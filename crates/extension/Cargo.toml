@@ -1,0 +1,20 @@
+[package]
+name = "a3s-use-extension"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "ACL manifest and native surface contracts for A3S Use extensions"
+
+[dependencies]
+a3s-acl = { git = "https://github.com/A3S-Lab/ACL", rev = "6e2a6469edc0f4c61b1e588d0ace873aaf15ce22" }
+a3s-use-core = { version = "0.1.0", path = "../core" }
+fs2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+semver = "1"
+sha2.workspace = true
+tempfile.workspace = true
+tokio.workspace = true

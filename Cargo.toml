@@ -1,0 +1,66 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/browser",
+    "crates/office",
+    "crates/extension",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/A3S-Lab/Use"
+authors = ["A3S Lab"]
+rust-version = "1.82"
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+fs2 = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tempfile = "3"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "process", "time"] }
+
+[package]
+name = "a3s-use"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Typed Browser, Office, and external application capabilities for A3S"
+
+[lib]
+name = "a3s_use"
+path = "src/lib.rs"
+
+[[bin]]
+name = "a3s-use"
+path = "src/main.rs"
+
+[features]
+default = ["browser", "office", "extensions"]
+browser = ["dep:a3s-use-browser"]
+office = ["dep:a3s-use-office"]
+extensions = ["dep:a3s-use-extension"]
+
+[dependencies]
+a3s-use-core = { version = "0.1.0", path = "crates/core" }
+a3s-use-browser = { version = "0.1.0", path = "crates/browser", optional = true }
+a3s-use-office = { version = "0.1.0", path = "crates/office", optional = true }
+a3s-use-extension = { version = "0.1.0", path = "crates/extension", optional = true }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
