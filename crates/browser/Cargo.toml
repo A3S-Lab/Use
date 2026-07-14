@@ -8,11 +8,35 @@ authors.workspace = true
 rust-version.workspace = true
 description = "Typed browser rendering and session contracts for A3S Use"
 
+[features]
+default = ["chrome"]
+chrome = [
+    "dep:chromiumoxide",
+    "dep:fs2",
+    "dep:futures",
+    "dep:reqwest",
+    "dep:tracing",
+    "dep:which",
+    "dep:zip",
+]
+lightpanda = ["chrome"]
+
 [dependencies]
 a3s-use-core = { version = "0.1.0", path = "../core" }
 async-trait.workspace = true
+chromiumoxide = { version = "0.7", features = ["tokio-runtime"], optional = true }
+fs2 = { workspace = true, optional = true }
+futures = { version = "0.3", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"], optional = true }
 serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tracing = { version = "0.1", optional = true }
 url = { version = "2", features = ["serde"] }
+which = { version = "7", optional = true }
+zip = { version = "2", default-features = false, features = ["deflate"], optional = true }
 
 [dev-dependencies]
+tempfile.workspace = true
 tokio.workspace = true

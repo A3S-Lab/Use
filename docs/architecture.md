@@ -9,6 +9,16 @@ provider runtimes may be missing.
 Search depends directly on the object-safe PageRenderer contract in
 a3s-use-browser. It never executes the CLI or requires a background service.
 
+Provider selection is explicit. `DiscoveredChrome` is the default and never
+downloads software. Only a `Managed*` provider or an explicit component install
+authorizes a download. Managed downloads are restricted to approved HTTPS
+hosts and redirects, bounded by size, hashed into an installation receipt,
+staged outside the active version, and atomically activated. Lightpanda assets
+must match the publisher SHA-256 exposed by GitHub Releases. Chrome for Testing's
+current version feed does not publish an independent SHA-256 value, so its
+receipt records HTTPS provenance and locally observed hashes without claiming
+publisher checksum verification.
+
 ## Native extension surfaces
 
 An external package declares any useful combination of:

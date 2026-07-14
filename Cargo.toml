@@ -25,7 +25,7 @@ serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
 tempfile = "3"
-tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "process", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "process", "sync", "time"] }
 
 [package]
 name = "a3s-use"
@@ -50,6 +50,7 @@ default = ["browser", "office", "extensions"]
 browser = ["dep:a3s-use-browser"]
 office = ["dep:a3s-use-office"]
 extensions = ["dep:a3s-use-extension"]
+lightpanda = ["browser", "a3s-use-browser/lightpanda"]
 
 [dependencies]
 a3s-use-core = { version = "0.1.0", path = "crates/core" }

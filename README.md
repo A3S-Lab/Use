@@ -50,7 +50,9 @@ A3S Use does not define a custom extension JSON-RPC protocol.
 
 The initial implementation includes typed contracts, built-in diagnostics,
 ownership-safe local extension activation, native CLI delegation, and
-component management. Browser provider extraction from A3S Search, OfficeCLI
+component management. The Browser crate now owns typed Chrome and Lightpanda
+provider selection, bounded and atomic managed installation, rendering, tab
+limits, and cancellation-safe process cleanup. Search migration, OfficeCLI
 integration, and the standard MCP server follow in the documented roadmap.
 
 ## License

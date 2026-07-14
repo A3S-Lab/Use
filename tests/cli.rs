@@ -1,6 +1,6 @@
 use std::process::Command;
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "browser", feature = "extensions")))]
 use std::os::unix::fs::PermissionsExt;
 
 fn binary() -> &'static str {
@@ -60,7 +60,35 @@ fn mcp_stop_is_safe_when_no_service_is_running() {
     assert_eq!(value["data"]["running"], false);
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "browser"))]
+#[test]
+fn browser_install_reuses_an_explicit_provider_without_downloading() {
+    let temp = tempfile::tempdir().unwrap();
+    let executable = temp.path().join("chrome-fixture");
+    std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).unwrap();
+
+    let output = Command::new(binary())
+        .args(["component", "install", "browser", "--json"])
+        .env("A3S_BROWSER_EXECUTABLE", &executable)
+        .env("A3S_USE_BROWSER_HOME", temp.path().join("managed"))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["changed"], false);
+    assert_eq!(value["data"]["provider"]["source"], "environment");
+    assert_eq!(
+        value["data"]["provider"]["path"],
+        executable.to_string_lossy().as_ref()
+    );
+    assert!(!temp.path().join("managed/chrome").exists());
+}
+
+#[cfg(all(unix, feature = "extensions"))]
 #[test]
 fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     let temp = tempfile::tempdir().unwrap();

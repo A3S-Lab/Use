@@ -235,6 +235,38 @@ async fn component_status(id: &str) -> UseResult<CommandOutput> {
 async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
     let id = value_argument(args, 1, "component install requires an ID")?;
     validate_component_install_options(args)?;
+    if matches!(id, "browser" | "use/browser") {
+        #[cfg(feature = "browser")]
+        {
+            let force = args.iter().any(|argument| argument == "--force");
+            let previous = a3s_use_browser::browser_status(a3s_use_browser::ManagedBrowser::Chrome);
+            let status = if force {
+                a3s_use_browser::update_browser(a3s_use_browser::ManagedBrowser::Chrome).await?
+            } else {
+                a3s_use_browser::install_browser(a3s_use_browser::ManagedBrowser::Chrome).await?
+            };
+            let changed = force
+                || !previous.available
+                || previous.path != status.path
+                || previous.source != status.source
+                || previous.version != status.version;
+            let diagnostic = browser_diagnostic();
+            return Ok(CommandOutput::success(
+                format!(
+                    "Browser provider is ready at {}.",
+                    status.path.as_ref().map_or_else(
+                        || "an unknown path".to_string(),
+                        |path| path.display().to_string()
+                    )
+                ),
+                serde_json::json!({
+                    "component": component_value(id, &diagnostic),
+                    "changed": changed,
+                    "provider": status
+                }),
+            ));
+        }
+    }
     if let Some(diagnostic) = builtin_diagnostic(id) {
         if option_argument(args, "--from")?.is_some() {
             return Err(usage_error("--from is valid only for external extensions"));
@@ -296,6 +328,24 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
 }
 
 async fn component_uninstall(id: &str) -> UseResult<CommandOutput> {
+    if matches!(id, "browser" | "use/browser") {
+        #[cfg(feature = "browser")]
+        {
+            let changed = a3s_use_browser::uninstall_managed_browsers().await?;
+            return Ok(CommandOutput::success(
+                if changed {
+                    "Removed A3S-managed Browser provider files."
+                } else {
+                    "No A3S-managed Browser provider files are installed."
+                },
+                serde_json::json!({
+                    "component": id,
+                    "changed": changed,
+                    "builtInCommandPreserved": true
+                }),
+            ));
+        }
+    }
     if matches!(id, "browser" | "use/browser" | "office" | "use/office") {
         return Ok(CommandOutput::success(
             format!("No managed runtime files are owned for '{id}'."),
