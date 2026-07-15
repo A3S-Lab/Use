@@ -263,7 +263,7 @@ jobs:
           sha256sum *.tar.gz *.zip > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.validate.outputs.tag }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           generate_release_notes: true
           files: |
             artifacts/*.tar.gz
