@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use a3s_use_core::{UseError, UseResult};
 
@@ -10,6 +11,7 @@ pub(crate) struct ExtensionView {
     pub component_id: String,
     pub route: String,
     pub version: String,
+    pub enabled: bool,
     pub package_root: PathBuf,
     pub surfaces: Vec<&'static str>,
     pub manifest: serde_json::Value,
@@ -38,8 +40,9 @@ pub(crate) fn external_package_id(id: &str) -> Option<&str> {
     }
 }
 
-pub(crate) async fn extension_capabilities() -> UseResult<Vec<serde_json::Value>> {
-    Ok(installed_extensions()
+pub(crate) async fn extension_capabilities() -> UseResult<(u64, Vec<serde_json::Value>)> {
+    let generation = extension_registry_generation().await?;
+    let extensions = installed_extensions()
         .await?
         .into_iter()
         .map(|extension| {
@@ -47,15 +50,19 @@ pub(crate) async fn extension_capabilities() -> UseResult<Vec<serde_json::Value>
                 "id": extension.package_id,
                 "route": extension.route,
                 "version": extension.version,
+                "enabled": extension.enabled,
+                "readiness": if extension.enabled { "ready" } else { "disabled" },
                 "surfaces": extension.surfaces,
                 "builtIn": false
             })
         })
-        .collect())
+        .collect();
+    Ok((generation, extensions))
 }
 
 pub(crate) async fn extension_list() -> UseResult<CommandOutput> {
     let extensions = installed_extensions().await?;
+    let generation = extension_registry_generation().await?;
     let human = if extensions.is_empty() {
         "No external Use extensions are installed.".to_string()
     } else {
@@ -63,8 +70,15 @@ pub(crate) async fn extension_list() -> UseResult<CommandOutput> {
             .iter()
             .map(|extension| {
                 format!(
-                    "{}\t{}\t{}",
-                    extension.package_id, extension.route, extension.version
+                    "{}\t{}\t{}\t{}",
+                    extension.package_id,
+                    extension.route,
+                    extension.version,
+                    if extension.enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
                 )
             })
             .collect::<Vec<_>>()
@@ -73,7 +87,7 @@ pub(crate) async fn extension_list() -> UseResult<CommandOutput> {
     let values = extensions.iter().map(extension_value).collect::<Vec<_>>();
     Ok(CommandOutput::success(
         human,
-        serde_json::json!({ "extensions": values }),
+        serde_json::json!({ "generation": generation, "extensions": values }),
     ))
 }
 
@@ -86,14 +100,86 @@ pub(crate) async fn extension_inspect(package_id: &str) -> UseResult<CommandOutp
     };
     Ok(CommandOutput::success(
         format!(
-            "Extension '{}' is ready on route '{}'.",
-            extension.package_id, extension.route
+            "Extension '{}' is {} on route '{}'.",
+            extension.package_id,
+            if extension.enabled {
+                "enabled"
+            } else {
+                "disabled"
+            },
+            extension.route
         ),
         serde_json::json!({
             "extension": extension_value(&extension),
             "manifest": extension.manifest
         }),
     ))
+}
+
+pub(crate) async fn extension_enable(package_id: &str) -> UseResult<CommandOutput> {
+    let result = activate_extension(package_id, true, Duration::ZERO).await?;
+    Ok(CommandOutput::success(
+        if result.changed {
+            format!("Enabled extension '{}'.", result.package_id)
+        } else {
+            format!("Extension '{}' is already enabled.", result.package_id)
+        },
+        serde_json::json!({
+            "packageId": result.package_id,
+            "changed": result.changed,
+            "enabled": result.enabled,
+            "generation": result.generation
+        }),
+    ))
+}
+
+pub(crate) async fn extension_disable(
+    package_id: &str,
+    timeout: Duration,
+) -> UseResult<CommandOutput> {
+    let result = activate_extension(package_id, false, timeout).await?;
+    Ok(CommandOutput::success(
+        if result.changed {
+            format!("Disabled extension '{}'.", result.package_id)
+        } else {
+            format!("Extension '{}' is already disabled.", result.package_id)
+        },
+        serde_json::json!({
+            "packageId": result.package_id,
+            "changed": result.changed,
+            "enabled": result.enabled,
+            "generation": result.generation
+        }),
+    ))
+}
+
+pub(crate) async fn extension_snapshot() -> UseResult<CommandOutput> {
+    let snapshot = current_registry_snapshot().await?;
+    Ok(CommandOutput::success(
+        format!("Extension registry generation {}.", snapshot["generation"]),
+        serde_json::json!({ "registry": snapshot }),
+    ))
+}
+
+pub(crate) async fn extension_watch(
+    after_generation: u64,
+    timeout: Duration,
+) -> UseResult<CommandOutput> {
+    let snapshot = watch_registry(after_generation, timeout).await?;
+    match snapshot {
+        Some(snapshot) => Ok(CommandOutput::success(
+            format!("Extension registry advanced beyond generation {after_generation}."),
+            serde_json::json!({ "changed": true, "registry": snapshot }),
+        )),
+        None => Ok(CommandOutput::success(
+            format!("Extension registry did not change after generation {after_generation}."),
+            serde_json::json!({
+                "changed": false,
+                "afterGeneration": after_generation,
+                "timeoutMs": timeout.as_millis().min(u64::MAX as u128) as u64
+            }),
+        )),
+    }
 }
 
 pub(crate) fn external_component_value(
@@ -104,10 +190,11 @@ pub(crate) fn external_component_value(
         "id": if full_id { &extension.component_id } else { &extension.package_id },
         "description": format!("External Use domain on route '{}'.", extension.route),
         "presence": "managed",
-        "health": "ready",
+        "health": if extension.enabled { "ready" } else { "disabled" },
         "version": extension.version,
         "path": extension.package_root,
         "route": extension.route,
+        "enabled": extension.enabled,
         "surfaces": extension.surfaces,
         "trust": "local-explicit"
     })
@@ -119,6 +206,7 @@ fn extension_value(extension: &ExtensionView) -> serde_json::Value {
         "componentId": extension.component_id,
         "route": extension.route,
         "version": extension.version,
+        "enabled": extension.enabled,
         "packageRoot": extension.package_root,
         "surfaces": extension.surfaces,
         "trust": "local-explicit"
@@ -190,6 +278,93 @@ pub(crate) async fn uninstall_extension(_package_id: &str) -> UseResult<Extensio
     Err(extensions_disabled())
 }
 
+#[derive(Debug, Clone)]
+struct ExtensionActivationView {
+    package_id: String,
+    changed: bool,
+    enabled: bool,
+    generation: u64,
+}
+
+#[cfg(feature = "extensions")]
+async fn activate_extension(
+    package_id: &str,
+    enabled: bool,
+    timeout: Duration,
+) -> UseResult<ExtensionActivationView> {
+    let result = if enabled {
+        crate::extension_host::enable(package_id).await?
+    } else {
+        crate::extension_host::disable(package_id, timeout).await?
+    };
+    Ok(ExtensionActivationView {
+        package_id: result.package_id,
+        changed: result.changed,
+        enabled: result.enabled,
+        generation: result.generation,
+    })
+}
+
+#[cfg(not(feature = "extensions"))]
+async fn activate_extension(
+    _package_id: &str,
+    _enabled: bool,
+    _timeout: Duration,
+) -> UseResult<ExtensionActivationView> {
+    Err(extensions_disabled())
+}
+
+#[cfg(feature = "extensions")]
+async fn current_registry_snapshot() -> UseResult<serde_json::Value> {
+    serde_json::to_value(crate::extension_host::snapshot().await?).map_err(|error| {
+        UseError::new(
+            "use.extension.registry_invalid",
+            format!("Failed to encode the extension registry snapshot: {error}"),
+        )
+    })
+}
+
+#[cfg(not(feature = "extensions"))]
+async fn current_registry_snapshot() -> UseResult<serde_json::Value> {
+    Ok(serde_json::json!({
+        "schemaVersion": 1,
+        "generation": 0,
+        "routes": []
+    }))
+}
+
+async fn extension_registry_generation() -> UseResult<u64> {
+    Ok(current_registry_snapshot().await?["generation"]
+        .as_u64()
+        .unwrap_or(0))
+}
+
+#[cfg(feature = "extensions")]
+async fn watch_registry(
+    after_generation: u64,
+    timeout: Duration,
+) -> UseResult<Option<serde_json::Value>> {
+    crate::extension_host::wait_for_change(after_generation, timeout)
+        .await?
+        .map(|snapshot| {
+            serde_json::to_value(snapshot).map_err(|error| {
+                UseError::new(
+                    "use.extension.registry_invalid",
+                    format!("Failed to encode the extension registry snapshot: {error}"),
+                )
+            })
+        })
+        .transpose()
+}
+
+#[cfg(not(feature = "extensions"))]
+async fn watch_registry(
+    _after_generation: u64,
+    _timeout: Duration,
+) -> UseResult<Option<serde_json::Value>> {
+    Ok(None)
+}
+
 #[cfg(feature = "extensions")]
 fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult<ExtensionView> {
     let surfaces = extension.surfaces();
@@ -204,6 +379,7 @@ fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult
         component_id: extension.receipt.component_id,
         route: extension.receipt.route,
         version: extension.receipt.version,
+        enabled: extension.receipt.enabled,
         package_root: extension.receipt.package_root,
         surfaces,
         manifest,

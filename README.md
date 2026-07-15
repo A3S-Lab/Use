@@ -9,7 +9,7 @@ Skill surfaces declared in an A3S ACL manifest.
 
 ```text
 a3s-use capabilities --json
-a3s-use doctor [browser|office] --json
+a3s-use doctor [browser|box|office] --json
 a3s-use component list --json
 a3s-use component status browser --json
 a3s-use component install office --json
@@ -32,10 +32,26 @@ a3s-use mcp status browser --json
 a3s-use mcp stop browser --json
 a3s-use extension list --json
 a3s-use extension inspect acme/slack --json
+a3s-use extension disable acme/slack --json
+a3s-use extension enable acme/slack --json
+a3s-use extension snapshot --json
+a3s-use extension watch --after-generation 3 --timeout-ms 30000 --json
 a3s-use slack channels list
 ```
 
-The umbrella CLI exposes the same domain arguments through `a3s use`.
+The umbrella CLI exposes the same domain arguments through `a3s use`. It also
+provides the component-backed Box route without transferring Box ownership to
+Use:
+
+```text
+a3s use box compose up --detach
+```
+
+The umbrella CLI resolves or installs its authoritative Box component, passes
+the canonical executable path to Use for that invocation, and preserves Box's
+argv, streams, and exit status. Use never copies Box and never writes a second
+Box receipt. A non-Box Use command only receives an already-ready Box path and
+does not install Box as a side effect.
 
 ## Crates
 
@@ -66,6 +82,26 @@ server, and an external package target launches the MCP executable declared in
 its ACL manifest. A3S Use does not translate one server's tools into another
 protocol.
 
+## Hot-plug lifecycle
+
+External Use packages are process-isolated and hot-plugged through a versioned
+registry projection; they are not loaded as dynamic Rust libraries. Install,
+upgrade, enable, disable, and uninstall publish an atomic immutable snapshot
+with a monotonically increasing generation. `extension watch` lets a resident
+consumer wait for a later generation without restarting.
+
+Every accepted CLI or MCP invocation holds a shared route lease until its
+child process exits. Disable and uninstall remove route visibility first, then
+take an exclusive drain lease before deleting owned files. New calls therefore
+fail closed while accepted calls finish. A timed-out drain leaves the route
+disabled and returns `use.extension.drain_timeout`; retrying the lifecycle
+operation converges from that safe state. Upgrades activate a new immutable
+package directory while old in-flight calls retain their prior package. The
+receipt is authoritative, so a snapshot missed by a crash is rebuilt from
+validated receipts on the next reconciliation. Each binding carries its
+validated immutable package root, so a forced reactivation still publishes a
+new generation when its version and manifest are unchanged.
+
 Stateless `browser render` runs directly against the typed Rust provider.
 Stateful Browser commands use the same Browser MCP tools through an
 authenticated, loopback-only standard MCP Streamable HTTP deployment. The
@@ -75,11 +111,12 @@ in a private generated receipt and is never printed by normal CLI output.
 
 ## Status
 
-The implementation includes typed contracts, built-in diagnostics,
-ownership-safe local extension activation, native CLI and standard MCP
-delegation, and component management. Browser owns typed Chrome and Lightpanda
-provider selection, bounded and atomic managed installation, rendering, and
-cancellation-safe process cleanup. Its full driver tracks agent-browser
+The implementation includes typed contracts, built-in diagnostics, hot-plug
+extension generations with graceful draining, native CLI and standard MCP
+delegation, the component-backed Box route, and component management. Browser
+owns typed Chrome and Lightpanda provider selection, bounded and atomic managed
+installation, rendering, and cancellation-safe process cleanup. Its full
+driver tracks agent-browser
 `0.31.2` at commit `3591f0f4b719c94bcb9aec83ebe811c5dd7f587a` and exposes
 the locked 82-command compatibility vocabulary, 151 MCP tools, six packaged
 Skills, and the Dashboard through `a3s use browser`. Search injects the small

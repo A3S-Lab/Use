@@ -8,15 +8,19 @@ use serde::{Deserialize, Serialize};
 mod package;
 mod paths;
 mod registry;
+mod registry_io;
+mod route_lock;
 
 pub use paths::ExtensionPaths;
 pub use registry::{
-    ExtensionReceipt, ExtensionRegistry, ExtensionTrust, InstallOptions, InstallResult,
+    ActivationResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
+    ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult,
     InstalledExtension, UninstallResult,
 };
 
 const RESERVED_ROUTES: &[&str] = &[
     "browser",
+    "box",
     "office",
     "capabilities",
     "component",
@@ -432,7 +436,12 @@ extension "acme/slack" {
 
     #[test]
     fn rejects_reserved_routes() {
-        let manifest = MANIFEST.replace("route          = \"slack\"", "route = \"browser\"");
-        assert!(ExtensionManifest::parse_acl(&manifest).is_err());
+        for route in ["browser", "box"] {
+            let manifest = MANIFEST.replace(
+                "route          = \"slack\"",
+                &format!("route = \"{route}\""),
+            );
+            assert!(ExtensionManifest::parse_acl(&manifest).is_err());
+        }
     }
 }

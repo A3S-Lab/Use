@@ -64,8 +64,14 @@ impl ExtensionPaths {
         append_package_id(self.extensions_root(), package_id)
     }
 
-    pub(crate) fn package_root(&self, package_id: &str, version: &str) -> PathBuf {
-        self.package_parent(package_id).join(version)
+    pub(crate) fn package_root(
+        &self,
+        package_id: &str,
+        version: &str,
+        activation: &str,
+    ) -> PathBuf {
+        self.package_parent(package_id)
+            .join(format!("{version}-{activation}"))
     }
 
     pub(crate) fn receipt_path(&self, package_id: &str) -> PathBuf {
@@ -76,6 +82,16 @@ impl ExtensionPaths {
 
     pub(crate) fn registry_lock_path(&self) -> PathBuf {
         self.receipts_root().join(".registry.lock")
+    }
+
+    pub(crate) fn registry_snapshot_path(&self) -> PathBuf {
+        self.state_root.join("registry.json")
+    }
+
+    pub(crate) fn package_lock_path(&self, package_id: &str) -> PathBuf {
+        let mut path = append_package_id(self.state_root.join("route-locks"), package_id);
+        path.set_extension("lock");
+        path
     }
 }
 
@@ -132,12 +148,20 @@ mod tests {
     fn package_paths_preserve_publisher_namespace() {
         let paths = ExtensionPaths::new("/data/use", "/state/use");
         assert_eq!(
-            paths.package_root("acme/slack", "1.2.0"),
-            PathBuf::from("/data/use/extensions/acme/slack/1.2.0")
+            paths.package_root("acme/slack", "1.2.0", "generation"),
+            PathBuf::from("/data/use/extensions/acme/slack/1.2.0-generation")
         );
         assert_eq!(
             paths.receipt_path("acme/slack"),
             PathBuf::from("/state/use/extensions/acme/slack.json")
+        );
+        assert_eq!(
+            paths.package_lock_path("acme/slack"),
+            PathBuf::from("/state/use/route-locks/acme/slack.lock")
+        );
+        assert_eq!(
+            paths.registry_snapshot_path(),
+            PathBuf::from("/state/use/registry.json")
         );
     }
 }

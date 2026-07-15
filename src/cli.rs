@@ -1,10 +1,11 @@
 use a3s_use_core::{DomainDiagnostic, Readiness, UseError, UseResult};
 
 use crate::extension_cli::{
-    extension_capabilities, extension_inspect, extension_list, external_component_value,
-    external_package_id, install_extension, installed_extension, installed_extensions,
-    uninstall_extension,
+    extension_capabilities, extension_disable, extension_enable, extension_inspect, extension_list,
+    extension_snapshot, extension_watch, external_component_value, external_package_id,
+    install_extension, installed_extension, installed_extensions, uninstall_extension,
 };
+use std::time::Duration;
 
 pub struct CommandOutput {
     pub human: String,
@@ -27,11 +28,6 @@ impl CommandOutput {
         }
     }
 
-    #[cfg(any(
-        feature = "office",
-        feature = "extensions",
-        all(feature = "browser", feature = "mcp")
-    ))]
     fn delegated(exit_code: u8) -> Self {
         Self {
             human: String::new(),
@@ -53,6 +49,10 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "doctor" => doctor(args.get(1).map(String::as_str)),
         "component" => component(&args[1..]).await,
         "browser" => browser(&args[1..]).await,
+        "box" => {
+            let exit_code = crate::component_route::run_box(&args[1..]).await?;
+            Ok(CommandOutput::delegated(exit_code))
+        }
         "office" => office(&args[1..]).await,
         "extension" => extension(&args[1..]).await,
         "mcp" => mcp(&args[1..]).await,
@@ -88,14 +88,18 @@ fn help() -> CommandOutput {
             "a3s-use — typed application capabilities\n\n",
             "usage:\n",
             "  a3s-use capabilities [--json]\n",
-            "  a3s-use doctor [browser|office] [--json]\n",
+            "  a3s-use doctor [browser|box|office] [--json]\n",
             "  a3s-use component list|status|install|uninstall [args] [--json]\n",
             "  a3s-use browser doctor [--json]\n",
             "  a3s-use browser render <url> [--output <path>] [--screenshot <path>] [--json]\n",
             "  a3s-use browser open|list|navigate|snapshot|click|type|press|select|scroll|screenshot|close [args] [--json]\n",
+            "  a3s-use box <a3s-box-args...>\n",
             "  a3s-use office doctor [--json]\n",
             "  a3s-use office <officecli-args...>\n",
             "  a3s-use extension list|inspect|doctor [args] [--json]\n",
+            "  a3s-use extension enable <publisher/name> [--json]\n",
+            "  a3s-use extension disable <publisher/name> [--timeout-ms <ms>] [--json]\n",
+            "  a3s-use extension snapshot|watch [--after-generation <n>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use mcp serve browser [--tools <profiles>]\n",
             "  a3s-use mcp serve office|<publisher/name>\n",
             "  a3s-use mcp start|status|stop [browser] [--json]"
@@ -106,6 +110,7 @@ fn help() -> CommandOutput {
                 "doctor",
                 "component",
                 "browser",
+                "box",
                 "office",
                 "extension",
                 "mcp"
@@ -116,10 +121,11 @@ fn help() -> CommandOutput {
 
 async fn capabilities() -> UseResult<CommandOutput> {
     let browser = browser_diagnostic();
+    let box_domain = crate::component_route::box_diagnostic();
     let office = office_diagnostic();
-    let extensions = extension_capabilities().await?;
+    let (extension_generation, extensions) = extension_capabilities().await?;
     Ok(CommandOutput::success(
-        "Built-in domains: browser, office",
+        "Built-in routes: browser, box, office",
         serde_json::json!({
             "domains": [
                 {
@@ -133,9 +139,20 @@ async fn capabilities() -> UseResult<CommandOutput> {
                     "builtIn": true,
                     "readiness": office.readiness,
                     "surfaces": ["cli", "mcp"]
+                },
+                {
+                    "id": "box",
+                    "builtIn": true,
+                    "readiness": box_domain.readiness,
+                    "surfaces": ["cli"]
                 }
             ],
             "externalSurfaces": ["cli", "mcp", "skill"],
+            "extensionRegistry": {
+                "schemaVersion": 1,
+                "generation": extension_generation,
+                "hotPlug": true
+            },
             "extensions": extensions
         }),
     ))
@@ -143,8 +160,13 @@ async fn capabilities() -> UseResult<CommandOutput> {
 
 fn doctor(domain: Option<&str>) -> UseResult<CommandOutput> {
     let diagnostics = match domain {
-        None | Some("--json") => vec![browser_diagnostic(), office_diagnostic()],
+        None | Some("--json") => vec![
+            browser_diagnostic(),
+            office_diagnostic(),
+            crate::component_route::box_diagnostic(),
+        ],
         Some("browser") => vec![browser_diagnostic()],
+        Some("box") => vec![crate::component_route::box_diagnostic()],
         Some("office") => vec![office_diagnostic()],
         Some(value) => {
             return Err(UseError::new(
@@ -185,15 +207,20 @@ async fn component(args: &[String]) -> UseResult<CommandOutput> {
 
 async fn component_list() -> UseResult<CommandOutput> {
     let browser = component_value("browser", &browser_diagnostic());
+    let box_component = component_value("box", &crate::component_route::box_diagnostic());
     let office = component_value("office", &office_diagnostic());
     let extensions = installed_extensions().await?;
-    let mut components = vec![browser, office];
+    let mut components = vec![browser, box_component, office];
     components.extend(
         extensions
             .iter()
             .map(|extension| external_component_value(extension, false)),
     );
-    let mut human = vec!["browser".to_string(), "office".to_string()];
+    let mut human = vec![
+        "browser".to_string(),
+        "box".to_string(),
+        "office".to_string(),
+    ];
     human.extend(
         extensions
             .iter()
@@ -222,8 +249,14 @@ async fn component_status(id: &str) -> UseResult<CommandOutput> {
         if let Some(extension) = installed_extension(package_id).await? {
             return Ok(CommandOutput {
                 human: format!(
-                    "Extension '{}' is ready on route '{}'.",
-                    extension.package_id, extension.route
+                    "Extension '{}' is {} on route '{}'.",
+                    extension.package_id,
+                    if extension.enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                    extension.route
                 ),
                 json: serde_json::json!({
                     "schemaVersion": 1,
@@ -482,6 +515,27 @@ async fn extension(args: &[String]) -> UseResult<CommandOutput> {
             let package_id = value_argument(args, 1, "extension inspect requires an ID")?;
             extension_inspect(package_id).await
         }
+        Some("enable") => {
+            validate_extension_options(args, 2, false)?;
+            let package_id = value_argument(args, 1, "extension enable requires an ID")?;
+            extension_enable(package_id).await
+        }
+        Some("disable") => {
+            validate_extension_options(args, 2, true)?;
+            let package_id = value_argument(args, 1, "extension disable requires an ID")?;
+            let timeout = duration_option(args, "--timeout-ms", 30_000)?;
+            extension_disable(package_id, timeout).await
+        }
+        Some("snapshot") => {
+            validate_extension_options(args, 1, false)?;
+            extension_snapshot().await
+        }
+        Some("watch") => {
+            validate_extension_watch_options(args)?;
+            let after_generation = integer_option(args, "--after-generation", 0)?;
+            let timeout = duration_option(args, "--timeout-ms", 30_000)?;
+            extension_watch(after_generation, timeout).await
+        }
         Some(command) => Err(UseError::new(
             "use.extension.command_unknown",
             format!("Unknown extension command '{command}'."),
@@ -739,6 +793,7 @@ fn office_presence(source: a3s_use_office::OfficeInstallSource) -> &'static str 
 fn builtin_diagnostic(id: &str) -> Option<DomainDiagnostic> {
     match id {
         "browser" | "use/browser" => Some(browser_diagnostic()),
+        "box" | "use/box" => Some(crate::component_route::box_diagnostic()),
         "office" | "use/office" => Some(office_diagnostic()),
         _ => None,
     }
@@ -785,6 +840,65 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
         }
     }
     Ok(())
+}
+
+fn validate_extension_options(
+    args: &[String],
+    first_option: usize,
+    allow_timeout: bool,
+) -> UseResult<()> {
+    let mut index = first_option;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--json" => index += 1,
+            "--timeout-ms" if allow_timeout => {
+                if args.get(index + 1).is_none() {
+                    return Err(usage_error("--timeout-ms requires a value"));
+                }
+                index += 2;
+            }
+            value => return Err(usage_error(format!("unknown extension option '{value}'"))),
+        }
+    }
+    Ok(())
+}
+
+fn validate_extension_watch_options(args: &[String]) -> UseResult<()> {
+    let mut index = 1;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--json" => index += 1,
+            "--after-generation" | "--timeout-ms" => {
+                if args.get(index + 1).is_none() {
+                    return Err(usage_error(format!("{} requires a value", args[index])));
+                }
+                index += 2;
+            }
+            value => {
+                return Err(usage_error(format!(
+                    "unknown extension watch option '{value}'"
+                )))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn integer_option(args: &[String], name: &str, default: u64) -> UseResult<u64> {
+    let Some(value) = option_argument(args, name)? else {
+        return Ok(default);
+    };
+    value.parse::<u64>().map_err(|_| {
+        usage_error(format!(
+            "{name} must be a non-negative integer, received '{value}'"
+        ))
+    })
+}
+
+fn duration_option(args: &[String], name: &str, default_ms: u64) -> UseResult<Duration> {
+    Ok(Duration::from_millis(integer_option(
+        args, name, default_ms,
+    )?))
 }
 
 #[cfg(feature = "browser")]

@@ -1,6 +1,9 @@
+use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use a3s_use_core::{UseError, UseResult};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
@@ -8,9 +11,14 @@ use super::package::{
     copy_package, io_error, owned_package_path, read_manifest, sha256, unique_suffix,
     unix_timestamp, validate_surface_files, write_receipt, RegistryLock,
 };
+use super::registry_io::{read_registry_snapshot, write_registry_snapshot};
+use super::route_lock::{acquire_drain_lock, deadline_after, open_route_lock};
 use super::{ExtensionManifest, ExtensionPaths, McpTransport};
 
 const RECEIPT_SCHEMA_VERSION: u32 = 1;
+pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 1;
+const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+const WATCH_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -30,6 +38,12 @@ pub struct ExtensionReceipt {
     pub manifest_sha256: String,
     pub trust: ExtensionTrust,
     pub installed_at_unix: u64,
+    #[serde(default = "enabled_by_default")]
+    pub enabled: bool,
+}
+
+fn enabled_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -85,6 +99,68 @@ impl InstalledExtension {
             .as_ref()
             .map(|surface| self.receipt.package_root.join(&surface.path))
     }
+
+    pub fn enabled(&self) -> bool {
+        self.receipt.enabled
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionRouteBinding {
+    pub package_id: String,
+    pub component_id: String,
+    pub route: String,
+    pub version: String,
+    #[serde(default)]
+    pub package_root: PathBuf,
+    pub manifest_sha256: String,
+    pub enabled: bool,
+    pub surfaces: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionRegistrySnapshot {
+    pub schema_version: u32,
+    pub generation: u64,
+    pub routes: Vec<ExtensionRouteBinding>,
+}
+
+impl Default for ExtensionRegistrySnapshot {
+    fn default() -> Self {
+        Self {
+            schema_version: REGISTRY_SCHEMA_VERSION,
+            generation: 0,
+            routes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivationResult {
+    pub package_id: String,
+    pub changed: bool,
+    pub enabled: bool,
+    pub generation: u64,
+}
+
+pub struct ExtensionRouteLease {
+    extension: InstalledExtension,
+    file: File,
+}
+
+impl ExtensionRouteLease {
+    pub fn extension(&self) -> &InstalledExtension {
+        &self.extension
+    }
+}
+
+impl Drop for ExtensionRouteLease {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -123,6 +199,72 @@ impl ExtensionRegistry {
 
     pub fn paths(&self) -> &ExtensionPaths {
         &self.paths
+    }
+
+    /// Return the immutable route projection currently visible to consumers.
+    ///
+    /// The published projection is compared with ownership-validated receipts
+    /// without blocking lifecycle writers. A mismatch is rebuilt under the
+    /// registry lock, repairing a crash between receipt activation and
+    /// generation publication without requiring a resident daemon.
+    pub async fn snapshot(&self) -> UseResult<ExtensionRegistrySnapshot> {
+        // The common read path is lock-free with respect to lifecycle writers.
+        // Only a real receipt/publication mismatch needs the registry lock for
+        // crash reconciliation.
+        let path = self.paths.registry_snapshot_path();
+        let published = read_registry_snapshot(&path).await?;
+        match self.list().await {
+            Ok(installed) if published.routes == route_bindings(&installed) => {
+                return Ok(published)
+            }
+            // A lifecycle writer may remove a receipt between the optimistic
+            // directory scan and receipt read. Re-check under the lock below;
+            // if that writer still owns it, the last complete publication is
+            // the only coherent snapshot to return.
+            Ok(_) | Err(_) => {}
+        }
+        let _lock = match RegistryLock::acquire(&self.paths.registry_lock_path()) {
+            Ok(lock) => lock,
+            Err(error) if error.code == "use.extension.busy" => {
+                return read_registry_snapshot(&path).await;
+            }
+            Err(error) => return Err(error),
+        };
+        let installed = self.list().await?;
+        self.publish_snapshot_locked(&installed).await
+    }
+
+    /// Wait until a newer registry generation is published.
+    ///
+    /// Consumers such as A3S Code can keep their process alive and refresh CLI,
+    /// MCP, and Skill surfaces when this returns a snapshot.
+    pub async fn wait_for_change(
+        &self,
+        after_generation: u64,
+        timeout: Duration,
+    ) -> UseResult<Option<ExtensionRegistrySnapshot>> {
+        let deadline = deadline_after(timeout)?;
+        // Reconcile once when the subscription starts. Polling after this
+        // point reads only immutable publications so watchers never become a
+        // periodic source of write-lock contention for lifecycle operations.
+        let initial = self.snapshot().await?;
+        if initial.generation > after_generation {
+            return Ok(Some(initial));
+        }
+        loop {
+            // Lifecycle mutations publish the immutable projection before
+            // draining old calls. Reading it directly keeps watchers live even
+            // while the mutation deliberately holds the registry write lock.
+            let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+            if published.generation > after_generation {
+                return Ok(Some(published));
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return Ok(None);
+            }
+            tokio::time::sleep(WATCH_INTERVAL.min(deadline.saturating_duration_since(now))).await;
+        }
     }
 
     pub async fn list(&self) -> UseResult<Vec<InstalledExtension>> {
@@ -184,7 +326,31 @@ impl ExtensionRegistry {
             .list()
             .await?
             .into_iter()
-            .find(|extension| extension.receipt.route == route))
+            .find(|extension| extension.receipt.enabled && extension.receipt.route == route))
+    }
+
+    /// Pin an active route generation for the lifetime of one delegated call.
+    /// Disable and uninstall operations acquire the matching exclusive lock
+    /// before deleting package files, so an accepted invocation cannot lose its
+    /// executable halfway through dispatch.
+    pub async fn acquire_route(&self, route: &str) -> UseResult<Option<ExtensionRouteLease>> {
+        let Some(candidate) = self.find_route(route).await? else {
+            return Ok(None);
+        };
+        self.acquire_extension_lease(candidate, Some(route)).await
+    }
+
+    pub async fn acquire_extension(
+        &self,
+        package_id: &str,
+    ) -> UseResult<Option<ExtensionRouteLease>> {
+        let Some(candidate) = self.get(package_id).await? else {
+            return Ok(None);
+        };
+        if !candidate.receipt.enabled {
+            return Ok(None);
+        }
+        self.acquire_extension_lease(candidate, None).await
     }
 
     pub async fn install_local(
@@ -252,6 +418,7 @@ impl ExtensionRegistry {
                 && current.receipt.version == manifest.version
                 && current.receipt.manifest_sha256 == digest
             {
+                self.publish_snapshot_locked(&installed).await?;
                 return Ok(InstallResult {
                     changed: false,
                     extension: current.clone(),
@@ -289,25 +456,21 @@ impl ExtensionRegistry {
         }
         validate_surface_files(&staged_manifest, staging.path()).await?;
 
+        let activation = unique_suffix();
         let target = self
             .paths
-            .package_root(&expected_package_id, &manifest.version);
-        let backup =
-            package_parent.join(format!(".backup-{}-{}", manifest.version, unique_suffix()));
+            .package_root(&expected_package_id, &manifest.version, &activation);
         let staging = staging.keep();
-        let had_target = fs::metadata(&target).await.is_ok();
-        if had_target {
-            fs::rename(&target, &backup)
-                .await
-                .map_err(|error| io_error("back up active extension package", &target, error))?;
-        }
         if let Err(error) = fs::rename(&staging, &target).await {
-            if had_target {
-                let _ = fs::rename(&backup, &target).await;
-            }
             let _ = fs::remove_dir_all(&staging).await;
             return Err(io_error("activate extension package", &target, error));
         }
+
+        let enabled = installed
+            .iter()
+            .find(|extension| extension.receipt.package_id == expected_package_id)
+            .map(|extension| extension.receipt.enabled)
+            .unwrap_or(true);
 
         let receipt = ExtensionReceipt {
             schema_version: RECEIPT_SCHEMA_VERSION,
@@ -319,33 +482,19 @@ impl ExtensionRegistry {
             manifest_sha256: digest,
             trust: ExtensionTrust::LocalExplicit,
             installed_at_unix: unix_timestamp(),
+            enabled,
         };
         let receipt_path = self.paths.receipt_path(&expected_package_id);
         if let Err(error) = write_receipt(&receipt_path, &receipt).await {
             let _ = fs::remove_dir_all(&target).await;
-            if had_target {
-                let _ = fs::rename(&backup, &target).await;
-            }
             return Err(error);
         }
 
-        if had_target {
-            let _ = fs::remove_dir_all(&backup).await;
-        }
-        if let Some(previous) = installed
-            .iter()
-            .find(|extension| extension.receipt.package_id == expected_package_id)
-        {
-            if previous.receipt.package_root != target
-                && owned_package_path(
-                    &self.paths,
-                    &expected_package_id,
-                    &previous.receipt.package_root,
-                )
-            {
-                let _ = fs::remove_dir_all(&previous.receipt.package_root).await;
-            }
-        }
+        // Previous immutable package generations remain available while calls
+        // that pinned them drain. Explicit uninstall and the future package GC
+        // are the only operations allowed to remove these directories.
+        let current = self.list().await?;
+        self.publish_snapshot_locked(&current).await?;
 
         Ok(InstallResult {
             changed: true,
@@ -353,19 +502,105 @@ impl ExtensionRegistry {
         })
     }
 
+    pub async fn enable(&self, package_id: &str) -> UseResult<ActivationResult> {
+        let package_id = normalize_package_id(package_id)?;
+        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let extension = self.get(&package_id).await?.ok_or_else(|| {
+            UseError::new(
+                "use.extension.not_installed",
+                format!("Extension '{package_id}' is not installed."),
+            )
+        })?;
+        let changed = !extension.receipt.enabled;
+        if changed {
+            let mut receipt = extension.receipt;
+            receipt.enabled = true;
+            write_receipt(&self.paths.receipt_path(&package_id), &receipt).await?;
+        }
+        let installed = self.list().await?;
+        let snapshot = self.publish_snapshot_locked(&installed).await?;
+        Ok(ActivationResult {
+            package_id,
+            changed,
+            enabled: true,
+            generation: snapshot.generation,
+        })
+    }
+
+    pub async fn disable(&self, package_id: &str) -> UseResult<ActivationResult> {
+        self.disable_with_timeout(package_id, DEFAULT_DRAIN_TIMEOUT)
+            .await
+    }
+
+    pub async fn disable_with_timeout(
+        &self,
+        package_id: &str,
+        timeout: Duration,
+    ) -> UseResult<ActivationResult> {
+        deadline_after(timeout)?;
+        let package_id = normalize_package_id(package_id)?;
+        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let extension = self.get(&package_id).await?.ok_or_else(|| {
+            UseError::new(
+                "use.extension.not_installed",
+                format!("Extension '{package_id}' is not installed."),
+            )
+        })?;
+        let changed = extension.receipt.enabled;
+        if changed {
+            let mut receipt = extension.receipt;
+            receipt.enabled = false;
+            write_receipt(&self.paths.receipt_path(&package_id), &receipt).await?;
+        }
+        let installed = self.list().await?;
+        let snapshot = self.publish_snapshot_locked(&installed).await?;
+        // Route visibility changes before draining. New calls fail closed while
+        // accepted calls retain their shared generation lease. Keep the
+        // registry lock for the drain so a concurrent enable cannot republish
+        // the route before all accepted calls have released their leases.
+        let _drain =
+            acquire_drain_lock(&self.paths.package_lock_path(&package_id), timeout).await?;
+        Ok(ActivationResult {
+            package_id,
+            changed,
+            enabled: false,
+            generation: snapshot.generation,
+        })
+    }
+
     pub async fn uninstall(&self, package_id: &str) -> UseResult<UninstallResult> {
         let package_id = normalize_package_id(package_id)?;
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let Some(extension) = self.get(&package_id).await? else {
+            // A previous uninstall may have committed receipt removal and then
+            // stopped before deleting its immutable package generations. The
+            // missing receipt already makes the route invisible; reconcile the
+            // projection and finish the owned cleanup on retry.
+            let installed = self.list().await?;
+            self.publish_snapshot_locked(&installed).await?;
+            let changed =
+                remove_package_parent_if_present(&self.paths.package_parent(&package_id)).await?;
             return Ok(UninstallResult {
                 package_id,
-                changed: false,
+                changed,
             });
         };
-        let receipt_path = self.paths.receipt_path(&package_id);
-        fs::remove_file(&receipt_path)
-            .await
-            .map_err(|error| io_error("disable extension route", &receipt_path, error))?;
+        if extension.receipt.enabled {
+            let mut receipt = extension.receipt.clone();
+            receipt.enabled = false;
+            write_receipt(&self.paths.receipt_path(&package_id), &receipt).await?;
+            let installed = self.list().await?;
+            self.publish_snapshot_locked(&installed).await?;
+        }
+
+        // Keep both locks until the receipt and every immutable package
+        // generation are gone. An enable or install cannot interleave between
+        // route removal and package deletion.
+        let _drain = acquire_drain_lock(
+            &self.paths.package_lock_path(&package_id),
+            DEFAULT_DRAIN_TIMEOUT,
+        )
+        .await?;
         if !owned_package_path(&self.paths, &package_id, &extension.receipt.package_root) {
             return Err(UseError::new(
                 "use.extension.ownership_invalid",
@@ -373,18 +608,73 @@ impl ExtensionRegistry {
             )
             .with_detail("routeDisabled", true));
         }
-        if let Err(error) = fs::remove_dir_all(&extension.receipt.package_root).await {
-            return Err(io_error(
-                "remove extension package",
-                &extension.receipt.package_root,
-                error,
-            )
-            .with_detail("routeDisabled", true));
-        }
+        let receipt_path = self.paths.receipt_path(&package_id);
+        fs::remove_file(&receipt_path)
+            .await
+            .map_err(|error| io_error("disable extension route", &receipt_path, error))?;
+        // Publish receipt removal before best-effort storage cleanup. If the
+        // latter is interrupted, a retry enters the no-receipt recovery path
+        // above without re-exposing the route.
+        let installed = self.list().await?;
+        self.publish_snapshot_locked(&installed).await?;
+        let package_parent = self.paths.package_parent(&package_id);
+        remove_package_parent_if_present(&package_parent).await?;
         Ok(UninstallResult {
             package_id,
             changed: true,
         })
+    }
+
+    async fn acquire_extension_lease(
+        &self,
+        candidate: InstalledExtension,
+        expected_route: Option<&str>,
+    ) -> UseResult<Option<ExtensionRouteLease>> {
+        let path = self.paths.package_lock_path(&candidate.receipt.package_id);
+        let file = open_route_lock(&path)?;
+        match FileExt::try_lock_shared(&file) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
+            Err(error) => return Err(io_error("acquire extension route lease", &path, error)),
+        }
+
+        // Re-read after locking so a concurrent disable cannot admit a call
+        // using stale route metadata.
+        let Some(extension) = self.get(&candidate.receipt.package_id).await? else {
+            let _ = FileExt::unlock(&file);
+            return Ok(None);
+        };
+        if !extension.receipt.enabled
+            || expected_route.is_some_and(|route| extension.receipt.route != route)
+        {
+            let _ = FileExt::unlock(&file);
+            return Ok(None);
+        }
+        Ok(Some(ExtensionRouteLease { extension, file }))
+    }
+
+    async fn publish_snapshot_locked(
+        &self,
+        installed: &[InstalledExtension],
+    ) -> UseResult<ExtensionRegistrySnapshot> {
+        let routes = route_bindings(installed);
+        let path = self.paths.registry_snapshot_path();
+        let current = read_registry_snapshot(&path).await?;
+        if current.routes == routes {
+            return Ok(current);
+        }
+        let snapshot = ExtensionRegistrySnapshot {
+            schema_version: REGISTRY_SCHEMA_VERSION,
+            generation: current.generation.checked_add(1).ok_or_else(|| {
+                UseError::new(
+                    "use.extension.generation_exhausted",
+                    "The extension registry generation is exhausted.",
+                )
+            })?,
+            routes,
+        };
+        write_registry_snapshot(&path, &snapshot).await?;
+        Ok(snapshot)
     }
 
     async fn load_receipt(&self, receipt_path: &Path) -> UseResult<InstalledExtension> {
@@ -440,6 +730,48 @@ impl ExtensionRegistry {
     }
 }
 
+fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding> {
+    installed
+        .iter()
+        .map(|extension| ExtensionRouteBinding {
+            package_id: extension.receipt.package_id.clone(),
+            component_id: extension.receipt.component_id.clone(),
+            route: extension.receipt.route.clone(),
+            version: extension.receipt.version.clone(),
+            package_root: extension.receipt.package_root.clone(),
+            manifest_sha256: extension.receipt.manifest_sha256.clone(),
+            enabled: extension.receipt.enabled,
+            surfaces: extension
+                .surfaces()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        })
+        .collect()
+}
+
+async fn remove_package_parent_if_present(path: &Path) -> UseResult<bool> {
+    let metadata = match fs::symlink_metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(io_error("inspect extension package", path, error)),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(UseError::new(
+            "use.extension.ownership_invalid",
+            format!(
+                "Refusing to remove invalid extension package directory '{}'.",
+                path.display()
+            ),
+        )
+        .with_detail("routeDisabled", true));
+    }
+    fs::remove_dir_all(path).await.map_err(|error| {
+        io_error("remove extension package", path, error).with_detail("routeDisabled", true)
+    })?;
+    Ok(true)
+}
+
 fn normalize_package_id(value: &str) -> UseResult<String> {
     let value = value.strip_prefix("use/").unwrap_or(value);
     if !super::valid_package_id(value) {
@@ -471,6 +803,6 @@ fn ensure_unique_routes(installed: &[InstalledExtension]) -> UseResult<()> {
     Ok(())
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "registry_tests.rs"]
 mod tests;

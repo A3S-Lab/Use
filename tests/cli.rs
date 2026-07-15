@@ -1,9 +1,8 @@
 use std::process::Command;
+#[cfg(feature = "extensions")]
+use std::time::{Duration, Instant};
 
-#[cfg(all(
-    unix,
-    any(feature = "browser", feature = "office", feature = "extensions")
-))]
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 fn binary() -> &'static str {
@@ -21,8 +20,45 @@ fn capabilities_are_available_as_versioned_json() {
     assert_eq!(value["schemaVersion"], 1);
     assert_eq!(value["data"]["domains"][0]["id"], "browser");
     assert_eq!(value["data"]["domains"][1]["id"], "office");
+    assert_eq!(value["data"]["domains"][2]["id"], "box");
     assert!(value["data"].get("customJsonRpc").is_none());
     assert!(value.get("jsonrpc").is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn box_route_preserves_native_arguments_output_and_status() {
+    let temp = tempfile::tempdir().unwrap();
+    let executable = temp.path().join("a3s-box-fixture");
+    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\"\nexit 9\n").unwrap();
+    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).unwrap();
+
+    let output = Command::new(binary())
+        .args(["box", "compose", "up", "--detach"])
+        .env("A3S_USE_BOX_EXECUTABLE", &executable)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(9));
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "compose up --detach\n"
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn box_route_fails_closed_without_an_explicit_component_path() {
+    let output = Command::new(binary())
+        .args(["box", "ps", "--json"])
+        .env_remove("A3S_USE_BOX_EXECUTABLE")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["error"]["code"], "use.box.missing");
 }
 
 #[test]
@@ -709,6 +745,92 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     );
     assert!(delegated.stderr.is_empty());
 
+    let disabled = Command::new(binary())
+        .args(["extension", "disable", "acme/slack", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(disabled.status.success(), "{disabled:?}");
+    let disabled_json: serde_json::Value = serde_json::from_slice(&disabled.stdout).unwrap();
+    assert_eq!(disabled_json["data"]["enabled"], false);
+    assert_eq!(disabled_json["data"]["generation"], 2);
+
+    let disabled_status = Command::new(binary())
+        .args(["component", "status", "acme/slack"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(disabled_status.status.success(), "{disabled_status:?}");
+    assert!(String::from_utf8(disabled_status.stdout)
+        .unwrap()
+        .contains("is disabled on route 'slack'"));
+
+    let unavailable = Command::new(binary())
+        .args(["slack", "channels", "list", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(!unavailable.status.success());
+    let unavailable_json: serde_json::Value = serde_json::from_slice(&unavailable.stdout).unwrap();
+    assert_eq!(unavailable_json["error"]["code"], "use.route_unknown");
+
+    let enabled = Command::new(binary())
+        .args(["extension", "enable", "acme/slack", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(enabled.status.success(), "{enabled:?}");
+    let enabled_json: serde_json::Value = serde_json::from_slice(&enabled.stdout).unwrap();
+    assert_eq!(enabled_json["data"]["enabled"], true);
+    assert_eq!(enabled_json["data"]["generation"], 3);
+
+    let snapshot = Command::new(binary())
+        .args(["extension", "snapshot", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(snapshot.status.success(), "{snapshot:?}");
+    let snapshot_json: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
+    assert_eq!(snapshot_json["data"]["registry"]["generation"], 3);
+    assert_eq!(
+        snapshot_json["data"]["registry"]["routes"][0]["enabled"],
+        true
+    );
+
+    let watcher = Command::new(binary())
+        .args([
+            "extension",
+            "watch",
+            "--after-generation",
+            "3",
+            "--timeout-ms",
+            "2000",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    let disabled_for_watch = Command::new(binary())
+        .args(["extension", "disable", "acme/slack", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(disabled_for_watch.status.success());
+    let watched = watcher.wait_with_output().unwrap();
+    assert!(watched.status.success(), "{watched:?}");
+    let watched_json: serde_json::Value = serde_json::from_slice(&watched.stdout).unwrap();
+    assert_eq!(watched_json["data"]["changed"], true);
+    assert_eq!(watched_json["data"]["registry"]["generation"], 4);
+
+    let reenabled = Command::new(binary())
+        .args(["extension", "enable", "acme/slack", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(reenabled.status.success());
+
     let removed = Command::new(binary())
         .args(["component", "uninstall", "acme/slack", "--json"])
         .env("A3S_USE_HOME", temp.path().join("home"))
@@ -717,6 +839,99 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     assert!(removed.status.success());
     let value: serde_json::Value = serde_json::from_slice(&removed.stdout).unwrap();
     assert_eq!(value["data"]["changed"], true);
+}
+
+#[cfg(all(unix, feature = "extensions"))]
+#[test]
+fn disable_drains_a_real_delegated_process_before_returning() {
+    let temp = tempfile::tempdir().unwrap();
+    let package = temp.path().join("package");
+    std::fs::create_dir_all(package.join("bin")).unwrap();
+    std::fs::write(
+        package.join("a3s-use-extension.acl"),
+        r#"extension "acme/slow" {
+  schema_version = 1
+  version = "1.0.0"
+  route = "slow"
+  actions = ["read"]
+
+  cli {
+    executable = "bin/slow"
+    json_output = false
+  }
+}
+"#,
+    )
+    .unwrap();
+    let executable = package.join("bin/slow");
+    std::fs::write(
+        &executable,
+        "#!/bin/sh\nprintf started > \"$A3S_USE_PACKAGE_ROOT/started\"\nsleep 1\n",
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).unwrap();
+    let home = temp.path().join("home");
+
+    let installed = Command::new(binary())
+        .args([
+            "component",
+            "install",
+            "acme/slow",
+            "--from",
+            package.to_str().unwrap(),
+            "--allow-unsigned",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(installed.status.success(), "{installed:?}");
+    let receipt: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(home.join("state/extensions/acme/slow.json")).unwrap(),
+    )
+    .unwrap();
+    let started =
+        std::path::PathBuf::from(receipt["packageRoot"].as_str().unwrap()).join("started");
+
+    let mut route = Command::new(binary())
+        .arg("slow")
+        .env("A3S_USE_HOME", &home)
+        .spawn()
+        .unwrap();
+    for _ in 0..500 {
+        if started.exists() {
+            break;
+        }
+        if let Some(status) = route.try_wait().unwrap() {
+            panic!("delegated process exited before its marker: {status}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(started.exists(), "delegated process did not start");
+
+    let before = Instant::now();
+    let disabled = Command::new(binary())
+        .args([
+            "extension",
+            "disable",
+            "acme/slow",
+            "--timeout-ms",
+            "3000",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    let elapsed = before.elapsed();
+
+    assert!(disabled.status.success(), "{disabled:?}");
+    assert!(
+        elapsed >= Duration::from_millis(600),
+        "drained in {elapsed:?}"
+    );
+    assert!(route.wait().unwrap().success());
 }
 
 #[cfg(all(unix, feature = "extensions"))]

@@ -31,6 +31,40 @@ The package manifest is a3s-use-extension.acl and is parsed by a3s-acl. A3S Use
 owns identity, routes, trust, activation, and lifecycle around the surfaces. It
 does not define JSON-RPC methods or convert surfaces implicitly.
 
+## Hot-plug registry
+
+Extension code remains behind native process boundaries. The registry is a
+derived, immutable route projection with a schema version and monotonic
+generation. Validated receipts are the source of truth. Each lifecycle commit
+writes its receipt first and atomically publishes the resulting registry
+snapshot; reconciliation repairs a missing publication after a crash.
+
+Install and upgrade stage into a unique immutable package directory. The
+active receipt switches atomically, while existing calls keep a shared package
+lease and continue against the generation they accepted. Disable and uninstall
+publish an invisible route before waiting for the exclusive drain lease. Each
+binding includes the immutable package root, so every changed activation is
+observable even when its version and manifest digest are unchanged. This
+ordering gives the lifecycle three explicit guarantees:
+
+1. no new call is admitted after the disable generation is visible;
+2. an accepted CLI or MCP process retains its package until it exits;
+3. a drain timeout returns an error while the route remains disabled.
+
+Consumers read `extension snapshot` for the current projection or long-poll
+`extension watch --after-generation <n>` for a later generation. No daemon,
+custom RPC protocol, `dlopen`, or restart is required.
+
+## Component-backed routes
+
+`box` is a reserved Use route backed by the independently managed A3S Box
+component. The umbrella CLI remains the only Box installer and receipt owner.
+For `a3s use box ...`, it resolves or installs Box, canonicalizes its executable
+path, and passes that path to Use for one child invocation. Use validates the
+absolute regular executable and delegates argv, streams, working directory,
+environment, and exit status. It does not discover Box on `PATH`, copy it, or
+create a wrapper package. Other Use commands never auto-install Box.
+
 ## Persistent sessions
 
 Browser exposes one typed session manager through the standard MCP tool set.
@@ -95,6 +129,9 @@ Implemented:
    CLI sessions.
 8. The complete locked agent-browser `0.31.2` command, MCP, Skill, Dashboard,
    lifecycle, and interactive Browser surface behind `a3s use browser`.
+9. Generation-based extension hot plug with enable, disable, watch, graceful
+   route draining, and crash reconciliation.
+10. The component-backed `a3s use box` route with one Box binary and receipt.
 
 Next:
 

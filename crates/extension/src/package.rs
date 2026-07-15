@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{UseError, UseResult};
@@ -207,10 +207,55 @@ pub(crate) async fn write_receipt(path: &Path, receipt: &ExtensionReceipt) -> Us
         return Err(io_error("sync extension receipt", &temporary, error));
     }
     drop(file);
-    if let Err(error) = fs::rename(&temporary, path).await {
+    if let Err(error) = activate_temporary_file(
+        temporary.clone(),
+        path.to_path_buf(),
+        "activate extension receipt",
+    )
+    .await
+    {
         let _ = fs::remove_file(&temporary).await;
-        return Err(io_error("activate extension receipt", path, error));
+        return Err(error);
     }
+    sync_parent_directory(parent, "extension receipt").await?;
+    Ok(())
+}
+
+pub(crate) async fn activate_temporary_file(
+    temporary: PathBuf,
+    target: PathBuf,
+    action: &'static str,
+) -> UseResult<()> {
+    let error_target = target.clone();
+    tokio::task::spawn_blocking(move || {
+        let temporary = tempfile::TempPath::try_from_path(temporary)?;
+        temporary.persist(target).map_err(|error| error.error)
+    })
+    .await
+    .map_err(|error| {
+        UseError::new(
+            "use.extension.io",
+            format!(
+                "Failed to {action} '{}': atomic replacement task failed: {error}",
+                error_target.display()
+            ),
+        )
+    })?
+    .map_err(|error| io_error(action, &error_target, error))
+}
+
+#[cfg(unix)]
+pub(crate) async fn sync_parent_directory(parent: &Path, label: &str) -> UseResult<()> {
+    fs::File::open(parent)
+        .await
+        .map_err(|error| io_error(&format!("open {label} directory"), parent, error))?
+        .sync_all()
+        .await
+        .map_err(|error| io_error(&format!("sync {label} directory"), parent, error))
+}
+
+#[cfg(not(unix))]
+pub(crate) async fn sync_parent_directory(_parent: &Path, _label: &str) -> UseResult<()> {
     Ok(())
 }
 
