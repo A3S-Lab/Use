@@ -55,6 +55,23 @@ Consumers read `extension snapshot` for the current projection or long-poll
 `extension watch --after-generation <n>` for a later generation. No daemon,
 custom RPC protocol, `dlopen`, or restart is required.
 
+### Unified capability projection
+
+Resident Code hosts do not need separate discovery paths for built-in and
+external domains. `capability snapshot` projects Browser, Office, Box, and
+enabled extensions through one schema while preserving each binding's
+`built-in` or `extension` origin. `capability watch` accepts both the extension
+generation and a content revision. The generation advances for extension
+lifecycle commits; the SHA-256 revision also detects built-in provider
+readiness and packaged Skill changes when the extension generation remains
+zero.
+
+The projection contains absolute validated Skill paths and an MCP launch
+target, never executable extension code or a generic action payload. Consumers
+still start `a3s-use mcp serve <target>` as a standard MCP server and load
+`SKILL.md` through their native Skill registry. The capability commands are
+versioned JSON CLI output, not a new RPC transport.
+
 ## Component-backed routes
 
 `box` is a reserved Use route backed by the independently managed A3S Box
@@ -132,6 +149,8 @@ Implemented:
 9. Generation-based extension hot plug with enable, disable, watch, graceful
    route draining, and crash reconciliation.
 10. The component-backed `a3s use box` route with one Box binary and receipt.
+11. A unified generation/revision capability projection for built-in and
+    external MCP and Skill surfaces.
 
 Next:
 

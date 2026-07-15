@@ -53,6 +53,43 @@ fn resolve_driver() -> UseResult<PathBuf> {
     Err(driver_missing(None))
 }
 
+pub(crate) fn is_available() -> bool {
+    resolve_driver().is_ok()
+}
+
+pub(crate) async fn primary_skill_surface() -> Option<(PathBuf, PathBuf)> {
+    let mut roots = Vec::new();
+    if let Some(skills_dir) = std::env::var_os("A3S_USE_BROWSER_SKILLS_DIR").map(PathBuf::from) {
+        if let Some(root) = skills_dir.parent() {
+            roots.push(root.to_path_buf());
+        }
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(root) = executable.parent() {
+            roots.push(root.to_path_buf());
+        }
+    }
+    roots.push(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("crates")
+            .join("browser-driver"),
+    );
+
+    for root in roots {
+        let skill = root.join("skills/a3s-use-browser/SKILL.md");
+        let Ok(root) = tokio::fs::canonicalize(root).await else {
+            continue;
+        };
+        let Ok(skill) = tokio::fs::canonicalize(skill).await else {
+            continue;
+        };
+        if skill.starts_with(&root) {
+            return Some((root, skill));
+        }
+    }
+    None
+}
+
 fn platform_driver_name() -> &'static str {
     if cfg!(windows) {
         "a3s-use-browser-driver.exe"
@@ -195,5 +232,13 @@ mod tests {
     #[test]
     fn source_skills_are_available_to_development_builds() {
         assert!(source_skills_dir().unwrap().join("core/SKILL.md").is_file());
+    }
+
+    #[tokio::test]
+    async fn primary_skill_is_resolved_inside_its_package_root() {
+        let (root, skill) = primary_skill_surface().await.unwrap();
+        assert!(root.is_absolute());
+        assert!(skill.starts_with(root));
+        assert!(skill.ends_with("skills/a3s-use-browser/SKILL.md"));
     }
 }

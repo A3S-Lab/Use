@@ -6,6 +6,7 @@ mod browser_cli;
 mod browser_driver;
 #[cfg(all(feature = "browser", feature = "mcp"))]
 mod browser_session_cli;
+mod capability_registry;
 pub mod cli;
 mod component_route;
 mod extension_cli;

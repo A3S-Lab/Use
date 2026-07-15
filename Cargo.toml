@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/A3S-Lab/Use"
@@ -70,10 +70,10 @@ mcp = [
 lightpanda = ["browser", "a3s-use-browser/lightpanda"]
 
 [dependencies]
-a3s-use-core = { version = "0.1.0", path = "crates/core" }
-a3s-use-browser = { version = "0.1.0", path = "crates/browser", optional = true }
-a3s-use-office = { version = "0.1.0", path = "crates/office", optional = true }
-a3s-use-extension = { version = "0.1.0", path = "crates/extension", optional = true }
+a3s-use-core = { version = "0.1.1", path = "crates/core" }
+a3s-use-browser = { version = "0.1.1", path = "crates/browser", optional = true }
+a3s-use-office = { version = "0.1.1", path = "crates/office", optional = true }
+a3s-use-extension = { version = "0.1.1", path = "crates/extension", optional = true }
 anyhow.workspace = true
 axum = { workspace = true, optional = true }
 clap.workspace = true
@@ -81,6 +81,7 @@ fs2 = { workspace = true, optional = true }
 getrandom = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 url.workspace = true
 rmcp = { workspace = true, optional = true }

@@ -25,6 +25,64 @@ fn capabilities_are_available_as_versioned_json() {
     assert!(value.get("jsonrpc").is_none());
 }
 
+#[test]
+fn unified_capability_snapshot_projects_builtin_browser_skill() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["capability", "snapshot", "--json"])
+        .env("A3S_USE_HOME", temp.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let capabilities = value["data"]["registry"]["capabilities"]
+        .as_array()
+        .unwrap();
+    let browser = capabilities
+        .iter()
+        .find(|capability| capability["id"] == "use/browser")
+        .unwrap();
+    assert_eq!(browser["origin"], "built-in");
+    assert!(browser["skills"][0]["path"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("skills/a3s-use-browser/SKILL.md")));
+    assert!(value.get("jsonrpc").is_none());
+}
+
+#[test]
+fn capability_watch_uses_revision_to_report_an_unchanged_snapshot() {
+    let temp = tempfile::tempdir().unwrap();
+    let snapshot = Command::new(binary())
+        .args(["capability", "snapshot", "--json"])
+        .env("A3S_USE_HOME", temp.path())
+        .output()
+        .unwrap();
+    assert!(snapshot.status.success(), "{snapshot:?}");
+    let snapshot: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
+    let registry = &snapshot["data"]["registry"];
+    let generation = registry["generation"].as_u64().unwrap().to_string();
+    let revision = registry["revision"].as_str().unwrap();
+
+    let watched = Command::new(binary())
+        .args([
+            "capability",
+            "watch",
+            "--after-generation",
+            &generation,
+            "--after-revision",
+            revision,
+            "--timeout-ms",
+            "1",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", temp.path())
+        .output()
+        .unwrap();
+    assert!(watched.status.success(), "{watched:?}");
+    let watched: serde_json::Value = serde_json::from_slice(&watched.stdout).unwrap();
+    assert_eq!(watched["data"]["changed"], false);
+}
+
 #[cfg(unix)]
 #[test]
 fn box_route_preserves_native_arguments_output_and_status() {

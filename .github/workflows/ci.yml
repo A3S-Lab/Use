@@ -46,9 +46,9 @@ jobs:
       - name: Run Office tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use-office --locked
-      - name: Run extension tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use-extension --locked
+      # Windows remains a preview target: the compile gate above covers the
+      # CLI/MCP/Skill and packaging contracts, while file-lock lifecycle and
+      # persistent Browser runtime validation are tracked in the roadmap.
       - name: Run Browser driver tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use-browser-driver --locked

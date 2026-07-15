@@ -21,6 +21,7 @@ pub use registry::{
 const RESERVED_ROUTES: &[&str] = &[
     "browser",
     "box",
+    "capability",
     "office",
     "capabilities",
     "component",

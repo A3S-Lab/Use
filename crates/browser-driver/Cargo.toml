@@ -1,6 +1,6 @@
 [package]
 name = "a3s-use-browser-driver"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Full browser automation driver embedded in A3S Use"
 license = "Apache-2.0"

@@ -36,6 +36,9 @@ a3s-use extension disable acme/slack --json
 a3s-use extension enable acme/slack --json
 a3s-use extension snapshot --json
 a3s-use extension watch --after-generation 3 --timeout-ms 30000 --json
+a3s-use capability snapshot --json
+a3s-use capability watch --after-generation 3 \
+  --after-revision <sha256> --timeout-ms 30000 --json
 a3s-use slack channels list
 ```
 
@@ -89,6 +92,15 @@ registry projection; they are not loaded as dynamic Rust libraries. Install,
 upgrade, enable, disable, and uninstall publish an atomic immutable snapshot
 with a monotonically increasing generation. `extension watch` lets a resident
 consumer wait for a later generation without restarting.
+
+Long-running hosts consume `capability snapshot` and `capability watch`, which
+project Browser, Office, Box, and enabled external packages through one
+read-only schema. Each binding identifies whether it is `built-in` or
+`extension` and declares only its available CLI, standard MCP, and `SKILL.md`
+surfaces. The extension generation tracks receipt mutations; the SHA-256
+revision also changes when built-in readiness or packaged Skills change. This
+is a discovery contract only—invocation still uses native CLI, standard MCP,
+or the Skill loader.
 
 Every accepted CLI or MCP invocation holds a shared route lease until its
 child process exits. Disable and uninstall remove route visibility first, then

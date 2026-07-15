@@ -1,0 +1,353 @@
+//! Unified projection of built-in and externally installed Use capabilities.
+//!
+//! This is a versioned JSON CLI contract for long-running consumers. It is
+//! not a private RPC protocol: invocation still happens through native CLI,
+//! standard MCP, and `SKILL.md` surfaces.
+
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use a3s_use_core::{Readiness, UseError, UseResult};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+const SCHEMA_VERSION: u32 = 1;
+const WATCH_INTERVAL: Duration = Duration::from_millis(100);
+const MAX_STABLE_SNAPSHOT_ATTEMPTS: usize = 5;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CapabilityRegistrySnapshot {
+    pub schema_version: u32,
+    pub generation: u64,
+    pub revision: String,
+    pub capabilities: Vec<CapabilityBinding>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum CapabilityOrigin {
+    BuiltIn,
+    Extension,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum McpTransport {
+    Stdio,
+    StreamableHttp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpSurface {
+    target: String,
+    transport: McpTransport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillSurface {
+    path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CapabilityBinding {
+    id: String,
+    route: String,
+    version: String,
+    origin: CapabilityOrigin,
+    enabled: bool,
+    readiness: Readiness,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    package_root: Option<PathBuf>,
+    surfaces: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mcp: Option<McpSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    skills: Vec<SkillSurface>,
+}
+
+pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
+    let (generation, extensions) = stable_extensions().await?;
+    let mut capabilities = vec![
+        browser_capability().await,
+        office_capability(),
+        box_capability(),
+    ];
+    capabilities.extend(extensions);
+    capabilities.sort_by(|left, right| left.id.cmp(&right.id));
+
+    let revision = revision(&capabilities)?;
+    Ok(CapabilityRegistrySnapshot {
+        schema_version: SCHEMA_VERSION,
+        generation,
+        revision,
+        capabilities,
+    })
+}
+
+pub(crate) async fn wait_for_change(
+    after_generation: u64,
+    after_revision: Option<&str>,
+    timeout: Duration,
+) -> UseResult<Option<CapabilityRegistrySnapshot>> {
+    let deadline = Instant::now().checked_add(timeout).ok_or_else(|| {
+        UseError::new(
+            "use.capability.timeout_invalid",
+            "The capability watch timeout is too large.",
+        )
+    })?;
+
+    loop {
+        let current = snapshot().await?;
+        let changed = match after_revision {
+            Some(revision) => {
+                current.generation != after_generation || current.revision != revision
+            }
+            None => current.generation > after_generation,
+        };
+        if changed {
+            return Ok(Some(current));
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            return Ok(None);
+        }
+        tokio::time::sleep(WATCH_INTERVAL.min(deadline.saturating_duration_since(now))).await;
+    }
+}
+
+async fn browser_capability() -> CapabilityBinding {
+    #[cfg(feature = "browser")]
+    {
+        let diagnostic = a3s_use_browser::doctor();
+        let skill = crate::browser_driver::primary_skill_surface().await;
+        let (package_root, skills) = match skill {
+            Some((root, path)) => (Some(root), vec![SkillSurface { path }]),
+            None => (None, Vec::new()),
+        };
+        CapabilityBinding {
+            id: "use/browser".to_string(),
+            route: "browser".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: true,
+            readiness: diagnostic.readiness,
+            package_root,
+            surfaces: vec!["cli".to_string(), "mcp".to_string(), "skill".to_string()],
+            mcp: crate::browser_driver::is_available().then(|| McpSurface {
+                target: "browser".to_string(),
+                transport: McpTransport::Stdio,
+            }),
+            skills,
+        }
+    }
+    #[cfg(not(feature = "browser"))]
+    {
+        CapabilityBinding {
+            id: "use/browser".to_string(),
+            route: "browser".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: false,
+            readiness: Readiness::Missing,
+            package_root: None,
+            surfaces: Vec::new(),
+            mcp: None,
+            skills: Vec::new(),
+        }
+    }
+}
+
+fn office_capability() -> CapabilityBinding {
+    #[cfg(feature = "office")]
+    {
+        let diagnostic = a3s_use_office::doctor();
+        let ready = diagnostic.readiness == Readiness::Ready;
+        CapabilityBinding {
+            id: "use/office".to_string(),
+            route: "office".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: true,
+            readiness: diagnostic.readiness,
+            package_root: None,
+            surfaces: vec!["cli".to_string(), "mcp".to_string()],
+            mcp: ready.then(|| McpSurface {
+                target: "office".to_string(),
+                transport: McpTransport::Stdio,
+            }),
+            skills: Vec::new(),
+        }
+    }
+    #[cfg(not(feature = "office"))]
+    {
+        CapabilityBinding {
+            id: "use/office".to_string(),
+            route: "office".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: false,
+            readiness: Readiness::Missing,
+            package_root: None,
+            surfaces: Vec::new(),
+            mcp: None,
+            skills: Vec::new(),
+        }
+    }
+}
+
+fn box_capability() -> CapabilityBinding {
+    let diagnostic = crate::component_route::box_diagnostic();
+    CapabilityBinding {
+        id: "use/box".to_string(),
+        route: "box".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        origin: CapabilityOrigin::BuiltIn,
+        enabled: diagnostic.readiness == Readiness::Ready,
+        readiness: diagnostic.readiness,
+        package_root: None,
+        surfaces: vec!["cli".to_string()],
+        mcp: None,
+        skills: Vec::new(),
+    }
+}
+
+fn revision(capabilities: &[CapabilityBinding]) -> UseResult<String> {
+    let bytes = serde_json::to_vec(capabilities).map_err(|error| {
+        UseError::new(
+            "use.capability.snapshot_invalid",
+            format!("Failed to encode the capability snapshot: {error}"),
+        )
+    })?;
+    let digest = Sha256::digest(bytes);
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+#[cfg(feature = "extensions")]
+async fn stable_extensions() -> UseResult<(u64, Vec<CapabilityBinding>)> {
+    for _ in 0..MAX_STABLE_SNAPSHOT_ATTEMPTS {
+        let before = crate::extension_host::snapshot().await?;
+        let Some(capabilities) = project_extensions(&before).await? else {
+            continue;
+        };
+        let after = crate::extension_host::snapshot().await?;
+        if before == after {
+            return Ok((before.generation, capabilities));
+        }
+    }
+    Err(UseError::new(
+        "use.capability.registry_busy",
+        "The extension registry changed repeatedly while capabilities were projected.",
+    )
+    .with_suggestion("Retry the capability snapshot after the current component operation."))
+}
+
+#[cfg(not(feature = "extensions"))]
+async fn stable_extensions() -> UseResult<(u64, Vec<CapabilityBinding>)> {
+    Ok((0, Vec::new()))
+}
+
+#[cfg(feature = "extensions")]
+async fn project_extensions(
+    snapshot: &a3s_use_extension::ExtensionRegistrySnapshot,
+) -> UseResult<Option<Vec<CapabilityBinding>>> {
+    let mut capabilities = Vec::with_capacity(snapshot.routes.len());
+    for route in &snapshot.routes {
+        let Some(extension) = crate::extension_host::get(&route.package_id).await? else {
+            return Ok(None);
+        };
+        let receipt = &extension.receipt;
+        let surfaces = extension
+            .surfaces()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if receipt.package_id != route.package_id
+            || receipt.component_id != route.component_id
+            || receipt.route != route.route
+            || receipt.version != route.version
+            || receipt.package_root != route.package_root
+            || receipt.manifest_sha256 != route.manifest_sha256
+            || receipt.enabled != route.enabled
+            || surfaces != route.surfaces
+        {
+            return Ok(None);
+        }
+
+        let mcp = extension.manifest.mcp.as_ref().map(|surface| McpSurface {
+            target: receipt.package_id.clone(),
+            transport: match surface.transport {
+                a3s_use_extension::McpTransport::Stdio => McpTransport::Stdio,
+                a3s_use_extension::McpTransport::StreamableHttp => McpTransport::StreamableHttp,
+            },
+        });
+        let skills = extension
+            .skill_path()
+            .into_iter()
+            .map(|path| SkillSurface { path })
+            .collect();
+        capabilities.push(CapabilityBinding {
+            id: receipt.component_id.clone(),
+            route: receipt.route.clone(),
+            version: receipt.version.clone(),
+            origin: CapabilityOrigin::Extension,
+            enabled: receipt.enabled,
+            readiness: if receipt.enabled {
+                Readiness::Ready
+            } else {
+                Readiness::Unknown
+            },
+            package_root: Some(receipt.package_root.clone()),
+            surfaces,
+            mcp,
+            skills,
+        });
+    }
+    Ok(Some(capabilities))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn built_ins_are_projected_without_extension_identity() {
+        let snapshot = snapshot().await.unwrap();
+        let browser = snapshot
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == "use/browser")
+            .unwrap();
+        let office = snapshot
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == "use/office")
+            .unwrap();
+
+        assert_eq!(browser.origin, CapabilityOrigin::BuiltIn);
+        assert_eq!(office.origin, CapabilityOrigin::BuiltIn);
+        assert!(browser.surfaces.iter().any(|surface| surface == "skill"));
+        assert!(browser
+            .skills
+            .iter()
+            .any(|skill| skill.path.ends_with("a3s-use-browser/SKILL.md")));
+        assert_eq!(snapshot.revision.len(), 64);
+    }
+
+    #[tokio::test]
+    async fn matching_revision_times_out_without_reporting_a_change() {
+        let current = snapshot().await.unwrap();
+        let changed = wait_for_change(
+            current.generation,
+            Some(&current.revision),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        assert!(changed.is_none());
+    }
+}

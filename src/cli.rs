@@ -1,5 +1,8 @@
 use a3s_use_core::{DomainDiagnostic, Readiness, UseError, UseResult};
 
+use crate::capability_registry::{
+    snapshot as capability_registry_snapshot, wait_for_change as wait_for_capability_change,
+};
 use crate::extension_cli::{
     extension_capabilities, extension_disable, extension_enable, extension_inspect, extension_list,
     extension_snapshot, extension_watch, external_component_value, external_package_id,
@@ -46,6 +49,7 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "-V" | "--version" | "version" => Ok(version()),
         "-h" | "--help" | "help" => Ok(help()),
         "capabilities" => capabilities().await,
+        "capability" => capability(&args[1..]).await,
         "doctor" => doctor(args.get(1).map(String::as_str)),
         "component" => component(&args[1..]).await,
         "browser" => browser(&args[1..]).await,
@@ -88,6 +92,8 @@ fn help() -> CommandOutput {
             "a3s-use — typed application capabilities\n\n",
             "usage:\n",
             "  a3s-use capabilities [--json]\n",
+            "  a3s-use capability snapshot [--json]\n",
+            "  a3s-use capability watch [--after-generation <n>] [--after-revision <sha256>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use doctor [browser|box|office] [--json]\n",
             "  a3s-use component list|status|install|uninstall [args] [--json]\n",
             "  a3s-use browser doctor [--json]\n",
@@ -107,6 +113,7 @@ fn help() -> CommandOutput {
         serde_json::json!({
             "commands": [
                 "capabilities",
+                "capability",
                 "doctor",
                 "component",
                 "browser",
@@ -132,7 +139,7 @@ async fn capabilities() -> UseResult<CommandOutput> {
                     "id": "browser",
                     "builtIn": true,
                     "readiness": browser.readiness,
-                    "surfaces": ["cli", "mcp"]
+                    "surfaces": ["cli", "mcp", "skill"]
                 },
                 {
                     "id": "office",
@@ -156,6 +163,45 @@ async fn capabilities() -> UseResult<CommandOutput> {
             "extensions": extensions
         }),
     ))
+}
+
+async fn capability(args: &[String]) -> UseResult<CommandOutput> {
+    match args.first().map(String::as_str) {
+        Some("snapshot") => {
+            validate_capability_options(args, false)?;
+            let snapshot = capability_registry_snapshot().await?;
+            Ok(CommandOutput::success(
+                format!(
+                    "Capability registry generation {} ({}).",
+                    snapshot.generation, snapshot.revision
+                ),
+                serde_json::json!({ "registry": snapshot }),
+            ))
+        }
+        Some("watch") => {
+            validate_capability_options(args, true)?;
+            let after_generation = integer_option(args, "--after-generation", 0)?;
+            let after_revision = option_argument(args, "--after-revision")?;
+            let timeout = duration_option(args, "--timeout-ms", 30_000)?;
+            match wait_for_capability_change(after_generation, after_revision, timeout).await? {
+                Some(snapshot) => Ok(CommandOutput::success(
+                    "The capability registry changed.",
+                    serde_json::json!({ "changed": true, "registry": snapshot }),
+                )),
+                None => Ok(CommandOutput::success(
+                    "The capability registry did not change.",
+                    serde_json::json!({
+                        "changed": false,
+                        "afterGeneration": after_generation,
+                        "afterRevision": after_revision,
+                        "timeoutMs": timeout.as_millis().min(u64::MAX as u128) as u64
+                    }),
+                )),
+            }
+        }
+        Some(value) => Err(usage_error(format!("unknown capability command '{value}'"))),
+        None => Err(usage_error("capability requires snapshot or watch")),
+    }
 }
 
 fn doctor(domain: Option<&str>) -> UseResult<CommandOutput> {
@@ -879,6 +925,23 @@ fn validate_extension_watch_options(args: &[String]) -> UseResult<()> {
                     "unknown extension watch option '{value}'"
                 )))
             }
+        }
+    }
+    Ok(())
+}
+
+fn validate_capability_options(args: &[String], watch: bool) -> UseResult<()> {
+    let mut index = 1;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--json" => index += 1,
+            "--after-generation" | "--after-revision" | "--timeout-ms" if watch => {
+                if args.get(index + 1).is_none() {
+                    return Err(usage_error(format!("{} requires a value", args[index])));
+                }
+                index += 2;
+            }
+            value => return Err(usage_error(format!("unknown capability option '{value}'"))),
         }
     }
     Ok(())

@@ -8,7 +8,38 @@ async fn capabilities_always_include_browser_and_office() {
     let domains = output.json["data"]["domains"].as_array().unwrap();
     assert_eq!(domains[0]["id"], "browser");
     assert_eq!(domains[1]["id"], "office");
+    assert!(domains[0]["surfaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|surface| surface == "skill"));
     assert!(output.json["data"].get("customJsonRpc").is_none());
+}
+
+#[tokio::test]
+async fn capability_snapshot_unifies_built_ins_without_rpc_envelopes() {
+    let output = run(vec![
+        "capability".to_string(),
+        "snapshot".to_string(),
+        "--json".to_string(),
+    ])
+    .await
+    .unwrap();
+    let registry = &output.json["data"]["registry"];
+    let capabilities = registry["capabilities"].as_array().unwrap();
+    let browser = capabilities
+        .iter()
+        .find(|capability| capability["id"] == "use/browser")
+        .unwrap();
+    let office = capabilities
+        .iter()
+        .find(|capability| capability["id"] == "use/office")
+        .unwrap();
+
+    assert_eq!(browser["origin"], "built-in");
+    assert_eq!(office["origin"], "built-in");
+    assert_eq!(registry["revision"].as_str().unwrap().len(), 64);
+    assert!(output.json.get("jsonrpc").is_none());
 }
 
 #[tokio::test]
