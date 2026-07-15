@@ -2,6 +2,7 @@
 members = [
     "crates/core",
     "crates/browser",
+    "crates/browser-driver",
     "crates/office",
     "crates/extension",
 ]

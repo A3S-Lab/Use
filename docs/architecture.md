@@ -93,5 +93,8 @@ Implemented:
 6. Direct standard-MCP launch for Office and external packages.
 7. Authenticated loopback standard MCP Streamable HTTP for persistent Browser
    CLI sessions.
+8. The complete locked agent-browser `0.31.2` command, MCP, Skill, Dashboard,
+   lifecycle, and interactive Browser surface behind `a3s use browser`.
 
-Next: signed remote extension publishers and release packaging stabilization.
+Next: signed remote extension publishers. External publisher infrastructure is
+independent of the built-in Browser compatibility contract.

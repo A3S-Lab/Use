@@ -2,6 +2,8 @@
 
 #[cfg(feature = "browser")]
 mod browser_cli;
+#[cfg(feature = "browser")]
+mod browser_driver;
 #[cfg(all(feature = "browser", feature = "mcp"))]
 mod browser_session_cli;
 pub mod cli;

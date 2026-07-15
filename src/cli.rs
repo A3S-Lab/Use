@@ -96,7 +96,8 @@ fn help() -> CommandOutput {
             "  a3s-use office doctor [--json]\n",
             "  a3s-use office <officecli-args...>\n",
             "  a3s-use extension list|inspect|doctor [args] [--json]\n",
-            "  a3s-use mcp serve browser|office|<publisher/name>\n",
+            "  a3s-use mcp serve browser [--tools <profiles>]\n",
+            "  a3s-use mcp serve office|<publisher/name>\n",
             "  a3s-use mcp start|status|stop [browser] [--json]"
         ),
         serde_json::json!({
@@ -434,19 +435,25 @@ async fn component_uninstall(id: &str) -> UseResult<CommandOutput> {
 }
 
 async fn browser(args: &[String]) -> UseResult<CommandOutput> {
-    match args.first().map(String::as_str) {
-        None | Some("doctor") => doctor(Some("browser")),
-        Some(_) => {
-            #[cfg(feature = "browser")]
-            {
-                crate::browser_cli::run(args).await
-            }
-            #[cfg(not(feature = "browser"))]
-            Err(UseError::new(
-                "use.browser.disabled",
-                "Browser support is disabled in this custom build.",
-            ))
+    #[cfg(feature = "browser")]
+    {
+        // `render` is the small, in-process typed surface used by Search and
+        // embedding applications. Every interactive/automation command is
+        // handled by the full Browser driver so `a3s use browser` has one
+        // agent-browser-compatible command vocabulary.
+        if args.first().map(String::as_str) == Some("render") {
+            return crate::browser_cli::run(args).await;
         }
+        let exit_code = crate::browser_driver::run(args).await?;
+        Ok(CommandOutput::delegated(exit_code))
+    }
+    #[cfg(not(feature = "browser"))]
+    {
+        let _ = args;
+        Err(UseError::new(
+            "use.browser.disabled",
+            "Browser support is disabled in this custom build.",
+        ))
     }
 }
 
@@ -491,24 +498,36 @@ async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
             let target = value_argument(args, 1, "mcp serve requires a domain or package ID")?;
             match target {
                 "browser" | "use/browser" => {
-                    #[cfg(all(feature = "browser", feature = "mcp"))]
+                    #[cfg(feature = "browser")]
                     {
-                        if args.len() == 2 {
-                            crate::mcp::serve_browser().await?;
-                        } else if args.len() == 5
+                        if args.len() == 5
                             && args[2] == "--streamable-http"
                             && args[3] == "--runtime-dir"
                             && !args[4].starts_with('-')
                         {
+                            #[cfg(feature = "mcp")]
                             crate::mcp::serve_browser_http(args[4].clone().into()).await?;
-                        } else {
-                            return Err(usage_error(
-                                "mcp serve browser accepts no options for stdio, or '--streamable-http --runtime-dir <path>' for its managed loopback deployment",
+                            #[cfg(not(feature = "mcp"))]
+                            return Err(UseError::new(
+                                "use.mcp.disabled",
+                                "Managed Browser MCP HTTP support is disabled in this custom build.",
                             ));
+                            Ok(CommandOutput::delegated(0))
+                        } else if args[2..]
+                            .iter()
+                            .any(|argument| argument == "--streamable-http")
+                        {
+                            Err(usage_error(
+                                "mcp serve browser --streamable-http requires '--runtime-dir <path>'",
+                            ))
+                        } else {
+                            let mut driver_args = vec!["mcp".to_string()];
+                            driver_args.extend_from_slice(&args[2..]);
+                            let exit_code = crate::browser_driver::run(&driver_args).await?;
+                            Ok(CommandOutput::delegated(exit_code))
                         }
-                        Ok(CommandOutput::delegated(0))
                     }
-                    #[cfg(not(all(feature = "browser", feature = "mcp")))]
+                    #[cfg(not(feature = "browser"))]
                     Err(UseError::new(
                         "use.mcp.disabled",
                         "Standard Browser MCP support is disabled in this custom build.",
@@ -669,7 +688,7 @@ fn output_encoding_error(error: serde_json::Error) -> UseError {
 
 fn component_value(id: &str, diagnostic: &DomainDiagnostic) -> serde_json::Value {
     let (presence, health) = match diagnostic.readiness {
-        Readiness::Ready => ("system", "ready"),
+        Readiness::Ready => (builtin_presence(id), "ready"),
         Readiness::Missing => ("missing", "unknown"),
         Readiness::Broken => ("external", "broken"),
         Readiness::Unknown => ("missing", "unknown"),
@@ -682,6 +701,39 @@ fn component_value(id: &str, diagnostic: &DomainDiagnostic) -> serde_json::Value
         "version": diagnostic.version,
         "path": diagnostic.path
     })
+}
+
+fn builtin_presence(id: &str) -> &'static str {
+    match id {
+        #[cfg(feature = "browser")]
+        "browser" | "use/browser" => browser_presence(
+            a3s_use_browser::browser_status(a3s_use_browser::ManagedBrowser::Chrome).source,
+        ),
+        #[cfg(feature = "office")]
+        "office" | "use/office" => office_presence(a3s_use_office::office_status().source),
+        _ => "external",
+    }
+}
+
+#[cfg(feature = "browser")]
+fn browser_presence(source: a3s_use_browser::BrowserInstallSource) -> &'static str {
+    match source {
+        a3s_use_browser::BrowserInstallSource::Environment => "external",
+        a3s_use_browser::BrowserInstallSource::System => "system",
+        a3s_use_browser::BrowserInstallSource::ManagedCache => "managed",
+        a3s_use_browser::BrowserInstallSource::Missing
+        | a3s_use_browser::BrowserInstallSource::Unsupported => "missing",
+    }
+}
+
+#[cfg(feature = "office")]
+fn office_presence(source: a3s_use_office::OfficeInstallSource) -> &'static str {
+    match source {
+        a3s_use_office::OfficeInstallSource::Environment => "external",
+        a3s_use_office::OfficeInstallSource::System => "system",
+        a3s_use_office::OfficeInstallSource::Managed => "managed",
+        a3s_use_office::OfficeInstallSource::Missing => "missing",
+    }
 }
 
 fn builtin_diagnostic(id: &str) -> Option<DomainDiagnostic> {

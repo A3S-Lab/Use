@@ -110,7 +110,7 @@ impl Drop for PersistentServiceGuard {
 
 #[cfg(all(feature = "browser", feature = "mcp"))]
 #[test]
-fn browser_cli_reuses_authenticated_standard_mcp_across_processes() {
+fn browser_driver_session_listing_coexists_with_authenticated_standard_mcp() {
     let temp = tempfile::tempdir().unwrap();
     let _guard = PersistentServiceGuard {
         runtime_dir: temp.path().to_path_buf(),
@@ -135,7 +135,7 @@ fn browser_cli_reuses_authenticated_standard_mcp_across_processes() {
     );
 
     let listed = Command::new(binary())
-        .args(["browser", "list", "--json"])
+        .args(["browser", "session", "list", "--json"])
         .env("A3S_USE_RUNTIME_DIR", temp.path())
         .output()
         .unwrap();
@@ -273,8 +273,10 @@ async fn browser_mcp_uses_the_standard_initialize_and_tools_contract() {
 
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+    const RESPONSE_TIMEOUT: Duration = Duration::from_secs(15);
+
     let mut child = tokio::process::Command::new(binary())
-        .args(["mcp", "serve", "browser"])
+        .args(["mcp", "serve", "browser", "--tools", "all"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -293,7 +295,7 @@ async fn browser_mcp_uses_the_standard_initialize_and_tools_contract() {
         .unwrap();
     stdin.flush().await.unwrap();
     let mut line = String::new();
-    tokio::time::timeout(Duration::from_secs(5), stdout.read_line(&mut line))
+    tokio::time::timeout(RESPONSE_TIMEOUT, stdout.read_line(&mut line))
         .await
         .unwrap()
         .unwrap();
@@ -312,44 +314,39 @@ async fn browser_mcp_uses_the_standard_initialize_and_tools_contract() {
         .await
         .unwrap();
     stdin
-        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n")
+        .write_all(
+            b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n\
+{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\",\"params\":{\"cursor\":\"64\"}}\n\
+{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/list\",\"params\":{\"cursor\":\"128\"}}\n",
+        )
         .await
         .unwrap();
     stdin.flush().await.unwrap();
-    line.clear();
-    tokio::time::timeout(Duration::from_secs(5), stdout.read_line(&mut line))
-        .await
-        .unwrap()
-        .unwrap();
-    let tools: serde_json::Value = serde_json::from_str(&line).unwrap();
-    let mut names = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
+    let mut names = Vec::new();
+    for _ in 0..3 {
+        line.clear();
+        tokio::time::timeout(RESPONSE_TIMEOUT, stdout.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        let tools: serde_json::Value = serde_json::from_str(&line).unwrap();
+        names.extend(
+            tools["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|tool| tool["name"].as_str().unwrap().to_string()),
+        );
+    }
+    assert_eq!(names.len(), 151);
+    assert!(names.iter().any(|name| name == "agent_browser_open"));
+    assert!(names.iter().any(|name| name == "agent_browser_snapshot"));
+    assert!(names
         .iter()
-        .map(|tool| tool["name"].as_str().unwrap())
-        .collect::<Vec<_>>();
-    names.sort_unstable();
-    assert_eq!(
-        names,
-        [
-            "browser_click",
-            "browser_close",
-            "browser_doctor",
-            "browser_list",
-            "browser_navigate",
-            "browser_open",
-            "browser_press",
-            "browser_render",
-            "browser_screenshot",
-            "browser_scroll",
-            "browser_select",
-            "browser_snapshot",
-            "browser_type"
-        ]
-    );
+        .any(|name| name == "agent_browser_dashboard_start"));
 
     drop(stdin);
-    let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+    let status = tokio::time::timeout(RESPONSE_TIMEOUT, child.wait())
         .await
         .unwrap()
         .unwrap();
@@ -382,6 +379,67 @@ fn browser_install_reuses_an_explicit_provider_without_downloading() {
         executable.to_string_lossy().as_ref()
     );
     assert!(!temp.path().join("managed/chrome").exists());
+}
+
+#[cfg(all(unix, feature = "browser"))]
+#[test]
+fn browser_install_command_delegates_to_the_component_lifecycle() {
+    let temp = tempfile::tempdir().unwrap();
+    let executable = temp.path().join("chrome-fixture");
+    std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).unwrap();
+
+    let output = Command::new(binary())
+        .args(["browser", "install", "--json"])
+        .env("A3S_BROWSER_EXECUTABLE", &executable)
+        .env("A3S_USE_BROWSER_HOME", temp.path().join("managed"))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["changed"], false);
+    assert_eq!(value["data"]["provider"]["source"], "environment");
+    assert_eq!(
+        value["data"]["provider"]["path"],
+        executable.to_string_lossy().as_ref()
+    );
+    assert!(!temp.path().join("managed/chrome").exists());
+}
+
+#[cfg(all(unix, feature = "browser"))]
+#[test]
+fn browser_upgrade_delegates_only_to_the_a3s_component_lifecycle() {
+    let temp = tempfile::tempdir().unwrap();
+    let lifecycle = temp.path().join("a3s-use-fixture");
+    let arguments = temp.path().join("arguments.txt");
+    std::fs::write(
+        &lifecycle,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' '{{\"schemaVersion\":1,\"ok\":true,\"data\":{{\"changed\":true}}}}'\n",
+            arguments.display()
+        ),
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&lifecycle).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&lifecycle, permissions).unwrap();
+
+    let output = Command::new(binary())
+        .args(["browser", "upgrade", "--json"])
+        .env("A3S_USE_EXECUTABLE", &lifecycle)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        std::fs::read_to_string(arguments).unwrap(),
+        "component\ninstall\nbrowser\n--force\n--json\n"
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["changed"], true);
 }
 
 #[cfg(all(unix, feature = "office"))]

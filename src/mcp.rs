@@ -17,13 +17,15 @@ mod browser {
     use std::sync::Arc;
     use std::time::Duration;
 
+    #[cfg(test)]
+    use a3s_use_browser::BrowserPoolConfig;
     use a3s_use_browser::{
-        BrowserPool, BrowserPoolConfig, BrowserSessions, OpenSessionRequest, PageRenderer,
-        RenderRequest, WaitCondition,
+        BrowserPool, BrowserSessions, OpenSessionRequest, PageRenderer, RenderRequest,
+        WaitCondition,
     };
     use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
     use rmcp::model::{CallToolResult, Implementation, ServerCapabilities, ServerInfo};
-    use rmcp::{tool, tool_handler, tool_router, ServerHandler, ServiceExt};
+    use rmcp::{tool, tool_handler, tool_router, ServerHandler};
     use serde::{Deserialize, Serialize};
     use tokio_util::sync::CancellationToken;
     use url::Url;
@@ -172,11 +174,6 @@ mod browser {
     }
 
     impl BrowserMcpServer {
-        fn new(pool: Arc<BrowserPool>) -> Self {
-            let sessions = Arc::new(BrowserSessions::new(Arc::clone(&pool)));
-            Self::with_sessions(pool, sessions, None)
-        }
-
         pub(super) fn persistent(
             pool: Arc<BrowserPool>,
             sessions: Arc<BrowserSessions>,
@@ -508,22 +505,6 @@ mod browser {
         }
     }
 
-    pub(super) async fn serve() -> UseResult<()> {
-        let pool = Arc::new(BrowserPool::new(BrowserPoolConfig::default()));
-        let server = BrowserMcpServer::new(pool);
-        let sessions = Arc::clone(&server.sessions);
-        let result = server
-            .serve(rmcp::transport::stdio())
-            .await
-            .map_err(mcp_error)?
-            .waiting()
-            .await
-            .map(|_| ())
-            .map_err(mcp_error);
-        sessions.shutdown().await;
-        result
-    }
-
     fn parse_session(value: &str) -> UseResult<UseSessionId> {
         UseSessionId::parse(value.to_string())
     }
@@ -564,21 +545,18 @@ mod browser {
         }))
     }
 
-    fn mcp_error(error: impl std::fmt::Display) -> UseError {
-        UseError::new(
-            "use.mcp.transport_failed",
-            format!("Standard MCP transport failed: {error}"),
-        )
-    }
-
     #[cfg(test)]
     mod tests {
         use super::*;
 
         #[test]
         fn browser_server_exposes_only_typed_mcp_tools() {
-            let server =
-                BrowserMcpServer::new(Arc::new(BrowserPool::new(BrowserPoolConfig::default())));
+            let pool = Arc::new(BrowserPool::new(BrowserPoolConfig::default()));
+            let server = BrowserMcpServer::with_sessions(
+                Arc::clone(&pool),
+                Arc::new(BrowserSessions::new(pool)),
+                None,
+            );
             let tools = server.tool_router.list_all();
             let mut names = tools
                 .iter()
@@ -616,23 +594,5 @@ mod browser {
                 "use.browser.url_scheme_unsupported"
             );
         }
-    }
-}
-
-#[cfg(not(feature = "browser"))]
-use a3s_use_core::UseError;
-use a3s_use_core::UseResult;
-
-pub(crate) async fn serve_browser() -> UseResult<()> {
-    #[cfg(feature = "browser")]
-    {
-        browser::serve().await
-    }
-    #[cfg(not(feature = "browser"))]
-    {
-        Err(UseError::new(
-            "use.browser.disabled",
-            "Browser support is disabled in this custom build.",
-        ))
     }
 }

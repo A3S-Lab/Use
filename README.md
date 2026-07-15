@@ -43,6 +43,7 @@ The umbrella CLI exposes the same domain arguments through `a3s use`.
 | --- | --- |
 | `a3s-use-core` | Shared diagnostics, errors, artifacts, and risk classes |
 | `a3s-use-browser` | Browser providers, rendering, and sessions |
+| `a3s-use-browser-driver` | Full interactive Browser CLI, MCP, Skills, Dashboard, and compatibility runtime |
 | `a3s-use-office` | Typed Office batches, pinned OfficeCLI installation, and native CLI delegation |
 | `a3s-use-extension` | ACL manifest model and native CLI/MCP/Skill descriptors |
 | `a3s-use` | Facade, CLI host, and standard MCP entry point |
@@ -77,12 +78,15 @@ in a private generated receipt and is never printed by normal CLI output.
 The implementation includes typed contracts, built-in diagnostics,
 ownership-safe local extension activation, native CLI and standard MCP
 delegation, and component management. Browser owns typed Chrome and Lightpanda
-provider selection, bounded and atomic managed installation, rendering, tab
-limits, semantic snapshots, cross-invocation sessions over standard MCP, and
-cancellation-safe process cleanup. Search injects that Browser contract
-directly. Office delegates the native OfficeCLI vocabulary, installs the
-publisher-checksummed `1.0.136` binary only after explicit authorization, and
-never reimplements OfficeCLI's resident transport.
+provider selection, bounded and atomic managed installation, rendering, and
+cancellation-safe process cleanup. Its full driver tracks agent-browser
+`0.31.2` at commit `3591f0f4b719c94bcb9aec83ebe811c5dd7f587a` and exposes
+the locked 82-command compatibility vocabulary, 151 MCP tools, six packaged
+Skills, and the Dashboard through `a3s use browser`. Search injects the small
+typed Browser contract directly and never starts the CLI or MCP service. Office
+delegates the native OfficeCLI vocabulary, installs the publisher-checksummed
+`1.0.136` binary only after explicit authorization, and never reimplements
+OfficeCLI's resident transport.
 
 ## License
 

@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,17 +12,24 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Require tag to match Cargo version
+      - name: Resolve and validate release version
+        id: version
         shell: bash
         run: |
+          set -euo pipefail
           version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(package["version"] for package in json.load(sys.stdin)["packages"] if package["name"] == "a3s-use"))')
-          test "${GITHUB_REF_NAME}" = "v${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          if test "${GITHUB_EVENT_NAME}" = "push"; then
+            test "${GITHUB_REF_NAME}" = "v${version}"
+          fi
       - run: cargo fmt --all -- --check
       - run: cargo test --workspace --all-features --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -32,10 +40,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-latest
             target: aarch64-apple-darwin
             name: darwin-arm64
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             name: darwin-x86_64
           - os: ubuntu-24.04-arm
@@ -44,6 +52,9 @@ jobs:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             name: linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -51,14 +62,122 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --locked --target "${{ matrix.target }}" --bin a3s-use
-      - name: Package
+      - run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use -p a3s-use-browser-driver
+      - name: Package Unix release
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          set -euo pipefail
+          version="${{ needs.validate.outputs.version }}"
           archive="a3s-use-${version}-${{ matrix.name }}.tar.gz"
-          tar czf "${archive}" -C "target/${{ matrix.target }}/release" a3s-use
+          stage="${RUNNER_TEMP}/a3s-use-${version}-${{ matrix.name }}"
+          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/dashboard"
+          install -m 0755 "target/${{ matrix.target }}/release/a3s-use" "${stage}/a3s-use"
+          install -m 0755 "target/${{ matrix.target }}/release/a3s-use-browser-driver" "${stage}/a3s-use-browser-driver"
+          cp -R crates/browser-driver/skills/. "${stage}/skills/"
+          cp -R crates/browser-driver/skill-data/. "${stage}/skill-data/"
+          cp -R crates/browser-driver/dashboard/out/. "${stage}/dashboard/"
+          install -m 0644 LICENSE README.md THIRD_PARTY_NOTICES.md "${stage}/"
+          install -m 0644 crates/browser-driver/LICENSE-APACHE-2.0 "${stage}/LICENSE-APACHE-2.0"
+          install -m 0644 crates/browser-driver/UPSTREAM.md "${stage}/UPSTREAM.md"
+          tar czf "${archive}" -C "${stage}" .
           echo "ARCHIVE=${archive}" >> "${GITHUB_ENV}"
+      - name: Package Windows release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ needs.validate.outputs.version }}"
+          $archive = "a3s-use-$version-${{ matrix.name }}.zip"
+          $stage = Join-Path $env:RUNNER_TEMP "a3s-use-$version-${{ matrix.name }}"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/a3s-use.exe" "$stage/a3s-use.exe"
+          Copy-Item "target/${{ matrix.target }}/release/a3s-use-browser-driver.exe" "$stage/a3s-use-browser-driver.exe"
+          Copy-Item -Recurse "crates/browser-driver/skills" "$stage/skills"
+          Copy-Item -Recurse "crates/browser-driver/skill-data" "$stage/skill-data"
+          Copy-Item -Recurse "crates/browser-driver/dashboard/out" "$stage/dashboard"
+          Copy-Item LICENSE,README.md,THIRD_PARTY_NOTICES.md $stage
+          Copy-Item crates/browser-driver/LICENSE-APACHE-2.0 "$stage/LICENSE-APACHE-2.0"
+          Copy-Item crates/browser-driver/UPSTREAM.md "$stage/UPSTREAM.md"
+          Compress-Archive -Path "$stage/*" -DestinationPath $archive
+          "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify installed Unix release
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="${RUNNER_TEMP}/installed-${{ matrix.name }}"
+          install -d "${install_root}"
+          tar xzf "${ARCHIVE}" -C "${install_root}"
+          test -x "${install_root}/a3s-use"
+          test -x "${install_root}/a3s-use-browser-driver"
+          test -f "${install_root}/skill-data/core/SKILL.md"
+          test -f "${install_root}/dashboard/index.html"
+          test -f "${install_root}/LICENSE-APACHE-2.0"
+          test -f "${install_root}/UPSTREAM.md"
+          test -f "${install_root}/THIRD_PARTY_NOTICES.md"
+          "${install_root}/a3s-use" --version
+          A3S_USE_BROWSER_SKILLS_DIR="${install_root}/skill-data" \
+            "${install_root}/a3s-use" browser skills list --json > "${RUNNER_TEMP}/skills.json"
+          python3 - "${RUNNER_TEMP}/skills.json" <<'PY'
+          import json, pathlib, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert value["success"] is True
+          assert {item["name"] for item in value["data"]} == {
+              "agentcore", "core", "dogfood", "electron", "slack", "vercel-sandbox"
+          }
+          PY
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+            '{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{"cursor":"64"}}' \
+            '{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{"cursor":"128"}}' \
+            | "${install_root}/a3s-use" mcp serve browser --tools all > "${RUNNER_TEMP}/mcp.jsonl"
+          python3 - "${RUNNER_TEMP}/mcp.jsonl" <<'PY'
+          import json, pathlib, sys
+          values = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+          by_id = {value.get("id"): value for value in values if "id" in value}
+          assert by_id[1]["result"]["serverInfo"]["name"] == "a3s-use-browser"
+          tools = [tool for request_id in (2, 3, 4) for tool in by_id[request_id]["result"]["tools"]]
+          assert len(tools) == 151
+          assert any(tool["name"] == "agent_browser_open" for tool in tools)
+          PY
+      - name: Verify installed Windows release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "installed-${{ matrix.name }}"
+          Expand-Archive -Path $env:ARCHIVE -DestinationPath $root
+          @(
+            "$root/a3s-use.exe",
+            "$root/a3s-use-browser-driver.exe",
+            "$root/skill-data/core/SKILL.md",
+            "$root/dashboard/index.html",
+            "$root/LICENSE-APACHE-2.0",
+            "$root/UPSTREAM.md",
+            "$root/THIRD_PARTY_NOTICES.md"
+          ) | ForEach-Object { if (-not (Test-Path $_ -PathType Leaf)) { throw "Missing release file $_" } }
+          & "$root/a3s-use.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "a3s-use --version failed" }
+          $env:A3S_USE_BROWSER_SKILLS_DIR = "$root/skill-data"
+          $skills = (& "$root/a3s-use.exe" browser skills list --json | ConvertFrom-Json)
+          if (-not $skills.success -or $skills.data.Count -ne 6) { throw "Packaged Skills smoke failed" }
+          $requests = @(
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}',
+            '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}',
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}',
+            '{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{"cursor":"64"}}',
+            '{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{"cursor":"128"}}'
+          )
+          $responses = ($requests -join "`n") | & "$root/a3s-use.exe" mcp serve browser --tools all
+          if ($LASTEXITCODE -ne 0) { throw "Packaged MCP smoke failed" }
+          $values = @($responses | ForEach-Object { $_ | ConvertFrom-Json })
+          $initialized = $values | Where-Object id -eq 1
+          if ($initialized.result.serverInfo.name -ne "a3s-use-browser") { throw "Wrong MCP server identity" }
+          $toolCount = (($values | Where-Object { $_.id -in 2,3,4 }).result.tools | Measure-Object).Count
+          if ($toolCount -ne 151) { throw "Expected 151 MCP tools, got $toolCount" }
       - uses: actions/upload-artifact@v4
         with:
           name: a3s-use-${{ matrix.name }}
@@ -66,6 +185,7 @@ jobs:
 
   release:
     needs: binaries
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -77,10 +197,11 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum *.tar.gz > checksums.txt
+          sha256sum *.tar.gz *.zip > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
             artifacts/*.tar.gz
+            artifacts/*.zip
             artifacts/checksums.txt

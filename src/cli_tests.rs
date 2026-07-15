@@ -25,3 +25,34 @@ async fn component_status_uses_cli_json_contract() {
     assert_eq!(output.json["component"]["id"], "browser");
     assert!(output.json.get("jsonrpc").is_none());
 }
+
+#[cfg(feature = "browser")]
+#[test]
+fn browser_component_presence_preserves_runtime_ownership() {
+    use a3s_use_browser::BrowserInstallSource;
+
+    assert_eq!(
+        browser_presence(BrowserInstallSource::Environment),
+        "external"
+    );
+    assert_eq!(browser_presence(BrowserInstallSource::System), "system");
+    assert_eq!(
+        browser_presence(BrowserInstallSource::ManagedCache),
+        "managed"
+    );
+    assert_eq!(browser_presence(BrowserInstallSource::Missing), "missing");
+}
+
+#[cfg(feature = "office")]
+#[test]
+fn office_component_presence_preserves_runtime_ownership() {
+    use a3s_use_office::OfficeInstallSource;
+
+    assert_eq!(
+        office_presence(OfficeInstallSource::Environment),
+        "external"
+    );
+    assert_eq!(office_presence(OfficeInstallSource::System), "system");
+    assert_eq!(office_presence(OfficeInstallSource::Managed), "managed");
+    assert_eq!(office_presence(OfficeInstallSource::Missing), "missing");
+}

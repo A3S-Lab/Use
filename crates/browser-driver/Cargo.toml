@@ -1,0 +1,52 @@
+[package]
+name = "a3s-use-browser-driver"
+version = "0.1.0"
+edition = "2021"
+description = "Full browser automation driver embedded in A3S Use"
+license = "Apache-2.0"
+repository = "https://github.com/A3S-Lab/Use"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "a3s-use-browser-driver"
+path = "src/main.rs"
+
+[dependencies]
+a3s-acl = { git = "https://github.com/A3S-Lab/ACL", rev = "6e2a6469edc0f4c61b1e588d0ace873aaf15ce22" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "5.0"
+base64 = "0.22"
+getrandom = "0.2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "signal", "process"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+image = "0.25"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots", "stream"] }
+sha2 = "0.10"
+aes-gcm = "0.10"
+async-trait = "0.1"
+socket2 = "0.6"
+similar = "2"
+time = { version = "0.3", features = ["formatting"] }
+hmac = "0.12"
+hex = "0.4"
+chrono = "0.4"
+urlencoding = "2"
+rust-embed = "8"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Threading", "Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
