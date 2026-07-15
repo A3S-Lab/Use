@@ -18,14 +18,21 @@ rust-version = "1.82"
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
+axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
+getrandom = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+rmcp = { version = "=0.8.5", default-features = false, features = ["base64", "client", "macros", "server", "transport-io", "transport-streamable-http-client-reqwest", "transport-streamable-http-server"] }
+schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "process", "sync", "time"] }
+tokio-util = "0.7"
+url = "2"
 
 [package]
 name = "a3s-use"
@@ -34,7 +41,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-rust-version.workspace = true
+rust-version = "1.85"
 description = "Typed Browser, Office, and external application capabilities for A3S"
 
 [lib]
@@ -46,10 +53,18 @@ name = "a3s-use"
 path = "src/main.rs"
 
 [features]
-default = ["browser", "office", "extensions"]
+default = ["browser", "office", "extensions", "mcp"]
 browser = ["dep:a3s-use-browser"]
 office = ["dep:a3s-use-office"]
 extensions = ["dep:a3s-use-extension"]
+mcp = [
+    "dep:axum",
+    "dep:fs2",
+    "dep:getrandom",
+    "dep:rmcp",
+    "dep:schemars",
+    "dep:tokio-util",
+]
 lightpanda = ["browser", "a3s-use-browser/lightpanda"]
 
 [dependencies]
@@ -58,10 +73,18 @@ a3s-use-browser = { version = "0.1.0", path = "crates/browser", optional = true 
 a3s-use-office = { version = "0.1.0", path = "crates/office", optional = true }
 a3s-use-extension = { version = "0.1.0", path = "crates/extension", optional = true }
 anyhow.workspace = true
+axum = { workspace = true, optional = true }
 clap.workspace = true
+fs2 = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+url.workspace = true
+rmcp = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
 
 [dev-dependencies]
+async-trait.workspace = true
 tempfile.workspace = true

@@ -11,5 +11,12 @@ description = "Typed Office operations and OfficeCLI provider boundary for A3S U
 [dependencies]
 a3s-use-core = { version = "0.1.0", path = "../core" }
 async-trait.workspace = true
+fs2.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

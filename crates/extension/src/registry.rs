@@ -8,7 +8,7 @@ use super::package::{
     copy_package, io_error, owned_package_path, read_manifest, sha256, unique_suffix,
     unix_timestamp, validate_surface_files, write_receipt, RegistryLock,
 };
-use super::{ExtensionManifest, ExtensionPaths};
+use super::{ExtensionManifest, ExtensionPaths, McpTransport};
 
 const RECEIPT_SCHEMA_VERSION: u32 = 1;
 
@@ -59,6 +59,24 @@ impl InstalledExtension {
             .cli
             .as_ref()
             .map(|surface| self.receipt.package_root.join(&surface.executable))
+    }
+
+    pub fn mcp_executable(&self) -> Option<PathBuf> {
+        self.manifest
+            .mcp
+            .as_ref()
+            .map(|surface| self.receipt.package_root.join(&surface.executable))
+    }
+
+    pub fn mcp_args(&self) -> Option<&[String]> {
+        self.manifest
+            .mcp
+            .as_ref()
+            .map(|surface| surface.args.as_slice())
+    }
+
+    pub fn mcp_transport(&self) -> Option<McpTransport> {
+        self.manifest.mcp.as_ref().map(|surface| surface.transport)
     }
 
     pub fn skill_path(&self) -> Option<PathBuf> {

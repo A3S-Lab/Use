@@ -80,3 +80,47 @@ pub async fn run_route(route: &str, args: &[String]) -> UseResult<Option<u8>> {
         .unwrap_or(1);
     Ok(Some(code))
 }
+
+pub async fn run_mcp(package_id: &str) -> UseResult<u8> {
+    let extension = ExtensionRegistry::from_env()?
+        .get(package_id)
+        .await?
+        .ok_or_else(|| {
+            UseError::new(
+                "use.extension.not_installed",
+                format!("Extension '{package_id}' is not installed."),
+            )
+        })?;
+    let executable = extension.mcp_executable().ok_or_else(|| {
+        UseError::new(
+            "use.extension.surface_unavailable",
+            format!("Extension '{package_id}' does not provide an MCP surface."),
+        )
+        .with_detail("availableSurfaces", serde_json::json!(extension.surfaces()))
+    })?;
+    if extension.mcp_transport() != Some(a3s_use_extension::McpTransport::Stdio) {
+        return Err(UseError::new(
+            "use.extension.mcp_transport_unsupported",
+            format!(
+                "Extension '{package_id}' declares Streamable HTTP; it cannot be attached to this stdio process."
+            ),
+        ));
+    }
+    let status = tokio::process::Command::new(&executable)
+        .args(extension.mcp_args().unwrap_or_default())
+        .env("A3S_USE_EXTENSION_ID", &extension.receipt.package_id)
+        .env("A3S_USE_PACKAGE_ROOT", &extension.receipt.package_root)
+        .kill_on_drop(true)
+        .status()
+        .await
+        .map_err(|error| {
+            UseError::new(
+                "use.extension.launch_failed",
+                format!("Failed to launch extension MCP server '{package_id}': {error}"),
+            )
+        })?;
+    Ok(status
+        .code()
+        .and_then(|code| u8::try_from(code).ok())
+        .unwrap_or(1))
+}

@@ -83,7 +83,7 @@ impl BrowserPool {
     }
 }
 
-async fn apply_wait_condition(
+pub(crate) async fn apply_wait_condition(
     page: &chromiumoxide::Page,
     condition: &WaitCondition,
 ) -> UseResult<()> {
@@ -121,7 +121,7 @@ async fn apply_wait_condition(
     Ok(())
 }
 
-async fn capture_screenshot(
+pub(crate) async fn capture_screenshot(
     page: &chromiumoxide::Page,
     path: &std::path::Path,
 ) -> UseResult<Artifact> {

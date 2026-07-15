@@ -1,8 +1,26 @@
-use std::path::{Path, PathBuf};
+//! Typed Office operations backed by OfficeCLI's native command surface.
+//!
+//! A3S Use does not implement OfficeCLI's resident-pipe protocol. Every
+//! operation below invokes the supported OfficeCLI binary; OfficeCLI itself
+//! decides whether to execute directly or reuse its resident process.
 
-use a3s_use_core::{DomainDiagnostic, Readiness, UseError, UseResult, UseSessionId};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use a3s_use_core::{UseError, UseResult, UseSessionId};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+mod command;
+mod discovery;
+mod install;
+
+pub use command::{delegate_native, OfficeCliProvider};
+pub use discovery::{
+    discover_office_cli, doctor, office_status, OfficeInstallSource, OfficeRuntimeStatus,
+    SUPPORTED_OFFICECLI_VERSION,
+};
+pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -10,6 +28,21 @@ pub enum DocumentKind {
     Word,
     Spreadsheet,
     Presentation,
+}
+
+impl DocumentKind {
+    fn accepts(self, path: &std::path::Path) -> bool {
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(str::to_ascii_lowercase);
+        matches!(
+            (self, extension.as_deref()),
+            (Self::Word, Some("docx"))
+                | (Self::Spreadsheet, Some("xlsx"))
+                | (Self::Presentation, Some("pptx"))
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +53,23 @@ pub struct OpenDocument {
     pub read_only: bool,
 }
 
+impl OpenDocument {
+    fn validate(&self) -> UseResult<()> {
+        if self.kind.accepts(&self.path) {
+            Ok(())
+        } else {
+            Err(UseError::new(
+                "use.office.document_kind_mismatch",
+                format!(
+                    "Document '{}' does not match the requested {:?} kind.",
+                    self.path.display(),
+                    self.kind
+                ),
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadRequest {
@@ -27,13 +77,68 @@ pub struct ReadRequest {
     pub selector: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One command in OfficeCLI's documented batch-item shape.
+///
+/// This is an Office-specific data model passed to `officecli batch`; it is not
+/// an A3S RPC envelope or a cross-domain action protocol.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MutationRequest {
+pub struct BatchCommand {
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub element_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path2: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub props: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub part: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub xpath: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub xml: Option<String>,
+}
+
+impl BatchCommand {
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchRequest {
     pub session: UseSessionId,
     pub request_id: String,
-    pub operation: String,
-    pub input: serde_json::Value,
+    pub commands: Vec<BatchCommand>,
+    pub stop_on_error: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,81 +152,20 @@ pub struct OperationResult {
 pub trait OfficeProvider: Send + Sync {
     async fn open(&self, request: OpenDocument) -> UseResult<UseSessionId>;
     async fn read(&self, request: ReadRequest) -> UseResult<serde_json::Value>;
-    async fn mutate(&self, request: MutationRequest) -> UseResult<OperationResult>;
-    async fn close(&self, session: UseSessionId, save: bool) -> UseResult<()>;
+    async fn batch(&self, request: BatchRequest) -> UseResult<OperationResult>;
+    async fn save(&self, session: UseSessionId) -> UseResult<()>;
+    async fn close(&self, session: UseSessionId) -> UseResult<()>;
 }
 
 /// Return this error when a mutation may have reached OfficeCLI but its reply
 /// was lost. Callers must inspect the document before deciding to retry.
 pub fn outcome_unknown(request_id: &str) -> UseError {
-    let mut error = UseError::new(
+    UseError::new(
         "use.office.outcome_unknown",
         "The Office mutation may have completed, but its outcome is unknown.",
     )
-    .with_suggestion("Inspect or reopen the document before issuing another mutation.");
-    error.details.insert(
-        "requestId".to_string(),
-        serde_json::Value::String(request_id.to_string()),
-    );
-    error
-}
-
-pub fn doctor() -> DomainDiagnostic {
-    match discover_office_cli() {
-        Some(path) => DomainDiagnostic {
-            domain: "office".to_string(),
-            readiness: Readiness::Ready,
-            provider: Some("office-cli".to_string()),
-            version: None,
-            path: Some(path),
-            message: "OfficeCLI is available.".to_string(),
-            suggestions: Vec::new(),
-        },
-        None => DomainDiagnostic {
-            domain: "office".to_string(),
-            readiness: Readiness::Missing,
-            provider: None,
-            version: None,
-            path: None,
-            message: "The supported OfficeCLI provider is not installed.".to_string(),
-            suggestions: vec!["Run 'a3s install use/office'.".to_string()],
-        },
-    }
-}
-
-pub fn discover_office_cli() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("A3S_OFFICECLI_EXECUTABLE").map(PathBuf::from) {
-        if executable(&path) {
-            return Some(path);
-        }
-    }
-    let path = std::env::var_os("PATH")?;
-    for directory in std::env::split_paths(&path) {
-        for name in ["officecli", "office-cli"] {
-            let candidate = directory.join(name);
-            if executable(&candidate) {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
-fn executable(path: &Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path)
-            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    .with_suggestion("Inspect or reopen the document before issuing another mutation.")
+    .with_detail("requestId", request_id)
 }
 
 #[cfg(test)]
@@ -140,5 +184,18 @@ mod tests {
     fn provider_contract_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync + ?Sized>() {}
         assert_send_sync::<dyn OfficeProvider>();
+    }
+
+    #[test]
+    fn document_kind_is_checked_before_launching_officecli() {
+        let request = OpenDocument {
+            path: "report.xlsx".into(),
+            kind: DocumentKind::Word,
+            read_only: false,
+        };
+        assert_eq!(
+            request.validate().unwrap_err().code,
+            "use.office.document_kind_mismatch"
+        );
     }
 }

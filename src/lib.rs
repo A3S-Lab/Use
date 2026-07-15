@@ -1,7 +1,14 @@
 //! Typed facade for A3S application capabilities.
 
+#[cfg(feature = "browser")]
+mod browser_cli;
+#[cfg(all(feature = "browser", feature = "mcp"))]
+mod browser_session_cli;
 pub mod cli;
 mod extension_cli;
+
+#[cfg(feature = "mcp")]
+mod mcp;
 
 #[cfg(feature = "extensions")]
 mod extension_host;

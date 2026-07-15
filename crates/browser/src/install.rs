@@ -131,6 +131,7 @@ pub(crate) fn validate_version_segment(value: &str) -> UseResult<&str> {
     Ok(value)
 }
 
+#[cfg(any(feature = "lightpanda", test))]
 pub(crate) fn parse_published_sha256(value: &str) -> UseResult<String> {
     let digest = value.strip_prefix("sha256:").ok_or_else(|| {
         browser_error("Browser publisher digest does not use the sha256 algorithm.")

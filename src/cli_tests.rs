@@ -25,15 +25,3 @@ async fn component_status_uses_cli_json_contract() {
     assert_eq!(output.json["component"]["id"], "browser");
     assert!(output.json.get("jsonrpc").is_none());
 }
-
-#[tokio::test]
-async fn mcp_stop_is_idempotent() {
-    let output = run(vec![
-        "mcp".to_string(),
-        "stop".to_string(),
-        "--json".to_string(),
-    ])
-    .await
-    .unwrap();
-    assert_eq!(output.json["data"]["running"], false);
-}

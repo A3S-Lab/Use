@@ -27,7 +27,11 @@ impl CommandOutput {
         }
     }
 
-    #[cfg(feature = "extensions")]
+    #[cfg(any(
+        feature = "office",
+        feature = "extensions",
+        all(feature = "browser", feature = "mcp")
+    ))]
     fn delegated(exit_code: u8) -> Self {
         Self {
             human: String::new(),
@@ -48,10 +52,10 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "capabilities" => capabilities().await,
         "doctor" => doctor(args.get(1).map(String::as_str)),
         "component" => component(&args[1..]).await,
-        "browser" => browser(&args[1..]),
-        "office" => office(&args[1..]),
+        "browser" => browser(&args[1..]).await,
+        "office" => office(&args[1..]).await,
         "extension" => extension(&args[1..]).await,
-        "mcp" => mcp(&args[1..]),
+        "mcp" => mcp(&args[1..]).await,
         route => {
             #[cfg(feature = "extensions")]
             if let Some(exit_code) = crate::extension_host::run_route(route, &args[1..]).await? {
@@ -87,9 +91,13 @@ fn help() -> CommandOutput {
             "  a3s-use doctor [browser|office] [--json]\n",
             "  a3s-use component list|status|install|uninstall [args] [--json]\n",
             "  a3s-use browser doctor [--json]\n",
+            "  a3s-use browser render <url> [--output <path>] [--screenshot <path>] [--json]\n",
+            "  a3s-use browser open|list|navigate|snapshot|click|type|press|select|scroll|screenshot|close [args] [--json]\n",
             "  a3s-use office doctor [--json]\n",
+            "  a3s-use office <officecli-args...>\n",
             "  a3s-use extension list|inspect|doctor [args] [--json]\n",
-            "  a3s-use mcp stop [--json]"
+            "  a3s-use mcp serve browser|office|<publisher/name>\n",
+            "  a3s-use mcp start|status|stop [browser] [--json]"
         ),
         serde_json::json!({
             "commands": [
@@ -267,6 +275,37 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
             ));
         }
     }
+    if matches!(id, "office" | "use/office") {
+        #[cfg(feature = "office")]
+        {
+            if option_argument(args, "--from")?.is_some() {
+                return Err(usage_error("--from is valid only for external extensions"));
+            }
+            let force = args.iter().any(|argument| argument == "--force");
+            let previous = a3s_use_office::office_status();
+            let status = a3s_use_office::install_office_cli(force).await?;
+            let changed = force
+                || !previous.available
+                || previous.path != status.path
+                || previous.source != status.source
+                || previous.version != status.version;
+            let diagnostic = office_diagnostic();
+            return Ok(CommandOutput::success(
+                format!(
+                    "OfficeCLI provider is ready at {}.",
+                    status.path.as_ref().map_or_else(
+                        || "an unknown path".to_string(),
+                        |path| path.display().to_string()
+                    )
+                ),
+                serde_json::json!({
+                    "component": component_value(id, &diagnostic),
+                    "changed": changed,
+                    "provider": status
+                }),
+            ));
+        }
+    }
     if let Some(diagnostic) = builtin_diagnostic(id) {
         if option_argument(args, "--from")?.is_some() {
             return Err(usage_error("--from is valid only for external extensions"));
@@ -346,6 +385,24 @@ async fn component_uninstall(id: &str) -> UseResult<CommandOutput> {
             ));
         }
     }
+    if matches!(id, "office" | "use/office") {
+        #[cfg(feature = "office")]
+        {
+            let changed = a3s_use_office::uninstall_managed_office_cli().await?;
+            return Ok(CommandOutput::success(
+                if changed {
+                    "Removed A3S-managed OfficeCLI provider files."
+                } else {
+                    "No A3S-managed OfficeCLI provider files are installed."
+                },
+                serde_json::json!({
+                    "component": id,
+                    "changed": changed,
+                    "builtInCommandPreserved": true
+                }),
+            ));
+        }
+    }
     if matches!(id, "browser" | "use/browser" | "office" | "use/office") {
         return Ok(CommandOutput::success(
             format!("No managed runtime files are owned for '{id}'."),
@@ -376,25 +433,38 @@ async fn component_uninstall(id: &str) -> UseResult<CommandOutput> {
     ))
 }
 
-fn browser(args: &[String]) -> UseResult<CommandOutput> {
+async fn browser(args: &[String]) -> UseResult<CommandOutput> {
     match args.first().map(String::as_str) {
         None | Some("doctor") => doctor(Some("browser")),
-        Some(command) => Err(UseError::new(
-            "use.browser.command_unavailable",
-            format!("Browser command '{command}' is not implemented yet."),
-        )
-        .with_suggestion("Run 'a3s use browser doctor --json'.")),
+        Some(_) => {
+            #[cfg(feature = "browser")]
+            {
+                crate::browser_cli::run(args).await
+            }
+            #[cfg(not(feature = "browser"))]
+            Err(UseError::new(
+                "use.browser.disabled",
+                "Browser support is disabled in this custom build.",
+            ))
+        }
     }
 }
 
-fn office(args: &[String]) -> UseResult<CommandOutput> {
+async fn office(args: &[String]) -> UseResult<CommandOutput> {
     match args.first().map(String::as_str) {
         None | Some("doctor") => doctor(Some("office")),
-        Some(command) => Err(UseError::new(
-            "use.office.command_unavailable",
-            format!("Office command '{command}' is not implemented yet."),
-        )
-        .with_suggestion("Run 'a3s use office doctor --json'.")),
+        Some(_) => {
+            #[cfg(feature = "office")]
+            {
+                let exit_code = a3s_use_office::delegate_native(args).await?;
+                Ok(CommandOutput::delegated(exit_code))
+            }
+            #[cfg(not(feature = "office"))]
+            Err(UseError::new(
+                "use.office.disabled",
+                "Office support is disabled in this custom build.",
+            ))
+        }
     }
 }
 
@@ -412,22 +482,189 @@ async fn extension(args: &[String]) -> UseResult<CommandOutput> {
     }
 }
 
-fn mcp(args: &[String]) -> UseResult<CommandOutput> {
+async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
     match args.first().map(String::as_str) {
-        Some("stop") => Ok(CommandOutput::success(
-            "No persistent MCP service is running.",
-            serde_json::json!({
-                "running": false,
-                "stopped": false,
-                "protocol": "mcp"
-            }),
-        )),
-        Some("serve") => Err(UseError::new(
-            "use.mcp.unavailable",
-            "The standard MCP server is not enabled in this initial release.",
-        )),
-        _ => Err(usage_error("mcp requires serve or stop")),
+        Some("start") => mcp_start(args).await,
+        Some("status") => mcp_status(args).await,
+        Some("stop") => mcp_stop(args).await,
+        Some("serve") => {
+            let target = value_argument(args, 1, "mcp serve requires a domain or package ID")?;
+            match target {
+                "browser" | "use/browser" => {
+                    #[cfg(all(feature = "browser", feature = "mcp"))]
+                    {
+                        if args.len() == 2 {
+                            crate::mcp::serve_browser().await?;
+                        } else if args.len() == 5
+                            && args[2] == "--streamable-http"
+                            && args[3] == "--runtime-dir"
+                            && !args[4].starts_with('-')
+                        {
+                            crate::mcp::serve_browser_http(args[4].clone().into()).await?;
+                        } else {
+                            return Err(usage_error(
+                                "mcp serve browser accepts no options for stdio, or '--streamable-http --runtime-dir <path>' for its managed loopback deployment",
+                            ));
+                        }
+                        Ok(CommandOutput::delegated(0))
+                    }
+                    #[cfg(not(all(feature = "browser", feature = "mcp")))]
+                    Err(UseError::new(
+                        "use.mcp.disabled",
+                        "Standard Browser MCP support is disabled in this custom build.",
+                    ))
+                }
+                "office" | "use/office" => {
+                    if args.len() != 2 {
+                        return Err(usage_error("mcp serve office accepts exactly one target"));
+                    }
+                    #[cfg(feature = "office")]
+                    {
+                        let exit_code =
+                            a3s_use_office::delegate_native(&["mcp".to_string()]).await?;
+                        Ok(CommandOutput::delegated(exit_code))
+                    }
+                    #[cfg(not(feature = "office"))]
+                    Err(UseError::new(
+                        "use.office.disabled",
+                        "Office support is disabled in this custom build.",
+                    ))
+                }
+                package_id if external_package_id(package_id).is_some() => {
+                    if args.len() != 2 {
+                        return Err(usage_error(
+                            "mcp serve for an extension accepts exactly one package ID",
+                        ));
+                    }
+                    #[cfg(feature = "extensions")]
+                    {
+                        let exit_code = crate::extension_host::run_mcp(package_id).await?;
+                        Ok(CommandOutput::delegated(exit_code))
+                    }
+                    #[cfg(not(feature = "extensions"))]
+                    Err(UseError::new(
+                        "use.extension.disabled",
+                        "External extension support is disabled in this custom build.",
+                    ))
+                }
+                value => Err(UseError::new(
+                    "use.mcp.target_unknown",
+                    format!("Unknown MCP target '{value}'."),
+                )),
+            }
+        }
+        _ => Err(usage_error("mcp requires start, status, stop, or serve")),
     }
+}
+
+async fn mcp_start(args: &[String]) -> UseResult<CommandOutput> {
+    validate_mcp_management_args(args, "start")?;
+    #[cfg(all(feature = "browser", feature = "mcp"))]
+    {
+        let status = crate::mcp::ensure_browser_service().await?;
+        let human = format!(
+            "Browser MCP service is running at {}.",
+            status
+                .endpoint
+                .as_deref()
+                .unwrap_or("its loopback endpoint")
+        );
+        Ok(CommandOutput::success(
+            human,
+            serde_json::to_value(status).map_err(output_encoding_error)?,
+        ))
+    }
+    #[cfg(not(all(feature = "browser", feature = "mcp")))]
+    Err(UseError::new(
+        "use.mcp.disabled",
+        "Persistent Browser MCP support is disabled in this custom build.",
+    ))
+}
+
+async fn mcp_status(args: &[String]) -> UseResult<CommandOutput> {
+    validate_mcp_management_args(args, "status")?;
+    #[cfg(all(feature = "browser", feature = "mcp"))]
+    {
+        let status = crate::mcp::browser_service_status().await?;
+        let human = if status.running {
+            format!(
+                "Browser MCP service is running at {}.",
+                status
+                    .endpoint
+                    .as_deref()
+                    .unwrap_or("its loopback endpoint")
+            )
+        } else {
+            "No persistent Browser MCP service is running.".to_string()
+        };
+        Ok(CommandOutput::success(
+            human,
+            serde_json::to_value(status).map_err(output_encoding_error)?,
+        ))
+    }
+    #[cfg(not(all(feature = "browser", feature = "mcp")))]
+    Ok(CommandOutput::success(
+        "No persistent Browser MCP service is running.",
+        serde_json::json!({
+            "running": false,
+            "stopped": false,
+            "protocol": "mcp-streamable-http"
+        }),
+    ))
+}
+
+async fn mcp_stop(args: &[String]) -> UseResult<CommandOutput> {
+    validate_mcp_management_args(args, "stop")?;
+    #[cfg(all(feature = "browser", feature = "mcp"))]
+    {
+        let status = crate::mcp::stop_browser_service().await?;
+        let human = if status.stopped {
+            "Stopped the persistent Browser MCP service."
+        } else {
+            "No persistent Browser MCP service is running."
+        };
+        Ok(CommandOutput::success(
+            human,
+            serde_json::to_value(status).map_err(output_encoding_error)?,
+        ))
+    }
+    #[cfg(not(all(feature = "browser", feature = "mcp")))]
+    Ok(CommandOutput::success(
+        "No persistent Browser MCP service is running.",
+        serde_json::json!({
+            "running": false,
+            "stopped": false,
+            "protocol": "mcp-streamable-http"
+        }),
+    ))
+}
+
+fn validate_mcp_management_args(args: &[String], command: &str) -> UseResult<()> {
+    for argument in &args[1..] {
+        if !matches!(argument.as_str(), "browser" | "use/browser" | "--json") {
+            return Err(usage_error(format!(
+                "mcp {command} accepts only the optional Browser target and --json"
+            )));
+        }
+    }
+    let target_count = args[1..]
+        .iter()
+        .filter(|argument| matches!(argument.as_str(), "browser" | "use/browser"))
+        .count();
+    if target_count > 1 {
+        return Err(usage_error(format!(
+            "mcp {command} accepts the Browser target only once"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "browser", feature = "mcp"))]
+fn output_encoding_error(error: serde_json::Error) -> UseError {
+    UseError::new(
+        "use.cli.output_invalid",
+        format!("Failed to encode command output: {error}"),
+    )
 }
 
 fn component_value(id: &str, diagnostic: &DomainDiagnostic) -> serde_json::Value {

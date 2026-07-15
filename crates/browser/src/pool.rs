@@ -2,6 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+#[cfg(feature = "lightpanda")]
 use std::time::Duration;
 
 use chromiumoxide::browser::{Browser, BrowserConfig};

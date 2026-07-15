@@ -25,6 +25,8 @@ mod management;
 mod pool;
 #[cfg(feature = "chrome")]
 mod renderer;
+#[cfg(feature = "chrome")]
+mod session;
 
 #[cfg(feature = "lightpanda")]
 mod lightpanda;
@@ -38,6 +40,11 @@ pub use management::{
 };
 #[cfg(feature = "chrome")]
 pub use pool::{BrowserBackend, BrowserPool, BrowserPoolConfig, BrowserProvider};
+#[cfg(feature = "chrome")]
+pub use session::{
+    BrowserActionResult, BrowserSessionInfo, BrowserSessions, BrowserSnapshot, OpenSessionRequest,
+    SnapshotElement,
+};
 
 #[cfg(feature = "lightpanda")]
 pub use lightpanda::{detect_lightpanda, ensure_lightpanda};

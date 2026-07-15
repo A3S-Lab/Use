@@ -33,10 +33,33 @@ does not define JSON-RPC methods or convert surfaces implicitly.
 
 ## Persistent sessions
 
-Stateless CLI operations may run embedded. When Browser or Office sessions must
-outlive one process, a local service exposes standard MCP. This is not a fourth
-extension protocol. Foreground MCP uses stdio; a future background form uses an
-authenticated loopback Streamable HTTP endpoint.
+Browser exposes one typed session manager through the standard MCP tool set.
+`mcp serve browser` provides stdio for MCP hosts. Separate Browser CLI
+invocations connect to a managed standard MCP Streamable HTTP deployment so
+that tabs, snapshots, and element references survive the invoking CLI process.
+The deployment:
+
+- binds only to an ephemeral `127.0.0.1` port;
+- requires a random bearer token and validates `Origin` when present;
+- records endpoint, token, PID, and ownership in a private generated receipt;
+- shares one typed `BrowserSessions` instance across MCP client sessions;
+- has bounded idle and maximum lifetimes;
+- stops through a standard MCP tool and cleans up tabs, Chrome, and its receipt.
+
+This is a deployment of the existing MCP server, not an A3S JSON-RPC service.
+CLI session commands call MCP tools with their published schemas. The token is
+never included in normal CLI output. `browser render` and Search remain direct
+in-process Rust calls and never require the service.
+
+Office commands are delegated to OfficeCLI's native CLI, and `mcp serve office`
+launches OfficeCLI's own standard MCP server. OfficeCLI may internally reuse a
+resident process, but its pipe and framing remain an OfficeCLI implementation
+detail; A3S Use neither speaks nor reimplements them.
+
+External MCP packages are launched from their declared executable, arguments,
+and transport. A3S Use owns package identity and activation, not the package's
+MCP tool vocabulary. The managed Browser deployment does not aggregate,
+translate, or proxy Office and extension tool vocabularies.
 
 ## Component CLI contract
 
@@ -45,16 +68,30 @@ The umbrella CLI delegates runtime lifecycle through ordinary commands:
     a3s-use component list --json
     a3s-use component status browser --json
     a3s-use component install browser --json
+    a3s-use component install office --json
     a3s-use component uninstall office --json
 
 Each invocation accepts argv and returns one versioned JSON document plus an
 exit status. This is CLI automation, not JSON-RPC.
 
+Managed Office installation is fixed to a reviewed OfficeCLI release. The
+binary is fetched only by an explicit install or repair command, restricted to
+approved HTTPS hosts, bounded by size, and checked against the publisher's
+SHA-256 before atomic activation. Native OfficeCLI execution sets
+`OFFICECLI_SKIP_UPDATE=1`; A3S upgrades are explicit component operations.
+
 ## Roadmap
 
-1. Stabilize core, Browser, Office, extension, and component contracts.
-2. Extract Chrome and Lightpanda rendering from A3S Search.
-3. Migrate Search to an injected Arc<dyn PageRenderer>.
-4. Add stateful Browser sessions and the standard MCP adapter.
-5. Integrate a pinned OfficeCLI provider with non-retryable ambiguous writes.
-6. Extend the initial local extension activation with signed remote publishers.
+Implemented:
+
+1. Core, Browser, Office, extension, and component contracts.
+2. Chrome and Lightpanda extraction from Search.
+3. Search injection through `Arc<dyn PageRenderer>`.
+4. Typed Browser rendering and session tools over standard MCP stdio.
+5. Native OfficeCLI delegation, pinned installation, and non-retryable
+   ambiguous-write handling.
+6. Direct standard-MCP launch for Office and external packages.
+7. Authenticated loopback standard MCP Streamable HTTP for persistent Browser
+   CLI sessions.
+
+Next: signed remote extension publishers and release packaging stabilization.
