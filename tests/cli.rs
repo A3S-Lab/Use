@@ -186,6 +186,8 @@ fn browser_driver_session_listing_coexists_with_authenticated_standard_mcp() {
 #[cfg(all(feature = "browser", feature = "mcp"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_available() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     const CLI_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
@@ -194,6 +196,25 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
     let Some(chrome) = a3s_use_browser::detect_chrome() else {
         return;
     };
+    let watchdog_done = Arc::new(AtomicBool::new(false));
+    let watchdog_stage = Arc::new(Mutex::new("setup"));
+    {
+        let done = Arc::clone(&watchdog_done);
+        let stage = Arc::clone(&watchdog_stage);
+        std::thread::spawn(move || {
+            for _ in 0..120 {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                if done.load(Ordering::Acquire) {
+                    return;
+                }
+            }
+            let stage = *stage
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            eprintln!("persistent Browser CLI test exceeded 120 seconds during {stage}");
+            std::process::exit(124);
+        });
+    }
     #[cfg(unix)]
     let temp = tempfile::Builder::new()
         .prefix("a3s-")
@@ -244,32 +265,43 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
             let _ = connection.await;
         }
     });
-    let run = |args: Vec<String>| {
+    let run = |stage: &'static str, args: Vec<String>| {
         let runtime_dir = temp.path().to_path_buf();
         let chrome = chrome.clone();
+        let watchdog_stage = Arc::clone(&watchdog_stage);
         async move {
+            *watchdog_stage
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = stage;
+            eprintln!("starting persistent Browser CLI stage: {stage}");
             let mut command = tokio::process::Command::new(binary());
             command
                 .args(&args)
                 .env("A3S_USE_RUNTIME_DIR", runtime_dir)
-                .env("A3S_BROWSER_EXECUTABLE", chrome);
-            tokio::time::timeout(CLI_TIMEOUT, command.output())
+                .env("A3S_BROWSER_EXECUTABLE", chrome)
+                .kill_on_drop(true);
+            let output = tokio::time::timeout(CLI_TIMEOUT, command.output())
                 .await
                 .unwrap_or_else(|_| panic!("CLI command timed out after 45 seconds: {args:?}"))
-                .unwrap()
+                .unwrap();
+            eprintln!("completed persistent Browser CLI stage: {stage}");
+            output
         }
     };
 
-    let opened = run(vec![
-        "browser".into(),
-        "open".into(),
-        format!("http://{address}/fixture"),
-        "--session".into(),
-        "s".into(),
-        "--wait".into(),
-        "load".into(),
-        "--json".into(),
-    ])
+    let opened = run(
+        "open",
+        vec![
+            "browser".into(),
+            "open".into(),
+            format!("http://{address}/fixture"),
+            "--session".into(),
+            "s".into(),
+            "--wait".into(),
+            "load".into(),
+            "--json".into(),
+        ],
+    )
     .await;
     assert!(opened.status.success(), "{opened:?}");
 
@@ -277,13 +309,16 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
     // completion before the accessibility tree is ready. Ask for the
     // snapshot explicitly so this test verifies the cross-process session
     // contract instead of depending on that optional response field.
-    let initial_snapshot = run(vec![
-        "browser".into(),
-        "snapshot".into(),
-        "--session".into(),
-        "s".into(),
-        "--json".into(),
-    ])
+    let initial_snapshot = run(
+        "initial snapshot",
+        vec![
+            "browser".into(),
+            "snapshot".into(),
+            "--session".into(),
+            "s".into(),
+            "--json".into(),
+        ],
+    )
     .await;
     assert!(initial_snapshot.status.success(), "{initial_snapshot:?}");
     let initial_snapshot_json: serde_json::Value =
@@ -296,25 +331,31 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
         .map(|(reference, _)| format!("@{reference}"))
         .unwrap_or_else(|| panic!("snapshot did not contain a textbox: {initial_snapshot_json}"));
 
-    let typed = run(vec![
-        "browser".into(),
-        "type".into(),
-        reference,
-        "persistent value".into(),
-        "--session".into(),
-        "s".into(),
-        "--json".into(),
-    ])
+    let typed = run(
+        "type",
+        vec![
+            "browser".into(),
+            "type".into(),
+            reference,
+            "persistent value".into(),
+            "--session".into(),
+            "s".into(),
+            "--json".into(),
+        ],
+    )
     .await;
     assert!(typed.status.success(), "{typed:?}");
 
-    let snapshot = run(vec![
-        "browser".into(),
-        "snapshot".into(),
-        "--session".into(),
-        "s".into(),
-        "--json".into(),
-    ])
+    let snapshot = run(
+        "final snapshot",
+        vec![
+            "browser".into(),
+            "snapshot".into(),
+            "--session".into(),
+            "s".into(),
+            "--json".into(),
+        ],
+    )
     .await;
     assert!(snapshot.status.success(), "{snapshot:?}");
     let snapshot_json: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
@@ -322,27 +363,34 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
         .as_str()
         .is_some_and(|snapshot| snapshot.contains("persistent value")));
 
-    let closed = run(vec![
-        "browser".into(),
-        "close".into(),
-        "--session".into(),
-        "s".into(),
-        "--json".into(),
-    ])
+    let closed = run(
+        "close",
+        vec![
+            "browser".into(),
+            "close".into(),
+            "--session".into(),
+            "s".into(),
+            "--json".into(),
+        ],
+    )
     .await;
     assert!(closed.status.success(), "{closed:?}");
 
-    let stopped = run(vec![
-        "mcp".into(),
-        "stop".into(),
-        "browser".into(),
-        "--json".into(),
-    ])
+    let stopped = run(
+        "stop",
+        vec![
+            "mcp".into(),
+            "stop".into(),
+            "browser".into(),
+            "--json".into(),
+        ],
+    )
     .await;
     assert!(stopped.status.success(), "{stopped:?}");
     guard.disarm();
     let _ = fixture_shutdown.send(());
     fixture.await.unwrap();
+    watchdog_done.store(true, Ordering::Release);
 }
 
 #[cfg(all(feature = "browser", feature = "mcp"))]

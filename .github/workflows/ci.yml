@@ -57,7 +57,7 @@ jobs:
         run: cargo test -p a3s-use --lib --bin a3s-use --locked
       - name: Run facade CLI integration tests
         if: runner.os == 'Windows'
-        run: cargo test -p a3s-use --test cli --locked
+        run: cargo test -p a3s-use --test cli --locked -- --nocapture
       - name: Run facade documentation tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --doc --locked
