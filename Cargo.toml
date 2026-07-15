@@ -65,6 +65,7 @@ mcp = [
     "dep:rmcp",
     "dep:schemars",
     "dep:tokio-util",
+    "dep:windows-sys",
 ]
 lightpanda = ["browser", "a3s-use-browser/lightpanda"]
 
@@ -85,6 +86,9 @@ url.workspace = true
 rmcp = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Console"], optional = true }
 
 [dev-dependencies]
 async-trait.workspace = true

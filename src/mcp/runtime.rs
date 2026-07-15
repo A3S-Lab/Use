@@ -35,6 +35,65 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const DEFAULT_MAX_LIFETIME: Duration = Duration::from_secs(12 * 60 * 60);
 
+#[cfg(windows)]
+struct StandardHandleInheritanceGuard {
+    handles: Vec<windows_sys::Win32::Foundation::HANDLE>,
+}
+
+#[cfg(windows)]
+impl StandardHandleInheritanceGuard {
+    fn disable() -> UseResult<Self> {
+        use windows_sys::Win32::Foundation::{
+            GetHandleInformation, SetHandleInformation, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE,
+        };
+        use windows_sys::Win32::System::Console::{
+            GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+        };
+
+        let mut guard = Self {
+            handles: Vec::new(),
+        };
+        for identifier in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            let handle = unsafe { GetStdHandle(identifier) };
+            if handle == 0 || handle == INVALID_HANDLE_VALUE {
+                continue;
+            }
+            let mut flags = 0;
+            if unsafe { GetHandleInformation(handle, &mut flags) } == 0 {
+                return Err(windows_handle_error("inspect standard-handle inheritance"));
+            }
+            if flags & HANDLE_FLAG_INHERIT == 0 {
+                continue;
+            }
+            if unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } == 0 {
+                return Err(windows_handle_error("disable standard-handle inheritance"));
+            }
+            guard.handles.push(handle);
+        }
+        Ok(guard)
+    }
+}
+
+#[cfg(windows)]
+impl Drop for StandardHandleInheritanceGuard {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT};
+
+        for handle in self.handles.drain(..) {
+            let _ =
+                unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) };
+        }
+    }
+}
+
+#[cfg(windows)]
+fn windows_handle_error(action: &str) -> UseError {
+    UseError::new(
+        "use.mcp.start_failed",
+        format!("Failed to {action}: {}", std::io::Error::last_os_error()),
+    )
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BrowserServiceStatus {
@@ -215,7 +274,8 @@ async fn ensure_receipt(paths: &ServicePaths) -> UseResult<BrowserServiceReceipt
             format!("Failed to locate the a3s-use executable: {error}"),
         )
     })?;
-    let mut child = tokio::process::Command::new(executable)
+    let mut command = tokio::process::Command::new(executable);
+    command
         .args([
             "mcp",
             "serve",
@@ -227,14 +287,24 @@ async fn ensure_receipt(paths: &ServicePaths) -> UseResult<BrowserServiceReceipt
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .kill_on_drop(false)
-        .spawn()
-        .map_err(|error| {
-            UseError::new(
-                "use.mcp.start_failed",
-                format!("Failed to start the Browser MCP service: {error}"),
-            )
-        })?;
+        .kill_on_drop(false);
+
+    // A Windows child can otherwise retain the anonymous stdout/stderr pipe
+    // used by a caller such as `Command::output()`. The short-lived CLI exits,
+    // but its caller waits forever for EOF while the persistent MCP service
+    // still owns the inherited pipe handle. Clear inheritance only for the
+    // synchronous spawn window, then restore the parent handles immediately.
+    #[cfg(windows)]
+    let standard_handles = StandardHandleInheritanceGuard::disable()?;
+    let child = command.spawn();
+    #[cfg(windows)]
+    drop(standard_handles);
+    let mut child = child.map_err(|error| {
+        UseError::new(
+            "use.mcp.start_failed",
+            format!("Failed to start the Browser MCP service: {error}"),
+        )
+    })?;
     let expected_pid = child.id();
     let deadline = Instant::now() + START_TIMEOUT;
     loop {
