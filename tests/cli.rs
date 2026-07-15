@@ -168,6 +168,9 @@ fn browser_driver_session_listing_coexists_with_authenticated_standard_mcp() {
 async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_available() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+    const CLI_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+    const FIXTURE_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
     let Some(chrome) = a3s_use_browser::detect_chrome() else {
         return;
     };
@@ -183,28 +186,55 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
+    let (fixture_shutdown, mut fixture_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let fixture = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let mut request = vec![0; 4_096];
-        let _ = stream.read(&mut request).await.unwrap();
-        let body = r#"<!doctype html><html><head><title>CLI session fixture</title></head><body><input id="query" aria-label="Query"></body></html>"#;
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).await.unwrap();
-        stream.shutdown().await.unwrap();
+        let mut connections = Vec::new();
+        loop {
+            tokio::select! {
+                _ = &mut fixture_shutdown_rx => break,
+                accepted = listener.accept() => {
+                    let (mut stream, _) = accepted.unwrap();
+                    connections.push(tokio::spawn(async move {
+                        let mut request = vec![0; 4_096];
+                        let Ok(Ok(read)) = tokio::time::timeout(
+                            FIXTURE_READ_TIMEOUT,
+                            stream.read(&mut request),
+                        )
+                        .await
+                        else {
+                            return;
+                        };
+                        if read == 0 {
+                            return;
+                        }
+                        let body = r#"<!doctype html><html><head><title>CLI session fixture</title></head><body><input id="query" aria-label="Query"></body></html>"#;
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        let _ = stream.write_all(response.as_bytes()).await;
+                        let _ = stream.shutdown().await;
+                    }));
+                }
+            }
+        }
+        for connection in connections {
+            connection.abort();
+            let _ = connection.await;
+        }
     });
     let run = |args: Vec<String>| {
         let runtime_dir = temp.path().to_path_buf();
         let chrome = chrome.clone();
         async move {
-            tokio::process::Command::new(binary())
-                .args(args)
+            let mut command = tokio::process::Command::new(binary());
+            command
+                .args(&args)
                 .env("A3S_USE_RUNTIME_DIR", runtime_dir)
-                .env("A3S_BROWSER_EXECUTABLE", chrome)
-                .output()
+                .env("A3S_BROWSER_EXECUTABLE", chrome);
+            tokio::time::timeout(CLI_TIMEOUT, command.output())
                 .await
+                .unwrap_or_else(|_| panic!("CLI command timed out after 45 seconds: {args:?}"))
                 .unwrap()
         }
     };
@@ -280,6 +310,7 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
     ])
     .await;
     assert!(closed.status.success(), "{closed:?}");
+    let _ = fixture_shutdown.send(());
     fixture.await.unwrap();
 }
 
