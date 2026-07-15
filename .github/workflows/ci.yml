@@ -35,4 +35,29 @@ jobs:
       - name: Compile workspace tests
         run: cargo test --workspace --locked --no-run
       - name: Run workspace tests
+        if: runner.os != 'Windows'
         run: cargo test --workspace --locked
+      - name: Run Core tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use-core --locked
+      - name: Run Browser library tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use-browser --locked
+      - name: Run Office tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use-office --locked
+      - name: Run extension tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use-extension --locked
+      - name: Run Browser driver tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use-browser-driver --locked
+      - name: Run facade unit tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use --lib --bin a3s-use --locked
+      - name: Run facade CLI integration tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use --test cli --locked
+      - name: Run facade documentation tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use --doc --locked
