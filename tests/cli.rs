@@ -96,15 +96,33 @@ fn mcp_stop_is_safe_when_no_service_is_running() {
 #[cfg(all(feature = "browser", feature = "mcp"))]
 struct PersistentServiceGuard {
     runtime_dir: std::path::PathBuf,
+    armed: bool,
+}
+
+#[cfg(all(feature = "browser", feature = "mcp"))]
+impl PersistentServiceGuard {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
 }
 
 #[cfg(all(feature = "browser", feature = "mcp"))]
 impl Drop for PersistentServiceGuard {
     fn drop(&mut self) {
+        use std::process::Stdio;
+
+        if !self.armed {
+            return;
+        }
+        // Panic cleanup must never replace the original failure with another
+        // indefinite wait. Normal test paths stop the service explicitly.
         let _ = Command::new(binary())
             .args(["mcp", "stop", "--json"])
             .env("A3S_USE_RUNTIME_DIR", &self.runtime_dir)
-            .output();
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
     }
 }
 
@@ -112,8 +130,9 @@ impl Drop for PersistentServiceGuard {
 #[test]
 fn browser_driver_session_listing_coexists_with_authenticated_standard_mcp() {
     let temp = tempfile::tempdir().unwrap();
-    let _guard = PersistentServiceGuard {
+    let mut guard = PersistentServiceGuard {
         runtime_dir: temp.path().to_path_buf(),
+        armed: true,
     };
 
     let started = Command::new(binary())
@@ -161,6 +180,7 @@ fn browser_driver_session_listing_coexists_with_authenticated_standard_mcp() {
     let stopped_json: serde_json::Value = serde_json::from_slice(&stopped.stdout).unwrap();
     assert_eq!(stopped_json["data"]["stopped"], true);
     assert!(!receipt.exists());
+    guard.disarm();
 }
 
 #[cfg(all(feature = "browser", feature = "mcp"))]
@@ -181,8 +201,9 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
         .unwrap();
     #[cfg(not(unix))]
     let temp = tempfile::tempdir().unwrap();
-    let _guard = PersistentServiceGuard {
+    let mut guard = PersistentServiceGuard {
         runtime_dir: temp.path().to_path_buf(),
+        armed: true,
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -310,6 +331,16 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
     ])
     .await;
     assert!(closed.status.success(), "{closed:?}");
+
+    let stopped = run(vec![
+        "mcp".into(),
+        "stop".into(),
+        "browser".into(),
+        "--json".into(),
+    ])
+    .await;
+    assert!(stopped.status.success(), "{stopped:?}");
+    guard.disarm();
     let _ = fixture_shutdown.send(());
     fixture.await.unwrap();
 }
