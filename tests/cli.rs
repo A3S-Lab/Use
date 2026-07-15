@@ -171,6 +171,12 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
     let Some(chrome) = a3s_use_browser::detect_chrome() else {
         return;
     };
+    #[cfg(unix)]
+    let temp = tempfile::Builder::new()
+        .prefix("a3s-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    #[cfg(not(unix))]
     let temp = tempfile::tempdir().unwrap();
     let _guard = PersistentServiceGuard {
         runtime_dir: temp.path().to_path_buf(),
@@ -208,22 +214,36 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
         "open".into(),
         format!("http://{address}/fixture"),
         "--session".into(),
-        "cross-process".into(),
+        "s".into(),
         "--wait".into(),
         "load".into(),
         "--json".into(),
     ])
     .await;
     assert!(opened.status.success(), "{opened:?}");
-    let opened_json: serde_json::Value = serde_json::from_slice(&opened.stdout).unwrap();
-    let reference = opened_json["data"]["snapshot"]["elements"]
-        .as_array()
-        .unwrap()
+
+    // `open` may omit its convenience snapshot when a backend reports load
+    // completion before the accessibility tree is ready. Ask for the
+    // snapshot explicitly so this test verifies the cross-process session
+    // contract instead of depending on that optional response field.
+    let initial_snapshot = run(vec![
+        "browser".into(),
+        "snapshot".into(),
+        "--session".into(),
+        "s".into(),
+        "--json".into(),
+    ])
+    .await;
+    assert!(initial_snapshot.status.success(), "{initial_snapshot:?}");
+    let initial_snapshot_json: serde_json::Value =
+        serde_json::from_slice(&initial_snapshot.stdout).unwrap();
+    let reference = initial_snapshot_json["data"]["refs"]
+        .as_object()
+        .unwrap_or_else(|| panic!("snapshot did not contain refs: {initial_snapshot_json}"))
         .iter()
-        .find(|element| element["role"] == "textbox")
-        .and_then(|element| element["reference"].as_str())
-        .unwrap()
-        .to_string();
+        .find(|(_, element)| element["role"] == "textbox")
+        .map(|(reference, _)| format!("@{reference}"))
+        .unwrap_or_else(|| panic!("snapshot did not contain a textbox: {initial_snapshot_json}"));
 
     let typed = run(vec![
         "browser".into(),
@@ -231,7 +251,7 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
         reference,
         "persistent value".into(),
         "--session".into(),
-        "cross-process".into(),
+        "s".into(),
         "--json".into(),
     ])
     .await;
@@ -241,23 +261,21 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
         "browser".into(),
         "snapshot".into(),
         "--session".into(),
-        "cross-process".into(),
+        "s".into(),
         "--json".into(),
     ])
     .await;
     assert!(snapshot.status.success(), "{snapshot:?}");
     let snapshot_json: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
-    assert!(snapshot_json["data"]["snapshot"]["elements"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|element| element["role"] == "textbox" && element["value"] == "persistent value"));
+    assert!(snapshot_json["data"]["snapshot"]
+        .as_str()
+        .is_some_and(|snapshot| snapshot.contains("persistent value")));
 
     let closed = run(vec![
         "browser".into(),
         "close".into(),
         "--session".into(),
-        "cross-process".into(),
+        "s".into(),
         "--json".into(),
     ])
     .await;
