@@ -1141,15 +1141,19 @@ mod tests {
             "AGENT_BROWSER_SOCKET_DIR",
             "XDG_RUNTIME_DIR",
         ]);
+        let runtime_dir = tempfile::tempdir().unwrap();
 
         _guard.remove("A3S_USE_BROWSER_SOCKET_DIR");
         _guard.remove("A3S_USE_BROWSER_RUNTIME_DIR");
         _guard.remove("AGENT_BROWSER_SOCKET_DIR");
-        _guard.set("XDG_RUNTIME_DIR", "/run/user/1000");
+        _guard.set(
+            "XDG_RUNTIME_DIR",
+            runtime_dir.path().to_str().expect("UTF-8 temporary path"),
+        );
 
         assert_eq!(
             get_socket_dir(),
-            PathBuf::from("/run/user/1000/a3s-use/browser-driver")
+            runtime_dir.path().join("a3s-use").join("browser-driver")
         );
     }
 

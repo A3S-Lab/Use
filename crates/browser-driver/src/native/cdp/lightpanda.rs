@@ -330,9 +330,12 @@ mod tests {
             .port()
     }
 
-    async fn serve_json_version_once_after_delay(port: u16, delay_ms: u64, body: &'static str) {
+    async fn serve_json_version_once_after_delay(
+        listener: TokioTcpListener,
+        delay_ms: u64,
+        body: &'static str,
+    ) {
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-        let listener = TokioTcpListener::bind(("127.0.0.1", port)).await.unwrap();
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut buf = [0u8; 1024];
         let _ = socket.read(&mut buf).await;
@@ -347,9 +350,10 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn waits_for_ready_without_logs() {
-        let port = unused_port();
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
         tokio::spawn(serve_json_version_once_after_delay(
-            port,
+            listener,
             150,
             r#"{"webSocketDebuggerUrl":"ws://127.0.0.1:9222/"}"#,
         ));

@@ -12,7 +12,11 @@ pub struct EnvGuard<'a> {
 
 impl<'a> EnvGuard<'a> {
     pub fn new(var_names: &[&str]) -> Self {
-        let lock = ENV_MUTEX.lock().unwrap();
+        // A failed assertion must not turn one useful failure into dozens of
+        // unrelated PoisonError failures in the rest of the test binary.
+        let lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let vars = var_names
             .iter()
             .map(|&name| (name.to_string(), std::env::var(name).ok()))
