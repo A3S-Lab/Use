@@ -681,16 +681,18 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let fixture = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = vec![0; 4_096];
-            let _ = stream.read(&mut request).await.unwrap();
-            let body = r#"<!doctype html><html><head><title>A3S fixture</title></head><body><label for="query">Query</label><input id="query" aria-label="Query"></body></html>"#;
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-            stream.shutdown().await.unwrap();
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = vec![0; 4_096];
+                let _ = stream.read(&mut request).await.unwrap();
+                let body = r#"<!doctype html><html><head><title>A3S fixture</title></head><body><label for="query">Query</label><input id="query" aria-label="Query"></body></html>"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+                stream.shutdown().await.unwrap();
+            }
         });
         let pool = Arc::new(BrowserPool::new(BrowserPoolConfig {
             provider: BrowserProvider::ChromeExecutable(executable),
@@ -737,7 +739,8 @@ mod tests {
         }
         .await;
         sessions.shutdown().await;
-        fixture.await.unwrap();
+        fixture.abort();
+        let _ = fixture.await;
         result.unwrap();
     }
 }
