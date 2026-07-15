@@ -55,7 +55,7 @@ jobs:
       - name: Run facade unit tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --lib --bin a3s-use --locked
-      - name: Run facade CLI integration tests
+      - name: Run facade CLI integration tests (Windows preview)
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --test cli --locked -- --nocapture
       - name: Run facade documentation tests

@@ -55,20 +55,31 @@ browser tests.
 
 ## Completion evidence
 
-Full replacement requires all of the following evidence:
+The current replacement claim covers macOS and Linux. Full replacement on
+those supported runtime platforms requires all of the following evidence:
 
 1. The command, MCP, and Skill parity gates pass.
 2. All non-ignored driver tests pass.
-3. The real-Chrome tests pass serially with an isolated temporary home and
-   runtime directory.
+3. The real-Chrome tests pass serially on macOS and Linux with an isolated
+   temporary home and runtime directory.
 4. `a3s use browser` uses A3S ACL configuration and writes only under the A3S
    Use data/cache/runtime roots unless the caller supplies an explicit path.
 5. `install` and `upgrade` delegate to the A3S component lifecycle and never
    update an unrelated npm, Homebrew, or Cargo package.
 6. Release archives contain `a3s-use`, `a3s-use-browser-driver`, packaged
    skills, the dashboard, and required license/provenance notices on every
-   supported target.
+   supported macOS and Linux target.
 7. An installed release passes smoke tests through the umbrella `a3s use
    browser` command and through standard MCP.
 
 Until every item has direct evidence, the replacement remains incomplete.
+
+## Windows roadmap
+
+Windows is currently a preview packaging target, not a supported Browser
+runtime target. CI still compiles the workspace and runs command parsing, MCP
+schema, Skills, packaging, and non-browser-runtime tests on Windows. The
+real-Chrome cross-process persistent-session test is compiled but explicitly
+ignored there until the first `browser open` call has the same bounded,
+cleanup-safe behavior proven on macOS and Linux. Passing that test and adding
+Windows to every completion-evidence item above are the promotion criteria.

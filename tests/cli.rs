@@ -184,6 +184,10 @@ fn browser_driver_session_listing_coexists_with_authenticated_standard_mcp() {
 }
 
 #[cfg(all(feature = "browser", feature = "mcp"))]
+#[cfg_attr(
+    windows,
+    ignore = "Windows real-Chrome persistent sessions are roadmap; macOS and Linux are the current supported runtime platforms"
+)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_available() {
     use std::sync::atomic::{AtomicBool, Ordering};

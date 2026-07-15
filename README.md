@@ -88,6 +88,13 @@ delegates the native OfficeCLI vocabulary, installs the publisher-checksummed
 `1.0.136` binary only after explicit authorization, and never reimplements
 OfficeCLI's resident transport.
 
+macOS and Linux are the current supported runtime platforms. Their Browser
+compatibility gate includes real-Chrome persistent sessions through separate
+`a3s use browser` invocations. Windows is a preview build: it must compile and
+pass the protocol, command, package, and non-browser-runtime tests, but its
+real-Chrome persistent-session path is roadmap work and is not part of the
+current compatibility claim.
+
 ## License
 
 MIT

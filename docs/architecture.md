@@ -96,5 +96,12 @@ Implemented:
 8. The complete locked agent-browser `0.31.2` command, MCP, Skill, Dashboard,
    lifecycle, and interactive Browser surface behind `a3s use browser`.
 
-Next: signed remote extension publishers. External publisher infrastructure is
-independent of the built-in Browser compatibility contract.
+Next:
+
+1. Windows real-Chrome persistent sessions. Windows remains a preview build
+   until separate `a3s use browser` invocations can open and reuse a session
+   with the same runtime guarantees as macOS and Linux. Windows compilation,
+   CLI/MCP schemas, packaged assets, and non-runtime tests remain continuously
+   checked in CI meanwhile.
+2. Signed remote extension publishers. External publisher infrastructure is
+   independent of the built-in Browser compatibility contract.
