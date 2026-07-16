@@ -57,6 +57,7 @@ a3s use office native create report.docx --json
 a3s use office native view report.docx text --json
 a3s use office native view report.docx html --output report.html --json
 a3s use office native view deck.pptx svg --output deck.svg --json
+a3s use office native view report.docx screenshot --output report.png --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native add report.docx /body --type paragraph --text 'More' --json
@@ -98,9 +99,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
-  HTML/PPTX-SVG semantic previews, and an explicit typed standard MCP preview
-  while retaining the 0.1.x OfficeCLI compatibility backend for surfaces not
-  yet promoted
+  HTML/PPTX-SVG semantic previews, Browser-injected semantic PNG screenshots,
+  and an explicit typed standard MCP preview while retaining the 0.1.x
+  OfficeCLI compatibility backend for surfaces not yet promoted
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -299,18 +300,22 @@ Cross-format template merge replaces `{{key}}` text in Word document and
 auxiliary text parts, Spreadsheet string cells, and Presentation slides and
 notes while preserving split-run formatting and reporting unresolved keys.
 
-The native runtime does not require Microsoft Office, LibreOffice, OfficeCLI,
-Python, Node.js, or .NET. LibreOffice may be used only by optional CI
-interoperability checks and is never part of document execution.
+The native document engine does not require Microsoft Office, LibreOffice,
+OfficeCLI, Python, Node.js, or .NET. LibreOffice may be used only by optional
+CI interoperability checks and is never part of document execution. Optional
+PNG screenshot output requires the `browser` feature and a ready A3S Browser
+provider because it captures the native semantic HTML through the existing
+Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML is available
-for Word, Spreadsheet, and Presentation; SVG is currently Presentation-only.
-`mcp serve office-native` exposes the same editor through typed standard MCP
-tools and bounded in-memory sessions.
+for Word, Spreadsheet, and Presentation; SVG is currently Presentation-only;
+Browser-injected PNG screenshots are available for all three formats.
+`mcp serve office-native` exposes the same editor and screenshot composition
+through typed standard MCP tools and bounded in-memory sessions.
 Other `0.1.x` commands and the default `mcp serve office` target still use a
 compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
 boundary, not a native-promotion claim. The default routes will be promoted
@@ -333,6 +338,7 @@ a3s use office native view report.xlsx stats --json
 a3s use office native view report.docx html --output report.html --json
 a3s use office native view workbook.xlsx html --output workbook.html --json
 a3s use office native view deck.pptx svg --output deck.svg --json
+a3s use office native view report.docx screenshot --output report.png --timeout-ms 30000 --json
 a3s use office native validate deck.pptx --json
 
 # Inspect a safely parsed XML part inline or export its original bytes.
@@ -437,7 +443,9 @@ limited to 10,000 mutations and 8 MiB of JSON, and remain unsaved until
 queries to at most 1,000 returned nodes. `office_close` rejects dirty sessions
 unless the caller saves or explicitly sets `discard=true`. `office_view`
 accepts `html` for all three formats and `svg` for Presentation in addition to
-text, outline, and statistics.
+text, outline, and statistics. It also accepts `screenshot` for all three
+formats; that mode requires a no-clobber local `output` ending in `.png` and
+accepts an optional `timeoutMs` from 1 through 120,000.
 
 Native render artifacts are deterministic, standalone, and network-free. They
 contain no timestamp or source path, escape document text and attributes, carry
@@ -447,9 +455,13 @@ sparse observed-cell representation instead of expanding large Spreadsheet
 gaps. Each render is bounded to 16 MiB while it is composed. CLI `--output`
 publishes through an atomic no-clobber file operation; inline MCP output remains
 subject to the stricter 8 MiB structured-result limit. These are semantic
-previews, not a Microsoft Office layout-fidelity claim. Word/Spreadsheet SVG,
-screenshot generation, and live watch remain open; screenshots will inject the
-existing Browser renderer rather than add another browser runtime.
+previews, not a Microsoft Office layout-fidelity claim. Screenshot mode stages
+the same deterministic HTML privately, opens its `file://` URL through the
+existing `PageRenderer`, and validates one regular PNG plus its size and
+SHA-256 receipt before atomic no-clobber publication. It defaults to a 30-second
+deadline, caps the deadline at 120 seconds, and caps the PNG at 64 MiB. It does
+not fetch external relationships or consult OfficeCLI. Word/Spreadsheet SVG,
+layout goldens, and live watch remain open.
 
 Native batch input is an ordinary JSON document, not an RPC protocol. The
 current schema is:

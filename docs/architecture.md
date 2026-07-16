@@ -155,8 +155,14 @@ formats and stacked SVG for Presentation, carries stable `data-path` metadata,
 and embeds only validated internal raster parts as `data:` URLs. External
 relationships are never fetched. Render composition has a 16 MiB bound; CLI
 artifact publication is atomic and no-clobber, while standard MCP applies its
-stricter 8 MiB result bound. Screenshot work will inject the existing typed
-Browser renderer and will not add another browser runtime to Office.
+stricter 8 MiB result bound. The Office crate remains browser-independent. At
+the root facade, screenshot composition stages that HTML privately and injects
+its `file://` URL plus a temporary PNG destination into the existing typed
+Browser `PageRenderer`. The facade validates one regular PNG and its provider
+size/SHA-256 receipt, applies a 64 MiB artifact bound, and publishes the caller's
+destination atomically without clobbering. It does not add another browser
+runtime to Office, and the result remains a semantic preview rather than a
+layout-fidelity render.
 
 Basic Presentation table mutation is a format-owned structural layer over the
 same loss-preserving XML editor. It inserts a real graphic frame and DrawingML
@@ -179,10 +185,12 @@ unchanged until the native product gates pass.
 
 The preview MCP adapter has an explicit typed vocabulary rather than a command
 string passthrough. It supports validate, create/open/list, semantic get/query,
-text/outline/statistics views, all-format HTML, Presentation SVG, constrained
-raw XML inspection, atomic typed mutation batches, immutable-template merge,
-save, and close. A server process owns at most 64 sessions. Batches and
-structured results are limited to 8 MiB,
+text/outline/statistics views, all-format HTML, Presentation SVG, all-format
+Browser-injected semantic PNG screenshots, constrained raw XML inspection,
+atomic typed mutation batches, immutable-template merge, save, and close. A
+screenshot requires an explicit no-clobber `.png` output and releases the
+Office session lock before Browser rendering. A server process owns at most 64
+sessions. Batches and structured results are limited to 8 MiB,
 batches to 10,000 mutations, query output to 1,000 nodes, and inline raw XML to
 1 MiB. Mutations remain in memory until an explicit save, while close fails on
 dirty state unless discard is explicit. These are MCP deployment rules around
@@ -253,8 +261,10 @@ Implemented:
     native template merge with bounded JSON
     and immutable templates, native PNG/JPEG/GIF add/read/remove with
     reference-aware media cleanup, deterministic all-format HTML and
-    Presentation SVG semantic rendering, atomic batches, changed-file conflict
-    detection, and the dependency-free `office native` CLI.
+    Presentation SVG semantic rendering, Browser-injected all-format semantic
+    PNG screenshots with validated receipts and no-clobber publication, atomic
+    batches, changed-file conflict detection, and the dependency-free
+    `office native` CLI.
 14. An explicit native Office standard MCP preview with bounded typed tools,
     in-process sessions, deferred atomic save, dirty-close protection, and
     process-level evidence that OfficeCLI is not consulted.
@@ -263,8 +273,8 @@ Next:
 
 1. Complete native read interoperability and repair-dialog evidence against
    Microsoft Office and the optional CI LibreOffice oracle.
-2. Native Office mutation, formula, rich-format, screenshot/live-watch
-   rendering, MCP promotion, and compatibility gates defined in
+2. Native Office mutation, formula, rich-format, live-watch rendering, layout
+   goldens, MCP promotion, and compatibility gates defined in
    `docs/native-office.md`.
 3. Windows real-Chrome persistent sessions. Windows remains a preview build
    until separate `a3s use browser` invocations can open and reuse a session

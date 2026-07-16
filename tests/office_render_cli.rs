@@ -284,6 +284,9 @@ async fn native_mcp_renders_html_and_svg_without_officecli() {
     let view_schema = view_schema["inputSchema"].to_string();
     assert!(view_schema.contains("html"));
     assert!(view_schema.contains("svg"));
+    assert!(view_schema.contains("screenshot"));
+    assert!(view_schema.contains("output"));
+    assert!(view_schema.contains("timeoutMs"));
 
     let created = call(
         &mut stdin,

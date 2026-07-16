@@ -25,6 +25,42 @@ use support::{
 const DEFAULT_QUERY_LIMIT: usize = 200;
 const MAX_QUERY_LIMIT: usize = 1_000;
 
+#[cfg(feature = "browser")]
+async fn screenshot_view(
+    document: &NativeOfficeDocument,
+    output: Option<String>,
+    timeout_ms: Option<u64>,
+) -> UseResult<serde_json::Value> {
+    use crate::office_screenshot::{
+        capture_native_office_screenshot, NativeOfficeScreenshotRequest,
+        DEFAULT_NATIVE_OFFICE_SCREENSHOT_TIMEOUT_MS,
+    };
+
+    let output = output.ok_or_else(|| {
+        UseError::new(
+            "use.office.screenshot_output_invalid",
+            "Native Office MCP screenshot view requires output.",
+        )
+    })?;
+    let request = NativeOfficeScreenshotRequest::new(output)
+        .with_timeout_ms(timeout_ms.unwrap_or(DEFAULT_NATIVE_OFFICE_SCREENSHOT_TIMEOUT_MS));
+    let screenshot = capture_native_office_screenshot(document, request).await?;
+    serde_json::to_value(screenshot).map_err(output_encoding_error)
+}
+
+#[cfg(not(feature = "browser"))]
+async fn screenshot_view(
+    _document: &NativeOfficeDocument,
+    _output: Option<String>,
+    _timeout_ms: Option<u64>,
+) -> UseResult<serde_json::Value> {
+    Err(UseError::new(
+        "use.browser.disabled",
+        "Native Office screenshots require the A3S Use Browser feature.",
+    )
+    .with_suggestion("Use an A3S Use build with Browser support, or request html instead."))
+}
+
 #[derive(Clone)]
 struct NativeOfficeMcpServer {
     sessions: NativeOfficeSessions,
@@ -186,17 +222,26 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_view",
-        description = "Produce a native text, outline, statistics, standalone HTML, or Presentation SVG semantic view for an open session"
+        description = "Produce a native text, outline, statistics, standalone HTML, Presentation SVG, or Browser-injected PNG screenshot view for an open session"
     )]
     async fn office_view(
         &self,
         Parameters(input): Parameters<OfficeViewInput>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let result = async {
+            if input.view != OfficeView::Screenshot
+                && (input.output.is_some() || input.timeout_ms.is_some())
+            {
+                return Err(UseError::new(
+                    "use.office.view_options_invalid",
+                    "Native Office MCP output and timeoutMs are available only for screenshot views.",
+                ));
+            }
             let (session, entry) = self.sessions.get(&input.session).await?;
             let state = entry.lock().await;
             state.ensure_open(&session)?;
             let document = state.editor.snapshot()?;
+            drop(state);
             let (view, value) = match input.view {
                 OfficeView::Text => ("text", serde_json::to_value(document.text_view())),
                 OfficeView::Outline => ("outline", serde_json::to_value(document.outline())),
@@ -208,6 +253,10 @@ impl NativeOfficeMcpServer {
                 OfficeView::Svg => (
                     "svg",
                     serde_json::to_value(document.render(NativeOfficeRenderFormat::Svg)?),
+                ),
+                OfficeView::Screenshot => (
+                    "screenshot",
+                    Ok(screenshot_view(&document, input.output, input.timeout_ms).await?),
                 ),
             };
             let value = value.map_err(output_encoding_error)?;
@@ -437,5 +486,25 @@ mod tests {
                 "office_view"
             ]
         );
+    }
+
+    #[test]
+    fn office_view_schema_exposes_typed_screenshot_options() {
+        let schema = schemars::schema_for!(OfficeViewInput);
+        let encoded = serde_json::to_string(&schema).unwrap();
+        assert!(encoded.contains("screenshot"));
+        assert!(encoded.contains("output"));
+        assert!(encoded.contains("timeoutMs"));
+
+        let input: OfficeViewInput = serde_json::from_value(serde_json::json!({
+            "session": "report",
+            "view": "screenshot",
+            "output": "report.png",
+            "timeoutMs": 30_000
+        }))
+        .unwrap();
+        assert_eq!(input.view, OfficeView::Screenshot);
+        assert_eq!(input.output.as_deref(), Some("report.png"));
+        assert_eq!(input.timeout_ms, Some(30_000));
     }
 }

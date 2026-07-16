@@ -50,6 +50,15 @@ pub enum NativeOfficeImageFormat {
     Gif,
 }
 
+/// Validated dimensions and format of a native raster image byte slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeOfficeImageMetadata {
+    pub format: NativeOfficeImageFormat,
+    pub width_px: u32,
+    pub height_px: u32,
+}
+
 impl NativeOfficeImageFormat {
     pub(crate) fn extension(self) -> &'static str {
         match self {
@@ -85,10 +94,20 @@ pub struct NativeOfficeImage {
 }
 
 impl NativeOfficeImage {
+    /// Validates PNG, JPEG, or GIF bytes without base64-encoding or mutating them.
+    pub fn inspect_bytes(bytes: impl AsRef<[u8]>) -> UseResult<NativeOfficeImageMetadata> {
+        let metadata = super::image::inspect_image(bytes.as_ref(), None)?;
+        Ok(NativeOfficeImageMetadata {
+            format: metadata.format,
+            width_px: metadata.width_px,
+            height_px: metadata.height_px,
+        })
+    }
+
     /// Detects and validates PNG, JPEG, or GIF bytes before serializing them.
     pub fn from_bytes(bytes: impl AsRef<[u8]>) -> UseResult<Self> {
         let bytes = bytes.as_ref();
-        let metadata = super::image::inspect_image(bytes, None)?;
+        let metadata = Self::inspect_bytes(bytes)?;
         Ok(Self {
             format: metadata.format,
             data: base64::engine::general_purpose::STANDARD.encode(bytes),

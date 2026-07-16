@@ -25,7 +25,7 @@ const HELP: &str = concat!(
     "usage:\n",
     "  a3s-use office native get <file> [path] [--depth <n>] [--json]\n",
     "  a3s-use office native query <file> <selector> [--json]\n",
-    "  a3s-use office native view <file> text|outline|stats|html|svg [--output <file>] [--json]\n",
+    "  a3s-use office native view <file> text|outline|stats|html|svg|screenshot [--output <file>] [--timeout-ms <ms>] [--json]\n",
     "  a3s-use office native raw <file> <part> [--output <xml-file>] [--json]\n",
     "  a3s-use office native raw-set <file> <part> --input <xml-file> [--output <file>] [--json]\n",
     "  a3s-use office native dump <file> [path] [--output <batch.json>] [--json]\n",

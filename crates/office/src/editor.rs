@@ -26,7 +26,8 @@ pub use part::{NativeCreatedPart, NativeOfficePartType};
 pub use raw::NativeRawXmlPart;
 pub use types::{
     NativeBatchResult, NativeCreatedImage, NativeOfficeImage, NativeOfficeImageFormat,
-    NativeOfficeInsertPosition, NativeOfficeMutation, NativeOfficeSwapResult, SpreadsheetCellValue,
+    NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
+    NativeOfficeSwapResult, SpreadsheetCellValue,
 };
 
 /// Loss-preserving OOXML editor with transactional in-memory batches.

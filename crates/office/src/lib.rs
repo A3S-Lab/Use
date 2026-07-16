@@ -37,8 +37,9 @@ pub use discovery::{
 };
 pub use editor::{
     NativeBatchResult, NativeCreatedImage, NativeCreatedPart, NativeOfficeEditor,
-    NativeOfficeImage, NativeOfficeImageFormat, NativeOfficeInsertPosition, NativeOfficeMutation,
-    NativeOfficePartType, NativeOfficeSwapResult, NativeRawXmlPart, SpreadsheetCellValue,
+    NativeOfficeImage, NativeOfficeImageFormat, NativeOfficeImageMetadata,
+    NativeOfficeInsertPosition, NativeOfficeMutation, NativeOfficePartType, NativeOfficeSwapResult,
+    NativeRawXmlPart, SpreadsheetCellValue,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 pub use opc::{

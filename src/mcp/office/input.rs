@@ -58,7 +58,7 @@ pub(super) struct OfficeQueryInput {
     pub(super) limit: Option<usize>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum OfficeView {
     Text,
@@ -66,6 +66,7 @@ pub(super) enum OfficeView {
     Stats,
     Html,
     Svg,
+    Screenshot,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -75,6 +76,10 @@ pub(super) struct OfficeViewInput {
     pub(super) session: String,
     /// Semantic view to produce.
     pub(super) view: OfficeView,
+    /// Required no-clobber local `.png` path for a screenshot view.
+    pub(super) output: Option<String>,
+    /// Screenshot deadline in milliseconds; defaults to 30000 and cannot exceed 120000.
+    pub(super) timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]

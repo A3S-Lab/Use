@@ -104,9 +104,10 @@ adapters and must parse into those operations; they are not the domain model.
 There is no cross-domain action envelope and no A3S JSON-RPC protocol.
 
 Rendering is separate from document mutation. Semantic HTML/SVG renderers
-produce deterministic artifacts. Screenshot generation injects the existing
-`a3s-use-browser` rendering contract instead of embedding a second browser
-runtime in the Office engine.
+produce deterministic artifacts inside `a3s-use-office`, which remains
+browser-independent. The root `a3s-use` facade implements screenshots by
+injecting the existing `a3s-use-browser` `PageRenderer` contract instead of
+embedding a second browser runtime in the Office engine.
 
 ## Safety and fidelity invariants
 
@@ -276,8 +277,30 @@ publishes atomically without replacing an existing path; inline CLI output uses
 the same render bound and MCP retains its stricter 8 MiB structured-result
 bound. Unit and process tests cover hostile markup, deterministic hashes,
 sparse cells, invalid raster parts, all-format HTML, Presentation SVG,
-no-clobber output, standard MCP, and an unusable OfficeCLI path. Word and
-Spreadsheet SVG, screenshots, layout goldens, and live watch remain open.
+no-clobber output, standard MCP, and an unusable OfficeCLI path.
+
+Browser-injected PNG screenshot output is implemented for all three formats at
+the root facade. It stages the deterministic HTML in a private temporary
+directory, converts the local path to a `file://` URL, and passes that URL plus
+a temporary PNG destination to the existing object-safe `PageRenderer`.
+`a3s-use-office` has no Browser dependency. The facade validates that the
+provider returned exactly one expected regular, non-symlink PNG artifact,
+checks its decoded dimensions, size, and SHA-256 receipt, then publishes the
+final destination atomically without overwriting an existing entry. The PNG is
+limited to 64 MiB; the rendering deadline defaults to 30 seconds and must be
+between 1 and 120 seconds. External relationships are never fetched.
+
+The typed `NativeOfficeScreenshotRenderer` accepts an injected
+`Arc<dyn PageRenderer>`; `capture_native_office_screenshot` performs normal
+Browser discovery for convenience. CLI
+`office native view <file> screenshot --output <file.png>` and MCP
+`office_view` with `view=screenshot` return the same typed receipt. MCP requires
+`output` and accepts optional `timeoutMs`; the session lock is released before
+Browser work starts. Process tests cover DOCX, XLSX, and PPTX CLI screenshots,
+an MCP screenshot lifecycle, PNG hashes, invalid arguments, Browser-disabled
+builds, and no-clobber behavior while setting an unusable OfficeCLI path.
+Screenshots are raster captures of the semantic preview, not Office layout
+fidelity. Word and Spreadsheet SVG, layout goldens, and live watch remain open.
 
 Basic Presentation table structure is deliberately bounded. Table dimensions
 must be positive, no mutation may exceed 5,000 rows, 5,000 columns, or 100,000
@@ -387,10 +410,11 @@ LibreOffice checks confirm that no repair dialog is required.
 - macOS and Linux release evidence; Windows remains preview until its separate
   platform gate is promoted.
 
-Status: two Gate 6 surfaces are now available for evidence gathering: native
-semantic rendering and the explicit `a3s use mcp serve office-native` target.
-HTML covers all three formats and SVG currently covers Presentation; both are
-bounded, deterministic, standalone, and available through the typed Rust API,
+Status: native semantic rendering, Browser-injected screenshots, and the
+explicit `a3s use mcp serve office-native` target are available for evidence
+gathering. HTML covers all three formats, SVG currently covers Presentation,
+and semantic-preview PNG screenshots cover all three formats when the Browser
+provider is ready. They are available through typed Rust APIs,
 `office native view`, and `office_view`. The MCP target's 12 typed tools use
 bounded in-process sessions for validate, create/open/list, semantic reads,
 constrained raw XML, atomic mutation batches, immutable-template merge, save,
@@ -398,9 +422,9 @@ and close. It limits open sessions to 64, batch and result JSON to 8 MiB, a
 batch to 10,000 mutations, query output to 1,000 nodes, and raw XML output to
 1 MiB. Mutations are not persisted until `office_save`, and a dirty session
 cannot close without save or explicit discard. Process-level tests complete a
-standard MCP initialize/list/call lifecycle and edit a document with an
-unusable OfficeCLI path. This preview does not complete Gate 6: Word/Spreadsheet
-SVG, screenshot/live-watch rendering, Office Skills, compatibility corpus,
+standard MCP initialize/list/call lifecycle, capture a real PNG when Chrome is
+available, and use an unusable OfficeCLI path. This preview does not complete
+Gate 6: Word/Spreadsheet SVG, live watch, Office Skills, compatibility corpus,
 fuzzing, rich-format coverage, layout goldens, and release evidence remain
 open, and the default Office target is not promoted.
 
@@ -431,11 +455,13 @@ worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format
 template merge with `merge`, all-format semantic HTML, Presentation semantic
-SVG, plus atomic batches under the native Office route.
+SVG, all-format Browser-injected semantic PNG screenshots, plus atomic batches
+under the native Office route.
 The explicit `mcp serve office-native` target now exposes the current typed
-subset without an external runtime. Other Office commands and the default
-`mcp serve office` target still delegate to the pinned OfficeCLI provider. This
-keeps existing users functional while native coverage grows. The native APIs
-are deliberately not advertised as full Office readiness, and `doctor`
-continues to report compatibility-provider readiness until the native read and
-mutation gates are met.
+subset without OfficeCLI; only its optional screenshot view requires a ready
+A3S Browser provider. Other Office commands and the default `mcp serve office`
+target still delegate to the pinned OfficeCLI provider. This keeps existing
+users functional while native coverage grows. The native APIs are deliberately
+not advertised as full Office readiness, and `doctor` continues to report
+compatibility-provider readiness until the native read and mutation gates are
+met.
