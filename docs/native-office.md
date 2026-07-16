@@ -30,6 +30,8 @@ formats:
 - loss-preserving round trips for unknown parts, relationships, elements, and
   attributes;
 - create, semantic view, get, query, set, add, remove, move, copy, and swap;
+- typed bold, italic, font-family, exact-size, RGB text-color, and alignment
+  mutation without generic property maps;
 - typed selectors with stable, one-based document paths;
 - transactional batch mutation and explicit partial-apply compatibility mode;
 - template merge and replayable dump/batch documents;
@@ -198,6 +200,22 @@ Worksheet removal deletes only unshared descendants, removes local definitions,
 shifts workbook indexes, and changes surviving formulas that target the deleted
 sheet to `#REF!`. Formula and structural mutations discard stale calculation
 chains and request a full application recalculation.
+
+Native `set-text-format` is implemented through one typed Rust, batch, CLI,
+and MCP contract. It supports explicit bold and italic state, font family,
+integer centipoint size, 24-bit RGB text color, and
+left/center/right/justify alignment. Word and Presentation character
+properties target semantic run paths; alignment targets their paragraph paths.
+Word accepts only sizes divisible by 50 centipoints because
+WordprocessingML stores half-points. Spreadsheet accepts single cells and
+bounded rectangular ranges, auto-vivifies empty styled cells, creates
+`xl/styles.xml` and its workbook relationship when absent, clones the base
+font/cell XF without dropping unknown properties, and deduplicates derived
+font and style records. Transitional and strict OOXML namespaces are retained.
+All three formats provide semantic readback and use normal batch rollback and
+post-mutation validation. Advanced named styles, inheritance, highlights,
+fills, borders, underline/strike, vertical alignment, and arbitrary property
+maps remain outside this milestone.
 
 Row and column edits update cell and row references, dimensions, column
 definitions, defined names, workbook view state, merges, filters, selections,
@@ -379,8 +397,10 @@ These structural column operations require a rectangular unmerged table and
 fail closed when merged-cell spans would need rewriting. Explicit column width
 mutation uses a positive signed-64-bit EMU value and keeps frame width equal to
 the grid-width sum. Merged-cell editing, custom row heights, table styles,
-fills, borders, and rich cell formatting remain later Presentation work. None
-of these operations invokes OfficeCLI or LibreOffice.
+fills, borders, and non-text cell styling remain later Presentation work. Run
+text formatting and paragraph alignment inside table cells use the shared
+typed format mutation. None of these operations invokes OfficeCLI or
+LibreOffice.
 
 Typed move/copy/swap is implemented as a bounded arrangement layer. `Index` is
 zero-based and is evaluated after source removal for a move; `Before` and
@@ -520,7 +540,8 @@ compatibility component for one deprecation cycle, then is removed.
 ## Current migration boundary
 
 The `0.1.x` CLI exposes native blank creation, reads, typed
-add/set/remove/move/copy/swap, Spreadsheet range and row/column structure edits,
+add/set/remove/move/copy/swap, cross-format text formatting, Spreadsheet range
+and row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format

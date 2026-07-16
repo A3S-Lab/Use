@@ -21,9 +21,18 @@ a3s use office native create report.docx --json
 a3s use office native add report.docx /body --type paragraph --text 'Summary' --json
 a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
 a3s use office native set report.docx '/body/p[1]' --text 'Updated summary' --json
+a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --font-family Aptos --font-size 14 --text-color 123456 --json
+a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native add report.docx /body --type picture --input chart.png --alt 'Quarterly revenue chart' --json
 a3s use office native move report.docx '/body/p[2]' --before '/body/p[1]' --json
 ```
+
+Character formatting targets a run returned by `get --depth 2`. Paragraph
+alignment targets the paragraph itself. Supported typed properties are bold,
+italic, font family, RGB text color, and font size; Word sizes must be exact
+half-point increments. Advanced styles, inheritance, highlight, underline,
+language, and RTL mutation still require an explicitly supported native
+operation or the compatibility route.
 
 Use `copy`, `swap`, and `remove` only with paths returned by a fresh read.
 Identity-bearing copies, cross-parent ownership migration, and rich structures

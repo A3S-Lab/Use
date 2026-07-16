@@ -1,6 +1,7 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
-    DocumentNode, NativeOfficeDocument, NativeOfficeEditor, SpreadsheetCellValue,
+    DocumentNode, NativeOfficeDocument, NativeOfficeEditor, NativeOfficeHorizontalAlignment,
+    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat, SpreadsheetCellValue,
 };
 use tokio::io::AsyncReadExt;
 
@@ -36,7 +37,7 @@ const HELP: &str = concat!(
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
-    "  a3s-use office native set <file> <path> (--text <value>|--number <value>|--boolean <true|false>|--formula <expression>) [--output <file>] [--json]\n",
+    "  a3s-use office native set <file> <path> [--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--bold <true|false>] [--italic <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -199,9 +200,20 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     .into_iter()
     .filter(|present| *present)
     .count();
-    if value_count != 1 {
+    let format = parse_text_format(&parsed)?;
+    if value_count > 1 {
         return Err(usage_error(
-            "office native set requires exactly one of --text, --number, --boolean, --formula, or --width-emu",
+            "office native set accepts at most one of --text, --number, --boolean, --formula, or --width-emu",
+        ));
+    }
+    if value_count == 0 && format.is_none() {
+        return Err(usage_error(
+            "office native set requires content, width, or at least one typed formatting option",
+        ));
+    }
+    if parsed.width_emu.is_some() && format.is_some() {
+        return Err(usage_error(
+            "--width-emu cannot be combined with text formatting options",
         ));
     }
     let typed_value = if let Some(value) = parsed.number.as_ref() {
@@ -227,12 +239,38 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let operation = if let Some(width_emu) = parsed.width_emu {
         editor.set_table_column_width(path, width_emu)?;
         "set-table-column-width"
-    } else if let Some(value) = typed_value {
-        editor.set_cell_value(path, value)?;
-        "set-cell-value"
     } else {
-        editor.set_text(path, parsed.text.as_deref().unwrap_or_default())?;
-        "set-text"
+        let mut mutations = Vec::with_capacity(2);
+        if let Some(value) = typed_value {
+            mutations.push(NativeOfficeMutation::SetCellValue {
+                path: path.clone(),
+                value,
+            });
+        } else if let Some(text) = &parsed.text {
+            mutations.push(NativeOfficeMutation::SetText {
+                path: path.clone(),
+                text: text.clone(),
+            });
+        }
+        if let Some(format) = format {
+            mutations.push(NativeOfficeMutation::SetTextFormat {
+                path: path.clone(),
+                format,
+            });
+        }
+        editor.apply_batch(&mutations)?;
+        match (
+            mutations
+                .iter()
+                .any(|mutation| matches!(mutation, NativeOfficeMutation::SetTextFormat { .. })),
+            mutations.len(),
+            mutations.first(),
+        ) {
+            (true, 1, _) => "set-text-format",
+            (true, _, _) => "set-content-and-text-format",
+            (false, _, Some(NativeOfficeMutation::SetCellValue { .. })) => "set-cell-value",
+            _ => "set-text",
+        }
     };
     let node = editor.snapshot()?.get(path, 0)?;
     save_editor(&mut editor, parsed.output.as_deref()).await?;
@@ -252,6 +290,120 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             "revision": editor.package().source_revision()
         }),
     ))
+}
+
+fn parse_text_format(parsed: &ParsedArguments) -> UseResult<Option<NativeOfficeTextFormat>> {
+    let format = NativeOfficeTextFormat {
+        bold: parsed
+            .bold
+            .as_deref()
+            .map(|value| parse_format_boolean("--bold", value))
+            .transpose()?,
+        italic: parsed
+            .italic
+            .as_deref()
+            .map(|value| parse_format_boolean("--italic", value))
+            .transpose()?,
+        font_family: parsed.font_family.clone(),
+        font_size_centipoints: parsed
+            .font_size
+            .as_deref()
+            .map(parse_font_size)
+            .transpose()?,
+        text_color: parsed
+            .text_color
+            .as_deref()
+            .map(parse_text_color)
+            .transpose()?,
+        alignment: parsed
+            .alignment
+            .as_deref()
+            .map(parse_alignment)
+            .transpose()?,
+    };
+    Ok((!format.is_empty()).then_some(format))
+}
+
+fn parse_format_boolean(option: &str, value: &str) -> UseResult<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(usage_error(format!(
+            "{option} requires true or false, received '{value}'"
+        ))),
+    }
+}
+
+fn parse_font_size(value: &str) -> UseResult<u32> {
+    let normalized = value
+        .strip_suffix("pt")
+        .or_else(|| value.strip_suffix("pT"))
+        .or_else(|| value.strip_suffix("Pt"))
+        .or_else(|| value.strip_suffix("PT"))
+        .unwrap_or(value);
+    let (whole, fraction) = normalized
+        .split_once('.')
+        .map_or((normalized, ""), |(whole, fraction)| (whole, fraction));
+    if whole.is_empty()
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || fraction.len() > 2
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(usage_error(format!(
+            "--font-size requires points with at most two decimals, received '{value}'"
+        )));
+    }
+    let whole = whole.parse::<u32>().map_err(|_| {
+        usage_error(format!(
+            "--font-size requires points with at most two decimals, received '{value}'"
+        ))
+    })?;
+    let fraction = match fraction.len() {
+        0 => 0,
+        1 => fraction.parse::<u32>().unwrap_or_default() * 10,
+        _ => fraction.parse::<u32>().unwrap_or_default(),
+    };
+    let centipoints = whole
+        .checked_mul(100)
+        .and_then(|value| value.checked_add(fraction))
+        .ok_or_else(|| usage_error("--font-size is too large"))?;
+    if !(100..=40_000).contains(&centipoints) {
+        return Err(usage_error("--font-size must be from 1 through 400 points"));
+    }
+    Ok(centipoints)
+}
+
+fn parse_text_color(value: &str) -> UseResult<NativeOfficeRgbColor> {
+    let value = value.strip_prefix('#').unwrap_or(value);
+    if value.len() != 6 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(usage_error(format!(
+            "--text-color requires exactly six hexadecimal RGB digits, received '{value}'"
+        )));
+    }
+    let component = |range: std::ops::Range<usize>| {
+        u8::from_str_radix(&value[range], 16).map_err(|_| {
+            usage_error(format!(
+                "--text-color requires exactly six hexadecimal RGB digits, received '{value}'"
+            ))
+        })
+    };
+    Ok(NativeOfficeRgbColor::new(
+        component(0..2)?,
+        component(2..4)?,
+        component(4..6)?,
+    ))
+}
+
+fn parse_alignment(value: &str) -> UseResult<NativeOfficeHorizontalAlignment> {
+    match value.to_ascii_lowercase().as_str() {
+        "left" => Ok(NativeOfficeHorizontalAlignment::Left),
+        "center" | "centre" => Ok(NativeOfficeHorizontalAlignment::Center),
+        "right" => Ok(NativeOfficeHorizontalAlignment::Right),
+        "justify" | "justified" => Ok(NativeOfficeHorizontalAlignment::Justify),
+        _ => Err(usage_error(format!(
+            "--align requires left, center, right, or justify, received '{value}'"
+        ))),
+    }
 }
 
 async fn remove(args: &[String]) -> UseResult<CommandOutput> {

@@ -1,4 +1,5 @@
 use super::*;
+use a3s_use_office::{NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat};
 
 #[test]
 fn native_office_server_exposes_only_bounded_typed_tools() {
@@ -74,4 +75,51 @@ fn office_view_schema_exposes_typed_view_options() {
     .unwrap();
     assert_eq!(annotated.view, OfficeView::Annotated);
     assert_eq!(annotated.limit, Some(25));
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_text_formatting() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "set-text-format",
+        "fontFamily",
+        "fontSizeCentipoints",
+        "textColor",
+        "alignment",
+        "justify",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "report",
+        "mutations": [{
+            "operation": "set-text-format",
+            "path": "/body/p[1]/r[1]",
+            "format": {
+                "bold": true,
+                "fontSizeCentipoints": 1200,
+                "textColor": { "red": 18, "green": 52, "blue": 86 }
+            }
+        }]
+    }))
+    .unwrap();
+    let mutation = input.mutations.into_iter().next().unwrap();
+    assert!(matches!(
+        mutation.into_native().unwrap(),
+        NativeOfficeMutation::SetTextFormat {
+            format: NativeOfficeTextFormat {
+                bold: Some(true),
+                font_size_centipoints: Some(1200),
+                text_color: Some(NativeOfficeRgbColor {
+                    red: 18,
+                    green: 52,
+                    blue: 86
+                }),
+                ..
+            },
+            ..
+        }
+    ));
 }

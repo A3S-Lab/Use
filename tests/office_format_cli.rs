@@ -1,0 +1,293 @@
+#![cfg(feature = "office")]
+
+use std::path::Path;
+use std::process::{Command, Output};
+
+fn binary() -> &'static str {
+    env!("CARGO_BIN_EXE_a3s-use")
+}
+
+fn execute(provider: &Path, args: &[&str]) -> Output {
+    Command::new(binary())
+        .args(args)
+        .env("A3S_OFFICECLI_EXECUTABLE", provider)
+        .output()
+        .unwrap()
+}
+
+fn run(provider: &Path, args: &[&str]) -> serde_json::Value {
+    let output = execute(provider, args);
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn run_failure(provider: &Path, args: &[&str]) -> serde_json::Value {
+    let output = execute(provider, args);
+    assert!(!output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
+    let temp = tempfile::tempdir().unwrap();
+    let provider = temp.path().join("must-not-be-invoked");
+    let word = temp.path().join("formatted.docx");
+    let spreadsheet = temp.path().join("formatted.xlsx");
+    let presentation = temp.path().join("formatted.pptx");
+    let word = word.to_str().unwrap();
+    let spreadsheet = spreadsheet.to_str().unwrap();
+    let presentation = presentation.to_str().unwrap();
+
+    run(&provider, &["office", "native", "create", word, "--json"]);
+    run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            word,
+            "/body/p[1]",
+            "--text",
+            "Native Word",
+            "--json",
+        ],
+    );
+    let word_run = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            word,
+            "/body/p[1]/r[1]",
+            "--bold",
+            "true",
+            "--italic",
+            "false",
+            "--font-family",
+            "Aptos",
+            "--font-size",
+            "14pt",
+            "--text-color",
+            "#123456",
+            "--json",
+        ],
+    );
+    assert_eq!(word_run["data"]["operation"], "set-text-format");
+    assert_eq!(word_run["data"]["node"]["format"]["bold"], "true");
+    assert_eq!(word_run["data"]["node"]["format"]["font"], "Aptos");
+    assert_eq!(word_run["data"]["node"]["format"]["size"], "14pt");
+    assert_eq!(word_run["data"]["node"]["format"]["color"], "123456");
+    let word_paragraph = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            word,
+            "/body/p[1]",
+            "--align",
+            "center",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        word_paragraph["data"]["node"]["format"]["alignment"],
+        "center"
+    );
+
+    run(
+        &provider,
+        &["office", "native", "create", spreadsheet, "--json"],
+    );
+    let cell = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            spreadsheet,
+            "/Sheet1/A1",
+            "--text",
+            "Revenue",
+            "--bold",
+            "true",
+            "--font-size",
+            "11.5",
+            "--text-color",
+            "0066CC",
+            "--align",
+            "right",
+            "--json",
+        ],
+    );
+    assert_eq!(cell["data"]["operation"], "set-content-and-text-format");
+    assert_eq!(cell["data"]["node"]["text"], "Revenue");
+    assert_eq!(cell["data"]["node"]["format"]["bold"], "true");
+    assert_eq!(cell["data"]["node"]["format"]["size"], "11.5pt");
+    assert_eq!(cell["data"]["node"]["format"]["color"], "0066CC");
+    assert_eq!(cell["data"]["node"]["format"]["alignment"], "right");
+
+    run(
+        &provider,
+        &["office", "native", "create", presentation, "--json"],
+    );
+    run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "add",
+            presentation,
+            "/",
+            "--type",
+            "slide",
+            "--text",
+            "Native Slides",
+            "--json",
+        ],
+    );
+    let slide_run = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            presentation,
+            "/slide[1]/shape[1]/paragraph[1]/run[1]",
+            "--italic",
+            "true",
+            "--font-family",
+            "Aptos Display",
+            "--font-size",
+            "20",
+            "--text-color",
+            "AA2200",
+            "--json",
+        ],
+    );
+    assert_eq!(slide_run["data"]["node"]["format"]["italic"], "1");
+    assert_eq!(slide_run["data"]["node"]["format"]["font"], "Aptos Display");
+    assert_eq!(slide_run["data"]["node"]["format"]["size"], "20pt");
+    assert_eq!(slide_run["data"]["node"]["format"]["color"], "AA2200");
+    let slide_paragraph = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            presentation,
+            "/slide[1]/shape[1]/paragraph[1]",
+            "--align",
+            "justify",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        slide_paragraph["data"]["node"]["format"]["alignment"],
+        "just"
+    );
+
+    for document in [word, spreadsheet, presentation] {
+        assert_eq!(
+            run(
+                &provider,
+                &["office", "native", "validate", document, "--json"]
+            )["data"]["valid"],
+            true
+        );
+    }
+    assert!(!provider.exists());
+}
+
+#[test]
+fn native_format_batch_is_typed_and_invalid_word_sizes_do_not_write() {
+    let temp = tempfile::tempdir().unwrap();
+    let provider = temp.path().join("must-not-be-invoked");
+    let spreadsheet = temp.path().join("batch.xlsx");
+    let batch = temp.path().join("format.json");
+    let spreadsheet = spreadsheet.to_str().unwrap();
+    run(
+        &provider,
+        &["office", "native", "create", spreadsheet, "--json"],
+    );
+    std::fs::write(
+        &batch,
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 1,
+            "mutations": [{
+                "operation": "set-text-format",
+                "path": "/Sheet1/B2",
+                "format": {
+                    "bold": true,
+                    "fontSizeCentipoints": 1200,
+                    "textColor": { "red": 17, "green": 34, "blue": 51 },
+                    "alignment": "center"
+                }
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let batch_path = batch.to_str().unwrap();
+    let result = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "batch",
+            spreadsheet,
+            "--input",
+            batch_path,
+            "--json",
+        ],
+    );
+    assert_eq!(result["data"]["result"]["applied"], 1);
+    let cell = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "get",
+            spreadsheet,
+            "/Sheet1/B2",
+            "--json",
+        ],
+    );
+    assert_eq!(cell["data"]["node"]["format"]["bold"], "true");
+    assert_eq!(cell["data"]["node"]["format"]["color"], "112233");
+
+    let word = temp.path().join("invalid.docx");
+    let word = word.to_str().unwrap();
+    run(&provider, &["office", "native", "create", word, "--json"]);
+    run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            word,
+            "/body/p[1]",
+            "--text",
+            "Unchanged",
+            "--json",
+        ],
+    );
+    let before = std::fs::read(word).unwrap();
+    let error = run_failure(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            word,
+            "/body/p[1]/r[1]",
+            "--font-size",
+            "11.25",
+            "--json",
+        ],
+    );
+    assert_eq!(error["error"]["code"], "use.office.font_size_unsupported");
+    assert_eq!(std::fs::read(word).unwrap(), before);
+    assert!(!provider.exists());
+}

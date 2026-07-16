@@ -22,8 +22,16 @@ a3s use office native add deck.pptx '/slide[1]' --type shape --text 'Q3' --json
 a3s use office native add deck.pptx '/slide[1]' --type table --rows 3 --columns 4 --json
 a3s use office native add deck.pptx '/slide[1]' --type picture --input diagram.png --alt 'System architecture' --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]' --text 'Updated roadmap' --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --bold true --font-family 'Aptos Display' --font-size 20 --text-color AA2200 --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
 a3s use office native swap deck.pptx '/slide[1]' '/slide[2]' --json
 ```
+
+Character formatting targets a run path; alignment targets its paragraph.
+This works for shape and table-cell text returned by a semantic read. The typed
+subset covers bold, italic, font family, exact centipoint size, RGB text color,
+and horizontal alignment. Shape-wide propagation, theme authoring, fills,
+outlines, and effects remain incomplete.
 
 Basic table rows, cells, and virtual columns support bounded structural edits.
 Merged cells, rich table styles, relationship-owning object copies, advanced

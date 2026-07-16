@@ -22,6 +22,12 @@ pub(super) struct ParsedArguments {
     pub number: Option<String>,
     pub boolean: Option<String>,
     pub formula: Option<String>,
+    pub bold: Option<String>,
+    pub italic: Option<String>,
+    pub font_family: Option<String>,
+    pub font_size: Option<String>,
+    pub text_color: Option<String>,
+    pub alignment: Option<String>,
     pub count: Option<u32>,
     pub position: Option<usize>,
     pub index: Option<usize>,
@@ -77,6 +83,30 @@ impl ParsedArguments {
                 }
                 "--formula" if allowed.formula => {
                     set_string_option(&mut parsed.formula, args, index, "--formula")?;
+                    index += 2;
+                }
+                "--bold" if allowed.bold => {
+                    set_string_option(&mut parsed.bold, args, index, "--bold")?;
+                    index += 2;
+                }
+                "--italic" if allowed.italic => {
+                    set_string_option(&mut parsed.italic, args, index, "--italic")?;
+                    index += 2;
+                }
+                "--font-family" if allowed.font_family => {
+                    set_string_option(&mut parsed.font_family, args, index, "--font-family")?;
+                    index += 2;
+                }
+                "--font-size" if allowed.font_size => {
+                    set_string_option(&mut parsed.font_size, args, index, "--font-size")?;
+                    index += 2;
+                }
+                "--text-color" if allowed.text_color => {
+                    set_string_option(&mut parsed.text_color, args, index, "--text-color")?;
+                    index += 2;
+                }
+                "--align" | "--alignment" if allowed.alignment => {
+                    set_string_option(&mut parsed.alignment, args, index, "--align")?;
                     index += 2;
                 }
                 "--output" if allowed.output => {
@@ -196,6 +226,12 @@ pub(super) struct AllowedOptions {
     number: bool,
     boolean: bool,
     formula: bool,
+    bold: bool,
+    italic: bool,
+    font_family: bool,
+    font_size: bool,
+    text_color: bool,
+    alignment: bool,
     count: bool,
     position: bool,
     index: bool,
@@ -225,6 +261,12 @@ impl AllowedOptions {
         number: false,
         boolean: false,
         formula: false,
+        bold: false,
+        italic: false,
+        font_family: false,
+        font_size: false,
+        text_color: false,
+        alignment: false,
         count: false,
         position: false,
         index: false,
@@ -251,6 +293,12 @@ impl AllowedOptions {
         number: true,
         boolean: true,
         formula: true,
+        bold: true,
+        italic: true,
+        font_family: true,
+        font_size: true,
+        text_color: true,
+        alignment: true,
         width_emu: true,
         ..Self::NONE
     };

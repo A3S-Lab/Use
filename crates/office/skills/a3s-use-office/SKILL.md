@@ -82,9 +82,10 @@ available.
 
 The native engine currently owns safe OPC/ZIP admission, semantic reads,
 bounded annotated and issue analysis, common typed mutations, atomic batches,
-template merge, constrained XML access, deterministic all-format HTML/SVG, and
-Browser-injected semantic screenshots, plus authenticated loopback live watch
-for saved files. Rich formatting, complete formula calculation, advanced
-charts/media, interactive preview editing/annotations, and full Office layout
-fidelity remain incomplete. Fail closed or use the explicit compatibility
-route rather than inventing unsupported native behavior.
+typed bold/italic/font/size/RGB/alignment formatting, template merge,
+constrained XML access, deterministic all-format HTML/SVG, and Browser-injected
+semantic screenshots, plus authenticated loopback live watch for saved files.
+Advanced formatting, complete formula calculation, advanced charts/media,
+interactive preview editing/annotations, and full Office layout fidelity remain
+incomplete. Fail closed or use the explicit compatibility route rather than
+inventing unsupported native behavior.

@@ -22,6 +22,28 @@ Mutations remain unsaved until `office_save`. Do not discard a dirty session
 unless the user explicitly accepts losing its changes. Release the session as
 soon as the workflow finishes.
 
+Rich-text changes use the typed `set-text-format` mutation inside
+`office_apply_batch`; do not send generic property maps:
+
+```json
+{
+  "session": "report",
+  "mutations": [{
+    "operation": "set-text-format",
+    "path": "/body/p[1]/r[1]",
+    "format": {
+      "bold": true,
+      "fontFamily": "Aptos",
+      "fontSizeCentipoints": 1400,
+      "textColor": { "red": 18, "green": 52, "blue": 86 }
+    }
+  }]
+}
+```
+
+Use a run path for Word/Presentation character properties, a paragraph path
+for their alignment, and a cell or bounded range path for Spreadsheet.
+
 `office_view` supports text, bounded annotated entries, outline, stats, issues,
 all-format HTML/SVG, and all-format semantic screenshots. Annotated and issue
 output accept a `limit` from 1 through 1,000; issue output is also filterable.

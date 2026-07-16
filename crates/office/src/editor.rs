@@ -25,9 +25,10 @@ mod part_tests;
 pub use part::{NativeCreatedPart, NativeOfficePartType};
 pub use raw::NativeRawXmlPart;
 pub use types::{
-    NativeBatchResult, NativeCreatedImage, NativeOfficeImage, NativeOfficeImageFormat,
-    NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
-    NativeOfficeSwapResult, SpreadsheetCellValue,
+    NativeBatchResult, NativeCreatedImage, NativeOfficeHorizontalAlignment, NativeOfficeImage,
+    NativeOfficeImageFormat, NativeOfficeImageMetadata, NativeOfficeInsertPosition,
+    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat,
+    SpreadsheetCellValue,
 };
 
 /// Loss-preserving OOXML editor with transactional in-memory batches.
@@ -73,6 +74,19 @@ impl NativeOfficeEditor {
         self.apply_batch(&[NativeOfficeMutation::SetText {
             path: path.into(),
             text: text.into(),
+        }])?;
+        Ok(())
+    }
+
+    /// Applies typed rich-text properties without changing document content.
+    pub fn set_text_format(
+        &mut self,
+        path: impl Into<String>,
+        format: NativeOfficeTextFormat,
+    ) -> UseResult<()> {
+        self.apply_batch(&[NativeOfficeMutation::SetTextFormat {
+            path: path.into(),
+            format,
         }])?;
         Ok(())
     }
@@ -466,6 +480,20 @@ impl NativeOfficeEditor {
                 NativeOfficeMutation::SetText { path, text } => {
                     set_text(&mut self.package, path, text).map(|()| path.clone())
                 }
+                NativeOfficeMutation::SetTextFormat { path, format } => format
+                    .validate()
+                    .and_then(|()| match self.package.kind() {
+                        DocumentKind::Word => {
+                            word::set_text_format(&mut self.package, path, format)
+                        }
+                        DocumentKind::Spreadsheet => {
+                            spreadsheet::set_text_format(&mut self.package, path, format)
+                        }
+                        DocumentKind::Presentation => {
+                            presentation::set_text_format(&mut self.package, path, format)
+                        }
+                    })
+                    .map(|()| path.clone()),
                 NativeOfficeMutation::SetTableColumnWidth { path, width_emu } => {
                     presentation::set_table_column_width(&mut self.package, path, *width_emu)
                         .map(|()| path.clone())

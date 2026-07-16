@@ -121,7 +121,8 @@ this native route first, loads format-specific references progressively, and
 documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
-XML access, bounded annotated and issue analysis, and atomic mutation batches
+XML access, bounded annotated and issue analysis, typed text formatting, and
+atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
 same typed contract reads unsaved native MCP session state without a private
@@ -138,6 +139,13 @@ carriers atomically update content types and owner relationships and return
 typed creation receipts. Root-scoped native replay artifacts bind an exact
 blank-template part-map fingerprint, typed mutations, and an expected result
 fingerprint; `batch` rejects a wrong base and rolls back a wrong result.
+Rich-text mutation is one closed Rust enum variant rather than a generic
+property envelope. Bold, italic, font family, centipoint size, RGB color, and
+horizontal alignment flow unchanged through Rust, batch JSON, CLI parsing,
+standard MCP schemas, and the Office Skill. Word and Presentation patch run or
+paragraph properties in place. Spreadsheet clones and deduplicates `fonts` and
+`cellXfs`, retaining unknown style data and the document's strict or
+transitional OOXML dialect.
 Native template merge is a typed editor operation, not a generic action
 envelope. The CLI boundary parses bounded JSON data, the format engines replace
 text across Word document/auxiliary parts, Spreadsheet string cells, or

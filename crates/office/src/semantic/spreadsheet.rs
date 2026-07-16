@@ -571,54 +571,120 @@ fn read_styles(package: &NativeOfficePackage) -> UseResult<Vec<BTreeMap<String, 
                 .collect::<BTreeMap<_, _>>()
         })
         .unwrap_or_default();
-    let styles = root
-        .child("cellXfs")
-        .map(|cell_xfs| {
-            cell_xfs
-                .children_named("xf")
-                .map(|style| {
-                    let mut values = BTreeMap::new();
-                    for (attribute, key) in [
-                        ("fontId", "fontId"),
-                        ("fillId", "fillId"),
-                        ("borderId", "borderId"),
-                        ("xfId", "baseStyleId"),
-                    ] {
-                        if let Some(value) = style.attribute(attribute) {
-                            values.insert(key.to_string(), value.to_string());
-                        }
+    // Some legacy producers omit the required fonts collection while still
+    // using fontId=0. Retain the prior tolerant read for that default only;
+    // explicit out-of-range font references fail closed.
+    let fonts = root
+        .child("fonts")
+        .map(|fonts| fonts.children_named("font").map(read_font).collect())
+        .unwrap_or_else(|| vec![BTreeMap::new()]);
+    let mut styles = Vec::new();
+    if let Some(cell_xfs) = root.child("cellXfs") {
+        for style in cell_xfs.children_named("xf") {
+            let mut values = BTreeMap::new();
+            for (attribute, key) in [
+                ("fontId", "fontId"),
+                ("fillId", "fillId"),
+                ("borderId", "borderId"),
+                ("xfId", "baseStyleId"),
+            ] {
+                if let Some(value) = style.attribute(attribute) {
+                    values.insert(key.to_string(), value.to_string());
+                }
+            }
+            if let Some(font_id) = style.attribute("fontId") {
+                let index = font_id.parse::<usize>().map_err(|error| {
+                    semantic_error(
+                        "use.office.spreadsheet_style_invalid",
+                        format!("Spreadsheet style has invalid fontId '{font_id}': {error}"),
+                    )
+                })?;
+                let font = fonts.get(index).ok_or_else(|| {
+                    semantic_error(
+                        "use.office.spreadsheet_style_invalid",
+                        format!("Spreadsheet style references missing font {index}."),
+                    )
+                })?;
+                values.extend(font.clone());
+            }
+            if let Some(number_format_id) = style.attribute("numFmtId") {
+                values.insert("numberFormatId".into(), number_format_id.into());
+                if let Some(format) = custom_formats
+                    .get(number_format_id)
+                    .map(String::as_str)
+                    .or_else(|| built_in_number_format(number_format_id))
+                {
+                    values.insert("numberFormat".into(), format.into());
+                }
+            }
+            if let Some(alignment) = style.child("alignment") {
+                for (attribute, key) in [
+                    ("horizontal", "alignment"),
+                    ("vertical", "verticalAlignment"),
+                    ("wrapText", "wrapText"),
+                    ("textRotation", "textRotation"),
+                ] {
+                    if let Some(value) = alignment.attribute(attribute) {
+                        values.insert(key.into(), value.into());
                     }
-                    if let Some(number_format_id) = style.attribute("numFmtId") {
-                        values.insert("numberFormatId".into(), number_format_id.into());
-                        if let Some(format) = custom_formats
-                            .get(number_format_id)
-                            .map(String::as_str)
-                            .or_else(|| built_in_number_format(number_format_id))
-                        {
-                            values.insert("numberFormat".into(), format.into());
-                        }
-                    }
-                    if let Some(alignment) = style.child("alignment") {
-                        for (attribute, key) in [
-                            ("horizontal", "alignment"),
-                            ("vertical", "verticalAlignment"),
-                            ("wrapText", "wrapText"),
-                            ("textRotation", "textRotation"),
-                        ] {
-                            if let Some(value) = alignment.attribute(attribute) {
-                                values.insert(key.into(), value.into());
-                            }
-                        }
-                    }
-                    values
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+                }
+            }
+            styles.push(values);
+        }
+    }
     if styles.is_empty() {
         Ok(vec![BTreeMap::new()])
     } else {
         Ok(styles)
+    }
+}
+
+fn read_font(font: &XmlElement) -> BTreeMap<String, String> {
+    let mut values = BTreeMap::new();
+    for (child_name, key) in [("b", "bold"), ("i", "italic")] {
+        if let Some(property) = font.child(child_name) {
+            values.insert(key.into(), spreadsheet_bool_value(property).to_string());
+        }
+    }
+    if let Some(name) = font.child("name").and_then(|name| name.attribute("val")) {
+        values.insert("font".into(), name.into());
+    }
+    if let Some(size) = font
+        .child("sz")
+        .and_then(|size| size.attribute("val"))
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+    {
+        values.insert("size".into(), format!("{size}pt"));
+    }
+    if let Some(rgb) = font
+        .child("color")
+        .and_then(|color| color.attribute("rgb"))
+        .and_then(normalize_font_rgb)
+    {
+        values.insert("color".into(), rgb);
+    }
+    values
+}
+
+fn spreadsheet_bool_value(element: &XmlElement) -> bool {
+    !matches!(
+        element
+            .attribute("val")
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("false" | "0" | "off" | "no")
+    )
+}
+
+fn normalize_font_rgb(value: &str) -> Option<String> {
+    if !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    match value.len() {
+        6 => Some(value.to_ascii_uppercase()),
+        8 => Some(value[2..].to_ascii_uppercase()),
+        _ => None,
     }
 }
 

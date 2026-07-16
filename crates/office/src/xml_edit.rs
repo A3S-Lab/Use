@@ -205,6 +205,95 @@ pub(crate) fn apply_patches(
     Ok(edited)
 }
 
+/// Rewrites only an element start tag while retaining every unmentioned
+/// qualified attribute and the original element content.
+pub(crate) fn patch_start_tag_attributes(
+    part: &LosslessXmlPart,
+    element: &IndexedXmlElement,
+    updates: &BTreeMap<String, Option<String>>,
+) -> UseResult<Vec<u8>> {
+    if updates.is_empty() {
+        return Ok(part.raw().to_vec());
+    }
+    let mut attributes = element.qualified_attributes.clone();
+    for (name, value) in updates {
+        if let Some(value) = value {
+            attributes.insert(name.clone(), value.clone());
+        } else {
+            attributes.remove(name);
+        }
+    }
+    let attributes = attributes
+        .into_iter()
+        .map(|(name, value)| format!(" {name}=\"{}\"", escape_attribute(&value)))
+        .collect::<String>();
+    let terminator = if element.empty { "/>" } else { ">" };
+    apply_patches(
+        part,
+        vec![XmlPatch::new(
+            element.start_tag_range.clone(),
+            format!("<{}{attributes}{terminator}", element.qualified_name),
+        )],
+    )
+}
+
+/// Returns one complete element with updated start-tag attributes while
+/// preserving its original child bytes. This is useful when a caller needs to
+/// combine several non-overlapping element replacements in one patch set.
+pub(crate) fn element_with_updated_attributes(
+    part: &LosslessXmlPart,
+    element: &IndexedXmlElement,
+    updates: &BTreeMap<String, Option<String>>,
+) -> UseResult<Vec<u8>> {
+    let mut attributes = element.qualified_attributes.clone();
+    for (name, value) in updates {
+        if let Some(value) = value {
+            attributes.insert(name.clone(), value.clone());
+        } else {
+            attributes.remove(name);
+        }
+    }
+    let attributes = attributes
+        .into_iter()
+        .map(|(name, value)| format!(" {name}=\"{}\"", escape_attribute(&value)))
+        .collect::<String>();
+    if element.empty {
+        return Ok(format!("<{}{attributes}/>", element.qualified_name).into_bytes());
+    }
+    let content = part
+        .parse_bytes()
+        .get(element.content_range.clone())
+        .ok_or_else(|| edit_error(part.name(), "XML element content range is invalid."))?;
+    let mut output = format!("<{}{attributes}>", element.qualified_name).into_bytes();
+    output.extend_from_slice(content);
+    output.extend_from_slice(format!("</{}>", element.qualified_name).as_bytes());
+    Ok(output)
+}
+
+/// Inserts a direct child before the first child whose local name belongs to
+/// `later_names`, or appends it when no later schema member exists.
+pub(crate) fn insert_ordered_child(
+    part: &LosslessXmlPart,
+    parent: &IndexedXmlElement,
+    child: impl AsRef<[u8]>,
+    later_names: &[&str],
+) -> UseResult<Vec<u8>> {
+    if parent.empty {
+        return insert_child(part, parent, child);
+    }
+    let position = parent
+        .children
+        .iter()
+        .find(|existing| later_names.contains(&existing.local_name.as_str()))
+        .map_or(parent.content_range.end, |existing| {
+            existing.full_range.start
+        });
+    apply_patches(
+        part,
+        vec![XmlPatch::new(position..position, child.as_ref().to_vec())],
+    )
+}
+
 pub(crate) fn relocate_element(
     part: &LosslessXmlPart,
     element: &IndexedXmlElement,
@@ -286,6 +375,10 @@ pub(crate) fn element_fragment<'a>(
     part.parse_bytes()
         .get(element.full_range.clone())
         .ok_or_else(|| edit_error(part.name(), "XML element byte range is invalid."))
+}
+
+pub(crate) fn escape_attribute(value: &str) -> String {
+    quick_xml::escape::escape(value).into_owned()
 }
 
 pub(crate) fn replace_text_descendants(

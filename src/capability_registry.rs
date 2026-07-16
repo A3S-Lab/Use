@@ -382,18 +382,36 @@ mod tests {
 
         assert_eq!(browser.origin, CapabilityOrigin::BuiltIn);
         assert_eq!(office.origin, CapabilityOrigin::BuiltIn);
-        assert!(browser.surfaces.iter().any(|surface| surface == "skill"));
-        assert!(browser
-            .skills
-            .iter()
-            .any(|skill| skill.path.ends_with("a3s-use-browser/SKILL.md")));
-        assert!(browser.skills.iter().all(|skill| skill.sha256.len() == 64));
-        assert!(office.surfaces.iter().any(|surface| surface == "skill"));
-        assert!(office
-            .skills
-            .iter()
-            .any(|skill| skill.path.ends_with("a3s-use-office/SKILL.md")));
-        assert!(office.skills.iter().all(|skill| skill.sha256.len() == 64));
+        #[cfg(feature = "browser")]
+        {
+            assert!(browser.surfaces.iter().any(|surface| surface == "skill"));
+            assert!(browser
+                .skills
+                .iter()
+                .any(|skill| skill.path.ends_with("a3s-use-browser/SKILL.md")));
+            assert!(browser.skills.iter().all(|skill| skill.sha256.len() == 64));
+        }
+        #[cfg(not(feature = "browser"))]
+        {
+            assert!(!browser.enabled);
+            assert!(browser.surfaces.is_empty());
+            assert!(browser.skills.is_empty());
+        }
+        #[cfg(feature = "office")]
+        {
+            assert!(office.surfaces.iter().any(|surface| surface == "skill"));
+            assert!(office
+                .skills
+                .iter()
+                .any(|skill| skill.path.ends_with("a3s-use-office/SKILL.md")));
+            assert!(office.skills.iter().all(|skill| skill.sha256.len() == 64));
+        }
+        #[cfg(not(feature = "office"))]
+        {
+            assert!(!office.enabled);
+            assert!(office.surfaces.is_empty());
+            assert!(office.skills.is_empty());
+        }
         assert_eq!(snapshot.revision.len(), 64);
     }
 

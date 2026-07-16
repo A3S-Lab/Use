@@ -1,7 +1,8 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
-    NativeOfficeImage, NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
-    NativeOfficePartType, SpreadsheetCellValue,
+    NativeOfficeHorizontalAlignment, NativeOfficeImage, NativeOfficeInsertPosition,
+    NativeOfficeIssueFilter, NativeOfficeMutation, NativeOfficePartType, NativeOfficeRgbColor,
+    NativeOfficeTextFormat, SpreadsheetCellValue,
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -192,6 +193,69 @@ impl From<OfficeCellValue> for SpreadsheetCellValue {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum OfficeHorizontalAlignment {
+    Left,
+    Center,
+    Right,
+    Justify,
+}
+
+impl From<OfficeHorizontalAlignment> for NativeOfficeHorizontalAlignment {
+    fn from(value: OfficeHorizontalAlignment) -> Self {
+        match value {
+            OfficeHorizontalAlignment::Left => Self::Left,
+            OfficeHorizontalAlignment::Center => Self::Center,
+            OfficeHorizontalAlignment::Right => Self::Right,
+            OfficeHorizontalAlignment::Justify => Self::Justify,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeRgbColor {
+    /// Red channel from 0 through 255.
+    red: u8,
+    /// Green channel from 0 through 255.
+    green: u8,
+    /// Blue channel from 0 through 255.
+    blue: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeTextFormat {
+    /// Explicitly enable or disable bold text.
+    bold: Option<bool>,
+    /// Explicitly enable or disable italic text.
+    italic: Option<bool>,
+    /// Font family applied to the supported script slots.
+    font_family: Option<String>,
+    /// Exact font size in centipoints (1/100 point), from 100 through 40000.
+    font_size_centipoints: Option<u32>,
+    /// Exact 24-bit RGB text color.
+    text_color: Option<OfficeRgbColor>,
+    /// Paragraph or cell horizontal alignment.
+    alignment: Option<OfficeHorizontalAlignment>,
+}
+
+impl From<OfficeTextFormat> for NativeOfficeTextFormat {
+    fn from(value: OfficeTextFormat) -> Self {
+        Self {
+            bold: value.bold,
+            italic: value.italic,
+            font_family: value.font_family,
+            font_size_centipoints: value.font_size_centipoints,
+            text_color: value
+                .text_color
+                .map(|color| NativeOfficeRgbColor::new(color.red, color.green, color.blue)),
+            alignment: value.alignment.map(Into::into),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum OfficeInsertPosition {
@@ -290,6 +354,10 @@ pub(super) enum OfficeMutation {
     SetText {
         path: String,
         text: String,
+    },
+    SetTextFormat {
+        path: String,
+        format: OfficeTextFormat,
     },
     SetTableColumnWidth {
         path: String,
@@ -406,6 +474,10 @@ impl OfficeMutation {
     pub(super) fn into_native(self) -> UseResult<NativeOfficeMutation> {
         Ok(match self {
             Self::SetText { path, text } => NativeOfficeMutation::SetText { path, text },
+            Self::SetTextFormat { path, format } => NativeOfficeMutation::SetTextFormat {
+                path,
+                format: format.into(),
+            },
             Self::SetTableColumnWidth { path, width_emu } => {
                 NativeOfficeMutation::SetTableColumnWidth { path, width_emu }
             }

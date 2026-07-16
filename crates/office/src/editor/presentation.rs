@@ -1,14 +1,17 @@
+use std::collections::BTreeMap;
+
 use a3s_use_core::UseResult;
 
 use super::{
     editor_error, escape_attribute, node_not_found, parse_segments, prefix,
-    preserve_space_attribute, qualified,
+    preserve_space_attribute, qualified, NativeOfficeHorizontalAlignment, NativeOfficeTextFormat,
 };
 use crate::semantic::{NativeOfficeDocument, OfficeNodeType};
 use crate::xml_edit::{
-    escape_text, index_xml, insert_child, replace_text_descendants, IndexedXmlElement,
+    apply_patches, escape_text, index_xml, insert_child, insert_ordered_child,
+    patch_start_tag_attributes, replace_text_descendants, IndexedXmlElement, XmlPatch,
 };
-use crate::{DocumentKind, NativeOfficePackage};
+use crate::{DocumentKind, LosslessXmlPart, NativeOfficePackage};
 
 mod arrange;
 mod table;
@@ -16,6 +19,31 @@ mod table_xml;
 mod text;
 
 pub(super) use arrange::{copy_node, move_node, swap_nodes};
+
+const CHARACTER_PROPERTY_ORDER: &[&str] = &[
+    "ln",
+    "noFill",
+    "solidFill",
+    "gradFill",
+    "blipFill",
+    "pattFill",
+    "grpFill",
+    "effectLst",
+    "effectDag",
+    "highlight",
+    "uLnTx",
+    "uLn",
+    "uFillTx",
+    "uFill",
+    "latin",
+    "ea",
+    "cs",
+    "sym",
+    "hlinkClick",
+    "hlinkMouseOver",
+    "rtl",
+    "extLst",
+];
 
 pub(super) fn add_table(
     package: &mut NativeOfficePackage,
@@ -258,6 +286,288 @@ pub(super) fn set_text(package: &mut NativeOfficePackage, path: &str, text: &str
     }
     let edited = replace_text_descendants(&part, target, "t", text, None)?;
     package.set_part(part_name, edited)
+}
+
+pub(super) fn set_text_format(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    format: &NativeOfficeTextFormat,
+) -> UseResult<()> {
+    let snapshot = NativeOfficeDocument::from_package(package.clone())?;
+    let requested = snapshot.get(path, 0)?;
+    match requested.node_type {
+        OfficeNodeType::Paragraph if format.has_character_properties() => {
+            return Err(editor_error(
+                "use.office.mutation_type_unsupported",
+                "Presentation paragraph paths accept alignment only; address a run path for character formatting.",
+            ));
+        }
+        OfficeNodeType::Run if format.alignment.is_some() => {
+            return Err(editor_error(
+                "use.office.mutation_type_unsupported",
+                "Presentation run paths accept character formatting only; address the paragraph for alignment.",
+            ));
+        }
+        OfficeNodeType::Paragraph | OfficeNodeType::Run => {}
+        _ => {
+            return Err(editor_error(
+                "use.office.mutation_type_unsupported",
+                "Native Presentation text formatting supports paragraph and run paths.",
+            ));
+        }
+    }
+    let slide_path = path
+        .split('/')
+        .find(|segment| segment.starts_with("slide["))
+        .map(|segment| format!("/{segment}"))
+        .ok_or_else(|| {
+            editor_error(
+                "use.office.mutation_path_unsupported",
+                "Presentation text formatting requires a slide element path.",
+            )
+        })?;
+    let slide = snapshot.get(&slide_path, 0)?;
+    let part_name = slide.format.get("part").ok_or_else(|| {
+        editor_error(
+            "use.office.presentation_slide_invalid",
+            "Presentation semantic slide has no source part.",
+        )
+    })?;
+    let original = package.xml_part(part_name)?;
+    let mut bytes = original.raw().to_vec();
+    if let Some(alignment) = format.alignment {
+        bytes = set_presentation_alignment(part_name, bytes, path, alignment)?;
+    }
+    if format.has_character_properties() {
+        bytes = ensure_character_properties(part_name, bytes, path)?;
+        if let Some(bold) = format.bold {
+            bytes =
+                set_character_attribute(part_name, bytes, path, "b", if bold { "1" } else { "0" })?;
+        }
+        if let Some(italic) = format.italic {
+            bytes = set_character_attribute(
+                part_name,
+                bytes,
+                path,
+                "i",
+                if italic { "1" } else { "0" },
+            )?;
+        }
+        if let Some(size) = format.font_size_centipoints {
+            bytes = set_character_attribute(part_name, bytes, path, "sz", &size.to_string())?;
+        }
+        if let Some(family) = &format.font_family {
+            for name in ["latin", "ea", "cs"] {
+                bytes = set_character_font(part_name, bytes, path, name, family)?;
+            }
+        }
+        if let Some(color) = format.text_color {
+            bytes = set_character_color(part_name, bytes, path, &color.hex())?;
+        }
+    }
+    package.set_part(part_name, bytes)
+}
+
+fn set_presentation_alignment(
+    part_name: &str,
+    bytes: Vec<u8>,
+    path: &str,
+    alignment: NativeOfficeHorizontalAlignment,
+) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(part_name.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let paragraph = locate_path(&index, path)?;
+    let properties = if let Some(properties) = paragraph.child("pPr", 1) {
+        properties
+    } else {
+        let tag = qualified(prefix(&paragraph.qualified_name), "pPr");
+        let edited = apply_patches(
+            &part,
+            vec![XmlPatch::new(
+                paragraph.content_range.start..paragraph.content_range.start,
+                format!("<{tag}/>"),
+            )],
+        )?;
+        return set_presentation_alignment(part_name, edited, path, alignment);
+    };
+    let value = match alignment {
+        NativeOfficeHorizontalAlignment::Left => "l",
+        NativeOfficeHorizontalAlignment::Center => "ctr",
+        NativeOfficeHorizontalAlignment::Right => "r",
+        NativeOfficeHorizontalAlignment::Justify => "just",
+    };
+    patch_start_tag_attributes(
+        &part,
+        properties,
+        &BTreeMap::from([("algn".to_string(), Some(value.to_string()))]),
+    )
+}
+
+fn ensure_character_properties(part_name: &str, bytes: Vec<u8>, path: &str) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(part_name.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let run = locate_path(&index, path)?;
+    if run.child("rPr", 1).is_some() {
+        return Ok(part.raw().to_vec());
+    }
+    let tag = qualified(prefix(&run.qualified_name), "rPr");
+    apply_patches(
+        &part,
+        vec![XmlPatch::new(
+            run.content_range.start..run.content_range.start,
+            format!("<{tag}/>"),
+        )],
+    )
+}
+
+fn set_character_attribute(
+    part_name: &str,
+    bytes: Vec<u8>,
+    path: &str,
+    name: &str,
+    value: &str,
+) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(part_name.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let run = locate_path(&index, path)?;
+    let properties = run.child("rPr", 1).ok_or_else(|| {
+        editor_error(
+            "use.office.presentation_run_properties_missing",
+            format!("Presentation run '{path}' has no properties element."),
+        )
+    })?;
+    patch_start_tag_attributes(
+        &part,
+        properties,
+        &BTreeMap::from([(name.to_string(), Some(value.to_string()))]),
+    )
+}
+
+fn set_character_font(
+    part_name: &str,
+    bytes: Vec<u8>,
+    path: &str,
+    name: &str,
+    family: &str,
+) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(part_name.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let run = locate_path(&index, path)?;
+    let properties = run.child("rPr", 1).ok_or_else(|| {
+        editor_error(
+            "use.office.presentation_run_properties_missing",
+            format!("Presentation run '{path}' has no properties element."),
+        )
+    })?;
+    if let Some(font) = properties.child(name, 1) {
+        return patch_start_tag_attributes(
+            &part,
+            font,
+            &BTreeMap::from([("typeface".to_string(), Some(family.to_string()))]),
+        );
+    }
+    let tag = qualified(prefix(&properties.qualified_name), name);
+    insert_character_property(
+        &part,
+        properties,
+        name,
+        format!(
+            "<{tag} typeface=\"{}\"/>",
+            crate::xml_edit::escape_attribute(family)
+        ),
+    )
+}
+
+fn set_character_color(
+    part_name: &str,
+    bytes: Vec<u8>,
+    path: &str,
+    color: &str,
+) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(part_name.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let run = locate_path(&index, path)?;
+    let properties = run.child("rPr", 1).ok_or_else(|| {
+        editor_error(
+            "use.office.presentation_run_properties_missing",
+            format!("Presentation run '{path}' has no properties element."),
+        )
+    })?;
+    let prefix = prefix(&properties.qualified_name);
+    let fill_tag = qualified(prefix, "solidFill");
+    let color_tag = qualified(prefix, "srgbClr");
+    let fragment = format!("<{fill_tag}><{color_tag} val=\"{color}\"/></{fill_tag}>");
+    if let Some(fill) = properties.child("solidFill", 1) {
+        if let Some(existing_color) = fill.child("srgbClr", 1) {
+            return patch_start_tag_attributes(
+                &part,
+                existing_color,
+                &BTreeMap::from([("val".to_string(), Some(color.to_string()))]),
+            );
+        }
+        if let Some(existing_color) = fill.children.first() {
+            let replacement = if existing_color.empty {
+                format!("<{color_tag} val=\"{color}\"/>").into_bytes()
+            } else {
+                let content = part
+                    .parse_bytes()
+                    .get(existing_color.content_range.clone())
+                    .ok_or_else(|| {
+                        editor_error(
+                            "use.office.presentation_color_invalid",
+                            "Presentation text color content range is invalid.",
+                        )
+                    })?;
+                let mut replacement = format!("<{color_tag} val=\"{color}\">").into_bytes();
+                replacement.extend_from_slice(content);
+                replacement.extend_from_slice(format!("</{color_tag}>").as_bytes());
+                replacement
+            };
+            return apply_patches(
+                &part,
+                vec![XmlPatch::new(
+                    existing_color.full_range.clone(),
+                    replacement,
+                )],
+            );
+        }
+        return insert_child(&part, fill, format!("<{color_tag} val=\"{color}\"/>"));
+    }
+    if let Some(fill) = properties.children.iter().find(|child| {
+        matches!(
+            child.local_name.as_str(),
+            "noFill" | "gradFill" | "blipFill" | "pattFill" | "grpFill"
+        )
+    }) {
+        return apply_patches(
+            &part,
+            vec![XmlPatch::new(fill.full_range.clone(), fragment)],
+        );
+    }
+    insert_character_property(&part, properties, "solidFill", fragment)
+}
+
+fn insert_character_property(
+    part: &LosslessXmlPart,
+    properties: &IndexedXmlElement,
+    name: &str,
+    fragment: String,
+) -> UseResult<Vec<u8>> {
+    let position = CHARACTER_PROPERTY_ORDER
+        .iter()
+        .position(|candidate| *candidate == name)
+        .ok_or_else(|| {
+            editor_error(
+                "use.office.presentation_run_property_invalid",
+                format!("Presentation run property '{name}' has no schema position."),
+            )
+        })?;
+    insert_ordered_child(
+        part,
+        properties,
+        fragment,
+        &CHARACTER_PROPERTY_ORDER[position + 1..],
+    )
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {

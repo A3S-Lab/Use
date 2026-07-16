@@ -27,6 +27,20 @@ caches, and request application recalculation. The native engine does not yet
 provide a complete formula evaluator. Check `formula_not_evaluated` and
 `formula_eval_error` issue records before delivery.
 
+## Cell Text Formatting
+
+```bash
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --font-family Aptos --font-size 11.5 --text-color 0066CC --align center --json
+a3s use office native set workbook.xlsx /Sheet1/A2 --text 'Total' --bold true --align right --json
+```
+
+Formatting accepts one cell or a bounded rectangular range and may be combined
+with one content write. It auto-creates empty styled cells and deduplicates
+OOXML font and cell-style records. The native typed subset covers bold, italic,
+font family, point size, RGB text color, and horizontal alignment. Number
+formats, fills, borders, vertical alignment, wrapping, and conditional styles
+remain separate work.
+
 ## Structure
 
 ```bash

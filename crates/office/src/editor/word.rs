@@ -1,11 +1,14 @@
+use std::collections::BTreeMap;
+
 use a3s_use_core::UseResult;
 
 use super::{
     editor_error, node_not_found, parse_segments, prefix, preserve_space_attribute, qualified,
-    validate_mutation_path,
+    validate_mutation_path, NativeOfficeHorizontalAlignment, NativeOfficeTextFormat,
 };
 use crate::xml_edit::{
-    apply_patches, index_xml, insert_child, replace_text_descendants, IndexedXmlElement, XmlPatch,
+    apply_patches, index_xml, insert_child, insert_ordered_child, patch_start_tag_attributes,
+    replace_text_descendants, IndexedXmlElement, XmlPatch,
 };
 use crate::{DocumentKind, LosslessXmlPart, NativeOfficePackage};
 
@@ -19,6 +22,61 @@ const DEFAULT_COLUMN_WIDTH: u32 = 2_400;
 const MAX_TABLE_ROWS: usize = 10_000;
 const MAX_TABLE_COLUMNS: usize = 63;
 const MAX_TABLE_CELLS: usize = 100_000;
+
+const RUN_PROPERTY_ORDER: &[&str] = &[
+    "rStyle",
+    "rFonts",
+    "b",
+    "bCs",
+    "i",
+    "iCs",
+    "caps",
+    "smallCaps",
+    "strike",
+    "dstrike",
+    "outline",
+    "shadow",
+    "emboss",
+    "imprint",
+    "noProof",
+    "snapToGrid",
+    "vanish",
+    "webHidden",
+    "color",
+    "spacing",
+    "w",
+    "kern",
+    "position",
+    "sz",
+    "szCs",
+    "highlight",
+    "u",
+    "effect",
+    "bdr",
+    "shd",
+    "fitText",
+    "vertAlign",
+    "rtl",
+    "cs",
+    "em",
+    "lang",
+    "eastAsianLayout",
+    "specVanish",
+    "oMath",
+    "rPrChange",
+];
+
+const PARAGRAPH_PROPERTIES_AFTER_ALIGNMENT: &[&str] = &[
+    "textDirection",
+    "textAlignment",
+    "textboxTightWrap",
+    "outlineLvl",
+    "divId",
+    "cnfStyle",
+    "rPr",
+    "sectPr",
+    "pPrChange",
+];
 
 pub(super) fn add_paragraph(
     package: &mut NativeOfficePackage,
@@ -110,6 +168,251 @@ pub(super) fn set_text(package: &mut NativeOfficePackage, path: &str, text: &str
     };
     let edited = replace_text_descendants(&part, target, "t", text, insertion)?;
     package.set_part(DOCUMENT_PART, edited)
+}
+
+pub(super) fn set_text_format(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    format: &NativeOfficeTextFormat,
+) -> UseResult<()> {
+    require_word(package, "set-text-format")?;
+    validate_mutation_path(path)?;
+    if format
+        .font_size_centipoints
+        .is_some_and(|size| size % 50 != 0)
+    {
+        return Err(editor_error(
+            "use.office.font_size_unsupported",
+            "Word run font sizes must use exact half-point increments (50 centipoints).",
+        ));
+    }
+
+    let original = package.xml_part(DOCUMENT_PART)?;
+    let index = index_xml(&original)?;
+    let target = locate_word_path(&index, path)?;
+    match target.local_name.as_str() {
+        "p" if format.has_character_properties() => {
+            return Err(editor_error(
+                "use.office.mutation_type_unsupported",
+                "Word paragraph paths accept alignment only; address a run path for character formatting.",
+            ));
+        }
+        "r" if format.alignment.is_some() => {
+            return Err(editor_error(
+                "use.office.mutation_type_unsupported",
+                "Word run paths accept character formatting only; address the paragraph for alignment.",
+            ));
+        }
+        "p" | "r" => {}
+        name => {
+            return Err(editor_error(
+                "use.office.mutation_type_unsupported",
+                format!("Word element '{name}' does not support native text formatting."),
+            ));
+        }
+    }
+
+    let mut bytes = original.raw().to_vec();
+    if let Some(alignment) = format.alignment {
+        bytes = set_paragraph_alignment(bytes, path, alignment)?;
+    }
+    if format.has_character_properties() {
+        bytes = ensure_run_properties(bytes, path)?;
+        if let Some(bold) = format.bold {
+            bytes = set_run_boolean(bytes, path, "b", bold)?;
+            bytes = set_run_boolean(bytes, path, "bCs", bold)?;
+        }
+        if let Some(italic) = format.italic {
+            bytes = set_run_boolean(bytes, path, "i", italic)?;
+            bytes = set_run_boolean(bytes, path, "iCs", italic)?;
+        }
+        if let Some(family) = &format.font_family {
+            bytes = set_run_fonts(bytes, path, family)?;
+        }
+        if let Some(size) = format.font_size_centipoints {
+            let half_points = size / 50;
+            bytes = set_run_value(bytes, path, "sz", &half_points.to_string(), &[])?;
+            bytes = set_run_value(bytes, path, "szCs", &half_points.to_string(), &[])?;
+        }
+        if let Some(color) = format.text_color {
+            bytes = set_run_value(
+                bytes,
+                path,
+                "color",
+                &color.hex(),
+                &["themeColor", "themeTint", "themeShade"],
+            )?;
+        }
+    }
+    package.set_part(DOCUMENT_PART, bytes)
+}
+
+fn set_paragraph_alignment(
+    bytes: Vec<u8>,
+    path: &str,
+    alignment: NativeOfficeHorizontalAlignment,
+) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(DOCUMENT_PART.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let paragraph = locate_word_path(&index, path)?;
+    let paragraph_prefix = prefix(&paragraph.qualified_name);
+    let properties = if let Some(properties) = paragraph.child("pPr", 1) {
+        properties
+    } else {
+        let tag = qualified(paragraph_prefix, "pPr");
+        let edited = apply_patches(
+            &part,
+            vec![XmlPatch::new(
+                paragraph.content_range.start..paragraph.content_range.start,
+                format!("<{tag}/>"),
+            )],
+        )?;
+        return set_paragraph_alignment(edited, path, alignment);
+    };
+    let value = match alignment {
+        NativeOfficeHorizontalAlignment::Left => "left",
+        NativeOfficeHorizontalAlignment::Center => "center",
+        NativeOfficeHorizontalAlignment::Right => "right",
+        NativeOfficeHorizontalAlignment::Justify => "both",
+    };
+    if let Some(justification) = properties.child("jc", 1) {
+        return patch_word_value_attribute(&part, justification, value, &[]);
+    }
+    let tag = qualified(prefix(&properties.qualified_name), "jc");
+    let attribute = qualified(prefix(&properties.qualified_name), "val");
+    insert_ordered_child(
+        &part,
+        properties,
+        format!("<{tag} {attribute}=\"{value}\"/>"),
+        PARAGRAPH_PROPERTIES_AFTER_ALIGNMENT,
+    )
+}
+
+fn ensure_run_properties(bytes: Vec<u8>, path: &str) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(DOCUMENT_PART.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let run = locate_word_path(&index, path)?;
+    if run.child("rPr", 1).is_some() {
+        return Ok(part.raw().to_vec());
+    }
+    let tag = qualified(prefix(&run.qualified_name), "rPr");
+    apply_patches(
+        &part,
+        vec![XmlPatch::new(
+            run.content_range.start..run.content_range.start,
+            format!("<{tag}/>"),
+        )],
+    )
+}
+
+fn set_run_boolean(bytes: Vec<u8>, path: &str, name: &str, value: bool) -> UseResult<Vec<u8>> {
+    set_run_value(bytes, path, name, if value { "1" } else { "0" }, &[])
+}
+
+fn set_run_fonts(bytes: Vec<u8>, path: &str, family: &str) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(DOCUMENT_PART.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let run = locate_word_path(&index, path)?;
+    let properties = run.child("rPr", 1).ok_or_else(|| {
+        editor_error(
+            "use.office.word_run_properties_missing",
+            format!("Word run '{path}' has no properties element."),
+        )
+    })?;
+    let property_prefix = prefix(&properties.qualified_name);
+    if let Some(fonts) = properties.child("rFonts", 1) {
+        let mut updates = ["ascii", "hAnsi", "eastAsia", "cs"]
+            .into_iter()
+            .map(|name| (qualified(property_prefix, name), Some(family.to_string())))
+            .collect::<BTreeMap<_, _>>();
+        for name in ["asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"] {
+            updates.insert(qualified(property_prefix, name), None);
+        }
+        return patch_start_tag_attributes(&part, fonts, &updates);
+    }
+    let tag = qualified(property_prefix, "rFonts");
+    let attributes = ["ascii", "hAnsi", "eastAsia", "cs"]
+        .into_iter()
+        .map(|name| {
+            format!(
+                " {}=\"{}\"",
+                qualified(property_prefix, name),
+                crate::xml_edit::escape_attribute(family)
+            )
+        })
+        .collect::<String>();
+    insert_run_property(&part, properties, "rFonts", format!("<{tag}{attributes}/>"))
+}
+
+fn set_run_value(
+    bytes: Vec<u8>,
+    path: &str,
+    name: &str,
+    value: &str,
+    remove_attributes: &[&str],
+) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(DOCUMENT_PART.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let run = locate_word_path(&index, path)?;
+    let properties = run.child("rPr", 1).ok_or_else(|| {
+        editor_error(
+            "use.office.word_run_properties_missing",
+            format!("Word run '{path}' has no properties element."),
+        )
+    })?;
+    if let Some(property) = properties.child(name, 1) {
+        return patch_word_value_attribute(&part, property, value, remove_attributes);
+    }
+    let property_prefix = prefix(&properties.qualified_name);
+    let tag = qualified(property_prefix, name);
+    let attribute = qualified(property_prefix, "val");
+    insert_run_property(
+        &part,
+        properties,
+        name,
+        format!(
+            "<{tag} {attribute}=\"{}\"/>",
+            crate::xml_edit::escape_attribute(value)
+        ),
+    )
+}
+
+fn patch_word_value_attribute(
+    part: &LosslessXmlPart,
+    element: &IndexedXmlElement,
+    value: &str,
+    remove_attributes: &[&str],
+) -> UseResult<Vec<u8>> {
+    let property_prefix = prefix(&element.qualified_name);
+    let mut updates =
+        BTreeMap::from([(qualified(property_prefix, "val"), Some(value.to_string()))]);
+    for name in remove_attributes {
+        updates.insert(qualified(property_prefix, name), None);
+    }
+    patch_start_tag_attributes(part, element, &updates)
+}
+
+fn insert_run_property(
+    part: &LosslessXmlPart,
+    properties: &IndexedXmlElement,
+    name: &str,
+    fragment: String,
+) -> UseResult<Vec<u8>> {
+    let position = RUN_PROPERTY_ORDER
+        .iter()
+        .position(|candidate| *candidate == name)
+        .ok_or_else(|| {
+            editor_error(
+                "use.office.word_run_property_invalid",
+                format!("Word run property '{name}' has no schema position."),
+            )
+        })?;
+    insert_ordered_child(
+        part,
+        properties,
+        fragment,
+        &RUN_PROPERTY_ORDER[position + 1..],
+    )
 }
 
 pub(super) fn add_table(

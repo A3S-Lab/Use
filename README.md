@@ -64,6 +64,8 @@ a3s use office native view deck.pptx svg --output deck.svg --json
 a3s use office native view report.docx screenshot --output report.png --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
+a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --font-family Aptos --font-size 14 --text-color 123456 --json
+a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native add report.docx /body --type paragraph --text 'More' --json
 a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
 a3s use office native add report.docx /body --type picture --input logo.png --alt 'A3S logo' --width 320 --json
@@ -102,6 +104,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   `agent-browser` 0.31.2
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
+  typed cross-format text formatting,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
   bounded typed issue diagnostics, Browser-injected semantic PNG screenshots,
@@ -271,7 +274,12 @@ admission, byte-preserving XML, content types, a safe relationship graph,
 stable selectors, semantic `get`, `query`, `text`, `outline`, and `stats`
 reads, bounded `issues` reports, safe blank-document creation, and
 loss-preserving text replacement for existing Word, Spreadsheet, and
-Presentation nodes. It can safely inspect
+Presentation nodes. Typed rich-text mutation covers bold, italic, font family,
+exact centipoint font size, RGB text color, and horizontal alignment. Word and
+Presentation apply character properties to run paths and alignment to paragraph
+paths; Spreadsheet applies the same contract to cells or bounded A1 ranges,
+creating and deduplicating OOXML font and cell-style records when necessary. It
+can safely inspect
 existing XML parts and replace non-OPC-metadata XML parts while preserving the
 root QName and validating the final document. Known chart, header, and footer
 part carriers can be created together with their content type and owner
@@ -318,7 +326,7 @@ provider because it captures the native semantic HTML through the existing
 Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
-typed add/set/remove/move/copy/swap operations, constrained raw XML access,
+typed add/set/remove/move/copy/swap and rich-text operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML and SVG are
@@ -382,6 +390,15 @@ a3s use office native add-part deck.pptx '/slide[1]' --type chart --json
 # Replace text in place or save to a separate OOXML document.
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native set report.xlsx /Sheet1/B2 --text '42' --output updated.xlsx --json
+
+# Apply typed text formatting. Word and Presentation character properties use
+# run paths; their alignment uses paragraph paths. Word sizes must be exact
+# half-point increments. Spreadsheet ranges may combine content and formatting.
+a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --font-family Aptos --font-size 14 --text-color 123456 --json
+a3s use office native set report.docx '/body/p[1]' --align center --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --font-size 11.5 --text-color 0066CC --align center --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --italic true --font-family 'Aptos Display' --font-size 20 --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
 
 # Preserve Spreadsheet value types; formula storage requests application recalculation.
 a3s use office native set workbook.xlsx /Sheet1/A1 --number 42.5 --json
@@ -694,7 +711,29 @@ relationship. It is not visible in document layout until a typed operation or
 explicit XML replacement references the returned relationship ID from the
 owner XML.
 
-Typed Spreadsheet batch values use an explicit nested type, for example:
+Typed formatting is batchable through the same public mutation contract:
+
+```json
+{
+  "operation": "set-text-format",
+  "path": "/Sheet1/A1:C1",
+  "format": {
+    "bold": true,
+    "fontFamily": "Aptos",
+    "fontSizeCentipoints": 1150,
+    "textColor": { "red": 0, "green": 102, "blue": 204 },
+    "alignment": "center"
+  }
+}
+```
+
+`fontSizeCentipoints` is an integer count of 1/100 point; the CLI accepts the
+equivalent point value through `--font-size`. An empty `format` object, unknown
+properties, invalid RGB components, and unsupported target/property
+combinations fail the whole batch. Spreadsheet style records are cloned and
+deduplicated without replacing unrelated style children or attributes.
+
+Typed Spreadsheet content values use an explicit nested type, for example:
 
 ```json
 {
@@ -717,8 +756,9 @@ callers:
 
 ```rust,no_run
 use a3s_use_office::{
-    NativeOfficeDocument, NativeOfficeEditor, NativeOfficeInsertPosition,
-    NativeOfficePackage, NativeOfficeRenderFormat, NativeOfficeReplayArtifact,
+    NativeOfficeDocument, NativeOfficeEditor, NativeOfficeHorizontalAlignment,
+    NativeOfficeInsertPosition, NativeOfficePackage, NativeOfficeRenderFormat,
+    NativeOfficeReplayArtifact, NativeOfficeRgbColor, NativeOfficeTextFormat,
 };
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
@@ -745,6 +785,23 @@ println!("{} {}", raw.part, raw.sha256);
 let header = editor.add_part("/", a3s_use_office::NativeOfficePartType::Header)?;
 println!("{} {}", header.part, header.relationship_id);
 editor.set_text("/body/p[1]", "Updated")?;
+editor.set_text_format(
+    "/body/p[1]/r[1]",
+    NativeOfficeTextFormat {
+        bold: Some(true),
+        font_family: Some("Aptos".into()),
+        font_size_centipoints: Some(1400),
+        text_color: Some(NativeOfficeRgbColor::new(0x12, 0x34, 0x56)),
+        ..NativeOfficeTextFormat::default()
+    },
+)?;
+editor.set_text_format(
+    "/body/p[1]",
+    NativeOfficeTextFormat {
+        alignment: Some(NativeOfficeHorizontalAlignment::Center),
+        ..NativeOfficeTextFormat::default()
+    },
+)?;
 let added = editor.add_paragraph("/body", "Summary")?;
 let moved = editor.move_node(
     added,
