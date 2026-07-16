@@ -37,7 +37,8 @@ pub use discovery::{
     SUPPORTED_OFFICECLI_VERSION,
 };
 pub use editor::{
-    NativeBatchResult, NativeCreatedImage, NativeCreatedPart, NativeOfficeEditor,
+    NativeBatchResult, NativeCreatedImage, NativeCreatedPart, NativeOfficeComment,
+    NativeOfficeCommentPosition, NativeOfficeCommentUpdate, NativeOfficeEditor,
     NativeOfficeHorizontalAlignment, NativeOfficeHyperlink, NativeOfficeHyperlinkTarget,
     NativeOfficeImage, NativeOfficeImageFormat, NativeOfficeImageMetadata,
     NativeOfficeInsertPosition, NativeOfficeMutation, NativeOfficePartType, NativeOfficeRgbColor,
@@ -254,6 +255,8 @@ mod tests {
 mod annotated_tests;
 #[cfg(test)]
 mod arrange_tests;
+#[cfg(test)]
+mod comment_tests;
 #[cfg(test)]
 mod format_tests;
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use super::*;
 use a3s_use_office::{
-    NativeOfficeHyperlinkTarget, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
+    NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeHyperlinkTarget,
+    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
 };
 
 #[test]
@@ -171,5 +172,53 @@ fn office_batch_schema_exposes_typed_hyperlinks() {
         } if uri == "https://example.com/report"
             && display == "Report"
             && tooltip == "Open report"
+    ));
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_legacy_comments() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "add-comment",
+        "set-comment",
+        "author",
+        "initials",
+        "position",
+        "xEmu",
+        "yEmu",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "deck",
+        "mutations": [{
+            "operation": "add-comment",
+            "parent": "/slide[1]",
+            "comment": {
+                "author": "Alice",
+                "text": "Review this",
+                "initials": "AL",
+                "position": { "xEmu": 914400, "yEmu": 457200 }
+            }
+        }]
+    }))
+    .unwrap();
+    let mutation = input.mutations.into_iter().next().unwrap();
+    assert!(matches!(
+        mutation.into_native().unwrap(),
+        NativeOfficeMutation::AddComment {
+            comment: NativeOfficeComment {
+                ref author,
+                ref text,
+                initials: Some(ref initials),
+                position: Some(NativeOfficeCommentPosition {
+                    x_emu: 914_400,
+                    y_emu: 457_200,
+                }),
+            },
+            ..
+        } if author == "Alice" && text == "Review this" && initials == "AL"
     ));
 }

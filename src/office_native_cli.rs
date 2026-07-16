@@ -1,7 +1,8 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
-    DocumentNode, NativeOfficeDocument, NativeOfficeEditor, NativeOfficeHorizontalAlignment,
-    NativeOfficeHyperlink, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
+    DocumentNode, NativeOfficeCommentPosition, NativeOfficeCommentUpdate, NativeOfficeDocument,
+    NativeOfficeEditor, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
+    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat, OfficeNodeType,
     SpreadsheetCellValue,
 };
 use tokio::io::AsyncReadExt;
@@ -36,9 +37,9 @@ const HELP: &str = concat!(
     "  a3s-use office native merge <template> <output> --data <json|@file.json> [--force] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
-    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
-    "  a3s-use office native set <file> <path> [--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--bold <true|false>] [--italic <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file> <path> [--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -208,16 +209,6 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             "office native set accepts at most one of --text, --number, --boolean, --formula, or --width-emu",
         ));
     }
-    if value_count == 0 && format.is_none() && hyperlink.is_none() {
-        return Err(usage_error(
-            "office native set requires content, width, typed formatting, or a hyperlink target",
-        ));
-    }
-    if parsed.width_emu.is_some() && (format.is_some() || hyperlink.is_some()) {
-        return Err(usage_error(
-            "--width-emu cannot be combined with text formatting or hyperlink options",
-        ));
-    }
     let typed_value = if let Some(value) = parsed.number.as_ref() {
         Some(SpreadsheetCellValue::Number {
             value: value.clone(),
@@ -238,10 +229,64 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let path = &parsed.positionals[1];
     let mut editor = NativeOfficeEditor::open(source).await?;
     let source_path = editor.package().path().to_path_buf();
-    let operation = if let Some(width_emu) = parsed.width_emu {
+    let is_comment = editor
+        .snapshot()?
+        .get(path, 0)
+        .is_ok_and(|node| node.node_type == OfficeNodeType::Comment);
+    let has_comment_options = parsed.author.is_some()
+        || parsed.initials.is_some()
+        || parsed.x_emu.is_some()
+        || parsed.y_emu.is_some();
+    let operation = if is_comment || has_comment_options {
+        if !is_comment {
+            return Err(usage_error(
+                "--author, --initials, --x-emu, and --y-emu require an existing comment path",
+            ));
+        }
+        if parsed.number.is_some()
+            || parsed.boolean.is_some()
+            || parsed.formula.is_some()
+            || parsed.width_emu.is_some()
+            || format.is_some()
+            || hyperlink.is_some()
+        {
+            return Err(usage_error(
+                "native comment set accepts only --text, --author, --initials, --x-emu, and --y-emu",
+            ));
+        }
+        let position = match (parsed.x_emu, parsed.y_emu) {
+            (Some(x_emu), Some(y_emu)) => Some(NativeOfficeCommentPosition::new(x_emu, y_emu)),
+            (None, None) => None,
+            _ => {
+                return Err(usage_error(
+                    "native Presentation comment coordinates require both --x-emu and --y-emu",
+                ))
+            }
+        };
+        editor.set_comment(
+            path,
+            NativeOfficeCommentUpdate {
+                author: parsed.author.clone(),
+                text: parsed.text.clone(),
+                initials: parsed.initials.clone(),
+                position,
+            },
+        )?;
+        "set-comment"
+    } else if let Some(width_emu) = parsed.width_emu {
+        if format.is_some() || hyperlink.is_some() {
+            return Err(usage_error(
+                "--width-emu cannot be combined with text formatting or hyperlink options",
+            ));
+        }
         editor.set_table_column_width(path, width_emu)?;
         "set-table-column-width"
     } else {
+        if value_count == 0 && format.is_none() && hyperlink.is_none() {
+            return Err(usage_error(
+                "office native set requires content, width, typed formatting, a hyperlink target, or comment properties",
+            ));
+        }
         let mut mutations = Vec::with_capacity(3);
         if let Some(value) = typed_value {
             mutations.push(NativeOfficeMutation::SetCellValue {

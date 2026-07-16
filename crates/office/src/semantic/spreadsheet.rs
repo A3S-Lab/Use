@@ -293,6 +293,7 @@ fn read_worksheet(
         }
     }
     append_worksheet_hyperlinks(opc, &worksheet, part_name, &sheet_path, &mut sheet_node)?;
+    append_worksheet_comments(package, opc, part_name, &sheet_path, &mut sheet_node)?;
     append_worksheet_pictures(
         package,
         opc,
@@ -309,6 +310,85 @@ fn read_worksheet(
         .collect::<Vec<_>>()
         .join("\n");
     Ok(sheet_node)
+}
+
+fn append_worksheet_comments(
+    package: &NativeOfficePackage,
+    opc: &OpcPackageModel,
+    worksheet_part: &str,
+    sheet_path: &str,
+    sheet: &mut DocumentNode,
+) -> UseResult<()> {
+    let source = RelationshipSource::Part {
+        part_name: worksheet_part.to_string(),
+    };
+    let Some(relationship) = opc
+        .relationships()
+        .relationships_from(&source)
+        .iter()
+        .find(|relationship| relationship.relationship_type.ends_with("/comments"))
+    else {
+        return Ok(());
+    };
+    let RelationshipTarget::Internal { part_name, .. } = &relationship.target else {
+        return Err(semantic_error(
+            "use.office.comment_relationship_invalid",
+            format!("Worksheet '{sheet_path}' comments relationship must be internal."),
+        ));
+    };
+    let part = package.xml_part(part_name)?;
+    let comments = parse_xml_tree(&part)?;
+    require_spreadsheet_element(&comments, "comments", part.name())?;
+    let authors = comments
+        .child("authors")
+        .map(|authors| {
+            authors
+                .children_named("author")
+                .map(direct_text)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let Some(list) = comments.child("commentList") else {
+        return Ok(());
+    };
+    for comment in list.children_named("comment") {
+        let reference = comment.attribute("ref").ok_or_else(|| {
+            semantic_error(
+                "use.office.comment_reference_missing",
+                format!("Worksheet '{sheet_path}' contains a comment without a cell reference."),
+            )
+        })?;
+        let reference = CellReference::parse(reference)?.a1();
+        let mut node = DocumentNode::new(
+            format!("{sheet_path}/{reference}/comment"),
+            "comment",
+            OfficeNodeType::Comment,
+        );
+        node.text = comment
+            .child("text")
+            .map(spreadsheet_text)
+            .unwrap_or_default();
+        node.format.insert("ref".into(), reference.clone());
+        node.format.insert("part".into(), part_name.clone());
+        node.format
+            .insert("ownerPart".into(), worksheet_part.to_string());
+        if let Some(author_id) = comment.attribute("authorId") {
+            node.format.insert("authorId".into(), author_id.into());
+            if let Some(author) = author_id
+                .parse::<usize>()
+                .ok()
+                .and_then(|author_id| authors.get(author_id))
+            {
+                node.format.insert("author".into(), author.clone());
+            }
+        }
+        if let Some(cell) = find_cell_mut(sheet, &reference) {
+            cell.children.push(node);
+        } else {
+            sheet.children.push(node);
+        }
+    }
+    Ok(())
 }
 
 fn append_worksheet_hyperlinks(

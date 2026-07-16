@@ -156,6 +156,16 @@ active or relative schemes, controls, and malformed targets. External links
 remain inert throughout semantic reads and rendering. Format engines allocate,
 reuse, and garbage-collect relationship IDs without deleting shared edges and
 preserve strict or transitional OOXML namespaces.
+Legacy-comment mutation is a third closed typed contract shared by the Rust
+API, versioned batch JSON, CLI, standard MCP schema, and Office Skill. Word owns
+main-document paragraph/run anchors and `word/comments.xml`; Spreadsheet owns
+classic cell notes, author tables, and VML drawings; Presentation owns legacy
+slide comments and the shared author list. Semantic paths remain format-native,
+and ordinary `remove` plus owner removal garbage-collect only owned resources.
+The XML patch layer preserves unknown attributes and extension nodes and keeps
+strict/transitional dialects. Modern threaded comments, replies/resolution,
+writable dates, rich bodies, and Word header/footer anchors remain explicit
+future contracts rather than untyped properties.
 Native template merge is a typed editor operation, not a generic action
 envelope. The CLI boundary parses bounded JSON data, the format engines replace
 text across Word document/auxiliary parts, Spreadsheet string cells, or
@@ -306,7 +316,9 @@ Implemented:
     common selectors, semantic Word/Spreadsheet/Presentation reads, safe blank
     creation, text replacement and typed Spreadsheet text/number/boolean/formula
     cell and range mutation, typed Word/Spreadsheet/Presentation hyperlink
-    read/add/update/remove with inert external targets, Word paragraph and
+    read/add/update/remove with inert external targets, typed legacy comment
+    read/add/update/remove with format-owned anchors, authors, positions, and
+    resource cleanup, Word paragraph and
     bounded table/row/cell mutation,
     worksheet add/remove/rename/reorder/copy with owned OPC-subgraph cloning and
     cleanup, bounded cross-format move/copy/swap arrangement, Spreadsheet

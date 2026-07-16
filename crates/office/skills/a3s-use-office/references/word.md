@@ -27,6 +27,10 @@ a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https:
 a3s use office native set report.docx '/body/p[1]/hyperlink[1]' --location section_1 --display 'Jump to section' --json
 a3s use office native query report.docx hyperlink --json
 a3s use office native remove report.docx '/body/p[1]/hyperlink[1]' --json
+a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please reword this' --json
+a3s use office native set report.docx '/comments/comment[1]' --author Bob --initials BO --text 'Reviewed' --json
+a3s use office native query report.docx comment --json
+a3s use office native remove report.docx '/comments/comment[1]' --json
 a3s use office native add report.docx /body --type picture --input chart.png --alt 'Quarterly revenue chart' --json
 a3s use office native move report.docx '/body/p[2]' --before '/body/p[1]' --json
 ```
@@ -46,6 +50,15 @@ Display text and tooltips are optional. Reads and rendering keep external links
 inert; they never fetch them. Header and footer hyperlink mutation is not yet
 native.
 
+Legacy comments accept a main-document paragraph or run parent and return a
+stable `/comments/comment[N]` path. The comment is range-anchored in the owner;
+semantic reads report the containing paragraph as `anchoredTo`. Add requires an
+author and plain text; initials are optional. Update author, initials, or text
+through the comment path, and remove through the ordinary `remove` command.
+Removing the owning paragraph or run also removes its comment. Replies,
+resolved state, writable dates, rich comment bodies, `commentsExtended.xml`,
+and header/footer anchors are not yet native.
+
 Use `copy`, `swap`, and `remove` only with paths returned by a fresh read.
 Identity-bearing copies, cross-parent ownership migration, and rich structures
 outside the documented native subset fail closed.
@@ -64,7 +77,8 @@ a3s use office native view report.docx svg --output report.svg --json
 a3s use office native watch report.docx --port 0
 ```
 
-Tracked changes, comments, complete fields/forms, TOC updates, equations,
+Tracked changes, comment replies/resolution and modern metadata, complete
+fields/forms, TOC updates, equations,
 advanced styles, and layout-accurate pagination are not yet complete native
 capabilities. HTML, SVG, and live watch are semantic previews, not Word
 pagination. Watch follows saved disk revisions and is not an interactive Word

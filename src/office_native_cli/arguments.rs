@@ -32,6 +32,10 @@ pub(super) struct ParsedArguments {
     pub location: Option<String>,
     pub display: Option<String>,
     pub tooltip: Option<String>,
+    pub author: Option<String>,
+    pub initials: Option<String>,
+    pub x_emu: Option<i32>,
+    pub y_emu: Option<i32>,
     pub count: Option<u32>,
     pub position: Option<usize>,
     pub index: Option<usize>,
@@ -127,6 +131,22 @@ impl ParsedArguments {
                 }
                 "--tooltip" if allowed.tooltip => {
                     set_string_option(&mut parsed.tooltip, args, index, "--tooltip")?;
+                    index += 2;
+                }
+                "--author" if allowed.author => {
+                    set_string_option(&mut parsed.author, args, index, "--author")?;
+                    index += 2;
+                }
+                "--initials" if allowed.initials => {
+                    set_string_option(&mut parsed.initials, args, index, "--initials")?;
+                    index += 2;
+                }
+                "--x-emu" if allowed.x_emu => {
+                    set_i32_option(&mut parsed.x_emu, args, index, "--x-emu")?;
+                    index += 2;
+                }
+                "--y-emu" if allowed.y_emu => {
+                    set_i32_option(&mut parsed.y_emu, args, index, "--y-emu")?;
                     index += 2;
                 }
                 "--output" if allowed.output => {
@@ -256,6 +276,10 @@ pub(super) struct AllowedOptions {
     location: bool,
     display: bool,
     tooltip: bool,
+    author: bool,
+    initials: bool,
+    x_emu: bool,
+    y_emu: bool,
     count: bool,
     position: bool,
     index: bool,
@@ -295,6 +319,10 @@ impl AllowedOptions {
         location: false,
         display: false,
         tooltip: false,
+        author: false,
+        initials: false,
+        x_emu: false,
+        y_emu: false,
         count: false,
         position: false,
         index: false,
@@ -331,6 +359,10 @@ impl AllowedOptions {
         location: true,
         display: true,
         tooltip: true,
+        author: true,
+        initials: true,
+        x_emu: true,
+        y_emu: true,
         width_emu: true,
         ..Self::NONE
     };
@@ -368,6 +400,10 @@ impl AllowedOptions {
         location: true,
         display: true,
         tooltip: true,
+        author: true,
+        initials: true,
+        x_emu: true,
+        y_emu: true,
         ..Self::NONE
     };
     pub const ADD_PART: Self = Self {
@@ -491,6 +527,24 @@ fn set_u64_option(
     *target = Some(value.parse::<u64>().map_err(|_| {
         usage_error(format!(
             "{option} requires a non-negative integer, received '{value}'"
+        ))
+    })?);
+    Ok(())
+}
+
+fn set_i32_option(
+    target: &mut Option<i32>,
+    args: &[String],
+    index: usize,
+    option: &str,
+) -> UseResult<()> {
+    if target.is_some() {
+        return Err(usage_error(format!("{option} may be specified only once")));
+    }
+    let value = option_value(args, index, option)?;
+    *target = Some(value.parse::<i32>().map_err(|_| {
+        usage_error(format!(
+            "{option} requires a signed 32-bit integer, received '{value}'"
         ))
     })?);
     Ok(())

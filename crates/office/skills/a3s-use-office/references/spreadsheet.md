@@ -24,6 +24,10 @@ a3s use office native set workbook.xlsx /Sheet1/E1 --url https://example.com/dat
 a3s use office native set workbook.xlsx /Sheet1/F1 --location 'Sheet1!B2' --display B2 --json
 a3s use office native query workbook.xlsx hyperlink --json
 a3s use office native remove workbook.xlsx /Sheet1/E1/hyperlink --json
+a3s use office native add workbook.xlsx /Sheet1/B2 --type comment --author Alice --text 'Check this formula' --json
+a3s use office native set workbook.xlsx /Sheet1/B2/comment --author Bob --text 'Formula checked' --json
+a3s use office native query workbook.xlsx comment --json
+a3s use office native remove workbook.xlsx /Sheet1/B2/comment --json
 ```
 
 Formula writes store validated formula text, invalidate stale calculation
@@ -37,6 +41,13 @@ targets are workbook locations such as `Sheet1!B2`. Display text and tooltips
 are optional. Update through the cell or returned `/hyperlink` path, and remove
 through the hyperlink path. Multi-cell hyperlink ranges are not yet a native
 write surface. Reads and previews never fetch external targets.
+
+Classic cell comments use stable `/SheetName/A1/comment` paths and may be added
+to an otherwise blank cell. Add requires an author and plain text. Update the
+author or text through the comment path; Spreadsheet rejects separate initials
+and slide coordinates instead of ignoring them. Native removal also cleans up
+the matching VML note shape and removes unused comment/VML parts. Threaded
+comments, replies, writable dates, and rich bodies are not yet native.
 
 ## Cell Text Formatting
 

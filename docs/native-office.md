@@ -33,6 +33,7 @@ formats:
 - typed bold, italic, font-family, exact-size, RGB text-color, and alignment
   mutation without generic property maps;
 - typed inert hyperlinks with format-specific external and internal targets;
+- typed legacy comments with format-specific anchors, authors, and positions;
 - typed selectors with stable, one-based document paths;
 - transactional batch mutation and explicit partial-apply compatibility mode;
 - template merge and replayable dump/batch documents;
@@ -238,6 +239,33 @@ shape, or slide is removed. Atomic batches roll back every XML and relationship
 change on failure, and both strict and transitional OOXML dialects are retained.
 Word header/footer hyperlink mutation, multi-cell Spreadsheet hyperlinks, and
 Presentation internal slide jumps remain outside this bounded milestone.
+
+Native `add-comment` and `set-comment` are implemented through one typed Rust,
+batch, CLI, and standard MCP contract. Word anchors a plain legacy comment to a
+main-document paragraph or run, creates `word/comments.xml` and the
+range/reference markers, and returns `/comments/comment[N]`. Spreadsheet
+creates classic cell notes, including on blank cells, with an author table,
+comments part, VML note drawing, worksheet `legacyDrawing` reference, and
+stable `/SheetName/A1/comment` paths. Presentation creates legacy per-slide
+comment parts plus the shared presentation author list, maintains monotonically
+increasing indexes per author, accepts optional signed-32-bit EMU coordinates,
+and returns `/slide[N]/comment[M]`.
+
+All three formats expose comments through semantic `get`, `query`, and bounded
+annotated views. Partial typed updates preserve omitted properties. Removal
+uses the ordinary `remove` mutation; removing an owning Word paragraph/run,
+Spreadsheet cell/range, or Presentation slide also removes its owned comments
+and unreferenced relationship, content-type, and VML resources. Mutation is
+atomic, unknown OOXML attributes and extension nodes survive updates, and
+strict/transitional root and relationship dialects are preserved. Format-only
+properties fail explicitly: Spreadsheet rejects initials and slide positions,
+while Word rejects slide positions.
+
+This milestone is intentionally legacy-comment scope, not full OfficeCLI or
+modern Office comment parity. PowerPoint modern threaded comments and replies,
+Word replies/resolved state and `commentsExtended.xml`, writable comment dates,
+rich comment bodies, Word header/footer comment anchoring, and Spreadsheet
+threaded comments remain unimplemented.
 
 Row and column edits update cell and row references, dimensions, column
 definitions, defined names, workbook view state, merges, filters, selections,
@@ -485,7 +513,8 @@ unchanged.
 Cross-parent/reference-graph arrangement beyond the bounded move/copy/swap
 coverage above, advanced image mutation and OOXML SVG fallback, complex/custom
 part carriers, Presentation table merges/rich styles, subtree and
-rich-structure dump, advanced rich-format operations, and
+rich-structure dump, advanced rich-format operations, modern threaded comments
+and legacy-comment replies/resolution/rich bodies, and
 the formula parser/dependency/recalculation engine remain before their
 respective gates can be promoted. Creation and structural mutation remain
 under the interoperability gate until Microsoft Office and optional CI
@@ -563,7 +592,8 @@ compatibility component for one deprecation cycle, then is removed.
 
 The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, cross-format text formatting, typed inert
-hyperlinks, Spreadsheet range and row/column structure edits,
+hyperlinks, typed cross-format legacy comments, Spreadsheet range and
+row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format

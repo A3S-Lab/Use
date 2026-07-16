@@ -3,7 +3,8 @@ use std::ops::Range;
 
 use a3s_use_core::{UseError, UseResult};
 use quick_xml::events::Event;
-use quick_xml::reader::Reader;
+use quick_xml::name::{QName, ResolveResult};
+use quick_xml::reader::NsReader;
 
 use crate::discovery::office_error;
 use crate::xml::{LosslessXmlPart, XmlEncoding};
@@ -12,6 +13,7 @@ use crate::xml::{LosslessXmlPart, XmlEncoding};
 pub(crate) struct IndexedXmlElement {
     pub qualified_name: String,
     pub local_name: String,
+    pub namespace: Option<String>,
     pub attributes: BTreeMap<String, String>,
     pub qualified_attributes: BTreeMap<String, String>,
     pub full_range: Range<usize>,
@@ -85,7 +87,7 @@ impl XmlPatch {
 
 pub(crate) fn index_xml(part: &LosslessXmlPart) -> UseResult<IndexedXmlElement> {
     require_utf8(part)?;
-    let mut reader = Reader::from_reader(part.parse_bytes());
+    let mut reader = NsReader::from_reader(part.parse_bytes());
     reader.config_mut().check_end_names = true;
     reader.config_mut().check_comments = true;
     let mut stack = Vec::<IndexedXmlElement>::new();
@@ -105,20 +107,24 @@ pub(crate) fn index_xml(part: &LosslessXmlPart) -> UseResult<IndexedXmlElement> 
         })?;
         match event {
             Event::Start(start) => {
+                let namespace = resolved_element_namespace(part.name(), &reader, start.name())?;
                 stack.push(indexed_element(
                     part.name(),
                     &start,
                     &reader,
+                    namespace,
                     event_start..event_end,
                     event_end..event_end,
                     false,
                 )?);
             }
             Event::Empty(start) => {
+                let namespace = resolved_element_namespace(part.name(), &reader, start.name())?;
                 let element = indexed_element(
                     part.name(),
                     &start,
                     &reader,
+                    namespace,
                     event_start..event_end,
                     event_end..event_end,
                     true,
@@ -388,8 +394,47 @@ pub(crate) fn replace_text_descendants(
     text: &str,
     insertion: Option<String>,
 ) -> UseResult<Vec<u8>> {
+    replace_text_descendants_matching(
+        part,
+        element,
+        text_element_name,
+        text,
+        insertion,
+        |candidate| candidate.local_name == text_element_name,
+    )
+}
+
+pub(crate) fn replace_namespaced_text_descendants(
+    part: &LosslessXmlPart,
+    element: &IndexedXmlElement,
+    text_element_name: &str,
+    text_namespace: Option<&str>,
+    text: &str,
+    insertion: Option<String>,
+) -> UseResult<Vec<u8>> {
+    replace_text_descendants_matching(
+        part,
+        element,
+        text_element_name,
+        text,
+        insertion,
+        |candidate| {
+            candidate.local_name == text_element_name
+                && candidate.namespace.as_deref() == text_namespace
+        },
+    )
+}
+
+fn replace_text_descendants_matching(
+    part: &LosslessXmlPart,
+    element: &IndexedXmlElement,
+    text_element_name: &str,
+    text: &str,
+    insertion: Option<String>,
+    matches: impl Fn(&IndexedXmlElement) -> bool,
+) -> UseResult<Vec<u8>> {
     let mut text_elements = Vec::new();
-    element.descendants_named(text_element_name, &mut text_elements);
+    collect_descendants_matching(element, &matches, &mut text_elements);
     if text_elements.is_empty() {
         let insertion = insertion.ok_or_else(|| {
             edit_error(
@@ -402,29 +447,27 @@ pub(crate) fn replace_text_descendants(
         })?;
         return insert_child(part, element, insertion);
     }
-    let escaped = escape_text(text);
-    let preserve_space =
-        text.starts_with(char::is_whitespace) || text.ends_with(char::is_whitespace);
     let mut patches = Vec::with_capacity(text_elements.len());
     for (index, text_element) in text_elements.into_iter().enumerate() {
-        if index == 0 && preserve_space {
-            let replacement = format!(
-                "<{} xml:space=\"preserve\">{escaped}</{}>",
-                text_element.qualified_name, text_element.qualified_name
-            );
-            patches.push(XmlPatch::new(text_element.full_range.clone(), replacement));
-        } else {
-            patches.push(XmlPatch::new(
-                text_element.content_range.clone(),
-                if index == 0 {
-                    escaped.as_bytes().to_vec()
-                } else {
-                    Vec::new()
-                },
-            ));
-        }
+        patches.push(replace_element_text_patch(
+            text_element,
+            if index == 0 { text } else { "" },
+        ));
     }
     apply_patches(part, patches)
+}
+
+fn collect_descendants_matching<'a>(
+    element: &'a IndexedXmlElement,
+    matches: &impl Fn(&IndexedXmlElement) -> bool,
+    output: &mut Vec<&'a IndexedXmlElement>,
+) {
+    for child in &element.children {
+        if matches(child) {
+            output.push(child);
+        }
+        collect_descendants_matching(child, matches, output);
+    }
 }
 
 pub(crate) fn decoded_element_text(
@@ -561,6 +604,7 @@ fn indexed_element(
     part_name: &str,
     start: &quick_xml::events::BytesStart<'_>,
     reader: &quick_xml::reader::Reader<&[u8]>,
+    namespace: Option<String>,
     start_tag_range: Range<usize>,
     content_range: Range<usize>,
     empty: bool,
@@ -621,6 +665,7 @@ fn indexed_element(
     Ok(IndexedXmlElement {
         qualified_name,
         local_name,
+        namespace,
         attributes,
         qualified_attributes,
         full_range: start_tag_range.start..start_tag_range.end,
@@ -629,6 +674,31 @@ fn indexed_element(
         children: Vec::new(),
         empty,
     })
+}
+
+fn resolved_element_namespace(
+    part_name: &str,
+    reader: &NsReader<&[u8]>,
+    name: QName<'_>,
+) -> UseResult<Option<String>> {
+    match reader.resolve_element(name).0 {
+        ResolveResult::Unbound => Ok(None),
+        ResolveResult::Bound(namespace) => std::str::from_utf8(namespace.as_ref())
+            .map(|namespace| Some(namespace.to_string()))
+            .map_err(|error| {
+                edit_error(
+                    part_name,
+                    format!("XML mutation namespace is not UTF-8: {error}"),
+                )
+            }),
+        ResolveResult::Unknown(prefix) => Err(edit_error(
+            part_name,
+            format!(
+                "XML mutation element uses unbound namespace prefix '{}'.",
+                String::from_utf8_lossy(&prefix)
+            ),
+        )),
+    }
 }
 
 fn append_element(

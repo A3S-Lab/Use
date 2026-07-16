@@ -98,6 +98,7 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
 }
 
 fn remove_cell(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
+    super::comment::remove_spreadsheet_range_comments(package, path)?;
     super::hyperlink::remove_spreadsheet_range_links(package, path)?;
     let (sheet_path, reference) = path.rsplit_once('/').ok_or_else(|| node_not_found(path))?;
     let range = CellRange::parse(reference)?;

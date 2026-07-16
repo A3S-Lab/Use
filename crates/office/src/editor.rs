@@ -9,6 +9,7 @@ use crate::{
     NativeOfficeTemplateMergeResult,
 };
 
+mod comment;
 mod hyperlink;
 mod image;
 mod part;
@@ -26,7 +27,8 @@ mod part_tests;
 pub use part::{NativeCreatedPart, NativeOfficePartType};
 pub use raw::NativeRawXmlPart;
 pub use types::{
-    NativeBatchResult, NativeCreatedImage, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
+    NativeBatchResult, NativeCreatedImage, NativeOfficeComment, NativeOfficeCommentPosition,
+    NativeOfficeCommentUpdate, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
     NativeOfficeHyperlinkTarget, NativeOfficeImage, NativeOfficeImageFormat,
     NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
     NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat, SpreadsheetCellValue,
@@ -101,6 +103,18 @@ impl NativeOfficeEditor {
         self.single_path(NativeOfficeMutation::SetHyperlink {
             path: path.into(),
             hyperlink,
+        })
+    }
+
+    /// Applies a partial typed update to an existing legacy Office comment.
+    pub fn set_comment(
+        &mut self,
+        path: impl Into<String>,
+        update: NativeOfficeCommentUpdate,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SetComment {
+            path: path.into(),
+            update,
         })
     }
 
@@ -271,6 +285,19 @@ impl NativeOfficeEditor {
                 "use.office.batch_validation_failed",
                 "Native Office image mutation returned no creation receipt.",
             )
+        })
+    }
+
+    /// Adds a typed legacy comment to a Word paragraph/run, Spreadsheet cell,
+    /// or Presentation slide.
+    pub fn add_comment(
+        &mut self,
+        parent: impl Into<String>,
+        comment: NativeOfficeComment,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::AddComment {
+            parent: parent.into(),
+            comment,
         })
     }
 
@@ -510,6 +537,9 @@ impl NativeOfficeEditor {
                 NativeOfficeMutation::SetHyperlink { path, hyperlink } => hyperlink
                     .validate()
                     .and_then(|()| hyperlink::set(&mut self.package, path, hyperlink)),
+                NativeOfficeMutation::SetComment { path, update } => update
+                    .validate()
+                    .and_then(|()| comment::set(&mut self.package, path, update)),
                 NativeOfficeMutation::SetTableColumnWidth { path, width_emu } => {
                     presentation::set_table_column_width(&mut self.package, path, *width_emu)
                         .map(|()| path.clone())
@@ -563,6 +593,9 @@ impl NativeOfficeEditor {
                         path
                     })
                 }
+                NativeOfficeMutation::AddComment { parent, comment } => comment
+                    .validate()
+                    .and_then(|()| comment::add(&mut self.package, parent, comment)),
                 NativeOfficeMutation::AddPart { parent, part_type } => {
                     part::add(&mut self.package, parent, *part_type).map(|created| {
                         let path = created.path.clone();
@@ -775,6 +808,9 @@ fn remove_node(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
     }
     if node_type == crate::OfficeNodeType::Hyperlink {
         return hyperlink::remove(package, path);
+    }
+    if node_type == crate::OfficeNodeType::Comment {
+        return comment::remove(package, path);
     }
     match package.kind() {
         DocumentKind::Word => word::remove(package, path),

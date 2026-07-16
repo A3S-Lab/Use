@@ -1,5 +1,6 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
+    NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeCommentUpdate,
     NativeOfficeHorizontalAlignment, NativeOfficeHyperlink, NativeOfficeImage,
     NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
     NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextFormat, SpreadsheetCellValue,
@@ -293,6 +294,71 @@ impl OfficeHyperlink {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeCommentPosition {
+    /// Horizontal slide coordinate in English Metric Units.
+    x_emu: i32,
+    /// Vertical slide coordinate in English Metric Units.
+    y_emu: i32,
+}
+
+impl From<OfficeCommentPosition> for NativeOfficeCommentPosition {
+    fn from(value: OfficeCommentPosition) -> Self {
+        Self::new(value.x_emu, value.y_emu)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeComment {
+    /// Required accountable author name.
+    author: String,
+    /// Required plain comment body.
+    text: String,
+    /// Optional Word or Presentation author initials. Spreadsheet rejects this field.
+    initials: Option<String>,
+    /// Optional legacy Presentation slide position. Word and Spreadsheet reject this field.
+    position: Option<OfficeCommentPosition>,
+}
+
+impl OfficeComment {
+    fn into_native(self) -> UseResult<NativeOfficeComment> {
+        let mut comment = NativeOfficeComment::new(self.author, self.text)?;
+        if let Some(initials) = self.initials {
+            comment = comment.with_initials(initials);
+        }
+        if let Some(position) = self.position {
+            comment = comment.with_position(position.into());
+        }
+        Ok(comment)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeCommentUpdate {
+    /// Replacement author name. Omit to preserve the current author.
+    author: Option<String>,
+    /// Replacement plain comment body. Omit to preserve the current body.
+    text: Option<String>,
+    /// Replacement Word or Presentation initials.
+    initials: Option<String>,
+    /// Replacement legacy Presentation slide position.
+    position: Option<OfficeCommentPosition>,
+}
+
+impl From<OfficeCommentUpdate> for NativeOfficeCommentUpdate {
+    fn from(value: OfficeCommentUpdate) -> Self {
+        Self {
+            author: value.author,
+            text: value.text,
+            initials: value.initials,
+            position: value.position.map(Into::into),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum OfficeInsertPosition {
@@ -400,6 +466,10 @@ pub(super) enum OfficeMutation {
         path: String,
         hyperlink: OfficeHyperlink,
     },
+    SetComment {
+        path: String,
+        update: OfficeCommentUpdate,
+    },
     SetTableColumnWidth {
         path: String,
         #[serde(rename = "widthEmu")]
@@ -443,6 +513,10 @@ pub(super) enum OfficeMutation {
     AddImage {
         parent: String,
         image: OfficeImage,
+    },
+    AddComment {
+        parent: String,
+        comment: OfficeComment,
     },
     AddPart {
         parent: String,
@@ -523,6 +597,10 @@ impl OfficeMutation {
                 path,
                 hyperlink: hyperlink.into_native()?,
             },
+            Self::SetComment { path, update } => NativeOfficeMutation::SetComment {
+                path,
+                update: update.into(),
+            },
             Self::SetTableColumnWidth { path, width_emu } => {
                 NativeOfficeMutation::SetTableColumnWidth { path, width_emu }
             }
@@ -562,6 +640,10 @@ impl OfficeMutation {
             Self::AddImage { parent, image } => NativeOfficeMutation::AddImage {
                 parent,
                 image: image.into_native()?,
+            },
+            Self::AddComment { parent, comment } => NativeOfficeMutation::AddComment {
+                parent,
+                comment: comment.into_native()?,
             },
             Self::AddPart { parent, part_type } => NativeOfficeMutation::AddPart {
                 parent,

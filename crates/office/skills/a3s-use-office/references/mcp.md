@@ -72,6 +72,31 @@ absolute HTTP, HTTPS, or mailto URIs without credentials and remain inert.
 Query `hyperlink` to discover stable paths and remove one with the ordinary
 typed `remove` mutation. Hyperlink changes remain unsaved until `office_save`.
 
+Legacy comments use typed `add-comment` and `set-comment` mutations:
+
+```json
+{
+  "session": "deck",
+  "mutations": [{
+    "operation": "add-comment",
+    "parent": "/slide[1]",
+    "comment": {
+      "author": "Alice",
+      "text": "Review this slide",
+      "initials": "AL",
+      "position": { "xEmu": 914400, "yEmu": 457200 }
+    }
+  }]
+}
+```
+
+Use `set-comment` with a partial `update` and a stable path returned by the add
+mutation or a `comment` query. Word accepts main-document paragraph/run
+anchors, Spreadsheet accepts classic cell notes, and Presentation accepts
+legacy slide comments with optional coordinates. Remove a comment with the
+ordinary `remove` mutation. Modern threaded comments and replies are outside
+this contract. Comment changes remain unsaved until `office_save`.
+
 `office_view` supports text, bounded annotated entries, outline, stats, issues,
 all-format HTML/SVG, and all-format semantic screenshots. Annotated and issue
 output accept a `limit` from 1 through 1,000; issue output is also filterable.

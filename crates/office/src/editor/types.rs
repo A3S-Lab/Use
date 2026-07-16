@@ -255,6 +255,174 @@ fn validate_hyperlink_text(
     Ok(())
 }
 
+/// An exact Presentation comment position in English Metric Units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeOfficeCommentPosition {
+    pub x_emu: i32,
+    pub y_emu: i32,
+}
+
+impl NativeOfficeCommentPosition {
+    pub const fn new(x_emu: i32, y_emu: i32) -> Self {
+        Self { x_emu, y_emu }
+    }
+}
+
+/// A complete typed legacy Office comment.
+///
+/// Word uses the mutation parent as its paragraph or run anchor, Spreadsheet
+/// uses a cell parent, and Presentation uses a slide parent plus an optional
+/// position. Modern threaded comments are a separate format and are not
+/// represented by this type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeOfficeComment {
+    pub author: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initials: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<NativeOfficeCommentPosition>,
+}
+
+impl NativeOfficeComment {
+    /// Creates a validated legacy Office comment.
+    pub fn new(author: impl Into<String>, text: impl Into<String>) -> UseResult<Self> {
+        let comment = Self {
+            author: author.into(),
+            text: text.into(),
+            initials: None,
+            position: None,
+        };
+        comment.validate()?;
+        Ok(comment)
+    }
+
+    pub fn with_initials(mut self, initials: impl Into<String>) -> Self {
+        self.initials = Some(initials.into());
+        self
+    }
+
+    pub fn with_position(mut self, position: NativeOfficeCommentPosition) -> Self {
+        self.position = Some(position);
+        self
+    }
+
+    pub(crate) fn validate(&self) -> UseResult<()> {
+        validate_comment_scalar(
+            &self.author,
+            255,
+            false,
+            "use.office.comment_author_invalid",
+            "Native Office comment authors",
+        )?;
+        validate_comment_scalar(
+            &self.text,
+            32_768,
+            true,
+            "use.office.comment_text_invalid",
+            "Native Office comment text",
+        )?;
+        if let Some(initials) = &self.initials {
+            validate_comment_scalar(
+                initials,
+                32,
+                false,
+                "use.office.comment_initials_invalid",
+                "Native Office comment initials",
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// A partial typed update for an existing legacy Office comment.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeOfficeCommentUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initials: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<NativeOfficeCommentPosition>,
+}
+
+impl NativeOfficeCommentUpdate {
+    pub fn is_empty(&self) -> bool {
+        self.author.is_none()
+            && self.text.is_none()
+            && self.initials.is_none()
+            && self.position.is_none()
+    }
+
+    pub(crate) fn validate(&self) -> UseResult<()> {
+        if self.is_empty() {
+            return Err(super::editor_error(
+                "use.office.comment_update_empty",
+                "Native Office comment updates require at least one typed property.",
+            ));
+        }
+        if let Some(author) = &self.author {
+            validate_comment_scalar(
+                author,
+                255,
+                false,
+                "use.office.comment_author_invalid",
+                "Native Office comment authors",
+            )?;
+        }
+        if let Some(text) = &self.text {
+            validate_comment_scalar(
+                text,
+                32_768,
+                true,
+                "use.office.comment_text_invalid",
+                "Native Office comment text",
+            )?;
+        }
+        if let Some(initials) = &self.initials {
+            validate_comment_scalar(
+                initials,
+                32,
+                false,
+                "use.office.comment_initials_invalid",
+                "Native Office comment initials",
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_comment_scalar(
+    value: &str,
+    max_bytes: usize,
+    multiline: bool,
+    code: &str,
+    label: &str,
+) -> UseResult<()> {
+    let invalid_control = value.chars().any(|character| {
+        character.is_control() && !(multiline && matches!(character, '\n' | '\t'))
+    });
+    if value.is_empty() || value.len() > max_bytes || value.trim() != value || invalid_control {
+        let allowed = if multiline {
+            "; line feeds and tabs are allowed"
+        } else {
+            ""
+        };
+        return Err(super::editor_error(
+            code,
+            format!(
+                "{label} must contain 1-{max_bytes} UTF-8 bytes without surrounding whitespace or unsupported control characters{allowed}."
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Typed Spreadsheet cell content written without a shared-string dependency.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
@@ -424,6 +592,10 @@ pub enum NativeOfficeMutation {
         path: String,
         hyperlink: NativeOfficeHyperlink,
     },
+    SetComment {
+        path: String,
+        update: NativeOfficeCommentUpdate,
+    },
     SetTableColumnWidth {
         path: String,
         #[serde(rename = "widthEmu")]
@@ -469,6 +641,10 @@ pub enum NativeOfficeMutation {
     AddImage {
         parent: String,
         image: NativeOfficeImage,
+    },
+    AddComment {
+        parent: String,
+        comment: NativeOfficeComment,
     },
     AddPart {
         parent: String,

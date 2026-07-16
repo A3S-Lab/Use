@@ -531,6 +531,8 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
         ));
     }
 
+    super::comment::remove_word_owner_comments(package, path)?;
+
     let part = package.xml_part(DOCUMENT_PART)?;
     let index = index_xml(&part)?;
     let target = locate_word_path(&index, path)?;
@@ -627,11 +629,28 @@ pub(super) fn locate_word_path<'a>(
                 ));
             }
         };
-        current = current
-            .child(local_name, segment.position.unwrap_or(1))
-            .ok_or_else(|| node_not_found(path))?;
+        let position = segment.position.unwrap_or(1);
+        current = if local_name == "r" {
+            current
+                .children
+                .iter()
+                .filter(|child| child.local_name == "r" && !is_comment_reference_run(child))
+                .nth(position - 1)
+        } else {
+            current.child(local_name, position)
+        }
+        .ok_or_else(|| node_not_found(path))?;
     }
     Ok(current)
+}
+
+fn is_comment_reference_run(run: &IndexedXmlElement) -> bool {
+    let meaningful = run
+        .children
+        .iter()
+        .filter(|child| child.local_name != "rPr")
+        .collect::<Vec<_>>();
+    meaningful.len() == 1 && meaningful[0].local_name == "commentReference"
 }
 
 fn word_text_fragment(target: &IndexedXmlElement, text: &str, wrap_run: bool) -> String {

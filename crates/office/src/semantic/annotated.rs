@@ -148,6 +148,7 @@ fn include_node(kind: DocumentKind, node_type: OfficeNodeType) -> bool {
             OfficeNodeType::Paragraph
                 | OfficeNodeType::Run
                 | OfficeNodeType::Hyperlink
+                | OfficeNodeType::Comment
                 | OfficeNodeType::Table
                 | OfficeNodeType::Picture
                 | OfficeNodeType::Header
@@ -155,7 +156,10 @@ fn include_node(kind: DocumentKind, node_type: OfficeNodeType) -> bool {
         ),
         DocumentKind::Spreadsheet => matches!(
             node_type,
-            OfficeNodeType::Worksheet | OfficeNodeType::Cell | OfficeNodeType::Picture
+            OfficeNodeType::Worksheet
+                | OfficeNodeType::Cell
+                | OfficeNodeType::Picture
+                | OfficeNodeType::Comment
         ),
         DocumentKind::Presentation => matches!(
             node_type,
@@ -170,6 +174,7 @@ fn include_node(kind: DocumentKind, node_type: OfficeNodeType) -> bool {
                 | OfficeNodeType::Notes
                 | OfficeNodeType::Paragraph
                 | OfficeNodeType::Run
+                | OfficeNodeType::Comment
         ),
     }
 }

@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
-
 use a3s_use_core::UseResult;
 
-use super::part::{dialect, relationship_part};
-use super::{editor_error, NativeOfficeHyperlink};
-use crate::xml_edit::{index_xml, patch_start_tag_attributes, IndexedXmlElement};
+use super::part::{dialect, ensure_namespace as ensure_part_namespace, relationship_part};
+use super::NativeOfficeHyperlink;
+use crate::xml_edit::{index_xml, IndexedXmlElement};
 use crate::{DocumentKind, LosslessXmlPart, NativeOfficePackage, RelationshipSource};
 
 mod presentation;
@@ -121,39 +119,12 @@ pub(super) fn ensure_namespace(
     preferred: &str,
     namespace: &str,
 ) -> UseResult<(Vec<u8>, String)> {
-    let root = index_xml(part)?;
-    if let Some(prefix) = bound_prefix(&root, namespace) {
-        return Ok((part.raw().to_vec(), prefix));
-    }
-    let prefix = (0..=64)
-        .map(|offset| {
-            if offset == 0 {
-                preferred.to_string()
-            } else {
-                format!("{preferred}{offset}")
-            }
-        })
-        .find(|candidate| {
-            !root
-                .qualified_attributes
-                .contains_key(&format!("xmlns:{candidate}"))
-        })
-        .ok_or_else(|| {
-            editor_error(
-                "use.office.hyperlink_namespace_exhausted",
-                format!("OOXML part '{}' has no free namespace prefix.", part.name()),
-            )
-        })?;
-    let updates = BTreeMap::from([(format!("xmlns:{prefix}"), Some(namespace.to_string()))]);
-    Ok((patch_start_tag_attributes(part, &root, &updates)?, prefix))
-}
-
-fn bound_prefix(root: &IndexedXmlElement, namespace: &str) -> Option<String> {
-    root.qualified_attributes.iter().find_map(|(name, value)| {
-        name.strip_prefix("xmlns:")
-            .filter(|_| value == namespace)
-            .map(str::to_string)
-    })
+    ensure_part_namespace(
+        part,
+        preferred,
+        namespace,
+        "use.office.hyperlink_namespace_exhausted",
+    )
 }
 
 pub(super) fn old_relationship_id(element: &IndexedXmlElement) -> Option<String> {

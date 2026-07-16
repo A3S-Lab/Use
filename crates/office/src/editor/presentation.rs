@@ -653,6 +653,7 @@ fn remove_slide(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> 
                 format!("Presentation slide '{path}' has no relationship ID."),
             )
         })?;
+    super::comment::remove_presentation_slide_comments(package, &part_name)?;
     let edited = crate::xml_edit::apply_patches(
         &presentation,
         vec![crate::xml_edit::XmlPatch::new(

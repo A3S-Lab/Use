@@ -200,16 +200,130 @@ fn read_slide(
     {
         read_shape_tree(shape_tree, &path, opc, part_name, &mut node.children);
     }
+    append_comments(package, opc, part_name, &path, &mut node)?;
     append_notes(package, opc, part_name, &path, &mut node)?;
     node.text = node
         .children
         .iter()
-        .filter(|child| child.node_type != OfficeNodeType::Notes)
+        .filter(|child| {
+            !matches!(
+                child.node_type,
+                OfficeNodeType::Notes | OfficeNodeType::Comment
+            )
+        })
         .map(|child| child.text.as_str())
         .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
     Ok(node)
+}
+
+fn append_comments(
+    package: &NativeOfficePackage,
+    opc: &OpcPackageModel,
+    slide_part: &str,
+    slide_path: &str,
+    slide: &mut DocumentNode,
+) -> UseResult<()> {
+    let source = RelationshipSource::Part {
+        part_name: slide_part.to_string(),
+    };
+    let Some(relationship) = opc
+        .relationships()
+        .relationships_from(&source)
+        .iter()
+        .find(|relationship| relationship.relationship_type.ends_with("/comments"))
+    else {
+        return Ok(());
+    };
+    let RelationshipTarget::Internal { part_name, .. } = &relationship.target else {
+        return Err(semantic_error(
+            "use.office.comment_relationship_invalid",
+            format!("Presentation slide '{slide_path}' comments relationship must be internal."),
+        ));
+    };
+    let authors = read_comment_authors(package, opc)?;
+    let part = package.xml_part(part_name)?;
+    let comments = parse_xml_tree(&part)?;
+    require_presentation_element(&comments, "cmLst", part.name())?;
+    for (offset, comment) in comments.children_named("cm").enumerate() {
+        let mut node = DocumentNode::new(
+            format!("{slide_path}/comment[{}]", offset + 1),
+            "comment",
+            OfficeNodeType::Comment,
+        );
+        node.text = comment.child("text").map(direct_text).unwrap_or_default();
+        node.format.insert("part".into(), part_name.clone());
+        node.format
+            .insert("ownerPart".into(), slide_part.to_string());
+        for (attribute, key) in [("authorId", "authorId"), ("idx", "index"), ("dt", "date")] {
+            if let Some(value) = comment.attribute(attribute) {
+                node.format.insert(key.into(), value.into());
+            }
+        }
+        if let Some(author_id) = comment
+            .attribute("authorId")
+            .and_then(|value| value.parse::<u32>().ok())
+        {
+            if let Some((name, initials)) = authors.get(&author_id) {
+                node.format.insert("author".into(), name.clone());
+                node.format.insert("initials".into(), initials.clone());
+            }
+        }
+        if let Some(position) = comment.child("pos") {
+            if let Some(x) = position.attribute("x") {
+                node.format.insert("xEmu".into(), x.into());
+            }
+            if let Some(y) = position.attribute("y") {
+                node.format.insert("yEmu".into(), y.into());
+            }
+        }
+        slide.children.push(node);
+    }
+    Ok(())
+}
+
+fn read_comment_authors(
+    package: &NativeOfficePackage,
+    opc: &OpcPackageModel,
+) -> UseResult<std::collections::BTreeMap<u32, (String, String)>> {
+    let source = RelationshipSource::Part {
+        part_name: "ppt/presentation.xml".to_string(),
+    };
+    let Some(relationship) = opc
+        .relationships()
+        .relationships_from(&source)
+        .iter()
+        .find(|relationship| relationship.relationship_type.ends_with("/commentAuthors"))
+    else {
+        return Ok(std::collections::BTreeMap::new());
+    };
+    let RelationshipTarget::Internal { part_name, .. } = &relationship.target else {
+        return Err(semantic_error(
+            "use.office.comment_relationship_invalid",
+            "Presentation comment authors relationship must be internal.",
+        ));
+    };
+    let part = package.xml_part(part_name)?;
+    let root = parse_xml_tree(&part)?;
+    require_presentation_element(&root, "cmAuthorLst", part.name())?;
+    Ok(root
+        .children_named("cmAuthor")
+        .filter_map(|author| {
+            author
+                .attribute("id")
+                .and_then(|id| id.parse::<u32>().ok())
+                .map(|id| {
+                    (
+                        id,
+                        (
+                            author.attribute("name").unwrap_or_default().to_string(),
+                            author.attribute("initials").unwrap_or_default().to_string(),
+                        ),
+                    )
+                })
+        })
+        .collect())
 }
 
 fn append_notes(

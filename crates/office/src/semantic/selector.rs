@@ -267,6 +267,7 @@ fn kind_matches(kind: &str, node: &DocumentNode) -> bool {
         "connector" | "connection" => node.node_type == OfficeNodeType::Connector,
         "group" => node.node_type == OfficeNodeType::Group,
         "hyperlink" => node.node_type == OfficeNodeType::Hyperlink,
+        "comment" | "note-comment" => node.node_type == OfficeNodeType::Comment,
         "notes" => node.node_type == OfficeNodeType::Notes,
         "header" => node.node_type == OfficeNodeType::Header,
         "footer" => node.node_type == OfficeNodeType::Footer,

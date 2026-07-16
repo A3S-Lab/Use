@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use a3s_use_core::{UseError, UseResult};
 use serde::{Deserialize, Serialize};
 
 use super::editor_error;
 use crate::semantic::{NativeOfficeDocument, OfficeNodeType};
+use crate::xml_edit::{index_xml, patch_start_tag_attributes, IndexedXmlElement};
 use crate::{DocumentKind, LosslessXmlPart, NativeOfficePackage, RelationshipSource};
 
 mod spreadsheet;
@@ -291,6 +294,47 @@ pub(super) fn relative_target(source: &str, target: &str) -> String {
         .join("/")
 }
 
+pub(super) fn ensure_namespace(
+    part: &LosslessXmlPart,
+    preferred: &str,
+    namespace: &str,
+    error_code: &str,
+) -> UseResult<(Vec<u8>, String)> {
+    let root = index_xml(part)?;
+    if let Some(prefix) = bound_prefix(&root, namespace) {
+        return Ok((part.raw().to_vec(), prefix));
+    }
+    let prefix = (0..=64)
+        .map(|offset| {
+            if offset == 0 {
+                preferred.to_string()
+            } else {
+                format!("{preferred}{offset}")
+            }
+        })
+        .find(|candidate| {
+            !root
+                .qualified_attributes
+                .contains_key(&format!("xmlns:{candidate}"))
+        })
+        .ok_or_else(|| {
+            editor_error(
+                error_code,
+                format!("OOXML part '{}' has no free namespace prefix.", part.name()),
+            )
+        })?;
+    let updates = BTreeMap::from([(format!("xmlns:{prefix}"), Some(namespace.to_string()))]);
+    Ok((patch_start_tag_attributes(part, &root, &updates)?, prefix))
+}
+
+fn bound_prefix(root: &IndexedXmlElement, namespace: &str) -> Option<String> {
+    root.qualified_attributes.iter().find_map(|(name, value)| {
+        name.strip_prefix("xmlns:")
+            .filter(|_| value == namespace)
+            .map(str::to_string)
+    })
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) enum OfficeDialect {
     Transitional,
@@ -313,6 +357,13 @@ impl OfficeDialect {
         match self {
             Self::Transitional => TRANSITIONAL_WORD,
             Self::Strict => STRICT_WORD,
+        }
+    }
+
+    pub(super) fn spreadsheet_namespace(self) -> &'static str {
+        match self {
+            Self::Transitional => TRANSITIONAL_SPREADSHEET,
+            Self::Strict => STRICT_SPREADSHEET,
         }
     }
 

@@ -27,6 +27,10 @@ a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align ce
 a3s use office native set deck.pptx '/slide[1]/shape[1]' --url https://example.com/slides --tooltip 'Open slides' --json
 a3s use office native query deck.pptx hyperlink --json
 a3s use office native remove deck.pptx '/slide[1]/shape[1]/hyperlink' --json
+a3s use office native add deck.pptx '/slide[1]' --type comment --author Alice --initials AL --text 'Rework this slide' --x-emu 914400 --y-emu 457200 --json
+a3s use office native set deck.pptx '/slide[1]/comment[1]' --author Bob --initials BO --text 'Reviewed' --x-emu 1828800 --y-emu 914400 --json
+a3s use office native query deck.pptx comment --json
+a3s use office native remove deck.pptx '/slide[1]/comment[1]' --json
 a3s use office native swap deck.pptx '/slide[1]' '/slide[2]' --json
 ```
 
@@ -43,6 +47,15 @@ display text is unsupported because the shape retains its existing text;
 internal slide jumps remain on the roadmap and fail with
 `use.office.hyperlink_target_unsupported`. Reads and previews never fetch the
 target.
+
+Legacy slide comments return `/slide[N]/comment[M]` paths. Add requires an
+author and plain text, accepts optional initials, and optionally accepts both
+`--x-emu` and `--y-emu`; coordinates are rejected unless both are present.
+Updates may change author, initials, text, or the complete position. The native
+engine manages the shared author list and per-author indexes and removes a
+slide's comment part when the slide is removed. Modern PowerPoint threaded
+comments, replies, resolved state, writable dates, and rich bodies are not yet
+native.
 
 Basic table rows, cells, and virtual columns support bounded structural edits.
 Merged cells, rich table styles, relationship-owning object copies, advanced

@@ -23,6 +23,7 @@ pub(super) fn read(
         )
     })?;
     let styles = read_styles(package)?;
+    let mut comment_anchors = BTreeMap::new();
 
     let mut root = DocumentNode::new("/", "document", OfficeNodeType::Document);
     let mut body_node = DocumentNode::new("/body", "body", OfficeNodeType::Body);
@@ -35,11 +36,13 @@ pub(super) fn read(
         &styles,
         opc,
         "word/document.xml",
+        &mut comment_anchors,
         &mut body_node.children,
     );
     body_node.text = join_block_text(&body_node.children);
     root.text = body_node.text.clone();
     root.children.push(body_node);
+    append_comments(package, opc, &comment_anchors, &mut root)?;
     read_headers_and_footers(package, opc, &styles, &mut root)?;
     Ok(root)
 }
@@ -76,18 +79,100 @@ fn read_headers_and_footers(
         let path = format!("/{tag}[{index}]");
         let mut node = DocumentNode::new(&path, tag, node_type);
         node.format.insert("part".into(), part_name.clone());
+        let mut ignored_comment_anchors = BTreeMap::new();
         read_block_children(
             &container,
             &path,
             styles,
             opc,
             part_name,
+            &mut ignored_comment_anchors,
             &mut node.children,
         );
         node.text = join_block_text(&node.children);
         root.children.push(node);
     }
     Ok(())
+}
+
+fn append_comments(
+    package: &NativeOfficePackage,
+    opc: &OpcPackageModel,
+    anchors: &BTreeMap<String, String>,
+    root: &mut DocumentNode,
+) -> UseResult<()> {
+    let source = RelationshipSource::Part {
+        part_name: "word/document.xml".to_string(),
+    };
+    let Some(relationship) = opc
+        .relationships()
+        .relationships_from(&source)
+        .iter()
+        .find(|relationship| relationship.relationship_type.ends_with("/comments"))
+    else {
+        return Ok(());
+    };
+    let RelationshipTarget::Internal { part_name, .. } = &relationship.target else {
+        return Err(semantic_error(
+            "use.office.comment_relationship_invalid",
+            "Word comments relationship must be internal.",
+        ));
+    };
+    let part = package.xml_part(part_name)?;
+    let comments = parse_xml_tree(&part)?;
+    require_word_element(&comments, "comments", part.name())?;
+    for (offset, comment) in comments.children_named("comment").enumerate() {
+        let id = comment.attribute("id").ok_or_else(|| {
+            semantic_error(
+                "use.office.comment_id_missing",
+                format!("Word comment {} has no ID.", offset + 1),
+            )
+        })?;
+        let mut node = DocumentNode::new(
+            format!("/comments/comment[{}]", offset + 1),
+            "comment",
+            OfficeNodeType::Comment,
+        );
+        node.text = word_text(comment);
+        node.format.insert("id".into(), id.into());
+        node.format.insert("part".into(), part_name.clone());
+        for (attribute, key) in [
+            ("author", "author"),
+            ("initials", "initials"),
+            ("date", "date"),
+        ] {
+            if let Some(value) = comment.attribute(attribute) {
+                node.format.insert(key.into(), value.into());
+            }
+        }
+        if let Some(anchor) = anchors.get(id) {
+            node.format.insert("anchoredTo".into(), anchor.clone());
+        }
+        root.children.push(node);
+    }
+    Ok(())
+}
+
+fn collect_paragraph_comment_anchors(
+    paragraph: &XmlElement,
+    path: &str,
+    anchors: &mut BTreeMap<String, String>,
+) {
+    let mut descendants = Vec::new();
+    paragraph.descendants(&mut descendants);
+    for marker_name in ["commentRangeStart", "commentReference"] {
+        for marker in descendants
+            .iter()
+            .copied()
+            .filter(|element| element.local_name == marker_name)
+        {
+            if let Some(id) = marker.attribute("id") {
+                anchors
+                    .entry(id.to_string())
+                    .or_insert_with(|| path.to_string());
+            }
+        }
+    }
 }
 
 fn read_styles(package: &NativeOfficePackage) -> UseResult<BTreeMap<String, String>> {
@@ -117,6 +202,7 @@ fn read_block_children(
     styles: &BTreeMap<String, String>,
     opc: &OpcPackageModel,
     owner_part: &str,
+    comment_anchors: &mut BTreeMap<String, String>,
     output: &mut Vec<DocumentNode>,
 ) {
     let mut paragraph_index = output
@@ -137,6 +223,7 @@ fn read_block_children(
                     styles,
                     opc,
                     owner_part,
+                    comment_anchors,
                 ));
             }
             "tbl" => {
@@ -147,11 +234,20 @@ fn read_block_children(
                     styles,
                     opc,
                     owner_part,
+                    comment_anchors,
                 ));
             }
             "sdt" | "customXml" | "ins" | "del" | "moveFrom" | "moveTo" => {
                 let nested = element.child("sdtContent").unwrap_or(element);
-                read_block_children(nested, parent_path, styles, opc, owner_part, output);
+                read_block_children(
+                    nested,
+                    parent_path,
+                    styles,
+                    opc,
+                    owner_part,
+                    comment_anchors,
+                    output,
+                );
                 paragraph_index = output
                     .iter()
                     .filter(|node| node.node_type == OfficeNodeType::Paragraph)
@@ -172,8 +268,10 @@ fn read_paragraph(
     styles: &BTreeMap<String, String>,
     opc: &OpcPackageModel,
     owner_part: &str,
+    comment_anchors: &mut BTreeMap<String, String>,
 ) -> DocumentNode {
     let mut node = DocumentNode::new(path, "p", OfficeNodeType::Paragraph);
+    collect_paragraph_comment_anchors(paragraph, path, comment_anchors);
     if let Some(properties) = paragraph.child("pPr") {
         apply_paragraph_properties(properties, styles, &mut node);
     }
@@ -182,6 +280,9 @@ fn read_paragraph(
     for child in paragraph.child_elements() {
         match child.local_name.as_str() {
             "r" => {
+                if is_comment_reference_run(child) {
+                    continue;
+                }
                 run_index += 1;
                 node.children
                     .push(read_run(child, &format!("{path}/r[{run_index}]")));
@@ -281,12 +382,23 @@ fn append_nested_runs(
 ) {
     for child in element.child_elements() {
         if child.local_name == "r" {
+            if is_comment_reference_run(child) {
+                continue;
+            }
             *run_index += 1;
             output.push(read_run(child, &format!("{paragraph_path}/r[{run_index}]")));
         } else {
             append_nested_runs(child, paragraph_path, run_index, output);
         }
     }
+}
+
+fn is_comment_reference_run(run: &XmlElement) -> bool {
+    let meaningful = run
+        .child_elements()
+        .filter(|child| child.local_name != "rPr")
+        .collect::<Vec<_>>();
+    meaningful.len() == 1 && meaningful[0].local_name == "commentReference"
 }
 
 fn read_run(run: &XmlElement, path: &str) -> DocumentNode {
@@ -357,6 +469,7 @@ fn read_table(
     styles: &BTreeMap<String, String>,
     opc: &OpcPackageModel,
     owner_part: &str,
+    comment_anchors: &mut BTreeMap<String, String>,
 ) -> DocumentNode {
     let mut node = DocumentNode::new(path, "tbl", OfficeNodeType::Table);
     if let Some(style) = table
@@ -381,6 +494,7 @@ fn read_table(
                 styles,
                 opc,
                 owner_part,
+                comment_anchors,
                 &mut cell_node.children,
             );
             cell_node.text = join_block_text(&cell_node.children);

@@ -1,5 +1,8 @@
 use a3s_use_core::UseResult;
-use a3s_use_office::{NativeCreatedImage, NativeOfficeEditor, NativeOfficeImage};
+use a3s_use_office::{
+    NativeCreatedImage, NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeEditor,
+    NativeOfficeImage,
+};
 
 use super::arguments::{AllowedOptions, ParsedArguments};
 use super::{
@@ -71,6 +74,31 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
                     None,
                 )
             }
+            "comment" | "note-comment" => {
+                let author = parsed
+                    .author
+                    .as_deref()
+                    .ok_or_else(|| usage_error("native comment add requires --author <name>"))?;
+                let body = parsed
+                    .text
+                    .as_deref()
+                    .ok_or_else(|| usage_error("native comment add requires --text <value>"))?;
+                let mut comment = NativeOfficeComment::new(author, body)?;
+                if let Some(initials) = &parsed.initials {
+                    comment = comment.with_initials(initials);
+                }
+                match (parsed.x_emu, parsed.y_emu) {
+                    (Some(x_emu), Some(y_emu)) => {
+                        comment =
+                            comment.with_position(NativeOfficeCommentPosition::new(x_emu, y_emu));
+                    }
+                    (None, None) => {}
+                    _ => return Err(usage_error(
+                        "native Presentation comment coordinates require both --x-emu and --y-emu",
+                    )),
+                }
+                ("add-comment", editor.add_comment(parent, comment)?, None)
+            }
             "picture" | "image" | "img" => {
                 let input = parsed.input.as_deref().ok_or_else(|| {
                     usage_error("native picture add requires --input <png|jpeg|gif>")
@@ -126,6 +154,7 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
 fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> {
     let is_picture = matches!(node_type, "picture" | "image" | "img");
     let is_hyperlink = matches!(node_type, "hyperlink" | "link");
+    let is_comment = matches!(node_type, "comment" | "note-comment");
     let accepts_rows = matches!(node_type, "table" | "tbl");
     let accepts_columns = matches!(node_type, "table" | "tbl" | "row" | "tr");
     let accepts_index = matches!(node_type, "column" | "col");
@@ -142,6 +171,8 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
             | "shape"
             | "hyperlink"
             | "link"
+            | "comment"
+            | "note-comment"
     );
     if parsed.rows.is_some() && !accepts_rows {
         return Err(usage_error(format!(
@@ -200,6 +231,18 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
         (parsed.tooltip.is_some(), "--tooltip"),
     ] {
         if present && !is_hyperlink {
+            return Err(usage_error(format!(
+                "native Office add type '{node_type}' does not accept {option}"
+            )));
+        }
+    }
+    for (present, option) in [
+        (parsed.author.is_some(), "--author"),
+        (parsed.initials.is_some(), "--initials"),
+        (parsed.x_emu.is_some(), "--x-emu"),
+        (parsed.y_emu.is_some(), "--y-emu"),
+    ] {
+        if present && !is_comment {
             return Err(usage_error(format!(
                 "native Office add type '{node_type}' does not accept {option}"
             )));
