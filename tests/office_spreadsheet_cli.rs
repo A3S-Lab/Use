@@ -157,6 +157,44 @@ fn native_spreadsheet_cli_edits_ranges_structure_and_sheet_order_without_officec
     );
     assert_eq!(root["data"]["node"]["children"][0]["path"], "/Q1 Data");
     assert_eq!(root["data"]["node"]["children"][1]["path"], "/Sheet1");
+
+    run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            document,
+            "/Sheet1/D1",
+            "--formula",
+            "'Sheet1'!B1",
+            "--json",
+        ],
+    );
+    let copied = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "copy-sheet",
+            document,
+            "/Sheet1",
+            "Copy",
+            "--position",
+            "2",
+            "--json",
+        ],
+    );
+    assert_eq!(copied["data"]["operation"], "copy-sheet");
+    assert_eq!(copied["data"]["path"], "/Copy");
+    let copied_formula = run(
+        &provider,
+        &["office", "native", "get", document, "/Copy/D1", "--json"],
+    );
+    assert_eq!(
+        copied_formula["data"]["node"]["format"]["formula"],
+        "'Copy'!B1"
+    );
 }
 
 #[test]
@@ -200,6 +238,12 @@ fn native_spreadsheet_structural_mutations_are_available_in_atomic_batches() {
                     "sheet": "/Sheet1",
                     "start": "A",
                     "count": 1
+                },
+                {
+                    "operation": "copy-worksheet",
+                    "path": "/Sheet1",
+                    "name": "Clone",
+                    "position": 2
                 }
             ]
         }))
@@ -218,7 +262,7 @@ fn native_spreadsheet_structural_mutations_are_available_in_atomic_batches() {
             "--json",
         ],
     );
-    assert_eq!(batch["data"]["result"]["applied"], 2);
+    assert_eq!(batch["data"]["result"]["applied"], 3);
     assert_eq!(batch["data"]["atomic"], true);
 
     let moved = run(
@@ -233,4 +277,16 @@ fn native_spreadsheet_structural_mutations_are_available_in_atomic_batches() {
         ],
     );
     assert_eq!(moved["data"]["node"]["text"], "move");
+    let cloned = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "get",
+            document_text,
+            "/Clone/B3",
+            "--json",
+        ],
+    );
+    assert_eq!(cloned["data"]["node"]["text"], "move");
 }

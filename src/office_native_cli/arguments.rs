@@ -17,6 +17,7 @@ pub(super) struct ParsedArguments {
     pub boolean: Option<String>,
     pub formula: Option<String>,
     pub count: Option<u32>,
+    pub position: Option<usize>,
 }
 
 impl ParsedArguments {
@@ -94,6 +95,10 @@ impl ParsedArguments {
                     })?);
                     index += 2;
                 }
+                "--position" if allowed.position => {
+                    set_usize_option(&mut parsed.position, args, index, "--position")?;
+                    index += 2;
+                }
                 option if option.starts_with('-') => {
                     return Err(usage_error(format!(
                         "unknown native Office option '{option}'"
@@ -123,6 +128,7 @@ pub(super) struct AllowedOptions {
     boolean: bool,
     formula: bool,
     count: bool,
+    position: bool,
 }
 
 impl AllowedOptions {
@@ -139,6 +145,7 @@ impl AllowedOptions {
         boolean: false,
         formula: false,
         count: false,
+        position: false,
     };
     pub const GET: Self = Self {
         depth: true,
@@ -173,6 +180,11 @@ impl AllowedOptions {
     pub const STRUCTURE: Self = Self {
         output: true,
         count: true,
+        ..Self::NONE
+    };
+    pub const COPY: Self = Self {
+        output: true,
+        position: true,
         ..Self::NONE
     };
 }

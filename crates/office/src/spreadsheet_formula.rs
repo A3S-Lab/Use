@@ -98,6 +98,37 @@ pub(crate) fn rewrite_formula_sheet_name(formula: &str, old: &str, new: &str) ->
     Ok(output)
 }
 
+pub(crate) fn rewrite_formula_deleted_sheet(formula: &str, deleted: &str) -> UseResult<String> {
+    let mut output = String::with_capacity(formula.len());
+    let mut cursor = 0;
+    while cursor < formula.len() {
+        if formula.as_bytes()[cursor] == b'"' {
+            let end = quoted_string_end(formula, cursor, b'"');
+            output.push_str(&formula[cursor..end]);
+            cursor = end;
+            continue;
+        }
+        if let Some(qualifier) = parse_qualifier(formula, cursor) {
+            if !qualifier.external && qualifier.name.contains(':') {
+                return Err(formula_error(
+                    "Three-dimensional sheet references are not yet safe for worksheet deletion.",
+                ));
+            }
+            if !qualifier.external && qualifier.name.eq_ignore_ascii_case(deleted) {
+                output.push_str("#REF!");
+            } else {
+                output.push_str(qualifier.raw);
+            }
+            cursor = qualifier.end;
+            continue;
+        }
+        let character = formula[cursor..].chars().next().unwrap_or_default();
+        output.push(character);
+        cursor += character.len_utf8();
+    }
+    Ok(output)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ParsedReference {
     Cells {
@@ -613,5 +644,18 @@ mod tests {
             r#"'Q1 Data'!A1+'Q1 Data'!B2+"Old!C3"+Other!D4"#
         );
         assert!(rewrite_formula_sheet_name("Sheet1:Sheet3!A1", "Sheet1", "Renamed").is_err());
+    }
+
+    #[test]
+    fn deleted_sheets_become_ref_qualifiers_without_touching_strings_or_external_links() {
+        assert_eq!(
+            rewrite_formula_deleted_sheet(
+                r#"Old!A1+'Old'!B2+\"Old!C3\"+'[book.xlsx]Old'!D4+Other!E5"#,
+                "Old"
+            )
+            .unwrap(),
+            r#"#REF!A1+#REF!B2+\"Old!C3\"+'[book.xlsx]Old'!D4+Other!E5"#
+        );
+        assert!(rewrite_formula_deleted_sheet("Sheet1:Sheet3!A1", "Sheet2").is_err());
     }
 }

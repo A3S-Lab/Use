@@ -293,7 +293,29 @@ async fn native_editor_sets_and_removes_bounded_spreadsheet_ranges_atomically() 
 async fn native_editor_writes_typed_spreadsheet_values_and_marks_formulas_for_recalculation() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("typed.xlsx");
-    let mut editor = NativeOfficeEditor::create(&path).await.unwrap();
+    let editor = NativeOfficeEditor::create(&path).await.unwrap();
+    let mut package = editor.package().clone();
+    package
+        .set_part(
+            "xl/calcChain.xml",
+            br#"<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="A1" i="1"/></calcChain>"#
+                .to_vec(),
+        )
+        .unwrap();
+    crate::opc_edit::add_content_type_override(
+        &mut package,
+        "xl/calcChain.xml",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml",
+    )
+    .unwrap();
+    crate::opc_edit::add_relationship(
+        &mut package,
+        "xl/_rels/workbook.xml.rels",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain",
+        "calcChain.xml",
+    )
+    .unwrap();
+    let mut editor = NativeOfficeEditor::from_package(package).unwrap();
     let original_workbook = editor.package().part("xl/workbook.xml").unwrap().to_vec();
     let original_worksheet = editor
         .package()
@@ -326,6 +348,7 @@ async fn native_editor_writes_typed_spreadsheet_values_and_marks_formulas_for_re
         editor.package().part("xl/worksheets/sheet1.xml").unwrap(),
         original_worksheet
     );
+    assert!(editor.package().contains_part("xl/calcChain.xml"));
 
     editor
         .set_cell_value(
@@ -377,6 +400,16 @@ async fn native_editor_writes_typed_spreadsheet_values_and_marks_formulas_for_re
     assert!(workbook.contains("calcMode=\"auto\""));
     assert!(workbook.contains("fullCalcOnLoad=\"1\""));
     assert!(workbook.contains("forceFullCalc=\"1\""));
+    assert!(!document.package().contains_part("xl/calcChain.xml"));
+    assert!(!String::from_utf8(
+        document
+            .package()
+            .part("xl/_rels/workbook.xml.rels")
+            .unwrap()
+            .to_vec()
+    )
+    .unwrap()
+    .contains("calcChain"));
 }
 
 #[tokio::test]

@@ -17,7 +17,7 @@ mod structure;
 mod worksheet;
 
 pub(super) use structure::{delete_columns, delete_rows, insert_columns, insert_rows};
-pub(super) use worksheet::{move_worksheet, rename_worksheet};
+pub(super) use worksheet::{copy_worksheet, move_worksheet, rename_worksheet};
 
 pub(super) fn set_text(package: &mut NativeOfficePackage, path: &str, text: &str) -> UseResult<()> {
     set_cell_value(
@@ -520,6 +520,7 @@ fn normalize_cell_value(value: &SpreadsheetCellValue) -> UseResult<SpreadsheetCe
 }
 
 fn mark_workbook_for_recalculation(package: &mut NativeOfficePackage) -> UseResult<()> {
+    remove_calculation_chain(package)?;
     let workbook = package.xml_part("xl/workbook.xml")?;
     let index = index_xml(&workbook)?;
     let edited = if let Some(calc) = index.child("calcPr", 1) {
@@ -571,6 +572,51 @@ fn mark_workbook_for_recalculation(package: &mut NativeOfficePackage) -> UseResu
         )?
     };
     package.set_part("xl/workbook.xml", edited)
+}
+
+fn remove_calculation_chain(package: &mut NativeOfficePackage) -> UseResult<()> {
+    let model = package.opc_model()?;
+    let source = crate::RelationshipSource::Part {
+        part_name: "xl/workbook.xml".into(),
+    };
+    let relationships = model
+        .relationships()
+        .relationships_from(&source)
+        .iter()
+        .filter(|relationship| relationship.relationship_type.ends_with("/calcChain"))
+        .filter_map(|relationship| {
+            relationship
+                .target
+                .internal_part_name()
+                .map(|part| (relationship.id.clone(), part.to_string()))
+        })
+        .collect::<Vec<_>>();
+    if relationships.is_empty() {
+        return Ok(());
+    }
+    let targets = relationships
+        .iter()
+        .map(|(_, target)| target.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for (id, _) in relationships {
+        crate::opc_edit::remove_relationship(package, "xl/_rels/workbook.xml.rels", &id)?;
+    }
+    for target in targets {
+        let relationships = worksheet::relationship_part(&target);
+        if model
+            .content_types()
+            .override_for_part(&relationships)
+            .is_some()
+        {
+            crate::opc_edit::remove_content_type_override(package, &relationships)?;
+        }
+        package.remove_part(&relationships)?;
+        if model.content_types().override_for_part(&target).is_some() {
+            crate::opc_edit::remove_content_type_override(package, &target)?;
+        }
+        package.remove_part(&target)?;
+    }
+    Ok(())
 }
 
 fn cell_coordinates(reference: &str) -> UseResult<(u32, u32, String)> {
@@ -695,6 +741,7 @@ pub(super) fn remove_worksheet(package: &mut NativeOfficePackage, path: &str) ->
             "Spreadsheet semantic sheet has no source part.",
         )
     })?;
+    let (owned_parts, owned_overrides) = worksheet::owned_worksheet_parts(package, &part_name)?;
     let workbook = package.xml_part("xl/workbook.xml")?;
     let index = index_xml(&workbook)?;
     let sheets = index.child("sheets", 1).ok_or_else(|| {
@@ -730,29 +777,28 @@ pub(super) fn remove_worksheet(package: &mut NativeOfficePackage, path: &str) ->
                 format!("Worksheet '{requested_name}' has no relationship ID."),
             )
         })?;
-    let edited = crate::xml_edit::apply_patches(
-        &workbook,
-        vec![crate::xml_edit::XmlPatch::new(
-            sheet.full_range.clone(),
-            Vec::new(),
-        )],
-    )?;
+    let edited = worksheet::remove_workbook_sheet(&workbook, requested_name)?;
+    worksheet::rewrite_deleted_worksheet_references(package, requested_name, &part_name)?;
     crate::opc_edit::remove_relationship(package, "xl/_rels/workbook.xml.rels", &relationship_id)?;
-    crate::opc_edit::remove_content_type_override(package, &part_name)?;
-    let (directory, file_name) = part_name.rsplit_once('/').ok_or_else(|| {
-        editor_error(
-            "use.office.spreadsheet_sheet_invalid",
-            format!("Worksheet part '{part_name}' has an invalid path."),
-        )
-    })?;
-    package.remove_part(&format!("{directory}/_rels/{file_name}.rels"))?;
-    if !package.remove_part(&part_name)? {
+    for owned_part in &owned_parts {
+        let relationships = worksheet::relationship_part(owned_part);
+        if owned_overrides.contains(&relationships) {
+            crate::opc_edit::remove_content_type_override(package, &relationships)?;
+        }
+        package.remove_part(&relationships)?;
+        if owned_overrides.contains(owned_part) {
+            crate::opc_edit::remove_content_type_override(package, owned_part)?;
+        }
+        package.remove_part(owned_part)?;
+    }
+    if package.contains_part(&part_name) {
         return Err(editor_error(
-            "use.office.node_not_found",
-            format!("Office semantic path '{path}' does not exist."),
+            "use.office.spreadsheet_sheet_invalid",
+            format!("Worksheet part '{part_name}' could not be removed."),
         ));
     }
-    package.set_part("xl/workbook.xml", edited)
+    package.set_part("xl/workbook.xml", edited)?;
+    mark_workbook_for_recalculation(package)
 }
 
 fn validate_worksheet_name(name: &str) -> UseResult<()> {

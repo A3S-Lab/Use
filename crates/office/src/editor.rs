@@ -90,6 +90,12 @@ pub enum NativeOfficeMutation {
         path: String,
         position: usize,
     },
+    CopyWorksheet {
+        path: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<usize>,
+    },
     Remove {
         path: String,
     },
@@ -355,6 +361,19 @@ impl NativeOfficeEditor {
         })
     }
 
+    pub fn copy_worksheet(
+        &mut self,
+        path: impl Into<String>,
+        name: impl Into<String>,
+        position: Option<usize>,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::CopyWorksheet {
+            path: path.into(),
+            name: name.into(),
+            position,
+        })
+    }
+
     fn single_path(&mut self, mutation: NativeOfficeMutation) -> UseResult<String> {
         let result = self.apply_batch(&[mutation])?;
         result.paths.into_iter().next().ok_or_else(|| {
@@ -435,6 +454,11 @@ impl NativeOfficeEditor {
                 NativeOfficeMutation::MoveWorksheet { path, position } => {
                     spreadsheet::move_worksheet(&mut self.package, path, *position)
                 }
+                NativeOfficeMutation::CopyWorksheet {
+                    path,
+                    name,
+                    position,
+                } => spreadsheet::copy_worksheet(&mut self.package, path, name, *position),
                 NativeOfficeMutation::Remove { path } => {
                     remove_node(&mut self.package, path).map(|()| path.clone())
                 }

@@ -30,6 +30,7 @@ const HELP: &str = concat!(
     "  a3s-use office native insert-columns|delete-columns <file> <sheet> <start> [--count <n>] [--output <file>] [--json]\n",
     "  a3s-use office native rename-sheet <file> <sheet> <new-name> [--output <file>] [--json]\n",
     "  a3s-use office native move-sheet <file> <sheet> <one-based-position> [--output <file>] [--json]\n",
+    "  a3s-use office native copy-sheet <file> <sheet> <new-name> [--position <one-based-position>] [--output <file>] [--json]\n",
     "  a3s-use office native batch <file> --input <mutations.json> [--output <file>] [--json]"
 );
 
@@ -50,6 +51,7 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("delete-columns") => edit_structure(args, StructureOperation::DeleteColumns).await,
         Some("rename-sheet") => rename_sheet(args).await,
         Some("move-sheet") => move_sheet(args).await,
+        Some("copy-sheet") => copy_sheet(args).await,
         Some("batch") => batch(args).await,
         Some(command) => Err(usage_error(format!(
             "unknown native Office command '{command}'"
@@ -64,7 +66,7 @@ fn help() -> CommandOutput {
             "commands": [
                 "get", "query", "view", "validate", "create", "add", "set", "remove",
                 "insert-rows", "delete-rows", "insert-columns", "delete-columns",
-                "rename-sheet", "move-sheet", "batch"
+                "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],
             "formats": ["docx", "xlsx", "pptx"],
             "runtimeDependencies": [],
@@ -529,6 +531,44 @@ async fn move_sheet(args: &[String]) -> UseResult<CommandOutput> {
             "changed": true,
             "path": path,
             "position": position,
+            "kind": editor.package().kind(),
+            "outputPath": output_path,
+            "inPlace": in_place,
+            "revision": editor.package().source_revision()
+        }),
+    ))
+}
+
+async fn copy_sheet(args: &[String]) -> UseResult<CommandOutput> {
+    let parsed = ParsedArguments::parse(args, AllowedOptions::COPY)?;
+    if parsed.positionals.len() != 3 {
+        return Err(usage_error(
+            "office native copy-sheet requires <file>, <sheet>, and <new-name>",
+        ));
+    }
+    if parsed.position == Some(0) {
+        return Err(usage_error("copy-sheet --position must be at least 1"));
+    }
+    let source = &parsed.positionals[0];
+    let sheet = &parsed.positionals[1];
+    let name = &parsed.positionals[2];
+    let mut editor = NativeOfficeEditor::open(source).await?;
+    let source_path = editor.package().path().to_path_buf();
+    let path = editor.copy_worksheet(sheet, name, parsed.position)?;
+    save_editor(&mut editor, parsed.output.as_deref()).await?;
+    let output_path = editor.package().path().to_path_buf();
+    let in_place = output_path == source_path;
+    Ok(CommandOutput::success(
+        format!(
+            "Copied {sheet} to {path} and saved '{}'.",
+            output_path.display()
+        ),
+        serde_json::json!({
+            "operation": "copy-sheet",
+            "changed": true,
+            "from": sheet,
+            "path": path,
+            "position": parsed.position,
             "kind": editor.package().kind(),
             "outputPath": output_path,
             "inPlace": in_place,

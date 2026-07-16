@@ -248,12 +248,14 @@ existing Word, Spreadsheet, and Presentation nodes. The typed mutation layer
 also adds and removes Word paragraphs and basic table/row/cell structures,
 upserts typed Spreadsheet text, number, boolean, and formula cells, removes
 cells and bounded cell ranges, structurally inserts or deletes rows and columns,
-and adds, removes, renames, or reorders worksheets. Structural Spreadsheet
-edits rewrite affected A1 formulas, defined names, worksheet metadata, tables,
-comments, VML notes, drawing anchors, and chart references; unsupported pivot
-and 3D-reference cases fail closed before save. Presentation slides and text
-shapes also support native add/remove. Saves are atomic and reject a changed
-source revision instead of overwriting another writer.
+and adds, removes, renames, reorders, or copies worksheets. Worksheet copy
+clones the owned OPC relationship subgraph while preserving shared workbook
+resources; removal garbage-collects only unshared descendants. Structural
+Spreadsheet edits rewrite affected A1 formulas, defined names, worksheet
+metadata, tables, comments, VML notes, drawing anchors, and chart references;
+unsupported pivot and 3D-reference cases fail closed before save. Presentation
+slides and text shapes also support native add/remove. Saves are atomic and
+reject a changed source revision instead of overwriting another writer.
 
 The native runtime does not require Microsoft Office, LibreOffice, OfficeCLI,
 Python, Node.js, or .NET. LibreOffice may be used only by optional CI
@@ -299,6 +301,7 @@ a3s use office native insert-rows workbook.xlsx /Sheet1 2 --count 3 --json
 a3s use office native delete-columns workbook.xlsx /Sheet1 B --count 2 --json
 a3s use office native rename-sheet workbook.xlsx /Sheet1 'Q1 Data' --json
 a3s use office native move-sheet workbook.xlsx '/Q1 Data' 1 --json
+a3s use office native copy-sheet workbook.xlsx '/Q1 Data' 'Q1 Copy' --position 2 --json
 
 # Add and remove native document structures.
 a3s use office native add report.docx /body --type paragraph --text 'Summary' --json
@@ -352,8 +355,8 @@ The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `set-text`,
 `set-cell-value`, `add-paragraph`, `add-table`, `add-table-row`, `add-table-cell`,
 `add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
-`delete-columns`, `rename-worksheet`, `move-worksheet`, `add-slide`,
-`add-shape`, and `remove`.
+`delete-columns`, `rename-worksheet`, `move-worksheet`, `copy-worksheet`,
+`add-slide`, `add-shape`, and `remove`.
 
 Typed Spreadsheet batch values use an explicit nested type, for example:
 

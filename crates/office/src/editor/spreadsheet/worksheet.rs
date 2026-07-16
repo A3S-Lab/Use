@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use a3s_use_core::UseResult;
 
@@ -7,9 +7,259 @@ use super::{
     validate_worksheet_name, XmlPatch,
 };
 use crate::semantic::{NativeOfficeDocument, OfficeNodeType};
-use crate::spreadsheet_formula::rewrite_formula_sheet_name;
+use crate::spreadsheet_formula::{rewrite_formula_deleted_sheet, rewrite_formula_sheet_name};
 use crate::xml_edit::{apply_patches, escape_text, IndexedXmlElement};
-use crate::{DocumentKind, LosslessXmlPart, NativeOfficePackage};
+use crate::{
+    DocumentKind, LosslessXmlPart, NativeOfficePackage, RelationshipSource, RelationshipTarget,
+};
+
+mod copy;
+
+pub(crate) use copy::copy_worksheet;
+
+pub(super) fn owned_worksheet_parts(
+    package: &NativeOfficePackage,
+    root_part: &str,
+) -> UseResult<(BTreeSet<String>, BTreeSet<String>)> {
+    let model = package.opc_model()?;
+    let mut candidates = BTreeSet::from([root_part.to_string()]);
+    let mut pending = VecDeque::from([root_part.to_string()]);
+    while let Some(source_part) = pending.pop_front() {
+        let source = RelationshipSource::Part {
+            part_name: source_part,
+        };
+        for relationship in model.relationships().relationships_from(&source) {
+            let RelationshipTarget::Internal { part_name, .. } = &relationship.target else {
+                continue;
+            };
+            if copy::is_shared_relationship(&relationship.relationship_type, part_name) {
+                continue;
+            }
+            if candidates.insert(part_name.clone()) {
+                pending.push_back(part_name.clone());
+            }
+        }
+    }
+
+    let mut protected = BTreeSet::new();
+    for (source, relationship) in model.relationships().relationships() {
+        let RelationshipTarget::Internal { part_name, .. } = &relationship.target else {
+            continue;
+        };
+        if part_name == root_part || !candidates.contains(part_name) {
+            continue;
+        }
+        let inbound_is_owned = source
+            .part_name()
+            .is_some_and(|source| candidates.contains(source));
+        if !inbound_is_owned {
+            protected.insert(part_name.clone());
+        }
+    }
+
+    let mut pending = protected.iter().cloned().collect::<VecDeque<_>>();
+    while let Some(source_part) = pending.pop_front() {
+        let source = RelationshipSource::Part {
+            part_name: source_part,
+        };
+        for relationship in model.relationships().relationships_from(&source) {
+            let RelationshipTarget::Internal { part_name, .. } = &relationship.target else {
+                continue;
+            };
+            if candidates.contains(part_name) && protected.insert(part_name.clone()) {
+                pending.push_back(part_name.clone());
+            }
+        }
+    }
+    candidates.retain(|part| part == root_part || !protected.contains(part));
+    let overrides = model
+        .content_types()
+        .overrides()
+        .map(|(part, _)| part.to_string())
+        .filter(|part| {
+            candidates.contains(part)
+                || candidates
+                    .iter()
+                    .any(|source| relationship_part(source) == *part)
+        })
+        .collect();
+    Ok((candidates, overrides))
+}
+
+pub(super) fn relationship_part(part_name: &str) -> String {
+    part_name.rsplit_once('/').map_or_else(
+        || format!("_rels/{part_name}.rels"),
+        |(directory, file_name)| format!("{directory}/_rels/{file_name}.rels"),
+    )
+}
+
+pub(super) fn rewrite_deleted_worksheet_references(
+    package: &mut NativeOfficePackage,
+    deleted_name: &str,
+    deleted_part: &str,
+) -> UseResult<()> {
+    let parts = package
+        .part_names()
+        .filter(|part| {
+            *part != deleted_part
+                && part.ends_with(".xml")
+                && (part.starts_with("xl/worksheets/")
+                    || part.starts_with("xl/charts/")
+                    || part.starts_with("xl/tables/"))
+        })
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    for part_name in parts {
+        let part = package.xml_part(&part_name)?;
+        let index = index_xml(&part)?;
+        let mut formulas = Vec::new();
+        collect_formula_elements(&index, &mut formulas);
+        let mut patches = Vec::new();
+        for formula in formulas {
+            let text = decoded_text(&part, formula)?;
+            let rewritten = rewrite_formula_deleted_sheet(&text, deleted_name)?;
+            if rewritten != text {
+                patches.push(XmlPatch::new(
+                    formula.content_range.clone(),
+                    escape_text(&rewritten),
+                ));
+            }
+        }
+        if patches.is_empty() {
+            continue;
+        }
+        if part_name.starts_with("xl/worksheets/") {
+            let mut cells = Vec::new();
+            index.descendants_named("c", &mut cells);
+            for cell in cells {
+                if cell.children.iter().any(|child| child.local_name == "f") {
+                    if let Some(value) = cell.children.iter().find(|child| child.local_name == "v")
+                    {
+                        patches.push(XmlPatch::new(value.full_range.clone(), Vec::new()));
+                    }
+                }
+            }
+        } else if part_name.starts_with("xl/charts/") {
+            for cache_name in ["numCache", "strCache", "multiLvlStrCache"] {
+                let mut caches = Vec::new();
+                index.descendants_named(cache_name, &mut caches);
+                patches.extend(
+                    caches
+                        .into_iter()
+                        .map(|cache| XmlPatch::new(cache.full_range.clone(), Vec::new())),
+                );
+            }
+        }
+        package.set_part(&part_name, apply_patches(&part, patches)?)?;
+    }
+    Ok(())
+}
+
+pub(super) fn remove_workbook_sheet(
+    workbook: &LosslessXmlPart,
+    deleted_name: &str,
+) -> UseResult<Vec<u8>> {
+    let index = index_xml(workbook)?;
+    let sheets = index.child("sheets", 1).ok_or_else(|| {
+        editor_error(
+            "use.office.spreadsheet_sheets_missing",
+            "Spreadsheet workbook has no sheets collection.",
+        )
+    })?;
+    let sheet_elements = sheets
+        .children
+        .iter()
+        .filter(|sheet| sheet.local_name == "sheet")
+        .collect::<Vec<_>>();
+    let removed_index = sheet_elements
+        .iter()
+        .position(|sheet| {
+            sheet
+                .attributes
+                .get("name")
+                .is_some_and(|name| name.eq_ignore_ascii_case(deleted_name))
+        })
+        .ok_or_else(|| node_not_found(&format!("/{deleted_name}")))?;
+    let mut patches = vec![XmlPatch::new(
+        sheet_elements[removed_index].full_range.clone(),
+        Vec::new(),
+    )];
+
+    let mut defined_names = Vec::new();
+    index.descendants_named("definedName", &mut defined_names);
+    for defined_name in defined_names {
+        let local_sheet_id = defined_name
+            .attributes
+            .get("localSheetId")
+            .and_then(|value| value.parse::<usize>().ok());
+        if local_sheet_id == Some(removed_index) {
+            patches.push(XmlPatch::new(defined_name.full_range.clone(), Vec::new()));
+            continue;
+        }
+        if local_sheet_id.is_some_and(|index| index >= sheet_elements.len()) {
+            return Err(editor_error(
+                "use.office.spreadsheet_defined_name_invalid",
+                format!(
+                    "Defined name localSheetId {} has no worksheet.",
+                    local_sheet_id.unwrap_or_default()
+                ),
+            ));
+        }
+        if let Some(local_sheet_id) = local_sheet_id.filter(|index| *index > removed_index) {
+            patches.push(XmlPatch::new(
+                defined_name.start_tag_range.clone(),
+                updated_start_tag(
+                    defined_name,
+                    &BTreeMap::from([(
+                        "localSheetId".to_string(),
+                        (local_sheet_id - 1).to_string(),
+                    )]),
+                ),
+            ));
+        }
+        let formula = decoded_text(workbook, defined_name)?;
+        let rewritten = rewrite_formula_deleted_sheet(&formula, deleted_name)?;
+        if rewritten != formula {
+            patches.push(XmlPatch::new(
+                defined_name.content_range.clone(),
+                escape_text(&rewritten),
+            ));
+        }
+    }
+
+    let remaining_sheets = sheet_elements.len() - 1;
+    let mut views = Vec::new();
+    index.descendants_named("workbookView", &mut views);
+    for view in views {
+        let mut updates = BTreeMap::new();
+        for attribute in ["activeTab", "firstSheet"] {
+            let Some(old_index) = view
+                .attributes
+                .get(attribute)
+                .and_then(|value| value.parse::<usize>().ok())
+            else {
+                continue;
+            };
+            let new_index = if old_index > removed_index {
+                old_index - 1
+            } else if old_index == removed_index {
+                removed_index.min(remaining_sheets - 1)
+            } else {
+                old_index
+            };
+            if new_index != old_index {
+                updates.insert(attribute.to_string(), new_index.to_string());
+            }
+        }
+        if !updates.is_empty() {
+            patches.push(XmlPatch::new(
+                view.start_tag_range.clone(),
+                updated_start_tag(view, &updates),
+            ));
+        }
+    }
+    apply_patches(workbook, patches)
+}
 
 pub(crate) fn rename_worksheet(
     package: &mut NativeOfficePackage,

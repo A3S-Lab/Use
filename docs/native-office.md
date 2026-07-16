@@ -174,15 +174,25 @@ character bound, and mark the workbook for full recalculation; they do not yet
 parse or evaluate formulas. Cell set/remove accepts normalized A1 rectangular
 ranges of at most 100,000 cells and rolls back the whole operation on error.
 Native Spreadsheet structure operations insert or delete at most 10,000 rows or
-columns, rename worksheets, and reorder worksheets. They update cell and row
-references, dimensions, column definitions, defined names, workbook view state,
-merges, filters, selections, validation, conditional formatting, hyperlinks,
-sort state, ignored errors, tables, comments, VML note anchors, drawing anchors,
-and chart formulas. Supported local and cross-sheet A1 formula references,
-including absolute, rectangular, whole-row, and whole-column references, are
-rewritten and their cached values are invalidated; external references and
-string literals are preserved. Unsafe 3D-reference and pivot-table structural
-edits fail closed and roll back.
+columns, rename worksheets, reorder worksheets, and copy a worksheet after its
+source or at an explicit one-based position. Copy assigns new worksheet and
+table identities, clones owned table/comment/VML/drawing/chart/media OPC
+subgraphs, preserves explicitly shared workbook resources, rewrites copied
+self-references and local defined names, and leaves every source part unchanged.
+Worksheet removal deletes only unshared descendants, removes local definitions,
+shifts workbook indexes, and changes surviving formulas that target the deleted
+sheet to `#REF!`. Formula and structural mutations discard stale calculation
+chains and request a full application recalculation.
+
+Row and column edits update cell and row references, dimensions, column
+definitions, defined names, workbook view state, merges, filters, selections,
+validation, conditional formatting, hyperlinks, sort state, ignored errors,
+tables, comments, VML note anchors, drawing anchors, and chart formulas.
+Supported local and cross-sheet A1 formula references, including absolute,
+rectangular, whole-row, and whole-column references, are rewritten and their
+cached values are invalidated; external references and string literals are
+preserved. Unsafe 3D-reference and pivot-table structural or copy edits fail
+closed and roll back.
 
 Native add supports Word paragraphs and bounded table/row/cell structures,
 while remove supports Word paragraphs, runs, tables, rows, and cells with
@@ -192,7 +202,7 @@ add/remove. Slide and worksheet removal updates their OPC relationships,
 content types, and owned parts. The typed editor and `office native batch`
 provide all-or-nothing in-memory rollback, bounded versioned inputs, atomic
 save/save-as, revision-conflict detection, and byte preservation for untouched
-package parts and XML subtrees. Worksheet copy, generic move/copy/swap, image
+package parts and XML subtrees. Generic node move/copy/swap, image creation and
 mutation, raw access, template merge, dump, advanced rich-format operations,
 and the formula parser/dependency/recalculation engine remain before their
 respective gates can be promoted. Creation and structural mutation remain under
@@ -247,9 +257,9 @@ compatibility component for one deprecation cycle, then is removed.
 
 The `0.1.x` CLI exposes native blank creation, reads, typed add/set/remove,
 Spreadsheet range and row/column structure edits, worksheet rename/reorder, and
-atomic batches under `office native`; other Office commands and MCP startup
-still delegate to the pinned OfficeCLI provider. This keeps existing users
-functional while native coverage grows. The native APIs are deliberately not
-advertised as full Office readiness, and `doctor` continues to report
-compatibility-provider readiness until the native read and mutation gates are
-met.
+loss-preserving worksheet copy through `copy-sheet`, plus atomic batches under
+`office native`; other Office commands and MCP startup still delegate to the
+pinned OfficeCLI provider. This keeps existing users functional while native
+coverage grows. The native APIs are deliberately not advertised as full Office
+readiness, and `doctor` continues to report compatibility-provider readiness
+until the native read and mutation gates are met.
