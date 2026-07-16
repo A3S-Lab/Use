@@ -11,6 +11,9 @@ pub mod cli;
 mod component_route;
 mod extension_cli;
 
+#[cfg(feature = "office")]
+mod office_native_cli;
+
 #[cfg(feature = "mcp")]
 mod mcp;
 

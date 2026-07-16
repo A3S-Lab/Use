@@ -52,7 +52,16 @@ a3s use browser snapshot --session research --json
 a3s use browser click @e1 --session research
 a3s use browser close --session research
 
-# Delegate Office operations to the supported OfficeCLI provider.
+# Read and mutate OOXML in-process with no external Office provider.
+a3s use office native create report.docx --json
+a3s use office native view report.docx text --json
+a3s use office native query report.docx 'p[style=Heading1]' --json
+a3s use office native set report.docx /body/p[1] --text 'Updated' --json
+a3s use office native add report.docx /body --type paragraph --text 'More' --json
+a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
+a3s use office native remove report.docx /body/p[2] --json
+
+# Commands not yet promoted to native continue through the compatibility route.
 a3s use office get report.docx /body --json
 a3s use office batch report.xlsx --input updates.json --json
 
@@ -73,8 +82,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **Agent Browser Compatibility**: Provide the locked 82-command vocabulary,
   151 MCP tools, six packaged Skills, Dashboard, and interactive runtime from
   `agent-browser` 0.31.2
-- **Native OfficeCLI Delegation**: Preserve OfficeCLI's command and standard MCP
-  contracts instead of reimplementing document formats or its resident transport
+- **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
+  selector, and semantic read layers while retaining the 0.1.x OfficeCLI
+  compatibility backend for commands not yet promoted
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -95,7 +105,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | Domain | Origin | CLI | MCP | Skill | Runtime owner |
 | --- | --- | --- | --- | --- | --- |
 | Browser | Built in | Full Browser vocabulary | A3S Use standard MCP server | Six packaged Browser Skills | A3S Use |
-| Office | Built in | Native OfficeCLI vocabulary | OfficeCLI standard MCP server | — | A3S Use manages the pinned provider |
+| Office | Built in | Stable Office vocabulary | Standard MCP server | Planned Office Skills | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
@@ -110,7 +120,7 @@ Default features are `browser`, `office`, `extensions`, and `mcp`.
 | Feature | Included capability |
 | --- | --- |
 | `browser` | Typed Browser library, stateless rendering, and full Browser driver delegation |
-| `office` | Typed Office contracts, managed OfficeCLI provider, and native delegation |
+| `office` | Typed Office contracts, native OOXML read engine, and temporary OfficeCLI compatibility |
 | `extensions` | ACL manifests, package receipts, hot-plug registry, and external CLI/MCP/Skill routes |
 | `mcp` | Standard MCP servers plus the managed Browser Streamable HTTP lifecycle |
 | `lightpanda` | Explicit opt-in Lightpanda provider support in addition to Chrome |
@@ -125,7 +135,7 @@ A compiled command surface is not proof that its provider is installed. Use
 | `a3s-use-core` | Shared diagnostics, errors, artifacts, session IDs, and risk classes |
 | `a3s-use-browser` | Object-safe rendering contract, providers, managed runtimes, and sessions |
 | `a3s-use-browser-driver` | Complete interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
-| `a3s-use-office` | Typed Office batches, pinned OfficeCLI lifecycle, and native delegation |
+| `a3s-use-office` | Native OOXML foundation, typed Office operations, and compatibility lifecycle |
 | `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |
 | `a3s-use` | Facade library, standalone CLI host, capability projection, and MCP entry points |
 
@@ -229,34 +239,168 @@ locked schemas, digests, runtime evidence, and promotion criteria.
 
 ## Office
 
-Office delegates commands to
-[iOfficeAI/OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) rather than
-reimplementing Word, spreadsheet, or presentation formats. The managed provider
-is pinned to reviewed OfficeCLI version `1.0.136`.
+Office is moving to an A3S-owned Rust engine for Word, Spreadsheet, and
+Presentation documents. The native engine now includes bounded package
+admission, byte-preserving XML, content types, a safe relationship graph,
+stable selectors, semantic `get`, `query`, `text`, `outline`, and `stats`
+reads, safe blank-document creation, and loss-preserving text replacement for
+existing Word, Spreadsheet, and Presentation nodes. The typed mutation layer
+also adds and removes Word paragraphs and basic table/row/cell structures,
+upserts typed Spreadsheet text, number, boolean, and formula cells, removes
+cells, adds and removes worksheets, and adds or removes Presentation slides
+and text shapes. Saves are atomic and reject a changed source revision instead
+of overwriting another writer.
+
+The native runtime does not require Microsoft Office, LibreOffice, OfficeCLI,
+Python, Node.js, or .NET. LibreOffice may be used only by optional CI
+interoperability checks and is never part of document execution.
+
+The explicit `office native` CLI exposes in-process blank creation, reads,
+typed add/set/remove operations, and atomic mutation batches today. Other
+`0.1.x` commands and the Office MCP route still use a compatibility backend
+pinned to OfficeCLI `1.0.136`. This is a migration boundary, not the target
+architecture. The default command route will be promoted only after mutation,
+fidelity, rendering, and cross-application interoperability gates pass.
 
 ```bash
 # Inspect without downloading anything.
 a3s use office doctor --json
 
-# Install the reviewed provider explicitly, then use its native vocabulary.
+# Create by extension; an existing destination is never overwritten.
+a3s use office native create report.docx --json
+a3s use office native create workbook.xlsx --json
+a3s use office native create deck.pptx --json
+
+# Read without OfficeCLI, Microsoft Office, or LibreOffice.
+a3s use office native get report.docx /body --depth 2 --json
+a3s use office native query report.docx 'p[style=Heading1]' --json
+a3s use office native view report.xlsx stats --json
+a3s use office native validate deck.pptx --json
+
+# Replace text in place or save to a separate OOXML document.
+a3s use office native set report.docx /body/p[1] --text 'Updated' --json
+a3s use office native set report.xlsx /Sheet1/B2 --text '42' --output updated.xlsx --json
+
+# Preserve Spreadsheet value types; formula storage requests application recalculation.
+a3s use office native set workbook.xlsx /Sheet1/A1 --number 42.5 --json
+a3s use office native set workbook.xlsx /Sheet1/B1 --boolean true --json
+a3s use office native set workbook.xlsx /Sheet1/C1 --formula 'SUM(A1:B1)' --json
+
+# Add and remove native document structures.
+a3s use office native add report.docx /body --type paragraph --text 'Summary' --json
+a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
+a3s use office native add report.docx '/body/tbl[1]' --type row --columns 3 --json
+a3s use office native add report.docx '/body/tbl[1]/tr[3]' --type cell --text 'Total' --json
+a3s use office native add workbook.xlsx / --type sheet --name Data --json
+a3s use office native add deck.pptx / --type slide --text 'Results' --json
+a3s use office native add deck.pptx '/slide[1]' --type shape --text '42%' --json
+a3s use office native remove workbook.xlsx /Data --json
+a3s use office native remove deck.pptx '/slide[1]/shape[2]' --json
+
+# Apply a bounded, versioned mutation document atomically.
+a3s use office native batch deck.pptx --input mutations.json --json
+
+# Install the current compatibility provider explicitly.
 a3s install use/office
 a3s use office get report.docx /body --json
 a3s use office batch report.xlsx --input updates.json --json
 
-# Launch OfficeCLI's own standard MCP server.
+# Launch the current compatibility standard MCP server.
 a3s use mcp serve office
 ```
 
-Managed installation accepts only approved HTTPS release origins, bounds the
-download, verifies the publisher SHA-256, stages outside the active version,
-and activates atomically. Native execution sets `OFFICECLI_SKIP_UPDATE=1` so an
-upgrade remains an explicit A3S component operation.
+Native batch input is an ordinary JSON document, not an RPC protocol. The
+current schema is:
 
-OfficeCLI may reuse its own resident process internally. Its pipe and framing
-are private implementation details: A3S Use neither speaks nor reimplements
-that transport. A lost response to a mutation can therefore return
-`use.office.outcome_unknown`; callers must report that the operation may have
-been applied and must not retry it automatically.
+```json
+{
+  "schemaVersion": 1,
+  "mutations": [
+    {
+      "operation": "set-text",
+      "path": "/body/p[1]",
+      "text": "Updated"
+    },
+    {
+      "operation": "add-paragraph",
+      "parent": "/body",
+      "text": "Summary"
+    },
+    {
+      "operation": "remove",
+      "path": "/body/p[2]"
+    }
+  ]
+}
+```
+
+The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
+and 10,000 mutations. The version 1 mutation set is `set-text`,
+`set-cell-value`, `add-paragraph`, `add-table`, `add-table-row`, `add-table-cell`,
+`add-worksheet`, `add-slide`, `add-shape`, and `remove`.
+
+Typed Spreadsheet batch values use an explicit nested type, for example:
+
+```json
+{
+  "operation": "set-cell-value",
+  "path": "/Sheet1/C1",
+  "value": {
+    "type": "formula",
+    "expression": "SUM(A1:B1)"
+  }
+}
+```
+
+Formula mutation stores OOXML formula text and marks the workbook for a full
+recalculation when opened. Native formula parsing and evaluation remain a
+separate rich-Spreadsheet delivery gate.
+
+The native package, semantic, and editor APIs are available directly to Rust
+callers:
+
+```rust,no_run
+use a3s_use_office::{NativeOfficeDocument, NativeOfficeEditor, NativeOfficePackage};
+
+# async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
+let mut package = NativeOfficePackage::open("report.docx").await?;
+let document_xml = package.part("/word/document.xml")?;
+println!("{} bytes", document_xml.len());
+
+// Format engines will use this API without dropping unknown OOXML parts.
+package.save().await?;
+
+let blank = NativeOfficePackage::create("blank.xlsx").await?;
+println!("created {:?}", blank.kind());
+
+let document = NativeOfficeDocument::open("report.docx").await?;
+println!("{}", document.text_view().text);
+let headings = document.query("p[style=Heading1]")?;
+println!("{} heading(s)", headings.len());
+
+let mut editor = NativeOfficeEditor::open("report.docx").await?;
+editor.set_text("/body/p[1]", "Updated")?;
+let added = editor.add_paragraph("/body", "Summary")?;
+editor.remove(added)?;
+let table = editor.add_table("/body", 2, 3)?;
+editor.set_text(format!("{table}/tr[1]/tc[1]"), "Name")?;
+editor.save().await?;
+# Ok(())
+# }
+```
+
+Managed compatibility installation accepts only approved HTTPS release
+origins, bounds the download, verifies the publisher SHA-256, stages outside
+the active version, and activates atomically. Compatibility execution sets
+`OFFICECLI_SKIP_UPDATE=1` so upgrades remain explicit A3S operations.
+
+The native engine will not copy OfficeCLI's private resident protocol. It will
+provide typed in-process sessions and its own standard MCP surface. Until that
+promotion, a lost compatibility response can return
+`use.office.outcome_unknown`; callers must not retry it automatically.
+
+See [Native Office Engine](docs/native-office.md) for the complete requirements,
+compatibility scope, safety invariants, delivery gates, and migration plan.
 
 ## External Extensions
 
@@ -377,7 +521,8 @@ crash, and in-flight calls retain the exact package generation they accepted.
                     ┌─────────────┼──────────────┐
                     │             │              │
                 Browser         Office       extension registry
-             typed + driver    OfficeCLI      CLI / MCP / Skill
+             typed + driver  native OOXML     CLI / MCP / Skill
+                              + 0.1 compat
                     │             │              │
                     └──────── capability snapshot/watch ───────► A3S Code
 
@@ -387,8 +532,9 @@ crash, and in-flight calls retain the exact package generation they accepted.
 ```
 
 The dependency arrows are intentional. Search links only the Browser contract,
-so rendering does not require `a3s-use`, MCP, or a resident process. Office and
-external domains keep their native process boundaries. A3S Code consumes the
+so rendering does not require `a3s-use`, MCP, or a resident process. Office is
+an in-process typed engine with a temporary 0.1.x compatibility process;
+external domains retain their process boundaries. A3S Code consumes the
 read-only projection and connects standard MCP/Skill surfaces; it does not gain
 component installation authority.
 
@@ -423,10 +569,11 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ```
 
 The suite covers typed contracts, provider discovery and installation,
-extension validation and route draining, capability snapshots, native
-delegation, MCP schemas, packaged Skills, and the locked agent-browser
-compatibility surface. Real-Chrome integration gates run serially with isolated
-home and runtime directories on supported platforms.
+extension validation and route draining, capability snapshots, the native
+OOXML package kernel, compatibility delegation, MCP schemas, packaged Skills,
+and the locked agent-browser compatibility surface. Real-Chrome integration
+gates run serially with isolated home and runtime directories on supported
+platforms.
 
 ## License
 

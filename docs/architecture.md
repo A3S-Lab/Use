@@ -6,6 +6,12 @@ Browser and Office are typed libraries and reserved built-in command routes.
 The default binary cannot omit their command and diagnostic surfaces, although
 provider runtimes may be missing.
 
+Office's target runtime is an A3S-owned Rust engine. Its lowest layer is a
+bounded, loss-preserving OPC/OOXML package kernel; format semantics build above
+that layer. The released 0.1.x CLI retains an explicitly managed OfficeCLI
+compatibility backend until the native promotion gates in
+[Native Office Engine](native-office.md) pass.
+
 Search depends directly on the object-safe PageRenderer contract in
 a3s-use-browser. It never executes the CLI or requires a background service.
 
@@ -104,10 +110,13 @@ CLI session commands call MCP tools with their published schemas. The token is
 never included in normal CLI output. `browser render` and Search remain direct
 in-process Rust calls and never require the service.
 
-Office commands are delegated to OfficeCLI's native CLI, and `mcp serve office`
-launches OfficeCLI's own standard MCP server. OfficeCLI may internally reuse a
-resident process, but its pipe and framing remain an OfficeCLI implementation
-detail; A3S Use neither speaks nor reimplements them.
+The native Office engine uses typed in-process sessions and will expose those
+same sessions through the A3S Use standard MCP server. It does not copy an
+upstream private pipe protocol. During the 0.1.x migration, Office blank
+creation, reads, typed add/set/remove operations, and atomic mutation batches
+are available explicitly under `office native`; unpromoted commands are
+delegated to OfficeCLI and `mcp serve office` launches its standard MCP server.
+That compatibility process remains isolated from the native engine.
 
 External MCP packages are launched from their declared executable, arguments,
 and transport. A3S Use owns package identity and activation, not the package's
@@ -127,11 +136,15 @@ The umbrella CLI delegates runtime lifecycle through ordinary commands:
 Each invocation accepts argv and returns one versioned JSON document plus an
 exit status. This is CLI automation, not JSON-RPC.
 
-Managed Office installation is fixed to a reviewed OfficeCLI release. The
-binary is fetched only by an explicit install or repair command, restricted to
-approved HTTPS hosts, bounded by size, and checked against the publisher's
-SHA-256 before atomic activation. Native OfficeCLI execution sets
+In 0.1.x, managed Office installation means the reviewed OfficeCLI compatibility
+release. It is fetched only by an explicit install or repair command, restricted
+to approved HTTPS hosts, bounded by size, and checked against the publisher's
+SHA-256 before atomic activation. Compatibility execution sets
 `OFFICECLI_SKIP_UPDATE=1`; A3S upgrades are explicit component operations.
+
+After native promotion, Office is built in and this component command no longer
+downloads an engine. The compatibility backend moves to an explicitly named
+component for one deprecation cycle before removal.
 
 ## Roadmap
 
@@ -153,13 +166,26 @@ Implemented:
 10. The component-backed `a3s use box` route with one Box binary and receipt.
 11. A unified generation/revision capability projection for built-in and
     external MCP and Skill surfaces.
+12. The native Office OPC/OOXML package kernel with bounded admission,
+    document-kind verification, unknown-part preservation, and atomic save.
+13. Native content-type and relationship graphs, safe loss-preserving XML,
+    common selectors, semantic Word/Spreadsheet/Presentation reads, safe blank
+    creation, text replacement and typed Spreadsheet text/number/boolean/formula
+    cell upsert, Word paragraph and bounded table/row/cell mutation, worksheet
+    mutation, Presentation slide/shape mutation, core node removal, atomic
+    batches, changed-file conflict detection, and the dependency-free
+    `office native` CLI.
 
 Next:
 
-1. Windows real-Chrome persistent sessions. Windows remains a preview build
+1. Complete native read interoperability and repair-dialog evidence against
+   Microsoft Office and the optional CI LibreOffice oracle.
+2. Native Office mutation, formula, rich-format, rendering, standard MCP, and
+   compatibility gates defined in `docs/native-office.md`.
+3. Windows real-Chrome persistent sessions. Windows remains a preview build
    until separate `a3s use browser` invocations can open and reuse a session
    with the same runtime guarantees as macOS and Linux. Windows compilation,
    CLI/MCP schemas, packaged assets, and non-runtime tests remain continuously
    checked in CI meanwhile.
-2. Signed remote extension publishers. External publisher infrastructure is
+4. Signed remote extension publishers. External publisher infrastructure is
    independent of the built-in Browser compatibility contract.

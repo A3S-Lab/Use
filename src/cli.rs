@@ -101,6 +101,7 @@ fn help() -> CommandOutput {
             "  a3s-use browser open|list|navigate|snapshot|click|type|press|select|scroll|screenshot|close [args] [--json]\n",
             "  a3s-use box <a3s-box-args...>\n",
             "  a3s-use office doctor [--json]\n",
+            "  a3s-use office native get|query|view|validate|create|add|set|remove|batch [args] [--json]\n",
             "  a3s-use office <officecli-args...>\n",
             "  a3s-use extension list|inspect|doctor [args] [--json]\n",
             "  a3s-use extension enable <publisher/name> [--json]\n",
@@ -539,6 +540,15 @@ async fn browser(args: &[String]) -> UseResult<CommandOutput> {
 async fn office(args: &[String]) -> UseResult<CommandOutput> {
     match args.first().map(String::as_str) {
         None | Some("doctor") => doctor(Some("office")),
+        Some("native") => {
+            #[cfg(feature = "office")]
+            return crate::office_native_cli::run(&args[1..]).await;
+            #[cfg(not(feature = "office"))]
+            return Err(UseError::new(
+                "use.office.disabled",
+                "Office support is disabled in this custom build.",
+            ));
+        }
         Some(_) => {
             #[cfg(feature = "office")]
             {

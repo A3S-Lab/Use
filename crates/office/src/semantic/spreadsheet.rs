@@ -1,0 +1,628 @@
+use std::collections::BTreeMap;
+
+use a3s_use_core::UseResult;
+
+use super::{semantic_error, DocumentNode, OfficeNodeType};
+use crate::xml_tree::{parse_xml_tree, XmlElement, XmlNode};
+use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, RelationshipTarget};
+
+const SPREADSHEET_NAMESPACE: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const STRICT_SPREADSHEET_NAMESPACE: &str = "http://purl.oclc.org/ooxml/spreadsheetml/main";
+const RELATIONSHIPS_NAMESPACE: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const STRICT_RELATIONSHIPS_NAMESPACE: &str =
+    "http://purl.oclc.org/ooxml/officeDocument/relationships";
+
+pub(super) fn read(
+    package: &NativeOfficePackage,
+    opc: &OpcPackageModel,
+) -> UseResult<DocumentNode> {
+    let workbook_part = package.xml_part("xl/workbook.xml")?;
+    let workbook = parse_xml_tree(&workbook_part)?;
+    require_spreadsheet_element(&workbook, "workbook", workbook_part.name())?;
+    let shared_strings = read_shared_strings(package)?;
+    let styles = read_styles(package)?;
+    let source = RelationshipSource::Part {
+        part_name: "xl/workbook.xml".to_string(),
+    };
+
+    let mut root = DocumentNode::new("/", "workbook", OfficeNodeType::Workbook);
+    let sheets = workbook.child("sheets").ok_or_else(|| {
+        semantic_error(
+            "use.office.spreadsheet_sheets_missing",
+            "Spreadsheet workbook has no sheets collection.",
+        )
+    })?;
+    for sheet in sheets.children_named("sheet") {
+        let name = sheet.attribute("name").ok_or_else(|| {
+            semantic_error(
+                "use.office.spreadsheet_sheet_invalid",
+                "Spreadsheet sheet is missing its name.",
+            )
+        })?;
+        validate_sheet_name(name)?;
+        let relationship_id = relationship_attribute(sheet, "id").ok_or_else(|| {
+            semantic_error(
+                "use.office.spreadsheet_sheet_invalid",
+                format!("Spreadsheet sheet '{name}' has no relationship ID."),
+            )
+        })?;
+        let relationship = opc
+            .relationships()
+            .relationship(&source, relationship_id)
+            .ok_or_else(|| {
+                semantic_error(
+                    "use.office.spreadsheet_sheet_missing",
+                    format!(
+                        "Spreadsheet sheet '{name}' references missing relationship '{relationship_id}'."
+                    ),
+                )
+            })?;
+        let RelationshipTarget::Internal { part_name, .. } = &relationship.target else {
+            return Err(semantic_error(
+                "use.office.spreadsheet_sheet_invalid",
+                format!("Spreadsheet sheet '{name}' cannot use an external relationship."),
+            ));
+        };
+        let mut sheet_node = read_worksheet(package, part_name, name, &shared_strings, &styles)?;
+        if let Some(sheet_id) = sheet.attribute("sheetId") {
+            sheet_node.format.insert("sheetId".into(), sheet_id.into());
+        }
+        if let Some(state) = sheet.attribute("state") {
+            sheet_node.format.insert("state".into(), state.into());
+        }
+        root.children.push(sheet_node);
+    }
+    root.text = root
+        .children
+        .iter()
+        .map(|sheet| sheet.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(root)
+}
+
+pub(super) fn virtual_get(
+    root: &DocumentNode,
+    path: &str,
+    depth: usize,
+) -> UseResult<Option<DocumentNode>> {
+    let Some((requested_sheet, target)) =
+        path.strip_prefix('/').and_then(|path| path.split_once('/'))
+    else {
+        return Ok(None);
+    };
+    let Some(sheet) = root.children.iter().find(|node| {
+        node.node_type == OfficeNodeType::Worksheet
+            && node.path[1..].eq_ignore_ascii_case(requested_sheet)
+    }) else {
+        return Ok(None);
+    };
+    if let Some(column) = target
+        .strip_prefix("col[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        return virtual_column(sheet, column, depth).map(Some);
+    }
+    let Some((start, end)) = target.split_once(':') else {
+        return Ok(None);
+    };
+    virtual_range(sheet, start, end, depth).map(Some)
+}
+
+fn virtual_column(sheet: &DocumentNode, requested: &str, depth: usize) -> UseResult<DocumentNode> {
+    let column = if requested
+        .chars()
+        .all(|character| character.is_ascii_digit())
+    {
+        let number = requested.parse::<u32>().map_err(|error| {
+            semantic_error(
+                "use.office.spreadsheet_column_invalid",
+                format!("Spreadsheet column '{requested}' is invalid: {error}"),
+            )
+        })?;
+        column_name(number)?
+    } else {
+        let normalized = requested.to_ascii_uppercase();
+        if column_number(&format!("{normalized}1")).is_none() {
+            return Err(semantic_error(
+                "use.office.spreadsheet_column_invalid",
+                format!("Spreadsheet column '{requested}' is outside A:XFD."),
+            ));
+        }
+        normalized
+    };
+    let path = format!("{}/col[{column}]", sheet.path);
+    let mut node = DocumentNode::new(path, "col", OfficeNodeType::Column);
+    node.format.insert("column".into(), column.clone());
+    let cells = cells(sheet)
+        .into_iter()
+        .filter(|cell| {
+            cell.format
+                .get("column")
+                .is_some_and(|value| value == &column)
+        })
+        .collect::<Vec<_>>();
+    node.child_count = cells.len();
+    node.text = cells
+        .iter()
+        .map(|cell| cell.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if depth > 0 {
+        node.children = cells
+            .into_iter()
+            .map(|cell| cell.clone_to_depth(depth - 1))
+            .collect();
+    }
+    Ok(node)
+}
+
+fn virtual_range(
+    sheet: &DocumentNode,
+    start: &str,
+    end: &str,
+    depth: usize,
+) -> UseResult<DocumentNode> {
+    let (start_column, start_row, start_reference) = cell_coordinates(start)?;
+    let (end_column, end_row, end_reference) = cell_coordinates(end)?;
+    let min_column = start_column.min(end_column);
+    let max_column = start_column.max(end_column);
+    let min_row = start_row.min(end_row);
+    let max_row = start_row.max(end_row);
+    let path = format!("{}/{}:{}", sheet.path, start_reference, end_reference);
+    let mut node = DocumentNode::new(path, "range", OfficeNodeType::Range);
+    node.format.insert(
+        "normalizedRef".into(),
+        format!(
+            "{}{}:{}{}",
+            column_name(min_column)?,
+            min_row,
+            column_name(max_column)?,
+            max_row
+        ),
+    );
+    let matching = cells(sheet)
+        .into_iter()
+        .filter(|cell| {
+            cell.path
+                .rsplit('/')
+                .next()
+                .and_then(|reference| cell_coordinates(reference).ok())
+                .is_some_and(|(column, row, _)| {
+                    (min_column..=max_column).contains(&column)
+                        && (min_row..=max_row).contains(&row)
+                })
+        })
+        .collect::<Vec<_>>();
+    node.child_count = matching.len();
+    node.text = matching
+        .iter()
+        .map(|cell| format!("{}={}", cell.path, cell.text))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if depth > 0 {
+        node.children = matching
+            .into_iter()
+            .map(|cell| cell.clone_to_depth(depth - 1))
+            .collect();
+    }
+    Ok(node)
+}
+
+fn cells(sheet: &DocumentNode) -> Vec<&DocumentNode> {
+    sheet
+        .children
+        .iter()
+        .flat_map(|row| row.children.iter())
+        .filter(|node| node.node_type == OfficeNodeType::Cell)
+        .collect()
+}
+
+fn cell_coordinates(reference: &str) -> UseResult<(u32, u32, String)> {
+    let reference = reference.to_ascii_uppercase();
+    let column_length = reference
+        .chars()
+        .take_while(|character| character.is_ascii_alphabetic())
+        .count();
+    let column = column_number(&reference).ok_or_else(|| {
+        semantic_error(
+            "use.office.spreadsheet_cell_reference_invalid",
+            format!("Spreadsheet cell reference '{reference}' is invalid."),
+        )
+    })?;
+    let row = reference
+        .get(column_length..)
+        .and_then(|row| row.parse::<u32>().ok())
+        .filter(|row| (1..=1_048_576).contains(row))
+        .ok_or_else(|| {
+            semantic_error(
+                "use.office.spreadsheet_cell_reference_invalid",
+                format!("Spreadsheet cell reference '{reference}' is outside row limits."),
+            )
+        })?;
+    Ok((column, row, reference))
+}
+
+fn read_worksheet(
+    package: &NativeOfficePackage,
+    part_name: &str,
+    sheet_name: &str,
+    shared_strings: &[String],
+    styles: &[BTreeMap<String, String>],
+) -> UseResult<DocumentNode> {
+    let part = package.xml_part(part_name)?;
+    let worksheet = parse_xml_tree(&part)?;
+    require_spreadsheet_element(&worksheet, "worksheet", part.name())?;
+    let sheet_path = format!("/{sheet_name}");
+    let mut sheet_node = DocumentNode::new(&sheet_path, "sheet", OfficeNodeType::Worksheet);
+    sheet_node.format.insert("part".into(), part_name.into());
+    let Some(sheet_data) = worksheet.child("sheetData") else {
+        return Ok(sheet_node);
+    };
+    let mut inferred_row = 0_u32;
+    for row in sheet_data.children_named("row") {
+        let row_number = row
+            .attribute("r")
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or_else(|| inferred_row.saturating_add(1));
+        if row_number == 0 {
+            return Err(semantic_error(
+                "use.office.spreadsheet_row_invalid",
+                format!("Worksheet '{sheet_name}' contains row zero."),
+            ));
+        }
+        inferred_row = row_number;
+        let row_path = format!("{sheet_path}/row[{row_number}]");
+        let mut row_node = DocumentNode::new(&row_path, "row", OfficeNodeType::Row);
+        copy_attribute(row, "ht", "height", &mut row_node);
+        copy_attribute(row, "hidden", "hidden", &mut row_node);
+        copy_attribute(row, "outlineLevel", "outlineLevel", &mut row_node);
+        let mut inferred_column = 0_u32;
+        for cell in row.children_named("c") {
+            let reference = match cell.attribute("r") {
+                Some(reference) => normalize_cell_reference(reference, row_number)?,
+                None => {
+                    inferred_column = inferred_column.saturating_add(1);
+                    format!("{}{row_number}", column_name(inferred_column)?)
+                }
+            };
+            inferred_column = column_number(&reference).unwrap_or(inferred_column);
+            row_node.children.push(read_cell(
+                cell,
+                &sheet_path,
+                &reference,
+                shared_strings,
+                styles,
+            )?);
+        }
+        row_node.text = row_node
+            .children
+            .iter()
+            .map(|cell| cell.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\t");
+        sheet_node.children.push(row_node);
+    }
+    sheet_node.text = sheet_node
+        .children
+        .iter()
+        .map(|row| row.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(sheet_node)
+}
+
+fn read_cell(
+    cell: &XmlElement,
+    sheet_path: &str,
+    reference: &str,
+    shared_strings: &[String],
+    styles: &[BTreeMap<String, String>],
+) -> UseResult<DocumentNode> {
+    let mut node = DocumentNode::new(
+        format!("{sheet_path}/{reference}"),
+        "cell",
+        OfficeNodeType::Cell,
+    );
+    let column = reference
+        .chars()
+        .take_while(|character| character.is_ascii_alphabetic())
+        .collect::<String>();
+    node.format.insert("column".into(), column);
+    node.format.insert(
+        "row".into(),
+        reference
+            .chars()
+            .skip_while(|character| character.is_ascii_alphabetic())
+            .collect(),
+    );
+    let value_type = cell.attribute("t").unwrap_or("n");
+    let raw_value = cell.child("v").map(direct_text).unwrap_or_default();
+    node.text = match value_type {
+        "s" => {
+            let index = raw_value.parse::<usize>().map_err(|error| {
+                semantic_error(
+                    "use.office.spreadsheet_shared_string_invalid",
+                    format!("Cell '{reference}' has invalid shared-string index: {error}"),
+                )
+            })?;
+            shared_strings.get(index).cloned().ok_or_else(|| {
+                semantic_error(
+                    "use.office.spreadsheet_shared_string_invalid",
+                    format!("Cell '{reference}' references missing shared string {index}."),
+                )
+            })?
+        }
+        "inlineStr" => cell.child("is").map(spreadsheet_text).unwrap_or_default(),
+        "b" => match raw_value.as_str() {
+            "1" => "true".to_string(),
+            "0" => "false".to_string(),
+            _ => raw_value,
+        },
+        _ => raw_value,
+    };
+    node.format
+        .insert("valueType".into(), value_type_name(value_type).into());
+    node.format
+        .insert("empty".into(), node.text.is_empty().to_string());
+    if let Some(formula) = cell.child("f") {
+        node.format.insert("formula".into(), direct_text(formula));
+        if let Some(formula_type) = formula.attribute("t") {
+            node.format
+                .insert("formulaType".into(), formula_type.into());
+        }
+        if let Some(reference) = formula.attribute("ref") {
+            node.format.insert("formulaRef".into(), reference.into());
+        }
+    }
+    if let Some(style_index) = cell
+        .attribute("s")
+        .and_then(|value| value.parse::<usize>().ok())
+    {
+        node.format
+            .insert("styleIndex".into(), style_index.to_string());
+        let style = styles.get(style_index).ok_or_else(|| {
+            semantic_error(
+                "use.office.spreadsheet_style_invalid",
+                format!("Cell '{reference}' references missing style {style_index}."),
+            )
+        })?;
+        node.format.extend(style.clone());
+    }
+    Ok(node)
+}
+
+fn read_shared_strings(package: &NativeOfficePackage) -> UseResult<Vec<String>> {
+    if !package.contains_part("xl/sharedStrings.xml") {
+        return Ok(Vec::new());
+    }
+    let part = package.xml_part("xl/sharedStrings.xml")?;
+    let root = parse_xml_tree(&part)?;
+    require_spreadsheet_element(&root, "sst", part.name())?;
+    Ok(root.children_named("si").map(spreadsheet_text).collect())
+}
+
+fn read_styles(package: &NativeOfficePackage) -> UseResult<Vec<BTreeMap<String, String>>> {
+    if !package.contains_part("xl/styles.xml") {
+        return Ok(vec![BTreeMap::new()]);
+    }
+    let part = package.xml_part("xl/styles.xml")?;
+    let root = parse_xml_tree(&part)?;
+    require_spreadsheet_element(&root, "styleSheet", part.name())?;
+    let custom_formats = root
+        .child("numFmts")
+        .map(|formats| {
+            formats
+                .children_named("numFmt")
+                .filter_map(|format| {
+                    Some((
+                        format.attribute("numFmtId")?.to_string(),
+                        format.attribute("formatCode")?.to_string(),
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let styles = root
+        .child("cellXfs")
+        .map(|cell_xfs| {
+            cell_xfs
+                .children_named("xf")
+                .map(|style| {
+                    let mut values = BTreeMap::new();
+                    for (attribute, key) in [
+                        ("fontId", "fontId"),
+                        ("fillId", "fillId"),
+                        ("borderId", "borderId"),
+                        ("xfId", "baseStyleId"),
+                    ] {
+                        if let Some(value) = style.attribute(attribute) {
+                            values.insert(key.to_string(), value.to_string());
+                        }
+                    }
+                    if let Some(number_format_id) = style.attribute("numFmtId") {
+                        values.insert("numberFormatId".into(), number_format_id.into());
+                        if let Some(format) = custom_formats
+                            .get(number_format_id)
+                            .map(String::as_str)
+                            .or_else(|| built_in_number_format(number_format_id))
+                        {
+                            values.insert("numberFormat".into(), format.into());
+                        }
+                    }
+                    if let Some(alignment) = style.child("alignment") {
+                        for (attribute, key) in [
+                            ("horizontal", "alignment"),
+                            ("vertical", "verticalAlignment"),
+                            ("wrapText", "wrapText"),
+                            ("textRotation", "textRotation"),
+                        ] {
+                            if let Some(value) = alignment.attribute(attribute) {
+                                values.insert(key.into(), value.into());
+                            }
+                        }
+                    }
+                    values
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if styles.is_empty() {
+        Ok(vec![BTreeMap::new()])
+    } else {
+        Ok(styles)
+    }
+}
+
+fn spreadsheet_text(element: &XmlElement) -> String {
+    let mut output = String::new();
+    append_spreadsheet_text(element, &mut output);
+    output
+}
+
+fn append_spreadsheet_text(element: &XmlElement, output: &mut String) {
+    if element.local_name == "t" {
+        output.push_str(&direct_text(element));
+        return;
+    }
+    if element.local_name == "rPh" {
+        return;
+    }
+    for child in element.child_elements() {
+        append_spreadsheet_text(child, output);
+    }
+}
+
+fn direct_text(element: &XmlElement) -> String {
+    element
+        .children
+        .iter()
+        .filter_map(|child| match child {
+            XmlNode::Text(text) => Some(text.as_str()),
+            XmlNode::Element(_) => None,
+        })
+        .collect()
+}
+
+fn normalize_cell_reference(reference: &str, expected_row: u32) -> UseResult<String> {
+    let reference = reference.to_ascii_uppercase();
+    let column_length = reference
+        .chars()
+        .take_while(|character| character.is_ascii_alphabetic())
+        .count();
+    if column_length == 0
+        || column_length == reference.len()
+        || !reference[column_length..]
+            .chars()
+            .all(|character| character.is_ascii_digit())
+        || reference[column_length..].parse::<u32>().ok() != Some(expected_row)
+        || column_number(&reference).is_none()
+    {
+        return Err(semantic_error(
+            "use.office.spreadsheet_cell_reference_invalid",
+            format!("Spreadsheet cell reference '{reference}' is invalid for row {expected_row}."),
+        ));
+    }
+    Ok(reference)
+}
+
+fn column_number(reference: &str) -> Option<u32> {
+    let mut number = 0_u32;
+    for character in reference
+        .chars()
+        .take_while(|character| character.is_ascii_alphabetic())
+    {
+        number = number.checked_mul(26)?.checked_add(
+            u32::from(character.to_ascii_uppercase() as u8)
+                .checked_sub(u32::from(b'A'))?
+                .checked_add(1)?,
+        )?;
+    }
+    (number > 0 && number <= 16_384).then_some(number)
+}
+
+fn column_name(mut number: u32) -> UseResult<String> {
+    if number == 0 || number > 16_384 {
+        return Err(semantic_error(
+            "use.office.spreadsheet_column_invalid",
+            format!("Spreadsheet column number {number} is outside XFD."),
+        ));
+    }
+    let mut name = Vec::new();
+    while number > 0 {
+        number -= 1;
+        name.push(char::from(b'A' + (number % 26) as u8));
+        number /= 26;
+    }
+    name.reverse();
+    Ok(name.into_iter().collect())
+}
+
+fn validate_sheet_name(name: &str) -> UseResult<()> {
+    if name.is_empty()
+        || name.chars().count() > 31
+        || name.chars().any(char::is_control)
+        || name.contains(['/', '\\', '[', ']', ':', '*', '?'])
+    {
+        return Err(semantic_error(
+            "use.office.spreadsheet_sheet_name_invalid",
+            format!("Spreadsheet sheet name '{name}' is invalid."),
+        ));
+    }
+    Ok(())
+}
+
+fn copy_attribute(element: &XmlElement, attribute: &str, key: &str, node: &mut DocumentNode) {
+    if let Some(value) = element.attribute(attribute) {
+        node.format.insert(key.into(), value.into());
+    }
+}
+
+fn value_type_name(value_type: &str) -> &'static str {
+    match value_type {
+        "s" | "inlineStr" | "str" => "String",
+        "b" => "Boolean",
+        "e" => "Error",
+        "d" => "Date",
+        _ => "Number",
+    }
+}
+
+fn built_in_number_format(id: &str) -> Option<&'static str> {
+    match id {
+        "0" => Some("General"),
+        "1" => Some("0"),
+        "2" => Some("0.00"),
+        "9" => Some("0%"),
+        "10" => Some("0.00%"),
+        "14" => Some("mm-dd-yy"),
+        "49" => Some("@"),
+        _ => None,
+    }
+}
+
+fn relationship_attribute<'a>(element: &'a XmlElement, local_name: &str) -> Option<&'a str> {
+    element
+        .attribute_ns(RELATIONSHIPS_NAMESPACE, local_name)
+        .or_else(|| element.attribute_ns(STRICT_RELATIONSHIPS_NAMESPACE, local_name))
+}
+
+fn require_spreadsheet_element(
+    element: &XmlElement,
+    local_name: &str,
+    part: &str,
+) -> UseResult<()> {
+    if element.local_name == local_name
+        && matches!(
+            element.namespace.as_deref(),
+            Some(SPREADSHEET_NAMESPACE | STRICT_SPREADSHEET_NAMESPACE)
+        )
+    {
+        return Ok(());
+    }
+    Err(semantic_error(
+        "use.office.spreadsheet_xml_invalid",
+        format!("Spreadsheet part '{part}' has an unexpected root element."),
+    ))
+}

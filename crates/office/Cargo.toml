@@ -6,17 +6,19 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Typed Office operations and OfficeCLI provider boundary for A3S Use"
+description = "Native OOXML operations and temporary OfficeCLI compatibility for A3S Use"
 
 [dependencies]
 a3s-use-core = { version = "0.1.1", path = "../core" }
 async-trait.workspace = true
 fs2.workspace = true
+quick-xml.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
+tempfile.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true

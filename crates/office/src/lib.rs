@@ -1,8 +1,9 @@
-//! Typed Office operations backed by OfficeCLI's native command surface.
+//! Native OOXML operations plus a temporary OfficeCLI compatibility boundary.
 //!
-//! A3S Use does not implement OfficeCLI's resident-pipe protocol. Every
-//! operation below invokes the supported OfficeCLI binary; OfficeCLI itself
-//! decides whether to execute directly or reuse its resident process.
+//! Package, OPC, XML, selector, and semantic read APIs execute in-process and
+//! do not require OfficeCLI, Microsoft Office, LibreOffice, or another runtime.
+//! Compatibility-only commands still invoke the pinned OfficeCLI binary during
+//! migration. A3S Use does not implement OfficeCLI's private resident protocol.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -13,14 +14,36 @@ use serde::{Deserialize, Serialize};
 
 mod command;
 mod discovery;
+mod editor;
 mod install;
+mod opc;
+mod opc_edit;
+mod package;
+mod semantic;
+mod template;
+mod xml;
+mod xml_edit;
+mod xml_tree;
 
 pub use command::{delegate_native, OfficeCliProvider};
 pub use discovery::{
     discover_office_cli, doctor, office_status, OfficeInstallSource, OfficeRuntimeStatus,
     SUPPORTED_OFFICECLI_VERSION,
 };
+pub use editor::{
+    NativeBatchResult, NativeOfficeEditor, NativeOfficeMutation, SpreadsheetCellValue,
+};
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
+pub use opc::{
+    ContentTypes, OpcPackageModel, Relationship, RelationshipGraph, RelationshipSource,
+    RelationshipTarget,
+};
+pub use package::{NativeOfficePackage, PackageLimits, PackageRevision};
+pub use semantic::{
+    DocumentNode, DocumentStatistics, NativeOfficeDocument, OfficeNodeType, OutlineEntry,
+    TextBlock, TextView,
+};
+pub use xml::{LosslessXmlPart, XmlEncoding, XmlLimits, XmlRootName};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -199,3 +222,12 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod opc_tests;
+
+#[cfg(test)]
+mod package_tests;
+
+#[cfg(test)]
+mod semantic_tests;
