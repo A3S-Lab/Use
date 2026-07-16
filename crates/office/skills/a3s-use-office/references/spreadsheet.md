@@ -50,7 +50,9 @@ a3s use office native validate workbook.xlsx --json
 a3s use office native view workbook.xlsx issues --limit 200 --json
 a3s use office native view workbook.xlsx html --output workbook.html --json
 a3s use office native view workbook.xlsx svg --output workbook.svg --json
+a3s use office native watch workbook.xlsx --port 0
 ```
 
 HTML, SVG, and screenshots are sparse semantic previews, not Excel layout or
-print fidelity.
+print fidelity. Watch reloads saved revisions; it does not provide inline cell
+editing or calculate formulas.

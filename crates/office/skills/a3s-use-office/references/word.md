@@ -39,10 +39,12 @@ a3s use office native validate report.docx --json
 a3s use office native view report.docx issues --json
 a3s use office native view report.docx html --output report.html --json
 a3s use office native view report.docx svg --output report.svg --json
+a3s use office native watch report.docx --port 0
 ```
 
 Tracked changes, comments, complete fields/forms, TOC updates, equations,
 advanced styles, and layout-accurate pagination are not yet complete native
-capabilities. HTML and SVG are semantic previews, not Word pagination. Use the
-compatibility route only after checking provider readiness and explaining the
-boundary.
+capabilities. HTML, SVG, and live watch are semantic previews, not Word
+pagination. Watch follows saved disk revisions and is not an interactive Word
+editor. Use the compatibility route only after checking provider readiness and
+explaining the boundary.

@@ -285,6 +285,33 @@ bound. Unit and process tests cover hostile markup, deterministic hashes,
 sparse cells, invalid raster parts, all-format HTML and SVG,
 no-clobber output, standard MCP, and an unusable OfficeCLI path.
 
+Native live watch is available through `office native watch <file>`. The typed
+`NativeOfficeWatchServer` renders before binding, listens only on IPv4
+loopback, uses an ephemeral port by default, and issues a fresh 256-bit token.
+The fixed wrapper, preview, status JSON, and standard SSE stream all require
+that token or an HttpOnly same-site cookie and reject a non-matching Host. The
+semantic document is isolated in a sandboxed iframe; its own CSP continues to
+disable script and network access. A 50–10,000 ms bounded poller (250 ms by
+default) tracks length/mtime and Unix device/inode/ctime, then reopens and
+fully renders changed saved revisions. A failed revision never replaces the
+last valid preview; a typed error is emitted and the poller retries until the
+file recovers. The foreground CLI accepts `--port`, `--poll-ms`, and an optional
+24-hour-bounded `--timeout-ms`, and prints one machine-readable startup receipt
+with `--json` before serving.
+
+The watch surface is deliberately read-only. It has no mutation endpoint,
+private resident pipe, or custom RPC envelope, never invokes OfficeCLI or
+LibreOffice, and sees an MCP session only after `office_save`. Full-page saved
+refresh is implemented for Word, Spreadsheet, and Presentation. Inline
+Spreadsheet edits, drag interactions, selection/mark/goto overlays,
+slide-scoped patches, automatic browser launching, and layout goldens remain
+outside this milestone. Unit and process tests cover token and Host rejection,
+CSP/cookie headers, SSE, last-good retention, corrupt-file recovery, separate
+CLI mutation, graceful shutdown, and an unusable OfficeCLI provider.
+Runtime evidence is currently macOS/Linux-first. Windows compiles the same
+CLI/server contracts and uses the portable length/mtime stamp, but remains a
+preview target under the repository's separate Windows promotion gate.
+
 Native issue analysis is implemented as a bounded, read-only pass over the
 semantic tree and OPC relationship graph. `NativeOfficeDocument::issues`
 defaults to 200 returned records and accepts a hard maximum of 1,000. Filtering
@@ -334,7 +361,7 @@ Browser work starts. Process tests cover DOCX, XLSX, and PPTX CLI screenshots,
 an MCP screenshot lifecycle, PNG hashes, invalid arguments, Browser-disabled
 builds, and no-clobber behavior while setting an unusable OfficeCLI path.
 Screenshots are raster captures of the semantic preview, not Office layout
-fidelity. Layout goldens and live watch remain open.
+fidelity. Layout goldens remain open.
 
 Basic Presentation table structure is deliberately bounded. Table dimensions
 must be positive, no mutation may exceed 5,000 rows, 5,000 columns, or 100,000
@@ -447,10 +474,10 @@ LibreOffice checks confirm that no repair dialog is required.
 Status: native bounded issue analysis, semantic rendering, Browser-injected
 screenshots, the explicit `a3s use mcp serve office-native` target, and the
 packaged `a3s-use-office` Skill are available for evidence gathering. Issue
-reports, HTML, SVG, and semantic-preview PNG screenshots cover all three
-formats; PNG requires a ready Browser provider. They are available through
-typed Rust APIs, `office native view`, `office_view`, and progressive
-Word/Spreadsheet/Presentation/MCP Skill references.
+reports, HTML, SVG, semantic-preview PNG screenshots, and saved-revision live
+watch cover all three formats; PNG requires a ready Browser provider. They are
+available through typed Rust APIs, `office native view|watch`, `office_view`,
+and progressive Word/Spreadsheet/Presentation/MCP Skill references.
 The MCP target's 12 typed tools use bounded in-process sessions for validate,
 create/open/list, semantic reads and issues, constrained raw XML, atomic
 mutation batches, immutable-template merge, save, and close. It limits open
@@ -462,9 +489,9 @@ standard MCP initialize/list/call lifecycle, capture a real PNG when Chrome is
 available, and use an unusable OfficeCLI path. Skill process tests exercise
 bounded `list`, `get --full`, and `path` discovery with the same unusable
 provider, and release archives smoke-check the packaged `SKILL.md`. This preview
-does not complete Gate 6: richer issue parity, live watch, compatibility corpus,
-fuzzing, rich-format coverage, layout goldens, and release evidence remain open,
-and the default Office target is not promoted.
+does not complete Gate 6: richer issue parity, interactive-watch parity,
+compatibility corpus, fuzzing, rich-format coverage, layout goldens, and release
+evidence remain open, and the default Office target is not promoted.
 
 At Gate 6, native becomes the default and `a3s install use/office` no longer
 downloads an engine. The OfficeCLI backend moves to an explicitly named

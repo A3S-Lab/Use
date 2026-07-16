@@ -35,7 +35,9 @@ a3s use office native validate deck.pptx --json
 a3s use office native view deck.pptx issues --type format --json
 a3s use office native view deck.pptx svg --output deck.svg --json
 a3s use office native view deck.pptx screenshot --output deck.png --json
+a3s use office native watch deck.pptx --port 0
 ```
 
-SVG, HTML, and PNG output are deterministic semantic previews. They do not
-prove PowerPoint layout, animation, morph, font, or theme fidelity.
+SVG, HTML, PNG, and live watch output are semantic previews. They do not prove
+PowerPoint layout, animation, morph, font, or theme fidelity. Watch refreshes
+the full saved preview and does not provide slide-scoped editing or annotations.

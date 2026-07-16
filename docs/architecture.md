@@ -174,6 +174,18 @@ destination atomically without clobbering. It does not add another browser
 runtime to Office, and the result remains a semantic preview rather than a
 layout-fidelity render.
 
+Native live watch is a root-facade deployment of the same deterministic HTML,
+not another Office engine. It validates and renders before binding an ephemeral
+`127.0.0.1` port, authenticates every standard HTTP/SSE request with a fresh
+256-bit capability token or HttpOnly same-site cookie, validates the exact
+loopback Host, and keeps document HTML inside a sandboxed iframe. A bounded
+poller detects saved file revisions, reopens them through the package kernel,
+and atomically swaps the in-memory preview only after a complete render. Failed
+or partial revisions retain the last valid bytes and emit a typed error state
+until recovery. There is no write endpoint, resident pipe, custom RPC dialect,
+external relationship fetch, or OfficeCLI/LibreOffice dependency. Unsaved MCP
+session state becomes visible only after `office_save`.
+
 Issue analysis is another read-only projection over the same semantic tree and
 relationship graph. It returns bounded typed records with stable category,
 subtype, severity, semantic path, context, and suggestion fields. The initial
@@ -284,8 +296,10 @@ Implemented:
     reference-aware media cleanup, deterministic all-format HTML and SVG
     semantic rendering, bounded conservative all-format issue
     analysis, Browser-injected all-format semantic PNG screenshots with
-    validated receipts and no-clobber publication, atomic batches, changed-file
-    conflict detection, and the dependency-free `office native` CLI.
+    validated receipts and no-clobber publication, authenticated loopback
+    all-format live watch with saved-revision refresh, atomic batches,
+    changed-file conflict detection, and the dependency-free `office native`
+    CLI.
 14. An explicit native Office standard MCP preview with bounded typed tools,
     in-process sessions, deferred atomic save, dirty-close protection, and
     process-level evidence that OfficeCLI is not consulted.
@@ -297,8 +311,8 @@ Next:
 
 1. Complete native read interoperability and repair-dialog evidence against
    Microsoft Office and the optional CI LibreOffice oracle.
-2. Native Office mutation, formula, rich-format, live-watch rendering, layout
-   goldens, MCP promotion, and compatibility gates defined in
+2. Native Office mutation, formula, rich-format, interactive-watch parity,
+   layout goldens, MCP promotion, and compatibility gates defined in
    `docs/native-office.md`.
 3. Windows real-Chrome persistent sessions. Windows remains a preview build
    until separate `a3s use browser` invocations can open and reuse a session

@@ -39,6 +39,16 @@ impl CommandOutput {
             should_print: false,
         }
     }
+
+    #[cfg(feature = "office")]
+    pub(crate) fn silent() -> Self {
+        Self {
+            human: String::new(),
+            json: serde_json::Value::Null,
+            exit_code: 0,
+            should_print: false,
+        }
+    }
 }
 
 pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
@@ -102,7 +112,7 @@ fn help() -> CommandOutput {
             "  a3s-use box <a3s-box-args...>\n",
             "  a3s-use office doctor [--json]\n",
             "  a3s-use office skills list|get|path [args] [--json]\n",
-            "  a3s-use office native get|query|view|raw|raw-set|dump|merge|validate|create|add|add-part|set|remove|move|copy|swap|insert-rows|delete-rows|insert-columns|delete-columns|rename-sheet|move-sheet|copy-sheet|batch [args] [--json]\n",
+            "  a3s-use office native get|query|view|watch|raw|raw-set|dump|merge|validate|create|add|add-part|set|remove|move|copy|swap|insert-rows|delete-rows|insert-columns|delete-columns|rename-sheet|move-sheet|copy-sheet|batch [args] [--json]\n",
             "  a3s-use office <officecli-args...>\n",
             "  a3s-use extension list|inspect|doctor [args] [--json]\n",
             "  a3s-use extension enable <publisher/name> [--json]\n",

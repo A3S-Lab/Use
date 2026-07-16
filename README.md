@@ -103,9 +103,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   all-format HTML/SVG semantic previews, bounded typed issue diagnostics,
-  Browser-injected semantic PNG screenshots, and an explicit typed standard
-  MCP preview while retaining the 0.1.x OfficeCLI compatibility backend for
-  surfaces not yet promoted
+  Browser-injected semantic PNG screenshots, authenticated loopback live watch,
+  and an explicit typed standard MCP preview while retaining the 0.1.x
+  OfficeCLI compatibility backend for surfaces not yet promoted
 - **Packaged Office Guidance**: Ship one first-party `a3s-use-office` Skill for
   safe Word, Spreadsheet, Presentation, native MCP, and compatibility workflows
 - **External Domains**: Install process-isolated packages that expose any useful
@@ -322,7 +322,9 @@ subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML and SVG are
 available for Word, Spreadsheet, and Presentation; the bounded issue view is
 available for all three formats; and Browser-injected PNG screenshots are
-available for all three formats. `mcp serve office-native`
+available for all three formats. An authenticated, loopback-only foreground
+watch provides full saved-revision refresh for all three formats without a
+resident pipe or mutation endpoint. `mcp serve office-native`
 exposes the same editor, issue analysis, and screenshot composition through
 typed standard MCP tools and bounded in-memory sessions.
 The packaged `a3s-use-office` Skill exposes the same product boundaries to
@@ -359,6 +361,7 @@ a3s use office native view report.docx svg --output report.svg --json
 a3s use office native view workbook.xlsx svg --output workbook.svg --json
 a3s use office native view deck.pptx svg --output deck.svg --json
 a3s use office native view report.docx screenshot --output report.png --timeout-ms 30000 --json
+a3s use office native watch deck.pptx --port 0
 a3s use office native validate deck.pptx --json
 
 # Inspect a safely parsed XML part inline or export its original bytes.
@@ -493,8 +496,22 @@ the same deterministic HTML privately, opens its `file://` URL through the
 existing `PageRenderer`, and validates one regular PNG plus its size and
 SHA-256 receipt before atomic no-clobber publication. It defaults to a 30-second
 deadline, caps the deadline at 120 seconds, and caps the PNG at 64 MiB. It does
-not fetch external relationships or consult OfficeCLI. Layout goldens and live
-watch remain open.
+not fetch external relationships or consult OfficeCLI.
+
+`office native watch <file>` renders the same bounded all-format HTML, binds
+only `127.0.0.1`, selects an ephemeral port by default, and prints a URL with a
+fresh 256-bit capability token. Every page, status response, and standard SSE
+stream requires that token or its HttpOnly same-site cookie and validates the
+exact loopback `Host`. The wrapper runs its own fixed script while the document
+preview stays in a sandboxed iframe under the renderer's script-free CSP.
+Atomic saves from another `office native` process trigger a full refresh.
+Transient missing or invalid revisions leave the last valid preview visible,
+publish a typed error state, and retry until recovery. The server is read-only:
+it has no mutation/RPC endpoint, never opens an external relationship, and
+does not observe unsaved `office-native` MCP sessions until `office_save`.
+`--timeout-ms` bounds automated runs; otherwise Ctrl+C stops the foreground
+server. Interactive editing, selection/mark overlays, and layout goldens remain
+open.
 
 Native batch input is an ordinary JSON document, not an RPC protocol. The
 current schema is:

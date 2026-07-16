@@ -1,6 +1,6 @@
 ---
 name: a3s-use-office
-description: Inspect, create, edit, validate, merge, and render .docx, .xlsx, and .pptx files through the A3S Use native CLI or standard MCP server, with explicit fallback to its pinned OfficeCLI compatibility route for unpromoted operations. Use when an agent needs to work with Microsoft Office OOXML documents, automate Word, Spreadsheet, or Presentation changes, diagnose document issues, or choose between native and compatibility Office capabilities.
+description: Inspect, create, edit, validate, merge, render, and live-preview .docx, .xlsx, and .pptx files through the A3S Use native CLI or standard MCP server, with explicit fallback to its pinned OfficeCLI compatibility route for unpromoted operations. Use when an agent needs to work with Microsoft Office OOXML documents, automate Word, Spreadsheet, or Presentation changes, diagnose document issues, preview saved changes, or choose between native and compatibility Office capabilities.
 ---
 
 # A3S Use Office
@@ -34,6 +34,18 @@ only when the requested operation is not yet native.
 
 5. Report the exact output path and any remaining issue records. Do not claim
    Microsoft Office layout fidelity from a semantic preview.
+
+For an iterative visual loop, run the foreground watch in a separate process:
+
+```bash
+a3s use office native watch "$FILE" --port 0
+```
+
+Open the authenticated loopback URL printed at startup. The watch refreshes
+after on-disk saves, including separate native CLI mutations. It is read-only,
+does not expose OfficeCLI's resident protocol, and does not observe unsaved MCP
+session changes until `office_save`. Stop it with Ctrl+C; use `--timeout-ms`
+when an agent must bound its lifetime.
 
 ## Choose the Surface
 
@@ -70,7 +82,8 @@ available.
 The native engine currently owns safe OPC/ZIP admission, semantic reads,
 bounded issue analysis, common typed mutations, atomic batches, template merge,
 constrained XML access, deterministic all-format HTML/SVG, and
-Browser-injected semantic screenshots. Rich formatting, complete formula
-calculation, advanced charts/media, live watch, and full Office layout fidelity
-remain incomplete. Fail closed or use the explicit compatibility route rather
-than inventing unsupported native behavior.
+Browser-injected semantic screenshots, plus authenticated loopback live watch
+for saved files. Rich formatting, complete formula calculation, advanced
+charts/media, interactive preview editing/annotations, and full Office layout
+fidelity remain incomplete. Fail closed or use the explicit compatibility
+route rather than inventing unsupported native behavior.

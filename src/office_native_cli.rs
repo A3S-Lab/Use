@@ -14,6 +14,7 @@ mod part;
 mod raw;
 mod replay;
 mod view;
+mod watch;
 
 use arguments::{parse_boolean_option, AllowedOptions, ParsedArguments};
 
@@ -26,6 +27,7 @@ const HELP: &str = concat!(
     "  a3s-use office native get <file> [path] [--depth <n>] [--json]\n",
     "  a3s-use office native query <file> <selector> [--json]\n",
     "  a3s-use office native view <file> text|outline|stats|issues|html|svg|screenshot [--type <filter>] [--limit <n>] [--output <file>] [--timeout-ms <ms>] [--json]\n",
+    "  a3s-use office native watch <file> [--port <0-65535>] [--poll-ms <50-10000>] [--timeout-ms <ms>] [--json]\n",
     "  a3s-use office native raw <file> <part> [--output <xml-file>] [--json]\n",
     "  a3s-use office native raw-set <file> <part> --input <xml-file> [--output <file>] [--json]\n",
     "  a3s-use office native dump <file> [path] [--output <batch.json>] [--json]\n",
@@ -53,6 +55,7 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("get") => get(args).await,
         Some("query") => query(args).await,
         Some("view") => view::run(args).await,
+        Some("watch") => watch::run(args).await,
         Some("raw") => raw::inspect(args).await,
         Some("raw-set") => raw::replace(args).await,
         Some("dump") => replay::dump(args).await,
@@ -85,7 +88,7 @@ fn help() -> CommandOutput {
         HELP,
         serde_json::json!({
             "commands": [
-                "get", "query", "view", "raw", "raw-set", "dump", "merge", "validate", "create", "add", "add-part", "set", "remove", "move", "copy", "swap",
+                "get", "query", "view", "watch", "raw", "raw-set", "dump", "merge", "validate", "create", "add", "add-part", "set", "remove", "move", "copy", "swap",
                 "insert-rows", "delete-rows", "insert-columns", "delete-columns",
                 "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],

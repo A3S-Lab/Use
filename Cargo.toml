@@ -23,6 +23,7 @@ axum = "0.8"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
+futures-util = "0.3"
 getrandom = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 quick-xml = "0.38"
@@ -59,7 +60,12 @@ path = "src/main.rs"
 [features]
 default = ["browser", "office", "extensions", "mcp"]
 browser = ["dep:a3s-use-browser"]
-office = ["dep:a3s-use-office"]
+office = [
+    "dep:a3s-use-office",
+    "dep:axum",
+    "dep:futures-util",
+    "dep:getrandom",
+]
 extensions = ["dep:a3s-use-extension"]
 mcp = [
     "dep:axum",
@@ -83,12 +89,13 @@ axum = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 clap.workspace = true
 fs2 = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 getrandom = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
 url.workspace = true
 rmcp = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
@@ -99,5 +106,6 @@ windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_
 
 [dev-dependencies]
 async-trait.workspace = true
+reqwest.workspace = true
 tempfile.workspace = true
 zip.workspace = true
