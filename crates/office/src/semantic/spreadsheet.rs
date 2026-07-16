@@ -11,6 +11,10 @@ use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, Relationsh
 
 const SPREADSHEET_NAMESPACE: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const STRICT_SPREADSHEET_NAMESPACE: &str = "http://purl.oclc.org/ooxml/spreadsheetml/main";
+const SPREADSHEET_DRAWING_NAMESPACE: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
+const STRICT_SPREADSHEET_DRAWING_NAMESPACE: &str =
+    "http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing";
 const RELATIONSHIPS_NAMESPACE: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const STRICT_RELATIONSHIPS_NAMESPACE: &str =
@@ -67,7 +71,8 @@ pub(super) fn read(
                 format!("Spreadsheet sheet '{name}' cannot use an external relationship."),
             ));
         };
-        let mut sheet_node = read_worksheet(package, part_name, name, &shared_strings, &styles)?;
+        let mut sheet_node =
+            read_worksheet(package, opc, part_name, name, &shared_strings, &styles)?;
         if let Some(sheet_id) = sheet.attribute("sheetId") {
             sheet_node.format.insert("sheetId".into(), sheet_id.into());
         }
@@ -229,6 +234,7 @@ fn cell_coordinates(reference: &str) -> UseResult<(u32, u32, String)> {
 
 fn read_worksheet(
     package: &NativeOfficePackage,
+    opc: &OpcPackageModel,
     part_name: &str,
     sheet_name: &str,
     shared_strings: &[String],
@@ -240,60 +246,218 @@ fn read_worksheet(
     let sheet_path = format!("/{sheet_name}");
     let mut sheet_node = DocumentNode::new(&sheet_path, "sheet", OfficeNodeType::Worksheet);
     sheet_node.format.insert("part".into(), part_name.into());
-    let Some(sheet_data) = worksheet.child("sheetData") else {
-        return Ok(sheet_node);
-    };
-    let mut inferred_row = 0_u32;
-    for row in sheet_data.children_named("row") {
-        let row_number = row
-            .attribute("r")
-            .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or_else(|| inferred_row.saturating_add(1));
-        if row_number == 0 {
-            return Err(semantic_error(
-                "use.office.spreadsheet_row_invalid",
-                format!("Worksheet '{sheet_name}' contains row zero."),
-            ));
+    if let Some(sheet_data) = worksheet.child("sheetData") {
+        let mut inferred_row = 0_u32;
+        for row in sheet_data.children_named("row") {
+            let row_number = row
+                .attribute("r")
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or_else(|| inferred_row.saturating_add(1));
+            if row_number == 0 {
+                return Err(semantic_error(
+                    "use.office.spreadsheet_row_invalid",
+                    format!("Worksheet '{sheet_name}' contains row zero."),
+                ));
+            }
+            inferred_row = row_number;
+            let row_path = format!("{sheet_path}/row[{row_number}]");
+            let mut row_node = DocumentNode::new(&row_path, "row", OfficeNodeType::Row);
+            copy_attribute(row, "ht", "height", &mut row_node);
+            copy_attribute(row, "hidden", "hidden", &mut row_node);
+            copy_attribute(row, "outlineLevel", "outlineLevel", &mut row_node);
+            let mut inferred_column = 0_u32;
+            for cell in row.children_named("c") {
+                let reference = match cell.attribute("r") {
+                    Some(reference) => normalize_cell_reference(reference, row_number)?,
+                    None => {
+                        inferred_column = inferred_column.saturating_add(1);
+                        format!("{}{row_number}", column_name(inferred_column)?)
+                    }
+                };
+                inferred_column = column_number(&reference).unwrap_or(inferred_column);
+                row_node.children.push(read_cell(
+                    cell,
+                    &sheet_path,
+                    &reference,
+                    shared_strings,
+                    styles,
+                )?);
+            }
+            row_node.text = row_node
+                .children
+                .iter()
+                .map(|cell| cell.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\t");
+            sheet_node.children.push(row_node);
         }
-        inferred_row = row_number;
-        let row_path = format!("{sheet_path}/row[{row_number}]");
-        let mut row_node = DocumentNode::new(&row_path, "row", OfficeNodeType::Row);
-        copy_attribute(row, "ht", "height", &mut row_node);
-        copy_attribute(row, "hidden", "hidden", &mut row_node);
-        copy_attribute(row, "outlineLevel", "outlineLevel", &mut row_node);
-        let mut inferred_column = 0_u32;
-        for cell in row.children_named("c") {
-            let reference = match cell.attribute("r") {
-                Some(reference) => normalize_cell_reference(reference, row_number)?,
-                None => {
-                    inferred_column = inferred_column.saturating_add(1);
-                    format!("{}{row_number}", column_name(inferred_column)?)
-                }
-            };
-            inferred_column = column_number(&reference).unwrap_or(inferred_column);
-            row_node.children.push(read_cell(
-                cell,
-                &sheet_path,
-                &reference,
-                shared_strings,
-                styles,
-            )?);
-        }
-        row_node.text = row_node
-            .children
-            .iter()
-            .map(|cell| cell.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\t");
-        sheet_node.children.push(row_node);
     }
+    append_worksheet_pictures(
+        package,
+        opc,
+        &worksheet,
+        part_name,
+        &sheet_path,
+        &mut sheet_node,
+    )?;
     sheet_node.text = sheet_node
         .children
         .iter()
+        .filter(|child| child.node_type == OfficeNodeType::Row)
         .map(|row| row.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
     Ok(sheet_node)
+}
+
+fn append_worksheet_pictures(
+    package: &NativeOfficePackage,
+    opc: &OpcPackageModel,
+    worksheet: &XmlElement,
+    worksheet_part: &str,
+    sheet_path: &str,
+    sheet: &mut DocumentNode,
+) -> UseResult<()> {
+    let drawings = worksheet.children_named("drawing").collect::<Vec<_>>();
+    if drawings.len() > 1 {
+        return Err(semantic_error(
+            "use.office.spreadsheet_drawing_invalid",
+            format!("Worksheet '{sheet_path}' contains more than one drawing element."),
+        ));
+    }
+    let Some(drawing) = drawings.first() else {
+        return Ok(());
+    };
+    let relationship_id = relationship_attribute(drawing, "id").ok_or_else(|| {
+        semantic_error(
+            "use.office.spreadsheet_drawing_invalid",
+            format!("Worksheet '{sheet_path}' drawing has no relationship ID."),
+        )
+    })?;
+    let worksheet_source = RelationshipSource::Part {
+        part_name: worksheet_part.to_string(),
+    };
+    let relationship = opc
+        .relationships()
+        .relationship(&worksheet_source, relationship_id)
+        .filter(|relationship| relationship.relationship_type.ends_with("/drawing"))
+        .ok_or_else(|| {
+            semantic_error(
+                "use.office.spreadsheet_drawing_invalid",
+                format!("Worksheet '{sheet_path}' drawing relationship is missing or invalid."),
+            )
+        })?;
+    let RelationshipTarget::Internal {
+        part_name: drawing_part,
+        ..
+    } = &relationship.target
+    else {
+        return Err(semantic_error(
+            "use.office.spreadsheet_drawing_invalid",
+            "Spreadsheet drawings must use internal relationships.",
+        ));
+    };
+    let drawing_xml = parse_xml_tree(&package.xml_part(drawing_part)?)?;
+    if drawing_xml.local_name != "wsDr"
+        || !matches!(
+            drawing_xml.namespace.as_deref(),
+            Some(SPREADSHEET_DRAWING_NAMESPACE | STRICT_SPREADSHEET_DRAWING_NAMESPACE)
+        )
+    {
+        return Err(semantic_error(
+            "use.office.spreadsheet_drawing_invalid",
+            format!("Spreadsheet drawing '/{drawing_part}' has an invalid root element."),
+        ));
+    }
+    let drawing_source = RelationshipSource::Part {
+        part_name: drawing_part.clone(),
+    };
+    let mut picture_index = 0_usize;
+    for anchor in drawing_xml.child_elements().filter(|element| {
+        matches!(
+            element.local_name.as_str(),
+            "oneCellAnchor" | "twoCellAnchor" | "absoluteAnchor"
+        )
+    }) {
+        let Some(picture) = find_descendant(anchor, "pic") else {
+            continue;
+        };
+        picture_index += 1;
+        let mut node = DocumentNode::new(
+            format!("{sheet_path}/picture[{picture_index}]"),
+            "picture",
+            OfficeNodeType::Picture,
+        );
+        node.format
+            .insert("ownerPart".into(), format!("/{drawing_part}"));
+        if let Some(properties) = find_descendant(picture, "cNvPr") {
+            copy_attribute(properties, "id", "id", &mut node);
+            copy_attribute(properties, "name", "name", &mut node);
+            if let Some(alt) = properties
+                .attribute("descr")
+                .or_else(|| properties.attribute("title"))
+            {
+                node.format.insert("alt".into(), alt.into());
+            }
+        }
+        if let Some(blip) = find_descendant(picture, "blip") {
+            if let Some(embed) = blip.attribute("embed") {
+                node.format.insert("relationshipId".into(), embed.into());
+                if let Some(media) = opc
+                    .relationships()
+                    .relationship(&drawing_source, embed)
+                    .and_then(|relationship| relationship.target.internal_part_name())
+                {
+                    node.format.insert("part".into(), format!("/{media}"));
+                }
+            }
+        }
+        let extent = anchor
+            .child("ext")
+            .or_else(|| find_descendant(picture, "xfrm").and_then(|xfrm| xfrm.child("ext")));
+        if let Some(extent) = extent {
+            copy_pixel_extent(extent, "cx", "widthPx", &mut node);
+            copy_pixel_extent(extent, "cy", "heightPx", &mut node);
+        }
+        if let Some(from) = anchor.child("from") {
+            let column = from
+                .child("col")
+                .and_then(|value| direct_text(value).parse::<u32>().ok());
+            let row = from
+                .child("row")
+                .and_then(|value| direct_text(value).parse::<u32>().ok());
+            if let (Some(column), Some(row)) = (column, row) {
+                if let Ok(column) = column_name(column.saturating_add(1)) {
+                    node.format
+                        .insert("anchorCell".into(), format!("{column}{}", row + 1));
+                }
+            }
+        }
+        sheet.children.push(node);
+    }
+    Ok(())
+}
+
+fn find_descendant<'a>(element: &'a XmlElement, local_name: &str) -> Option<&'a XmlElement> {
+    for child in element.child_elements() {
+        if child.local_name == local_name {
+            return Some(child);
+        }
+        if let Some(found) = find_descendant(child, local_name) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn copy_pixel_extent(element: &XmlElement, attribute: &str, key: &str, node: &mut DocumentNode) {
+    if let Some(value) = element
+        .attribute(attribute)
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        node.format
+            .insert(key.into(), ((value + 4_762) / 9_525).to_string());
+    }
 }
 
 fn read_cell(

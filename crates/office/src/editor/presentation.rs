@@ -361,7 +361,10 @@ fn text_shape_xml(shape: TextShape<'_>) -> String {
     )
 }
 
-fn locate_path<'a>(root: &'a IndexedXmlElement, path: &str) -> UseResult<&'a IndexedXmlElement> {
+pub(super) fn locate_path<'a>(
+    root: &'a IndexedXmlElement,
+    path: &str,
+) -> UseResult<&'a IndexedXmlElement> {
     let segments = parse_segments(path)?;
     let mut segments = segments.into_iter();
     let slide = segments.next().ok_or_else(|| node_not_found(path))?;
@@ -375,6 +378,9 @@ fn locate_path<'a>(root: &'a IndexedXmlElement, path: &str) -> UseResult<&'a Ind
         current = match segment.name.as_str() {
             "shape" => current
                 .child("sp", segment.position.unwrap_or(1))
+                .ok_or_else(|| node_not_found(path))?,
+            "picture" => current
+                .child("pic", segment.position.unwrap_or(1))
                 .ok_or_else(|| node_not_found(path))?,
             "group" => current
                 .child("grpSp", segment.position.unwrap_or(1))

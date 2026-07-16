@@ -20,6 +20,7 @@ rust-version = "1.82"
 anyhow = "1"
 async-trait = "0.1"
 axum = "0.8"
+base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
 getrandom = "0.3"

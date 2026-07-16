@@ -26,7 +26,7 @@ pub(super) fn add_chart(
     })
 }
 
-fn worksheet_drawing(
+pub(in crate::editor) fn worksheet_drawing(
     package: &mut NativeOfficePackage,
     worksheet_part: &str,
     dialect: OfficeDialect,

@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use a3s_use_core::{UseError, UseResult};
-use serde::{Deserialize, Serialize};
 
 use crate::discovery::office_error;
 use crate::semantic::NativeOfficeDocument;
@@ -10,10 +9,12 @@ use crate::{
     NativeOfficeTemplateMergeResult,
 };
 
+mod image;
 mod part;
 mod presentation;
 mod raw;
 mod spreadsheet;
+mod types;
 mod word;
 
 #[cfg(test)]
@@ -21,169 +22,10 @@ mod part_tests;
 
 pub use part::{NativeCreatedPart, NativeOfficePartType};
 pub use raw::NativeRawXmlPart;
-
-/// Typed Spreadsheet cell content written without a shared-string dependency.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum SpreadsheetCellValue {
-    Text { value: String },
-    Number { value: String },
-    Boolean { value: bool },
-    Formula { expression: String },
-}
-
-/// Zero-based insertion selector shared by native move and copy operations.
-///
-/// `Index` is evaluated after removing the source for a move. `Before` and
-/// `After` use stable semantic paths and are resolved before the mutation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum NativeOfficeInsertPosition {
-    Index { index: usize },
-    Before { path: String },
-    After { path: String },
-}
-
-impl NativeOfficeInsertPosition {
-    pub fn at_index(index: usize) -> Self {
-        Self::Index { index }
-    }
-
-    pub fn before(path: impl Into<String>) -> Self {
-        Self::Before { path: path.into() }
-    }
-
-    pub fn after(path: impl Into<String>) -> Self {
-        Self::After { path: path.into() }
-    }
-}
-
-/// Typed in-process mutation supported by an atomic native batch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum NativeOfficeMutation {
-    SetText {
-        path: String,
-        text: String,
-    },
-    SetCellValue {
-        path: String,
-        value: SpreadsheetCellValue,
-    },
-    AddParagraph {
-        parent: String,
-        text: String,
-    },
-    AddTable {
-        parent: String,
-        rows: usize,
-        columns: usize,
-    },
-    AddTableRow {
-        parent: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        columns: Option<usize>,
-    },
-    AddTableCell {
-        parent: String,
-        text: String,
-    },
-    AddSlide {
-        parent: String,
-        title: String,
-    },
-    AddShape {
-        parent: String,
-        text: String,
-    },
-    AddPart {
-        parent: String,
-        #[serde(rename = "type")]
-        part_type: NativeOfficePartType,
-    },
-    AddWorksheet {
-        name: String,
-    },
-    InsertRows {
-        sheet: String,
-        start: u32,
-        count: u32,
-    },
-    DeleteRows {
-        sheet: String,
-        start: u32,
-        count: u32,
-    },
-    InsertColumns {
-        sheet: String,
-        start: String,
-        count: u32,
-    },
-    DeleteColumns {
-        sheet: String,
-        start: String,
-        count: u32,
-    },
-    RenameWorksheet {
-        path: String,
-        name: String,
-    },
-    MoveWorksheet {
-        path: String,
-        position: usize,
-    },
-    CopyWorksheet {
-        path: String,
-        name: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        position: Option<usize>,
-    },
-    Move {
-        path: String,
-        #[serde(rename = "to", default, skip_serializing_if = "Option::is_none")]
-        target_parent: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        position: Option<NativeOfficeInsertPosition>,
-    },
-    Copy {
-        path: String,
-        #[serde(rename = "to", default, skip_serializing_if = "Option::is_none")]
-        target_parent: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        position: Option<NativeOfficeInsertPosition>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
-    },
-    Swap {
-        path: String,
-        with: String,
-    },
-    ReplaceXmlPart {
-        part: String,
-        xml: String,
-    },
-    Remove {
-        path: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeOfficeSwapResult {
-    pub first: String,
-    pub second: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeBatchResult {
-    pub applied: usize,
-    pub paths: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub swaps: Vec<NativeOfficeSwapResult>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub created_parts: Vec<NativeCreatedPart>,
-}
+pub use types::{
+    NativeBatchResult, NativeCreatedImage, NativeOfficeImage, NativeOfficeImageFormat,
+    NativeOfficeInsertPosition, NativeOfficeMutation, NativeOfficeSwapResult, SpreadsheetCellValue,
+};
 
 /// Loss-preserving OOXML editor with transactional in-memory batches.
 #[derive(Debug, Clone)]
@@ -344,6 +186,24 @@ impl NativeOfficeEditor {
             editor_error(
                 "use.office.batch_validation_failed",
                 "Native Office shape mutation returned no path.",
+            )
+        })
+    }
+
+    /// Embeds a validated PNG, JPEG, or GIF as a native DrawingML picture.
+    pub fn add_image(
+        &mut self,
+        parent: impl Into<String>,
+        image: NativeOfficeImage,
+    ) -> UseResult<NativeCreatedImage> {
+        let result = self.apply_batch(&[NativeOfficeMutation::AddImage {
+            parent: parent.into(),
+            image,
+        }])?;
+        result.created_images.into_iter().next().ok_or_else(|| {
+            editor_error(
+                "use.office.batch_validation_failed",
+                "Native Office image mutation returned no creation receipt.",
             )
         })
     }
@@ -551,14 +411,17 @@ impl NativeOfficeEditor {
                 paths: Vec::new(),
                 swaps: Vec::new(),
                 created_parts: Vec::new(),
+                created_images: Vec::new(),
             });
         }
         let original = self.package.clone();
         let mut paths = Vec::with_capacity(mutations.len());
         let mut swaps = Vec::new();
         let mut created_parts = Vec::new();
+        let mut created_images = Vec::new();
         for mutation in mutations {
             let mut created_part = None;
+            let mut created_image = None;
             let mut swap = None;
             let result = match mutation {
                 NativeOfficeMutation::SetText { path, text } => {
@@ -587,6 +450,13 @@ impl NativeOfficeEditor {
                 }
                 NativeOfficeMutation::AddShape { parent, text } => {
                     presentation::add_shape(&mut self.package, parent, text)
+                }
+                NativeOfficeMutation::AddImage { parent, image } => {
+                    image::add(&mut self.package, parent, image).map(|created| {
+                        let path = created.path.clone();
+                        created_image = Some(created);
+                        path
+                    })
                 }
                 NativeOfficeMutation::AddPart { parent, part_type } => {
                     part::add(&mut self.package, parent, *part_type).map(|created| {
@@ -671,6 +541,9 @@ impl NativeOfficeEditor {
                     if let Some(created) = created_part {
                         created_parts.push(created);
                     }
+                    if let Some(created) = created_image {
+                        created_images.push(created);
+                    }
                     if let Some(receipt) = swap {
                         swaps.push(receipt);
                     }
@@ -693,6 +566,7 @@ impl NativeOfficeEditor {
             paths,
             swaps,
             created_parts,
+            created_images,
         })
     }
 
@@ -788,6 +662,13 @@ fn set_text(package: &mut NativeOfficePackage, path: &str, text: &str) -> UseRes
 
 fn remove_node(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
     validate_mutation_path(path)?;
+    if NativeOfficeDocument::from_package(package.clone())?
+        .get(path, 0)?
+        .node_type
+        == crate::OfficeNodeType::Picture
+    {
+        return image::remove(package, path);
+    }
     match package.kind() {
         DocumentKind::Word => word::remove(package, path),
         DocumentKind::Spreadsheet => spreadsheet::remove(package, path),

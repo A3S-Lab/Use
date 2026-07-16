@@ -136,6 +136,18 @@ retain their original ownership; inserted values are never recursively
 evaluated. The default output path is no-clobber, template/output identity is
 rejected, and `--force` authorizes only destination replacement.
 
+Raster image mutation uses a shared media ownership layer below the three
+format engines. PNG, JPEG, and GIF bytes are validated and bounded before any
+package mutation. Word owns an inline drawing relationship from its main part;
+Spreadsheet owns the image relationship from a worksheet drawing part and
+anchors the picture to a cell; Presentation owns it from the slide part. Each
+format exposes the result as a semantic `Picture` node with stable path,
+relationship ID, name, alternative text, and pixel dimensions. Removal first
+edits the owner XML, then drops an unreferenced relationship, and garbage
+collects media only when the package relationship graph has no remaining target
+edge. The media changes share the editor's atomic rollback boundary. SVG is a
+separate future representation because OOXML requires a raster fallback.
+
 Unpromoted commands are delegated to OfficeCLI and
 `mcp serve office` launches its standard MCP server. That compatibility process
 remains isolated from the native engine.
@@ -201,8 +213,9 @@ Implemented:
     raw XML inspection/replacement, typed
     chart/header/footer part carriers, exact root replay artifacts for the
     canonical typed subset, cross-format native template merge with bounded JSON
-    and immutable templates, atomic batches, changed-file conflict detection,
-    and the dependency-free `office native` CLI.
+    and immutable templates, native PNG/JPEG/GIF add/read/remove with
+    reference-aware media cleanup, atomic batches, changed-file conflict
+    detection, and the dependency-free `office native` CLI.
 
 Next:
 

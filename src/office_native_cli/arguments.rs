@@ -11,6 +11,9 @@ pub(super) struct ParsedArguments {
     pub input: Option<String>,
     pub node_type: Option<String>,
     pub name: Option<String>,
+    pub alt: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
     pub rows: Option<usize>,
     pub columns: Option<usize>,
     pub number: Option<String>,
@@ -79,6 +82,18 @@ impl ParsedArguments {
                 }
                 "--name" if allowed.name => {
                     set_string_option(&mut parsed.name, args, index, "--name")?;
+                    index += 2;
+                }
+                "--alt" if allowed.alt => {
+                    set_string_option(&mut parsed.alt, args, index, "--alt")?;
+                    index += 2;
+                }
+                "--width" if allowed.width => {
+                    set_u32_option(&mut parsed.width, args, index, "--width")?;
+                    index += 2;
+                }
+                "--height" if allowed.height => {
+                    set_u32_option(&mut parsed.height, args, index, "--height")?;
                     index += 2;
                 }
                 "--rows" if allowed.rows => {
@@ -155,6 +170,9 @@ pub(super) struct AllowedOptions {
     input: bool,
     node_type: bool,
     name: bool,
+    alt: bool,
+    width: bool,
+    height: bool,
     rows: bool,
     columns: bool,
     number: bool,
@@ -178,6 +196,9 @@ impl AllowedOptions {
         input: false,
         node_type: false,
         name: false,
+        alt: false,
+        width: false,
+        height: false,
         rows: false,
         columns: false,
         number: false,
@@ -225,8 +246,12 @@ impl AllowedOptions {
     pub const ADD: Self = Self {
         text: true,
         output: true,
+        input: true,
         node_type: true,
         name: true,
+        alt: true,
+        width: true,
+        height: true,
         rows: true,
         columns: true,
         ..Self::NONE
@@ -314,6 +339,24 @@ fn set_usize_option(
     }
     let value = option_value(args, index, option)?;
     *target = Some(value.parse::<usize>().map_err(|_| {
+        usage_error(format!(
+            "{option} requires a non-negative integer, received '{value}'"
+        ))
+    })?);
+    Ok(())
+}
+
+fn set_u32_option(
+    target: &mut Option<u32>,
+    args: &[String],
+    index: usize,
+    option: &str,
+) -> UseResult<()> {
+    if target.is_some() {
+        return Err(usage_error(format!("{option} may be specified only once")));
+    }
+    let value = option_value(args, index, option)?;
+    *target = Some(value.parse::<u32>().map_err(|_| {
         usage_error(format!(
             "{option} requires a non-negative integer, received '{value}'"
         ))

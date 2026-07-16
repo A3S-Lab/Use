@@ -327,7 +327,23 @@ fn read_picture(picture: &XmlElement, path: &str) -> DocumentNode {
             node.format.insert("linkRelationshipId".into(), link.into());
         }
     }
+    if let Some(transform) = find_descendant(picture, "xfrm") {
+        if let Some(extent) = transform.child("ext") {
+            copy_pixel_extent(extent, "cx", "widthPx", &mut node);
+            copy_pixel_extent(extent, "cy", "heightPx", &mut node);
+        }
+    }
     node
+}
+
+fn copy_pixel_extent(element: &XmlElement, attribute: &str, key: &str, node: &mut DocumentNode) {
+    if let Some(value) = element
+        .attribute(attribute)
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        node.format
+            .insert(key.into(), ((value + 4_762) / 9_525).to_string());
+    }
 }
 
 fn read_table(frame: &XmlElement, path: &str) -> DocumentNode {

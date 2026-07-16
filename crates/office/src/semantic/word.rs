@@ -217,7 +217,60 @@ fn read_run(run: &XmlElement, path: &str) -> DocumentNode {
         apply_run_properties(properties, &mut node);
     }
     node.text = word_text(run);
+    if let Some(blip) = find_descendant(run, "blip") {
+        node.tag = "picture".into();
+        node.node_type = OfficeNodeType::Picture;
+        if let Some(embed) = blip.attribute("embed") {
+            node.format.insert("relationshipId".into(), embed.into());
+        }
+        if let Some(properties) = find_descendant(run, "docPr") {
+            copy_picture_attribute(properties, "name", "name", &mut node);
+            if let Some(alt) = properties
+                .attribute("descr")
+                .or_else(|| properties.attribute("title"))
+            {
+                node.format.insert("alt".into(), alt.into());
+            }
+        }
+        if let Some(extent) = find_descendant(run, "extent") {
+            copy_picture_extent(extent, "cx", "widthPx", &mut node);
+            copy_picture_extent(extent, "cy", "heightPx", &mut node);
+        }
+    }
     node
+}
+
+fn find_descendant<'a>(element: &'a XmlElement, local_name: &str) -> Option<&'a XmlElement> {
+    for child in element.child_elements() {
+        if child.local_name == local_name {
+            return Some(child);
+        }
+        if let Some(found) = find_descendant(child, local_name) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn copy_picture_attribute(
+    element: &XmlElement,
+    attribute: &str,
+    key: &str,
+    node: &mut DocumentNode,
+) {
+    if let Some(value) = element.attribute(attribute) {
+        node.format.insert(key.into(), value.into());
+    }
+}
+
+fn copy_picture_extent(element: &XmlElement, attribute: &str, key: &str, node: &mut DocumentNode) {
+    if let Some(value) = element
+        .attribute(attribute)
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        node.format
+            .insert(key.into(), ((value + 4_762) / 9_525).to_string());
+    }
 }
 
 fn read_table(table: &XmlElement, path: &str, styles: &BTreeMap<String, String>) -> DocumentNode {

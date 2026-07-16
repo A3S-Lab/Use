@@ -7,6 +7,8 @@ use crate::{DocumentKind, LosslessXmlPart, NativeOfficePackage, RelationshipSour
 
 mod spreadsheet;
 
+pub(super) use spreadsheet::worksheet_drawing;
+
 const TRANSITIONAL_RELATIONSHIPS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const STRICT_RELATIONSHIPS: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships";
@@ -22,6 +24,13 @@ const STRICT_CHART: &str = "http://purl.oclc.org/ooxml/drawingml/chart";
 const TRANSITIONAL_SPREADSHEET_DRAWING: &str =
     "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
 const STRICT_SPREADSHEET_DRAWING: &str = "http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing";
+const TRANSITIONAL_DRAWING: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const STRICT_DRAWING: &str = "http://purl.oclc.org/ooxml/drawingml/main";
+const TRANSITIONAL_PICTURE: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+const STRICT_PICTURE: &str = "http://purl.oclc.org/ooxml/drawingml/picture";
+const TRANSITIONAL_WORD_DRAWING: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+const STRICT_WORD_DRAWING: &str = "http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing";
 
 const CHART_CONTENT_TYPE: &str =
     "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
@@ -258,14 +267,14 @@ fn allocate_part(package: &NativeOfficePackage, directory: &str, stem: &str) -> 
         })
 }
 
-fn relationship_part(part_name: &str) -> String {
+pub(super) fn relationship_part(part_name: &str) -> String {
     part_name.rsplit_once('/').map_or_else(
         || format!("_rels/{part_name}.rels"),
         |(directory, file_name)| format!("{directory}/_rels/{file_name}.rels"),
     )
 }
 
-fn relative_target(source: &str, target: &str) -> String {
+pub(super) fn relative_target(source: &str, target: &str) -> String {
     let source_directory = source
         .rsplit_once('/')
         .map(|(directory, _)| directory.split('/').collect::<Vec<_>>())
@@ -283,24 +292,24 @@ fn relative_target(source: &str, target: &str) -> String {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum OfficeDialect {
+pub(super) enum OfficeDialect {
     Transitional,
     Strict,
 }
 
 impl OfficeDialect {
-    fn relationship_namespace(self) -> &'static str {
+    pub(super) fn relationship_namespace(self) -> &'static str {
         match self {
             Self::Transitional => TRANSITIONAL_RELATIONSHIPS,
             Self::Strict => STRICT_RELATIONSHIPS,
         }
     }
 
-    fn relationship_type(self, name: &str) -> String {
+    pub(super) fn relationship_type(self, name: &str) -> String {
         format!("{}/{name}", self.relationship_namespace())
     }
 
-    fn word_namespace(self) -> &'static str {
+    pub(super) fn word_namespace(self) -> &'static str {
         match self {
             Self::Transitional => TRANSITIONAL_WORD,
             Self::Strict => STRICT_WORD,
@@ -314,15 +323,43 @@ impl OfficeDialect {
         }
     }
 
-    fn spreadsheet_drawing_namespace(self) -> &'static str {
+    pub(super) fn spreadsheet_drawing_namespace(self) -> &'static str {
         match self {
             Self::Transitional => TRANSITIONAL_SPREADSHEET_DRAWING,
             Self::Strict => STRICT_SPREADSHEET_DRAWING,
         }
     }
+
+    pub(super) fn drawing_namespace(self) -> &'static str {
+        match self {
+            Self::Transitional => TRANSITIONAL_DRAWING,
+            Self::Strict => STRICT_DRAWING,
+        }
+    }
+
+    pub(super) fn picture_namespace(self) -> &'static str {
+        match self {
+            Self::Transitional => TRANSITIONAL_PICTURE,
+            Self::Strict => STRICT_PICTURE,
+        }
+    }
+
+    pub(super) fn word_drawing_namespace(self) -> &'static str {
+        match self {
+            Self::Transitional => TRANSITIONAL_WORD_DRAWING,
+            Self::Strict => STRICT_WORD_DRAWING,
+        }
+    }
+
+    pub(super) fn presentation_namespace(self) -> &'static str {
+        match self {
+            Self::Transitional => TRANSITIONAL_PRESENTATION,
+            Self::Strict => STRICT_PRESENTATION,
+        }
+    }
 }
 
-fn dialect(package: &NativeOfficePackage) -> UseResult<OfficeDialect> {
+pub(super) fn dialect(package: &NativeOfficePackage) -> UseResult<OfficeDialect> {
     let namespace = package
         .xml_part(package.kind().main_part())?
         .root()

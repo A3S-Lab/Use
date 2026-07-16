@@ -6,6 +6,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::cli::CommandOutput;
 
+mod add;
 mod arguments;
 mod arrange;
 mod merge;
@@ -16,6 +17,7 @@ mod replay;
 use arguments::{parse_boolean_option, AllowedOptions, ParsedArguments};
 
 const MAX_BATCH_INPUT_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_IMAGE_INPUT_BYTES: u64 = 64 * 1024 * 1024;
 
 const HELP: &str = concat!(
     "a3s-use office native — dependency-free OOXML operations\n\n",
@@ -29,7 +31,7 @@ const HELP: &str = concat!(
     "  a3s-use office native merge <template> <output> --data <json|@file.json> [--force] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
-    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape [--rows <n>] [--columns <n>] [--name <name>] [--text <value>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
     "  a3s-use office native set <file> <path> (--text <value>|--number <value>|--boolean <true|false>|--formula <expression>) [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
@@ -56,7 +58,7 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("merge") => merge::run(args).await,
         Some("validate") => validate(args).await,
         Some("create") => create(args).await,
-        Some("add") => add(args).await,
+        Some("add") => add::run(args).await,
         Some("add-part") => part::add(args).await,
         Some("set") => set(args).await,
         Some("remove") => remove(args).await,
@@ -229,93 +231,6 @@ async fn create(args: &[String]) -> UseResult<CommandOutput> {
             "revision": editor.package().source_revision()
         }),
     ))
-}
-
-async fn add(args: &[String]) -> UseResult<CommandOutput> {
-    let parsed = ParsedArguments::parse(args, AllowedOptions::ADD)?;
-    if parsed.positionals.len() != 2 {
-        return Err(usage_error(
-            "office native add requires <file> and <parent>",
-        ));
-    }
-    let node_type = parsed
-        .node_type
-        .as_deref()
-        .ok_or_else(|| usage_error("office native add requires --type <node-type>"))?;
-    let source = &parsed.positionals[0];
-    let parent = &parsed.positionals[1];
-    validate_add_options(node_type, &parsed)?;
-    let mut editor = NativeOfficeEditor::open(source).await?;
-    let source_path = editor.package().path().to_path_buf();
-    let text = parsed.text.as_deref().unwrap_or_default();
-    let (operation, path) = match node_type {
-        "paragraph" | "p" => ("add-paragraph", editor.add_paragraph(parent, text)?),
-        "table" | "tbl" => (
-            "add-table",
-            editor.add_table(
-                parent,
-                parsed.rows.unwrap_or(1),
-                parsed.columns.unwrap_or(1),
-            )?,
-        ),
-        "row" | "tr" => (
-            "add-table-row",
-            editor.add_table_row(parent, parsed.columns)?,
-        ),
-        "cell" | "tc" => ("add-table-cell", editor.add_table_cell(parent, text)?),
-        "sheet" | "worksheet" => {
-            if parent != "/" {
-                return Err(usage_error("native worksheets can be added only to /"));
-            }
-            let name = parsed
-                .name
-                .as_deref()
-                .ok_or_else(|| usage_error("native worksheet add requires --name <name>"))?;
-            ("add-worksheet", editor.add_worksheet(name)?)
-        }
-        "slide" => ("add-slide", editor.add_slide(parent, text)?),
-        "shape" => ("add-shape", editor.add_shape(parent, text)?),
-        _ => {
-            return Err(usage_error(format!(
-                "native Office add type '{node_type}' is not supported yet"
-            )))
-        }
-    };
-    let node = editor.snapshot()?.get(&path, 2)?;
-    save_editor(&mut editor, parsed.output.as_deref()).await?;
-    let output_path = editor.package().path().to_path_buf();
-    let in_place = output_path == source_path;
-
-    Ok(CommandOutput::success(
-        format!("Added {path} and saved '{}'.", output_path.display()),
-        serde_json::json!({
-            "operation": operation,
-            "changed": true,
-            "parent": parent,
-            "path": path,
-            "node": node,
-            "kind": editor.package().kind(),
-            "outputPath": output_path,
-            "inPlace": in_place,
-            "revision": editor.package().source_revision()
-        }),
-    ))
-}
-
-fn validate_add_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> {
-    let accepts_rows = matches!(node_type, "table" | "tbl");
-    let accepts_columns = matches!(node_type, "table" | "tbl" | "row" | "tr");
-    if parsed.rows.is_some() && !accepts_rows {
-        return Err(usage_error(format!(
-            "native Office add type '{node_type}' does not accept --rows"
-        )));
-    }
-    if parsed.columns.is_some() && !accepts_columns {
-        return Err(usage_error(format!(
-            "native Office add type '{node_type}' does not accept --columns"
-        )));
-    }
-    Ok(())
 }
 
 async fn set(args: &[String]) -> UseResult<CommandOutput> {
@@ -658,6 +573,7 @@ async fn save_editor(editor: &mut NativeOfficeEditor, output: Option<&str>) -> U
 #[derive(Debug, Clone, Copy)]
 enum NativeInputKind {
     Batch,
+    Image,
     RawXml,
     TemplateData,
 }
@@ -666,6 +582,7 @@ impl NativeInputKind {
     fn code_prefix(self) -> &'static str {
         match self {
             Self::Batch => "use.office.batch_input",
+            Self::Image => "use.office.image_input",
             Self::RawXml => "use.office.raw_input",
             Self::TemplateData => "use.office.template_data_input",
         }
@@ -674,6 +591,7 @@ impl NativeInputKind {
     fn label(self) -> &'static str {
         match self {
             Self::Batch => "Native Office batch input",
+            Self::Image => "Native Office image input",
             Self::RawXml => "Native Office raw XML input",
             Self::TemplateData => "Native Office template data input",
         }

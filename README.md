@@ -59,6 +59,7 @@ a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native add report.docx /body --type paragraph --text 'More' --json
 a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
+a3s use office native add report.docx /body --type picture --input logo.png --alt 'A3S logo' --width 320 --json
 a3s use office native remove report.docx /body/p[2] --json
 a3s use office native move report.docx /body/p[2] --before /body/p[1] --json
 a3s use office native copy workbook.xlsx /Sheet1 --name 'Sheet1 Copy' --json
@@ -90,9 +91,10 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   151 MCP tools, six packaged Skills, Dashboard, and interactive runtime from
   `agent-browser` 0.31.2
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
-  selector, semantic read, transactional add/set/remove/move/copy/swap, and
-  cross-format template merge layers while retaining the 0.1.x OfficeCLI
-  compatibility backend for commands not yet promoted
+  selector, semantic read, transactional add/set/remove/move/copy/swap,
+  native PNG/JPEG/GIF embedding, and cross-format template merge layers while
+  retaining the 0.1.x OfficeCLI compatibility backend for commands not yet
+  promoted
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -276,8 +278,11 @@ resources; removal garbage-collects only unshared descendants. Structural
 Spreadsheet edits rewrite affected A1 formulas, defined names, worksheet
 metadata, tables, comments, VML notes, drawing anchors, and chart references;
 unsupported pivot and 3D-reference cases fail closed before save. Presentation
-slides and text shapes also support native add/remove. Saves are atomic and
-reject a changed source revision instead of overwriting another writer.
+slides and text shapes also support native add/remove. PNG, JPEG, and GIF can be
+embedded as real Word inline pictures, Spreadsheet one-cell drawing anchors,
+and Presentation slide pictures; semantic reads and reference-aware removal use
+the same cross-format `Picture` contract. Saves are atomic and reject a changed
+source revision instead of overwriting another writer.
 Cross-format template merge replaces `{{key}}` text in Word document and
 auxiliary text parts, Spreadsheet string cells, and Presentation slides and
 notes while preserving split-run formatting and reporting unresolved keys.
@@ -289,7 +294,8 @@ interoperability checks and is never part of document execution.
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
-subset, and atomic mutation batches, plus dependency-free template merge today.
+subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
+dependency-free template merge today.
 Other `0.1.x` commands and the Office MCP route still use a compatibility
 backend pinned to OfficeCLI `1.0.136`. This is a migration boundary, not the
 target architecture. The default command route will be promoted only after
@@ -354,6 +360,13 @@ a3s use office native add deck.pptx / --type slide --text 'Results' --json
 a3s use office native add deck.pptx '/slide[1]' --type shape --text '42%' --json
 a3s use office native remove workbook.xlsx /Data --json
 a3s use office native remove deck.pptx '/slide[1]/shape[2]' --json
+
+# Embed bounded PNG, JPEG, or GIF data as a real DrawingML picture. Supplying
+# one dimension preserves the source aspect ratio; supplying both is explicit.
+a3s use office native add report.docx /body --type picture --input logo.png --name Logo --alt 'A3S logo' --width 320 --json
+a3s use office native add workbook.xlsx /Sheet1/B2 --type picture --input chart.jpeg --width 480 --height 270 --json
+a3s use office native add deck.pptx '/slide[1]' --type picture --input photo.gif --json
+a3s use office native remove deck.pptx '/slide[1]/picture[1]' --json
 
 # Arrange supported semantic nodes. --index is zero-based; --before and --after
 # resolve stable pre-mutation paths. A copy defaults to immediately after its
@@ -423,7 +436,40 @@ and 10,000 mutations. The version 1 mutation set is `set-text`,
 `add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
 `delete-columns`, `rename-worksheet`, `move-worksheet`, `copy-worksheet`,
 `move`, `copy`, `swap`, `replace-xml-part`, `add-part`, `add-slide`, `add-shape`,
-and `remove`.
+`add-image`, and `remove`.
+
+An image mutation uses the same versioned batch boundary:
+
+```json
+{
+  "operation": "add-image",
+  "parent": "/Sheet1/B2",
+  "image": {
+    "format": "png",
+    "data": "<base64>",
+    "name": "Logo",
+    "altText": "A3S logo",
+    "widthPx": 320
+  }
+}
+```
+
+The native engine validates decoded format signatures and structure, bounds
+bytes and pixel dimensions, infers a missing axis from the source aspect ratio,
+and inserts a visible OOXML picture object. Word uses an inline DrawingML run,
+Spreadsheet uses a one-cell drawing anchor, and Presentation uses a slide
+picture. Removal deletes the XML object and an unused image relationship, then
+deletes the media part and content-type declaration only when no relationship
+anywhere in the package still targets it. Direct CLI image inputs must be
+regular, non-symlink files no larger than 64 MiB. Normal CLI output never
+contains image data; `createdImage` and batch `createdImages` receipts contain
+only paths, owner/media parts, relationship ID, format, and final dimensions.
+
+SVG embedding is not implemented yet. Correct OOXML SVG support requires an
+SVG part plus a raster fallback rather than treating SVG as an ordinary bitmap.
+Image replacement, crop, rotation, effects, compression controls, floating
+Word wrapping, Spreadsheet two-cell sizing, and media rendering also remain
+outside this bounded add/read/remove milestone.
 
 `office native dump` produces a stricter versioned batch artifact, also as
 ordinary JSON:

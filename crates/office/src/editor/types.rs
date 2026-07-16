@@ -1,0 +1,272 @@
+use a3s_use_core::UseResult;
+use base64::Engine as _;
+use serde::{Deserialize, Serialize};
+
+use super::part::{NativeCreatedPart, NativeOfficePartType};
+
+/// Typed Spreadsheet cell content written without a shared-string dependency.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SpreadsheetCellValue {
+    Text { value: String },
+    Number { value: String },
+    Boolean { value: bool },
+    Formula { expression: String },
+}
+
+/// Zero-based insertion selector shared by native move and copy operations.
+///
+/// `Index` is evaluated after removing the source for a move. `Before` and
+/// `After` use stable semantic paths and are resolved before the mutation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum NativeOfficeInsertPosition {
+    Index { index: usize },
+    Before { path: String },
+    After { path: String },
+}
+
+impl NativeOfficeInsertPosition {
+    pub fn at_index(index: usize) -> Self {
+        Self::Index { index }
+    }
+
+    pub fn before(path: impl Into<String>) -> Self {
+        Self::Before { path: path.into() }
+    }
+
+    pub fn after(path: impl Into<String>) -> Self {
+        Self::After { path: path.into() }
+    }
+}
+
+/// Raster formats that can be embedded without an external Office runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeOfficeImageFormat {
+    Png,
+    #[serde(alias = "jpg")]
+    Jpeg,
+    Gif,
+}
+
+impl NativeOfficeImageFormat {
+    pub(crate) fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpeg",
+            Self::Gif => "gif",
+        }
+    }
+
+    pub(crate) fn content_type(self) -> &'static str {
+        match self {
+            Self::Png => "image/png",
+            Self::Jpeg => "image/jpeg",
+            Self::Gif => "image/gif",
+        }
+    }
+}
+
+/// A bounded, base64-serializable raster image for a native Office mutation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeOfficeImage {
+    pub(super) format: NativeOfficeImageFormat,
+    pub(super) data: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) alt_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) width_px: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) height_px: Option<u32>,
+}
+
+impl NativeOfficeImage {
+    /// Detects and validates PNG, JPEG, or GIF bytes before serializing them.
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> UseResult<Self> {
+        let bytes = bytes.as_ref();
+        let metadata = super::image::inspect_image(bytes, None)?;
+        Ok(Self {
+            format: metadata.format,
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+            name: None,
+            alt_text: None,
+            width_px: None,
+            height_px: None,
+        })
+    }
+
+    pub fn format(&self) -> NativeOfficeImageFormat {
+        self.format
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn with_alt_text(mut self, alt_text: impl Into<String>) -> Self {
+        self.alt_text = Some(alt_text.into());
+        self
+    }
+
+    pub fn with_width_px(mut self, width_px: u32) -> Self {
+        self.width_px = Some(width_px);
+        self
+    }
+
+    pub fn with_height_px(mut self, height_px: u32) -> Self {
+        self.height_px = Some(height_px);
+        self
+    }
+}
+
+/// Receipt for an image embedded into a semantic Office document location.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeCreatedImage {
+    pub path: String,
+    pub part: String,
+    pub parent: String,
+    pub owner_part: String,
+    pub relationship_id: String,
+    pub format: NativeOfficeImageFormat,
+    pub width_px: u32,
+    pub height_px: u32,
+}
+
+/// Typed in-process mutation supported by an atomic native batch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum NativeOfficeMutation {
+    SetText {
+        path: String,
+        text: String,
+    },
+    SetCellValue {
+        path: String,
+        value: SpreadsheetCellValue,
+    },
+    AddParagraph {
+        parent: String,
+        text: String,
+    },
+    AddTable {
+        parent: String,
+        rows: usize,
+        columns: usize,
+    },
+    AddTableRow {
+        parent: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        columns: Option<usize>,
+    },
+    AddTableCell {
+        parent: String,
+        text: String,
+    },
+    AddSlide {
+        parent: String,
+        title: String,
+    },
+    AddShape {
+        parent: String,
+        text: String,
+    },
+    AddImage {
+        parent: String,
+        image: NativeOfficeImage,
+    },
+    AddPart {
+        parent: String,
+        #[serde(rename = "type")]
+        part_type: NativeOfficePartType,
+    },
+    AddWorksheet {
+        name: String,
+    },
+    InsertRows {
+        sheet: String,
+        start: u32,
+        count: u32,
+    },
+    DeleteRows {
+        sheet: String,
+        start: u32,
+        count: u32,
+    },
+    InsertColumns {
+        sheet: String,
+        start: String,
+        count: u32,
+    },
+    DeleteColumns {
+        sheet: String,
+        start: String,
+        count: u32,
+    },
+    RenameWorksheet {
+        path: String,
+        name: String,
+    },
+    MoveWorksheet {
+        path: String,
+        position: usize,
+    },
+    CopyWorksheet {
+        path: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<usize>,
+    },
+    Move {
+        path: String,
+        #[serde(rename = "to", default, skip_serializing_if = "Option::is_none")]
+        target_parent: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<NativeOfficeInsertPosition>,
+    },
+    Copy {
+        path: String,
+        #[serde(rename = "to", default, skip_serializing_if = "Option::is_none")]
+        target_parent: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<NativeOfficeInsertPosition>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    Swap {
+        path: String,
+        with: String,
+    },
+    ReplaceXmlPart {
+        part: String,
+        xml: String,
+    },
+    Remove {
+        path: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeOfficeSwapResult {
+    pub first: String,
+    pub second: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeBatchResult {
+    pub applied: usize,
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub swaps: Vec<NativeOfficeSwapResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub created_parts: Vec<NativeCreatedPart>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub created_images: Vec<NativeCreatedImage>,
+}

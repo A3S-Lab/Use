@@ -221,6 +221,30 @@ relationship receipts, handles transitional and strict OOXML namespaces, and
 rolls back every package change on failure. It does not yet insert a visible
 chart frame or Word section reference.
 
+Bounded raster image add/read/remove is implemented natively for PNG, JPEG, and
+GIF across all three formats. Input bytes are base64 only at the typed batch
+boundary and are never returned by normal CLI output. The decoder validates the
+declared format against the decoded signature and basic image structure, reads
+source dimensions, enforces byte/dimension/pixel bounds, and preserves aspect
+ratio when only width or height is requested. Word inserts a real inline
+DrawingML picture under `/body`, a paragraph, or a table cell. Spreadsheet
+requires an anchor cell such as `/Sheet1/A1`, creates or reuses the worksheet
+drawing, and inserts a one-cell anchor. Presentation inserts a real picture in
+the selected slide shape tree. Every operation allocates a collision-free media
+part, owner relationship, non-visual identity, name/alternative text metadata,
+and final pixel dimensions.
+
+Picture removal is reference-aware. It removes the owning XML subtree and an
+unused image relationship first, then removes the media part and content-type
+override only when no relationship anywhere in the package still targets that
+part. All XML, relationship, content-type, and media changes participate in the
+existing atomic batch rollback. Process-level tests cover Word, Spreadsheet,
+and Presentation with an unusable OfficeCLI provider path; separate format
+tests cover PNG, JPEG, GIF, dimension inference, invalid data, rollback, and
+batch `createdImages` receipts. SVG is deferred because interoperable OOXML SVG
+requires a raster fallback representation. Replacement, crop, effects,
+floating/advanced anchors, and rich image rendering are not implemented yet.
+
 Typed move/copy/swap is implemented as a bounded arrangement layer. `Index` is
 zero-based and is evaluated after source removal for a move; `Before` and
 `After` resolve stable semantic paths before mutation. A copy with no position
@@ -279,12 +303,12 @@ three formats with an unusable OfficeCLI path and verify template bytes remain
 unchanged.
 
 Cross-parent/reference-graph arrangement beyond the bounded move/copy/swap
-coverage above, image creation and mutation, complex/custom part carriers,
-subtree and rich-structure dump, advanced rich-format operations, and the
-formula parser/dependency/recalculation engine remain before their respective
-gates can be promoted. Creation and structural mutation remain under the
-interoperability gate until Microsoft Office and optional CI LibreOffice checks
-confirm that no repair dialog is required.
+coverage above, advanced image mutation and SVG fallback, complex/custom part
+carriers, subtree and rich-structure dump, advanced rich-format operations, and
+the formula parser/dependency/recalculation engine remain before their
+respective gates can be promoted. Creation and structural mutation remain
+under the interoperability gate until Microsoft Office and optional CI
+LibreOffice checks confirm that no repair dialog is required.
 
 ### Gate 3 — Rich Word
 
@@ -336,10 +360,10 @@ The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, Spreadsheet range and row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
-canonical typed subset, cross-format template merge with `merge`, plus atomic
-batches under the native Office route; other Office commands and MCP startup
-still delegate to the pinned OfficeCLI provider. This keeps existing users
-functional while native coverage grows. The native APIs are deliberately not
-advertised as full Office readiness, and `doctor` continues to report
-compatibility-provider readiness until the native read and mutation gates are
-met.
+canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format
+template merge with `merge`, plus atomic batches under the native Office route;
+other Office commands and MCP startup still delegate to the pinned OfficeCLI
+provider. This keeps existing users functional while native coverage grows.
+The native APIs are deliberately not advertised as full Office readiness, and
+`doctor` continues to report compatibility-provider readiness until the native
+read and mutation gates are met.

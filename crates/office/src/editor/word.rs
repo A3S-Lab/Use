@@ -290,7 +290,7 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
     package.set_part(DOCUMENT_PART, edited)
 }
 
-fn locate_word_path<'a>(
+pub(super) fn locate_word_path<'a>(
     root: &'a IndexedXmlElement,
     path: &str,
 ) -> UseResult<&'a IndexedXmlElement> {
