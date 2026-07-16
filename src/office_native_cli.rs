@@ -7,6 +7,7 @@ use tokio::io::AsyncReadExt;
 use crate::cli::CommandOutput;
 
 mod arguments;
+mod merge;
 mod part;
 mod raw;
 mod replay;
@@ -24,6 +25,7 @@ const HELP: &str = concat!(
     "  a3s-use office native raw <file> <part> [--output <xml-file>] [--json]\n",
     "  a3s-use office native raw-set <file> <part> --input <xml-file> [--output <file>] [--json]\n",
     "  a3s-use office native dump <file> [path] [--output <batch.json>] [--json]\n",
+    "  a3s-use office native merge <template> <output> --data <json|@file.json> [--force] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape [--rows <n>] [--columns <n>] [--name <name>] [--text <value>] [--output <file>] [--json]\n",
@@ -47,6 +49,7 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("raw") => raw::inspect(args).await,
         Some("raw-set") => raw::replace(args).await,
         Some("dump") => replay::dump(args).await,
+        Some("merge") => merge::run(args).await,
         Some("validate") => validate(args).await,
         Some("create") => create(args).await,
         Some("add") => add(args).await,
@@ -72,7 +75,7 @@ fn help() -> CommandOutput {
         HELP,
         serde_json::json!({
             "commands": [
-                "get", "query", "view", "raw", "raw-set", "dump", "validate", "create", "add", "add-part", "set", "remove",
+                "get", "query", "view", "raw", "raw-set", "dump", "merge", "validate", "create", "add", "add-part", "set", "remove",
                 "insert-rows", "delete-rows", "insert-columns", "delete-columns",
                 "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],
@@ -649,6 +652,7 @@ async fn save_editor(editor: &mut NativeOfficeEditor, output: Option<&str>) -> U
 enum NativeInputKind {
     Batch,
     RawXml,
+    TemplateData,
 }
 
 impl NativeInputKind {
@@ -656,6 +660,7 @@ impl NativeInputKind {
         match self {
             Self::Batch => "use.office.batch_input",
             Self::RawXml => "use.office.raw_input",
+            Self::TemplateData => "use.office.template_data_input",
         }
     }
 
@@ -663,6 +668,7 @@ impl NativeInputKind {
         match self {
             Self::Batch => "Native Office batch input",
             Self::RawXml => "Native Office raw XML input",
+            Self::TemplateData => "Native Office template data input",
         }
     }
 }

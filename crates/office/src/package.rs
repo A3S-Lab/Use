@@ -300,15 +300,27 @@ impl NativeOfficePackage {
         self.write_to(path).await
     }
 
+    /// Atomically saves to a new path and refuses to replace any existing
+    /// filesystem entry.
+    pub async fn save_as_new(&mut self, path: impl AsRef<Path>) -> UseResult<()> {
+        let path = absolute(path.as_ref())?;
+        require_extension_kind(&path, self.kind)?;
+        self.write_to_target(path, WriteTarget::CreateNew).await
+    }
+
     async fn write_to(&mut self, path: PathBuf) -> UseResult<()> {
-        validate_structure(self.kind, &self.parts)?;
-        validate_part_limits(&self.parts, self.limits)?;
-        let parts = self.parts.clone();
         let target = if path == self.path {
             WriteTarget::Revision(self.source_revision.clone())
         } else {
             WriteTarget::Replace
         };
+        self.write_to_target(path, target).await
+    }
+
+    async fn write_to_target(&mut self, path: PathBuf, target: WriteTarget) -> UseResult<()> {
+        validate_structure(self.kind, &self.parts)?;
+        validate_part_limits(&self.parts, self.limits)?;
+        let parts = self.parts.clone();
         let max_archive_bytes = self.limits.max_archive_bytes;
         let error_path = path.clone();
         let revision = tokio::task::spawn_blocking(move || {

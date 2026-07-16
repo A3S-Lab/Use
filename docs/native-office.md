@@ -130,6 +130,9 @@ runtime in the Office engine.
 9. Replay dump never emits a lossy approximation. A dump is accepted only when
    replaying its typed mutations from the recorded blank-template fingerprint
    reproduces the complete uncompressed OOXML part map byte-for-byte.
+10. Template merge never modifies its template in place. It validates all
+    replacements transactionally and creates a distinct no-clobber output unless
+    the caller explicitly authorizes destination replacement with `--force`.
 
 ## Delivery gates
 
@@ -230,9 +233,28 @@ Unsupported rich or non-canonical content fails with
 file output are limited to 8 MiB and 10,000 mutations, inline output is limited
 to 1 MiB, and dump refuses to overwrite an existing path.
 
+Native template merge is implemented across Word, Spreadsheet, and
+Presentation. JSON data must be an object; literal top-level keys override
+flattened dot/bracket paths, and replacements are single pass. Word processes
+the main document, headers, footers, footnotes, endnotes, and comments.
+Presentation processes slides and notes. Spreadsheet processes inline strings,
+direct string values, and referenced shared rich strings while retaining run
+ownership and skipping phonetic text. Shared-string replacements are counted
+per referencing cell. Resolved placeholders in unsupported non-string cells
+fail closed instead of changing their value type.
+
+The editor restores the original package on any XML, type, or semantic failure.
+The CLI accepts inline JSON, `@file.json`, or an existing `.json` path. File
+inputs are regular, non-symlink files bounded to 8 MiB; flattened data also has
+entry, key, depth, and total-byte limits. Template/output identity, including
+Unix hard links, is rejected. Output creation is atomic and no-clobber by
+default, with explicit `--force` replacement. Process-level tests cover all
+three formats with an unusable OfficeCLI path and verify template bytes remain
+unchanged.
+
 Generic node move/copy/swap, image creation and mutation, complex/custom part
-carriers, template merge, subtree and rich-structure dump, advanced rich-format
-operations, and the formula parser/dependency/recalculation engine remain before
+carriers, subtree and rich-structure dump, advanced rich-format operations, and
+the formula parser/dependency/recalculation engine remain before
 their respective gates can be promoted. Creation and structural mutation remain
 under the interoperability gate until Microsoft Office and optional CI
 LibreOffice checks confirm that no repair dialog is required.
@@ -286,8 +308,9 @@ compatibility component for one deprecation cycle, then is removed.
 The `0.1.x` CLI exposes native blank creation, reads, typed add/set/remove,
 Spreadsheet range and row/column structure edits, worksheet rename/reorder, and
 loss-preserving worksheet copy through `copy-sheet`, safe `raw`/`raw-set`, known
-`add-part` carriers, exact root replay dump for the canonical typed subset, plus
-atomic batches under `office native`; other Office commands and MCP startup
+`add-part` carriers, exact root replay dump for the canonical typed subset,
+cross-format template merge with `merge`, plus atomic batches under the native
+Office route; other Office commands and MCP startup
 still delegate to the pinned OfficeCLI provider. This keeps existing users
 functional while native coverage grows. The native APIs are deliberately not
 advertised as full Office readiness, and `doctor` continues to report

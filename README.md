@@ -63,6 +63,7 @@ a3s use office native remove report.docx /body/p[2] --json
 a3s use office native raw report.docx /word/document.xml --json
 a3s use office native add-part report.docx / --type header --json
 a3s use office native dump report.docx --output report.replay.json --json
+a3s use office native merge template.docx report.docx --data @report.json --json
 
 # Commands not yet promoted to native continue through the compatibility route.
 a3s use office get report.docx /body --json
@@ -86,8 +87,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   151 MCP tools, six packaged Skills, Dashboard, and interactive runtime from
   `agent-browser` 0.31.2
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
-  selector, and semantic read layers while retaining the 0.1.x OfficeCLI
-  compatibility backend for commands not yet promoted
+  selector, semantic read, transactional mutation, and cross-format template
+  merge layers while retaining the 0.1.x OfficeCLI compatibility backend for
+  commands not yet promoted
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -263,6 +265,9 @@ metadata, tables, comments, VML notes, drawing anchors, and chart references;
 unsupported pivot and 3D-reference cases fail closed before save. Presentation
 slides and text shapes also support native add/remove. Saves are atomic and
 reject a changed source revision instead of overwriting another writer.
+Cross-format template merge replaces `{{key}}` text in Word document and
+auxiliary text parts, Spreadsheet string cells, and Presentation slides and
+notes while preserving split-run formatting and reporting unresolved keys.
 
 The native runtime does not require Microsoft Office, LibreOffice, OfficeCLI,
 Python, Node.js, or .NET. LibreOffice may be used only by optional CI
@@ -271,7 +276,8 @@ interoperability checks and is never part of document execution.
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove operations, constrained raw XML access, known typed part
 carriers, exact replay artifacts for a constrained canonical subset, and atomic
-mutation batches today. Other `0.1.x` commands and the
+mutation batches, plus dependency-free template merge today. Other `0.1.x`
+commands and the
 Office MCP route still use a compatibility backend
 pinned to OfficeCLI `1.0.136`. This is a migration boundary, not the target
 architecture. The default command route will be promoted only after mutation,
@@ -335,6 +341,11 @@ a3s use office native add deck.pptx / --type slide --text 'Results' --json
 a3s use office native add deck.pptx '/slide[1]' --type shape --text '42%' --json
 a3s use office native remove workbook.xlsx /Data --json
 a3s use office native remove deck.pptx '/slide[1]/shape[2]' --json
+
+# Merge a template into a separate output. JSON may be inline, @file, or an
+# existing .json path. Existing outputs require an explicit --force.
+a3s use office native merge template.docx report.docx --data @report.json --json
+a3s use office native merge template.xlsx report.xlsx --data '{"quarter":"Q3"}' --json
 
 # Apply a bounded, versioned mutation document atomically.
 a3s use office native batch deck.pptx --input mutations.json --json
@@ -415,6 +426,35 @@ afterward. A failed result check restores the original in-memory package before
 any save. Dump files are limited to 8 MiB and 10,000 mutations, refuse to
 overwrite an existing path, and use a 1 MiB inline-output limit. This is a
 portable Office batch artifact, not RPC and not a universal action envelope.
+
+`office native merge` opens a `.docx`, `.xlsx`, or `.pptx` template, performs a
+single-pass replacement, validates the resulting OPC/semantic document, and
+atomically writes a separate output. The template and output may not identify
+the same file. The output is no-clobber by default; `--force` is the only way to
+replace an existing destination, and it never authorizes modifying the template
+in place.
+
+Merge data must be a JSON object. Literal top-level keys take precedence over
+flattened nested paths: `{"user.name":"literal","user":{"name":"nested"}}`
+resolves `{{user.name}}` to `literal`. Nested objects use dot paths and arrays
+use bracket paths such as `{{items[0].name}}`. Replacement is deliberately
+single pass, so a value containing `{{another.key}}` remains literal and is
+reported as unresolved rather than recursively substituted. Results include the
+replacement count, sorted used keys, sorted unresolved placeholders, and sorted
+changed OOXML parts.
+
+Word merge covers the main document, headers, footers, footnotes, endnotes, and
+comments. Presentation merge covers slides and notes. Spreadsheet merge covers
+inline strings, direct `t="str"` values, and referenced shared rich strings;
+shared-string replacements are counted per referencing cell and phonetic runs
+are left untouched. A resolved placeholder in a numeric, boolean, error, or
+otherwise unsupported cell fails closed instead of coercing the cell type.
+
+Data files are limited to 8 MiB and must be regular, non-symlink files. Flattened
+data is additionally bounded by entry count, nesting depth, key length, and
+total bytes. XML-forbidden replacement characters fail the whole in-memory
+transaction before any output is created. This native path does not invoke
+OfficeCLI, Microsoft Office, LibreOffice, Python, Node.js, or .NET.
 
 Raw replacement is also available inside the same atomic batch:
 
@@ -508,6 +548,13 @@ editor.remove(added)?;
 let table = editor.add_table("/body", 2, 3)?;
 editor.set_text(format!("{table}/tr[1]/tc[1]"), "Name")?;
 editor.save().await?;
+
+let mut template = NativeOfficeEditor::open("template.docx").await?;
+let merge = template.merge_template(&serde_json::json!({
+    "customer": {"name": "A3S Lab"}
+}))?;
+println!("{} replacement(s)", merge.replaced_count);
+template.save_as_new("merged.docx").await?;
 
 let replay = NativeOfficeReplayArtifact::dump(&editor.snapshot()?, "/")?;
 let mut restored = NativeOfficeEditor::create("restored.docx").await?;

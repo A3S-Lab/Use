@@ -18,6 +18,8 @@ pub(super) struct ParsedArguments {
     pub formula: Option<String>,
     pub count: Option<u32>,
     pub position: Option<usize>,
+    pub data: Option<String>,
+    pub force: bool,
 }
 
 impl ParsedArguments {
@@ -99,6 +101,17 @@ impl ParsedArguments {
                     set_usize_option(&mut parsed.position, args, index, "--position")?;
                     index += 2;
                 }
+                "--data" if allowed.data => {
+                    set_string_option(&mut parsed.data, args, index, "--data")?;
+                    index += 2;
+                }
+                "--force" if allowed.force => {
+                    if parsed.force {
+                        return Err(usage_error("--force may be specified only once"));
+                    }
+                    parsed.force = true;
+                    index += 1;
+                }
                 option if option.starts_with('-') => {
                     return Err(usage_error(format!(
                         "unknown native Office option '{option}'"
@@ -129,6 +142,8 @@ pub(super) struct AllowedOptions {
     formula: bool,
     count: bool,
     position: bool,
+    data: bool,
+    force: bool,
 }
 
 impl AllowedOptions {
@@ -146,6 +161,8 @@ impl AllowedOptions {
         formula: false,
         count: false,
         position: false,
+        data: false,
+        force: false,
     };
     pub const GET: Self = Self {
         depth: true,
@@ -203,6 +220,11 @@ impl AllowedOptions {
     pub const COPY: Self = Self {
         output: true,
         position: true,
+        ..Self::NONE
+    };
+    pub const MERGE: Self = Self {
+        data: true,
+        force: true,
         ..Self::NONE
     };
 }

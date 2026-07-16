@@ -124,6 +124,15 @@ carriers atomically update content types and owner relationships and return
 typed creation receipts. Root-scoped native replay artifacts bind an exact
 blank-template part-map fingerprint, typed mutations, and an expected result
 fingerprint; `batch` rejects a wrong base and rolls back a wrong result.
+Native template merge is a typed editor operation, not a generic action
+envelope. The CLI boundary parses bounded JSON data, the format engines replace
+text across Word document/auxiliary parts, Spreadsheet string cells, or
+Presentation slides/notes, and the editor validates the complete result before
+the package layer atomically creates a separate output. Split OOXML text runs
+retain their original ownership; inserted values are never recursively
+evaluated. The default output path is no-clobber, template/output identity is
+rejected, and `--force` authorizes only destination replacement.
+
 Unpromoted commands are delegated to OfficeCLI and
 `mcp serve office` launches its standard MCP server. That compatibility process
 remains isolated from the native engine.
@@ -187,7 +196,8 @@ Implemented:
     related-part reference rewriting, Presentation slide/shape mutation, core
     node removal, constrained raw XML inspection/replacement, typed
     chart/header/footer part carriers, exact root replay artifacts for the
-    canonical typed subset, atomic batches, changed-file conflict detection,
+    canonical typed subset, cross-format native template merge with bounded JSON
+    and immutable templates, atomic batches, changed-file conflict detection,
     and the dependency-free `office native` CLI.
 
 Next:

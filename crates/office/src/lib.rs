@@ -24,6 +24,7 @@ mod semantic;
 mod spreadsheet_formula;
 mod spreadsheet_reference;
 mod template;
+mod template_merge;
 mod xml;
 mod xml_edit;
 mod xml_tree;
@@ -50,6 +51,10 @@ pub use replay::{
 pub use semantic::{
     DocumentNode, DocumentStatistics, NativeOfficeDocument, OfficeNodeType, OutlineEntry,
     TextBlock, TextView,
+};
+pub use template_merge::{
+    NativeOfficeTemplateMergeResult, MAX_TEMPLATE_DATA_DEPTH, MAX_TEMPLATE_DATA_ENTRIES,
+    MAX_TEMPLATE_DATA_FLATTENED_BYTES, MAX_TEMPLATE_DATA_KEY_BYTES,
 };
 pub use xml::{LosslessXmlPart, XmlEncoding, XmlLimits, XmlRootName};
 
@@ -245,3 +250,6 @@ mod replay_tests;
 
 #[cfg(test)]
 mod semantic_tests;
+
+#[cfg(test)]
+mod template_merge_tests;

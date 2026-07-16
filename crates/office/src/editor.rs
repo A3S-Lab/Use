@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::discovery::office_error;
 use crate::semantic::NativeOfficeDocument;
-use crate::{DocumentKind, NativeOfficePackage, NativeOfficeReplayArtifact};
+use crate::{
+    template_merge, DocumentKind, NativeOfficePackage, NativeOfficeReplayArtifact,
+    NativeOfficeTemplateMergeResult,
+};
 
 mod part;
 mod presentation;
@@ -600,12 +603,41 @@ impl NativeOfficeEditor {
         Ok(result)
     }
 
+    /// Replaces `{{key}}` placeholders across the document's native OOXML text
+    /// surfaces. The in-memory package is restored if any part cannot be
+    /// edited losslessly or if the resulting package fails semantic validation.
+    pub fn merge_template(
+        &mut self,
+        data: &serde_json::Value,
+    ) -> UseResult<NativeOfficeTemplateMergeResult> {
+        let original = self.package.clone();
+        let result = match template_merge::merge(&mut self.package, data) {
+            Ok(result) => result,
+            Err(error) => {
+                self.package = original;
+                return Err(error);
+            }
+        };
+        if let Err(error) = NativeOfficeDocument::from_package(self.package.clone()) {
+            self.package = original;
+            return Err(editor_error(
+                "use.office.template_validation_failed",
+                format!("Native Office template merge failed post-mutation validation: {error}"),
+            ));
+        }
+        Ok(result)
+    }
+
     pub async fn save(&mut self) -> UseResult<()> {
         self.package.save().await
     }
 
     pub async fn save_as(&mut self, path: impl AsRef<Path>) -> UseResult<()> {
         self.package.save_as(path).await
+    }
+
+    pub async fn save_as_new(&mut self, path: impl AsRef<Path>) -> UseResult<()> {
+        self.package.save_as_new(path).await
     }
 }
 

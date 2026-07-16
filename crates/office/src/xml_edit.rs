@@ -251,6 +251,83 @@ pub(crate) fn replace_text_descendants(
     apply_patches(part, patches)
 }
 
+pub(crate) fn decoded_element_text(
+    part: &LosslessXmlPart,
+    element: &IndexedXmlElement,
+) -> UseResult<String> {
+    require_utf8(part)?;
+    if !element.children.is_empty() {
+        return Err(edit_error(
+            part.name(),
+            format!(
+                "XML text element '{}' contains nested elements.",
+                element.qualified_name
+            ),
+        ));
+    }
+    if element.empty {
+        return Ok(String::new());
+    }
+    let bytes = part
+        .parse_bytes()
+        .get(element.content_range.clone())
+        .ok_or_else(|| edit_error(part.name(), "XML text element range is invalid."))?;
+    if bytes.contains(&b'<') {
+        return Err(edit_error(
+            part.name(),
+            "CDATA, comments, and processing instructions inside an OOXML text element are not editable yet.",
+        ));
+    }
+    let text = std::str::from_utf8(bytes).map_err(|error| {
+        edit_error(
+            part.name(),
+            format!("XML text element is not valid UTF-8: {error}"),
+        )
+    })?;
+    quick_xml::escape::unescape(text)
+        .map(|value| value.into_owned())
+        .map_err(|error| {
+            edit_error(
+                part.name(),
+                format!("XML text element contains invalid escapes: {error}"),
+            )
+        })
+}
+
+pub(crate) fn replace_element_text_patch(element: &IndexedXmlElement, text: &str) -> XmlPatch {
+    let escaped = escape_text(text);
+    let preserve_space =
+        text.starts_with(char::is_whitespace) || text.ends_with(char::is_whitespace);
+    let has_preserve = element
+        .qualified_attributes
+        .get("xml:space")
+        .is_some_and(|value| value == "preserve");
+    if !element.empty && (!preserve_space || has_preserve) {
+        return XmlPatch::new(element.content_range.clone(), escaped);
+    }
+
+    let mut attributes = element.qualified_attributes.clone();
+    if preserve_space {
+        attributes.insert("xml:space".to_string(), "preserve".to_string());
+    }
+    let attributes = attributes
+        .into_iter()
+        .map(|(name, value)| {
+            format!(
+                " {name}=\"{}\"",
+                quick_xml::escape::escape(&value).into_owned()
+            )
+        })
+        .collect::<String>();
+    XmlPatch::new(
+        element.full_range.clone(),
+        format!(
+            "<{}{attributes}>{escaped}</{}>",
+            element.qualified_name, element.qualified_name
+        ),
+    )
+}
+
 pub(crate) fn insert_child(
     part: &LosslessXmlPart,
     element: &IndexedXmlElement,
