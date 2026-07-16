@@ -9,6 +9,7 @@ Use stable one-based paths returned by `outline` or `get`, such as `/slide[1]`,
 a3s use office native get deck.pptx '/slide[1]' --depth 3 --json
 a3s use office native query deck.pptx 'shape:contains("Roadmap")' --json
 a3s use office native view deck.pptx outline --json
+a3s use office native view deck.pptx annotated --limit 200 --json
 a3s use office native view deck.pptx issues --json
 ```
 

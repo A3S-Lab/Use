@@ -121,8 +121,11 @@ this native route first, loads format-specific references progressively, and
 documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
-XML access, bounded issue analysis, and atomic mutation batches are available
-explicitly under `office native`. That route also owns bounded Spreadsheet
+XML access, bounded annotated and issue analysis, and atomic mutation batches
+are available explicitly under `office native`. Annotated views flatten the
+shared semantic tree with stable paths and bounded observed formatting; the
+same typed contract reads unsaved native MCP session state without a private
+resident protocol. That route also owns bounded Spreadsheet
 range mutation, row/column insertion and deletion, and worksheet
 rename/reorder/copy with
 loss-preserving OPC subgraph ownership. Its arrangement layer covers
@@ -217,14 +220,16 @@ unchanged until the native product gates pass.
 
 The preview MCP adapter has an explicit typed vocabulary rather than a command
 string passthrough. It supports validate, create/open/list, semantic get/query,
-text/outline/statistics views, all-format HTML and SVG, all-format
-bounded issue views, Browser-injected semantic PNG screenshots, constrained raw
-XML inspection, atomic typed mutation batches, immutable-template merge, save,
-and close. A screenshot requires an explicit no-clobber `.png` output and
+bounded annotated plus text/outline/statistics views, all-format HTML and SVG,
+all-format bounded issue views, Browser-injected semantic PNG screenshots,
+constrained raw XML inspection, atomic typed mutation batches,
+immutable-template merge, save, and close. A screenshot requires an explicit
+no-clobber `.png` output and
 releases the Office session lock before Browser rendering. A server process
 owns at most 64 sessions. Batches and structured results are limited to 8 MiB,
-batches to 10,000 mutations, query and issue output to 1,000 records, and inline
-raw XML to 1 MiB. Mutations remain in memory until an explicit save, while
+batches to 10,000 mutations, query, annotated, and issue output to 1,000
+records, and inline raw XML to 1 MiB. Mutations remain in memory until an
+explicit save, while
 close fails on dirty state unless discard is explicit. These are MCP deployment
 rules around the same editor types, not a second Office domain model or an A3S
 RPC protocol.
@@ -294,8 +299,9 @@ Implemented:
     native template merge with bounded JSON
     and immutable templates, native PNG/JPEG/GIF add/read/remove with
     reference-aware media cleanup, deterministic all-format HTML and SVG
-    semantic rendering, bounded conservative all-format issue
-    analysis, Browser-injected all-format semantic PNG screenshots with
+    semantic rendering, bounded all-format annotated views, bounded
+    conservative all-format issue analysis, Browser-injected all-format
+    semantic PNG screenshots with
     validated receipts and no-clobber publication, authenticated loopback
     all-format live watch with saved-revision refresh, atomic batches,
     changed-file conflict detection, and the dependency-free `office native`

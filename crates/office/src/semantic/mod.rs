@@ -1,7 +1,13 @@
+mod annotated;
 mod presentation;
 mod selector;
 mod spreadsheet;
 mod word;
+
+pub use annotated::{
+    NativeOfficeAnnotatedEntry, NativeOfficeAnnotatedOptions, NativeOfficeAnnotatedView,
+    DEFAULT_NATIVE_OFFICE_ANNOTATED_LIMIT, MAX_NATIVE_OFFICE_ANNOTATED_LIMIT,
+};
 
 use std::collections::BTreeMap;
 use std::path::Path;

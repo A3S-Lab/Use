@@ -61,8 +61,9 @@ pub use replay::{
     NATIVE_OFFICE_REPLAY_FORMAT, NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
 };
 pub use semantic::{
-    DocumentNode, DocumentStatistics, NativeOfficeDocument, OfficeNodeType, OutlineEntry,
-    TextBlock, TextView,
+    DocumentNode, DocumentStatistics, NativeOfficeAnnotatedEntry, NativeOfficeAnnotatedOptions,
+    NativeOfficeAnnotatedView, NativeOfficeDocument, OfficeNodeType, OutlineEntry, TextBlock,
+    TextView, DEFAULT_NATIVE_OFFICE_ANNOTATED_LIMIT, MAX_NATIVE_OFFICE_ANNOTATED_LIMIT,
 };
 pub use template_merge::{
     NativeOfficeTemplateMergeResult, MAX_TEMPLATE_DATA_DEPTH, MAX_TEMPLATE_DATA_ENTRIES,
@@ -248,6 +249,8 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod annotated_tests;
 #[cfg(test)]
 mod arrange_tests;
 #[cfg(test)]

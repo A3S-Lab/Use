@@ -57,6 +57,7 @@ a3s use office skills list --json
 a3s use office skills get a3s-use-office --full
 a3s use office native create report.docx --json
 a3s use office native view report.docx text --json
+a3s use office native view report.docx annotated --limit 100 --json
 a3s use office native view report.docx issues --type content --limit 50 --json
 a3s use office native view report.docx html --output report.html --json
 a3s use office native view deck.pptx svg --output deck.svg --json
@@ -102,9 +103,10 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
-  all-format HTML/SVG semantic previews, bounded typed issue diagnostics,
-  Browser-injected semantic PNG screenshots, authenticated loopback live watch,
-  and an explicit typed standard MCP preview while retaining the 0.1.x
+  bounded all-format annotated views, all-format HTML/SVG semantic previews,
+  bounded typed issue diagnostics, Browser-injected semantic PNG screenshots,
+  authenticated loopback live watch, and an explicit typed standard MCP
+  preview while retaining the 0.1.x
   OfficeCLI compatibility backend for surfaces not yet promoted
 - **Packaged Office Guidance**: Ship one first-party `a3s-use-office` Skill for
   safe Word, Spreadsheet, Presentation, native MCP, and compatibility workflows
@@ -320,13 +322,13 @@ typed add/set/remove/move/copy/swap operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML and SVG are
-available for Word, Spreadsheet, and Presentation; the bounded issue view is
-available for all three formats; and Browser-injected PNG screenshots are
-available for all three formats. An authenticated, loopback-only foreground
+available for Word, Spreadsheet, and Presentation; bounded annotated and issue
+views are available for all three formats; and Browser-injected PNG screenshots
+are available for all three formats. An authenticated, loopback-only foreground
 watch provides full saved-revision refresh for all three formats without a
-resident pipe or mutation endpoint. `mcp serve office-native`
-exposes the same editor, issue analysis, and screenshot composition through
-typed standard MCP tools and bounded in-memory sessions.
+resident pipe or mutation endpoint. `mcp serve office-native` exposes the same
+editor, annotated/issue analysis, and screenshot composition through typed
+standard MCP tools and bounded in-memory sessions.
 The packaged `a3s-use-office` Skill exposes the same product boundaries to
 agents without starting OfficeCLI. Discover its metadata with
 `office skills list`, read only its `SKILL.md` with
@@ -465,8 +467,10 @@ limited to 10,000 mutations and 8 MiB of JSON, and remain unsaved until
 `office_save`. Results are limited to 8 MiB, raw XML responses to 1 MiB, and
 queries to at most 1,000 returned nodes. `office_close` rejects dirty sessions
 unless the caller saves or explicitly sets `discard=true`. `office_view`
-accepts `html` and `svg` for all three formats in addition to text, outline,
-and statistics. The `issues` view accepts an optional typed
+accepts `html` and `svg` for all three formats in addition to text, annotated,
+outline, and statistics. The typed `annotated` view flattens stable semantic
+paths, node types, text, styles, and observed formatting; its `limit` is 1
+through 1,000 and defaults to 200. The `issues` view accepts an optional typed
 `issueType` and a `limit` from 1 through 1,000, defaulting to 200. It also
 accepts `screenshot` for all three formats; that mode requires a no-clobber
 local `output` ending in `.png` and accepts an optional `timeoutMs` from 1

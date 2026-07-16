@@ -15,6 +15,7 @@ only when the requested operation is not yet native.
 
    ```bash
    a3s use office native validate "$FILE" --json
+   a3s use office native view "$FILE" annotated --limit 200 --json
    a3s use office native view "$FILE" outline --json
    a3s use office native view "$FILE" issues --json
    ```
@@ -80,8 +81,8 @@ available.
 ## Native Boundaries
 
 The native engine currently owns safe OPC/ZIP admission, semantic reads,
-bounded issue analysis, common typed mutations, atomic batches, template merge,
-constrained XML access, deterministic all-format HTML/SVG, and
+bounded annotated and issue analysis, common typed mutations, atomic batches,
+template merge, constrained XML access, deterministic all-format HTML/SVG, and
 Browser-injected semantic screenshots, plus authenticated loopback live watch
 for saved files. Rich formatting, complete formula calculation, advanced
 charts/media, interactive preview editing/annotations, and full Office layout

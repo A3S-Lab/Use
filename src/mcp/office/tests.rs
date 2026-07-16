@@ -32,6 +32,7 @@ fn native_office_server_exposes_only_bounded_typed_tools() {
 fn office_view_schema_exposes_typed_view_options() {
     let schema = schemars::schema_for!(OfficeViewInput);
     let encoded = serde_json::to_string(&schema).unwrap();
+    assert!(encoded.contains("annotated"));
     assert!(encoded.contains("screenshot"));
     assert!(encoded.contains("issues"));
     assert!(encoded.contains("issueType"));
@@ -64,4 +65,13 @@ fn office_view_schema_exposes_typed_view_options() {
         Some(input::OfficeIssueFilter::MissingAltText)
     );
     assert_eq!(issues.limit, Some(10));
+
+    let annotated: OfficeViewInput = serde_json::from_value(serde_json::json!({
+        "session": "report",
+        "view": "annotated",
+        "limit": 25
+    }))
+    .unwrap();
+    assert_eq!(annotated.view, OfficeView::Annotated);
+    assert_eq!(annotated.limit, Some(25));
 }

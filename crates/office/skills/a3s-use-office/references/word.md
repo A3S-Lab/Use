@@ -10,6 +10,7 @@ Use stable one-based semantic paths such as `/body/p[1]`,
 a3s use office native get report.docx /body --depth 2 --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native view report.docx text --json
+a3s use office native view report.docx annotated --limit 200 --json
 a3s use office native view report.docx issues --type content --json
 ```
 

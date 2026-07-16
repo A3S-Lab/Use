@@ -9,6 +9,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 a3s use office native get workbook.xlsx /Sheet1 --depth 2 --json
 a3s use office native query workbook.xlsx 'cell[formula]' --json
 a3s use office native view workbook.xlsx stats --json
+a3s use office native view workbook.xlsx annotated --limit 200 --json
 a3s use office native view workbook.xlsx issues --type content --json
 ```
 

@@ -22,8 +22,10 @@ Mutations remain unsaved until `office_save`. Do not discard a dirty session
 unless the user explicitly accepts losing its changes. Release the session as
 soon as the workflow finishes.
 
-`office_view` supports text, outline, stats, issues, all-format HTML/SVG, and
-all-format semantic screenshots. Issue output is bounded and filterable.
+`office_view` supports text, bounded annotated entries, outline, stats, issues,
+all-format HTML/SVG, and all-format semantic screenshots. Annotated and issue
+output accept a `limit` from 1 through 1,000; issue output is also filterable.
+Annotated reads include unsaved mutations in the current typed session.
 Screenshot output requires a no-clobber `.png` path and a ready A3S Browser
 provider; other native Office tools do not require Browser or OfficeCLI.
 

@@ -62,6 +62,7 @@ pub(super) struct OfficeQueryInput {
 #[serde(rename_all = "kebab-case")]
 pub(super) enum OfficeView {
     Text,
+    Annotated,
     Outline,
     Stats,
     Issues,
@@ -109,7 +110,7 @@ pub(super) struct OfficeViewInput {
     pub(super) view: OfficeView,
     /// Optional broad category or stable subtype filter for an issues view.
     pub(super) issue_type: Option<OfficeIssueFilter>,
-    /// Maximum issues returned, from 1 through 1000. Defaults to 200.
+    /// Maximum annotated entries or issues returned, from 1 through 1000. Defaults to 200.
     pub(super) limit: Option<usize>,
     /// Required no-clobber local `.png` path for a screenshot view.
     pub(super) output: Option<String>,

@@ -10,7 +10,8 @@ use std::path::Path;
 
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
-    NativeOfficeDocument, NativeOfficeIssueOptions, NativeOfficeRenderFormat,
+    NativeOfficeAnnotatedOptions, NativeOfficeDocument, NativeOfficeIssueOptions,
+    NativeOfficeRenderFormat, DEFAULT_NATIVE_OFFICE_ANNOTATED_LIMIT,
     DEFAULT_NATIVE_OFFICE_ISSUE_LIMIT,
 };
 use input::{
@@ -227,7 +228,7 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_view",
-        description = "Produce a native text, outline, statistics, bounded issues, standalone all-format HTML or SVG, or Browser-injected PNG screenshot view for an open session"
+        description = "Produce a native text, bounded annotated, outline, statistics, bounded issues, standalone all-format HTML or SVG, or Browser-injected PNG screenshot view for an open session"
     )]
     async fn office_view(
         &self,
@@ -242,12 +243,18 @@ impl NativeOfficeMcpServer {
                     "Native Office MCP output and timeoutMs are available only for screenshot views.",
                 ));
             }
-            if input.view != OfficeView::Issues
-                && (input.issue_type.is_some() || input.limit.is_some())
+            if input.view != OfficeView::Issues && input.issue_type.is_some() {
+                return Err(UseError::new(
+                    "use.office.view_options_invalid",
+                    "Native Office MCP issueType is available only for issues views.",
+                ));
+            }
+            if !matches!(input.view, OfficeView::Annotated | OfficeView::Issues)
+                && input.limit.is_some()
             {
                 return Err(UseError::new(
                     "use.office.view_options_invalid",
-                    "Native Office MCP issueType and limit are available only for issues views.",
+                    "Native Office MCP limit is available only for annotated or issues views.",
                 ));
             }
             let (session, entry) = self.sessions.get(&input.session).await?;
@@ -257,6 +264,14 @@ impl NativeOfficeMcpServer {
             drop(state);
             let (view, value) = match input.view {
                 OfficeView::Text => ("text", serde_json::to_value(document.text_view())),
+                OfficeView::Annotated => (
+                    "annotated",
+                    serde_json::to_value(document.annotated(NativeOfficeAnnotatedOptions {
+                        limit: input
+                            .limit
+                            .unwrap_or(DEFAULT_NATIVE_OFFICE_ANNOTATED_LIMIT),
+                    })?),
+                ),
                 OfficeView::Outline => ("outline", serde_json::to_value(document.outline())),
                 OfficeView::Stats => ("stats", serde_json::to_value(document.statistics())),
                 OfficeView::Issues => (

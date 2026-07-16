@@ -2,8 +2,9 @@ use std::path::Path;
 
 use a3s_use_core::UseResult;
 use a3s_use_office::{
-    NativeOfficeDocument, NativeOfficeIssueFilter, NativeOfficeIssueOptions,
-    NativeOfficeIssueReport, NativeOfficeIssueSeverity, NativeOfficeRenderedView,
+    NativeOfficeAnnotatedOptions, NativeOfficeDocument, NativeOfficeIssueFilter,
+    NativeOfficeIssueOptions, NativeOfficeIssueReport, NativeOfficeIssueSeverity,
+    NativeOfficeRenderedView, DEFAULT_NATIVE_OFFICE_ANNOTATED_LIMIT,
     DEFAULT_NATIVE_OFFICE_ISSUE_LIMIT,
 };
 
@@ -15,7 +16,7 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
     let parsed = ParsedArguments::parse(args, AllowedOptions::VIEW)?;
     if parsed.positionals.len() != 2 {
         return Err(usage_error(
-            "office native view requires <file> and text, outline, stats, issues, html, svg, or screenshot",
+            "office native view requires <file> and text, annotated, outline, stats, issues, html, svg, or screenshot",
         ));
     }
     let document = NativeOfficeDocument::open(&parsed.positionals[0]).await?;
@@ -26,6 +27,23 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
             Ok(CommandOutput::success(
                 view.text.clone(),
                 serde_json::json!({ "view": "text", "result": view }),
+            ))
+        }
+        "annotated" | "a" => {
+            reject_output_and_timeout(&parsed, "annotated")?;
+            if parsed.node_type.is_some() {
+                return Err(usage_error(
+                    "--type is available for issues views, not annotated",
+                ));
+            }
+            let view = document.annotated(NativeOfficeAnnotatedOptions {
+                limit: parsed
+                    .limit
+                    .unwrap_or(DEFAULT_NATIVE_OFFICE_ANNOTATED_LIMIT),
+            })?;
+            Ok(CommandOutput::success(
+                view.text.clone(),
+                serde_json::json!({ "view": "annotated", "result": view }),
             ))
         }
         "outline" | "o" => {
@@ -92,7 +110,7 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
             screenshot(document, parsed.output.as_deref(), parsed.timeout_ms).await
         }
         mode => Err(usage_error(format!(
-            "native Office view mode '{mode}' is not text, outline, stats, issues, html, svg, or screenshot"
+            "native Office view mode '{mode}' is not text, annotated, outline, stats, issues, html, svg, or screenshot"
         ))),
     }
 }
@@ -125,7 +143,7 @@ fn reject_issue_options(parsed: &ParsedArguments, view: &str) -> UseResult<()> {
         return Ok(());
     }
     Err(usage_error(format!(
-        "--type and --limit are available for issues views, not {view}"
+        "--type is available for issues views and --limit is available for annotated or issues views, not {view}"
     )))
 }
 

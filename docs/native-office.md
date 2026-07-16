@@ -35,8 +35,8 @@ formats:
 - template merge and replayable dump/batch documents;
 - raw part access, constrained XML mutation, part creation, and validation;
 - open, save, close, revision tracking, and conflict detection;
-- text, outline, statistics, bounded typed issue, HTML, SVG, and screenshot
-  views;
+- text, bounded annotated, outline, statistics, bounded typed issue, HTML, SVG,
+  and screenshot views;
 - standard MCP tools and a first-party Office Skill backed by the same typed engine.
 
 The compatibility command baseline is OfficeCLI `1.0.136`, commit
@@ -157,16 +157,19 @@ not yet the default CLI provider.
 
 - Loss-preserving XML and relationship graph.
 - Common selector parser and stable paths.
-- Text, outline, statistics, bounded issues, get, and query for all three
-  formats.
+- Text, bounded annotated, outline, statistics, bounded issues, get, and query
+  for all three formats.
 - Fixtures open without repair in Microsoft Office and LibreOffice.
 
 Status: implementation in progress. Loss-preserving XML, UTF-8/UTF-16 safety,
 content types, relationship resolution, common selectors, stable `get` paths,
-and semantic text/outline/statistics reads are implemented for all three
-formats. The explicit `a3s use office native` CLI exercises them without an
-external provider. Gate 1 remains unpromoted until the cross-application
-repair-dialog corpus passes and remaining rich read nodes are covered.
+and semantic text/annotated/outline/statistics reads are implemented for all
+three formats. Annotated reads return at most 200 entries by default and 1,000
+when explicitly requested; individual text and format fields are also bounded
+and truncated on UTF-8 boundaries. The explicit `a3s use office native` CLI
+exercises them without an external provider. Gate 1 remains unpromoted until
+the cross-application repair-dialog corpus passes and remaining rich read nodes
+are covered.
 
 ### Gate 2 — Native basic mutation
 
@@ -471,21 +474,23 @@ LibreOffice checks confirm that no repair dialog is required.
 - macOS and Linux release evidence; Windows remains preview until its separate
   platform gate is promoted.
 
-Status: native bounded issue analysis, semantic rendering, Browser-injected
-screenshots, the explicit `a3s use mcp serve office-native` target, and the
-packaged `a3s-use-office` Skill are available for evidence gathering. Issue
-reports, HTML, SVG, semantic-preview PNG screenshots, and saved-revision live
-watch cover all three formats; PNG requires a ready Browser provider. They are
-available through typed Rust APIs, `office native view|watch`, `office_view`,
-and progressive Word/Spreadsheet/Presentation/MCP Skill references.
+Status: native bounded annotated and issue analysis, semantic rendering,
+Browser-injected screenshots, the explicit `a3s use mcp serve office-native`
+target, and the packaged `a3s-use-office` Skill are available for evidence
+gathering. Annotated views, issue reports, HTML, SVG, semantic-preview PNG
+screenshots, and saved-revision live watch cover all three formats; PNG requires
+a ready Browser provider. They are available through typed Rust APIs, `office
+native view|watch`, `office_view`, and progressive
+Word/Spreadsheet/Presentation/MCP Skill references.
 The MCP target's 12 typed tools use bounded in-process sessions for validate,
-create/open/list, semantic reads and issues, constrained raw XML, atomic
+create/open/list, semantic reads, annotations, and issues, constrained raw XML, atomic
 mutation batches, immutable-template merge, save, and close. It limits open
 sessions to 64, batch and result JSON to 8 MiB, a batch to 10,000 mutations,
-query output to 1,000 nodes, issue output to 1,000 records, and raw XML output
-to 1 MiB. Mutations are not persisted until `office_save`, and a dirty session
-cannot close without save or explicit discard. Process-level tests complete a
-standard MCP initialize/list/call lifecycle, capture a real PNG when Chrome is
+query output to 1,000 nodes, annotated and issue output to 1,000 records, and
+raw XML output to 1 MiB. Mutations are not persisted until `office_save`, and a
+dirty session cannot close without save or explicit discard. Process-level
+tests complete a standard MCP initialize/list/call lifecycle, verify annotated
+reads against unsaved typed session state, capture a real PNG when Chrome is
 available, and use an unusable OfficeCLI path. Skill process tests exercise
 bounded `list`, `get --full`, and `path` discovery with the same unusable
 provider, and release archives smoke-check the packaged `SKILL.md`. This preview
@@ -520,8 +525,8 @@ worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format
 template merge with `merge`, all-format semantic HTML and SVG, bounded
-all-format issue reports, all-format Browser-injected semantic PNG
-screenshots, plus atomic batches under the native Office route.
+all-format annotated and issue reports, all-format Browser-injected semantic
+PNG screenshots, plus atomic batches under the native Office route.
 The distribution also packages `a3s-use-office`, with bounded
 `office skills list|get|path` access and a content SHA-256 in the unified
 capability snapshot. Loading the Skill never discovers or starts OfficeCLI.
