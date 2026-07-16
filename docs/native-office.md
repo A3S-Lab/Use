@@ -35,7 +35,8 @@ formats:
 - template merge and replayable dump/batch documents;
 - raw part access, constrained XML mutation, part creation, and validation;
 - open, save, close, revision tracking, and conflict detection;
-- text, outline, statistics, issue, HTML, SVG, and screenshot views;
+- text, outline, statistics, bounded typed issue, HTML, SVG, and screenshot
+  views;
 - standard MCP tools and Office-specific Skills backed by the same typed engine.
 
 The compatibility command baseline is OfficeCLI `1.0.136`, commit
@@ -156,7 +157,8 @@ not yet the default CLI provider.
 
 - Loss-preserving XML and relationship graph.
 - Common selector parser and stable paths.
-- Text, outline, statistics, get, and query for all three formats.
+- Text, outline, statistics, bounded issues, get, and query for all three
+  formats.
 - Fixtures open without repair in Microsoft Office and LibreOffice.
 
 Status: implementation in progress. Loss-preserving XML, UTF-8/UTF-16 safety,
@@ -278,6 +280,34 @@ the same render bound and MCP retains its stricter 8 MiB structured-result
 bound. Unit and process tests cover hostile markup, deterministic hashes,
 sparse cells, invalid raster parts, all-format HTML, Presentation SVG,
 no-clobber output, standard MCP, and an unusable OfficeCLI path.
+
+Native issue analysis is implemented as a bounded, read-only pass over the
+semantic tree and OPC relationship graph. `NativeOfficeDocument::issues`
+defaults to 200 returned records and accepts a hard maximum of 1,000. Filtering
+by the broad `format`, `content`, or `structure` category, or by an exact stable
+subtype, occurs before the window is applied. The report always distinguishes
+the total matching `count`, `returned` records, and `truncated` state.
+
+The initial conservative rules are `missing_alt_text`, `broken_part_ref`,
+`formula_not_evaluated`, `formula_ref_missing_sheet`, `formula_eval_error`, and
+`low_contrast`. Missing-sheet detection scans direct quoted or ASCII-unquoted
+worksheet-qualified formula references while excluding formula string
+literals and external-workbook references. Low-contrast detection compares
+only explicit RGB run text against
+the explicit fill of its owning shape; scheme, inherited, transformed, or
+translucent colors are skipped. Broken references are checked against the
+typed relationship graph and expected relationship kind. The scanner does not
+guess at text overflow, object overlap, theme resolution, pagination, or
+application layout. Consequently, an empty report is useful evidence for the
+implemented rules, not a complete Office validity or visual-fidelity claim.
+
+CLI `office native view <file> issues` and MCP `office_view` with
+`view=issues` expose the same typed report. CLI accepts `--type` and `--limit`;
+MCP accepts `issueType` and `limit`. Unit tests cover all three formats,
+filtering, limits, string-literal exclusion, missing-sheet discrimination,
+explicit low contrast, broken relationships, and clean blank documents.
+Process tests run the CLI and a complete standard MCP lifecycle with an
+unusable OfficeCLI path, proving the view is native and provider-independent.
 
 Browser-injected PNG screenshot output is implemented for all three formats at
 the root facade. It stages the deterministic HTML in a private temporary
@@ -410,23 +440,24 @@ LibreOffice checks confirm that no repair dialog is required.
 - macOS and Linux release evidence; Windows remains preview until its separate
   platform gate is promoted.
 
-Status: native semantic rendering, Browser-injected screenshots, and the
-explicit `a3s use mcp serve office-native` target are available for evidence
-gathering. HTML covers all three formats, SVG currently covers Presentation,
-and semantic-preview PNG screenshots cover all three formats when the Browser
-provider is ready. They are available through typed Rust APIs,
-`office native view`, and `office_view`. The MCP target's 12 typed tools use
-bounded in-process sessions for validate, create/open/list, semantic reads,
-constrained raw XML, atomic mutation batches, immutable-template merge, save,
-and close. It limits open sessions to 64, batch and result JSON to 8 MiB, a
-batch to 10,000 mutations, query output to 1,000 nodes, and raw XML output to
-1 MiB. Mutations are not persisted until `office_save`, and a dirty session
+Status: native bounded issue analysis, semantic rendering, Browser-injected
+screenshots, and the explicit `a3s use mcp serve office-native` target are
+available for evidence gathering. Issue reports and HTML cover all three
+formats, SVG currently covers Presentation, and semantic-preview PNG
+screenshots cover all three formats when the Browser provider is ready. They
+are available through typed Rust APIs, `office native view`, and `office_view`.
+The MCP target's 12 typed tools use bounded in-process sessions for validate,
+create/open/list, semantic reads and issues, constrained raw XML, atomic
+mutation batches, immutable-template merge, save, and close. It limits open
+sessions to 64, batch and result JSON to 8 MiB, a batch to 10,000 mutations,
+query output to 1,000 nodes, issue output to 1,000 records, and raw XML output
+to 1 MiB. Mutations are not persisted until `office_save`, and a dirty session
 cannot close without save or explicit discard. Process-level tests complete a
 standard MCP initialize/list/call lifecycle, capture a real PNG when Chrome is
 available, and use an unusable OfficeCLI path. This preview does not complete
-Gate 6: Word/Spreadsheet SVG, live watch, Office Skills, compatibility corpus,
-fuzzing, rich-format coverage, layout goldens, and release evidence remain
-open, and the default Office target is not promoted.
+Gate 6: richer issue parity, Word/Spreadsheet SVG, live watch, Office Skills,
+compatibility corpus, fuzzing, rich-format coverage, layout goldens, and
+release evidence remain open, and the default Office target is not promoted.
 
 At Gate 6, native becomes the default and `a3s install use/office` no longer
 downloads an engine. The OfficeCLI backend moves to an explicitly named
@@ -455,8 +486,8 @@ worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format
 template merge with `merge`, all-format semantic HTML, Presentation semantic
-SVG, all-format Browser-injected semantic PNG screenshots, plus atomic batches
-under the native Office route.
+SVG, bounded all-format issue reports, all-format Browser-injected semantic PNG
+screenshots, plus atomic batches under the native Office route.
 The explicit `mcp serve office-native` target now exposes the current typed
 subset without OfficeCLI; only its optional screenshot view requires a ready
 A3S Browser provider. Other Office commands and the default `mcp serve office`

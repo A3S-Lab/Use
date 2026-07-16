@@ -1,7 +1,7 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
-    NativeOfficeImage, NativeOfficeInsertPosition, NativeOfficeMutation, NativeOfficePartType,
-    SpreadsheetCellValue,
+    NativeOfficeImage, NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
+    NativeOfficePartType, SpreadsheetCellValue,
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -64,9 +64,40 @@ pub(super) enum OfficeView {
     Text,
     Outline,
     Stats,
+    Issues,
     Html,
     Svg,
     Screenshot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum OfficeIssueFilter {
+    Format,
+    Content,
+    Structure,
+    MissingAltText,
+    BrokenPartRef,
+    FormulaNotEvaluated,
+    FormulaRefMissingSheet,
+    FormulaEvalError,
+    LowContrast,
+}
+
+impl From<OfficeIssueFilter> for NativeOfficeIssueFilter {
+    fn from(value: OfficeIssueFilter) -> Self {
+        match value {
+            OfficeIssueFilter::Format => Self::Format,
+            OfficeIssueFilter::Content => Self::Content,
+            OfficeIssueFilter::Structure => Self::Structure,
+            OfficeIssueFilter::MissingAltText => Self::MissingAltText,
+            OfficeIssueFilter::BrokenPartRef => Self::BrokenPartRef,
+            OfficeIssueFilter::FormulaNotEvaluated => Self::FormulaNotEvaluated,
+            OfficeIssueFilter::FormulaRefMissingSheet => Self::FormulaRefMissingSheet,
+            OfficeIssueFilter::FormulaEvalError => Self::FormulaEvalError,
+            OfficeIssueFilter::LowContrast => Self::LowContrast,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -76,6 +107,10 @@ pub(super) struct OfficeViewInput {
     pub(super) session: String,
     /// Semantic view to produce.
     pub(super) view: OfficeView,
+    /// Optional broad category or stable subtype filter for an issues view.
+    pub(super) issue_type: Option<OfficeIssueFilter>,
+    /// Maximum issues returned, from 1 through 1000. Defaults to 200.
+    pub(super) limit: Option<usize>,
     /// Required no-clobber local `.png` path for a screenshot view.
     pub(super) output: Option<String>,
     /// Screenshot deadline in milliseconds; defaults to 30000 and cannot exceed 120000.

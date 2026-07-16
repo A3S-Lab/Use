@@ -16,6 +16,7 @@ mod command;
 mod discovery;
 mod editor;
 mod install;
+mod issues;
 mod opc;
 mod opc_edit;
 mod package;
@@ -42,6 +43,11 @@ pub use editor::{
     NativeRawXmlPart, SpreadsheetCellValue,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
+pub use issues::{
+    NativeOfficeIssue, NativeOfficeIssueCategory, NativeOfficeIssueFilter,
+    NativeOfficeIssueOptions, NativeOfficeIssueReport, NativeOfficeIssueSeverity,
+    NativeOfficeIssueSubtype, DEFAULT_NATIVE_OFFICE_ISSUE_LIMIT, MAX_NATIVE_OFFICE_ISSUE_LIMIT,
+};
 pub use opc::{
     ContentTypes, OpcPackageModel, Relationship, RelationshipGraph, RelationshipSource,
     RelationshipTarget,
@@ -246,6 +252,8 @@ mod tests {
 mod arrange_tests;
 #[cfg(test)]
 mod image_tests;
+#[cfg(test)]
+mod issues_tests;
 #[cfg(test)]
 mod spreadsheet_edit_tests;
 

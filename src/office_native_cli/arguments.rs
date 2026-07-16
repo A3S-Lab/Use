@@ -6,6 +6,7 @@ use super::usage_error;
 pub(super) struct ParsedArguments {
     pub positionals: Vec<String>,
     pub depth: Option<usize>,
+    pub limit: Option<usize>,
     pub timeout_ms: Option<u64>,
     pub text: Option<String>,
     pub output: Option<String>,
@@ -52,6 +53,10 @@ impl ParsedArguments {
                             "--depth requires a non-negative integer, received '{value}'"
                         ))
                     })?);
+                    index += 2;
+                }
+                "--limit" if allowed.limit => {
+                    set_usize_option(&mut parsed.limit, args, index, "--limit")?;
                     index += 2;
                 }
                 "--timeout-ms" if allowed.timeout_ms => {
@@ -175,6 +180,7 @@ impl ParsedArguments {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct AllowedOptions {
     depth: bool,
+    limit: bool,
     timeout_ms: bool,
     text: bool,
     output: bool,
@@ -203,6 +209,7 @@ pub(super) struct AllowedOptions {
 impl AllowedOptions {
     pub const NONE: Self = Self {
         depth: false,
+        limit: false,
         timeout_ms: false,
         text: false,
         output: false,
@@ -234,6 +241,8 @@ impl AllowedOptions {
     pub const VIEW: Self = Self {
         output: true,
         timeout_ms: true,
+        node_type: true,
+        limit: true,
         ..Self::NONE
     };
     pub const SET: Self = Self {

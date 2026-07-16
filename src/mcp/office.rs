@@ -3,11 +3,16 @@
 mod input;
 mod session;
 mod support;
+#[cfg(test)]
+mod tests;
 
 use std::path::Path;
 
 use a3s_use_core::{UseError, UseResult};
-use a3s_use_office::{NativeOfficeDocument, NativeOfficeRenderFormat};
+use a3s_use_office::{
+    NativeOfficeDocument, NativeOfficeIssueOptions, NativeOfficeRenderFormat,
+    DEFAULT_NATIVE_OFFICE_ISSUE_LIMIT,
+};
 use input::{
     OfficeBatchInput, OfficeCloseInput, OfficeCreateInput, OfficeFileInput, OfficeGetInput,
     OfficeMergeTemplateInput, OfficeOpenInput, OfficeQueryInput, OfficeRawXmlInput,
@@ -222,7 +227,7 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_view",
-        description = "Produce a native text, outline, statistics, standalone HTML, Presentation SVG, or Browser-injected PNG screenshot view for an open session"
+        description = "Produce a native text, outline, statistics, bounded issues, standalone HTML, Presentation SVG, or Browser-injected PNG screenshot view for an open session"
     )]
     async fn office_view(
         &self,
@@ -237,6 +242,14 @@ impl NativeOfficeMcpServer {
                     "Native Office MCP output and timeoutMs are available only for screenshot views.",
                 ));
             }
+            if input.view != OfficeView::Issues
+                && (input.issue_type.is_some() || input.limit.is_some())
+            {
+                return Err(UseError::new(
+                    "use.office.view_options_invalid",
+                    "Native Office MCP issueType and limit are available only for issues views.",
+                ));
+            }
             let (session, entry) = self.sessions.get(&input.session).await?;
             let state = entry.lock().await;
             state.ensure_open(&session)?;
@@ -246,6 +259,13 @@ impl NativeOfficeMcpServer {
                 OfficeView::Text => ("text", serde_json::to_value(document.text_view())),
                 OfficeView::Outline => ("outline", serde_json::to_value(document.outline())),
                 OfficeView::Stats => ("stats", serde_json::to_value(document.statistics())),
+                OfficeView::Issues => (
+                    "issues",
+                    serde_json::to_value(document.issues(NativeOfficeIssueOptions {
+                        filter: input.issue_type.map(Into::into),
+                        limit: input.limit.unwrap_or(DEFAULT_NATIVE_OFFICE_ISSUE_LIMIT),
+                    })?),
+                ),
                 OfficeView::Html => (
                     "html",
                     serde_json::to_value(document.render(NativeOfficeRenderFormat::Html)?),
@@ -454,57 +474,4 @@ pub(crate) async fn serve_stdio() -> UseResult<()> {
         )
     })?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn native_office_server_exposes_only_bounded_typed_tools() {
-        let server = NativeOfficeMcpServer::new();
-        let tools = server.tool_router.list_all();
-        let mut names = tools
-            .iter()
-            .map(|tool| tool.name.as_ref())
-            .collect::<Vec<_>>();
-        names.sort_unstable();
-        assert_eq!(
-            names,
-            [
-                "office_apply_batch",
-                "office_close",
-                "office_create",
-                "office_get",
-                "office_list",
-                "office_merge_template",
-                "office_open",
-                "office_query",
-                "office_raw_xml",
-                "office_save",
-                "office_validate",
-                "office_view"
-            ]
-        );
-    }
-
-    #[test]
-    fn office_view_schema_exposes_typed_screenshot_options() {
-        let schema = schemars::schema_for!(OfficeViewInput);
-        let encoded = serde_json::to_string(&schema).unwrap();
-        assert!(encoded.contains("screenshot"));
-        assert!(encoded.contains("output"));
-        assert!(encoded.contains("timeoutMs"));
-
-        let input: OfficeViewInput = serde_json::from_value(serde_json::json!({
-            "session": "report",
-            "view": "screenshot",
-            "output": "report.png",
-            "timeoutMs": 30_000
-        }))
-        .unwrap();
-        assert_eq!(input.view, OfficeView::Screenshot);
-        assert_eq!(input.output.as_deref(), Some("report.png"));
-        assert_eq!(input.timeout_ms, Some(30_000));
-    }
 }

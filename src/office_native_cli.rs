@@ -25,7 +25,7 @@ const HELP: &str = concat!(
     "usage:\n",
     "  a3s-use office native get <file> [path] [--depth <n>] [--json]\n",
     "  a3s-use office native query <file> <selector> [--json]\n",
-    "  a3s-use office native view <file> text|outline|stats|html|svg|screenshot [--output <file>] [--timeout-ms <ms>] [--json]\n",
+    "  a3s-use office native view <file> text|outline|stats|issues|html|svg|screenshot [--type <filter>] [--limit <n>] [--output <file>] [--timeout-ms <ms>] [--json]\n",
     "  a3s-use office native raw <file> <part> [--output <xml-file>] [--json]\n",
     "  a3s-use office native raw-set <file> <part> --input <xml-file> [--output <file>] [--json]\n",
     "  a3s-use office native dump <file> [path] [--output <batch.json>] [--json]\n",
@@ -723,6 +723,22 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.rows, Some(2));
         assert_eq!(parsed.columns, Some(3));
+
+        let parsed = ParsedArguments::parse(
+            &[
+                "view".into(),
+                "book.xlsx".into(),
+                "issues".into(),
+                "--type".into(),
+                "formula_not_evaluated".into(),
+                "--limit".into(),
+                "10".into(),
+            ],
+            AllowedOptions::VIEW,
+        )
+        .unwrap();
+        assert_eq!(parsed.node_type.as_deref(), Some("formula_not_evaluated"));
+        assert_eq!(parsed.limit, Some(10));
 
         assert_eq!(
             ParsedArguments::parse(

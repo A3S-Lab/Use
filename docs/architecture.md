@@ -114,8 +114,8 @@ The native Office engine uses typed in-process sessions and exposes them through
 the explicit `mcp serve office-native` standard MCP preview. It does not copy an
 upstream private pipe protocol. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
-XML access, and atomic mutation batches are available explicitly under
-`office native`. That route also owns bounded Spreadsheet range mutation,
+XML access, bounded issue analysis, and atomic mutation batches are available
+explicitly under `office native`. That route also owns bounded Spreadsheet range mutation,
 row/column insertion and deletion, and worksheet rename/reorder/copy with
 loss-preserving OPC subgraph ownership. Its arrangement layer covers
 same-parent Word structures, worksheets and dense plain rows, slides, and
@@ -164,6 +164,16 @@ destination atomically without clobbering. It does not add another browser
 runtime to Office, and the result remains a semantic preview rather than a
 layout-fidelity render.
 
+Issue analysis is another read-only projection over the same semantic tree and
+relationship graph. It returns bounded typed records with stable category,
+subtype, severity, semantic path, context, and suggestion fields. The initial
+rules cover missing image alternative text, broken typed relationships,
+uncached formulas, missing-sheet formula references, formula errors, and
+explicit shape-fill/text RGB contrast. Filtering precedes the 200-default,
+1,000-maximum result window. The scanner deliberately avoids inferred layout
+diagnostics such as text overflow, overlap, pagination, theme resolution, or
+application-specific rendering; a clean result is not a fidelity claim.
+
 Basic Presentation table mutation is a format-owned structural layer over the
 same loss-preserving XML editor. It inserts a real graphic frame and DrawingML
 table into the slide shape tree, allocates a collision-free non-visual ID,
@@ -186,15 +196,16 @@ unchanged until the native product gates pass.
 The preview MCP adapter has an explicit typed vocabulary rather than a command
 string passthrough. It supports validate, create/open/list, semantic get/query,
 text/outline/statistics views, all-format HTML, Presentation SVG, all-format
-Browser-injected semantic PNG screenshots, constrained raw XML inspection,
-atomic typed mutation batches, immutable-template merge, save, and close. A
-screenshot requires an explicit no-clobber `.png` output and releases the
-Office session lock before Browser rendering. A server process owns at most 64
-sessions. Batches and structured results are limited to 8 MiB,
-batches to 10,000 mutations, query output to 1,000 nodes, and inline raw XML to
-1 MiB. Mutations remain in memory until an explicit save, while close fails on
-dirty state unless discard is explicit. These are MCP deployment rules around
-the same editor types, not a second Office domain model or an A3S RPC protocol.
+bounded issue views, Browser-injected semantic PNG screenshots, constrained raw
+XML inspection, atomic typed mutation batches, immutable-template merge, save,
+and close. A screenshot requires an explicit no-clobber `.png` output and
+releases the Office session lock before Browser rendering. A server process
+owns at most 64 sessions. Batches and structured results are limited to 8 MiB,
+batches to 10,000 mutations, query and issue output to 1,000 records, and inline
+raw XML to 1 MiB. Mutations remain in memory until an explicit save, while
+close fails on dirty state unless discard is explicit. These are MCP deployment
+rules around the same editor types, not a second Office domain model or an A3S
+RPC protocol.
 
 External MCP packages are launched from their declared executable, arguments,
 and transport. A3S Use owns package identity and activation, not the package's
@@ -261,10 +272,10 @@ Implemented:
     native template merge with bounded JSON
     and immutable templates, native PNG/JPEG/GIF add/read/remove with
     reference-aware media cleanup, deterministic all-format HTML and
-    Presentation SVG semantic rendering, Browser-injected all-format semantic
-    PNG screenshots with validated receipts and no-clobber publication, atomic
-    batches, changed-file conflict detection, and the dependency-free
-    `office native` CLI.
+    Presentation SVG semantic rendering, bounded conservative all-format issue
+    analysis, Browser-injected all-format semantic PNG screenshots with
+    validated receipts and no-clobber publication, atomic batches, changed-file
+    conflict detection, and the dependency-free `office native` CLI.
 14. An explicit native Office standard MCP preview with bounded typed tools,
     in-process sessions, deferred atomic save, dirty-close protection, and
     process-level evidence that OfficeCLI is not consulted.

@@ -1,7 +1,11 @@
 use std::path::Path;
 
 use a3s_use_core::UseResult;
-use a3s_use_office::{NativeOfficeDocument, NativeOfficeRenderedView};
+use a3s_use_office::{
+    NativeOfficeDocument, NativeOfficeIssueFilter, NativeOfficeIssueOptions,
+    NativeOfficeIssueReport, NativeOfficeIssueSeverity, NativeOfficeRenderedView,
+    DEFAULT_NATIVE_OFFICE_ISSUE_LIMIT,
+};
 
 use crate::office_artifact::{self, OfficeArtifactKind};
 
@@ -11,7 +15,7 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
     let parsed = ParsedArguments::parse(args, AllowedOptions::VIEW)?;
     if parsed.positionals.len() != 2 {
         return Err(usage_error(
-            "office native view requires <file> and text, outline, stats, html, svg, or screenshot",
+            "office native view requires <file> and text, outline, stats, issues, html, svg, or screenshot",
         ));
     }
     let document = NativeOfficeDocument::open(&parsed.positionals[0]).await?;
@@ -57,24 +61,48 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
                 serde_json::json!({ "view": "stats", "result": statistics }),
             ))
         }
+        "issues" | "i" => {
+            reject_output_and_timeout(&parsed, "issues")?;
+            let filter = parsed
+                .node_type
+                .as_deref()
+                .map(NativeOfficeIssueFilter::parse)
+                .transpose()?;
+            let report = document.issues(NativeOfficeIssueOptions {
+                filter,
+                limit: parsed.limit.unwrap_or(DEFAULT_NATIVE_OFFICE_ISSUE_LIMIT),
+            })?;
+            Ok(CommandOutput::success(
+                format_issue_report(&report),
+                serde_json::json!({ "view": "issues", "result": report }),
+            ))
+        }
         "html" | "h" => {
             reject_timeout(&parsed, "html")?;
+            reject_issue_options(&parsed, "html")?;
             rendered(document.html_view()?, parsed.output.as_deref()).await
         }
         "svg" => {
             reject_timeout(&parsed, "svg")?;
+            reject_issue_options(&parsed, "svg")?;
             rendered(document.svg_view()?, parsed.output.as_deref()).await
         }
         "screenshot" | "png" => {
+            reject_issue_options(&parsed, "screenshot")?;
             screenshot(document, parsed.output.as_deref(), parsed.timeout_ms).await
         }
         mode => Err(usage_error(format!(
-            "native Office view mode '{mode}' is not text, outline, stats, html, svg, or screenshot"
+            "native Office view mode '{mode}' is not text, outline, stats, issues, html, svg, or screenshot"
         ))),
     }
 }
 
 fn reject_artifact_options(parsed: &ParsedArguments, view: &str) -> UseResult<()> {
+    reject_output_and_timeout(parsed, view)?;
+    reject_issue_options(parsed, view)
+}
+
+fn reject_output_and_timeout(parsed: &ParsedArguments, view: &str) -> UseResult<()> {
     if parsed.output.is_some() {
         return Err(usage_error(format!(
             "--output is available for html, svg, and screenshot views, not {view}"
@@ -90,6 +118,41 @@ fn reject_timeout(parsed: &ParsedArguments, view: &str) -> UseResult<()> {
     Err(usage_error(format!(
         "--timeout-ms is available for screenshot views, not {view}"
     )))
+}
+
+fn reject_issue_options(parsed: &ParsedArguments, view: &str) -> UseResult<()> {
+    if parsed.node_type.is_none() && parsed.limit.is_none() {
+        return Ok(());
+    }
+    Err(usage_error(format!(
+        "--type and --limit are available for issues views, not {view}"
+    )))
+}
+
+fn format_issue_report(report: &NativeOfficeIssueReport) -> String {
+    let mut lines = vec![format!(
+        "Found {} issue(s); returned {}{}.",
+        report.count,
+        report.returned,
+        if report.truncated { " (truncated)" } else { "" }
+    )];
+    for issue in &report.issues {
+        let severity = match issue.severity {
+            NativeOfficeIssueSeverity::Error => "ERROR",
+            NativeOfficeIssueSeverity::Warning => "WARN",
+            NativeOfficeIssueSeverity::Info => "INFO",
+        };
+        lines.push(format!(
+            "[{severity}] {} {}: {}",
+            issue.subtype.as_str(),
+            issue.path,
+            issue.message
+        ));
+        if let Some(suggestion) = &issue.suggestion {
+            lines.push(format!("  Suggestion: {suggestion}"));
+        }
+    }
+    lines.join("\n")
 }
 
 async fn rendered(

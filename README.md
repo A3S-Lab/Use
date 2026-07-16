@@ -55,6 +55,7 @@ a3s use browser close --session research
 # Read and mutate OOXML in-process with no external Office provider.
 a3s use office native create report.docx --json
 a3s use office native view report.docx text --json
+a3s use office native view report.docx issues --type content --limit 50 --json
 a3s use office native view report.docx html --output report.html --json
 a3s use office native view deck.pptx svg --output deck.svg --json
 a3s use office native view report.docx screenshot --output report.png --json
@@ -99,9 +100,10 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
-  HTML/PPTX-SVG semantic previews, Browser-injected semantic PNG screenshots,
-  and an explicit typed standard MCP preview while retaining the 0.1.x
-  OfficeCLI compatibility backend for surfaces not yet promoted
+  HTML/PPTX-SVG semantic previews, bounded typed issue diagnostics,
+  Browser-injected semantic PNG screenshots, and an explicit typed standard
+  MCP preview while retaining the 0.1.x OfficeCLI compatibility backend for
+  surfaces not yet promoted
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -260,8 +262,9 @@ Office is moving to an A3S-owned Rust engine for Word, Spreadsheet, and
 Presentation documents. The native engine now includes bounded package
 admission, byte-preserving XML, content types, a safe relationship graph,
 stable selectors, semantic `get`, `query`, `text`, `outline`, and `stats`
-reads, safe blank-document creation, and loss-preserving text replacement for
-existing Word, Spreadsheet, and Presentation nodes. It can safely inspect
+reads, bounded `issues` reports, safe blank-document creation, and
+loss-preserving text replacement for existing Word, Spreadsheet, and
+Presentation nodes. It can safely inspect
 existing XML parts and replace non-OPC-metadata XML parts while preserving the
 root QName and validating the final document. Known chart, header, and footer
 part carriers can be created together with their content type and owner
@@ -313,9 +316,10 @@ known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML is available
 for Word, Spreadsheet, and Presentation; SVG is currently Presentation-only;
-Browser-injected PNG screenshots are available for all three formats.
-`mcp serve office-native` exposes the same editor and screenshot composition
-through typed standard MCP tools and bounded in-memory sessions.
+the bounded issue view is available for all three formats; and Browser-injected
+PNG screenshots are available for all three formats. `mcp serve office-native`
+exposes the same editor, issue analysis, and screenshot composition through
+typed standard MCP tools and bounded in-memory sessions.
 Other `0.1.x` commands and the default `mcp serve office` target still use a
 compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
 boundary, not a native-promotion claim. The default routes will be promoted
@@ -335,6 +339,8 @@ a3s use office native create deck.pptx --json
 a3s use office native get report.docx /body --depth 2 --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native view report.xlsx stats --json
+a3s use office native view report.docx issues --json
+a3s use office native view workbook.xlsx issues --type formula_not_evaluated --limit 20 --json
 a3s use office native view report.docx html --output report.html --json
 a3s use office native view workbook.xlsx html --output workbook.html --json
 a3s use office native view deck.pptx svg --output deck.svg --json
@@ -443,9 +449,22 @@ limited to 10,000 mutations and 8 MiB of JSON, and remain unsaved until
 queries to at most 1,000 returned nodes. `office_close` rejects dirty sessions
 unless the caller saves or explicitly sets `discard=true`. `office_view`
 accepts `html` for all three formats and `svg` for Presentation in addition to
-text, outline, and statistics. It also accepts `screenshot` for all three
-formats; that mode requires a no-clobber local `output` ending in `.png` and
-accepts an optional `timeoutMs` from 1 through 120,000.
+text, outline, and statistics. The `issues` view accepts an optional typed
+`issueType` and a `limit` from 1 through 1,000, defaulting to 200. It also
+accepts `screenshot` for all three formats; that mode requires a no-clobber
+local `output` ending in `.png` and accepts an optional `timeoutMs` from 1
+through 120,000.
+
+Native issue analysis is conservative and read-only. It currently reports
+missing picture alternative text, missing or incompatible internal part
+relationships, formulas without cached results, formulas that reference a
+missing worksheet, cached or explicit formula errors, and low contrast between
+explicit RGB run text and its own shape fill. Reports include stable category,
+subtype, severity, path, context, and suggestion fields; filtering happens
+before the bounded result window, and `count`, `returned`, and `truncated`
+remain explicit. It does not infer text overflow, object overlap, theme or
+inherited colors, or Microsoft Office layout behavior. A clean report is not a
+full fidelity or interoperability certification.
 
 Native render artifacts are deterministic, standalone, and network-free. They
 contain no timestamp or source path, escape document text and attributes, carry
