@@ -182,6 +182,11 @@ impl AllowedOptions {
         columns: true,
         ..Self::NONE
     };
+    pub const ADD_PART: Self = Self {
+        output: true,
+        node_type: true,
+        ..Self::NONE
+    };
     pub const MUTATE: Self = Self {
         output: true,
         ..Self::NONE

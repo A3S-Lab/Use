@@ -33,8 +33,8 @@ pub use discovery::{
     SUPPORTED_OFFICECLI_VERSION,
 };
 pub use editor::{
-    NativeBatchResult, NativeOfficeEditor, NativeOfficeMutation, NativeRawXmlPart,
-    SpreadsheetCellValue,
+    NativeBatchResult, NativeCreatedPart, NativeOfficeEditor, NativeOfficeMutation,
+    NativeOfficePartType, NativeRawXmlPart, SpreadsheetCellValue,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 pub use opc::{

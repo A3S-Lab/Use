@@ -208,12 +208,18 @@ normalized UTF-8 text and can export the original bytes. Raw replacement accepts
 bounded UTF-8 input, rejects content-type and relationship parts, requires the
 root local name and namespace to remain unchanged, and participates in the same
 semantic/OPC validation and atomic rollback as every other native mutation.
-Generic node move/copy/swap, image creation and mutation, typed part creation,
-template merge, dump, advanced rich-format operations, and the formula
-parser/dependency/recalculation engine remain before their respective gates can
-be promoted. Creation and structural mutation remain under the interoperability
-gate until Microsoft Office and optional CI LibreOffice checks confirm that no
-repair dialog is required.
+Known part creation is implemented for Word chart/header/footer carriers and
+Spreadsheet/Presentation chart carriers. It allocates collision-free part
+names, writes content-type overrides, creates owner relationships, returns typed
+relationship receipts, handles transitional and strict OOXML namespaces, and
+rolls back every package change on failure. It does not yet insert a visible
+chart frame or Word section reference. Generic node move/copy/swap, image
+creation and mutation, complex/custom part carriers, template merge, dump,
+advanced rich-format operations, and the formula parser/dependency/recalculation
+engine remain before their respective gates can be promoted. Creation and
+structural mutation remain under the interoperability gate until Microsoft
+Office and optional CI LibreOffice checks confirm that no repair dialog is
+required.
 
 ### Gate 3 — Rich Word
 
@@ -263,10 +269,10 @@ compatibility component for one deprecation cycle, then is removed.
 
 The `0.1.x` CLI exposes native blank creation, reads, typed add/set/remove,
 Spreadsheet range and row/column structure edits, worksheet rename/reorder, and
-loss-preserving worksheet copy through `copy-sheet`, safe `raw`/`raw-set`, plus
-atomic batches under `office native`; other Office commands and MCP startup
-still delegate to the pinned OfficeCLI provider. This keeps existing users
-functional while native coverage grows. The native APIs are deliberately not
-advertised as full Office readiness, and `doctor` continues to report
-compatibility-provider readiness until the native read and mutation gates are
-met.
+loss-preserving worksheet copy through `copy-sheet`, safe `raw`/`raw-set`, known
+`add-part` carriers, plus atomic batches under `office native`; other Office
+commands and MCP startup still delegate to the pinned OfficeCLI provider. This
+keeps existing users functional while native coverage grows. The native APIs
+are deliberately not advertised as full Office readiness, and `doctor`
+continues to report compatibility-provider readiness until the native read and
+mutation gates are met.

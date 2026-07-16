@@ -7,11 +7,16 @@ use crate::discovery::office_error;
 use crate::semantic::NativeOfficeDocument;
 use crate::{DocumentKind, NativeOfficePackage};
 
+mod part;
 mod presentation;
 mod raw;
 mod spreadsheet;
 mod word;
 
+#[cfg(test)]
+mod part_tests;
+
+pub use part::{NativeCreatedPart, NativeOfficePartType};
 pub use raw::NativeRawXmlPart;
 
 /// Typed Spreadsheet cell content written without a shared-string dependency.
@@ -61,6 +66,11 @@ pub enum NativeOfficeMutation {
     AddShape {
         parent: String,
         text: String,
+    },
+    AddPart {
+        parent: String,
+        #[serde(rename = "type")]
+        part_type: NativeOfficePartType,
     },
     AddWorksheet {
         name: String,
@@ -113,6 +123,8 @@ pub enum NativeOfficeMutation {
 pub struct NativeBatchResult {
     pub applied: usize,
     pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub created_parts: Vec<NativeCreatedPart>,
 }
 
 /// Loss-preserving OOXML editor with transactional in-memory batches.
@@ -278,6 +290,24 @@ impl NativeOfficeEditor {
         })
     }
 
+    /// Creates a known XML part with its content type and owner relationship.
+    pub fn add_part(
+        &mut self,
+        parent: impl Into<String>,
+        part_type: NativeOfficePartType,
+    ) -> UseResult<NativeCreatedPart> {
+        let result = self.apply_batch(&[NativeOfficeMutation::AddPart {
+            parent: parent.into(),
+            part_type,
+        }])?;
+        result.created_parts.into_iter().next().ok_or_else(|| {
+            editor_error(
+                "use.office.batch_validation_failed",
+                "Native Office part mutation returned no creation receipt.",
+            )
+        })
+    }
+
     pub fn remove(&mut self, path: impl Into<String>) -> UseResult<String> {
         let result = self.apply_batch(&[NativeOfficeMutation::Remove { path: path.into() }])?;
         result.paths.into_iter().next().ok_or_else(|| {
@@ -416,11 +446,14 @@ impl NativeOfficeEditor {
             return Ok(NativeBatchResult {
                 applied: 0,
                 paths: Vec::new(),
+                created_parts: Vec::new(),
             });
         }
         let original = self.package.clone();
         let mut paths = Vec::with_capacity(mutations.len());
+        let mut created_parts = Vec::new();
         for mutation in mutations {
+            let mut created_part = None;
             let result = match mutation {
                 NativeOfficeMutation::SetText { path, text } => {
                     set_text(&mut self.package, path, text).map(|()| path.clone())
@@ -448,6 +481,13 @@ impl NativeOfficeEditor {
                 }
                 NativeOfficeMutation::AddShape { parent, text } => {
                     presentation::add_shape(&mut self.package, parent, text)
+                }
+                NativeOfficeMutation::AddPart { parent, part_type } => {
+                    part::add(&mut self.package, parent, *part_type).map(|created| {
+                        let path = created.path.clone();
+                        created_part = Some(created);
+                        path
+                    })
                 }
                 NativeOfficeMutation::AddWorksheet { name } => {
                     spreadsheet::add_worksheet(&mut self.package, name)
@@ -491,7 +531,12 @@ impl NativeOfficeEditor {
                 }
             };
             match result {
-                Ok(path) => paths.push(path),
+                Ok(path) => {
+                    paths.push(path);
+                    if let Some(created) = created_part {
+                        created_parts.push(created);
+                    }
+                }
                 Err(error) => {
                     self.package = original;
                     return Err(error);
@@ -508,6 +553,7 @@ impl NativeOfficeEditor {
         Ok(NativeBatchResult {
             applied: paths.len(),
             paths,
+            created_parts,
         })
     }
 

@@ -209,6 +209,15 @@ impl NativeOfficePackage {
         {
             return Err(duplicate_part(&name));
         }
+        if !self.parts.contains_key(&name) && self.parts.len() >= self.limits.max_entries {
+            return Err(package_error(
+                "use.office.package_entry_limit",
+                format!(
+                    "OOXML package cannot add part '{name}'; the {}-entry limit is reached.",
+                    self.limits.max_entries
+                ),
+            ));
+        }
         let bytes_len = u64::try_from(bytes.len()).map_err(|_| {
             package_error(
                 "use.office.package_part_too_large",

@@ -61,6 +61,7 @@ a3s use office native add report.docx /body --type paragraph --text 'More' --jso
 a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
 a3s use office native remove report.docx /body/p[2] --json
 a3s use office native raw report.docx /word/document.xml --json
+a3s use office native add-part report.docx / --type header --json
 
 # Commands not yet promoted to native continue through the compatibility route.
 a3s use office get report.docx /body --json
@@ -247,7 +248,9 @@ stable selectors, semantic `get`, `query`, `text`, `outline`, and `stats`
 reads, safe blank-document creation, and loss-preserving text replacement for
 existing Word, Spreadsheet, and Presentation nodes. It can safely inspect
 existing XML parts and replace non-OPC-metadata XML parts while preserving the
-root QName and validating the final document. The typed mutation layer
+root QName and validating the final document. Known chart, header, and footer
+part carriers can be created together with their content type and owner
+relationship. The typed mutation layer
 also adds and removes Word paragraphs and basic table/row/cell structures,
 upserts typed Spreadsheet text, number, boolean, and formula cells, removes
 cells and bounded cell ranges, structurally inserts or deletes rows and columns,
@@ -265,9 +268,9 @@ Python, Node.js, or .NET. LibreOffice may be used only by optional CI
 interoperability checks and is never part of document execution.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
-typed add/set/remove operations, constrained raw XML access, and atomic mutation
-batches today. Other
-`0.1.x` commands and the Office MCP route still use a compatibility backend
+typed add/set/remove operations, constrained raw XML access, known typed part
+carriers, and atomic mutation batches today. Other `0.1.x` commands and the
+Office MCP route still use a compatibility backend
 pinned to OfficeCLI `1.0.136`. This is a migration boundary, not the target
 architecture. The default command route will be promoted only after mutation,
 fidelity, rendering, and cross-application interoperability gates pass.
@@ -293,6 +296,12 @@ a3s use office native raw report.docx /word/document.xml --output document.xml -
 
 # Replace one existing XML part; --output is an optional Office save-as target.
 a3s use office native raw-set report.docx /word/document.xml --input document.xml --output updated.docx --json
+
+# Create known part carriers and receive their owner relationship IDs.
+a3s use office native add-part report.docx / --type header --json
+a3s use office native add-part report.docx / --type chart --json
+a3s use office native add-part workbook.xlsx /Sheet1 --type chart --json
+a3s use office native add-part deck.pptx '/slide[1]' --type chart --json
 
 # Replace text in place or save to a separate OOXML document.
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
@@ -367,7 +376,7 @@ and 10,000 mutations. The version 1 mutation set is `set-text`,
 `set-cell-value`, `add-paragraph`, `add-table`, `add-table-row`, `add-table-cell`,
 `add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
 `delete-columns`, `rename-worksheet`, `move-worksheet`, `copy-worksheet`,
-`replace-xml-part`, `add-slide`, `add-shape`, and `remove`.
+`replace-xml-part`, `add-part`, `add-slide`, `add-shape`, and `remove`.
 
 Raw replacement is also available inside the same atomic batch:
 
@@ -387,6 +396,25 @@ limited to 1 MiB; use its `--output` option to export larger original part bytes
 without modifying the Office package. Raw export refuses to overwrite an
 existing destination. Every replacement runs through the normal semantic and
 OPC post-mutation validation, and any failure rolls back the whole batch.
+
+Typed part creation is also batchable:
+
+```json
+{
+  "operation": "add-part",
+  "parent": "/slide[1]",
+  "type": "chart"
+}
+```
+
+The batch result keeps the existing ordered `paths` ledger and adds
+`createdParts` receipts containing `part`, `ownerPart`, `relationshipId`, and
+`type`. Word supports chart, header, and footer carriers at `/`; Spreadsheet
+supports chart carriers under a worksheet; Presentation supports chart carriers
+under a slide. A carrier is a valid blank XML part with content type and owner
+relationship. It is not visible in document layout until a typed operation or
+explicit XML replacement references the returned relationship ID from the
+owner XML.
 
 Typed Spreadsheet batch values use an explicit nested type, for example:
 
@@ -431,6 +459,8 @@ println!("{} heading(s)", headings.len());
 let mut editor = NativeOfficeEditor::open("report.docx").await?;
 let raw = editor.raw_xml_part("/word/document.xml")?;
 println!("{} {}", raw.part, raw.sha256);
+let header = editor.add_part("/", a3s_use_office::NativeOfficePartType::Header)?;
+println!("{} {}", header.part, header.relationship_id);
 editor.set_text("/body/p[1]", "Updated")?;
 let added = editor.add_paragraph("/body", "Summary")?;
 editor.remove(added)?;

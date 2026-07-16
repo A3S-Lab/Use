@@ -175,6 +175,27 @@ async fn native_package_enforces_bounded_archive_limits() {
 }
 
 #[tokio::test]
+async fn native_package_enforces_entry_limits_during_mutation() {
+    let temp = fixture(DocumentKind::Word);
+    let path = temp.path().join("document.docx");
+    let limits = PackageLimits {
+        max_entries: 3,
+        ..PackageLimits::default()
+    };
+    let mut package = NativeOfficePackage::open_with_limits(&path, limits)
+        .await
+        .unwrap();
+
+    let error = package
+        .set_part("word/header1.xml", b"<header/>".to_vec())
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.office.package_entry_limit");
+    assert!(!package.contains_part("word/header1.xml"));
+    assert!(!package.is_dirty());
+}
+
+#[tokio::test]
 async fn native_package_round_trip_preserves_unknown_parts() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("round-trip.docx");

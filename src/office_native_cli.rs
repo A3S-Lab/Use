@@ -9,6 +9,7 @@ use tokio::io::AsyncReadExt;
 use crate::cli::CommandOutput;
 
 mod arguments;
+mod part;
 mod raw;
 
 use arguments::{parse_boolean_option, AllowedOptions, ParsedArguments};
@@ -27,6 +28,7 @@ const HELP: &str = concat!(
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape [--rows <n>] [--columns <n>] [--name <name>] [--text <value>] [--output <file>] [--json]\n",
+    "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
     "  a3s-use office native set <file> <path> (--text <value>|--number <value>|--boolean <true|false>|--formula <expression>) [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native insert-rows|delete-rows <file> <sheet> <start> [--count <n>] [--output <file>] [--json]\n",
@@ -48,6 +50,7 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("validate") => validate(args).await,
         Some("create") => create(args).await,
         Some("add") => add(args).await,
+        Some("add-part") => part::add(args).await,
         Some("set") => set(args).await,
         Some("remove") => remove(args).await,
         Some("insert-rows") => edit_structure(args, StructureOperation::InsertRows).await,
@@ -69,7 +72,7 @@ fn help() -> CommandOutput {
         HELP,
         serde_json::json!({
             "commands": [
-                "get", "query", "view", "raw", "raw-set", "validate", "create", "add", "set", "remove",
+                "get", "query", "view", "raw", "raw-set", "validate", "create", "add", "add-part", "set", "remove",
                 "insert-rows", "delete-rows", "insert-columns", "delete-columns",
                 "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],
