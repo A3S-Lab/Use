@@ -52,7 +52,9 @@ a3s use browser snapshot --session research --json
 a3s use browser click @e1 --session research
 a3s use browser close --session research
 
-# Read and mutate OOXML in-process with no external Office provider.
+# Load the packaged Office Skill or mutate OOXML with no external provider.
+a3s use office skills list --json
+a3s use office skills get a3s-use-office --full
 a3s use office native create report.docx --json
 a3s use office native view report.docx text --json
 a3s use office native view report.docx issues --type content --limit 50 --json
@@ -104,6 +106,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   Browser-injected semantic PNG screenshots, and an explicit typed standard
   MCP preview while retaining the 0.1.x OfficeCLI compatibility backend for
   surfaces not yet promoted
+- **Packaged Office Guidance**: Ship one first-party `a3s-use-office` Skill for
+  safe Word, Spreadsheet, Presentation, native MCP, and compatibility workflows
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -124,7 +128,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | Domain | Origin | CLI | MCP | Skill | Runtime owner |
 | --- | --- | --- | --- | --- | --- |
 | Browser | Built in | Full Browser vocabulary | A3S Use standard MCP server | Six packaged Browser Skills | A3S Use |
-| Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Planned Office Skills | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
+| Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
@@ -175,8 +179,9 @@ a3s use doctor --json
 Prebuilt archives are also published on
 [GitHub Releases](https://github.com/A3S-Lab/Use/releases). A complete archive
 contains `a3s-use`, its sibling `a3s-use-browser-driver`, Browser Skills, the
-Dashboard, and license/provenance notices. Keep those packaged assets together;
-installing only the facade binary does not provide the complete Browser surface.
+first-party Office Skill, the Dashboard, and license/provenance notices. Keep
+those packaged assets together; installing only the facade binary does not
+provide the complete Browser and Office Skill surfaces.
 
 Build all binaries from source with:
 
@@ -320,10 +325,18 @@ the bounded issue view is available for all three formats; and Browser-injected
 PNG screenshots are available for all three formats. `mcp serve office-native`
 exposes the same editor, issue analysis, and screenshot composition through
 typed standard MCP tools and bounded in-memory sessions.
+The packaged `a3s-use-office` Skill exposes the same product boundaries to
+agents without starting OfficeCLI. Discover its metadata with
+`office skills list`, read only its `SKILL.md` with
+`office skills get a3s-use-office`, append its four format/MCP references with
+`--full`, or locate the installed directory with `office skills path`. The
+capability snapshot
+binds the Skill path and lowercase SHA-256 so a resident host can verify the
+bytes before loading them.
 Other `0.1.x` commands and the default `mcp serve office` target still use a
 compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
 boundary, not a native-promotion claim. The default routes will be promoted
-only after mutation, fidelity, rendering, Skills, and cross-application
+only after mutation, fidelity, rendering, compatibility, and cross-application
 interoperability gates pass.
 
 ```bash

@@ -75,7 +75,7 @@ pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
     let (generation, extensions) = stable_extensions().await?;
     let mut capabilities = vec![
         browser_capability().await?,
-        office_capability(),
+        office_capability().await?,
         box_capability(),
     ];
     capabilities.extend(extensions);
@@ -164,30 +164,35 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
     }
 }
 
-fn office_capability() -> CapabilityBinding {
+async fn office_capability() -> UseResult<CapabilityBinding> {
     #[cfg(feature = "office")]
     {
         let diagnostic = a3s_use_office::doctor();
         let ready = diagnostic.readiness == Readiness::Ready;
-        CapabilityBinding {
+        let skill = crate::office_skills::primary_skill_surface().await;
+        let (package_root, skills) = match skill {
+            Some((root, path)) => (Some(root), vec![skill_surface(path).await?]),
+            None => (None, Vec::new()),
+        };
+        Ok(CapabilityBinding {
             id: "use/office".to_string(),
             route: "office".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             origin: CapabilityOrigin::BuiltIn,
             enabled: true,
             readiness: diagnostic.readiness,
-            package_root: None,
-            surfaces: vec!["cli".to_string(), "mcp".to_string()],
+            package_root,
+            surfaces: vec!["cli".to_string(), "mcp".to_string(), "skill".to_string()],
             mcp: ready.then(|| McpSurface {
                 target: "office".to_string(),
                 transport: McpTransport::Stdio,
             }),
-            skills: Vec::new(),
-        }
+            skills,
+        })
     }
     #[cfg(not(feature = "office"))]
     {
-        CapabilityBinding {
+        Ok(CapabilityBinding {
             id: "use/office".to_string(),
             route: "office".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -198,7 +203,7 @@ fn office_capability() -> CapabilityBinding {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
-        }
+        })
     }
 }
 
@@ -383,6 +388,12 @@ mod tests {
             .iter()
             .any(|skill| skill.path.ends_with("a3s-use-browser/SKILL.md")));
         assert!(browser.skills.iter().all(|skill| skill.sha256.len() == 64));
+        assert!(office.surfaces.iter().any(|surface| surface == "skill"));
+        assert!(office
+            .skills
+            .iter()
+            .any(|skill| skill.path.ends_with("a3s-use-office/SKILL.md")));
+        assert!(office.skills.iter().all(|skill| skill.sha256.len() == 64));
         assert_eq!(snapshot.revision.len(), 64);
     }
 

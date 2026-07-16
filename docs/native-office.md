@@ -12,7 +12,7 @@ external interoperability oracle; shipped binaries and normal tests must work
 without it.
 
 The `a3s use office` route, typed Rust API, standard MCP server, and packaged
-Skills remain stable product surfaces. OfficeCLI `1.0.136` is a temporary
+Skill remain stable product surfaces. OfficeCLI `1.0.136` is a temporary
 compatibility backend and a black-box behavior baseline while native coverage
 is built. It is not the target architecture.
 
@@ -37,7 +37,7 @@ formats:
 - open, save, close, revision tracking, and conflict detection;
 - text, outline, statistics, bounded typed issue, HTML, SVG, and screenshot
   views;
-- standard MCP tools and Office-specific Skills backed by the same typed engine.
+- standard MCP tools and a first-party Office Skill backed by the same typed engine.
 
 The compatibility command baseline is OfficeCLI `1.0.136`, commit
 `4ba79f0b984e141f57f58d4398ba2df29e8187e8`. Product parity covers document
@@ -434,18 +434,20 @@ LibreOffice checks confirm that no repair dialog is required.
 ### Gate 6 — Native product promotion
 
 - HTML/SVG/screenshot rendering and live watch.
-- Native standard MCP server and Office Skills.
+- Native standard MCP server and a packaged first-party Office Skill.
 - CLI compatibility corpus for every core command.
 - Fuzzing for ZIP, XML, selector, formula, and mutation inputs.
 - macOS and Linux release evidence; Windows remains preview until its separate
   platform gate is promoted.
 
 Status: native bounded issue analysis, semantic rendering, Browser-injected
-screenshots, and the explicit `a3s use mcp serve office-native` target are
-available for evidence gathering. Issue reports and HTML cover all three
-formats, SVG currently covers Presentation, and semantic-preview PNG
-screenshots cover all three formats when the Browser provider is ready. They
-are available through typed Rust APIs, `office native view`, and `office_view`.
+screenshots, the explicit `a3s use mcp serve office-native` target, and the
+packaged `a3s-use-office` Skill are available for evidence gathering. Issue
+reports and HTML cover all three formats, SVG currently covers Presentation,
+and semantic-preview PNG screenshots cover all three formats when the Browser
+provider is ready. They are available through typed Rust APIs, `office native
+view`, `office_view`, and progressive Word/Spreadsheet/Presentation/MCP Skill
+references.
 The MCP target's 12 typed tools use bounded in-process sessions for validate,
 create/open/list, semantic reads and issues, constrained raw XML, atomic
 mutation batches, immutable-template merge, save, and close. It limits open
@@ -454,10 +456,12 @@ query output to 1,000 nodes, issue output to 1,000 records, and raw XML output
 to 1 MiB. Mutations are not persisted until `office_save`, and a dirty session
 cannot close without save or explicit discard. Process-level tests complete a
 standard MCP initialize/list/call lifecycle, capture a real PNG when Chrome is
-available, and use an unusable OfficeCLI path. This preview does not complete
-Gate 6: richer issue parity, Word/Spreadsheet SVG, live watch, Office Skills,
-compatibility corpus, fuzzing, rich-format coverage, layout goldens, and
-release evidence remain open, and the default Office target is not promoted.
+available, and use an unusable OfficeCLI path. Skill process tests exercise
+bounded `list`, `get --full`, and `path` discovery with the same unusable
+provider, and release archives smoke-check the packaged `SKILL.md`. This preview
+does not complete Gate 6: richer issue parity, Word/Spreadsheet SVG, live watch,
+compatibility corpus, fuzzing, rich-format coverage, layout goldens, and release
+evidence remain open, and the default Office target is not promoted.
 
 At Gate 6, native becomes the default and `a3s install use/office` no longer
 downloads an engine. The OfficeCLI backend moves to an explicitly named
@@ -488,6 +492,9 @@ canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format
 template merge with `merge`, all-format semantic HTML, Presentation semantic
 SVG, bounded all-format issue reports, all-format Browser-injected semantic PNG
 screenshots, plus atomic batches under the native Office route.
+The distribution also packages `a3s-use-office`, with bounded
+`office skills list|get|path` access and a content SHA-256 in the unified
+capability snapshot. Loading the Skill never discovers or starts OfficeCLI.
 The explicit `mcp serve office-native` target now exposes the current typed
 subset without OfficeCLI; only its optional screenshot view requires a ready
 A3S Browser provider. Other Office commands and the default `mcp serve office`

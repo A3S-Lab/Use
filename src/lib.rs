@@ -15,6 +15,8 @@ mod extension_cli;
 mod office_artifact;
 #[cfg(feature = "office")]
 mod office_native_cli;
+#[cfg(feature = "office")]
+mod office_skills;
 
 #[cfg(all(feature = "browser", feature = "office"))]
 pub mod office_screenshot;

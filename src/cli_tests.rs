@@ -38,6 +38,15 @@ async fn capability_snapshot_unifies_built_ins_without_rpc_envelopes() {
 
     assert_eq!(browser["origin"], "built-in");
     assert_eq!(office["origin"], "built-in");
+    assert!(office["surfaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|surface| surface == "skill"));
+    assert!(office["skills"][0]["path"]
+        .as_str()
+        .is_some_and(|path| path.ends_with("a3s-use-office/SKILL.md")));
+    assert_eq!(office["skills"][0]["sha256"].as_str().unwrap().len(), 64);
     assert_eq!(registry["revision"].as_str().unwrap().len(), 64);
     assert!(output.json.get("jsonrpc").is_none());
 }

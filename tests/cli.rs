@@ -1,8 +1,9 @@
+#[cfg(feature = "office")]
+use std::io::Write;
+use std::path::Path;
 use std::process::Command;
 #[cfg(all(feature = "extensions", unix))]
 use std::time::{Duration, Instant};
-#[cfg(feature = "office")]
-use std::{io::Write, path::Path};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -28,11 +29,20 @@ fn capabilities_are_available_as_versioned_json() {
 }
 
 #[test]
-fn unified_capability_snapshot_projects_builtin_browser_skill() {
+fn unified_capability_snapshot_projects_builtin_skills() {
     let temp = tempfile::tempdir().unwrap();
+    let office_skills = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates")
+        .join("office")
+        .join("skills");
     let output = Command::new(binary())
         .args(["capability", "snapshot", "--json"])
         .env("A3S_USE_HOME", temp.path())
+        .env("A3S_USE_OFFICE_SKILLS_DIR", &office_skills)
+        .env(
+            "A3S_OFFICECLI_EXECUTABLE",
+            temp.path().join("must-not-be-invoked"),
+        )
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
@@ -43,6 +53,10 @@ fn unified_capability_snapshot_projects_builtin_browser_skill() {
     let browser = capabilities
         .iter()
         .find(|capability| capability["id"] == "use/browser")
+        .unwrap();
+    let office = capabilities
+        .iter()
+        .find(|capability| capability["id"] == "use/office")
         .unwrap();
     assert_eq!(browser["origin"], "built-in");
     assert!(browser["skills"][0]["path"].as_str().is_some_and(|path| {
@@ -59,7 +73,80 @@ fn unified_capability_snapshot_projects_builtin_browser_skill() {
     assert!(skill_digest
         .bytes()
         .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
+    assert_eq!(office["origin"], "built-in");
+    assert!(office["surfaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|surface| surface == "skill"));
+    assert!(office["skills"][0]["path"].as_str().is_some_and(|path| {
+        Path::new(path).ends_with(Path::new("skills").join("a3s-use-office").join("SKILL.md"))
+    }));
+    let office_skill_digest = office["skills"][0]["sha256"]
+        .as_str()
+        .expect("the Office capability must bind packaged Skill content");
+    assert_eq!(office_skill_digest.len(), 64);
+    assert!(office_skill_digest
+        .bytes()
+        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
     assert!(value.get("jsonrpc").is_none());
+}
+
+#[cfg(feature = "office")]
+#[test]
+fn office_skill_commands_are_packaged_and_provider_independent() {
+    let temp = tempfile::tempdir().unwrap();
+    let skills_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates")
+        .join("office")
+        .join("skills");
+    let provider = temp.path().join("must-not-be-invoked");
+
+    let list = Command::new(binary())
+        .args(["office", "skills", "list", "--json"])
+        .env("A3S_USE_OFFICE_SKILLS_DIR", &skills_root)
+        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
+        .output()
+        .unwrap();
+    assert!(list.status.success(), "{list:?}");
+    let list: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
+    assert_eq!(list["ok"], true);
+    assert_eq!(list["data"][0]["name"], "a3s-use-office");
+
+    let get = Command::new(binary())
+        .args([
+            "office",
+            "skills",
+            "get",
+            "a3s-use-office",
+            "--full",
+            "--json",
+        ])
+        .env("A3S_USE_OFFICE_SKILLS_DIR", &skills_root)
+        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
+        .output()
+        .unwrap();
+    assert!(get.status.success(), "{get:?}");
+    let get: serde_json::Value = serde_json::from_slice(&get.stdout).unwrap();
+    assert_eq!(get["data"]["name"], "a3s-use-office");
+    assert_eq!(get["data"]["full"], true);
+    assert!(get["data"]["content"]
+        .as_str()
+        .unwrap()
+        .contains("## Bundled reference: references/mcp.md"));
+
+    let path = Command::new(binary())
+        .args(["office", "skills", "path", "a3s-use-office", "--json"])
+        .env("A3S_USE_OFFICE_SKILLS_DIR", &skills_root)
+        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
+        .output()
+        .unwrap();
+    assert!(path.status.success(), "{path:?}");
+    let path: serde_json::Value = serde_json::from_slice(&path.stdout).unwrap();
+    assert!(path["data"]["path"].as_str().is_some_and(|path| {
+        Path::new(path).ends_with(Path::new("skills").join("a3s-use-office"))
+    }));
+    assert!(!provider.exists());
 }
 
 #[test]

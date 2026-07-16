@@ -73,6 +73,10 @@ readiness and packaged Skill changes when the extension generation remains
 unchanged. Each Skill projection includes an absolute package path and its own
 lowercase SHA-256, allowing a resident host to reject raced or modified bytes
 before replacing its live Skill.
+The default distribution projects both the Browser Skill and the first-party
+`a3s-use-office` Skill. `office skills list|get|path` exposes the latter as
+bounded local CLI reads; it never launches the OfficeCLI compatibility
+provider.
 
 The projection contains content-bound Skill references and an MCP launch target,
 never executable extension code or a generic action payload. Consumers still
@@ -112,11 +116,15 @@ in-process Rust calls and never require the service.
 
 The native Office engine uses typed in-process sessions and exposes them through
 the explicit `mcp serve office-native` standard MCP preview. It does not copy an
-upstream private pipe protocol. During the 0.1.x migration, Office blank
+upstream private pipe protocol. The packaged `a3s-use-office` Skill selects
+this native route first, loads format-specific references progressively, and
+documents the explicit compatibility fallback without changing authority or
+starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
 XML access, bounded issue analysis, and atomic mutation batches are available
-explicitly under `office native`. That route also owns bounded Spreadsheet range mutation,
-row/column insertion and deletion, and worksheet rename/reorder/copy with
+explicitly under `office native`. That route also owns bounded Spreadsheet
+range mutation, row/column insertion and deletion, and worksheet
+rename/reorder/copy with
 loss-preserving OPC subgraph ownership. Its arrangement layer covers
 same-parent Word structures, worksheets and dense plain rows, slides, and
 same-slide top-level Presentation objects. Ownership- or reference-bearing
@@ -279,6 +287,9 @@ Implemented:
 14. An explicit native Office standard MCP preview with bounded typed tools,
     in-process sessions, deferred atomic save, dirty-close protection, and
     process-level evidence that OfficeCLI is not consulted.
+15. A packaged first-party `a3s-use-office` Skill with progressive
+    Word/Spreadsheet/Presentation/MCP references, bounded local discovery,
+    release-archive smoke checks, and content-bound capability projection.
 
 Next:
 
