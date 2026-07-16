@@ -101,7 +101,7 @@ fn help() -> CommandOutput {
             "  a3s-use browser open|list|navigate|snapshot|click|type|press|select|scroll|screenshot|close [args] [--json]\n",
             "  a3s-use box <a3s-box-args...>\n",
             "  a3s-use office doctor [--json]\n",
-            "  a3s-use office native get|query|view|validate|create|add|set|remove|insert-rows|delete-rows|insert-columns|delete-columns|rename-sheet|move-sheet|copy-sheet|batch [args] [--json]\n",
+            "  a3s-use office native get|query|view|raw|raw-set|validate|create|add|set|remove|insert-rows|delete-rows|insert-columns|delete-columns|rename-sheet|move-sheet|copy-sheet|batch [args] [--json]\n",
             "  a3s-use office <officecli-args...>\n",
             "  a3s-use extension list|inspect|doctor [args] [--json]\n",
             "  a3s-use extension enable <publisher/name> [--json]\n",

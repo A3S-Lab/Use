@@ -9,6 +9,7 @@ use tokio::io::AsyncReadExt;
 use crate::cli::CommandOutput;
 
 mod arguments;
+mod raw;
 
 use arguments::{parse_boolean_option, AllowedOptions, ParsedArguments};
 
@@ -21,6 +22,8 @@ const HELP: &str = concat!(
     "  a3s-use office native get <file> [path] [--depth <n>] [--json]\n",
     "  a3s-use office native query <file> <selector> [--json]\n",
     "  a3s-use office native view <file> text|outline|stats [--json]\n",
+    "  a3s-use office native raw <file> <part> [--output <xml-file>] [--json]\n",
+    "  a3s-use office native raw-set <file> <part> --input <xml-file> [--output <file>] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape [--rows <n>] [--columns <n>] [--name <name>] [--text <value>] [--output <file>] [--json]\n",
@@ -40,6 +43,8 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("get") => get(args).await,
         Some("query") => query(args).await,
         Some("view") => view(args).await,
+        Some("raw") => raw::inspect(args).await,
+        Some("raw-set") => raw::replace(args).await,
         Some("validate") => validate(args).await,
         Some("create") => create(args).await,
         Some("add") => add(args).await,
@@ -64,7 +69,7 @@ fn help() -> CommandOutput {
         HELP,
         serde_json::json!({
             "commands": [
-                "get", "query", "view", "validate", "create", "add", "set", "remove",
+                "get", "query", "view", "raw", "raw-set", "validate", "create", "add", "set", "remove",
                 "insert-rows", "delete-rows", "insert-columns", "delete-columns",
                 "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],
@@ -638,43 +643,7 @@ struct NativeBatchInput {
 }
 
 async fn read_batch_input(path: &str) -> UseResult<NativeBatchInput> {
-    let file = tokio::fs::File::open(path).await.map_err(|error| {
-        batch_input_error(
-            "use.office.batch_input_open_failed",
-            path,
-            format!("Failed to open native Office batch input '{path}': {error}"),
-        )
-    })?;
-    let metadata = file.metadata().await.map_err(|error| {
-        batch_input_error(
-            "use.office.batch_input_open_failed",
-            path,
-            format!("Failed to inspect native Office batch input '{path}': {error}"),
-        )
-    })?;
-    if !metadata.is_file() {
-        return Err(batch_input_error(
-            "use.office.batch_input_invalid",
-            path,
-            "Native Office batch input must be a regular file.",
-        ));
-    }
-    if metadata.len() > MAX_BATCH_INPUT_BYTES {
-        return Err(batch_input_too_large(path));
-    }
-
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    let mut reader = file.take(MAX_BATCH_INPUT_BYTES + 1);
-    reader.read_to_end(&mut bytes).await.map_err(|error| {
-        batch_input_error(
-            "use.office.batch_input_read_failed",
-            path,
-            format!("Failed to read native Office batch input '{path}': {error}"),
-        )
-    })?;
-    if bytes.len() as u64 > MAX_BATCH_INPUT_BYTES {
-        return Err(batch_input_too_large(path));
-    }
+    let bytes = read_bounded_input(path, MAX_BATCH_INPUT_BYTES, NativeInputKind::Batch).await?;
     let input: NativeBatchInput = serde_json::from_slice(&bytes).map_err(|error| {
         batch_input_error(
             "use.office.batch_input_invalid",
@@ -705,12 +674,109 @@ async fn read_batch_input(path: &str) -> UseResult<NativeBatchInput> {
     Ok(input)
 }
 
-fn batch_input_too_large(path: &str) -> UseError {
-    batch_input_error(
-        "use.office.batch_input_too_large",
+#[derive(Debug, Clone, Copy)]
+enum NativeInputKind {
+    Batch,
+    RawXml,
+}
+
+impl NativeInputKind {
+    fn code_prefix(self) -> &'static str {
+        match self {
+            Self::Batch => "use.office.batch_input",
+            Self::RawXml => "use.office.raw_input",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Batch => "Native Office batch input",
+            Self::RawXml => "Native Office raw XML input",
+        }
+    }
+}
+
+async fn read_bounded_input(path: &str, limit: u64, kind: NativeInputKind) -> UseResult<Vec<u8>> {
+    let path_metadata = tokio::fs::symlink_metadata(path).await.map_err(|error| {
+        input_error(
+            kind,
+            "open_failed",
+            path,
+            format!("Failed to inspect {} '{path}': {error}", kind.label()),
+        )
+    })?;
+    if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
+        return Err(input_error(
+            kind,
+            "invalid",
+            path,
+            format!("{} must be a regular, non-symlink file.", kind.label()),
+        ));
+    }
+    if path_metadata.len() > limit {
+        return Err(input_too_large(kind, path, limit));
+    }
+
+    let file = tokio::fs::File::open(path).await.map_err(|error| {
+        input_error(
+            kind,
+            "open_failed",
+            path,
+            format!("Failed to open {} '{path}': {error}", kind.label()),
+        )
+    })?;
+    let metadata = file.metadata().await.map_err(|error| {
+        input_error(
+            kind,
+            "open_failed",
+            path,
+            format!("Failed to inspect {} '{path}': {error}", kind.label()),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(input_error(
+            kind,
+            "invalid",
+            path,
+            format!("{} changed and is no longer a regular file.", kind.label()),
+        ));
+    }
+    if metadata.len() > limit {
+        return Err(input_too_large(kind, path, limit));
+    }
+
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    let mut reader = file.take(limit + 1);
+    reader.read_to_end(&mut bytes).await.map_err(|error| {
+        input_error(
+            kind,
+            "read_failed",
+            path,
+            format!("Failed to read {} '{path}': {error}", kind.label()),
+        )
+    })?;
+    if bytes.len() as u64 > limit {
+        return Err(input_too_large(kind, path, limit));
+    }
+    Ok(bytes)
+}
+
+fn input_too_large(kind: NativeInputKind, path: &str, limit: u64) -> UseError {
+    input_error(
+        kind,
+        "too_large",
         path,
-        format!("Native Office batch input exceeds the {MAX_BATCH_INPUT_BYTES}-byte limit."),
+        format!("{} exceeds the {limit}-byte limit.", kind.label()),
     )
+}
+
+fn input_error(
+    kind: NativeInputKind,
+    suffix: &str,
+    path: &str,
+    message: impl Into<String>,
+) -> UseError {
+    UseError::new(format!("{}_{suffix}", kind.code_prefix()), message).with_detail("input", path)
 }
 
 fn batch_input_error(code: &str, path: &str, message: impl Into<String>) -> UseError {
@@ -841,5 +907,33 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.code, "use.office.batch_schema_unsupported");
+
+        let oversized_xml = tempfile::NamedTempFile::new().unwrap();
+        oversized_xml
+            .as_file()
+            .set_len(raw::MAX_RAW_XML_INPUT_BYTES + 1)
+            .unwrap();
+        let error = raw::read_xml_input(oversized_xml.path().to_str().unwrap())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "use.office.raw_input_too_large");
+
+        let invalid_utf8 = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(invalid_utf8.path(), [0xff, 0xfe, 0xfd]).unwrap();
+        let error = raw::read_xml_input(invalid_utf8.path().to_str().unwrap())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "use.office.raw_input_invalid");
+
+        #[cfg(unix)]
+        {
+            let directory = tempfile::tempdir().unwrap();
+            let link = directory.path().join("input.xml");
+            std::os::unix::fs::symlink(invalid_utf8.path(), &link).unwrap();
+            let error = raw::read_xml_input(link.to_str().unwrap())
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "use.office.raw_input_invalid");
+        }
     }
 }

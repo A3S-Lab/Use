@@ -113,12 +113,15 @@ in-process Rust calls and never require the service.
 The native Office engine uses typed in-process sessions and will expose those
 same sessions through the A3S Use standard MCP server. It does not copy an
 upstream private pipe protocol. During the 0.1.x migration, Office blank
-creation, reads, typed add/set/remove operations, and atomic mutation batches
-are available explicitly under `office native`. That route also owns bounded
+creation, reads, typed add/set/remove operations, constrained raw XML access,
+and atomic mutation batches are available explicitly under `office native`.
+That route also owns bounded
 Spreadsheet range mutation, row/column insertion and deletion, and worksheet
-rename/reorder/copy with loss-preserving OPC subgraph ownership. Unpromoted
-commands are delegated to OfficeCLI and `mcp serve office` launches its standard
-MCP server. That compatibility process remains isolated from the native engine.
+rename/reorder/copy with loss-preserving OPC subgraph ownership. Safe raw XML
+inspection and constrained existing-part replacement use the same typed editor,
+post-mutation validation, and rollback boundary. Unpromoted commands are
+delegated to OfficeCLI and `mcp serve office` launches its standard MCP server.
+That compatibility process remains isolated from the native engine.
 
 External MCP packages are launched from their declared executable, arguments,
 and transport. A3S Use owns package identity and activation, not the package's
@@ -177,8 +180,9 @@ Implemented:
     worksheet add/remove/rename/reorder/copy with owned OPC-subgraph cloning and
     cleanup, Spreadsheet row/column structural edits with formula and
     related-part reference rewriting, Presentation slide/shape mutation, core
-    node removal, atomic batches, changed-file conflict detection, and the
-    dependency-free `office native` CLI.
+    node removal, constrained raw XML inspection/replacement, atomic batches,
+    changed-file conflict detection, and the dependency-free `office native`
+    CLI.
 
 Next:
 

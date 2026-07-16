@@ -164,6 +164,15 @@ impl AllowedOptions {
         input: true,
         ..Self::NONE
     };
+    pub const RAW: Self = Self {
+        output: true,
+        ..Self::NONE
+    };
+    pub const RAW_SET: Self = Self {
+        output: true,
+        input: true,
+        ..Self::NONE
+    };
     pub const ADD: Self = Self {
         text: true,
         output: true,

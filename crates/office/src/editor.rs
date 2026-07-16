@@ -8,8 +8,11 @@ use crate::semantic::NativeOfficeDocument;
 use crate::{DocumentKind, NativeOfficePackage};
 
 mod presentation;
+mod raw;
 mod spreadsheet;
 mod word;
+
+pub use raw::NativeRawXmlPart;
 
 /// Typed Spreadsheet cell content written without a shared-string dependency.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,6 +99,10 @@ pub enum NativeOfficeMutation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         position: Option<usize>,
     },
+    ReplaceXmlPart {
+        part: String,
+        xml: String,
+    },
     Remove {
         path: String,
     },
@@ -132,6 +139,11 @@ impl NativeOfficeEditor {
 
     pub fn package(&self) -> &NativeOfficePackage {
         &self.package
+    }
+
+    /// Safely parses and returns an existing OOXML XML part.
+    pub fn raw_xml_part(&self, part: &str) -> UseResult<NativeRawXmlPart> {
+        raw::inspect(&self.package, part)
     }
 
     pub fn snapshot(&self) -> UseResult<NativeOfficeDocument> {
@@ -374,6 +386,18 @@ impl NativeOfficeEditor {
         })
     }
 
+    /// Replaces an existing, non-OPC-metadata XML part transactionally.
+    pub fn replace_xml_part(
+        &mut self,
+        part: impl Into<String>,
+        xml: impl Into<String>,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::ReplaceXmlPart {
+            part: part.into(),
+            xml: xml.into(),
+        })
+    }
+
     fn single_path(&mut self, mutation: NativeOfficeMutation) -> UseResult<String> {
         let result = self.apply_batch(&[mutation])?;
         result.paths.into_iter().next().ok_or_else(|| {
@@ -459,6 +483,9 @@ impl NativeOfficeEditor {
                     name,
                     position,
                 } => spreadsheet::copy_worksheet(&mut self.package, path, name, *position),
+                NativeOfficeMutation::ReplaceXmlPart { part, xml } => {
+                    raw::replace(&mut self.package, part, xml)
+                }
                 NativeOfficeMutation::Remove { path } => {
                     remove_node(&mut self.package, path).map(|()| path.clone())
                 }
