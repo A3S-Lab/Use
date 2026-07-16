@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use a3s_use_core::UseResult;
 
 use super::{semantic_error, DocumentNode, OfficeNodeType};
@@ -34,6 +36,7 @@ pub(super) fn read(
             "Presentation has no slide ID list.",
         )
     })?;
+    let mut slides = Vec::new();
     for (offset, slide_id) in slide_list.children_named("sldId").enumerate() {
         let index = offset + 1;
         let relationship_id = relationship_attribute(slide_id, "id").ok_or_else(|| {
@@ -59,7 +62,14 @@ pub(super) fn read(
                 format!("Presentation slide {index} cannot use an external relationship."),
             ));
         };
-        let mut slide = read_slide(package, opc, part_name, index)?;
+        slides.push((index, slide_id, part_name.clone()));
+    }
+    let slide_paths = slides
+        .iter()
+        .map(|(index, _, part_name)| (part_name.clone(), format!("/slide[{index}]")))
+        .collect::<BTreeMap<_, _>>();
+    for (index, slide_id, part_name) in slides {
+        let mut slide = read_slide(package, opc, &part_name, index, &slide_paths)?;
         if let Some(id) = slide_id.attribute("id") {
             slide.format.insert("slideId".into(), id.into());
         }
@@ -186,6 +196,7 @@ fn read_slide(
     opc: &OpcPackageModel,
     part_name: &str,
     index: usize,
+    slide_paths: &BTreeMap<String, String>,
 ) -> UseResult<DocumentNode> {
     let part = package.xml_part(part_name)?;
     let slide = parse_xml_tree(&part)?;
@@ -200,7 +211,14 @@ fn read_slide(
         .child("cSld")
         .and_then(|common_slide| common_slide.child("spTree"))
     {
-        read_shape_tree(shape_tree, &path, opc, part_name, &mut node.children);
+        read_shape_tree(
+            shape_tree,
+            &path,
+            opc,
+            part_name,
+            slide_paths,
+            &mut node.children,
+        );
     }
     append_comments(package, opc, part_name, &path, &mut node)?;
     append_notes(package, opc, part_name, &path, &mut node)?;
@@ -383,6 +401,7 @@ fn read_shape_tree(
     parent_path: &str,
     opc: &OpcPackageModel,
     owner_part: &str,
+    slide_paths: &BTreeMap<String, String>,
     output: &mut Vec<DocumentNode>,
 ) {
     let mut shape_index = 0_usize;
@@ -400,6 +419,7 @@ fn read_shape_tree(
                     &format!("{parent_path}/shape[{shape_index}]"),
                     opc,
                     owner_part,
+                    slide_paths,
                 ));
             }
             "pic" => {
@@ -442,7 +462,14 @@ fn read_shape_tree(
                 let path = format!("{parent_path}/group[{group_index}]");
                 let mut group = DocumentNode::new(&path, "group", OfficeNodeType::Group);
                 apply_non_visual_properties(element, &mut group);
-                read_shape_tree(element, &path, opc, owner_part, &mut group.children);
+                read_shape_tree(
+                    element,
+                    &path,
+                    opc,
+                    owner_part,
+                    slide_paths,
+                    &mut group.children,
+                );
                 group.text = group
                     .children
                     .iter()
@@ -462,6 +489,7 @@ fn read_shape(
     path: &str,
     opc: &OpcPackageModel,
     owner_part: &str,
+    slide_paths: &BTreeMap<String, String>,
 ) -> DocumentNode {
     let placeholder = find_descendant(shape, "ph");
     let node_type = if placeholder.is_some() {
@@ -493,7 +521,7 @@ fn read_shape(
             .collect::<Vec<_>>()
             .join("\n");
     }
-    append_shape_hyperlink(shape, path, opc, owner_part, &mut node);
+    append_shape_hyperlink(shape, path, opc, owner_part, slide_paths, &mut node);
     node
 }
 
@@ -502,6 +530,7 @@ fn append_shape_hyperlink(
     path: &str,
     opc: &OpcPackageModel,
     owner_part: &str,
+    slide_paths: &BTreeMap<String, String>,
     shape_node: &mut DocumentNode,
 ) {
     let Some(hyperlink) =
@@ -528,20 +557,21 @@ fn append_shape_hyperlink(
     let source = RelationshipSource::Part {
         part_name: owner_part.to_string(),
     };
-    if let Some(relationship) = opc
-        .relationships()
-        .relationship(&source, id)
-        .filter(|relationship| relationship.relationship_type.ends_with("/hyperlink"))
-    {
-        match &relationship.target {
-            RelationshipTarget::External { uri } => {
+    if let Some(relationship) = opc.relationships().relationship(&source, id) {
+        match (&*relationship.relationship_type, &relationship.target) {
+            (relationship_type, RelationshipTarget::External { uri })
+                if relationship_type.ends_with("/hyperlink") =>
+            {
                 node.format.insert("targetKind".into(), "external".into());
                 node.format.insert("target".into(), uri.clone());
             }
-            RelationshipTarget::Internal {
-                part_name,
-                fragment,
-            } => {
+            (
+                relationship_type,
+                RelationshipTarget::Internal {
+                    part_name,
+                    fragment,
+                },
+            ) if relationship_type.ends_with("/hyperlink") => {
                 node.format.insert("targetKind".into(), "internal".into());
                 let target = fragment.as_ref().map_or_else(
                     || part_name.clone(),
@@ -549,6 +579,23 @@ fn append_shape_hyperlink(
                 );
                 node.format.insert("target".into(), target);
             }
+            (
+                relationship_type,
+                RelationshipTarget::Internal {
+                    part_name,
+                    fragment: None,
+                },
+            ) if relationship_type.ends_with("/slide") => {
+                node.format.insert("targetKind".into(), "internal".into());
+                node.format.insert(
+                    "target".into(),
+                    slide_paths
+                        .get(part_name)
+                        .cloned()
+                        .unwrap_or_else(|| part_name.clone()),
+                );
+            }
+            _ => {}
         }
     }
     shape_node.children.push(node);

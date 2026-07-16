@@ -298,7 +298,7 @@ impl OfficeTextReplacement {
 pub(super) enum OfficeHyperlinkTarget {
     /// Inert absolute HTTP, HTTPS, or mailto URI.
     External { uri: String },
-    /// Format-specific in-document location. Presentation slide jumps are not yet supported.
+    /// Format-specific in-document location, including Presentation slide jumps.
     Internal { location: String },
 }
 

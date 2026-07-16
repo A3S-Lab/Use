@@ -87,10 +87,11 @@ Hyperlinks use the typed `set-hyperlink` mutation:
 }
 ```
 
-Use an internal target with `"location"` for a Word bookmark or Spreadsheet
-location. Presentation accepts only external shape-wide links and no separate
-display text; internal slide jumps return
-`use.office.hyperlink_target_unsupported`. External targets accept only
+Use an internal target with `"location"` for a Word bookmark, Spreadsheet
+workbook location, or Presentation `slide[N]`/`/slide[N]` jump. Word accepts
+body, header, and footer paragraphs. Spreadsheet accepts a cell or bounded
+rectangular range and rejects overlapping link ranges. Presentation accepts a
+shape-wide link and no separate display text. External targets accept only
 absolute HTTP, HTTPS, or mailto URIs without credentials and remain inert.
 Query `hyperlink` to discover stable paths and remove one with the ordinary
 typed `remove` mutation. Hyperlink changes remain unsaved until `office_save`.

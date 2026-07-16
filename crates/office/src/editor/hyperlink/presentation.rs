@@ -6,7 +6,7 @@ use super::{
     add_external_relationship, ensure_namespace, existing_external_relationship,
     old_relationship_id, remove_relationship_if_unused,
 };
-use crate::editor::part::dialect;
+use crate::editor::part::{dialect, relationship_part, relative_target};
 use crate::editor::presentation::locate_path;
 use crate::editor::{editor_error, node_not_found, qualified};
 use crate::xml_edit::{
@@ -15,8 +15,16 @@ use crate::xml_edit::{
 };
 use crate::{
     LosslessXmlPart, NativeOfficeDocument, NativeOfficeHyperlink, NativeOfficeHyperlinkTarget,
-    NativeOfficePackage, OfficeNodeType,
+    NativeOfficePackage, OfficeNodeType, RelationshipSource, RelationshipTarget,
 };
+
+const SLIDE_JUMP_ACTION: &str = "ppaction://hlinksldjump";
+
+#[derive(Debug)]
+enum ResolvedTarget {
+    External { uri: String },
+    Slide { part: String },
+}
 
 pub(super) fn set(
     package: &mut NativeOfficePackage,
@@ -29,13 +37,16 @@ pub(super) fn set(
             "Presentation shape hyperlinks use the shape's existing text and do not accept separate display text.",
         ));
     }
-    let NativeOfficeHyperlinkTarget::External { uri } = &hyperlink.target else {
-        return Err(editor_error(
-            "use.office.hyperlink_target_unsupported",
-            "Native Presentation hyperlinks currently support external HTTP, HTTPS, and mailto targets; slide jumps remain on the roadmap.",
-        ));
-    };
     let snapshot = NativeOfficeDocument::from_package(package.clone())?;
+    let target = match &hyperlink.target {
+        NativeOfficeHyperlinkTarget::External { uri } => {
+            ResolvedTarget::External { uri: uri.clone() }
+        }
+        NativeOfficeHyperlinkTarget::Internal { location } => {
+            let (_, part) = resolve_slide_target(&snapshot, location)?;
+            ResolvedTarget::Slide { part }
+        }
+    };
     let requested = snapshot.get(path, 0)?;
     let owner_path = match requested.node_type {
         OfficeNodeType::Shape | OfficeNodeType::Placeholder => requested.path,
@@ -82,9 +93,19 @@ pub(super) fn set(
     })?;
     let existing = properties.child("hlinkClick", 1);
     let old_id = existing.and_then(old_relationship_id);
-    let relationship_id = existing_external_relationship(package, owner, old_id.as_deref(), uri)?
-        .map(Ok)
-        .unwrap_or_else(|| add_external_relationship(package, owner, uri))?;
+    let relationship_id = match &target {
+        ResolvedTarget::External { uri } => {
+            existing_external_relationship(package, owner, old_id.as_deref(), uri)?
+                .map(Ok)
+                .unwrap_or_else(|| add_external_relationship(package, owner, uri))?
+        }
+        ResolvedTarget::Slide { part, .. } => {
+            existing_slide_relationship(package, owner, old_id.as_deref(), part)?
+                .map(Ok)
+                .unwrap_or_else(|| add_slide_relationship(package, owner, part))?
+        }
+    };
+    let action = matches!(target, ResolvedTarget::Slide { .. }).then_some(SLIDE_JUMP_ACTION);
 
     let edited = if let Some(existing) = existing {
         update_existing(
@@ -93,6 +114,7 @@ pub(super) fn set(
             &relationship_id,
             &relationship_prefix,
             hyperlink.tooltip.as_deref(),
+            action,
         )?
     } else {
         let tooltip = hyperlink
@@ -103,11 +125,14 @@ pub(super) fn set(
             });
         let tag = qualified(Some(&drawing_prefix), "hlinkClick");
         let id = qualified(Some(&relationship_prefix), "id");
+        let action = action.map_or_else(String::new, |value| {
+            format!(" action=\"{}\"", crate::xml_edit::escape_attribute(value))
+        });
         insert_ordered_child(
             &part,
             properties,
             format!(
-                "<{tag} {id}=\"{}\"{tooltip}/>",
+                "<{tag} {id}=\"{}\"{tooltip}{action}/>",
                 crate::xml_edit::escape_attribute(&relationship_id)
             ),
             &["hlinkHover", "extLst"],
@@ -162,6 +187,7 @@ fn update_existing(
     relationship_id: &str,
     relationship_prefix: &str,
     tooltip: Option<&str>,
+    action: Option<&str>,
 ) -> UseResult<Vec<u8>> {
     let mut updates = removal_updates(existing, &["id", "tooltip", "action"]);
     updates.insert(
@@ -171,7 +197,90 @@ fn update_existing(
     if let Some(tooltip) = tooltip {
         updates.insert("tooltip".into(), Some(tooltip.to_string()));
     }
+    if let Some(action) = action {
+        updates.insert("action".into(), Some(action.to_string()));
+    }
     patch_start_tag_attributes(part, existing, &updates)
+}
+
+fn resolve_slide_target(
+    snapshot: &NativeOfficeDocument,
+    location: &str,
+) -> UseResult<(String, String)> {
+    let path = if location.starts_with('/') {
+        location.to_string()
+    } else {
+        format!("/{location}")
+    };
+    let position = path
+        .strip_prefix("/slide[")
+        .and_then(|value| value.strip_suffix(']'))
+        .filter(|value| !value.contains('/'))
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| invalid_slide_location(location))?;
+    let path = format!("/slide[{position}]");
+    let slide = snapshot
+        .get(&path, 0)
+        .ok()
+        .filter(|node| node.node_type == OfficeNodeType::Slide)
+        .ok_or_else(|| invalid_slide_location(location))?;
+    let part = slide.format.get("part").cloned().ok_or_else(|| {
+        editor_error(
+            "use.office.presentation_slide_invalid",
+            format!("Presentation hyperlink target '{path}' has no source part."),
+        )
+    })?;
+    Ok((path, part.trim_start_matches('/').to_string()))
+}
+
+fn invalid_slide_location(location: &str) -> a3s_use_core::UseError {
+    editor_error(
+        "use.office.hyperlink_location_invalid",
+        "Native Presentation internal hyperlinks require an existing slide[N] or /slide[N] target.",
+    )
+    .with_detail("location", location)
+}
+
+fn existing_slide_relationship(
+    package: &NativeOfficePackage,
+    owner: &str,
+    id: Option<&str>,
+    target_part: &str,
+) -> UseResult<Option<String>> {
+    let Some(id) = id else {
+        return Ok(None);
+    };
+    let source = RelationshipSource::Part {
+        part_name: owner.to_string(),
+    };
+    let matched = package
+        .opc_model()?
+        .relationships()
+        .relationship(&source, id)
+        .is_some_and(|relationship| {
+            relationship.relationship_type.ends_with("/slide")
+                && matches!(
+                    &relationship.target,
+                    RelationshipTarget::Internal { part_name, fragment: None }
+                        if part_name == target_part
+                )
+        });
+    Ok(matched.then(|| id.to_string()))
+}
+
+fn add_slide_relationship(
+    package: &mut NativeOfficePackage,
+    owner: &str,
+    target_part: &str,
+) -> UseResult<String> {
+    let office_dialect = dialect(package)?;
+    crate::opc_edit::add_relationship(
+        package,
+        &relationship_part(owner),
+        &office_dialect.relationship_type("slide"),
+        &relative_target(owner, target_part),
+    )
 }
 
 fn removal_updates(

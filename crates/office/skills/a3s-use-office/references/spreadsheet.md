@@ -23,6 +23,7 @@ a3s use office native set workbook.xlsx /Sheet1/C1 --boolean true --json
 a3s use office native set workbook.xlsx /Sheet1/D1 --formula 'SUM(B1:B12)' --json
 a3s use office native set workbook.xlsx /Sheet1/E1 --url https://example.com/data --display Data --tooltip 'Open data' --json
 a3s use office native set workbook.xlsx /Sheet1/F1 --location 'Sheet1!B2' --display B2 --json
+a3s use office native set workbook.xlsx /Sheet1/G2:H4 --url https://example.com/range --display Range --json
 a3s use office native query workbook.xlsx hyperlink --json
 a3s use office native remove workbook.xlsx /Sheet1/E1/hyperlink --json
 a3s use office native add workbook.xlsx /Sheet1/B2 --type comment --author Alice --text 'Check this formula' --json
@@ -44,12 +45,16 @@ caches, and request application recalculation. The native engine does not yet
 provide a complete formula evaluator. Check `formula_not_evaluated` and
 `formula_eval_error` issue records before delivery.
 
-Hyperlinks target one cell and auto-create it when absent. External targets
-accept only absolute HTTP, HTTPS, or mailto URIs without credentials; internal
-targets are workbook locations such as `Sheet1!B2`. Display text and tooltips
-are optional. Update through the cell or returned `/hyperlink` path, and remove
-through the hyperlink path. Multi-cell hyperlink ranges are not yet a native
-write surface. Reads and previews never fetch external targets.
+Hyperlinks target one cell or a bounded rectangular range. A missing single
+cell is auto-created; a range link neither creates cells nor rewrites their
+contents. External targets accept only absolute HTTP, HTTPS, or mailto URIs
+without credentials; internal targets are workbook locations such as
+`Sheet1!B2`. Display text and tooltips are optional. Single-cell links use a
+cell `/hyperlink` child path; range links use a stable worksheet
+`/hyperlink[N]` path returned by the mutation or a query. Update through the
+cell/range or returned hyperlink path, and remove through the hyperlink path.
+Overlapping hyperlink ranges fail with `use.office.hyperlink_range_conflict`.
+Reads and previews never fetch external targets.
 
 Classic cell comments use stable `/SheetName/A1/comment` paths and may be added
 to an otherwise blank cell. Add requires an author and plain text. Update the

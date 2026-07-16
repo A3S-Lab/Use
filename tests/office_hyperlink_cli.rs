@@ -111,6 +111,71 @@ fn native_cli_manages_typed_hyperlinks_in_all_formats_without_officecli() {
     assert_eq!(updated["data"]["operation"], "set-hyperlink");
     assert_eq!(updated["data"]["node"]["format"]["target"], "section_1");
 
+    let header = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "add-part",
+            word.to_str().unwrap(),
+            "/",
+            "--type",
+            "header",
+            "--json",
+        ],
+    );
+    assert_eq!(header["data"]["createdPart"]["path"], "/header[1]");
+    let header_xml = temp.path().join("header.xml");
+    std::fs::write(
+        &header_xml,
+        br#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:hdr>"#,
+    )
+    .unwrap();
+    run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "raw-set",
+            word.to_str().unwrap(),
+            "/word/header1.xml",
+            "--input",
+            header_xml.to_str().unwrap(),
+            "--json",
+        ],
+    );
+    let header_link = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            word.to_str().unwrap(),
+            "/header[1]/p[1]",
+            "--url",
+            "https://example.com/header",
+            "--display",
+            "Header link",
+            "--json",
+        ],
+    );
+    assert_eq!(header_link["data"]["path"], "/header[1]/p[1]");
+    let header_link = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "get",
+            word.to_str().unwrap(),
+            "/header[1]/p[1]/hyperlink[1]",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        header_link["data"]["node"]["path"],
+        "/header[1]/p[1]/hyperlink[1]"
+    );
+
     let spreadsheet = temp.path().join("links.xlsx");
     create(&provider, &spreadsheet);
     let cell_link = run(
@@ -132,6 +197,34 @@ fn native_cli_manages_typed_hyperlinks_in_all_formats_without_officecli() {
     );
     assert_eq!(cell_link["data"]["path"], "/Sheet1/A1/hyperlink");
     assert_eq!(cell_link["data"]["node"]["format"]["display"], "Data");
+    let range_link = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            spreadsheet.to_str().unwrap(),
+            "/Sheet1/B2:C3",
+            "--url",
+            "https://example.com/range",
+            "--display",
+            "Range",
+            "--json",
+        ],
+    );
+    assert_eq!(range_link["data"]["path"], "/Sheet1/B2:C3");
+    let range_link = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "get",
+            spreadsheet.to_str().unwrap(),
+            "/Sheet1/hyperlink[1]",
+            "--json",
+        ],
+    );
+    assert_eq!(range_link["data"]["node"]["format"]["ref"], "B2:C3");
 
     let presentation = temp.path().join("links.pptx");
     create(&provider, &presentation);
@@ -147,6 +240,21 @@ fn native_cli_manages_typed_hyperlinks_in_all_formats_without_officecli() {
             "slide",
             "--text",
             "Linked shape",
+            "--json",
+        ],
+    );
+    run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "add",
+            presentation.to_str().unwrap(),
+            "/",
+            "--type",
+            "slide",
+            "--text",
+            "Target slide",
             "--json",
         ],
     );
@@ -166,6 +274,26 @@ fn native_cli_manages_typed_hyperlinks_in_all_formats_without_officecli() {
         ],
     );
     assert_eq!(shape_link["data"]["operation"], "set-hyperlink");
+    let slide_jump = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            presentation.to_str().unwrap(),
+            "/slide[1]/shape[1]/hyperlink",
+            "--location",
+            "slide[2]",
+            "--tooltip",
+            "Jump to target",
+            "--json",
+        ],
+    );
+    assert_eq!(slide_jump["data"]["node"]["format"]["target"], "/slide[2]");
+    assert_eq!(
+        slide_jump["data"]["node"]["format"]["action"],
+        "ppaction://hlinksldjump"
+    );
     let queried = run(
         &provider,
         &[
@@ -185,7 +313,9 @@ fn native_cli_manages_typed_hyperlinks_in_all_formats_without_officecli() {
 
     for (document, link) in [
         (&word, "/body/p[1]/hyperlink[1]"),
+        (&word, "/header[1]/p[1]/hyperlink[1]"),
         (&spreadsheet, "/Sheet1/A1/hyperlink"),
+        (&spreadsheet, "/Sheet1/hyperlink[1]"),
         (&presentation, "/slide[1]/shape[1]/hyperlink"),
     ] {
         run(
@@ -199,6 +329,8 @@ fn native_cli_manages_typed_hyperlinks_in_all_formats_without_officecli() {
                 "--json",
             ],
         );
+    }
+    for document in [&word, &spreadsheet, &presentation] {
         assert_eq!(
             run(
                 &provider,
@@ -427,6 +559,83 @@ async fn native_standard_mcp_applies_and_reads_unsaved_typed_hyperlinks() {
         7,
         "office_close",
         serde_json::json!({"session":"report"}),
+        TIMEOUT,
+    )
+    .await;
+    assert_eq!(closed["result"]["structuredContent"]["closed"], true);
+
+    let deck = temp.path().join("mcp-jumps.pptx");
+    let created = call(
+        &mut stdin,
+        &mut stdout,
+        8,
+        "office_create",
+        serde_json::json!({"session":"deck","file":deck}),
+        TIMEOUT,
+    )
+    .await;
+    assert_ne!(created["result"]["isError"], true, "{created}");
+    let applied = call(
+        &mut stdin,
+        &mut stdout,
+        9,
+        "office_apply_batch",
+        serde_json::json!({
+            "session":"deck",
+            "mutations":[
+                {"operation":"add-slide","parent":"/","title":"Linked shape"},
+                {"operation":"add-slide","parent":"/","title":"Target slide"},
+                {
+                    "operation":"set-hyperlink",
+                    "path":"/slide[1]/shape[1]",
+                    "hyperlink":{
+                        "target":{"kind":"internal","location":"slide[2]"},
+                        "tooltip":"Typed MCP slide jump"
+                    }
+                }
+            ]
+        }),
+        TIMEOUT,
+    )
+    .await;
+    assert_ne!(applied["result"]["isError"], true, "{applied}");
+    assert_eq!(
+        applied["result"]["structuredContent"]["result"]["applied"],
+        3
+    );
+    let read = call(
+        &mut stdin,
+        &mut stdout,
+        10,
+        "office_get",
+        serde_json::json!({
+            "session":"deck",
+            "path":"/slide[1]/shape[1]/hyperlink",
+            "depth":0
+        }),
+        TIMEOUT,
+    )
+    .await;
+    assert_ne!(read["result"]["isError"], true, "{read}");
+    let node = &read["result"]["structuredContent"]["node"];
+    assert_eq!(node["format"]["target"], "/slide[2]");
+    assert_eq!(node["format"]["action"], "ppaction://hlinksldjump");
+    let saved = call(
+        &mut stdin,
+        &mut stdout,
+        11,
+        "office_save",
+        serde_json::json!({"session":"deck"}),
+        TIMEOUT,
+    )
+    .await;
+    assert_ne!(saved["result"]["isError"], true, "{saved}");
+    let closed = call(
+        &mut stdin,
+        &mut stdout,
+        12,
+        "office_close",
+        serde_json::json!({"session":"deck"}),
         TIMEOUT,
     )
     .await;

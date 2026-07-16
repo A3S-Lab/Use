@@ -262,13 +262,16 @@ maps remain outside this milestone.
 
 Native `set-hyperlink` is implemented through one typed Rust, batch, CLI, and
 standard MCP contract. Word adds an external HTTP/HTTPS/mailto relationship or
-internal bookmark anchor to a document-body paragraph, updates an existing
-hyperlink path, and supports display text and tooltip. Spreadsheet adds or
-updates an external relationship or internal workbook location on one cell,
-supports display text and tooltip, and auto-creates a missing cell with the
-display or target text. Presentation attaches an external shape-wide click
-relationship and optional tooltip to a shape; separate display text and
-internal slide jumps return typed unsupported errors. All three formats expose
+internal bookmark anchor to a body, header, or footer paragraph, updates an
+existing hyperlink path, and supports display text and tooltip in each owning
+part. Spreadsheet adds or updates an external relationship or internal
+workbook location on one cell or a bounded rectangular range, supports display
+text and tooltip, and auto-creates a missing single cell with the display or
+target text. Range links preserve existing cell contents, expose a stable
+worksheet hyperlink path, and reject overlaps with a typed conflict error.
+Presentation attaches an external shape-wide click or an internal jump to an
+existing `slide[N]` target and optional tooltip to a shape; separate display
+text remains unsupported. All three formats expose
 stable semantic hyperlink nodes to `get`, `query`, annotated views, CLI, and
 MCP, and remove them through the normal typed `remove` operation. External URI
 validation rejects active or relative schemes, embedded credentials, controls,
@@ -276,8 +279,6 @@ and malformed targets. Relationship IDs are allocated or reused safely and are
 garbage-collected only when unused, including when an owning paragraph, cell,
 shape, or slide is removed. Atomic batches roll back every XML and relationship
 change on failure, and both strict and transitional OOXML dialects are retained.
-Word header/footer hyperlink mutation, multi-cell Spreadsheet hyperlinks, and
-Presentation internal slide jumps remain outside this bounded milestone.
 
 Native `add-comment` and `set-comment` are implemented through one typed Rust,
 batch, CLI, and standard MCP contract. Word anchors a plain legacy comment to a

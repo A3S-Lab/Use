@@ -92,10 +92,10 @@ scoped literal/regex replacement, typed bold/italic/font/size/RGB/alignment
 formatting, typed inert hyperlinks, typed legacy comments, template merge,
 constrained XML access, deterministic all-format HTML/SVG, and Browser-injected
 semantic screenshots, plus authenticated loopback live watch for saved files.
-Hyperlinks cover Word body paragraphs and bookmarks, Spreadsheet cells and
-internal locations, and external Presentation shape clicks. Word header/footer
-links, Spreadsheet link ranges, and Presentation slide jumps remain incomplete,
-as do modern threaded comments, replies/resolution, writable comment dates,
+Hyperlinks cover Word body/header/footer paragraphs and bookmarks, Spreadsheet
+cells or bounded ranges and internal locations, and external Presentation shape
+clicks or internal jumps to existing slides. Remaining boundaries include
+modern threaded comments, replies/resolution, writable comment dates,
 rich comment bodies, Word header/footer comment anchors, advanced formatting,
 complete formula calculation, advanced charts/media, interactive preview
 editing/annotations, and full Office layout fidelity. Fail

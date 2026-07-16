@@ -1,6 +1,7 @@
 use crate::{
     DocumentKind, NativeOfficeEditor, NativeOfficeHyperlink, NativeOfficeHyperlinkTarget,
-    NativeOfficeMutation, OfficeNodeType, RelationshipSource, RelationshipTarget,
+    NativeOfficeMutation, NativeOfficePartType, OfficeNodeType, RelationshipSource,
+    RelationshipTarget,
 };
 
 fn external(uri: &str) -> NativeOfficeHyperlink {
@@ -129,6 +130,96 @@ async fn native_word_adds_updates_reads_queries_and_removes_hyperlinks() {
 }
 
 #[tokio::test]
+async fn native_word_manages_header_and_footer_hyperlinks_in_their_own_parts() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("header-footer-links.docx");
+    let mut seed = NativeOfficeEditor::create(&path).await.unwrap();
+    let header = seed.add_part("/", NativeOfficePartType::Header).unwrap();
+    let footer = seed.add_part("/", NativeOfficePartType::Footer).unwrap();
+    let mut package = seed.package().clone();
+    package
+        .set_part(
+            header.part.trim_start_matches('/'),
+            br#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:hdr>"#.to_vec(),
+        )
+        .unwrap();
+    package
+        .set_part(
+            footer.part.trim_start_matches('/'),
+            br#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Footer</w:t></w:r></w:p></w:ftr>"#.to_vec(),
+        )
+        .unwrap();
+    let mut editor = NativeOfficeEditor::from_package(package).unwrap();
+
+    let header_link = editor
+        .set_hyperlink(
+            "/header[1]/p[1]",
+            external("https://example.com/header")
+                .with_display("Header link")
+                .with_tooltip("Header tooltip"),
+        )
+        .unwrap();
+    assert_eq!(header_link, "/header[1]/p[1]/hyperlink[1]");
+    let node = editor.snapshot().unwrap().get(&header_link, 0).unwrap();
+    assert_eq!(node.text, "Header link");
+    assert_eq!(node.format["target"], "https://example.com/header");
+    assert_eq!(
+        relationship_count(&editor, "word/header1.xml", "/hyperlink"),
+        1
+    );
+    assert_eq!(
+        relationship_count(&editor, "word/document.xml", "/hyperlink"),
+        0
+    );
+
+    editor
+        .set_hyperlink(
+            &header_link,
+            NativeOfficeHyperlink::internal("header_bookmark")
+                .unwrap()
+                .with_display("Inside header"),
+        )
+        .unwrap();
+    let node = editor.snapshot().unwrap().get(&header_link, 0).unwrap();
+    assert_eq!(node.format["targetKind"], "internal");
+    assert_eq!(node.format["target"], "header_bookmark");
+    assert_eq!(
+        relationship_count(&editor, "word/header1.xml", "/hyperlink"),
+        0
+    );
+
+    let footer_link = editor
+        .set_hyperlink(
+            "/footer[1]/p[1]",
+            external("mailto:office@example.com").with_display("Mail footer"),
+        )
+        .unwrap();
+    assert_eq!(footer_link, "/footer[1]/p[1]/hyperlink[1]");
+    assert_eq!(
+        editor
+            .snapshot()
+            .unwrap()
+            .get(&footer_link, 0)
+            .unwrap()
+            .format["target"],
+        "mailto:office@example.com"
+    );
+
+    editor.remove(&header_link).unwrap();
+    editor.remove(&footer_link).unwrap();
+    assert!(editor
+        .snapshot()
+        .unwrap()
+        .query("hyperlink")
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        relationship_count(&editor, "word/footer1.xml", "/hyperlink"),
+        0
+    );
+}
+
+#[tokio::test]
 async fn native_spreadsheet_sets_internal_and_external_cell_hyperlinks() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("links.xlsx");
@@ -191,11 +282,79 @@ async fn native_spreadsheet_sets_internal_and_external_cell_hyperlinks() {
 }
 
 #[tokio::test]
-async fn native_presentation_sets_external_shape_hyperlinks_without_fetching() {
+async fn native_spreadsheet_manages_bounded_range_hyperlinks_without_overlaps() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("range-links.xlsx");
+    let mut editor = NativeOfficeEditor::create(&path).await.unwrap();
+    editor.set_text("/Sheet1/A1", "Keep A1").unwrap();
+    editor.set_text("/Sheet1/B2", "Keep B2").unwrap();
+
+    let link_path = editor
+        .set_hyperlink(
+            "/Sheet1/A1:B2",
+            external("https://example.com/range")
+                .with_display("Range")
+                .with_tooltip("Open range"),
+        )
+        .unwrap();
+    assert_eq!(link_path, "/Sheet1/hyperlink[1]");
+    let link = editor.snapshot().unwrap().get(&link_path, 0).unwrap();
+    assert_eq!(link.format["ref"], "A1:B2");
+    assert_eq!(link.format["targetKind"], "external");
+    assert_eq!(link.format["target"], "https://example.com/range");
+    assert_eq!(
+        editor
+            .snapshot()
+            .unwrap()
+            .get("/Sheet1/A1", 0)
+            .unwrap()
+            .text,
+        "Keep A1"
+    );
+    assert_eq!(
+        relationship_count(&editor, "xl/worksheets/sheet1.xml", "/hyperlink"),
+        1
+    );
+
+    editor
+        .set_hyperlink(
+            &link_path,
+            NativeOfficeHyperlink::internal("Sheet1!D4")
+                .unwrap()
+                .with_display("Internal range"),
+        )
+        .unwrap();
+    let link = editor.snapshot().unwrap().get(&link_path, 0).unwrap();
+    assert_eq!(link.format["targetKind"], "internal");
+    assert_eq!(link.format["target"], "Sheet1!D4");
+    assert_eq!(
+        relationship_count(&editor, "xl/worksheets/sheet1.xml", "/hyperlink"),
+        0
+    );
+
+    let before = editor.package().content_sha256();
+    let conflict = editor
+        .set_hyperlink("/Sheet1/B2:C3", external("https://example.com/overlap"))
+        .unwrap_err();
+    assert_eq!(conflict.code, "use.office.hyperlink_range_conflict");
+    assert_eq!(editor.package().content_sha256(), before);
+
+    editor.remove(&link_path).unwrap();
+    assert!(editor
+        .snapshot()
+        .unwrap()
+        .query("hyperlink")
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn native_presentation_switches_between_external_links_and_internal_slide_jumps() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("links.pptx");
     let mut editor = NativeOfficeEditor::create(&path).await.unwrap();
     editor.add_slide("/", "Linked shape").unwrap();
+    editor.add_slide("/", "Target slide").unwrap();
 
     let link_path = editor
         .set_hyperlink(
@@ -233,14 +392,49 @@ async fn native_presentation_sets_external_shape_hyperlinks_without_fetching() {
         "Updated"
     );
 
+    editor
+        .set_hyperlink(
+            &link_path,
+            NativeOfficeHyperlink::internal("slide[2]")
+                .unwrap()
+                .with_tooltip("Jump to target"),
+        )
+        .unwrap();
+    let link = editor.snapshot().unwrap().get(&link_path, 0).unwrap();
+    assert_eq!(link.format["targetKind"], "internal");
+    assert_eq!(link.format["target"], "/slide[2]");
+    assert_eq!(link.format["action"], "ppaction://hlinksldjump");
+    assert_eq!(link.format["tooltip"], "Jump to target");
+    assert_eq!(
+        relationship_count(&editor, "ppt/slides/slide1.xml", "/hyperlink"),
+        0
+    );
+    assert_eq!(
+        relationship_count(&editor, "ppt/slides/slide1.xml", "/slide"),
+        1
+    );
+
+    editor
+        .set_hyperlink(
+            &link_path,
+            NativeOfficeHyperlink::internal("/slide[2]")
+                .unwrap()
+                .with_tooltip("Updated jump"),
+        )
+        .unwrap();
+    assert_eq!(
+        relationship_count(&editor, "ppt/slides/slide1.xml", "/slide"),
+        1
+    );
+
     let before = editor.package().content_sha256();
     let error = editor
         .set_hyperlink(
-            "/slide[1]/shape[1]",
-            NativeOfficeHyperlink::internal("slide[1]").unwrap(),
+            &link_path,
+            NativeOfficeHyperlink::internal("target-slide").unwrap(),
         )
         .unwrap_err();
-    assert_eq!(error.code, "use.office.hyperlink_target_unsupported");
+    assert_eq!(error.code, "use.office.hyperlink_location_invalid");
     assert_eq!(editor.package().content_sha256(), before);
 
     editor.remove(&link_path).unwrap();
@@ -250,6 +444,10 @@ async fn native_presentation_sets_external_shape_hyperlinks_without_fetching() {
     );
     assert_eq!(
         relationship_count(&editor, "ppt/slides/slide1.xml", "/hyperlink"),
+        0
+    );
+    assert_eq!(
+        relationship_count(&editor, "ppt/slides/slide1.xml", "/slide"),
         0
     );
 }
@@ -411,6 +609,7 @@ async fn native_hyperlinks_preserve_strict_ooxml_dialects() {
         let mut seed = NativeOfficeEditor::create(&path).await.unwrap();
         if extension == "pptx" {
             seed.add_slide("/", "Strict").unwrap();
+            seed.add_slide("/", "Target").unwrap();
         }
         let mut package = seed.package().clone();
         let parts = package.part_names().map(str::to_string).collect::<Vec<_>>();
@@ -439,5 +638,16 @@ async fn native_hyperlinks_preserve_strict_ooxml_dialects() {
             String::from_utf8(editor.package().part(relationship_part).unwrap().to_vec()).unwrap();
         assert!(relationships.contains(&format!("{STRICT_RELATIONSHIPS}/hyperlink")));
         assert!(!relationships.contains(&format!("{TRANSITIONAL_RELATIONSHIPS}/hyperlink")));
+
+        if extension == "pptx" {
+            editor
+                .set_hyperlink(owner, NativeOfficeHyperlink::internal("slide[2]").unwrap())
+                .unwrap();
+            let relationships =
+                String::from_utf8(editor.package().part(relationship_part).unwrap().to_vec())
+                    .unwrap();
+            assert!(relationships.contains(&format!("{STRICT_RELATIONSHIPS}/slide")));
+            assert!(!relationships.contains(&format!("{TRANSITIONAL_RELATIONSHIPS}/slide")));
+        }
     }
 }

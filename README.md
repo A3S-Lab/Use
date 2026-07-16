@@ -292,15 +292,17 @@ Spreadsheet, and Presentation. Matches may span rich-text runs without
 flattening their formatting. Typed rich-text mutation covers bold, italic, font
 family, exact centipoint font size, RGB text color, and horizontal alignment.
 Word and Presentation apply character properties to run paths and alignment to
-paragraph paths; Spreadsheet applies the same contract to cells or bounded A1 ranges,
+paragraph paths; Spreadsheet applies the same contract to cells or bounded A1
+ranges,
 creating and deduplicating OOXML font and cell-style records when necessary. It
 also creates, updates, reads, queries, and removes typed hyperlinks. Word owns
-external HTTP/HTTPS/mailto links and internal bookmark targets with display
-text and tooltips; Spreadsheet owns external links and internal cell locations
-with display text and tooltips, auto-creating a missing linked cell;
-Presentation owns external shape-wide links and tooltips. Presentation slide
-jumps remain unsupported and fail closed. External targets reject embedded
-credentials, active or relative schemes, and malformed URIs; semantic rendering
+external HTTP/HTTPS/mailto links and internal bookmark targets in body,
+header, and footer paragraphs, with display text and tooltips; Spreadsheet
+owns external links and internal workbook locations on cells or bounded
+rectangular ranges, with display text and tooltips, auto-creating a missing
+single linked cell; Presentation owns external shape-wide links and internal
+jumps to existing slides, with optional tooltips. External targets reject
+embedded credentials, active or relative schemes, and malformed URIs; semantic rendering
 keeps every relationship inert and never fetches it. The same typed engine
 creates, updates, reads, queries, and removes classic Office comments. Word
 comments anchor to a main-document paragraph or run and expose stable
@@ -444,12 +446,15 @@ a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align ce
 
 # Add or update inert hyperlinks. External targets accept only absolute
 # HTTP/HTTPS/mailto URIs without credentials. Word internal targets are bookmark
-# names; Spreadsheet internal targets are workbook locations. Presentation
-# currently supports only external, shape-wide links without separate display text.
+# names; Spreadsheet internal targets are workbook locations; Presentation
+# internal targets are existing slide[N] paths. Presentation keeps shape text.
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com/report --display 'Open report' --tooltip 'A3S report' --json
 a3s use office native set report.docx '/body/p[1]/hyperlink[1]' --location section_1 --display 'Jump to section' --json
+a3s use office native set report.docx '/header[1]/p[1]' --url https://example.com/header --display 'Header link' --json
 a3s use office native set workbook.xlsx /Sheet1/A1 --location 'Sheet1!B2' --display B2 --json
+a3s use office native set workbook.xlsx /Sheet1/B2:C3 --url https://example.com/range --display Range --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]' --url https://example.com/slides --tooltip 'Open slides' --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]/hyperlink' --location 'slide[2]' --tooltip 'Next slide' --json
 a3s use office native query report.docx hyperlink --json
 a3s use office native remove report.docx '/body/p[1]/hyperlink[1]' --json
 
@@ -849,14 +854,15 @@ Hyperlinks use the same typed batch contract and remain inert data:
 ```
 
 Use `{ "kind": "internal", "location": "section_1" }` for a Word
-bookmark or a Spreadsheet location such as `Sheet1!B2`. Word accepts a body
-paragraph path when adding and the returned hyperlink path when updating.
-Spreadsheet accepts one cell and creates it when absent. Presentation accepts a
-shape or its hyperlink path, does not accept separate display text, and returns
-`use.office.hyperlink_target_unsupported` for an internal slide jump. Removing
-a hyperlink or its owning paragraph, cell, shape, or slide garbage-collects only
-an unused hyperlink relationship. Strict and transitional OOXML namespaces are
-preserved.
+bookmark, `Sheet1!B2` for a Spreadsheet location, or `/slide[2]` for a
+Presentation slide jump. Word accepts body, header, and footer paragraph paths
+when adding and the returned hyperlink path when updating. Spreadsheet accepts
+one cell or a bounded rectangular range; only a missing single cell is created,
+and a range link does not rewrite cell contents. Presentation accepts a shape
+or its hyperlink path and does not accept separate display text. Removing a
+hyperlink or its owning paragraph, cell/range, shape, or slide garbage-collects
+only an unused hyperlink or slide relationship. Strict and transitional OOXML
+namespaces are preserved.
 
 Legacy comments use their own typed batch variants rather than generic
 properties:

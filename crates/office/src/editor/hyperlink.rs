@@ -87,12 +87,15 @@ pub(super) fn remove_relationship_if_unused(
     let source = RelationshipSource::Part {
         part_name: owner.to_string(),
     };
-    let is_hyperlink = package
+    let is_owned_action = package
         .opc_model()?
         .relationships()
         .relationship(&source, id)
-        .is_some_and(|relationship| relationship.relationship_type.ends_with("/hyperlink"));
-    if !is_hyperlink || xml_references_id(package, owner, id)? {
+        .is_some_and(|relationship| {
+            relationship.relationship_type.ends_with("/hyperlink")
+                || relationship.relationship_type.ends_with("/slide")
+        });
+    if !is_owned_action || xml_references_id(package, owner, id)? {
         return Ok(());
     }
     crate::opc_edit::remove_relationship(package, &relationship_part(owner), id)

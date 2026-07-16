@@ -163,14 +163,16 @@ and cell-scope bounds are enforced before the editor's normal semantic
 validation and atomic rollback boundary.
 Hyperlink mutation is another closed typed contract shared by the Rust API,
 versioned batch JSON, CLI, standard MCP schema, and Office Skill. Word owns
-external HTTP/HTTPS/mailto relationships and internal bookmark anchors;
-Spreadsheet owns external relationships and internal locations on single cells;
-Presentation owns external shape-wide click relationships. Presentation slide
-jumps remain unsupported and fail closed. URI validation rejects credentials,
-active or relative schemes, controls, and malformed targets. External links
+external HTTP/HTTPS/mailto relationships and internal bookmark anchors in body,
+header, and footer parts; Spreadsheet owns external relationships and internal
+locations on cells or bounded rectangular ranges; Presentation owns external
+shape-wide click relationships and internal jumps to existing slides. URI
+validation rejects credentials, active or relative schemes, controls, and malformed targets. External links
 remain inert throughout semantic reads and rendering. Format engines allocate,
-reuse, and garbage-collect relationship IDs without deleting shared edges and
-preserve strict or transitional OOXML namespaces.
+reuse, and garbage-collect hyperlink or slide relationship IDs without deleting
+shared edges and preserve strict or transitional OOXML namespaces. Spreadsheet
+rejects overlapping hyperlink ranges so semantic paths and updates remain
+unambiguous.
 Legacy-comment mutation is a third closed typed contract shared by the Rust
 API, versioned batch JSON, CLI, standard MCP schema, and Office Skill. Word owns
 main-document paragraph/run anchors and `word/comments.xml`; Spreadsheet owns

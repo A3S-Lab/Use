@@ -113,8 +113,8 @@ pub enum NativeOfficeHyperlinkTarget {
     /// An inert absolute HTTP, HTTPS, or mail address stored as an external
     /// OOXML relationship.
     External { uri: String },
-    /// A format-specific in-document location such as a Word bookmark or
-    /// Spreadsheet cell location.
+    /// A format-specific in-document location such as a Word bookmark,
+    /// Spreadsheet cell location, or Presentation slide path.
     Internal { location: String },
 }
 

@@ -8,7 +8,7 @@ use super::{
 };
 use crate::editor::part::dialect;
 use crate::editor::{editor_error, node_not_found, prefix, qualified};
-use crate::spreadsheet_reference::{CellRange, CellReference};
+use crate::spreadsheet_reference::CellRange;
 use crate::xml_edit::{
     apply_patches, index_xml, insert_child, insert_ordered_child, patch_start_tag_attributes,
     IndexedXmlElement, XmlPatch,
@@ -45,35 +45,37 @@ pub(super) fn set(
     path: &str,
     hyperlink: &NativeOfficeHyperlink,
 ) -> UseResult<String> {
-    let requested_cell = path.strip_suffix("/hyperlink").unwrap_or(path);
-    let (requested_sheet, requested_reference) = split_cell_path(requested_cell)?;
-    let reference = CellReference::parse(requested_reference)?.a1();
-
     let initial = NativeOfficeDocument::from_package(package.clone())?;
-    if initial.get(requested_cell, 0).is_err() {
+    let (requested_sheet, requested_range) = requested_scope(&initial, path)?;
+    let reference = requested_range.a1();
+    let requested_cell = requested_range
+        .is_single_cell()
+        .then(|| format!("/{requested_sheet}/{reference}"));
+    if requested_cell
+        .as_deref()
+        .is_some_and(|cell| initial.get(cell, 0).is_err())
+    {
         let display = hyperlink
             .display
             .as_deref()
             .unwrap_or_else(|| hyperlink.default_display());
-        crate::editor::spreadsheet::set_text(package, requested_cell, display)?;
+        crate::editor::spreadsheet::set_text(
+            package,
+            requested_cell.as_deref().unwrap_or_default(),
+            display,
+        )?;
     }
     let snapshot = NativeOfficeDocument::from_package(package.clone())?;
-    let sheet = snapshot
-        .root()
-        .children
-        .iter()
-        .find(|node| {
-            node.node_type == OfficeNodeType::Worksheet
-                && node.path[1..].eq_ignore_ascii_case(requested_sheet)
-        })
-        .ok_or_else(|| node_not_found(path))?;
-    let cell_path = format!("{}/{}", sheet.path, reference);
-    let cell = snapshot.get(&cell_path, 0)?;
-    if cell.node_type != OfficeNodeType::Cell {
-        return Err(editor_error(
-            "use.office.hyperlink_owner_unsupported",
-            "Native Spreadsheet hyperlinks require a single cell path.",
-        ));
+    let sheet = find_sheet(&snapshot, &requested_sheet).ok_or_else(|| node_not_found(path))?;
+    if requested_range.is_single_cell() {
+        let cell_path = format!("{}/{}", sheet.path, reference);
+        let cell = snapshot.get(&cell_path, 0)?;
+        if cell.node_type != OfficeNodeType::Cell {
+            return Err(editor_error(
+                "use.office.hyperlink_owner_unsupported",
+                "Native Spreadsheet single-cell hyperlinks require a cell path.",
+            ));
+        }
     }
     let owner = sheet.format.get("part").ok_or_else(|| {
         editor_error(
@@ -93,7 +95,10 @@ pub(super) fn set(
     let part = LosslessXmlPart::parse(owner.clone(), bytes)?;
     let index = index_xml(&part)?;
     let hyperlinks = index.child("hyperlinks", 1);
-    let existing = hyperlinks.and_then(|links| find_hyperlink(links, &reference));
+    let existing = hyperlinks.and_then(|links| find_hyperlink(links, requested_range));
+    if let Some(hyperlinks) = hyperlinks {
+        reject_overlapping_hyperlinks(hyperlinks, requested_range, existing)?;
+    }
     let old_id = existing.and_then(old_relationship_id);
     let relationship_id = match &hyperlink.target {
         NativeOfficeHyperlinkTarget::External { uri } => Some(
@@ -135,28 +140,36 @@ pub(super) fn set(
     };
     package.set_part(owner, edited)?;
     remove_relationship_if_unused(package, owner, old_id.as_deref())?;
-    Ok(format!("{cell_path}/hyperlink"))
+    let updated = NativeOfficeDocument::from_package(package.clone())?;
+    let updated_sheet =
+        find_sheet(&updated, &requested_sheet).ok_or_else(|| node_not_found(path))?;
+    find_semantic_hyperlink(updated_sheet, &reference)
+        .map(|node| node.path.clone())
+        .ok_or_else(|| node_not_found(path))
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
-    let cell_path = path.strip_suffix("/hyperlink").ok_or_else(|| {
-        editor_error(
+    let snapshot = NativeOfficeDocument::from_package(package.clone())?;
+    let requested = snapshot.get(path, 0)?;
+    if requested.node_type != OfficeNodeType::Hyperlink {
+        return Err(editor_error(
             "use.office.mutation_type_unsupported",
-            "Native Spreadsheet hyperlink removal requires a cell hyperlink path.",
+            "Native Spreadsheet hyperlink removal requires a hyperlink path.",
+        ));
+    }
+    let reference = requested.format.get("ref").ok_or_else(|| {
+        editor_error(
+            "use.office.spreadsheet_hyperlink_invalid",
+            "Spreadsheet semantic hyperlink has no range reference.",
         )
     })?;
-    let (requested_sheet, requested_reference) = split_cell_path(cell_path)?;
-    let reference = CellReference::parse(requested_reference)?.a1();
-    let snapshot = NativeOfficeDocument::from_package(package.clone())?;
-    let sheet = snapshot
-        .root()
-        .children
-        .iter()
-        .find(|node| {
-            node.node_type == OfficeNodeType::Worksheet
-                && node.path[1..].eq_ignore_ascii_case(requested_sheet)
-        })
+    let range = CellRange::parse(reference)?;
+    let requested_sheet = path
+        .trim_start_matches('/')
+        .split('/')
+        .next()
         .ok_or_else(|| node_not_found(path))?;
+    let sheet = find_sheet(&snapshot, requested_sheet).ok_or_else(|| node_not_found(path))?;
     let owner = sheet.format.get("part").ok_or_else(|| {
         editor_error(
             "use.office.spreadsheet_sheet_invalid",
@@ -168,7 +181,7 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
     let hyperlinks = index
         .child("hyperlinks", 1)
         .ok_or_else(|| node_not_found(path))?;
-    let hyperlink = find_hyperlink(hyperlinks, &reference).ok_or_else(|| node_not_found(path))?;
+    let hyperlink = find_hyperlink(hyperlinks, range).ok_or_else(|| node_not_found(path))?;
     let old_id = old_relationship_id(hyperlink);
     let target = if hyperlinks
         .children
@@ -274,6 +287,90 @@ fn range_contains(outer: CellRange, inner: CellRange) -> bool {
         && outer.end.row >= inner.end.row
 }
 
+fn requested_scope(document: &NativeOfficeDocument, path: &str) -> UseResult<(String, CellRange)> {
+    if let Ok(node) = document.get(path, 0) {
+        if node.node_type == OfficeNodeType::Hyperlink {
+            let reference = node.format.get("ref").ok_or_else(|| {
+                editor_error(
+                    "use.office.spreadsheet_hyperlink_invalid",
+                    "Spreadsheet semantic hyperlink has no range reference.",
+                )
+            })?;
+            let sheet = node
+                .path
+                .trim_start_matches('/')
+                .split('/')
+                .next()
+                .ok_or_else(|| node_not_found(path))?;
+            return Ok((sheet.to_string(), CellRange::parse(reference)?));
+        }
+    }
+    let owner_path = path.strip_suffix("/hyperlink").unwrap_or(path);
+    let (sheet, reference) = split_cell_path(owner_path)?;
+    Ok((sheet.to_string(), CellRange::parse(reference)?))
+}
+
+fn find_sheet<'a>(
+    document: &'a NativeOfficeDocument,
+    requested: &str,
+) -> Option<&'a crate::DocumentNode> {
+    document.root().children.iter().find(|node| {
+        node.node_type == OfficeNodeType::Worksheet
+            && node.path[1..].eq_ignore_ascii_case(requested)
+    })
+}
+
+fn find_semantic_hyperlink<'a>(
+    node: &'a crate::DocumentNode,
+    reference: &str,
+) -> Option<&'a crate::DocumentNode> {
+    if node.node_type == OfficeNodeType::Hyperlink
+        && node
+            .format
+            .get("ref")
+            .is_some_and(|value| value == reference)
+    {
+        return Some(node);
+    }
+    node.children
+        .iter()
+        .find_map(|child| find_semantic_hyperlink(child, reference))
+}
+
+fn reject_overlapping_hyperlinks(
+    hyperlinks: &IndexedXmlElement,
+    requested: CellRange,
+    existing: Option<&IndexedXmlElement>,
+) -> UseResult<()> {
+    for hyperlink in hyperlinks
+        .children
+        .iter()
+        .filter(|child| child.local_name == "hyperlink")
+    {
+        if existing.is_some_and(|existing| existing.full_range == hyperlink.full_range) {
+            continue;
+        }
+        let reference = hyperlink.attributes.get("ref").ok_or_else(|| {
+            editor_error(
+                "use.office.spreadsheet_hyperlink_invalid",
+                "Spreadsheet hyperlink has no cell or range reference.",
+            )
+        })?;
+        let linked = CellRange::parse(reference)?;
+        if ranges_intersect(requested, linked) {
+            return Err(editor_error(
+                "use.office.hyperlink_range_conflict",
+                format!(
+                    "Spreadsheet hyperlink range '{}' overlaps existing hyperlink range '{}'.",
+                    requested.a1(),
+                    linked.a1()
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn split_cell_path(path: &str) -> UseResult<(&str, &str)> {
     let (sheet, reference) = path
         .strip_prefix('/')
@@ -282,16 +379,16 @@ fn split_cell_path(path: &str) -> UseResult<(&str, &str)> {
     if sheet.is_empty() || reference.is_empty() || reference.contains('/') {
         return Err(editor_error(
             "use.office.hyperlink_owner_unsupported",
-            "Native Spreadsheet hyperlinks require a single cell path such as /Sheet1/A1.",
+            "Native Spreadsheet hyperlinks require a cell or rectangular range path such as /Sheet1/A1:C3.",
         ));
     }
     Ok((sheet, reference))
 }
 
-fn find_hyperlink<'a>(
-    hyperlinks: &'a IndexedXmlElement,
-    reference: &str,
-) -> Option<&'a IndexedXmlElement> {
+fn find_hyperlink(
+    hyperlinks: &IndexedXmlElement,
+    reference: CellRange,
+) -> Option<&IndexedXmlElement> {
     hyperlinks
         .children
         .iter()
@@ -300,8 +397,8 @@ fn find_hyperlink<'a>(
             child
                 .attributes
                 .get("ref")
-                .and_then(|value| CellReference::parse(value).ok())
-                .is_some_and(|value| value.a1() == reference)
+                .and_then(|value| CellRange::parse(value).ok())
+                .is_some_and(|value| value == reference)
         })
 }
 
