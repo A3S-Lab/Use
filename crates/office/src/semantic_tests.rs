@@ -244,6 +244,52 @@ async fn native_editor_upserts_cells_in_a_created_empty_spreadsheet() {
 }
 
 #[tokio::test]
+async fn native_editor_sets_and_removes_bounded_spreadsheet_ranges_atomically() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("ranges.xlsx");
+    let mut editor = NativeOfficeEditor::create(&path).await.unwrap();
+
+    editor.set_text("/Sheet1/C3:A2", "filled").unwrap();
+    let range = editor.snapshot().unwrap().get("/Sheet1/A2:C3", 1).unwrap();
+    assert_eq!(range.child_count, 6);
+    assert!(range.children.iter().all(|cell| cell.text == "filled"));
+    assert_eq!(range.format["normalizedRef"], "A2:C3");
+
+    editor.remove("/Sheet1/B2:C3").unwrap();
+    let remaining = editor.snapshot().unwrap().get("/Sheet1/A2:C3", 1).unwrap();
+    assert_eq!(remaining.child_count, 2);
+    assert_eq!(remaining.children[0].path, "/Sheet1/A2");
+    assert_eq!(remaining.children[1].path, "/Sheet1/A3");
+
+    let before = editor
+        .package()
+        .part("xl/worksheets/sheet1.xml")
+        .unwrap()
+        .to_vec();
+    let error = editor
+        .set_text("/Sheet1/A1:XFD1048576", "too large")
+        .unwrap_err();
+    assert_eq!(error.code, "use.office.spreadsheet_range_too_large");
+    assert_eq!(
+        editor.package().part("xl/worksheets/sheet1.xml").unwrap(),
+        before
+    );
+
+    editor.save().await.unwrap();
+    let document = NativeOfficeDocument::open(&path).await.unwrap();
+    let worksheet = String::from_utf8(
+        document
+            .package()
+            .part("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(worksheet.contains("<dimension ref=\"A2:A3\"/>"));
+    assert!(worksheet.find("r=\"A2\"").unwrap() < worksheet.find("r=\"A3\"").unwrap());
+}
+
+#[tokio::test]
 async fn native_editor_writes_typed_spreadsheet_values_and_marks_formulas_for_recalculation() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("typed.xlsx");
@@ -359,6 +405,168 @@ async fn native_editor_adds_a_worksheet_and_populates_it() {
         editor.remove("/Sheet1").unwrap_err().code,
         "use.office.spreadsheet_last_sheet"
     );
+}
+
+#[tokio::test]
+async fn native_editor_structurally_edits_spreadsheets_and_rewrites_cross_sheet_formulas() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("structure.xlsx");
+    let mut editor = NativeOfficeEditor::create(&path).await.unwrap();
+    editor.add_worksheet("Data").unwrap();
+    editor
+        .set_cell_value(
+            "/Sheet1/A1",
+            SpreadsheetCellValue::Number { value: "1".into() },
+        )
+        .unwrap();
+    editor.set_text("/Sheet1/A3", "tail").unwrap();
+    editor
+        .set_cell_value(
+            "/Sheet1/B2",
+            SpreadsheetCellValue::Formula {
+                expression: "A1+$A$3+'Data'!C4".into(),
+            },
+        )
+        .unwrap();
+    editor
+        .set_cell_value(
+            "/Data/C4",
+            SpreadsheetCellValue::Formula {
+                expression: "Sheet1!B2+C4".into(),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        editor.insert_rows("/Sheet1", 2, 2).unwrap(),
+        "/Sheet1/row[2:3]"
+    );
+    let snapshot = editor.snapshot().unwrap();
+    assert_eq!(
+        snapshot.get("/Sheet1/B4", 0).unwrap().format["formula"],
+        "A1+$A$5+'Data'!C4"
+    );
+    assert_eq!(
+        snapshot.get("/Data/C4", 0).unwrap().format["formula"],
+        "Sheet1!B4+C4"
+    );
+    assert_eq!(snapshot.get("/Sheet1/A5", 0).unwrap().text, "tail");
+
+    assert_eq!(
+        editor.delete_columns("/Sheet1", "A", 1).unwrap(),
+        "/Sheet1/col[1:1]"
+    );
+    let snapshot = editor.snapshot().unwrap();
+    assert_eq!(
+        snapshot.get("/Sheet1/A4", 0).unwrap().format["formula"],
+        "#REF!+#REF!+'Data'!C4"
+    );
+    assert_eq!(
+        snapshot.get("/Data/C4", 0).unwrap().format["formula"],
+        "Sheet1!A4+C4"
+    );
+    assert_eq!(
+        snapshot.get("/Sheet1/A1", 0).unwrap_err().code,
+        "use.office.node_not_found"
+    );
+
+    assert_eq!(
+        editor.rename_worksheet("/Data", "Q1 Data").unwrap(),
+        "/Q1 Data"
+    );
+    assert_eq!(
+        editor
+            .snapshot()
+            .unwrap()
+            .get("/Sheet1/A4", 0)
+            .unwrap()
+            .format["formula"],
+        "#REF!+#REF!+'Q1 Data'!C4"
+    );
+    assert_eq!(editor.move_worksheet("/Q1 Data", 1).unwrap(), "/Q1 Data");
+    let snapshot = editor.snapshot().unwrap();
+    assert_eq!(snapshot.root().children[0].path, "/Q1 Data");
+    assert_eq!(snapshot.root().children[1].path, "/Sheet1");
+
+    let before = editor
+        .package()
+        .part("xl/worksheets/sheet1.xml")
+        .unwrap()
+        .to_vec();
+    editor.set_text("/Sheet1/XFD1", "edge").unwrap();
+    let with_edge = editor
+        .package()
+        .part("xl/worksheets/sheet1.xml")
+        .unwrap()
+        .to_vec();
+    let error = editor.insert_columns("/Sheet1", "XFD", 1).unwrap_err();
+    assert_eq!(error.code, "use.office.spreadsheet_structure_overflow");
+    assert_eq!(
+        editor.package().part("xl/worksheets/sheet1.xml").unwrap(),
+        with_edge
+    );
+    assert_ne!(before, with_edge);
+
+    editor.save().await.unwrap();
+    NativeOfficeDocument::open(&path).await.unwrap();
+}
+
+#[tokio::test]
+async fn native_spreadsheet_structure_preserves_and_rewrites_area_metadata() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("areas.xlsx");
+    let editor = NativeOfficeEditor::create(&path).await.unwrap();
+    let mut package = editor.package().clone();
+    let worksheet = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B2"/>
+  <sheetViews><sheetView workbookViewId="0"><selection activeCell="B2" sqref="B2"/></sheetView></sheetViews>
+  <sheetFormatPr defaultRowHeight="15"/>
+  <cols><col min="2" max="3" width="20" customWidth="1"/></cols>
+  <sheetData><row r="1" spans="1:2"><c r="A1" t="inlineStr"><is><t>a</t></is></c><c r="B1" t="inlineStr"><is><t>b</t></is></c></row></sheetData>
+  <autoFilter ref="A1:C10"/>
+  <mergeCells count="2"><mergeCell ref="B2:C3"/><mergeCell ref="D5:E6"/></mergeCells>
+  <dataValidations count="2"><dataValidation type="whole" sqref="B2:C3 D5"/><dataValidation type="list" sqref="F1"/></dataValidations>
+  <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
+</worksheet>"#;
+    package
+        .set_part("xl/worksheets/sheet1.xml", worksheet.as_bytes().to_vec())
+        .unwrap();
+    let mut editor = NativeOfficeEditor::from_package(package).unwrap();
+
+    editor.insert_columns("/Sheet1", "B", 1).unwrap();
+    let inserted = String::from_utf8(
+        editor
+            .package()
+            .part("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(inserted.contains("min=\"3\""));
+    assert!(inserted.contains("max=\"4\""));
+    assert!(inserted.contains("ref=\"A1:D10\""));
+    assert!(inserted.contains("ref=\"C2:D3\""));
+    assert!(inserted.contains("ref=\"E5:F6\""));
+    assert!(inserted.contains("sqref=\"C2:D3 E5\""));
+    assert!(!inserted.contains("spans="));
+
+    editor.delete_columns("/Sheet1", "C", 2).unwrap();
+    let deleted = String::from_utf8(
+        editor
+            .package()
+            .part("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(!deleted.contains("<col "));
+    assert!(deleted.contains("ref=\"A1:B10\""));
+    assert!(!deleted.contains("ref=\"C2:D3\""));
+    assert!(deleted.contains("ref=\"C5:D6\""));
+    assert!(deleted.contains("count=\"1\""));
+    assert!(deleted.contains("sqref=\"C5\""));
+    NativeOfficeDocument::from_package(editor.package().clone()).unwrap();
 }
 
 #[tokio::test]

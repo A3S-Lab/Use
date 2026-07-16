@@ -8,6 +8,10 @@ use tokio::io::AsyncReadExt;
 
 use crate::cli::CommandOutput;
 
+mod arguments;
+
+use arguments::{parse_boolean_option, AllowedOptions, ParsedArguments};
+
 const MAX_BATCH_INPUT_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_BATCH_MUTATIONS: usize = 10_000;
 
@@ -22,6 +26,10 @@ const HELP: &str = concat!(
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape [--rows <n>] [--columns <n>] [--name <name>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native set <file> <path> (--text <value>|--number <value>|--boolean <true|false>|--formula <expression>) [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
+    "  a3s-use office native insert-rows|delete-rows <file> <sheet> <start> [--count <n>] [--output <file>] [--json]\n",
+    "  a3s-use office native insert-columns|delete-columns <file> <sheet> <start> [--count <n>] [--output <file>] [--json]\n",
+    "  a3s-use office native rename-sheet <file> <sheet> <new-name> [--output <file>] [--json]\n",
+    "  a3s-use office native move-sheet <file> <sheet> <one-based-position> [--output <file>] [--json]\n",
     "  a3s-use office native batch <file> --input <mutations.json> [--output <file>] [--json]"
 );
 
@@ -36,6 +44,12 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("add") => add(args).await,
         Some("set") => set(args).await,
         Some("remove") => remove(args).await,
+        Some("insert-rows") => edit_structure(args, StructureOperation::InsertRows).await,
+        Some("delete-rows") => edit_structure(args, StructureOperation::DeleteRows).await,
+        Some("insert-columns") => edit_structure(args, StructureOperation::InsertColumns).await,
+        Some("delete-columns") => edit_structure(args, StructureOperation::DeleteColumns).await,
+        Some("rename-sheet") => rename_sheet(args).await,
+        Some("move-sheet") => move_sheet(args).await,
         Some("batch") => batch(args).await,
         Some(command) => Err(usage_error(format!(
             "unknown native Office command '{command}'"
@@ -47,7 +61,11 @@ fn help() -> CommandOutput {
     CommandOutput::success(
         HELP,
         serde_json::json!({
-            "commands": ["get", "query", "view", "validate", "create", "add", "set", "remove", "batch"],
+            "commands": [
+                "get", "query", "view", "validate", "create", "add", "set", "remove",
+                "insert-rows", "delete-rows", "insert-columns", "delete-columns",
+                "rename-sheet", "move-sheet", "batch"
+            ],
             "formats": ["docx", "xlsx", "pptx"],
             "runtimeDependencies": [],
             "atomicBatch": true
@@ -347,7 +365,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
 }
 
 async fn remove(args: &[String]) -> UseResult<CommandOutput> {
-    let parsed = ParsedArguments::parse(args, AllowedOptions::REMOVE)?;
+    let parsed = ParsedArguments::parse(args, AllowedOptions::MUTATE)?;
     if parsed.positionals.len() != 2 {
         return Err(usage_error(
             "office native remove requires <file> and <path>",
@@ -374,6 +392,157 @@ async fn remove(args: &[String]) -> UseResult<CommandOutput> {
             "revision": editor.package().source_revision()
         }),
     ))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum StructureOperation {
+    InsertRows,
+    DeleteRows,
+    InsertColumns,
+    DeleteColumns,
+}
+
+impl StructureOperation {
+    fn name(self) -> &'static str {
+        match self {
+            Self::InsertRows => "insert-rows",
+            Self::DeleteRows => "delete-rows",
+            Self::InsertColumns => "insert-columns",
+            Self::DeleteColumns => "delete-columns",
+        }
+    }
+}
+
+async fn edit_structure(
+    args: &[String],
+    operation: StructureOperation,
+) -> UseResult<CommandOutput> {
+    let parsed = ParsedArguments::parse(args, AllowedOptions::STRUCTURE)?;
+    if parsed.positionals.len() != 3 {
+        return Err(usage_error(format!(
+            "office native {} requires <file>, <sheet>, and <start>",
+            operation.name()
+        )));
+    }
+    let source = &parsed.positionals[0];
+    let sheet = &parsed.positionals[1];
+    let start = &parsed.positionals[2];
+    let count = parsed.count.unwrap_or(1);
+    let mut editor = NativeOfficeEditor::open(source).await?;
+    let source_path = editor.package().path().to_path_buf();
+    let path = match operation {
+        StructureOperation::InsertRows => {
+            editor.insert_rows(sheet, parse_row_start(start)?, count)?
+        }
+        StructureOperation::DeleteRows => {
+            editor.delete_rows(sheet, parse_row_start(start)?, count)?
+        }
+        StructureOperation::InsertColumns => editor.insert_columns(sheet, start, count)?,
+        StructureOperation::DeleteColumns => editor.delete_columns(sheet, start, count)?,
+    };
+    save_editor(&mut editor, parsed.output.as_deref()).await?;
+    let output_path = editor.package().path().to_path_buf();
+    let in_place = output_path == source_path;
+    Ok(CommandOutput::success(
+        format!(
+            "Applied {} at {path} and saved '{}'.",
+            operation.name(),
+            output_path.display()
+        ),
+        serde_json::json!({
+            "operation": operation.name(),
+            "changed": true,
+            "sheet": sheet,
+            "start": start,
+            "count": count,
+            "path": path,
+            "kind": editor.package().kind(),
+            "outputPath": output_path,
+            "inPlace": in_place,
+            "revision": editor.package().source_revision()
+        }),
+    ))
+}
+
+async fn rename_sheet(args: &[String]) -> UseResult<CommandOutput> {
+    let parsed = ParsedArguments::parse(args, AllowedOptions::MUTATE)?;
+    if parsed.positionals.len() != 3 {
+        return Err(usage_error(
+            "office native rename-sheet requires <file>, <sheet>, and <new-name>",
+        ));
+    }
+    let source = &parsed.positionals[0];
+    let sheet = &parsed.positionals[1];
+    let name = &parsed.positionals[2];
+    let mut editor = NativeOfficeEditor::open(source).await?;
+    let source_path = editor.package().path().to_path_buf();
+    let path = editor.rename_worksheet(sheet, name)?;
+    save_editor(&mut editor, parsed.output.as_deref()).await?;
+    let output_path = editor.package().path().to_path_buf();
+    let in_place = output_path == source_path;
+    Ok(CommandOutput::success(
+        format!(
+            "Renamed {sheet} to {path} and saved '{}'.",
+            output_path.display()
+        ),
+        serde_json::json!({
+            "operation": "rename-sheet",
+            "changed": sheet != &path,
+            "from": sheet,
+            "path": path,
+            "kind": editor.package().kind(),
+            "outputPath": output_path,
+            "inPlace": in_place,
+            "revision": editor.package().source_revision()
+        }),
+    ))
+}
+
+async fn move_sheet(args: &[String]) -> UseResult<CommandOutput> {
+    let parsed = ParsedArguments::parse(args, AllowedOptions::MUTATE)?;
+    if parsed.positionals.len() != 3 {
+        return Err(usage_error(
+            "office native move-sheet requires <file>, <sheet>, and <one-based-position>",
+        ));
+    }
+    let source = &parsed.positionals[0];
+    let sheet = &parsed.positionals[1];
+    let position = parsed.positionals[2].parse::<usize>().map_err(|_| {
+        usage_error(format!(
+            "move-sheet position must be a positive integer, received '{}'",
+            parsed.positionals[2]
+        ))
+    })?;
+    let mut editor = NativeOfficeEditor::open(source).await?;
+    let source_path = editor.package().path().to_path_buf();
+    let path = editor.move_worksheet(sheet, position)?;
+    save_editor(&mut editor, parsed.output.as_deref()).await?;
+    let output_path = editor.package().path().to_path_buf();
+    let in_place = output_path == source_path;
+    Ok(CommandOutput::success(
+        format!(
+            "Moved {sheet} to position {position} and saved '{}'.",
+            output_path.display()
+        ),
+        serde_json::json!({
+            "operation": "move-sheet",
+            "changed": true,
+            "path": path,
+            "position": position,
+            "kind": editor.package().kind(),
+            "outputPath": output_path,
+            "inPlace": in_place,
+            "revision": editor.package().source_revision()
+        }),
+    ))
+}
+
+fn parse_row_start(value: &str) -> UseResult<u32> {
+    value.parse::<u32>().map_err(|_| {
+        usage_error(format!(
+            "Spreadsheet row start must be a positive integer, received '{value}'"
+        ))
+    })
 }
 
 async fn batch(args: &[String]) -> UseResult<CommandOutput> {
@@ -506,208 +675,6 @@ fn batch_input_too_large(path: &str) -> UseError {
 
 fn batch_input_error(code: &str, path: &str, message: impl Into<String>) -> UseError {
     UseError::new(code, message).with_detail("input", path)
-}
-
-#[derive(Debug, Default)]
-struct ParsedArguments {
-    positionals: Vec<String>,
-    depth: Option<usize>,
-    text: Option<String>,
-    output: Option<String>,
-    input: Option<String>,
-    node_type: Option<String>,
-    name: Option<String>,
-    rows: Option<usize>,
-    columns: Option<usize>,
-    number: Option<String>,
-    boolean: Option<String>,
-    formula: Option<String>,
-}
-
-impl ParsedArguments {
-    fn parse(args: &[String], allowed: AllowedOptions) -> UseResult<Self> {
-        let mut parsed = Self::default();
-        let mut index = 1;
-        while index < args.len() {
-            match args[index].as_str() {
-                "--json" => index += 1,
-                "--" => {
-                    parsed.positionals.extend_from_slice(&args[index + 1..]);
-                    break;
-                }
-                "--depth" if allowed.depth => {
-                    if parsed.depth.is_some() {
-                        return Err(usage_error("--depth may be specified only once"));
-                    }
-                    let value = option_value(args, index, "--depth")?;
-                    parsed.depth = Some(value.parse::<usize>().map_err(|_| {
-                        usage_error(format!(
-                            "--depth requires a non-negative integer, received '{value}'"
-                        ))
-                    })?);
-                    index += 2;
-                }
-                "--text" if allowed.text => {
-                    set_string_option(&mut parsed.text, args, index, "--text")?;
-                    index += 2;
-                }
-                "--number" if allowed.number => {
-                    set_string_option(&mut parsed.number, args, index, "--number")?;
-                    index += 2;
-                }
-                "--boolean" | "--bool" if allowed.boolean => {
-                    set_string_option(&mut parsed.boolean, args, index, "--boolean")?;
-                    index += 2;
-                }
-                "--formula" if allowed.formula => {
-                    set_string_option(&mut parsed.formula, args, index, "--formula")?;
-                    index += 2;
-                }
-                "--output" if allowed.output => {
-                    set_string_option(&mut parsed.output, args, index, "--output")?;
-                    index += 2;
-                }
-                "--input" if allowed.input => {
-                    set_string_option(&mut parsed.input, args, index, "--input")?;
-                    index += 2;
-                }
-                "--type" if allowed.node_type => {
-                    set_string_option(&mut parsed.node_type, args, index, "--type")?;
-                    index += 2;
-                }
-                "--name" if allowed.name => {
-                    set_string_option(&mut parsed.name, args, index, "--name")?;
-                    index += 2;
-                }
-                "--rows" if allowed.rows => {
-                    set_usize_option(&mut parsed.rows, args, index, "--rows")?;
-                    index += 2;
-                }
-                "--columns" | "--cols" if allowed.columns => {
-                    set_usize_option(&mut parsed.columns, args, index, "--columns")?;
-                    index += 2;
-                }
-                option if option.starts_with('-') => {
-                    return Err(usage_error(format!(
-                        "unknown native Office option '{option}'"
-                    )));
-                }
-                value => {
-                    parsed.positionals.push(value.to_string());
-                    index += 1;
-                }
-            }
-        }
-        Ok(parsed)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct AllowedOptions {
-    depth: bool,
-    text: bool,
-    output: bool,
-    input: bool,
-    node_type: bool,
-    name: bool,
-    rows: bool,
-    columns: bool,
-    number: bool,
-    boolean: bool,
-    formula: bool,
-}
-
-impl AllowedOptions {
-    const NONE: Self = Self {
-        depth: false,
-        text: false,
-        output: false,
-        input: false,
-        node_type: false,
-        name: false,
-        rows: false,
-        columns: false,
-        number: false,
-        boolean: false,
-        formula: false,
-    };
-    const GET: Self = Self {
-        depth: true,
-        ..Self::NONE
-    };
-    const SET: Self = Self {
-        text: true,
-        output: true,
-        number: true,
-        boolean: true,
-        formula: true,
-        ..Self::NONE
-    };
-    const BATCH: Self = Self {
-        output: true,
-        input: true,
-        ..Self::NONE
-    };
-    const ADD: Self = Self {
-        text: true,
-        output: true,
-        node_type: true,
-        name: true,
-        rows: true,
-        columns: true,
-        ..Self::NONE
-    };
-    const REMOVE: Self = Self {
-        output: true,
-        ..Self::NONE
-    };
-}
-
-fn option_value<'a>(args: &'a [String], index: usize, option: &str) -> UseResult<&'a str> {
-    args.get(index + 1)
-        .map(String::as_str)
-        .ok_or_else(|| usage_error(format!("{option} requires a value")))
-}
-
-fn set_string_option(
-    target: &mut Option<String>,
-    args: &[String],
-    index: usize,
-    option: &str,
-) -> UseResult<()> {
-    if target.is_some() {
-        return Err(usage_error(format!("{option} may be specified only once")));
-    }
-    *target = Some(option_value(args, index, option)?.to_string());
-    Ok(())
-}
-
-fn set_usize_option(
-    target: &mut Option<usize>,
-    args: &[String],
-    index: usize,
-    option: &str,
-) -> UseResult<()> {
-    if target.is_some() {
-        return Err(usage_error(format!("{option} may be specified only once")));
-    }
-    let value = option_value(args, index, option)?;
-    *target = Some(value.parse::<usize>().map_err(|_| {
-        usage_error(format!(
-            "{option} requires a non-negative integer, received '{value}'"
-        ))
-    })?);
-    Ok(())
-}
-
-fn parse_boolean_option(value: &str) -> UseResult<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(usage_error(format!(
-            "--boolean requires true or false, received '{value}'"
-        ))),
-    }
 }
 
 fn format_node(node: &DocumentNode, level: usize) -> String {

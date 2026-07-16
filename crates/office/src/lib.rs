@@ -20,6 +20,8 @@ mod opc;
 mod opc_edit;
 mod package;
 mod semantic;
+mod spreadsheet_formula;
+mod spreadsheet_reference;
 mod template;
 mod xml;
 mod xml_edit;
@@ -222,6 +224,9 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod spreadsheet_edit_tests;
 
 #[cfg(test)]
 mod opc_tests;

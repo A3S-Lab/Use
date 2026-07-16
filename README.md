@@ -247,9 +247,13 @@ reads, safe blank-document creation, and loss-preserving text replacement for
 existing Word, Spreadsheet, and Presentation nodes. The typed mutation layer
 also adds and removes Word paragraphs and basic table/row/cell structures,
 upserts typed Spreadsheet text, number, boolean, and formula cells, removes
-cells, adds and removes worksheets, and adds or removes Presentation slides
-and text shapes. Saves are atomic and reject a changed source revision instead
-of overwriting another writer.
+cells and bounded cell ranges, structurally inserts or deletes rows and columns,
+and adds, removes, renames, or reorders worksheets. Structural Spreadsheet
+edits rewrite affected A1 formulas, defined names, worksheet metadata, tables,
+comments, VML notes, drawing anchors, and chart references; unsupported pivot
+and 3D-reference cases fail closed before save. Presentation slides and text
+shapes also support native add/remove. Saves are atomic and reject a changed
+source revision instead of overwriting another writer.
 
 The native runtime does not require Microsoft Office, LibreOffice, OfficeCLI,
 Python, Node.js, or .NET. LibreOffice may be used only by optional CI
@@ -285,6 +289,16 @@ a3s use office native set report.xlsx /Sheet1/B2 --text '42' --output updated.xl
 a3s use office native set workbook.xlsx /Sheet1/A1 --number 42.5 --json
 a3s use office native set workbook.xlsx /Sheet1/B1 --boolean true --json
 a3s use office native set workbook.xlsx /Sheet1/C1 --formula 'SUM(A1:B1)' --json
+
+# Set or remove a bounded rectangular range atomically.
+a3s use office native set workbook.xlsx /Sheet1/A2:C4 --number 0 --json
+a3s use office native remove workbook.xlsx /Sheet1/B3:C4 --json
+
+# Edit worksheet structure and ordering without invoking OfficeCLI.
+a3s use office native insert-rows workbook.xlsx /Sheet1 2 --count 3 --json
+a3s use office native delete-columns workbook.xlsx /Sheet1 B --count 2 --json
+a3s use office native rename-sheet workbook.xlsx /Sheet1 'Q1 Data' --json
+a3s use office native move-sheet workbook.xlsx '/Q1 Data' 1 --json
 
 # Add and remove native document structures.
 a3s use office native add report.docx /body --type paragraph --text 'Summary' --json
@@ -337,7 +351,9 @@ current schema is:
 The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `set-text`,
 `set-cell-value`, `add-paragraph`, `add-table`, `add-table-row`, `add-table-cell`,
-`add-worksheet`, `add-slide`, `add-shape`, and `remove`.
+`add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
+`delete-columns`, `rename-worksheet`, `move-worksheet`, `add-slide`,
+`add-shape`, and `remove`.
 
 Typed Spreadsheet batch values use an explicit nested type, for example:
 
@@ -353,8 +369,9 @@ Typed Spreadsheet batch values use an explicit nested type, for example:
 ```
 
 Formula mutation stores OOXML formula text and marks the workbook for a full
-recalculation when opened. Native formula parsing and evaluation remain a
-separate rich-Spreadsheet delivery gate.
+recalculation when opened. Structural edits rewrite supported A1 references
+without evaluating formulas. A complete formula parser, dependency graph, and
+evaluator remain a separate rich-Spreadsheet delivery gate.
 
 The native package, semantic, and editor APIs are available directly to Rust
 callers:

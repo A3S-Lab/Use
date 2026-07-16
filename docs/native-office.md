@@ -171,20 +171,33 @@ upsert missing ordered rows and cells and maintain worksheet dimensions.
 Spreadsheet writes preserve explicit text, finite-number, boolean, and formula
 types. Formula writes strip an optional leading `=`, enforce Excel's 8192
 character bound, and mark the workbook for full recalculation; they do not yet
-parse or evaluate formulas. Native add supports Word paragraphs and bounded
-table/row/cell structures, while remove supports Word paragraphs, runs, tables,
-rows, and cells with structural last-child invariants and table-grid
-maintenance. Spreadsheet cells and worksheets and Presentation slides and text
-shapes also support native add/remove. Slide and worksheet removal updates
-their OPC relationships, content types, and owned parts. The typed editor and
-`office native batch` provide all-or-nothing in-memory rollback, bounded
-versioned inputs, atomic save/save-as, revision-conflict detection, and byte
-preservation for untouched package parts and XML subtrees. Advanced table
-properties and merge/column operations, move/copy/swap, image mutation, raw
-access, merge, dump, and the formula parser/dependency/recalculation engine
-remain before their respective gates can be promoted. Creation and structural
-mutation remain under the interoperability gate until Microsoft Office and
-optional CI LibreOffice checks confirm that no repair dialog is required.
+parse or evaluate formulas. Cell set/remove accepts normalized A1 rectangular
+ranges of at most 100,000 cells and rolls back the whole operation on error.
+Native Spreadsheet structure operations insert or delete at most 10,000 rows or
+columns, rename worksheets, and reorder worksheets. They update cell and row
+references, dimensions, column definitions, defined names, workbook view state,
+merges, filters, selections, validation, conditional formatting, hyperlinks,
+sort state, ignored errors, tables, comments, VML note anchors, drawing anchors,
+and chart formulas. Supported local and cross-sheet A1 formula references,
+including absolute, rectangular, whole-row, and whole-column references, are
+rewritten and their cached values are invalidated; external references and
+string literals are preserved. Unsafe 3D-reference and pivot-table structural
+edits fail closed and roll back.
+
+Native add supports Word paragraphs and bounded table/row/cell structures,
+while remove supports Word paragraphs, runs, tables, rows, and cells with
+structural last-child invariants and table-grid maintenance. Spreadsheet cells
+and worksheets and Presentation slides and text shapes also support native
+add/remove. Slide and worksheet removal updates their OPC relationships,
+content types, and owned parts. The typed editor and `office native batch`
+provide all-or-nothing in-memory rollback, bounded versioned inputs, atomic
+save/save-as, revision-conflict detection, and byte preservation for untouched
+package parts and XML subtrees. Worksheet copy, generic move/copy/swap, image
+mutation, raw access, template merge, dump, advanced rich-format operations,
+and the formula parser/dependency/recalculation engine remain before their
+respective gates can be promoted. Creation and structural mutation remain under
+the interoperability gate until Microsoft Office and optional CI LibreOffice
+checks confirm that no repair dialog is required.
 
 ### Gate 3 — Rich Word
 
@@ -232,10 +245,11 @@ compatibility component for one deprecation cycle, then is removed.
 
 ## Current migration boundary
 
-The `0.1.x` CLI exposes native blank creation, reads, typed add/set/remove
-operations, and atomic batches under `office native`; other Office commands and
-MCP startup still delegate to the pinned OfficeCLI provider. This keeps
-existing users functional while native coverage grows. The native APIs are
-deliberately not advertised as full Office readiness, and `doctor` continues
-to report compatibility-provider readiness until the native read and mutation
-gates are met.
+The `0.1.x` CLI exposes native blank creation, reads, typed add/set/remove,
+Spreadsheet range and row/column structure edits, worksheet rename/reorder, and
+atomic batches under `office native`; other Office commands and MCP startup
+still delegate to the pinned OfficeCLI provider. This keeps existing users
+functional while native coverage grows. The native APIs are deliberately not
+advertised as full Office readiness, and `doctor` continues to report
+compatibility-provider readiness until the native read and mutation gates are
+met.

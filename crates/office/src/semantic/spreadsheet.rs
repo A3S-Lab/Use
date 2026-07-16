@@ -3,6 +3,9 @@ use std::collections::BTreeMap;
 use a3s_use_core::UseResult;
 
 use super::{semantic_error, DocumentNode, OfficeNodeType};
+use crate::spreadsheet_reference::{
+    column_name as a1_column_name, parse_column, CellReference, MAX_COLUMNS,
+};
 use crate::xml_tree::{parse_xml_tree, XmlElement, XmlNode};
 use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, RelationshipTarget};
 
@@ -220,28 +223,8 @@ fn cells(sheet: &DocumentNode) -> Vec<&DocumentNode> {
 }
 
 fn cell_coordinates(reference: &str) -> UseResult<(u32, u32, String)> {
-    let reference = reference.to_ascii_uppercase();
-    let column_length = reference
-        .chars()
-        .take_while(|character| character.is_ascii_alphabetic())
-        .count();
-    let column = column_number(&reference).ok_or_else(|| {
-        semantic_error(
-            "use.office.spreadsheet_cell_reference_invalid",
-            format!("Spreadsheet cell reference '{reference}' is invalid."),
-        )
-    })?;
-    let row = reference
-        .get(column_length..)
-        .and_then(|row| row.parse::<u32>().ok())
-        .filter(|row| (1..=1_048_576).contains(row))
-        .ok_or_else(|| {
-            semantic_error(
-                "use.office.spreadsheet_cell_reference_invalid",
-                format!("Spreadsheet cell reference '{reference}' is outside row limits."),
-            )
-        })?;
-    Ok((column, row, reference))
+    let reference = CellReference::parse(reference)?;
+    Ok((reference.column, reference.row, reference.a1()))
 }
 
 fn read_worksheet(
@@ -528,35 +511,21 @@ fn normalize_cell_reference(reference: &str, expected_row: u32) -> UseResult<Str
 }
 
 fn column_number(reference: &str) -> Option<u32> {
-    let mut number = 0_u32;
-    for character in reference
+    let column = reference
         .chars()
         .take_while(|character| character.is_ascii_alphabetic())
-    {
-        number = number.checked_mul(26)?.checked_add(
-            u32::from(character.to_ascii_uppercase() as u8)
-                .checked_sub(u32::from(b'A'))?
-                .checked_add(1)?,
-        )?;
-    }
-    (number > 0 && number <= 16_384).then_some(number)
+        .collect::<String>();
+    parse_column(&column).ok()
 }
 
-fn column_name(mut number: u32) -> UseResult<String> {
-    if number == 0 || number > 16_384 {
+fn column_name(number: u32) -> UseResult<String> {
+    if !(1..=MAX_COLUMNS).contains(&number) {
         return Err(semantic_error(
             "use.office.spreadsheet_column_invalid",
             format!("Spreadsheet column number {number} is outside XFD."),
         ));
     }
-    let mut name = Vec::new();
-    while number > 0 {
-        number -= 1;
-        name.push(char::from(b'A' + (number % 26) as u8));
-        number /= 26;
-    }
-    name.reverse();
-    Ok(name.into_iter().collect())
+    Ok(a1_column_name(number))
 }
 
 fn validate_sheet_name(name: &str) -> UseResult<()> {

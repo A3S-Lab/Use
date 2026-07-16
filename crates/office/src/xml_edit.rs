@@ -154,7 +154,9 @@ pub(crate) fn apply_patches(
     mut patches: Vec<XmlPatch>,
 ) -> UseResult<Vec<u8>> {
     require_utf8(part)?;
-    patches.sort_by_key(|patch| patch.range.start);
+    // Insertions at the same byte as a replacement must be emitted first.
+    // Sorting by the empty range's smaller end makes that ordering explicit.
+    patches.sort_by_key(|patch| (patch.range.start, patch.range.end));
     let parse_bytes = part.parse_bytes();
     let mut previous_end = 0_usize;
     for patch in &patches {
