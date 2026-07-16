@@ -72,13 +72,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      A3S_USE_BROWSER_HOME: ${{ runner.temp }}/a3s-use-browser
-      A3S_USE_BROWSER_RUNTIME_DIR: ${{ runner.temp }}/a3s-use-browser-runtime
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Configure isolated Browser paths
+        shell: bash
+        run: |
+          echo "A3S_USE_BROWSER_HOME=${RUNNER_TEMP}/a3s-use-browser" >> "${GITHUB_ENV}"
+          echo "A3S_USE_BROWSER_RUNTIME_DIR=${RUNNER_TEMP}/a3s-use-browser-runtime" >> "${GITHUB_ENV}"
       - name: Install managed Chrome through A3S Use
         run: cargo run --locked -p a3s-use --no-default-features --features browser -- component install browser --json
       - name: Run domain-containment regressions
