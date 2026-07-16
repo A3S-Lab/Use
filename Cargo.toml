@@ -63,6 +63,7 @@ office = ["dep:a3s-use-office"]
 extensions = ["dep:a3s-use-extension"]
 mcp = [
     "dep:axum",
+    "dep:base64",
     "dep:fs2",
     "dep:getrandom",
     "dep:rmcp",
@@ -79,6 +80,7 @@ a3s-use-office = { version = "0.1.1", path = "crates/office", optional = true }
 a3s-use-extension = { version = "0.1.1", path = "crates/extension", optional = true }
 anyhow.workspace = true
 axum = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
 clap.workspace = true
 fs2 = { workspace = true, optional = true }
 getrandom = { workspace = true, optional = true }

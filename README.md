@@ -73,8 +73,11 @@ a3s use office native merge template.docx report.docx --data @report.json --json
 a3s use office get report.docx /body --json
 a3s use office batch report.xlsx --input updates.json --json
 
-# Start a standard MCP server for a supported domain.
+# Start a standard MCP server for Browser or the explicit native Office preview.
 a3s use mcp serve browser
+a3s use mcp serve office-native
+
+# Keep using the pinned OfficeCLI compatibility MCP server where needed.
 a3s use mcp serve office
 ```
 
@@ -92,9 +95,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   `agent-browser` 0.31.2
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
-  native PNG/JPEG/GIF embedding, and cross-format template merge layers while
-  retaining the 0.1.x OfficeCLI compatibility backend for commands not yet
-  promoted
+  native PNG/JPEG/GIF embedding, cross-format template merge, and an explicit
+  typed standard MCP preview while retaining the 0.1.x OfficeCLI compatibility
+  backend for surfaces not yet promoted
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -115,7 +118,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | Domain | Origin | CLI | MCP | Skill | Runtime owner |
 | --- | --- | --- | --- | --- | --- |
 | Browser | Built in | Full Browser vocabulary | A3S Use standard MCP server | Six packaged Browser Skills | A3S Use |
-| Office | Built in | Stable Office vocabulary | Standard MCP server | Planned Office Skills | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
+| Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Planned Office Skills | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
@@ -300,12 +303,13 @@ The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
-dependency-free template merge today.
-Other `0.1.x` commands and the Office MCP route still use a compatibility
-backend pinned to OfficeCLI `1.0.136`. This is a migration boundary, not the
-target architecture. The default command route will be promoted only after
-mutation, fidelity, rendering, and cross-application interoperability gates
-pass.
+dependency-free template merge today. `mcp serve office-native` exposes the
+same editor through typed standard MCP tools and bounded in-memory sessions.
+Other `0.1.x` commands and the default `mcp serve office` target still use a
+compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
+boundary, not a native-promotion claim. The default routes will be promoted
+only after mutation, fidelity, rendering, Skills, and cross-application
+interoperability gates pass.
 
 ```bash
 # Inspect without downloading anything.
@@ -406,9 +410,23 @@ a3s install use/office
 a3s use office get report.docx /body --json
 a3s use office batch report.xlsx --input updates.json --json
 
+# Launch the explicit native standard MCP preview. No OfficeCLI is consulted.
+a3s use mcp serve office-native
+
 # Launch the current compatibility standard MCP server.
 a3s use mcp serve office
 ```
+
+The native MCP process exposes 12 typed tools: `office_validate`,
+`office_create`, `office_open`, `office_list`, `office_get`, `office_query`,
+`office_view`, `office_raw_xml`, `office_apply_batch`,
+`office_merge_template`, `office_save`, and `office_close`. It accepts no shell
+command string and defines no A3S RPC dialect; stdio carries only standard MCP.
+Each process owns at most 64 sessions. Mutation batches are atomic in memory,
+limited to 10,000 mutations and 8 MiB of JSON, and remain unsaved until
+`office_save`. Results are limited to 8 MiB, raw XML responses to 1 MiB, and
+queries to at most 1,000 returned nodes. `office_close` rejects dirty sessions
+unless the caller saves or explicitly sets `discard=true`.
 
 Native batch input is an ordinary JSON document, not an RPC protocol. The
 current schema is:
@@ -666,9 +684,10 @@ origins, bounds the download, verifies the publisher SHA-256, stages outside
 the active version, and activates atomically. Compatibility execution sets
 `OFFICECLI_SKIP_UPDATE=1` so upgrades remain explicit A3S operations.
 
-The native engine will not copy OfficeCLI's private resident protocol. It will
-provide typed in-process sessions and its own standard MCP surface. Until that
-promotion, a lost compatibility response can return
+The native engine does not copy OfficeCLI's private resident protocol. The
+explicit `office-native` target now provides typed in-process sessions over its
+own standard MCP surface. Until the default-route promotion, a lost
+compatibility response can return
 `use.office.outcome_unknown`; callers must not retry it automatically.
 
 See [Native Office Engine](docs/native-office.md) for the complete requirements,

@@ -1706,6 +1706,238 @@ fn office_mcp_target_delegates_to_officeclis_standard_server() {
     assert!(output.stderr.is_empty());
 }
 
+#[cfg(all(feature = "office", feature = "mcp"))]
+#[tokio::test]
+async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+
+    const RESPONSE_TIMEOUT: Duration = Duration::from_secs(15);
+
+    let temp = tempfile::tempdir().unwrap();
+    let document = temp.path().join("native-mcp.docx");
+    let mut child = tokio::process::Command::new(binary())
+        .args(["mcp", "serve", "office-native"])
+        .env(
+            "A3S_OFFICECLI_EXECUTABLE",
+            temp.path().join("must-not-be-invoked"),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut stderr = child.stderr.take().unwrap();
+
+    let initialized = standard_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": { "name": "a3s-use-test", "version": "1" }
+            }
+        }),
+        RESPONSE_TIMEOUT,
+    )
+    .await;
+    assert_eq!(initialized["jsonrpc"], "2.0");
+    assert_eq!(initialized["id"], 1);
+    assert_eq!(
+        initialized["result"]["serverInfo"]["name"],
+        "a3s-use-office-native"
+    );
+
+    stdin
+        .write_all(
+            b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}\n",
+        )
+        .await
+        .unwrap();
+    stdin.flush().await.unwrap();
+
+    let tools = standard_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {}
+        }),
+        RESPONSE_TIMEOUT,
+    )
+    .await;
+    let tools = tools["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 12);
+    let apply = tools
+        .iter()
+        .find(|tool| tool["name"] == "office_apply_batch")
+        .unwrap();
+    assert_eq!(
+        apply["inputSchema"]["properties"]["mutations"]["type"],
+        "array"
+    );
+    assert!(apply["inputSchema"]["properties"].get("command").is_none());
+
+    let created = standard_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "office_create",
+                "arguments": {
+                    "session": "native_test",
+                    "file": document
+                }
+            }
+        }),
+        RESPONSE_TIMEOUT,
+    )
+    .await;
+    assert_ne!(created["result"]["isError"], true);
+    assert_eq!(
+        created["result"]["structuredContent"]["session"],
+        "native_test"
+    );
+
+    let applied = standard_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "office_apply_batch",
+                "arguments": {
+                    "session": "native_test",
+                    "mutations": [{
+                        "operation": "add-paragraph",
+                        "parent": "/body",
+                        "text": "Native MCP"
+                    }]
+                }
+            }
+        }),
+        RESPONSE_TIMEOUT,
+    )
+    .await;
+    assert_ne!(applied["result"]["isError"], true);
+    assert_eq!(
+        applied["result"]["structuredContent"]["result"]["applied"],
+        1
+    );
+    assert_eq!(applied["result"]["structuredContent"]["persisted"], false);
+
+    let unsaved_close = standard_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+                "name": "office_close",
+                "arguments": { "session": "native_test" }
+            }
+        }),
+        RESPONSE_TIMEOUT,
+    )
+    .await;
+    assert_eq!(unsaved_close["result"]["isError"], true);
+    assert_eq!(
+        unsaved_close["result"]["structuredContent"]["code"],
+        "use.office.unsaved_changes"
+    );
+
+    let saved = standard_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "office_save",
+                "arguments": { "session": "native_test" }
+            }
+        }),
+        RESPONSE_TIMEOUT,
+    )
+    .await;
+    assert_eq!(saved["result"]["structuredContent"]["saved"], true);
+
+    let closed = standard_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {
+                "name": "office_close",
+                "arguments": { "session": "native_test" }
+            }
+        }),
+        RESPONSE_TIMEOUT,
+    )
+    .await;
+    assert_eq!(closed["result"]["structuredContent"]["closed"], true);
+
+    drop(stdin);
+    let status = tokio::time::timeout(RESPONSE_TIMEOUT, child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(status.success());
+    let mut diagnostics = Vec::new();
+    stderr.read_to_end(&mut diagnostics).await.unwrap();
+    assert!(
+        diagnostics.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&diagnostics)
+    );
+    assert_eq!(
+        native_office_text_view(&document, temp.path()),
+        "Native MCP"
+    );
+}
+
+#[cfg(all(feature = "office", feature = "mcp"))]
+async fn standard_mcp_request(
+    stdin: &mut tokio::process::ChildStdin,
+    stdout: &mut tokio::io::BufReader<tokio::process::ChildStdout>,
+    request: serde_json::Value,
+    timeout: std::time::Duration,
+) -> serde_json::Value {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+    let mut encoded = serde_json::to_vec(&request).unwrap();
+    encoded.push(b'\n');
+    stdin.write_all(&encoded).await.unwrap();
+    stdin.flush().await.unwrap();
+    let mut line = String::new();
+    let bytes = tokio::time::timeout(timeout, stdout.read_line(&mut line))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(bytes > 0, "native Office MCP closed before responding");
+    serde_json::from_str(&line).unwrap()
+}
+
 #[cfg(all(unix, feature = "extensions"))]
 #[test]
 fn explicit_extension_install_delegates_native_cli_and_preserves_status() {

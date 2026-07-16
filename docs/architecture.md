@@ -110,8 +110,8 @@ CLI session commands call MCP tools with their published schemas. The token is
 never included in normal CLI output. `browser render` and Search remain direct
 in-process Rust calls and never require the service.
 
-The native Office engine uses typed in-process sessions and will expose those
-same sessions through the A3S Use standard MCP server. It does not copy an
+The native Office engine uses typed in-process sessions and exposes them through
+the explicit `mcp serve office-native` standard MCP preview. It does not copy an
 upstream private pipe protocol. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
 XML access, and atomic mutation batches are available explicitly under
@@ -161,9 +161,21 @@ merged-span rewriting fail before save; merge editing remains outside this
 bounded milestone. These mutations use the existing typed batch transaction
 and do not introduce another protocol or runtime.
 
-Unpromoted commands are delegated to OfficeCLI and
-`mcp serve office` launches its standard MCP server. That compatibility process
-remains isolated from the native engine.
+Unpromoted commands are delegated to OfficeCLI and `mcp serve office` launches
+its standard MCP server. That compatibility process remains isolated from the
+native engine. `mcp serve office-native` instead runs the A3S-owned server in
+process, never discovers or starts OfficeCLI, and keeps the compatibility target
+unchanged until the native product gates pass.
+
+The preview MCP adapter has an explicit typed vocabulary rather than a command
+string passthrough. It supports validate, create/open/list, semantic get/query,
+text/outline/statistics views, constrained raw XML inspection, atomic typed
+mutation batches, immutable-template merge, save, and close. A server process
+owns at most 64 sessions. Batches and structured results are limited to 8 MiB,
+batches to 10,000 mutations, query output to 1,000 nodes, and inline raw XML to
+1 MiB. Mutations remain in memory until an explicit save, while close fails on
+dirty state unless discard is explicit. These are MCP deployment rules around
+the same editor types, not a second Office domain model or an A3S RPC protocol.
 
 External MCP packages are launched from their declared executable, arguments,
 and transport. A3S Use owns package identity and activation, not the package's
@@ -231,12 +243,15 @@ Implemented:
     and immutable templates, native PNG/JPEG/GIF add/read/remove with
     reference-aware media cleanup, atomic batches, changed-file conflict
     detection, and the dependency-free `office native` CLI.
+14. An explicit native Office standard MCP preview with bounded typed tools,
+    in-process sessions, deferred atomic save, dirty-close protection, and
+    process-level evidence that OfficeCLI is not consulted.
 
 Next:
 
 1. Complete native read interoperability and repair-dialog evidence against
    Microsoft Office and the optional CI LibreOffice oracle.
-2. Native Office mutation, formula, rich-format, rendering, standard MCP, and
+2. Native Office mutation, formula, rich-format, rendering, MCP promotion, and
    compatibility gates defined in `docs/native-office.md`.
 3. Windows real-Chrome persistent sessions. Windows remains a preview build
    until separate `a3s use browser` invocations can open and reuse a session

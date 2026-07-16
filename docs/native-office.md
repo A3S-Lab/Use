@@ -360,6 +360,19 @@ LibreOffice checks confirm that no repair dialog is required.
 - macOS and Linux release evidence; Windows remains preview until its separate
   platform gate is promoted.
 
+Status: one Gate 6 surface is now available for evidence gathering through the
+explicit `a3s use mcp serve office-native` target. Its 12 typed tools use
+bounded in-process sessions for validate, create/open/list, semantic reads,
+constrained raw XML, atomic mutation batches, immutable-template merge, save,
+and close. It limits open sessions to 64, batch and result JSON to 8 MiB, a
+batch to 10,000 mutations, query output to 1,000 nodes, and raw XML output to
+1 MiB. Mutations are not persisted until `office_save`, and a dirty session
+cannot close without save or explicit discard. Process-level tests complete a
+standard MCP initialize/list/call lifecycle and edit a document with an
+unusable OfficeCLI path. This preview does not complete Gate 6: rendering,
+Office Skills, compatibility corpus, fuzzing, rich-format coverage, and release
+evidence remain open, and the default Office target is not promoted.
+
 At Gate 6, native becomes the default and `a3s install use/office` no longer
 downloads an engine. The OfficeCLI backend moves to an explicitly named
 compatibility component for one deprecation cycle, then is removed.
@@ -386,9 +399,11 @@ add/set/remove/move/copy/swap, Spreadsheet range and row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format
-template merge with `merge`, plus atomic batches under the native Office route;
-other Office commands and MCP startup still delegate to the pinned OfficeCLI
-provider. This keeps existing users functional while native coverage grows.
-The native APIs are deliberately not advertised as full Office readiness, and
-`doctor` continues to report compatibility-provider readiness until the native
-read and mutation gates are met.
+template merge with `merge`, plus atomic batches under the native Office route.
+The explicit `mcp serve office-native` target now exposes the current typed
+subset without an external runtime. Other Office commands and the default
+`mcp serve office` target still delegate to the pinned OfficeCLI provider. This
+keeps existing users functional while native coverage grows. The native APIs
+are deliberately not advertised as full Office readiness, and `doctor`
+continues to report compatibility-provider readiness until the native read and
+mutation gates are met.

@@ -108,7 +108,7 @@ fn help() -> CommandOutput {
             "  a3s-use extension disable <publisher/name> [--timeout-ms <ms>] [--json]\n",
             "  a3s-use extension snapshot|watch [--after-generation <n>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use mcp serve browser [--tools <profiles>]\n",
-            "  a3s-use mcp serve office|<publisher/name>\n",
+            "  a3s-use mcp serve office|office-native|<publisher/name>\n",
             "  a3s-use mcp start|status|stop [browser] [--json]"
         ),
         serde_json::json!({
@@ -657,6 +657,23 @@ async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
                     Err(UseError::new(
                         "use.office.disabled",
                         "Office support is disabled in this custom build.",
+                    ))
+                }
+                "office-native" | "use/office-native" => {
+                    if args.len() != 2 {
+                        return Err(usage_error(
+                            "mcp serve office-native accepts exactly one target",
+                        ));
+                    }
+                    #[cfg(all(feature = "office", feature = "mcp"))]
+                    {
+                        crate::mcp::serve_native_office_stdio().await?;
+                        Ok(CommandOutput::delegated(0))
+                    }
+                    #[cfg(not(all(feature = "office", feature = "mcp")))]
+                    Err(UseError::new(
+                        "use.mcp.disabled",
+                        "Native Office MCP support is disabled in this custom build.",
                     ))
                 }
                 package_id if external_package_id(package_id).is_some() => {
