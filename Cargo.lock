@@ -124,6 +124,7 @@ dependencies = [
  "base64",
  "fs2",
  "quick-xml",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

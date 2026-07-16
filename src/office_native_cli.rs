@@ -2,8 +2,8 @@ use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
     DocumentNode, NativeOfficeCommentPosition, NativeOfficeCommentUpdate, NativeOfficeDocument,
     NativeOfficeEditor, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
-    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat, OfficeNodeType,
-    SpreadsheetCellValue,
+    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
+    NativeOfficeTextReplacement, OfficeNodeType, SpreadsheetCellValue,
 };
 use tokio::io::AsyncReadExt;
 
@@ -39,7 +39,7 @@ const HELP: &str = concat!(
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
-    "  a3s-use office native set <file> <path> [--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -96,6 +96,7 @@ fn help() -> CommandOutput {
                 "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],
             "formats": ["docx", "xlsx", "pptx"],
+            "textReplacementModes": ["literal", "regex"],
             "runtimeDependencies": [],
             "atomicBatch": true
         }),
@@ -191,6 +192,9 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let parsed = ParsedArguments::parse(args, AllowedOptions::SET)?;
     if parsed.positionals.len() != 2 {
         return Err(usage_error("office native set requires <file> and <path>"));
+    }
+    if parsed.find.is_some() || parsed.replacement.is_some() || parsed.regex {
+        return replace_text(parsed).await;
     }
     let value_count = [
         parsed.text.is_some(),
@@ -349,6 +353,85 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             "changed": true,
             "path": path,
             "node": node,
+            "kind": editor.package().kind(),
+            "outputPath": output_path,
+            "inPlace": in_place,
+            "revision": editor.package().source_revision()
+        }),
+    ))
+}
+
+async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
+    let find = parsed
+        .find
+        .as_deref()
+        .ok_or_else(|| usage_error("office native set --replace requires --find <text>"))?;
+    let replacement = parsed
+        .replacement
+        .as_deref()
+        .ok_or_else(|| usage_error("office native set --find requires --replace <text>"))?;
+    if [
+        parsed.text.is_some(),
+        parsed.number.is_some(),
+        parsed.boolean.is_some(),
+        parsed.formula.is_some(),
+        parsed.width_emu.is_some(),
+        parsed.bold.is_some(),
+        parsed.italic.is_some(),
+        parsed.font_family.is_some(),
+        parsed.font_size.is_some(),
+        parsed.text_color.is_some(),
+        parsed.alignment.is_some(),
+        parsed.url.is_some(),
+        parsed.location.is_some(),
+        parsed.display.is_some(),
+        parsed.tooltip.is_some(),
+        parsed.author.is_some(),
+        parsed.initials.is_some(),
+        parsed.x_emu.is_some(),
+        parsed.y_emu.is_some(),
+    ]
+    .into_iter()
+    .any(|present| present)
+    {
+        return Err(usage_error(
+            "--find and --replace cannot be combined with other native Office set values",
+        ));
+    }
+
+    let replacement = if parsed.regex {
+        NativeOfficeTextReplacement::regex(find, replacement)?
+    } else {
+        NativeOfficeTextReplacement::literal(find, replacement)?
+    };
+    let source = &parsed.positionals[0];
+    let path = &parsed.positionals[1];
+    let mut editor = NativeOfficeEditor::open(source).await?;
+    let source_path = editor.package().path().to_path_buf();
+    let result = editor.replace_text(path, replacement)?;
+    save_editor(&mut editor, parsed.output.as_deref()).await?;
+    let output_path = editor.package().path().to_path_buf();
+    let in_place = output_path == source_path;
+    let human = if result.changed {
+        format!(
+            "Replaced {} match(es) in {path} and saved '{}'.",
+            result.match_count,
+            output_path.display()
+        )
+    } else {
+        format!(
+            "Found {} match(es) in {path}; no document text changed.",
+            result.match_count
+        )
+    };
+    Ok(CommandOutput::success(
+        human,
+        serde_json::json!({
+            "operation": "replace-text",
+            "changed": result.changed,
+            "path": path,
+            "matches": result.match_count,
+            "result": result,
             "kind": editor.package().kind(),
             "outputPath": output_path,
             "inPlace": in_place,

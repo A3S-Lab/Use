@@ -22,6 +22,8 @@ a3s use office native add deck.pptx '/slide[1]' --type shape --text 'Q3' --json
 a3s use office native add deck.pptx '/slide[1]' --type table --rows 3 --columns 4 --json
 a3s use office native add deck.pptx '/slide[1]' --type picture --input diagram.png --alt 'System architecture' --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]' --text 'Updated roadmap' --json
+a3s use office native set deck.pptx '/slide[1]' --find Draft --replace Final --json
+a3s use office native set deck.pptx '/slide[1]/notes' --find internal --replace confidential --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --bold true --font-family 'Aptos Display' --font-size 20 --text-color AA2200 --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]' --url https://example.com/slides --tooltip 'Open slides' --json
@@ -33,6 +35,13 @@ a3s use office native query deck.pptx comment --json
 a3s use office native remove deck.pptx '/slide[1]/comment[1]' --json
 a3s use office native swap deck.pptx '/slide[1]' '/slide[2]' --json
 ```
+
+General replacement is literal by default and may span rich-text runs. Add
+`--regex` for Rust regex with capture expansion. `/` covers all slide and notes
+text; a slide, object, table-cell, paragraph, or run path narrows the visible
+slide content, while `/slide[N]/notes` targets speaker notes explicitly. A
+slide scope does not implicitly alter its notes. Zero matches are an unchanged
+success.
 
 Character formatting targets a run path; alignment targets its paragraph.
 This works for shape and table-cell text returned by a semantic read. The typed

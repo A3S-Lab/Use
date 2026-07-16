@@ -576,10 +576,142 @@ pub struct NativeCreatedImage {
     pub height_px: u32,
 }
 
+/// Matching semantics for a bounded native Office text replacement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeOfficeTextMatchMode {
+    /// Case-sensitive, non-overlapping substring matching.
+    Literal,
+    /// Linear-time Rust regular expressions with capture expansion in the
+    /// replacement string.
+    Regex,
+}
+
+/// Maximum UTF-8 byte length accepted for a native Office find expression.
+pub const MAX_NATIVE_OFFICE_FIND_BYTES: usize = 64 * 1024;
+/// Maximum UTF-8 byte length accepted for a native Office replacement value.
+pub const MAX_NATIVE_OFFICE_REPLACEMENT_BYTES: usize = 1024 * 1024;
+/// Maximum semantic matches accepted in one native Office replacement.
+pub const MAX_NATIVE_OFFICE_TEXT_MATCHES: usize = 100_000;
+/// Maximum expanded replacement bytes accepted in one native Office operation.
+pub const MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum Spreadsheet cells addressable by one replacement scope.
+pub const MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS: usize = 100_000;
+
+const MAX_NATIVE_OFFICE_REGEX_COMPILED_BYTES: usize = 8 * 1024 * 1024;
+
+/// Typed, bounded find/replace value shared by Word, Spreadsheet, and
+/// Presentation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeOfficeTextReplacement {
+    pub find: String,
+    pub replace: String,
+    pub mode: NativeOfficeTextMatchMode,
+}
+
+impl NativeOfficeTextReplacement {
+    /// Creates a validated literal replacement.
+    pub fn literal(find: impl Into<String>, replace: impl Into<String>) -> UseResult<Self> {
+        Self::new(find, replace, NativeOfficeTextMatchMode::Literal)
+    }
+
+    /// Creates a validated regular-expression replacement.
+    pub fn regex(find: impl Into<String>, replace: impl Into<String>) -> UseResult<Self> {
+        Self::new(find, replace, NativeOfficeTextMatchMode::Regex)
+    }
+
+    pub fn new(
+        find: impl Into<String>,
+        replace: impl Into<String>,
+        mode: NativeOfficeTextMatchMode,
+    ) -> UseResult<Self> {
+        let replacement = Self {
+            find: find.into(),
+            replace: replace.into(),
+            mode,
+        };
+        replacement.validate()?;
+        Ok(replacement)
+    }
+
+    pub(crate) fn validate(&self) -> UseResult<()> {
+        if self.find.is_empty() || self.find.len() > MAX_NATIVE_OFFICE_FIND_BYTES {
+            return Err(super::editor_error(
+                "use.office.text_find_invalid",
+                format!(
+                    "Native Office find expressions must contain 1-{MAX_NATIVE_OFFICE_FIND_BYTES} UTF-8 bytes."
+                ),
+            )
+            .with_detail("findBytes", self.find.len()));
+        }
+        if self.replace.len() > MAX_NATIVE_OFFICE_REPLACEMENT_BYTES {
+            return Err(super::editor_error(
+                "use.office.text_replacement_invalid",
+                format!(
+                    "Native Office replacement values cannot exceed {MAX_NATIVE_OFFICE_REPLACEMENT_BYTES} UTF-8 bytes."
+                ),
+            )
+            .with_detail("replacementBytes", self.replace.len()));
+        }
+        validate_replacement_xml_text(&self.replace)?;
+        if self.mode == NativeOfficeTextMatchMode::Regex {
+            let expression = regex::RegexBuilder::new(&self.find)
+                .size_limit(MAX_NATIVE_OFFICE_REGEX_COMPILED_BYTES)
+                .build()
+                .map_err(|error| {
+                    super::editor_error(
+                        "use.office.text_regex_invalid",
+                        format!("Native Office regular expression is invalid: {error}"),
+                    )
+                })?;
+            if expression.is_match("") {
+                return Err(super::editor_error(
+                    "use.office.text_regex_empty_match",
+                    "Native Office regular expressions must consume at least one character.",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_replacement_xml_text(value: &str) -> UseResult<()> {
+    if let Some(character) = value.chars().find(|character| {
+        !matches!(*character, '\u{9}' | '\u{a}' | '\u{d}')
+            && (*character < '\u{20}' || matches!(*character, '\u{fffe}' | '\u{ffff}'))
+    }) {
+        return Err(super::editor_error(
+            "use.office.text_replacement_invalid",
+            format!(
+                "Native Office replacement contains XML-forbidden character U+{:04X}.",
+                u32::from(character)
+            ),
+        )
+        .with_detail("codePoint", format!("U+{:04X}", u32::from(character))));
+    }
+    Ok(())
+}
+
+/// Per-mutation receipt for a native Office text replacement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeOfficeTextReplacementResult {
+    pub path: String,
+    pub mode: NativeOfficeTextMatchMode,
+    pub match_count: usize,
+    pub changed: bool,
+    pub changed_parts: Vec<String>,
+}
+
 /// Typed in-process mutation supported by an atomic native batch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum NativeOfficeMutation {
+    ReplaceText {
+        path: String,
+        replacement: NativeOfficeTextReplacement,
+    },
     SetText {
         path: String,
         text: String,
@@ -735,4 +867,6 @@ pub struct NativeBatchResult {
     pub created_parts: Vec<NativeCreatedPart>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub created_images: Vec<NativeCreatedImage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_replacements: Vec<NativeOfficeTextReplacementResult>,
 }

@@ -21,6 +21,8 @@ a3s use office native create report.docx --json
 a3s use office native add report.docx /body --type paragraph --text 'Summary' --json
 a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
 a3s use office native set report.docx '/body/p[1]' --text 'Updated summary' --json
+a3s use office native set report.docx /body --find Draft --replace Final --json
+a3s use office native set report.docx / --find 'Q([1-4]) 2025' --replace 'Q$1 2026' --regex --json
 a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com/report --display 'Open report' --tooltip 'A3S report' --json
@@ -34,6 +36,14 @@ a3s use office native remove report.docx '/comments/comment[1]' --json
 a3s use office native add report.docx /body --type picture --input chart.png --alt 'Quarterly revenue chart' --json
 a3s use office native move report.docx '/body/p[2]' --before '/body/p[1]' --json
 ```
+
+General replacement is case-sensitive and literal by default. `--regex`
+enables Rust regular expressions with `$1`/`$name` capture expansion. `/`
+includes the main document, headers, footers, footnotes, endnotes, and legacy
+comments. Use `/body`, a header/footer, paragraph, run, table/cell, hyperlink,
+or comment path to keep the edit narrower. Matches may span runs; replacement
+text uses the first matched run's formatting and does not flatten later runs.
+Zero matches return an unchanged success.
 
 Character formatting targets a run returned by `get --depth 2`. Paragraph
 alignment targets the paragraph itself. Supported typed properties are bold,

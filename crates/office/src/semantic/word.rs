@@ -614,18 +614,25 @@ fn word_text(element: &XmlElement) -> String {
 }
 
 fn append_word_text(element: &XmlElement, output: &mut String) {
-    match element.local_name.as_str() {
-        "t" | "delText" | "instrText" => output.push_str(&direct_text(element)),
-        "tab" => output.push('\t'),
-        "br" | "cr" => output.push('\n'),
-        "noBreakHyphen" => output.push('\u{2011}'),
-        "softHyphen" => output.push('\u{00ad}'),
+    match (
+        is_word_namespace(element.namespace.as_deref()),
+        element.local_name.as_str(),
+    ) {
+        (true, "t" | "delText" | "instrText") => output.push_str(&direct_text(element)),
+        (true, "tab") => output.push('\t'),
+        (true, "br" | "cr") => output.push('\n'),
+        (true, "noBreakHyphen") => output.push('\u{2011}'),
+        (true, "softHyphen") => output.push('\u{00ad}'),
         _ => {
             for child in element.child_elements() {
                 append_word_text(child, output);
             }
         }
     }
+}
+
+fn is_word_namespace(namespace: Option<&str>) -> bool {
+    matches!(namespace, Some(WORD_NAMESPACE | STRICT_WORD_NAMESPACE))
 }
 
 fn direct_text(element: &XmlElement) -> String {

@@ -17,6 +17,7 @@ a3s use office native view workbook.xlsx issues --type content --json
 
 ```bash
 a3s use office native set workbook.xlsx /Sheet1/A1 --text 'Revenue' --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C20 --find Draft --replace Final --json
 a3s use office native set workbook.xlsx /Sheet1/B1 --number 42.5 --json
 a3s use office native set workbook.xlsx /Sheet1/C1 --boolean true --json
 a3s use office native set workbook.xlsx /Sheet1/D1 --formula 'SUM(B1:B12)' --json
@@ -29,6 +30,14 @@ a3s use office native set workbook.xlsx /Sheet1/B2/comment --author Bob --text '
 a3s use office native query workbook.xlsx comment --json
 a3s use office native remove workbook.xlsx /Sheet1/B2/comment --json
 ```
+
+General replacement accepts `/`, one worksheet, one cell, or a rectangular A1
+range and edits string cells only. Literal matching is the default; add
+`--regex` for Rust regex and capture expansion. A scoped edit of a shared rich
+string clones and redirects only selected cells when references exist outside
+the scope. Rich runs and unknown XML survive, and phonetic text is excluded.
+Numeric, boolean, formula, and error values are not coerced. Zero matches are
+reported as an unchanged success.
 
 Formula writes store validated formula text, invalidate stale calculation
 caches, and request application recalculation. The native engine does not yet

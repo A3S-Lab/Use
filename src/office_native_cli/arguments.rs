@@ -9,6 +9,8 @@ pub(super) struct ParsedArguments {
     pub limit: Option<usize>,
     pub timeout_ms: Option<u64>,
     pub text: Option<String>,
+    pub find: Option<String>,
+    pub replacement: Option<String>,
     pub output: Option<String>,
     pub input: Option<String>,
     pub node_type: Option<String>,
@@ -44,6 +46,7 @@ pub(super) struct ParsedArguments {
     pub after: Option<String>,
     pub data: Option<String>,
     pub force: bool,
+    pub regex: bool,
 }
 
 impl ParsedArguments {
@@ -79,6 +82,14 @@ impl ParsedArguments {
                 }
                 "--text" if allowed.text => {
                     set_string_option(&mut parsed.text, args, index, "--text")?;
+                    index += 2;
+                }
+                "--find" if allowed.find => {
+                    set_string_option(&mut parsed.find, args, index, "--find")?;
+                    index += 2;
+                }
+                "--replace" if allowed.replacement => {
+                    set_string_option(&mut parsed.replacement, args, index, "--replace")?;
                     index += 2;
                 }
                 "--number" if allowed.number => {
@@ -232,6 +243,13 @@ impl ParsedArguments {
                     parsed.force = true;
                     index += 1;
                 }
+                "--regex" if allowed.regex => {
+                    if parsed.regex {
+                        return Err(usage_error("--regex may be specified only once"));
+                    }
+                    parsed.regex = true;
+                    index += 1;
+                }
                 option if option.starts_with('-') => {
                     return Err(usage_error(format!(
                         "unknown native Office option '{option}'"
@@ -253,6 +271,8 @@ pub(super) struct AllowedOptions {
     limit: bool,
     timeout_ms: bool,
     text: bool,
+    find: bool,
+    replacement: bool,
     output: bool,
     input: bool,
     node_type: bool,
@@ -288,6 +308,7 @@ pub(super) struct AllowedOptions {
     after: bool,
     data: bool,
     force: bool,
+    regex: bool,
 }
 
 impl AllowedOptions {
@@ -296,6 +317,8 @@ impl AllowedOptions {
         limit: false,
         timeout_ms: false,
         text: false,
+        find: false,
+        replacement: false,
         output: false,
         input: false,
         node_type: false,
@@ -331,6 +354,7 @@ impl AllowedOptions {
         after: false,
         data: false,
         force: false,
+        regex: false,
     };
     pub const GET: Self = Self {
         depth: true,
@@ -345,6 +369,8 @@ impl AllowedOptions {
     };
     pub const SET: Self = Self {
         text: true,
+        find: true,
+        replacement: true,
         output: true,
         number: true,
         boolean: true,
@@ -364,6 +390,7 @@ impl AllowedOptions {
         x_emu: true,
         y_emu: true,
         width_emu: true,
+        regex: true,
         ..Self::NONE
     };
     pub const BATCH: Self = Self {

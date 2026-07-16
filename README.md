@@ -64,6 +64,7 @@ a3s use office native view deck.pptx svg --output deck.svg --json
 a3s use office native view report.docx screenshot --output report.png --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
+a3s use office native set report.docx /body --find 'Q1 2025' --replace 'Q1 2026' --json
 a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
@@ -107,7 +108,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   `agent-browser` 0.32.1
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
-  typed cross-format text formatting, inert hyperlinks, and legacy comments,
+  scoped cross-format literal/regex replacement, typed text formatting, inert
+  hyperlinks, and legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
   bounded typed issue diagnostics, Browser-injected semantic PNG screenshots,
@@ -285,11 +287,12 @@ Presentation documents. The native engine now includes bounded package
 admission, byte-preserving XML, content types, a safe relationship graph,
 stable selectors, semantic `get`, `query`, `text`, `outline`, and `stats`
 reads, bounded `issues` reports, safe blank-document creation, and
-loss-preserving text replacement for existing Word, Spreadsheet, and
-Presentation nodes. Typed rich-text mutation covers bold, italic, font family,
-exact centipoint font size, RGB text color, and horizontal alignment. Word and
-Presentation apply character properties to run paths and alignment to paragraph
-paths; Spreadsheet applies the same contract to cells or bounded A1 ranges,
+loss-preserving text assignment plus scoped literal/regex replacement for Word,
+Spreadsheet, and Presentation. Matches may span rich-text runs without
+flattening their formatting. Typed rich-text mutation covers bold, italic, font
+family, exact centipoint font size, RGB text color, and horizontal alignment.
+Word and Presentation apply character properties to run paths and alignment to
+paragraph paths; Spreadsheet applies the same contract to cells or bounded A1 ranges,
 creating and deduplicating OOXML font and cell-style records when necessary. It
 also creates, updates, reads, queries, and removes typed hyperlinks. Word owns
 external HTTP/HTTPS/mailto links and internal bookmark targets with display
@@ -357,9 +360,8 @@ provider because it captures the native semantic HTML through the existing
 Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
-typed add/set/remove/move/copy/swap, rich-text, hyperlink, and legacy-comment
-operations,
-constrained raw XML access,
+typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
+rich-text, hyperlink, and legacy-comment operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML and SVG are
@@ -423,6 +425,13 @@ a3s use office native add-part deck.pptx '/slide[1]' --type chart --json
 # Replace text in place or save to a separate OOXML document.
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native set report.xlsx /Sheet1/B2 --text '42' --output updated.xlsx --json
+
+# Find and replace within a semantic scope. Literal matching is the default;
+# --regex enables Rust regular expressions and $name/$1 capture expansion.
+a3s use office native set report.docx /body --find 'Q1 2025' --replace 'Q1 2026' --json
+a3s use office native set report.docx / --find 'Q([1-4]) 2025' --replace 'Q$1 2026' --regex --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C20 --find Draft --replace Final --json
+a3s use office native set deck.pptx '/slide[1]/notes' --find internal --replace confidential --json
 
 # Apply typed text formatting. Word and Presentation character properties use
 # run paths; their alignment uses paragraph paths. Word sizes must be exact
@@ -596,6 +605,15 @@ current schema is:
   "schemaVersion": 1,
   "mutations": [
     {
+      "operation": "replace-text",
+      "path": "/body",
+      "replacement": {
+        "find": "Q([1-4]) 2025",
+        "replace": "Q$1 2026",
+        "mode": "regex"
+      }
+    },
+    {
       "operation": "set-text",
       "path": "/body/p[1]",
       "text": "Updated"
@@ -622,7 +640,7 @@ current schema is:
 ```
 
 The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
-and 10,000 mutations. The version 1 mutation set is `set-text`,
+and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `set-text-format`, `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
 `add-table`, `add-table-row`, `add-table-column`, `add-table-cell`,
@@ -728,6 +746,28 @@ total bytes. XML-forbidden replacement characters fail the whole in-memory
 transaction before any output is created. This native path does not invoke
 OfficeCLI, Microsoft Office, LibreOffice, Python, Node.js, or .NET.
 
+General text replacement is separate from template merge. `replace-text` uses
+an explicit semantic path and either case-sensitive, non-overlapping literal
+matching or a linear-time Rust regular expression. Word `/` covers the main
+document plus headers, footers, footnotes, endnotes, and comments; narrower
+body, header/footer, paragraph, run, table, cell, hyperlink, and comment paths
+stay within their source part. Spreadsheet accepts `/`, a worksheet, or one
+cell/rectangular range and edits only string cells. A scoped shared-string edit
+clones the rich shared-string item and redirects selected cells when other
+cells still reference the original. Presentation accepts `/`,
+slide/object/text paths, and `/slide[N]/notes`; slide scopes do not implicitly
+include notes. Phonetic Spreadsheet text is never changed.
+
+One operation accepts at most 64 KiB of find expression, 1 MiB of replacement
+text, 100,000 semantic matches, 64 MiB of expanded replacement text, and a
+100,000-cell Spreadsheet scope. Regex matches must consume text. Results report
+`matchCount`, `changed`, and sorted `changedParts`; zero matches are a
+successful unchanged result. Batch results add these receipts under
+`textReplacements`. All replacements are single pass, preserve split-run
+ownership by assigning new text to the first matched run, retain unknown XML,
+support strict and transitional OOXML, and participate in normal batch rollback
+and post-mutation validation.
+
 Raw replacement is also available inside the same atomic batch:
 
 ```json
@@ -760,12 +800,14 @@ Typed part creation is also batchable:
 The batch result keeps the existing ordered `paths` ledger, adds `swaps`
 receipts containing the post-mutation `first` and `second` paths, and adds
 `createdParts` receipts containing `part`, `ownerPart`, `relationshipId`, and
-`type`. Word supports chart, header, and footer carriers at `/`; Spreadsheet
-supports chart carriers under a worksheet; Presentation supports chart carriers
-under a slide. A carrier is a valid blank XML part with content type and owner
-relationship. It is not visible in document layout until a typed operation or
-explicit XML replacement references the returned relationship ID from the
-owner XML.
+`type`. Text replacement receipts are reported separately under
+`textReplacements` so a successful zero-match operation remains distinguishable
+from a content change. Word supports chart, header, and footer carriers at `/`;
+Spreadsheet supports chart carriers under a worksheet; Presentation supports
+chart carriers under a slide. A carrier is a valid blank XML part with content
+type and owner relationship. It is not visible in document layout until a typed
+operation or explicit XML replacement references the returned relationship ID
+from the owner XML.
 
 Typed formatting is batchable through the same public mutation contract:
 

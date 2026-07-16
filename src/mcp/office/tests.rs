@@ -1,7 +1,7 @@
 use super::*;
 use a3s_use_office::{
     NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeHyperlinkTarget,
-    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
+    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat, NativeOfficeTextMatchMode,
 };
 
 #[test]
@@ -124,6 +124,41 @@ fn office_batch_schema_exposes_typed_text_formatting() {
             },
             ..
         }
+    ));
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_text_replacement() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in ["replace-text", "find", "replace", "literal", "regex"] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "report",
+        "mutations": [{
+            "operation": "replace-text",
+            "path": "/body",
+            "replacement": {
+                "find": "Q([1-4]) 2025",
+                "replace": "Q$1 2026",
+                "mode": "regex"
+            }
+        }]
+    }))
+    .unwrap();
+    let mutation = input.mutations.into_iter().next().unwrap();
+    assert!(matches!(
+        mutation.into_native().unwrap(),
+        NativeOfficeMutation::ReplaceText {
+            replacement: a3s_use_office::NativeOfficeTextReplacement {
+                mode: NativeOfficeTextMatchMode::Regex,
+                ref find,
+                ref replace,
+            },
+            ..
+        } if find == "Q([1-4]) 2025" && replace == "Q$1 2026"
     ));
 }
 

@@ -730,7 +730,11 @@ fn read_shared_strings(package: &NativeOfficePackage) -> UseResult<Vec<String>> 
     let part = package.xml_part("xl/sharedStrings.xml")?;
     let root = parse_xml_tree(&part)?;
     require_spreadsheet_element(&root, "sst", part.name())?;
-    Ok(root.children_named("si").map(spreadsheet_text).collect())
+    Ok(root
+        .children_named("si")
+        .filter(|item| is_spreadsheet_namespace(item.namespace.as_deref()))
+        .map(spreadsheet_text)
+        .collect())
 }
 
 fn read_styles(package: &NativeOfficePackage) -> UseResult<Vec<BTreeMap<String, String>>> {
@@ -878,16 +882,24 @@ fn spreadsheet_text(element: &XmlElement) -> String {
 }
 
 fn append_spreadsheet_text(element: &XmlElement, output: &mut String) {
-    if element.local_name == "t" {
+    let is_spreadsheet = is_spreadsheet_namespace(element.namespace.as_deref());
+    if is_spreadsheet && element.local_name == "t" {
         output.push_str(&direct_text(element));
         return;
     }
-    if element.local_name == "rPh" {
+    if is_spreadsheet && element.local_name == "rPh" {
         return;
     }
     for child in element.child_elements() {
         append_spreadsheet_text(child, output);
     }
+}
+
+fn is_spreadsheet_namespace(namespace: Option<&str>) -> bool {
+    matches!(
+        namespace,
+        Some(SPREADSHEET_NAMESPACE | STRICT_SPREADSHEET_NAMESPACE)
+    )
 }
 
 fn direct_text(element: &XmlElement) -> String {

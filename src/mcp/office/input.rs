@@ -3,7 +3,8 @@ use a3s_use_office::{
     NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeCommentUpdate,
     NativeOfficeHorizontalAlignment, NativeOfficeHyperlink, NativeOfficeImage,
     NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
-    NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextFormat, SpreadsheetCellValue,
+    NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextFormat, NativeOfficeTextMatchMode,
+    NativeOfficeTextReplacement, SpreadsheetCellValue,
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -257,6 +258,41 @@ impl From<OfficeTextFormat> for NativeOfficeTextFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum OfficeTextMatchMode {
+    /// Case-sensitive, non-overlapping substring matching.
+    Literal,
+    /// Linear-time Rust regular expression matching with capture expansion.
+    Regex,
+}
+
+impl From<OfficeTextMatchMode> for NativeOfficeTextMatchMode {
+    fn from(value: OfficeTextMatchMode) -> Self {
+        match value {
+            OfficeTextMatchMode::Literal => Self::Literal,
+            OfficeTextMatchMode::Regex => Self::Regex,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeTextReplacement {
+    /// Required literal substring or Rust regular expression.
+    find: String,
+    /// Literal replacement for literal mode, or capture-aware replacement for regex mode.
+    replace: String,
+    /// Explicit match mode. Literal mode is recommended for untrusted input.
+    mode: OfficeTextMatchMode,
+}
+
+impl OfficeTextReplacement {
+    fn into_native(self) -> UseResult<NativeOfficeTextReplacement> {
+        NativeOfficeTextReplacement::new(self.find, self.replace, self.mode.into())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum OfficeHyperlinkTarget {
@@ -454,6 +490,11 @@ impl OfficeImage {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum OfficeMutation {
+    ReplaceText {
+        /// Root, container, paragraph/run, worksheet/cell/range, slide/shape, or notes scope.
+        path: String,
+        replacement: OfficeTextReplacement,
+    },
     SetText {
         path: String,
         text: String,
@@ -588,6 +629,10 @@ pub(super) enum OfficeMutation {
 impl OfficeMutation {
     pub(super) fn into_native(self) -> UseResult<NativeOfficeMutation> {
         Ok(match self {
+            Self::ReplaceText { path, replacement } => NativeOfficeMutation::ReplaceText {
+                path,
+                replacement: replacement.into_native()?,
+            },
             Self::SetText { path, text } => NativeOfficeMutation::SetText { path, text },
             Self::SetTextFormat { path, format } => NativeOfficeMutation::SetTextFormat {
                 path,

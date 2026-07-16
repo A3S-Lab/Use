@@ -30,6 +30,8 @@ formats:
 - loss-preserving round trips for unknown parts, relationships, elements, and
   attributes;
 - create, semantic view, get, query, set, add, remove, move, copy, and swap;
+- bounded, scoped literal and regular-expression text replacement that
+  preserves rich-text run ownership;
 - typed bold, italic, font-family, exact-size, RGB text-color, and alignment
   mutation without generic property maps;
 - typed inert hyperlinks with format-specific external and internal targets;
@@ -144,6 +146,10 @@ embedding a second browser runtime in the Office engine.
 11. Render output is bounded while it is composed, contains no source path or
     timestamp, never fetches an external relationship, and never emits document
     text as executable markup, style, or script.
+12. General find/replace is single pass and path-scoped. Zero matches are
+    reported as an unchanged success; a scoped Spreadsheet replacement never
+    mutates cells outside the requested worksheet or A1 range through a shared
+    string alias.
 
 ## Delivery gates
 
@@ -204,6 +210,39 @@ Worksheet removal deletes only unshared descendants, removes local definitions,
 shifts workbook indexes, and changes surviving formulas that target the deleted
 sheet to `#REF!`. Formula and structural mutations discard stale calculation
 chains and request a full application recalculation.
+
+Native `replace-text` is implemented through one typed Rust, batch, CLI, and
+standard MCP contract. Literal mode performs case-sensitive, non-overlapping
+substring matching. Regex mode uses Rust's linear-time regular-expression
+engine and expands `$1` and `$name` captures; matches that consume no text are
+rejected. Replacement is single pass and may span multiple OOXML text runs.
+The inserted value belongs to the first matched run, unmatched text retains its
+original run, and later covered runs are emptied without deleting their
+formatting or unknown extension content.
+
+Word `/` covers `document.xml`, referenced or unreferenced header/footer text
+parts, footnotes, endnotes, and legacy comments. Narrower body, header/footer,
+paragraph, run, table/row/cell, hyperlink, and comment scopes remain inside one
+source part. Spreadsheet accepts `/`, one worksheet, one cell, or a normalized
+rectangular range and changes only shared, inline, or direct string values.
+When selected and unselected cells reference the same shared rich string, the
+engine clones the complete `si` item, preserves unknown children and rich runs,
+redirects only selected cells, and leaves phonetic `rPh` text unchanged.
+Presentation accepts `/`, a slide or supported object/text descendant, and a
+related `/slide[N]/notes` path. A slide scope excludes speaker notes unless the
+notes path or root is selected.
+
+Find expressions are limited to 64 KiB, replacement input to 1 MiB, semantic
+matches to 100,000, expanded replacement output to 64 MiB, and Spreadsheet
+range or observed-scope cells to 100,000. Receipts contain the scope,
+literal/regex mode, `matchCount`, `changed`, and sorted `changedParts`; batch
+receipts are additive under `textReplacements`. Zero matches do not dirty an
+in-place document. XML-forbidden output, invalid regex, limit overflow, path or
+cell-type errors, and failed post-mutation validation roll back the complete
+batch. Tests cover strict and transitional Word, Spreadsheet, and Presentation,
+split runs, unknown XML, partial shared-string aliases, notes, zero matches,
+rollback, the CLI on all formats, and a complete unsaved/save/close standard
+MCP lifecycle with an unusable OfficeCLI provider path.
 
 Native `set-text-format` is implemented through one typed Rust, batch, CLI,
 and MCP contract. It supports explicit bold and italic state, font family,
@@ -591,7 +630,8 @@ compatibility component for one deprecation cycle, then is removed.
 ## Current migration boundary
 
 The `0.1.x` CLI exposes native blank creation, reads, typed
-add/set/remove/move/copy/swap, cross-format text formatting, typed inert
+add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
+cross-format text formatting, typed inert
 hyperlinks, typed cross-format legacy comments, Spreadsheet range and
 row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe

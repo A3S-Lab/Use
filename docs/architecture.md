@@ -122,7 +122,7 @@ documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
 XML access, bounded annotated and issue analysis, typed text formatting,
-typed hyperlinks, and atomic mutation batches
+typed scoped text replacement, typed hyperlinks, and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
 same typed contract reads unsaved native MCP session state without a private
@@ -146,6 +146,21 @@ standard MCP schemas, and the Office Skill. Word and Presentation patch run or
 paragraph properties in place. Spreadsheet clones and deduplicates `fonts` and
 `cellXfs`, retaining unknown style data and the document's strict or
 transitional OOXML dialect.
+General text replacement is a separate closed mutation variant. A compiled
+literal or Rust-regex matcher feeds the shared split-segment patch layer, which
+maps every matched byte span back to its original OOXML text owner and assigns
+inserted text to the first matched run. Format engines supply bounded semantic
+scopes: Word document and auxiliary parts or narrower content paths,
+Spreadsheet workbook/worksheet/cell/range string values, and Presentation
+slides, objects, text descendants, or notes. Spreadsheet first computes shared
+string reference multiplicity. A partial scope clones the lossless rich-string
+item and rewrites only selected cell indexes; a whole-reference scope patches
+the original once while counting matches per cell. This prevents alias leakage
+without flattening rich runs, phonetic records, or unknown extensions. The same
+receipt (`matchCount`, `changed`, and `changedParts`) crosses Rust, versioned
+batch JSON, CLI, standard MCP, and the packaged Skill. Match, output, regex,
+and cell-scope bounds are enforced before the editor's normal semantic
+validation and atomic rollback boundary.
 Hyperlink mutation is another closed typed contract shared by the Rust API,
 versioned batch JSON, CLI, standard MCP schema, and Office Skill. Word owns
 external HTTP/HTTPS/mailto relationships and internal bookmark anchors;
@@ -314,7 +329,8 @@ Implemented:
     document-kind verification, unknown-part preservation, and atomic save.
 13. Native content-type and relationship graphs, safe loss-preserving XML,
     common selectors, semantic Word/Spreadsheet/Presentation reads, safe blank
-    creation, text replacement and typed Spreadsheet text/number/boolean/formula
+    creation, scoped cross-format literal/regex replacement with split-run and
+    shared-string safety, and typed Spreadsheet text/number/boolean/formula
     cell and range mutation, typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment
     read/add/update/remove with format-owned anchors, authors, positions, and

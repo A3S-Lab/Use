@@ -44,6 +44,29 @@ Rich-text changes use the typed `set-text-format` mutation inside
 Use a run path for Word/Presentation character properties, a paragraph path
 for their alignment, and a cell or bounded range path for Spreadsheet.
 
+General find/replace uses the typed `replace-text` mutation. Keep `mode`
+explicit and prefer `literal` for ordinary text:
+
+```json
+{
+  "session": "report",
+  "mutations": [{
+    "operation": "replace-text",
+    "path": "/body",
+    "replacement": {
+      "find": "Q([1-4]) 2025",
+      "replace": "Q$1 2026",
+      "mode": "regex"
+    }
+  }]
+}
+```
+
+The batch receipt includes `textReplacements` with `matchCount`, `changed`, and
+`changedParts`. Zero matches are successful and unchanged. Regex matches must
+consume text. Spreadsheet cell/range scopes protect unselected shared-string
+references; Word and Presentation replacements preserve split-run formatting.
+
 Hyperlinks use the typed `set-hyperlink` mutation:
 
 ```json

@@ -42,7 +42,11 @@ pub use editor::{
     NativeOfficeHorizontalAlignment, NativeOfficeHyperlink, NativeOfficeHyperlinkTarget,
     NativeOfficeImage, NativeOfficeImageFormat, NativeOfficeImageMetadata,
     NativeOfficeInsertPosition, NativeOfficeMutation, NativeOfficePartType, NativeOfficeRgbColor,
-    NativeOfficeSwapResult, NativeOfficeTextFormat, NativeRawXmlPart, SpreadsheetCellValue,
+    NativeOfficeSwapResult, NativeOfficeTextFormat, NativeOfficeTextMatchMode,
+    NativeOfficeTextReplacement, NativeOfficeTextReplacementResult, NativeRawXmlPart,
+    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
+    MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 pub use issues::{
@@ -288,3 +292,6 @@ mod semantic_tests;
 
 #[cfg(test)]
 mod template_merge_tests;
+
+#[cfg(test)]
+mod text_replace_tests;

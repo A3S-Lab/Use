@@ -6,6 +6,8 @@ use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, Relationsh
 
 const PRESENTATION_NAMESPACE: &str = "http://schemas.openxmlformats.org/presentationml/2006/main";
 const STRICT_PRESENTATION_NAMESPACE: &str = "http://purl.oclc.org/ooxml/presentationml/main";
+const DRAWING_NAMESPACE: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const STRICT_DRAWING_NAMESPACE: &str = "http://purl.oclc.org/ooxml/drawingml/main";
 const RELATIONSHIPS_NAMESPACE: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const STRICT_RELATIONSHIPS_NAMESPACE: &str =
@@ -358,6 +360,7 @@ fn append_notes(
         "notes",
         OfficeNodeType::Notes,
     );
+    node.format.insert("part".into(), part_name.clone());
     let mut paragraphs = Vec::new();
     let mut descendants = Vec::new();
     notes.descendants(&mut descendants);
@@ -808,11 +811,15 @@ fn presentation_text(element: &XmlElement) -> String {
 }
 
 fn append_presentation_text(element: &XmlElement, output: &mut String) {
-    if element.local_name == "t" {
+    let is_drawing = matches!(
+        element.namespace.as_deref(),
+        Some(DRAWING_NAMESPACE | STRICT_DRAWING_NAMESPACE)
+    );
+    if is_drawing && element.local_name == "t" {
         output.push_str(&direct_text(element));
         return;
     }
-    if element.local_name == "br" {
+    if is_drawing && element.local_name == "br" {
         output.push('\n');
         return;
     }

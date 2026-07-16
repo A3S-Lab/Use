@@ -16,6 +16,7 @@ mod part;
 mod presentation;
 mod raw;
 mod spreadsheet;
+mod text_replace;
 mod types;
 mod word;
 
@@ -31,7 +32,11 @@ pub use types::{
     NativeOfficeCommentUpdate, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
     NativeOfficeHyperlinkTarget, NativeOfficeImage, NativeOfficeImageFormat,
     NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
-    NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat, SpreadsheetCellValue,
+    NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat,
+    NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextReplacementResult,
+    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
+    MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
 
 /// Loss-preserving OOXML editor with transactional in-memory batches.
@@ -79,6 +84,28 @@ impl NativeOfficeEditor {
             text: text.into(),
         }])?;
         Ok(())
+    }
+
+    /// Replaces bounded text matches within one semantic document scope.
+    ///
+    /// Matches may span rich-text runs, while replacement text inherits the
+    /// first matched run's formatting. A zero-match operation succeeds and
+    /// returns an unchanged receipt.
+    pub fn replace_text(
+        &mut self,
+        path: impl Into<String>,
+        replacement: NativeOfficeTextReplacement,
+    ) -> UseResult<NativeOfficeTextReplacementResult> {
+        let result = self.apply_batch(&[NativeOfficeMutation::ReplaceText {
+            path: path.into(),
+            replacement,
+        }])?;
+        result.text_replacements.into_iter().next().ok_or_else(|| {
+            editor_error(
+                "use.office.batch_validation_failed",
+                "Native Office text replacement returned no receipt.",
+            )
+        })
     }
 
     /// Applies typed rich-text properties without changing document content.
@@ -505,6 +532,7 @@ impl NativeOfficeEditor {
                 swaps: Vec::new(),
                 created_parts: Vec::new(),
                 created_images: Vec::new(),
+                text_replacements: Vec::new(),
             });
         }
         let original = self.package.clone();
@@ -512,11 +540,20 @@ impl NativeOfficeEditor {
         let mut swaps = Vec::new();
         let mut created_parts = Vec::new();
         let mut created_images = Vec::new();
+        let mut text_replacements = Vec::new();
         for mutation in mutations {
             let mut created_part = None;
             let mut created_image = None;
             let mut swap = None;
+            let mut text_replacement = None;
             let result = match mutation {
+                NativeOfficeMutation::ReplaceText { path, replacement } => {
+                    text_replace::replace(&mut self.package, path, replacement).map(|receipt| {
+                        let path = receipt.path.clone();
+                        text_replacement = Some(receipt);
+                        path
+                    })
+                }
                 NativeOfficeMutation::SetText { path, text } => {
                     set_text(&mut self.package, path, text).map(|()| path.clone())
                 }
@@ -685,6 +722,9 @@ impl NativeOfficeEditor {
                     if let Some(receipt) = swap {
                         swaps.push(receipt);
                     }
+                    if let Some(receipt) = text_replacement {
+                        text_replacements.push(receipt);
+                    }
                 }
                 Err(error) => {
                     self.package = original;
@@ -705,6 +745,7 @@ impl NativeOfficeEditor {
             swaps,
             created_parts,
             created_images,
+            text_replacements,
         })
     }
 

@@ -28,7 +28,9 @@ only when the requested operation is not yet native.
 
 3. Prefer a typed `office native` operation. Use `--output` for a distinct
    result when the command supports it; otherwise work on an intentional copy.
-   Use one atomic `batch` for dependent changes.
+   Use one atomic `batch` for dependent changes. For general find/replace, use
+   `set <file> <scope> --find ... --replace ...`; use literal mode unless regex
+   captures are actually required.
 
 4. Verify the result with `validate`, a targeted `get` or `query`, and
    `view ... issues`. Use HTML, SVG, or screenshot only as a semantic preview.
@@ -76,6 +78,9 @@ available.
   only absolute HTTP, HTTPS, or mailto URIs without embedded credentials.
 - Preserve no-clobber behavior. Do not add `--force` or replace an existing
   destination unless the user explicitly authorizes replacement.
+- Treat a zero-match replacement as an unchanged successful receipt, not as a
+  claimed edit. Keep Spreadsheet scopes narrow when only selected cells should
+  change; the engine protects shared-string aliases outside the scope.
 - Keep the default OfficeCLI compatibility route separate from the native
   engine. Do not depend on OfficeCLI's private resident protocol.
 
@@ -83,8 +88,8 @@ available.
 
 The native engine currently owns safe OPC/ZIP admission, semantic reads,
 bounded annotated and issue analysis, common typed mutations, atomic batches,
-typed bold/italic/font/size/RGB/alignment formatting, typed inert hyperlinks,
-typed legacy comments, template merge,
+scoped literal/regex replacement, typed bold/italic/font/size/RGB/alignment
+formatting, typed inert hyperlinks, typed legacy comments, template merge,
 constrained XML access, deterministic all-format HTML/SVG, and Browser-injected
 semantic screenshots, plus authenticated loopback live watch for saved files.
 Hyperlinks cover Word body paragraphs and bookmarks, Spreadsheet cells and
