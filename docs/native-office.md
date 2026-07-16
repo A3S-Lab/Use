@@ -221,6 +221,32 @@ relationship receipts, handles transitional and strict OOXML namespaces, and
 rolls back every package change on failure. It does not yet insert a visible
 chart frame or Word section reference.
 
+Typed move/copy/swap is implemented as a bounded arrangement layer. `Index` is
+zero-based and is evaluated after source removal for a move; `Before` and
+`After` resolve stable semantic paths before mutation. A copy with no position
+is inserted immediately after its source, while a move with no position moves
+to the end of its supported sibling set. Every operation participates in the
+same atomic batch rollback and semantic post-validation as add/set/remove.
+
+- Word moves and swaps paragraphs/tables inside a body or table cell, rows
+  inside a table, cells inside a row, and runs inside a paragraph. Copies cover
+  identity-free paragraphs, tables, rows, and runs. Cross-parent movement,
+  relationship or document-identity copies, and table-cell copy fail closed;
+  table-cell copy remains blocked until table-grid resizing is defined.
+- Spreadsheet moves, copies, and swaps worksheets. Worksheet copy requires a
+  distinct name and retains the existing loss-preserving owned-subgraph clone.
+  Dense plain rows can also move, copy, and swap with row/cell reference
+  renumbering. Row arrangement rejects sparse rows, formulas anywhere in the
+  workbook, defined names, row-addressed metadata, worksheet relationships, and
+  unsafe shared-string or identity copies before mutation.
+- Presentation moves, copies, and swaps slides. Slide copy currently accepts
+  only a layout-only relationship graph. Top-level shapes, pictures, tables,
+  charts, connectors, and groups can move or swap within one slide. Copy is
+  limited to a plain relationship-free shape without placeholders, extension
+  identities, or relationship attributes; the copy receives a fresh `cNvPr`
+  ID and name. Cross-slide object movement and relationship-owning copies fail
+  closed.
+
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
 tables, Spreadsheet worksheets and typed cells without styles or cached formula
@@ -252,12 +278,13 @@ default, with explicit `--force` replacement. Process-level tests cover all
 three formats with an unusable OfficeCLI path and verify template bytes remain
 unchanged.
 
-Generic node move/copy/swap, image creation and mutation, complex/custom part
-carriers, subtree and rich-structure dump, advanced rich-format operations, and
-the formula parser/dependency/recalculation engine remain before
-their respective gates can be promoted. Creation and structural mutation remain
-under the interoperability gate until Microsoft Office and optional CI
-LibreOffice checks confirm that no repair dialog is required.
+Cross-parent/reference-graph arrangement beyond the bounded move/copy/swap
+coverage above, image creation and mutation, complex/custom part carriers,
+subtree and rich-structure dump, advanced rich-format operations, and the
+formula parser/dependency/recalculation engine remain before their respective
+gates can be promoted. Creation and structural mutation remain under the
+interoperability gate until Microsoft Office and optional CI LibreOffice checks
+confirm that no repair dialog is required.
 
 ### Gate 3 — Rich Word
 
@@ -305,12 +332,12 @@ compatibility component for one deprecation cycle, then is removed.
 
 ## Current migration boundary
 
-The `0.1.x` CLI exposes native blank creation, reads, typed add/set/remove,
-Spreadsheet range and row/column structure edits, worksheet rename/reorder, and
-loss-preserving worksheet copy through `copy-sheet`, safe `raw`/`raw-set`, known
-`add-part` carriers, exact root replay dump for the canonical typed subset,
-cross-format template merge with `merge`, plus atomic batches under the native
-Office route; other Office commands and MCP startup
+The `0.1.x` CLI exposes native blank creation, reads, typed
+add/set/remove/move/copy/swap, Spreadsheet range and row/column structure edits,
+worksheet rename/reorder and loss-preserving worksheet copy, safe
+`raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
+canonical typed subset, cross-format template merge with `merge`, plus atomic
+batches under the native Office route; other Office commands and MCP startup
 still delegate to the pinned OfficeCLI provider. This keeps existing users
 functional while native coverage grows. The native APIs are deliberately not
 advertised as full Office readiness, and `doctor` continues to report

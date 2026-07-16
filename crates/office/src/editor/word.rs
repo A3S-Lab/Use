@@ -9,6 +9,10 @@ use crate::xml_edit::{
 };
 use crate::{DocumentKind, LosslessXmlPart, NativeOfficePackage};
 
+mod arrange;
+
+pub(super) use arrange::{copy_node, move_node, swap_nodes};
+
 const DOCUMENT_PART: &str = "word/document.xml";
 const WORD_NAMESPACE: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const DEFAULT_COLUMN_WIDTH: u32 = 2_400;

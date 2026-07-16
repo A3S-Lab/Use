@@ -32,6 +32,32 @@ pub enum SpreadsheetCellValue {
     Formula { expression: String },
 }
 
+/// Zero-based insertion selector shared by native move and copy operations.
+///
+/// `Index` is evaluated after removing the source for a move. `Before` and
+/// `After` use stable semantic paths and are resolved before the mutation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum NativeOfficeInsertPosition {
+    Index { index: usize },
+    Before { path: String },
+    After { path: String },
+}
+
+impl NativeOfficeInsertPosition {
+    pub fn at_index(index: usize) -> Self {
+        Self::Index { index }
+    }
+
+    pub fn before(path: impl Into<String>) -> Self {
+        Self::Before { path: path.into() }
+    }
+
+    pub fn after(path: impl Into<String>) -> Self {
+        Self::After { path: path.into() }
+    }
+}
+
 /// Typed in-process mutation supported by an atomic native batch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
@@ -112,6 +138,26 @@ pub enum NativeOfficeMutation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         position: Option<usize>,
     },
+    Move {
+        path: String,
+        #[serde(rename = "to", default, skip_serializing_if = "Option::is_none")]
+        target_parent: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<NativeOfficeInsertPosition>,
+    },
+    Copy {
+        path: String,
+        #[serde(rename = "to", default, skip_serializing_if = "Option::is_none")]
+        target_parent: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<NativeOfficeInsertPosition>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    Swap {
+        path: String,
+        with: String,
+    },
     ReplaceXmlPart {
         part: String,
         xml: String,
@@ -123,9 +169,18 @@ pub enum NativeOfficeMutation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct NativeOfficeSwapResult {
+    pub first: String,
+    pub second: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NativeBatchResult {
     pub applied: usize,
     pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub swaps: Vec<NativeOfficeSwapResult>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub created_parts: Vec<NativeCreatedPart>,
 }
@@ -419,6 +474,51 @@ impl NativeOfficeEditor {
         })
     }
 
+    pub fn move_node(
+        &mut self,
+        path: impl Into<String>,
+        target_parent: Option<String>,
+        position: Option<NativeOfficeInsertPosition>,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::Move {
+            path: path.into(),
+            target_parent,
+            position,
+        })
+    }
+
+    pub fn copy_node(
+        &mut self,
+        path: impl Into<String>,
+        target_parent: Option<String>,
+        position: Option<NativeOfficeInsertPosition>,
+        name: Option<String>,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::Copy {
+            path: path.into(),
+            target_parent,
+            position,
+            name,
+        })
+    }
+
+    pub fn swap_nodes(
+        &mut self,
+        path: impl Into<String>,
+        with: impl Into<String>,
+    ) -> UseResult<NativeOfficeSwapResult> {
+        let result = self.apply_batch(&[NativeOfficeMutation::Swap {
+            path: path.into(),
+            with: with.into(),
+        }])?;
+        result.swaps.into_iter().next().ok_or_else(|| {
+            editor_error(
+                "use.office.batch_validation_failed",
+                "Native Office swap mutation returned no swap receipt.",
+            )
+        })
+    }
+
     /// Replaces an existing, non-OPC-metadata XML part transactionally.
     pub fn replace_xml_part(
         &mut self,
@@ -449,14 +549,17 @@ impl NativeOfficeEditor {
             return Ok(NativeBatchResult {
                 applied: 0,
                 paths: Vec::new(),
+                swaps: Vec::new(),
                 created_parts: Vec::new(),
             });
         }
         let original = self.package.clone();
         let mut paths = Vec::with_capacity(mutations.len());
+        let mut swaps = Vec::new();
         let mut created_parts = Vec::new();
         for mutation in mutations {
             let mut created_part = None;
+            let mut swap = None;
             let result = match mutation {
                 NativeOfficeMutation::SetText { path, text } => {
                     set_text(&mut self.package, path, text).map(|()| path.clone())
@@ -526,6 +629,35 @@ impl NativeOfficeEditor {
                     name,
                     position,
                 } => spreadsheet::copy_worksheet(&mut self.package, path, name, *position),
+                NativeOfficeMutation::Move {
+                    path,
+                    target_parent,
+                    position,
+                } => move_node(
+                    &mut self.package,
+                    path,
+                    target_parent.as_deref(),
+                    position.as_ref(),
+                ),
+                NativeOfficeMutation::Copy {
+                    path,
+                    target_parent,
+                    position,
+                    name,
+                } => copy_node(
+                    &mut self.package,
+                    path,
+                    target_parent.as_deref(),
+                    position.as_ref(),
+                    name.as_deref(),
+                ),
+                NativeOfficeMutation::Swap { path, with } => {
+                    swap_nodes(&mut self.package, path, with).map(|receipt| {
+                        let primary = receipt.first.clone();
+                        swap = Some(receipt);
+                        primary
+                    })
+                }
                 NativeOfficeMutation::ReplaceXmlPart { part, xml } => {
                     raw::replace(&mut self.package, part, xml)
                 }
@@ -538,6 +670,9 @@ impl NativeOfficeEditor {
                     paths.push(path);
                     if let Some(created) = created_part {
                         created_parts.push(created);
+                    }
+                    if let Some(receipt) = swap {
+                        swaps.push(receipt);
                     }
                 }
                 Err(error) => {
@@ -556,6 +691,7 @@ impl NativeOfficeEditor {
         Ok(NativeBatchResult {
             applied: paths.len(),
             paths,
+            swaps,
             created_parts,
         })
     }
@@ -656,6 +792,55 @@ fn remove_node(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
         DocumentKind::Word => word::remove(package, path),
         DocumentKind::Spreadsheet => spreadsheet::remove(package, path),
         DocumentKind::Presentation => presentation::remove(package, path),
+    }
+}
+
+fn move_node(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    target_parent: Option<&str>,
+    position: Option<&NativeOfficeInsertPosition>,
+) -> UseResult<String> {
+    validate_mutation_path(path)?;
+    match package.kind() {
+        DocumentKind::Word => word::move_node(package, path, target_parent, position),
+        DocumentKind::Spreadsheet => spreadsheet::move_node(package, path, target_parent, position),
+        DocumentKind::Presentation => {
+            presentation::move_node(package, path, target_parent, position)
+        }
+    }
+}
+
+fn copy_node(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    target_parent: Option<&str>,
+    position: Option<&NativeOfficeInsertPosition>,
+    name: Option<&str>,
+) -> UseResult<String> {
+    validate_mutation_path(path)?;
+    match package.kind() {
+        DocumentKind::Word => word::copy_node(package, path, target_parent, position, name),
+        DocumentKind::Spreadsheet => {
+            spreadsheet::copy_node(package, path, target_parent, position, name)
+        }
+        DocumentKind::Presentation => {
+            presentation::copy_node(package, path, target_parent, position, name)
+        }
+    }
+}
+
+fn swap_nodes(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    with: &str,
+) -> UseResult<NativeOfficeSwapResult> {
+    validate_mutation_path(path)?;
+    validate_mutation_path(with)?;
+    match package.kind() {
+        DocumentKind::Word => word::swap_nodes(package, path, with),
+        DocumentKind::Spreadsheet => spreadsheet::swap_nodes(package, path, with),
+        DocumentKind::Presentation => presentation::swap_nodes(package, path, with),
     }
 }
 

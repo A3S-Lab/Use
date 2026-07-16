@@ -7,6 +7,7 @@ use tokio::io::AsyncReadExt;
 use crate::cli::CommandOutput;
 
 mod arguments;
+mod arrange;
 mod merge;
 mod part;
 mod raw;
@@ -32,6 +33,9 @@ const HELP: &str = concat!(
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
     "  a3s-use office native set <file> <path> (--text <value>|--number <value>|--boolean <true|false>|--formula <expression>) [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
+    "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
+    "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
+    "  a3s-use office native swap <file> <path> <with> [--output <file>] [--json]\n",
     "  a3s-use office native insert-rows|delete-rows <file> <sheet> <start> [--count <n>] [--output <file>] [--json]\n",
     "  a3s-use office native insert-columns|delete-columns <file> <sheet> <start> [--count <n>] [--output <file>] [--json]\n",
     "  a3s-use office native rename-sheet <file> <sheet> <new-name> [--output <file>] [--json]\n",
@@ -56,6 +60,9 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("add-part") => part::add(args).await,
         Some("set") => set(args).await,
         Some("remove") => remove(args).await,
+        Some("move") => arrange::move_node(args).await,
+        Some("copy") => arrange::copy_node(args).await,
+        Some("swap") => arrange::swap_nodes(args).await,
         Some("insert-rows") => edit_structure(args, StructureOperation::InsertRows).await,
         Some("delete-rows") => edit_structure(args, StructureOperation::DeleteRows).await,
         Some("insert-columns") => edit_structure(args, StructureOperation::InsertColumns).await,
@@ -75,7 +82,7 @@ fn help() -> CommandOutput {
         HELP,
         serde_json::json!({
             "commands": [
-                "get", "query", "view", "raw", "raw-set", "dump", "merge", "validate", "create", "add", "add-part", "set", "remove",
+                "get", "query", "view", "raw", "raw-set", "dump", "merge", "validate", "create", "add", "add-part", "set", "remove", "move", "copy", "swap",
                 "insert-rows", "delete-rows", "insert-columns", "delete-columns",
                 "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],

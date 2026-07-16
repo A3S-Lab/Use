@@ -205,6 +205,89 @@ pub(crate) fn apply_patches(
     Ok(edited)
 }
 
+pub(crate) fn relocate_element(
+    part: &LosslessXmlPart,
+    element: &IndexedXmlElement,
+    insertion: usize,
+) -> UseResult<Vec<u8>> {
+    require_utf8(part)?;
+    if insertion > part.parse_bytes().len() {
+        return Err(edit_error(
+            part.name(),
+            "XML element insertion falls outside the part.",
+        ));
+    }
+    if (element.full_range.start..=element.full_range.end).contains(&insertion) {
+        return Ok(part.raw().to_vec());
+    }
+    let fragment = element_fragment(part, element)?.to_vec();
+    apply_patches(
+        part,
+        vec![
+            XmlPatch::new(element.full_range.clone(), Vec::new()),
+            XmlPatch::new(insertion..insertion, fragment),
+        ],
+    )
+}
+
+pub(crate) fn duplicate_element(
+    part: &LosslessXmlPart,
+    element: &IndexedXmlElement,
+    insertion: usize,
+) -> UseResult<Vec<u8>> {
+    require_utf8(part)?;
+    if insertion > part.parse_bytes().len() {
+        return Err(edit_error(
+            part.name(),
+            "XML element insertion falls outside the part.",
+        ));
+    }
+    apply_patches(
+        part,
+        vec![XmlPatch::new(
+            insertion..insertion,
+            element_fragment(part, element)?.to_vec(),
+        )],
+    )
+}
+
+pub(crate) fn swap_elements(
+    part: &LosslessXmlPart,
+    first: &IndexedXmlElement,
+    second: &IndexedXmlElement,
+) -> UseResult<Vec<u8>> {
+    require_utf8(part)?;
+    if first.full_range == second.full_range {
+        return Ok(part.raw().to_vec());
+    }
+    if first.full_range.start < second.full_range.end
+        && second.full_range.start < first.full_range.end
+    {
+        return Err(edit_error(
+            part.name(),
+            "XML elements selected for swap overlap.",
+        ));
+    }
+    let first_fragment = element_fragment(part, first)?.to_vec();
+    let second_fragment = element_fragment(part, second)?.to_vec();
+    apply_patches(
+        part,
+        vec![
+            XmlPatch::new(first.full_range.clone(), second_fragment),
+            XmlPatch::new(second.full_range.clone(), first_fragment),
+        ],
+    )
+}
+
+pub(crate) fn element_fragment<'a>(
+    part: &'a LosslessXmlPart,
+    element: &IndexedXmlElement,
+) -> UseResult<&'a [u8]> {
+    part.parse_bytes()
+        .get(element.full_range.clone())
+        .ok_or_else(|| edit_error(part.name(), "XML element byte range is invalid."))
+}
+
 pub(crate) fn replace_text_descendants(
     part: &LosslessXmlPart,
     element: &IndexedXmlElement,

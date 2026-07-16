@@ -18,6 +18,10 @@ pub(super) struct ParsedArguments {
     pub formula: Option<String>,
     pub count: Option<u32>,
     pub position: Option<usize>,
+    pub index: Option<usize>,
+    pub target_parent: Option<String>,
+    pub before: Option<String>,
+    pub after: Option<String>,
     pub data: Option<String>,
     pub force: bool,
 }
@@ -101,6 +105,22 @@ impl ParsedArguments {
                     set_usize_option(&mut parsed.position, args, index, "--position")?;
                     index += 2;
                 }
+                "--index" if allowed.index => {
+                    set_usize_option(&mut parsed.index, args, index, "--index")?;
+                    index += 2;
+                }
+                "--to" if allowed.target_parent => {
+                    set_string_option(&mut parsed.target_parent, args, index, "--to")?;
+                    index += 2;
+                }
+                "--before" if allowed.before => {
+                    set_string_option(&mut parsed.before, args, index, "--before")?;
+                    index += 2;
+                }
+                "--after" if allowed.after => {
+                    set_string_option(&mut parsed.after, args, index, "--after")?;
+                    index += 2;
+                }
                 "--data" if allowed.data => {
                     set_string_option(&mut parsed.data, args, index, "--data")?;
                     index += 2;
@@ -142,6 +162,10 @@ pub(super) struct AllowedOptions {
     formula: bool,
     count: bool,
     position: bool,
+    index: bool,
+    target_parent: bool,
+    before: bool,
+    after: bool,
     data: bool,
     force: bool,
 }
@@ -161,6 +185,10 @@ impl AllowedOptions {
         formula: false,
         count: false,
         position: false,
+        index: false,
+        target_parent: false,
+        before: false,
+        after: false,
         data: false,
         force: false,
     };
@@ -220,6 +248,23 @@ impl AllowedOptions {
     pub const COPY: Self = Self {
         output: true,
         position: true,
+        ..Self::NONE
+    };
+    pub const MOVE_NODE: Self = Self {
+        output: true,
+        index: true,
+        target_parent: true,
+        before: true,
+        after: true,
+        ..Self::NONE
+    };
+    pub const COPY_NODE: Self = Self {
+        output: true,
+        name: true,
+        index: true,
+        target_parent: true,
+        before: true,
+        after: true,
         ..Self::NONE
     };
     pub const MERGE: Self = Self {

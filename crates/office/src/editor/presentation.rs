@@ -10,6 +10,10 @@ use crate::xml_edit::{
 };
 use crate::{DocumentKind, NativeOfficePackage};
 
+mod arrange;
+
+pub(super) use arrange::{copy_node, move_node, swap_nodes};
+
 pub(super) fn add_slide(
     package: &mut NativeOfficePackage,
     parent: &str,

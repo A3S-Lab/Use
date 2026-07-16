@@ -13,9 +13,11 @@ use crate::{DocumentKind, NativeOfficePackage};
 
 const MAX_RANGE_MUTATION_CELLS: usize = 100_000;
 
+mod arrange;
 mod structure;
 mod worksheet;
 
+pub(super) use arrange::{copy_node, move_node, swap_nodes};
 pub(super) use structure::{delete_columns, delete_rows, insert_columns, insert_rows};
 pub(super) use worksheet::{copy_worksheet, move_worksheet, rename_worksheet};
 

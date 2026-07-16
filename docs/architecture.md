@@ -113,13 +113,16 @@ in-process Rust calls and never require the service.
 The native Office engine uses typed in-process sessions and will expose those
 same sessions through the A3S Use standard MCP server. It does not copy an
 upstream private pipe protocol. During the 0.1.x migration, Office blank
-creation, reads, typed add/set/remove operations, constrained raw XML access,
-and atomic mutation batches are available explicitly under `office native`.
-That route also owns bounded
-Spreadsheet range mutation, row/column insertion and deletion, and worksheet
-rename/reorder/copy with loss-preserving OPC subgraph ownership. Safe raw XML
-inspection and constrained existing-part replacement use the same typed editor,
-post-mutation validation, and rollback boundary. Known chart/header/footer part
+creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
+XML access, and atomic mutation batches are available explicitly under
+`office native`. That route also owns bounded Spreadsheet range mutation,
+row/column insertion and deletion, and worksheet rename/reorder/copy with
+loss-preserving OPC subgraph ownership. Its arrangement layer covers
+same-parent Word structures, worksheets and dense plain rows, slides, and
+same-slide top-level Presentation objects. Ownership- or reference-bearing
+cases outside those bounds fail closed. Safe raw XML inspection and constrained
+existing-part replacement use the same typed editor, post-mutation validation,
+and rollback boundary. Known chart/header/footer part
 carriers atomically update content types and owner relationships and return
 typed creation receipts. Root-scoped native replay artifacts bind an exact
 blank-template part-map fingerprint, typed mutations, and an expected result
@@ -192,9 +195,10 @@ Implemented:
     creation, text replacement and typed Spreadsheet text/number/boolean/formula
     cell and range mutation, Word paragraph and bounded table/row/cell mutation,
     worksheet add/remove/rename/reorder/copy with owned OPC-subgraph cloning and
-    cleanup, Spreadsheet row/column structural edits with formula and
-    related-part reference rewriting, Presentation slide/shape mutation, core
-    node removal, constrained raw XML inspection/replacement, typed
+    cleanup, bounded cross-format move/copy/swap arrangement, Spreadsheet
+    row/column structural edits with formula and related-part reference
+    rewriting, Presentation slide/shape mutation, core node removal, constrained
+    raw XML inspection/replacement, typed
     chart/header/footer part carriers, exact root replay artifacts for the
     canonical typed subset, cross-format native template merge with bounded JSON
     and immutable templates, atomic batches, changed-file conflict detection,

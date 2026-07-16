@@ -60,6 +60,9 @@ a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native add report.docx /body --type paragraph --text 'More' --json
 a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
 a3s use office native remove report.docx /body/p[2] --json
+a3s use office native move report.docx /body/p[2] --before /body/p[1] --json
+a3s use office native copy workbook.xlsx /Sheet1 --name 'Sheet1 Copy' --json
+a3s use office native swap deck.pptx '/slide[1]' '/slide[2]' --json
 a3s use office native raw report.docx /word/document.xml --json
 a3s use office native add-part report.docx / --type header --json
 a3s use office native dump report.docx --output report.replay.json --json
@@ -87,9 +90,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   151 MCP tools, six packaged Skills, Dashboard, and interactive runtime from
   `agent-browser` 0.31.2
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
-  selector, semantic read, transactional mutation, and cross-format template
-  merge layers while retaining the 0.1.x OfficeCLI compatibility backend for
-  commands not yet promoted
+  selector, semantic read, transactional add/set/remove/move/copy/swap, and
+  cross-format template merge layers while retaining the 0.1.x OfficeCLI
+  compatibility backend for commands not yet promoted
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -257,7 +260,17 @@ relationship. The typed mutation layer
 also adds and removes Word paragraphs and basic table/row/cell structures,
 upserts typed Spreadsheet text, number, boolean, and formula cells, removes
 cells and bounded cell ranges, structurally inserts or deletes rows and columns,
-and adds, removes, renames, reorders, or copies worksheets. Worksheet copy
+and adds, removes, renames, reorders, or copies worksheets. It also exposes
+typed `move`, `copy`, and `swap` mutations with zero-based or path-relative
+placement. Word supports same-parent paragraph, table, row, cell, and run
+moves and swaps plus identity-free paragraph, table, row, and run copies.
+Spreadsheet supports worksheet arrangement and dense plain-row arrangement with
+row/cell renumbering. Presentation supports slide arrangement, same-slide
+top-level object movement/swaps, layout-only slide copies, and relationship-free
+plain-shape copies with fresh non-visual identities. Cross-parent ownership
+migration, formula-bearing or reference-rich row arrangement, identity-bearing
+Word copies, table-cell copies, and relationship-owning Presentation copies fail
+closed before save. Worksheet copy
 clones the owned OPC relationship subgraph while preserving shared workbook
 resources; removal garbage-collects only unshared descendants. Structural
 Spreadsheet edits rewrite affected A1 formulas, defined names, worksheet
@@ -274,14 +287,14 @@ Python, Node.js, or .NET. LibreOffice may be used only by optional CI
 interoperability checks and is never part of document execution.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
-typed add/set/remove operations, constrained raw XML access, known typed part
-carriers, exact replay artifacts for a constrained canonical subset, and atomic
-mutation batches, plus dependency-free template merge today. Other `0.1.x`
-commands and the
-Office MCP route still use a compatibility backend
-pinned to OfficeCLI `1.0.136`. This is a migration boundary, not the target
-architecture. The default command route will be promoted only after mutation,
-fidelity, rendering, and cross-application interoperability gates pass.
+typed add/set/remove/move/copy/swap operations, constrained raw XML access,
+known typed part carriers, exact replay artifacts for a constrained canonical
+subset, and atomic mutation batches, plus dependency-free template merge today.
+Other `0.1.x` commands and the Office MCP route still use a compatibility
+backend pinned to OfficeCLI `1.0.136`. This is a migration boundary, not the
+target architecture. The default command route will be promoted only after
+mutation, fidelity, rendering, and cross-application interoperability gates
+pass.
 
 ```bash
 # Inspect without downloading anything.
@@ -342,6 +355,13 @@ a3s use office native add deck.pptx '/slide[1]' --type shape --text '42%' --json
 a3s use office native remove workbook.xlsx /Data --json
 a3s use office native remove deck.pptx '/slide[1]/shape[2]' --json
 
+# Arrange supported semantic nodes. --index is zero-based; --before and --after
+# resolve stable pre-mutation paths. A copy defaults to immediately after its
+# source.
+a3s use office native move report.docx '/body/p[3]' --before '/body/p[1]' --json
+a3s use office native copy workbook.xlsx '/Q1 Data' --name 'Q1 Copy' --after '/Q1 Data' --json
+a3s use office native swap deck.pptx '/slide[1]' '/slide[3]' --json
+
 # Merge a template into a separate output. JSON may be inline, @file, or an
 # existing .json path. Existing outputs require an explicit --force.
 a3s use office native merge template.docx report.docx --data @report.json --json
@@ -384,6 +404,14 @@ current schema is:
     {
       "operation": "remove",
       "path": "/body/p[2]"
+    },
+    {
+      "operation": "move",
+      "path": "/body/p[3]",
+      "position": {
+        "kind": "before",
+        "path": "/body/p[1]"
+      }
     }
   ]
 }
@@ -394,7 +422,8 @@ and 10,000 mutations. The version 1 mutation set is `set-text`,
 `set-cell-value`, `add-paragraph`, `add-table`, `add-table-row`, `add-table-cell`,
 `add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
 `delete-columns`, `rename-worksheet`, `move-worksheet`, `copy-worksheet`,
-`replace-xml-part`, `add-part`, `add-slide`, `add-shape`, and `remove`.
+`move`, `copy`, `swap`, `replace-xml-part`, `add-part`, `add-slide`, `add-shape`,
+and `remove`.
 
 `office native dump` produces a stricter versioned batch artifact, also as
 ordinary JSON:
@@ -485,7 +514,8 @@ Typed part creation is also batchable:
 }
 ```
 
-The batch result keeps the existing ordered `paths` ledger and adds
+The batch result keeps the existing ordered `paths` ledger, adds `swaps`
+receipts containing the post-mutation `first` and `second` paths, and adds
 `createdParts` receipts containing `part`, `ownerPart`, `relationshipId`, and
 `type`. Word supports chart, header, and footer carriers at `/`; Spreadsheet
 supports chart carriers under a worksheet; Presentation supports chart carriers
@@ -517,8 +547,8 @@ callers:
 
 ```rust,no_run
 use a3s_use_office::{
-    NativeOfficeDocument, NativeOfficeEditor, NativeOfficePackage,
-    NativeOfficeReplayArtifact,
+    NativeOfficeDocument, NativeOfficeEditor, NativeOfficeInsertPosition,
+    NativeOfficePackage, NativeOfficeReplayArtifact,
 };
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
@@ -544,7 +574,14 @@ let header = editor.add_part("/", a3s_use_office::NativeOfficePartType::Header)?
 println!("{} {}", header.part, header.relationship_id);
 editor.set_text("/body/p[1]", "Updated")?;
 let added = editor.add_paragraph("/body", "Summary")?;
-editor.remove(added)?;
+let moved = editor.move_node(
+    added,
+    None,
+    Some(NativeOfficeInsertPosition::at_index(0)),
+)?;
+let copied = editor.copy_node(&moved, None, None, None)?;
+let swapped = editor.swap_nodes(moved, copied)?;
+editor.remove(swapped.second)?;
 let table = editor.add_table("/body", 2, 3)?;
 editor.set_text(format!("{table}/tr[1]/tc[1]"), "Name")?;
 editor.save().await?;
