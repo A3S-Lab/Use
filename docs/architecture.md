@@ -64,13 +64,15 @@ enabled extensions through one schema while preserving each binding's
 generation and a content revision. The generation advances for extension
 lifecycle commits; the SHA-256 revision also detects built-in provider
 readiness and packaged Skill changes when the extension generation remains
-zero.
+unchanged. Each Skill projection includes an absolute package path and its own
+lowercase SHA-256, allowing a resident host to reject raced or modified bytes
+before replacing its live Skill.
 
-The projection contains absolute validated Skill paths and an MCP launch
-target, never executable extension code or a generic action payload. Consumers
-still start `a3s-use mcp serve <target>` as a standard MCP server and load
-`SKILL.md` through their native Skill registry. The capability commands are
-versioned JSON CLI output, not a new RPC transport.
+The projection contains content-bound Skill references and an MCP launch target,
+never executable extension code or a generic action payload. Consumers still
+start `a3s-use mcp serve <target>` as a standard MCP server and load `SKILL.md`
+through their native Skill registry. The capability commands are versioned JSON
+CLI output, not a new RPC transport.
 
 ## Component-backed routes
 

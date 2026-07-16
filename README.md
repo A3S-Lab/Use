@@ -98,9 +98,11 @@ project Browser, Office, Box, and enabled external packages through one
 read-only schema. Each binding identifies whether it is `built-in` or
 `extension` and declares only its available CLI, standard MCP, and `SKILL.md`
 surfaces. The extension generation tracks receipt mutations; the SHA-256
-revision also changes when built-in readiness or packaged Skills change. This
-is a discovery contract only—invocation still uses native CLI, standard MCP,
-or the Skill loader.
+revision also changes when built-in readiness or packaged Skills change. Every
+projected Skill carries its own lowercase SHA-256 so a resident consumer can
+verify the exact bytes before loading them and can reload content even when its
+absolute path is unchanged. This is a discovery contract only—invocation still
+uses native CLI, standard MCP, or the Skill loader.
 
 Every accepted CLI or MCP invocation holds a shared route lease until its
 child process exits. Disable and uninstall remove route visibility first, then

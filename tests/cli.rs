@@ -46,6 +46,13 @@ fn unified_capability_snapshot_projects_builtin_browser_skill() {
     assert!(browser["skills"][0]["path"]
         .as_str()
         .is_some_and(|path| path.ends_with("skills/a3s-use-browser/SKILL.md")));
+    let skill_digest = browser["skills"][0]["sha256"]
+        .as_str()
+        .expect("the capability registry must bind Skill content, not only its path");
+    assert_eq!(skill_digest.len(), 64);
+    assert!(skill_digest
+        .bytes()
+        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
     assert!(value.get("jsonrpc").is_none());
 }
 

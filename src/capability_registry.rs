@@ -4,12 +4,13 @@
 //! not a private RPC protocol: invocation still happens through native CLI,
 //! standard MCP, and `SKILL.md` surfaces.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{Readiness, UseError, UseResult};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use tokio::io::AsyncReadExt;
 
 const SCHEMA_VERSION: u32 = 1;
 const WATCH_INTERVAL: Duration = Duration::from_millis(100);
@@ -49,6 +50,7 @@ struct McpSurface {
 #[serde(rename_all = "camelCase")]
 struct SkillSurface {
     path: PathBuf,
+    sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -72,7 +74,7 @@ pub(crate) struct CapabilityBinding {
 pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
     let (generation, extensions) = stable_extensions().await?;
     let mut capabilities = vec![
-        browser_capability().await,
+        browser_capability().await?,
         office_capability(),
         box_capability(),
     ];
@@ -120,16 +122,16 @@ pub(crate) async fn wait_for_change(
     }
 }
 
-async fn browser_capability() -> CapabilityBinding {
+async fn browser_capability() -> UseResult<CapabilityBinding> {
     #[cfg(feature = "browser")]
     {
         let diagnostic = a3s_use_browser::doctor();
         let skill = crate::browser_driver::primary_skill_surface().await;
         let (package_root, skills) = match skill {
-            Some((root, path)) => (Some(root), vec![SkillSurface { path }]),
+            Some((root, path)) => (Some(root), vec![skill_surface(path).await?]),
             None => (None, Vec::new()),
         };
-        CapabilityBinding {
+        Ok(CapabilityBinding {
             id: "use/browser".to_string(),
             route: "browser".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -143,11 +145,11 @@ async fn browser_capability() -> CapabilityBinding {
                 transport: McpTransport::Stdio,
             }),
             skills,
-        }
+        })
     }
     #[cfg(not(feature = "browser"))]
     {
-        CapabilityBinding {
+        Ok(CapabilityBinding {
             id: "use/browser".to_string(),
             route: "browser".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -158,7 +160,7 @@ async fn browser_capability() -> CapabilityBinding {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
-        }
+        })
     }
 }
 
@@ -227,6 +229,52 @@ fn revision(capabilities: &[CapabilityBinding]) -> UseResult<String> {
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+async fn skill_surface(path: PathBuf) -> UseResult<SkillSurface> {
+    let metadata = tokio::fs::symlink_metadata(&path)
+        .await
+        .map_err(|error| skill_io_error("inspect", &path, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(UseError::new(
+            "use.capability.skill_invalid",
+            format!(
+                "Projected Skill '{}' must be a regular package file.",
+                path.display()
+            ),
+        ));
+    }
+
+    let mut file = tokio::fs::File::open(&path)
+        .await
+        .map_err(|error| skill_io_error("open", &path, error))?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .await
+            .map_err(|error| skill_io_error("read", &path, error))?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+
+    Ok(SkillSurface {
+        path,
+        sha256: format!("{:x}", digest.finalize()),
+    })
+}
+
+fn skill_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError {
+    UseError::new(
+        "use.capability.skill_unreadable",
+        format!(
+            "Failed to {action} projected Skill '{}': {error}",
+            path.display()
+        ),
+    )
+}
+
 #[cfg(feature = "extensions")]
 async fn stable_extensions() -> UseResult<(u64, Vec<CapabilityBinding>)> {
     for _ in 0..MAX_STABLE_SNAPSHOT_ATTEMPTS {
@@ -285,11 +333,10 @@ async fn project_extensions(
                 a3s_use_extension::McpTransport::StreamableHttp => McpTransport::StreamableHttp,
             },
         });
-        let skills = extension
-            .skill_path()
-            .into_iter()
-            .map(|path| SkillSurface { path })
-            .collect();
+        let mut skills = Vec::new();
+        if let Some(path) = extension.skill_path() {
+            skills.push(skill_surface(path).await?);
+        }
         capabilities.push(CapabilityBinding {
             id: receipt.component_id.clone(),
             route: receipt.route.clone(),
@@ -335,7 +382,26 @@ mod tests {
             .skills
             .iter()
             .any(|skill| skill.path.ends_with("a3s-use-browser/SKILL.md")));
+        assert!(browser.skills.iter().all(|skill| skill.sha256.len() == 64));
         assert_eq!(snapshot.revision.len(), 64);
+    }
+
+    #[tokio::test]
+    async fn skill_content_changes_revision_without_changing_its_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("SKILL.md");
+        tokio::fs::write(&path, b"first").await.unwrap();
+        let first = skill_surface(path.clone()).await.unwrap();
+        tokio::fs::write(&path, b"second").await.unwrap();
+        let second = skill_surface(path).await.unwrap();
+        assert_ne!(first.sha256, second.sha256);
+
+        let mut capability = box_capability();
+        capability.skills = vec![first];
+        let first_revision = revision(&[capability.clone()]).unwrap();
+        capability.skills = vec![second];
+        let second_revision = revision(&[capability]).unwrap();
+        assert_ne!(first_revision, second_revision);
     }
 
     #[tokio::test]
