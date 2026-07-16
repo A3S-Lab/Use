@@ -32,6 +32,7 @@ formats:
 - create, semantic view, get, query, set, add, remove, move, copy, and swap;
 - typed bold, italic, font-family, exact-size, RGB text-color, and alignment
   mutation without generic property maps;
+- typed inert hyperlinks with format-specific external and internal targets;
 - typed selectors with stable, one-based document paths;
 - transactional batch mutation and explicit partial-apply compatibility mode;
 - template merge and replayable dump/batch documents;
@@ -58,9 +59,9 @@ BCP-47 language tags, and RTL layout.
 
 Spreadsheet coverage includes workbooks, worksheets, cells, ranges, row and
 column mutation, formulas, defined names, styles and number formats, tables,
-sorting, filters, validation, conditional formatting, drawings, images, charts,
-pivot tables and caches, slicers, sparklines, comments, OLE preservation, and
-CSV/TSV import.
+sorting, filters, validation, conditional formatting, hyperlinks, drawings,
+images, charts, pivot tables and caches, slicers, sparklines, comments, OLE
+preservation, and CSV/TSV import.
 
 The formula subsystem requires a real parser, dependency graph, recalculation
 engine, dynamic-array spilling, reference rewriting, and a typed function
@@ -72,7 +73,7 @@ script runtime.
 Presentation coverage includes slides, masters, layouts, themes, placeholders,
 shapes, text, groups, connectors, tables, images, charts, audio and video, OLE
 preservation, 3D model parts, equations, diagrams, notes, comments, animations,
-transitions, morph metadata, and slide zoom.
+transitions, hyperlink actions, morph metadata, and slide zoom.
 
 ## Architecture
 
@@ -122,8 +123,10 @@ embedding a second browser runtime in the Office engine.
    case-ambiguous part names are rejected.
 4. DTDs and external XML entities are rejected. Namespace prefixes, unknown
    attributes, `mc:AlternateContent`, and untouched parts survive round trips.
-5. External relationships are data. Network access requires a separate,
-   explicit policy and remains disabled by default.
+5. External relationships are data. Native hyperlink writes accept only
+   absolute HTTP, HTTPS, or mailto URIs without embedded credentials. Opening,
+   inspecting, and rendering never fetch them; network access requires a
+   separate, explicit policy and remains disabled by default.
 6. Mutation batches are atomic by default. A compatibility caller must opt in
    to continue-on-error behavior and receives an applied-operation ledger.
 7. Save writes a synchronized temporary package in the destination directory
@@ -175,8 +178,8 @@ are covered.
 
 ### Gate 2 — Native basic mutation
 
-- Create documents and perform core text, table, cell, sheet, slide, shape, and
-  image mutations.
+- Create documents and perform core text, table, cell, sheet, slide, shape,
+  hyperlink, and image mutations.
 - Atomic batch, save conflict detection, raw access, validation, merge, and dump.
 - Untouched-part and untouched-subtree fidelity gates.
 
@@ -216,6 +219,25 @@ All three formats provide semantic readback and use normal batch rollback and
 post-mutation validation. Advanced named styles, inheritance, highlights,
 fills, borders, underline/strike, vertical alignment, and arbitrary property
 maps remain outside this milestone.
+
+Native `set-hyperlink` is implemented through one typed Rust, batch, CLI, and
+standard MCP contract. Word adds an external HTTP/HTTPS/mailto relationship or
+internal bookmark anchor to a document-body paragraph, updates an existing
+hyperlink path, and supports display text and tooltip. Spreadsheet adds or
+updates an external relationship or internal workbook location on one cell,
+supports display text and tooltip, and auto-creates a missing cell with the
+display or target text. Presentation attaches an external shape-wide click
+relationship and optional tooltip to a shape; separate display text and
+internal slide jumps return typed unsupported errors. All three formats expose
+stable semantic hyperlink nodes to `get`, `query`, annotated views, CLI, and
+MCP, and remove them through the normal typed `remove` operation. External URI
+validation rejects active or relative schemes, embedded credentials, controls,
+and malformed targets. Relationship IDs are allocated or reused safely and are
+garbage-collected only when unused, including when an owning paragraph, cell,
+shape, or slide is removed. Atomic batches roll back every XML and relationship
+change on failure, and both strict and transitional OOXML dialects are retained.
+Word header/footer hyperlink mutation, multi-cell Spreadsheet hyperlinks, and
+Presentation internal slide jumps remain outside this bounded milestone.
 
 Row and column edits update cell and row references, dimensions, column
 definitions, defined names, workbook view state, merges, filters, selections,
@@ -540,8 +562,8 @@ compatibility component for one deprecation cycle, then is removed.
 ## Current migration boundary
 
 The `0.1.x` CLI exposes native blank creation, reads, typed
-add/set/remove/move/copy/swap, cross-format text formatting, Spreadsheet range
-and row/column structure edits,
+add/set/remove/move/copy/swap, cross-format text formatting, typed inert
+hyperlinks, Spreadsheet range and row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format

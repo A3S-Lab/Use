@@ -72,7 +72,8 @@ available.
   Native formula writes request spreadsheet recalculation; they do not promise
   a computed cached value.
 - Treat external OOXML relationships as inert. Do not fetch linked resources
-  while inspecting or rendering a document.
+  while inspecting or rendering a document. Native hyperlink writes accept
+  only absolute HTTP, HTTPS, or mailto URIs without embedded credentials.
 - Preserve no-clobber behavior. Do not add `--force` or replace an existing
   destination unless the user explicitly authorizes replacement.
 - Keep the default OfficeCLI compatibility route separate from the native
@@ -82,10 +83,14 @@ available.
 
 The native engine currently owns safe OPC/ZIP admission, semantic reads,
 bounded annotated and issue analysis, common typed mutations, atomic batches,
-typed bold/italic/font/size/RGB/alignment formatting, template merge,
+typed bold/italic/font/size/RGB/alignment formatting, typed inert hyperlinks,
+template merge,
 constrained XML access, deterministic all-format HTML/SVG, and Browser-injected
 semantic screenshots, plus authenticated loopback live watch for saved files.
-Advanced formatting, complete formula calculation, advanced charts/media,
-interactive preview editing/annotations, and full Office layout fidelity remain
-incomplete. Fail closed or use the explicit compatibility route rather than
-inventing unsupported native behavior.
+Hyperlinks cover Word body paragraphs and bookmarks, Spreadsheet cells and
+internal locations, and external Presentation shape clicks. Word header/footer
+links, Spreadsheet link ranges, and Presentation slide jumps remain incomplete,
+as do advanced formatting, complete formula calculation, advanced charts/media,
+interactive preview editing/annotations, and full Office layout fidelity. Fail
+closed or use the explicit compatibility route rather than inventing
+unsupported native behavior.

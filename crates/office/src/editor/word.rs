@@ -534,6 +534,7 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
     let part = package.xml_part(DOCUMENT_PART)?;
     let index = index_xml(&part)?;
     let target = locate_word_path(&index, path)?;
+    let hyperlink_relationships = super::hyperlink::owned_hyperlink_relationship_ids(target);
     let mut patches = Vec::new();
     match target.local_name.as_str() {
         "p" => validate_paragraph_removal(&index, path)?,
@@ -590,7 +591,12 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
     }
     patches.push(XmlPatch::new(target.full_range.clone(), Vec::new()));
     let edited = apply_patches(&part, patches)?;
-    package.set_part(DOCUMENT_PART, edited)
+    package.set_part(DOCUMENT_PART, edited)?;
+    super::hyperlink::remove_relationships_if_unused(
+        package,
+        DOCUMENT_PART,
+        &hyperlink_relationships,
+    )
 }
 
 pub(super) fn locate_word_path<'a>(

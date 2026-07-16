@@ -1,5 +1,7 @@
 use super::*;
-use a3s_use_office::{NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat};
+use a3s_use_office::{
+    NativeOfficeHyperlinkTarget, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
+};
 
 #[test]
 fn native_office_server_exposes_only_bounded_typed_tools() {
@@ -121,5 +123,53 @@ fn office_batch_schema_exposes_typed_text_formatting() {
             },
             ..
         }
+    ));
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_hyperlinks() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "set-hyperlink",
+        "external",
+        "internal",
+        "uri",
+        "location",
+        "display",
+        "tooltip",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "report",
+        "mutations": [{
+            "operation": "set-hyperlink",
+            "path": "/body/p[1]",
+            "hyperlink": {
+                "target": {
+                    "kind": "external",
+                    "uri": "https://example.com/report"
+                },
+                "display": "Report",
+                "tooltip": "Open report"
+            }
+        }]
+    }))
+    .unwrap();
+    let mutation = input.mutations.into_iter().next().unwrap();
+    assert!(matches!(
+        mutation.into_native().unwrap(),
+        NativeOfficeMutation::SetHyperlink {
+            hyperlink: a3s_use_office::NativeOfficeHyperlink {
+                target: NativeOfficeHyperlinkTarget::External { ref uri },
+                display: Some(ref display),
+                tooltip: Some(ref tooltip),
+            },
+            ..
+        } if uri == "https://example.com/report"
+            && display == "Report"
+            && tooltip == "Open report"
     ));
 }

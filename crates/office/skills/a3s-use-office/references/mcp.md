@@ -44,6 +44,34 @@ Rich-text changes use the typed `set-text-format` mutation inside
 Use a run path for Word/Presentation character properties, a paragraph path
 for their alignment, and a cell or bounded range path for Spreadsheet.
 
+Hyperlinks use the typed `set-hyperlink` mutation:
+
+```json
+{
+  "session": "report",
+  "mutations": [{
+    "operation": "set-hyperlink",
+    "path": "/body/p[1]",
+    "hyperlink": {
+      "target": {
+        "kind": "external",
+        "uri": "https://example.com/report"
+      },
+      "display": "Open report",
+      "tooltip": "A3S report"
+    }
+  }]
+}
+```
+
+Use an internal target with `"location"` for a Word bookmark or Spreadsheet
+location. Presentation accepts only external shape-wide links and no separate
+display text; internal slide jumps return
+`use.office.hyperlink_target_unsupported`. External targets accept only
+absolute HTTP, HTTPS, or mailto URIs without credentials and remain inert.
+Query `hyperlink` to discover stable paths and remove one with the ordinary
+typed `remove` mutation. Hyperlink changes remain unsaved until `office_save`.
+
 `office_view` supports text, bounded annotated entries, outline, stats, issues,
 all-format HTML/SVG, and all-format semantic screenshots. Annotated and issue
 output accept a `limit` from 1 through 1,000; issue output is also filterable.

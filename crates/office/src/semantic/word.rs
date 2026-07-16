@@ -29,7 +29,14 @@ pub(super) fn read(
     body_node
         .format
         .insert("part".into(), "word/document.xml".into());
-    read_block_children(body, "/body", &styles, &mut body_node.children);
+    read_block_children(
+        body,
+        "/body",
+        &styles,
+        opc,
+        "word/document.xml",
+        &mut body_node.children,
+    );
     body_node.text = join_block_text(&body_node.children);
     root.text = body_node.text.clone();
     root.children.push(body_node);
@@ -69,7 +76,14 @@ fn read_headers_and_footers(
         let path = format!("/{tag}[{index}]");
         let mut node = DocumentNode::new(&path, tag, node_type);
         node.format.insert("part".into(), part_name.clone());
-        read_block_children(&container, &path, styles, &mut node.children);
+        read_block_children(
+            &container,
+            &path,
+            styles,
+            opc,
+            part_name,
+            &mut node.children,
+        );
         node.text = join_block_text(&node.children);
         root.children.push(node);
     }
@@ -101,6 +115,8 @@ fn read_block_children(
     container: &XmlElement,
     parent_path: &str,
     styles: &BTreeMap<String, String>,
+    opc: &OpcPackageModel,
+    owner_part: &str,
     output: &mut Vec<DocumentNode>,
 ) {
     let mut paragraph_index = output
@@ -119,6 +135,8 @@ fn read_block_children(
                     element,
                     &format!("{parent_path}/p[{paragraph_index}]"),
                     styles,
+                    opc,
+                    owner_part,
                 ));
             }
             "tbl" => {
@@ -127,11 +145,13 @@ fn read_block_children(
                     element,
                     &format!("{parent_path}/tbl[{table_index}]"),
                     styles,
+                    opc,
+                    owner_part,
                 ));
             }
             "sdt" | "customXml" | "ins" | "del" | "moveFrom" | "moveTo" => {
                 let nested = element.child("sdtContent").unwrap_or(element);
-                read_block_children(nested, parent_path, styles, output);
+                read_block_children(nested, parent_path, styles, opc, owner_part, output);
                 paragraph_index = output
                     .iter()
                     .filter(|node| node.node_type == OfficeNodeType::Paragraph)
@@ -150,6 +170,8 @@ fn read_paragraph(
     paragraph: &XmlElement,
     path: &str,
     styles: &BTreeMap<String, String>,
+    opc: &OpcPackageModel,
+    owner_part: &str,
 ) -> DocumentNode {
     let mut node = DocumentNode::new(path, "p", OfficeNodeType::Paragraph);
     if let Some(properties) = paragraph.child("pPr") {
@@ -169,9 +191,7 @@ fn read_paragraph(
                 let hyperlink_path = format!("{path}/hyperlink[{hyperlink_index}]");
                 let mut hyperlink =
                     DocumentNode::new(&hyperlink_path, "hyperlink", OfficeNodeType::Hyperlink);
-                if let Some(id) = child.attribute("id") {
-                    hyperlink.format.insert("relationshipId".into(), id.into());
-                }
+                apply_hyperlink_target(child, opc, owner_part, &mut hyperlink);
                 for run in child.children_named("r") {
                     run_index += 1;
                     hyperlink
@@ -197,6 +217,60 @@ fn read_paragraph(
         .map(|child| child.text.as_str())
         .collect();
     node
+}
+
+fn apply_hyperlink_target(
+    element: &XmlElement,
+    opc: &OpcPackageModel,
+    owner_part: &str,
+    node: &mut DocumentNode,
+) {
+    for (attribute, key) in [
+        ("tooltip", "tooltip"),
+        ("history", "history"),
+        ("docLocation", "docLocation"),
+        ("tgtFrame", "targetFrame"),
+    ] {
+        if let Some(value) = element.attribute(attribute) {
+            node.format.insert(key.into(), value.into());
+        }
+    }
+    if let Some(anchor) = element.attribute("anchor") {
+        node.format.insert("targetKind".into(), "internal".into());
+        node.format.insert("target".into(), anchor.into());
+        return;
+    }
+    let Some(id) = element.attribute("id") else {
+        return;
+    };
+    node.format.insert("relationshipId".into(), id.into());
+    let source = RelationshipSource::Part {
+        part_name: owner_part.to_string(),
+    };
+    let Some(relationship) = opc
+        .relationships()
+        .relationship(&source, id)
+        .filter(|relationship| relationship.relationship_type.ends_with("/hyperlink"))
+    else {
+        return;
+    };
+    match &relationship.target {
+        RelationshipTarget::External { uri } => {
+            node.format.insert("targetKind".into(), "external".into());
+            node.format.insert("target".into(), uri.clone());
+        }
+        RelationshipTarget::Internal {
+            part_name,
+            fragment,
+        } => {
+            node.format.insert("targetKind".into(), "internal".into());
+            let target = fragment.as_ref().map_or_else(
+                || part_name.clone(),
+                |fragment| format!("{part_name}#{fragment}"),
+            );
+            node.format.insert("target".into(), target);
+        }
+    }
 }
 
 fn append_nested_runs(
@@ -277,7 +351,13 @@ fn copy_picture_extent(element: &XmlElement, attribute: &str, key: &str, node: &
     }
 }
 
-fn read_table(table: &XmlElement, path: &str, styles: &BTreeMap<String, String>) -> DocumentNode {
+fn read_table(
+    table: &XmlElement,
+    path: &str,
+    styles: &BTreeMap<String, String>,
+    opc: &OpcPackageModel,
+    owner_part: &str,
+) -> DocumentNode {
     let mut node = DocumentNode::new(path, "tbl", OfficeNodeType::Table);
     if let Some(style) = table
         .child("tblPr")
@@ -295,7 +375,14 @@ fn read_table(table: &XmlElement, path: &str, styles: &BTreeMap<String, String>)
         for (cell_offset, cell) in row.children_named("tc").enumerate() {
             let cell_path = format!("{row_path}/tc[{}]", cell_offset + 1);
             let mut cell_node = DocumentNode::new(&cell_path, "tc", OfficeNodeType::TableCell);
-            read_block_children(cell, &cell_path, styles, &mut cell_node.children);
+            read_block_children(
+                cell,
+                &cell_path,
+                styles,
+                opc,
+                owner_part,
+                &mut cell_node.children,
+            );
             cell_node.text = join_block_text(&cell_node.children);
             row_node.children.push(cell_node);
         }

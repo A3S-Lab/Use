@@ -66,6 +66,7 @@ a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
+a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx /body --type paragraph --text 'More' --json
 a3s use office native add report.docx /body --type table --rows 2 --columns 3 --json
 a3s use office native add report.docx /body --type picture --input logo.png --alt 'A3S logo' --width 320 --json
@@ -104,7 +105,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   `agent-browser` 0.32.1
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
-  typed cross-format text formatting,
+  typed cross-format text formatting and inert hyperlinks,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
   bounded typed issue diagnostics, Browser-injected semantic PNG screenshots,
@@ -288,7 +289,14 @@ exact centipoint font size, RGB text color, and horizontal alignment. Word and
 Presentation apply character properties to run paths and alignment to paragraph
 paths; Spreadsheet applies the same contract to cells or bounded A1 ranges,
 creating and deduplicating OOXML font and cell-style records when necessary. It
-can safely inspect
+also creates, updates, reads, queries, and removes typed hyperlinks. Word owns
+external HTTP/HTTPS/mailto links and internal bookmark targets with display
+text and tooltips; Spreadsheet owns external links and internal cell locations
+with display text and tooltips, auto-creating a missing linked cell;
+Presentation owns external shape-wide links and tooltips. Presentation slide
+jumps remain unsupported and fail closed. External targets reject embedded
+credentials, active or relative schemes, and malformed URIs; semantic rendering
+keeps every relationship inert and never fetches it. It can safely inspect
 existing XML parts and replace non-OPC-metadata XML parts while preserving the
 root QName and validating the final document. Known chart, header, and footer
 part carriers can be created together with their content type and owner
@@ -335,7 +343,8 @@ provider because it captures the native semantic HTML through the existing
 Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
-typed add/set/remove/move/copy/swap and rich-text operations, constrained raw XML access,
+typed add/set/remove/move/copy/swap, rich-text, and hyperlink operations,
+constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML and SVG are
@@ -408,6 +417,17 @@ a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --font-size 11.5 --text-color 0066CC --align center --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --italic true --font-family 'Aptos Display' --font-size 20 --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
+
+# Add or update inert hyperlinks. External targets accept only absolute
+# HTTP/HTTPS/mailto URIs without credentials. Word internal targets are bookmark
+# names; Spreadsheet internal targets are workbook locations. Presentation
+# currently supports only external, shape-wide links without separate display text.
+a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com/report --display 'Open report' --tooltip 'A3S report' --json
+a3s use office native set report.docx '/body/p[1]/hyperlink[1]' --location section_1 --display 'Jump to section' --json
+a3s use office native set workbook.xlsx /Sheet1/A1 --location 'Sheet1!B2' --display B2 --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]' --url https://example.com/slides --tooltip 'Open slides' --json
+a3s use office native query report.docx hyperlink --json
+a3s use office native remove report.docx '/body/p[1]/hyperlink[1]' --json
 
 # Preserve Spreadsheet value types; formula storage requests application recalculation.
 a3s use office native set workbook.xlsx /Sheet1/A1 --number 42.5 --json
@@ -578,7 +598,9 @@ current schema is:
 
 The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `set-text`,
-`set-cell-value`, `add-paragraph`, `add-table`, `add-table-row`, `add-table-cell`,
+`set-text-format`, `set-hyperlink`, `set-table-column-width`, `set-cell-value`,
+`add-paragraph`,
+`add-table`, `add-table-row`, `add-table-column`, `add-table-cell`,
 `add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
 `delete-columns`, `rename-worksheet`, `move-worksheet`, `copy-worksheet`,
 `move`, `copy`, `swap`, `replace-xml-part`, `add-part`, `add-slide`, `add-shape`,
@@ -742,6 +764,33 @@ properties, invalid RGB components, and unsupported target/property
 combinations fail the whole batch. Spreadsheet style records are cloned and
 deduplicated without replacing unrelated style children or attributes.
 
+Hyperlinks use the same typed batch contract and remain inert data:
+
+```json
+{
+  "operation": "set-hyperlink",
+  "path": "/body/p[1]",
+  "hyperlink": {
+    "target": {
+      "kind": "external",
+      "uri": "https://example.com/report"
+    },
+    "display": "Open report",
+    "tooltip": "A3S report"
+  }
+}
+```
+
+Use `{ "kind": "internal", "location": "section_1" }` for a Word
+bookmark or a Spreadsheet location such as `Sheet1!B2`. Word accepts a body
+paragraph path when adding and the returned hyperlink path when updating.
+Spreadsheet accepts one cell and creates it when absent. Presentation accepts a
+shape or its hyperlink path, does not accept separate display text, and returns
+`use.office.hyperlink_target_unsupported` for an internal slide jump. Removing
+a hyperlink or its owning paragraph, cell, shape, or slide garbage-collects only
+an unused hyperlink relationship. Strict and transitional OOXML namespaces are
+preserved.
+
 Typed Spreadsheet content values use an explicit nested type, for example:
 
 ```json
@@ -766,8 +815,9 @@ callers:
 ```rust,no_run
 use a3s_use_office::{
     NativeOfficeDocument, NativeOfficeEditor, NativeOfficeHorizontalAlignment,
-    NativeOfficeInsertPosition, NativeOfficePackage, NativeOfficeRenderFormat,
-    NativeOfficeReplayArtifact, NativeOfficeRgbColor, NativeOfficeTextFormat,
+    NativeOfficeHyperlink, NativeOfficeInsertPosition, NativeOfficePackage,
+    NativeOfficeRenderFormat, NativeOfficeReplayArtifact, NativeOfficeRgbColor,
+    NativeOfficeTextFormat,
 };
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
@@ -811,6 +861,11 @@ editor.set_text_format(
         ..NativeOfficeTextFormat::default()
     },
 )?;
+let hyperlink = NativeOfficeHyperlink::external("https://example.com/report")?
+    .with_display("Open report")
+    .with_tooltip("A3S report");
+let hyperlink_path = editor.set_hyperlink("/body/p[1]", hyperlink)?;
+println!("created {hyperlink_path}");
 let added = editor.add_paragraph("/body", "Summary")?;
 let moved = editor.move_node(
     added,

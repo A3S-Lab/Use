@@ -2,7 +2,10 @@ use a3s_use_core::UseResult;
 use a3s_use_office::{NativeCreatedImage, NativeOfficeEditor, NativeOfficeImage};
 
 use super::arguments::{AllowedOptions, ParsedArguments};
-use super::{read_bounded_input, save_editor, usage_error, NativeInputKind, MAX_IMAGE_INPUT_BYTES};
+use super::{
+    parse_hyperlink, read_bounded_input, save_editor, usage_error, NativeInputKind,
+    MAX_IMAGE_INPUT_BYTES,
+};
 use crate::cli::CommandOutput;
 
 pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
@@ -57,6 +60,17 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
             }
             "slide" => ("add-slide", editor.add_slide(parent, text)?, None),
             "shape" => ("add-shape", editor.add_shape(parent, text)?, None),
+            "hyperlink" | "link" => {
+                let display = parsed.display.as_deref().or(parsed.text.as_deref());
+                let hyperlink = parse_hyperlink(&parsed, display)?.ok_or_else(|| {
+                    usage_error("native hyperlink add requires --url or --location")
+                })?;
+                (
+                    "set-hyperlink",
+                    editor.set_hyperlink(parent, hyperlink)?,
+                    None,
+                )
+            }
             "picture" | "image" | "img" => {
                 let input = parsed.input.as_deref().ok_or_else(|| {
                     usage_error("native picture add requires --input <png|jpeg|gif>")
@@ -111,13 +125,23 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
 
 fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> {
     let is_picture = matches!(node_type, "picture" | "image" | "img");
+    let is_hyperlink = matches!(node_type, "hyperlink" | "link");
     let accepts_rows = matches!(node_type, "table" | "tbl");
     let accepts_columns = matches!(node_type, "table" | "tbl" | "row" | "tr");
     let accepts_index = matches!(node_type, "column" | "col");
     let accepts_name = is_picture || matches!(node_type, "sheet" | "worksheet");
     let accepts_text = matches!(
         node_type,
-        "paragraph" | "p" | "column" | "col" | "cell" | "tc" | "slide" | "shape"
+        "paragraph"
+            | "p"
+            | "column"
+            | "col"
+            | "cell"
+            | "tc"
+            | "slide"
+            | "shape"
+            | "hyperlink"
+            | "link"
     );
     if parsed.rows.is_some() && !accepts_rows {
         return Err(usage_error(format!(
@@ -144,6 +168,11 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
             "native Office add type '{node_type}' does not accept --text"
         )));
     }
+    if is_hyperlink && parsed.text.is_some() && parsed.display.is_some() {
+        return Err(usage_error(
+            "native hyperlink add accepts at most one of --text or --display",
+        ));
+    }
     if parsed.input.is_some() && !is_picture {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept --input"
@@ -163,6 +192,18 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept --height"
         )));
+    }
+    for (present, option) in [
+        (parsed.url.is_some(), "--url"),
+        (parsed.location.is_some(), "--location"),
+        (parsed.display.is_some(), "--display"),
+        (parsed.tooltip.is_some(), "--tooltip"),
+    ] {
+        if present && !is_hyperlink {
+            return Err(usage_error(format!(
+                "native Office add type '{node_type}' does not accept {option}"
+            )));
+        }
     }
     Ok(())
 }

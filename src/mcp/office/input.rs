@@ -1,8 +1,8 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
-    NativeOfficeHorizontalAlignment, NativeOfficeImage, NativeOfficeInsertPosition,
-    NativeOfficeIssueFilter, NativeOfficeMutation, NativeOfficePartType, NativeOfficeRgbColor,
-    NativeOfficeTextFormat, SpreadsheetCellValue,
+    NativeOfficeHorizontalAlignment, NativeOfficeHyperlink, NativeOfficeImage,
+    NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
+    NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextFormat, SpreadsheetCellValue,
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -258,6 +258,43 @@ impl From<OfficeTextFormat> for NativeOfficeTextFormat {
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub(super) enum OfficeHyperlinkTarget {
+    /// Inert absolute HTTP, HTTPS, or mailto URI.
+    External { uri: String },
+    /// Format-specific in-document location. Presentation slide jumps are not yet supported.
+    Internal { location: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeHyperlink {
+    pub(super) target: OfficeHyperlinkTarget,
+    /// Optional Word or Spreadsheet display text. Presentation shapes use their existing text.
+    pub(super) display: Option<String>,
+    /// Optional hover tooltip.
+    pub(super) tooltip: Option<String>,
+}
+
+impl OfficeHyperlink {
+    fn into_native(self) -> UseResult<NativeOfficeHyperlink> {
+        let mut hyperlink = match self.target {
+            OfficeHyperlinkTarget::External { uri } => NativeOfficeHyperlink::external(uri)?,
+            OfficeHyperlinkTarget::Internal { location } => {
+                NativeOfficeHyperlink::internal(location)?
+            }
+        };
+        if let Some(display) = self.display {
+            hyperlink = hyperlink.with_display(display);
+        }
+        if let Some(tooltip) = self.tooltip {
+            hyperlink = hyperlink.with_tooltip(tooltip);
+        }
+        Ok(hyperlink)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum OfficeInsertPosition {
     Index { index: usize },
     Before { path: String },
@@ -358,6 +395,10 @@ pub(super) enum OfficeMutation {
     SetTextFormat {
         path: String,
         format: OfficeTextFormat,
+    },
+    SetHyperlink {
+        path: String,
+        hyperlink: OfficeHyperlink,
     },
     SetTableColumnWidth {
         path: String,
@@ -477,6 +518,10 @@ impl OfficeMutation {
             Self::SetTextFormat { path, format } => NativeOfficeMutation::SetTextFormat {
                 path,
                 format: format.into(),
+            },
+            Self::SetHyperlink { path, hyperlink } => NativeOfficeMutation::SetHyperlink {
+                path,
+                hyperlink: hyperlink.into_native()?,
             },
             Self::SetTableColumnWidth { path, width_emu } => {
                 NativeOfficeMutation::SetTableColumnWidth { path, width_emu }

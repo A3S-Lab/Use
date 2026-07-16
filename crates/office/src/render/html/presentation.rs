@@ -104,10 +104,15 @@ fn render_shape(
         "shape"
     };
     start_object(output, node, class, slide_width, slide_height)?;
-    if node.children.is_empty() {
+    let paragraphs = node
+        .children
+        .iter()
+        .filter(|child| child.node_type == OfficeNodeType::Paragraph)
+        .collect::<Vec<_>>();
+    if paragraphs.is_empty() {
         output.text(&node.text)?;
     } else {
-        for paragraph in &node.children {
+        for paragraph in paragraphs {
             output.push("<p")?;
             write_node_attributes(output, paragraph)?;
             output.push(">")?;

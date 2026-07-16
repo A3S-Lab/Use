@@ -38,10 +38,10 @@ pub use discovery::{
 };
 pub use editor::{
     NativeBatchResult, NativeCreatedImage, NativeCreatedPart, NativeOfficeEditor,
-    NativeOfficeHorizontalAlignment, NativeOfficeImage, NativeOfficeImageFormat,
-    NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
-    NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat,
-    NativeRawXmlPart, SpreadsheetCellValue,
+    NativeOfficeHorizontalAlignment, NativeOfficeHyperlink, NativeOfficeHyperlinkTarget,
+    NativeOfficeImage, NativeOfficeImageFormat, NativeOfficeImageMetadata,
+    NativeOfficeInsertPosition, NativeOfficeMutation, NativeOfficePartType, NativeOfficeRgbColor,
+    NativeOfficeSwapResult, NativeOfficeTextFormat, NativeRawXmlPart, SpreadsheetCellValue,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 pub use issues::{
@@ -256,6 +256,8 @@ mod annotated_tests;
 mod arrange_tests;
 #[cfg(test)]
 mod format_tests;
+#[cfg(test)]
+mod hyperlink_tests;
 #[cfg(test)]
 mod image_tests;
 #[cfg(test)]

@@ -198,7 +198,7 @@ fn read_slide(
         .child("cSld")
         .and_then(|common_slide| common_slide.child("spTree"))
     {
-        read_shape_tree(shape_tree, &path, &mut node.children);
+        read_shape_tree(shape_tree, &path, opc, part_name, &mut node.children);
     }
     append_notes(package, opc, part_name, &path, &mut node)?;
     node.text = node
@@ -261,7 +261,13 @@ fn append_notes(
     Ok(())
 }
 
-fn read_shape_tree(tree: &XmlElement, parent_path: &str, output: &mut Vec<DocumentNode>) {
+fn read_shape_tree(
+    tree: &XmlElement,
+    parent_path: &str,
+    opc: &OpcPackageModel,
+    owner_part: &str,
+    output: &mut Vec<DocumentNode>,
+) {
     let mut shape_index = 0_usize;
     let mut picture_index = 0_usize;
     let mut table_index = 0_usize;
@@ -275,6 +281,8 @@ fn read_shape_tree(tree: &XmlElement, parent_path: &str, output: &mut Vec<Docume
                 output.push(read_shape(
                     element,
                     &format!("{parent_path}/shape[{shape_index}]"),
+                    opc,
+                    owner_part,
                 ));
             }
             "pic" => {
@@ -317,7 +325,7 @@ fn read_shape_tree(tree: &XmlElement, parent_path: &str, output: &mut Vec<Docume
                 let path = format!("{parent_path}/group[{group_index}]");
                 let mut group = DocumentNode::new(&path, "group", OfficeNodeType::Group);
                 apply_non_visual_properties(element, &mut group);
-                read_shape_tree(element, &path, &mut group.children);
+                read_shape_tree(element, &path, opc, owner_part, &mut group.children);
                 group.text = group
                     .children
                     .iter()
@@ -332,7 +340,12 @@ fn read_shape_tree(tree: &XmlElement, parent_path: &str, output: &mut Vec<Docume
     }
 }
 
-fn read_shape(shape: &XmlElement, path: &str) -> DocumentNode {
+fn read_shape(
+    shape: &XmlElement,
+    path: &str,
+    opc: &OpcPackageModel,
+    owner_part: &str,
+) -> DocumentNode {
     let placeholder = find_descendant(shape, "ph");
     let node_type = if placeholder.is_some() {
         OfficeNodeType::Placeholder
@@ -363,7 +376,65 @@ fn read_shape(shape: &XmlElement, path: &str) -> DocumentNode {
             .collect::<Vec<_>>()
             .join("\n");
     }
+    append_shape_hyperlink(shape, path, opc, owner_part, &mut node);
     node
+}
+
+fn append_shape_hyperlink(
+    shape: &XmlElement,
+    path: &str,
+    opc: &OpcPackageModel,
+    owner_part: &str,
+    shape_node: &mut DocumentNode,
+) {
+    let Some(hyperlink) =
+        find_descendant(shape, "cNvPr").and_then(|properties| properties.child("hlinkClick"))
+    else {
+        return;
+    };
+    let mut node = DocumentNode::new(
+        format!("{path}/hyperlink"),
+        "hyperlink",
+        OfficeNodeType::Hyperlink,
+    );
+    if let Some(tooltip) = hyperlink.attribute("tooltip") {
+        node.format.insert("tooltip".into(), tooltip.into());
+    }
+    if let Some(action) = hyperlink.attribute("action") {
+        node.format.insert("action".into(), action.into());
+    }
+    let Some(id) = hyperlink.attribute("id") else {
+        shape_node.children.push(node);
+        return;
+    };
+    node.format.insert("relationshipId".into(), id.into());
+    let source = RelationshipSource::Part {
+        part_name: owner_part.to_string(),
+    };
+    if let Some(relationship) = opc
+        .relationships()
+        .relationship(&source, id)
+        .filter(|relationship| relationship.relationship_type.ends_with("/hyperlink"))
+    {
+        match &relationship.target {
+            RelationshipTarget::External { uri } => {
+                node.format.insert("targetKind".into(), "external".into());
+                node.format.insert("target".into(), uri.clone());
+            }
+            RelationshipTarget::Internal {
+                part_name,
+                fragment,
+            } => {
+                node.format.insert("targetKind".into(), "internal".into());
+                let target = fragment.as_ref().map_or_else(
+                    || part_name.clone(),
+                    |fragment| format!("{part_name}#{fragment}"),
+                );
+                node.format.insert("target".into(), target);
+            }
+        }
+    }
+    shape_node.children.push(node);
 }
 
 fn read_picture(picture: &XmlElement, path: &str) -> DocumentNode {

@@ -607,6 +607,7 @@ fn remove_object(
     let part = package.xml_part(part_name)?;
     let index = index_xml(&part)?;
     let target = locate_path(&index, path)?;
+    let hyperlink_relationships = super::hyperlink::owned_hyperlink_relationship_ids(target);
     let edited = crate::xml_edit::apply_patches(
         &part,
         vec![crate::xml_edit::XmlPatch::new(
@@ -614,7 +615,8 @@ fn remove_object(
             Vec::new(),
         )],
     )?;
-    package.set_part(part_name, edited)
+    package.set_part(part_name, edited)?;
+    super::hyperlink::remove_relationships_if_unused(package, part_name, &hyperlink_relationships)
 }
 
 fn remove_slide(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {

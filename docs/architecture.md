@@ -121,8 +121,8 @@ this native route first, loads format-specific references progressively, and
 documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
-XML access, bounded annotated and issue analysis, typed text formatting, and
-atomic mutation batches
+XML access, bounded annotated and issue analysis, typed text formatting,
+typed hyperlinks, and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
 same typed contract reads unsaved native MCP session state without a private
@@ -146,6 +146,16 @@ standard MCP schemas, and the Office Skill. Word and Presentation patch run or
 paragraph properties in place. Spreadsheet clones and deduplicates `fonts` and
 `cellXfs`, retaining unknown style data and the document's strict or
 transitional OOXML dialect.
+Hyperlink mutation is another closed typed contract shared by the Rust API,
+versioned batch JSON, CLI, standard MCP schema, and Office Skill. Word owns
+external HTTP/HTTPS/mailto relationships and internal bookmark anchors;
+Spreadsheet owns external relationships and internal locations on single cells;
+Presentation owns external shape-wide click relationships. Presentation slide
+jumps remain unsupported and fail closed. URI validation rejects credentials,
+active or relative schemes, controls, and malformed targets. External links
+remain inert throughout semantic reads and rendering. Format engines allocate,
+reuse, and garbage-collect relationship IDs without deleting shared edges and
+preserve strict or transitional OOXML namespaces.
 Native template merge is a typed editor operation, not a generic action
 envelope. The CLI boundary parses bounded JSON data, the format engines replace
 text across Word document/auxiliary parts, Spreadsheet string cells, or
@@ -295,7 +305,9 @@ Implemented:
 13. Native content-type and relationship graphs, safe loss-preserving XML,
     common selectors, semantic Word/Spreadsheet/Presentation reads, safe blank
     creation, text replacement and typed Spreadsheet text/number/boolean/formula
-    cell and range mutation, Word paragraph and bounded table/row/cell mutation,
+    cell and range mutation, typed Word/Spreadsheet/Presentation hyperlink
+    read/add/update/remove with inert external targets, Word paragraph and
+    bounded table/row/cell mutation,
     worksheet add/remove/rename/reorder/copy with owned OPC-subgraph cloning and
     cleanup, bounded cross-format move/copy/swap arrangement, Spreadsheet
     row/column structural edits with formula and related-part reference

@@ -1,6 +1,7 @@
 use a3s_use_core::UseResult;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use super::part::{NativeCreatedPart, NativeOfficePartType};
 
@@ -103,6 +104,155 @@ impl NativeOfficeTextFormat {
             || self.font_size_centipoints.is_some()
             || self.text_color.is_some()
     }
+}
+
+/// A hyperlink destination represented without executing or resolving it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum NativeOfficeHyperlinkTarget {
+    /// An inert absolute HTTP, HTTPS, or mail address stored as an external
+    /// OOXML relationship.
+    External { uri: String },
+    /// A format-specific in-document location such as a Word bookmark or
+    /// Spreadsheet cell location.
+    Internal { location: String },
+}
+
+/// A complete typed hyperlink value shared by native Office formats.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeOfficeHyperlink {
+    pub target: NativeOfficeHyperlinkTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tooltip: Option<String>,
+}
+
+impl NativeOfficeHyperlink {
+    /// Creates a validated inert external hyperlink.
+    pub fn external(uri: impl Into<String>) -> UseResult<Self> {
+        let hyperlink = Self {
+            target: NativeOfficeHyperlinkTarget::External { uri: uri.into() },
+            display: None,
+            tooltip: None,
+        };
+        hyperlink.validate()?;
+        Ok(hyperlink)
+    }
+
+    /// Creates a validated format-specific internal hyperlink target.
+    pub fn internal(location: impl Into<String>) -> UseResult<Self> {
+        let hyperlink = Self {
+            target: NativeOfficeHyperlinkTarget::Internal {
+                location: location.into(),
+            },
+            display: None,
+            tooltip: None,
+        };
+        hyperlink.validate()?;
+        Ok(hyperlink)
+    }
+
+    pub fn with_display(mut self, display: impl Into<String>) -> Self {
+        self.display = Some(display.into());
+        self
+    }
+
+    pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
+        self.tooltip = Some(tooltip.into());
+        self
+    }
+
+    pub(crate) fn validate(&self) -> UseResult<()> {
+        match &self.target {
+            NativeOfficeHyperlinkTarget::External { uri } => validate_external_uri(uri)?,
+            NativeOfficeHyperlinkTarget::Internal { location } => {
+                validate_hyperlink_text(
+                    location,
+                    2_048,
+                    "use.office.hyperlink_location_invalid",
+                    "Native Office internal hyperlink locations",
+                )?;
+            }
+        }
+        if let Some(display) = &self.display {
+            validate_hyperlink_text(
+                display,
+                32_768,
+                "use.office.hyperlink_display_invalid",
+                "Native Office hyperlink display text",
+            )?;
+        }
+        if let Some(tooltip) = &self.tooltip {
+            validate_hyperlink_text(
+                tooltip,
+                4_096,
+                "use.office.hyperlink_tooltip_invalid",
+                "Native Office hyperlink tooltips",
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn default_display(&self) -> &str {
+        match &self.target {
+            NativeOfficeHyperlinkTarget::External { uri } => uri,
+            NativeOfficeHyperlinkTarget::Internal { location } => location,
+        }
+    }
+}
+
+fn validate_external_uri(uri: &str) -> UseResult<()> {
+    validate_hyperlink_text(
+        uri,
+        2_048,
+        "use.office.hyperlink_uri_invalid",
+        "Native Office external hyperlink URIs",
+    )?;
+    let parsed = Url::parse(uri).map_err(|error| {
+        super::editor_error(
+            "use.office.hyperlink_uri_invalid",
+            format!("Native Office external hyperlink URI is invalid: {error}"),
+        )
+    })?;
+    let valid = match parsed.scheme() {
+        "http" | "https" => {
+            parsed.host_str().is_some()
+                && parsed.username().is_empty()
+                && parsed.password().is_none()
+        }
+        "mailto" => !parsed.path().is_empty(),
+        _ => false,
+    };
+    if !valid {
+        return Err(super::editor_error(
+            "use.office.hyperlink_uri_invalid",
+            "Native Office external hyperlinks require an absolute HTTP, HTTPS, or mailto URI without embedded credentials.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_hyperlink_text(
+    value: &str,
+    max_bytes: usize,
+    code: &str,
+    label: &str,
+) -> UseResult<()> {
+    if value.is_empty()
+        || value.len() > max_bytes
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+    {
+        return Err(super::editor_error(
+            code,
+            format!(
+                "{label} must contain 1-{max_bytes} non-control UTF-8 bytes without surrounding whitespace."
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Typed Spreadsheet cell content written without a shared-string dependency.
@@ -269,6 +419,10 @@ pub enum NativeOfficeMutation {
     SetTextFormat {
         path: String,
         format: NativeOfficeTextFormat,
+    },
+    SetHyperlink {
+        path: String,
+        hyperlink: NativeOfficeHyperlink,
     },
     SetTableColumnWidth {
         path: String,

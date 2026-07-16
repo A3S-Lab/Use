@@ -1,7 +1,8 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
     DocumentNode, NativeOfficeDocument, NativeOfficeEditor, NativeOfficeHorizontalAlignment,
-    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat, SpreadsheetCellValue,
+    NativeOfficeHyperlink, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
+    SpreadsheetCellValue,
 };
 use tokio::io::AsyncReadExt;
 
@@ -35,9 +36,9 @@ const HELP: &str = concat!(
     "  a3s-use office native merge <template> <output> --data <json|@file.json> [--force] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
-    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
-    "  a3s-use office native set <file> <path> [--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--bold <true|false>] [--italic <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file> <path> [--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--bold <true|false>] [--italic <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -201,19 +202,20 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     .filter(|present| *present)
     .count();
     let format = parse_text_format(&parsed)?;
+    let hyperlink = parse_hyperlink(&parsed, parsed.display.as_deref())?;
     if value_count > 1 {
         return Err(usage_error(
             "office native set accepts at most one of --text, --number, --boolean, --formula, or --width-emu",
         ));
     }
-    if value_count == 0 && format.is_none() {
+    if value_count == 0 && format.is_none() && hyperlink.is_none() {
         return Err(usage_error(
-            "office native set requires content, width, or at least one typed formatting option",
+            "office native set requires content, width, typed formatting, or a hyperlink target",
         ));
     }
-    if parsed.width_emu.is_some() && format.is_some() {
+    if parsed.width_emu.is_some() && (format.is_some() || hyperlink.is_some()) {
         return Err(usage_error(
-            "--width-emu cannot be combined with text formatting options",
+            "--width-emu cannot be combined with text formatting or hyperlink options",
         ));
     }
     let typed_value = if let Some(value) = parsed.number.as_ref() {
@@ -240,7 +242,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         editor.set_table_column_width(path, width_emu)?;
         "set-table-column-width"
     } else {
-        let mut mutations = Vec::with_capacity(2);
+        let mut mutations = Vec::with_capacity(3);
         if let Some(value) = typed_value {
             mutations.push(NativeOfficeMutation::SetCellValue {
                 path: path.clone(),
@@ -258,17 +260,35 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
                 format,
             });
         }
+        if let Some(hyperlink) = hyperlink {
+            mutations.push(NativeOfficeMutation::SetHyperlink {
+                path: path.clone(),
+                hyperlink,
+            });
+        }
         editor.apply_batch(&mutations)?;
-        match (
-            mutations
-                .iter()
-                .any(|mutation| matches!(mutation, NativeOfficeMutation::SetTextFormat { .. })),
-            mutations.len(),
-            mutations.first(),
-        ) {
-            (true, 1, _) => "set-text-format",
-            (true, _, _) => "set-content-and-text-format",
-            (false, _, Some(NativeOfficeMutation::SetCellValue { .. })) => "set-cell-value",
+        let has_format = mutations
+            .iter()
+            .any(|mutation| matches!(mutation, NativeOfficeMutation::SetTextFormat { .. }));
+        let has_hyperlink = mutations
+            .iter()
+            .any(|mutation| matches!(mutation, NativeOfficeMutation::SetHyperlink { .. }));
+        let has_content = mutations.iter().any(|mutation| {
+            matches!(
+                mutation,
+                NativeOfficeMutation::SetText { .. } | NativeOfficeMutation::SetCellValue { .. }
+            )
+        });
+        match (has_content, has_format, has_hyperlink, mutations.first()) {
+            (false, false, true, _) => "set-hyperlink",
+            (false, true, false, _) => "set-text-format",
+            (false, true, true, _) => "set-text-format-and-hyperlink",
+            (true, false, true, _) => "set-content-and-hyperlink",
+            (true, true, true, _) => "set-content-format-and-hyperlink",
+            (true, true, false, _) => "set-content-and-text-format",
+            (true, false, false, Some(NativeOfficeMutation::SetCellValue { .. })) => {
+                "set-cell-value"
+            }
             _ => "set-text",
         }
     };
@@ -322,6 +342,38 @@ fn parse_text_format(parsed: &ParsedArguments) -> UseResult<Option<NativeOfficeT
             .transpose()?,
     };
     Ok((!format.is_empty()).then_some(format))
+}
+
+fn parse_hyperlink(
+    parsed: &ParsedArguments,
+    display: Option<&str>,
+) -> UseResult<Option<NativeOfficeHyperlink>> {
+    if parsed.url.is_some() && parsed.location.is_some() {
+        return Err(usage_error(
+            "native Office hyperlink accepts exactly one of --url or --location",
+        ));
+    }
+    let mut hyperlink = if let Some(uri) = &parsed.url {
+        Some(NativeOfficeHyperlink::external(uri)?)
+    } else if let Some(location) = &parsed.location {
+        Some(NativeOfficeHyperlink::internal(location)?)
+    } else {
+        None
+    };
+    if hyperlink.is_none() && (display.is_some() || parsed.tooltip.is_some()) {
+        return Err(usage_error(
+            "--display and --tooltip require --url or --location",
+        ));
+    }
+    if let Some(value) = hyperlink.as_mut() {
+        if let Some(display) = display {
+            *value = value.clone().with_display(display);
+        }
+        if let Some(tooltip) = &parsed.tooltip {
+            *value = value.clone().with_tooltip(tooltip);
+        }
+    }
+    Ok(hyperlink)
 }
 
 fn parse_format_boolean(option: &str, value: &str) -> UseResult<bool> {

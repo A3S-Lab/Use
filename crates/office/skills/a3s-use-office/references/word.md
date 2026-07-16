@@ -23,6 +23,10 @@ a3s use office native add report.docx /body --type table --rows 2 --columns 3 --
 a3s use office native set report.docx '/body/p[1]' --text 'Updated summary' --json
 a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
+a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com/report --display 'Open report' --tooltip 'A3S report' --json
+a3s use office native set report.docx '/body/p[1]/hyperlink[1]' --location section_1 --display 'Jump to section' --json
+a3s use office native query report.docx hyperlink --json
+a3s use office native remove report.docx '/body/p[1]/hyperlink[1]' --json
 a3s use office native add report.docx /body --type picture --input chart.png --alt 'Quarterly revenue chart' --json
 a3s use office native move report.docx '/body/p[2]' --before '/body/p[1]' --json
 ```
@@ -33,6 +37,14 @@ italic, font family, RGB text color, and font size; Word sizes must be exact
 half-point increments. Advanced styles, inheritance, highlight, underline,
 language, and RTL mutation still require an explicitly supported native
 operation or the compatibility route.
+
+Hyperlink creation accepts a document-body paragraph path and returns a stable
+`/hyperlink[N]` child path for update or removal. External targets accept only
+absolute HTTP, HTTPS, or mailto URIs without credentials. Internal targets are
+1-40 character Word bookmark names beginning with a letter or underscore.
+Display text and tooltips are optional. Reads and rendering keep external links
+inert; they never fetch them. Header and footer hyperlink mutation is not yet
+native.
 
 Use `copy`, `swap`, and `remove` only with paths returned by a fresh read.
 Identity-bearing copies, cross-parent ownership migration, and rich structures

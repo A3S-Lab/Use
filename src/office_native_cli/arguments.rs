@@ -28,6 +28,10 @@ pub(super) struct ParsedArguments {
     pub font_size: Option<String>,
     pub text_color: Option<String>,
     pub alignment: Option<String>,
+    pub url: Option<String>,
+    pub location: Option<String>,
+    pub display: Option<String>,
+    pub tooltip: Option<String>,
     pub count: Option<u32>,
     pub position: Option<usize>,
     pub index: Option<usize>,
@@ -107,6 +111,22 @@ impl ParsedArguments {
                 }
                 "--align" | "--alignment" if allowed.alignment => {
                     set_string_option(&mut parsed.alignment, args, index, "--align")?;
+                    index += 2;
+                }
+                "--url" | "--link" | "--href" if allowed.url => {
+                    set_string_option(&mut parsed.url, args, index, "--url")?;
+                    index += 2;
+                }
+                "--location" if allowed.location => {
+                    set_string_option(&mut parsed.location, args, index, "--location")?;
+                    index += 2;
+                }
+                "--display" if allowed.display => {
+                    set_string_option(&mut parsed.display, args, index, "--display")?;
+                    index += 2;
+                }
+                "--tooltip" if allowed.tooltip => {
+                    set_string_option(&mut parsed.tooltip, args, index, "--tooltip")?;
                     index += 2;
                 }
                 "--output" if allowed.output => {
@@ -232,6 +252,10 @@ pub(super) struct AllowedOptions {
     font_size: bool,
     text_color: bool,
     alignment: bool,
+    url: bool,
+    location: bool,
+    display: bool,
+    tooltip: bool,
     count: bool,
     position: bool,
     index: bool,
@@ -267,6 +291,10 @@ impl AllowedOptions {
         font_size: false,
         text_color: false,
         alignment: false,
+        url: false,
+        location: false,
+        display: false,
+        tooltip: false,
         count: false,
         position: false,
         index: false,
@@ -299,6 +327,10 @@ impl AllowedOptions {
         font_size: true,
         text_color: true,
         alignment: true,
+        url: true,
+        location: true,
+        display: true,
+        tooltip: true,
         width_emu: true,
         ..Self::NONE
     };
@@ -332,6 +364,10 @@ impl AllowedOptions {
         rows: true,
         columns: true,
         index: true,
+        url: true,
+        location: true,
+        display: true,
+        tooltip: true,
         ..Self::NONE
     };
     pub const ADD_PART: Self = Self {

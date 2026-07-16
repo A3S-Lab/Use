@@ -4,7 +4,7 @@ use a3s_use_core::UseResult;
 
 use super::{semantic_error, DocumentNode, OfficeNodeType};
 use crate::spreadsheet_reference::{
-    column_name as a1_column_name, parse_column, CellReference, MAX_COLUMNS,
+    column_name as a1_column_name, parse_column, CellRange, CellReference, MAX_COLUMNS,
 };
 use crate::xml_tree::{parse_xml_tree, XmlElement, XmlNode};
 use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, RelationshipTarget};
@@ -292,6 +292,7 @@ fn read_worksheet(
             sheet_node.children.push(row_node);
         }
     }
+    append_worksheet_hyperlinks(opc, &worksheet, part_name, &sheet_path, &mut sheet_node)?;
     append_worksheet_pictures(
         package,
         opc,
@@ -308,6 +309,108 @@ fn read_worksheet(
         .collect::<Vec<_>>()
         .join("\n");
     Ok(sheet_node)
+}
+
+fn append_worksheet_hyperlinks(
+    opc: &OpcPackageModel,
+    worksheet: &XmlElement,
+    worksheet_part: &str,
+    sheet_path: &str,
+    sheet: &mut DocumentNode,
+) -> UseResult<()> {
+    let Some(hyperlinks) = worksheet.child("hyperlinks") else {
+        return Ok(());
+    };
+    let source = RelationshipSource::Part {
+        part_name: worksheet_part.to_string(),
+    };
+    let mut fallback_index = 0_usize;
+    for hyperlink in hyperlinks.children_named("hyperlink") {
+        let reference = hyperlink.attribute("ref").ok_or_else(|| {
+            semantic_error(
+                "use.office.spreadsheet_hyperlink_invalid",
+                format!("Worksheet '{sheet_path}' contains a hyperlink without a cell reference."),
+            )
+        })?;
+        let range = CellRange::parse(reference)?;
+        let normalized_reference = range.a1();
+        let single_cell = range.is_single_cell().then(|| range.start.a1());
+        let cell = single_cell
+            .as_deref()
+            .and_then(|reference| find_cell_mut(sheet, reference));
+        fallback_index += usize::from(cell.is_none());
+        let path = cell.as_ref().map_or_else(
+            || format!("{sheet_path}/hyperlink[{fallback_index}]"),
+            |cell| {
+                if cell
+                    .children
+                    .iter()
+                    .any(|child| child.node_type == OfficeNodeType::Hyperlink)
+                {
+                    format!("{}/hyperlink[2]", cell.path)
+                } else {
+                    format!("{}/hyperlink", cell.path)
+                }
+            },
+        );
+        let mut node = DocumentNode::new(path, "hyperlink", OfficeNodeType::Hyperlink);
+        node.format.insert("ref".into(), normalized_reference);
+        for (attribute, key) in [("display", "display"), ("tooltip", "tooltip")] {
+            if let Some(value) = hyperlink.attribute(attribute) {
+                node.format.insert(key.into(), value.into());
+            }
+        }
+        if let Some(location) = hyperlink.attribute("location") {
+            node.format.insert("targetKind".into(), "internal".into());
+            node.format.insert("target".into(), location.into());
+        } else if let Some(id) = hyperlink.attribute("id") {
+            node.format.insert("relationshipId".into(), id.into());
+            if let Some(relationship) = opc
+                .relationships()
+                .relationship(&source, id)
+                .filter(|relationship| relationship.relationship_type.ends_with("/hyperlink"))
+            {
+                match &relationship.target {
+                    RelationshipTarget::External { uri } => {
+                        node.format.insert("targetKind".into(), "external".into());
+                        node.format.insert("target".into(), uri.clone());
+                    }
+                    RelationshipTarget::Internal {
+                        part_name,
+                        fragment,
+                    } => {
+                        node.format.insert("targetKind".into(), "internal".into());
+                        let target = fragment.as_ref().map_or_else(
+                            || part_name.clone(),
+                            |fragment| format!("{part_name}#{fragment}"),
+                        );
+                        node.format.insert("target".into(), target);
+                    }
+                }
+            }
+        }
+        node.text = node
+            .format
+            .get("display")
+            .cloned()
+            .or_else(|| cell.as_ref().map(|cell| cell.text.clone()))
+            .unwrap_or_default();
+        if let Some(cell) = cell {
+            cell.children.push(node);
+        } else {
+            sheet.children.push(node);
+        }
+    }
+    Ok(())
+}
+
+fn find_cell_mut<'a>(sheet: &'a mut DocumentNode, reference: &str) -> Option<&'a mut DocumentNode> {
+    let path = format!("{}/{reference}", sheet.path);
+    sheet
+        .children
+        .iter_mut()
+        .flat_map(|row| row.children.iter_mut())
+        .find(|cell| cell.node_type == OfficeNodeType::Cell && cell.path == path)
 }
 
 fn append_worksheet_pictures(

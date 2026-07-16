@@ -54,6 +54,31 @@ pub(crate) fn add_relationship(
     relationship_type: &str,
     target: &str,
 ) -> UseResult<String> {
+    add_relationship_with_mode(package, relationship_part, relationship_type, target, None)
+}
+
+pub(crate) fn add_external_relationship(
+    package: &mut NativeOfficePackage,
+    relationship_part: &str,
+    relationship_type: &str,
+    target: &str,
+) -> UseResult<String> {
+    add_relationship_with_mode(
+        package,
+        relationship_part,
+        relationship_type,
+        target,
+        Some("External"),
+    )
+}
+
+fn add_relationship_with_mode(
+    package: &mut NativeOfficePackage,
+    relationship_part: &str,
+    relationship_type: &str,
+    target: &str,
+    target_mode: Option<&str>,
+) -> UseResult<String> {
     let part = if package.contains_part(relationship_part) {
         package.xml_part(relationship_part)?
     } else {
@@ -82,8 +107,11 @@ pub(crate) fn add_relationship(
             )
         })?;
     let tag = qualified(prefix(&index.qualified_name), "Relationship");
+    let target_mode = target_mode
+        .map(|mode| format!(" TargetMode=\"{}\"", escape_attribute(mode)))
+        .unwrap_or_default();
     let fragment = format!(
-        "<{tag} Id=\"{}\" Type=\"{}\" Target=\"{}\"/>",
+        "<{tag} Id=\"{}\" Type=\"{}\" Target=\"{}\"{target_mode}/>",
         escape_attribute(&id),
         escape_attribute(relationship_type),
         escape_attribute(target)

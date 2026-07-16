@@ -9,6 +9,7 @@ use crate::{
     NativeOfficeTemplateMergeResult,
 };
 
+mod hyperlink;
 mod image;
 mod part;
 mod presentation;
@@ -25,10 +26,10 @@ mod part_tests;
 pub use part::{NativeCreatedPart, NativeOfficePartType};
 pub use raw::NativeRawXmlPart;
 pub use types::{
-    NativeBatchResult, NativeCreatedImage, NativeOfficeHorizontalAlignment, NativeOfficeImage,
-    NativeOfficeImageFormat, NativeOfficeImageMetadata, NativeOfficeInsertPosition,
-    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat,
-    SpreadsheetCellValue,
+    NativeBatchResult, NativeCreatedImage, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
+    NativeOfficeHyperlinkTarget, NativeOfficeImage, NativeOfficeImageFormat,
+    NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
+    NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat, SpreadsheetCellValue,
 };
 
 /// Loss-preserving OOXML editor with transactional in-memory batches.
@@ -89,6 +90,18 @@ impl NativeOfficeEditor {
             format,
         }])?;
         Ok(())
+    }
+
+    /// Creates or replaces a typed hyperlink on a supported semantic owner.
+    pub fn set_hyperlink(
+        &mut self,
+        path: impl Into<String>,
+        hyperlink: NativeOfficeHyperlink,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SetHyperlink {
+            path: path.into(),
+            hyperlink,
+        })
     }
 
     /// Sets one Presentation table-grid column width in English Metric Units.
@@ -494,6 +507,9 @@ impl NativeOfficeEditor {
                         }
                     })
                     .map(|()| path.clone()),
+                NativeOfficeMutation::SetHyperlink { path, hyperlink } => hyperlink
+                    .validate()
+                    .and_then(|()| hyperlink::set(&mut self.package, path, hyperlink)),
                 NativeOfficeMutation::SetTableColumnWidth { path, width_emu } => {
                     presentation::set_table_column_width(&mut self.package, path, *width_emu)
                         .map(|()| path.clone())
@@ -751,12 +767,14 @@ fn set_text(package: &mut NativeOfficePackage, path: &str, text: &str) -> UseRes
 
 fn remove_node(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
     validate_mutation_path(path)?;
-    if NativeOfficeDocument::from_package(package.clone())?
+    let node_type = NativeOfficeDocument::from_package(package.clone())?
         .get(path, 0)?
-        .node_type
-        == crate::OfficeNodeType::Picture
-    {
+        .node_type;
+    if node_type == crate::OfficeNodeType::Picture {
         return image::remove(package, path);
+    }
+    if node_type == crate::OfficeNodeType::Hyperlink {
+        return hyperlink::remove(package, path);
     }
     match package.kind() {
         DocumentKind::Word => word::remove(package, path),
