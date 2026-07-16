@@ -30,7 +30,7 @@ only when the requested operation is not yet native.
    Use one atomic `batch` for dependent changes.
 
 4. Verify the result with `validate`, a targeted `get` or `query`, and
-   `view ... issues`. Use HTML or screenshot only as a semantic preview.
+   `view ... issues`. Use HTML, SVG, or screenshot only as a semantic preview.
 
 5. Report the exact output path and any remaining issue records. Do not claim
    Microsoft Office layout fidelity from a semantic preview.
@@ -69,7 +69,7 @@ available.
 
 The native engine currently owns safe OPC/ZIP admission, semantic reads,
 bounded issue analysis, common typed mutations, atomic batches, template merge,
-constrained XML access, deterministic HTML, Presentation SVG, and
+constrained XML access, deterministic all-format HTML/SVG, and
 Browser-injected semantic screenshots. Rich formatting, complete formula
 calculation, advanced charts/media, live watch, and full Office layout fidelity
 remain incomplete. Fail closed or use the explicit compatibility route rather

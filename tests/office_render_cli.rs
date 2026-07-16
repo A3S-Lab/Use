@@ -28,7 +28,7 @@ fn run_failure(provider: &Path, args: &[&str]) -> serde_json::Value {
 }
 
 #[test]
-fn native_cli_renders_all_html_formats_and_presentation_svg_without_officecli() {
+fn native_cli_renders_all_html_and_svg_formats_without_officecli() {
     let temp = tempfile::tempdir().unwrap();
     let provider = temp.path().join("must-not-be-invoked");
     let word = temp.path().join("report.docx");
@@ -114,38 +114,32 @@ fn native_cli_renders_all_html_formats_and_presentation_svg_without_officecli() 
         assert_ne!(rendered["data"]["result"]["sha256"], "");
     }
 
-    let svg = run(
-        &provider,
-        &[
-            "office",
-            "native",
-            "view",
-            presentation.to_str().unwrap(),
-            "svg",
-            "--json",
-        ],
-    );
-    assert_eq!(svg["data"]["view"], "svg");
-    assert!(svg["data"]["result"]["content"]
-        .as_str()
-        .unwrap()
-        .starts_with("<?xml version=\"1.0\""));
-
-    let unsupported = run_failure(
-        &provider,
-        &[
-            "office",
-            "native",
-            "view",
-            word.to_str().unwrap(),
-            "svg",
-            "--json",
-        ],
-    );
-    assert_eq!(
-        unsupported["error"]["code"],
-        "use.office.render_format_unsupported"
-    );
+    for (document, kind, expected) in [
+        (&word, "word", "Word &lt;semantic&gt;"),
+        (&spreadsheet, "spreadsheet", "Spreadsheet &amp; sparse"),
+        (&presentation, "presentation", "Presentation &gt; preview"),
+    ] {
+        let svg = run(
+            &provider,
+            &[
+                "office",
+                "native",
+                "view",
+                document.to_str().unwrap(),
+                "svg",
+                "--json",
+            ],
+        );
+        assert_eq!(svg["data"]["view"], "svg");
+        let content = svg["data"]["result"]["content"].as_str().unwrap();
+        assert!(content.starts_with("<?xml version=\"1.0\""));
+        assert!(content.contains(&format!("data-document-kind=\"{kind}\"")));
+        assert!(content.contains(expected));
+        assert!(!content.contains("<script"));
+        assert!(!content.contains("href=\"http"));
+        assert_eq!(svg["data"]["result"]["mediaType"], "image/svg+xml");
+        assert_eq!(svg["data"]["result"]["sha256"].as_str().unwrap().len(), 64);
+    }
 }
 
 #[test]
@@ -154,6 +148,7 @@ fn native_cli_render_files_are_atomic_and_no_clobber() {
     let provider = temp.path().join("must-not-be-invoked");
     let document = temp.path().join("report.docx");
     let html = temp.path().join("preview.html");
+    let svg = temp.path().join("preview.svg");
     run(
         &provider,
         &[
@@ -214,11 +209,33 @@ fn native_cli_render_files_are_atomic_and_no_clobber() {
     );
     assert_eq!(refused["error"]["code"], "use.office.render_output_exists");
     assert_eq!(std::fs::read(&html).unwrap(), original);
+
+    let written = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "view",
+            document.to_str().unwrap(),
+            "svg",
+            "--output",
+            svg.to_str().unwrap(),
+            "--json",
+        ],
+    );
+    assert_eq!(
+        written["data"]["result"]["outputPath"],
+        svg.to_str().unwrap()
+    );
+    assert!(written["data"]["result"].get("content").is_none());
+    assert!(std::fs::read(&svg)
+        .unwrap()
+        .starts_with(b"<?xml version=\"1.0\""));
 }
 
 #[cfg(feature = "mcp")]
 #[tokio::test]
-async fn native_mcp_renders_html_and_svg_without_officecli() {
+async fn native_mcp_renders_all_html_and_svg_formats_without_officecli() {
     use std::process::Stdio;
     use std::time::Duration;
 
@@ -227,7 +244,9 @@ async fn native_mcp_renders_html_and_svg_without_officecli() {
     const TIMEOUT: Duration = Duration::from_secs(15);
 
     let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("mcp-deck.pptx");
+    let word = temp.path().join("mcp-report.docx");
+    let spreadsheet = temp.path().join("mcp-workbook.xlsx");
+    let presentation = temp.path().join("mcp-deck.pptx");
     let mut child = tokio::process::Command::new(binary())
         .args(["mcp", "serve", "office-native"])
         .env(
@@ -288,66 +307,54 @@ async fn native_mcp_renders_html_and_svg_without_officecli() {
     assert!(view_schema.contains("output"));
     assert!(view_schema.contains("timeoutMs"));
 
-    let created = call(
+    render_mcp_session(
         &mut stdin,
         &mut stdout,
         3,
-        "office_create",
-        serde_json::json!({"session":"deck","file":document}),
+        "word",
+        &word,
+        serde_json::json!([{
+            "operation":"set-text",
+            "path":"/body/p[1]",
+            "text":"MCP Word <render>"
+        }]),
+        "word",
+        "MCP Word &lt;render&gt;",
         TIMEOUT,
     )
     .await;
-    assert_ne!(created["result"]["isError"], true);
-
-    let applied = call(
+    render_mcp_session(
         &mut stdin,
         &mut stdout,
-        4,
-        "office_apply_batch",
-        serde_json::json!({
-            "session":"deck",
-            "mutations":[{
-                "operation":"add-slide",
-                "parent":"/",
-                "title":"MCP <render>"
-            }]
-        }),
+        8,
+        "spreadsheet",
+        &spreadsheet,
+        serde_json::json!([{
+            "operation":"set-cell-value",
+            "path":"/Sheet1/XFD1048576",
+            "value":{"type":"text","value":"MCP Spreadsheet & render"}
+        }]),
+        "spreadsheet",
+        "MCP Spreadsheet &amp; render",
         TIMEOUT,
     )
     .await;
-    assert_ne!(applied["result"]["isError"], true);
-
-    for (id, mode, marker) in [
-        (5, "html", "<!doctype html>"),
-        (6, "svg", "<?xml version=\"1.0\""),
-    ] {
-        let rendered = call(
-            &mut stdin,
-            &mut stdout,
-            id,
-            "office_view",
-            serde_json::json!({"session":"deck","view":mode}),
-            TIMEOUT,
-        )
-        .await;
-        assert_ne!(rendered["result"]["isError"], true);
-        let content = rendered["result"]["structuredContent"]["result"]["content"]
-            .as_str()
-            .unwrap();
-        assert!(content.starts_with(marker));
-        assert!(content.contains("MCP &lt;render&gt;"));
-    }
-
-    let closed = call(
+    render_mcp_session(
         &mut stdin,
         &mut stdout,
-        7,
-        "office_close",
-        serde_json::json!({"session":"deck","discard":true}),
+        13,
+        "presentation",
+        &presentation,
+        serde_json::json!([{
+            "operation":"add-slide",
+            "parent":"/",
+            "title":"MCP Presentation > render"
+        }]),
+        "presentation",
+        "MCP Presentation &gt; render",
         TIMEOUT,
     )
     .await;
-    assert_eq!(closed["result"]["structuredContent"]["closed"], true);
 
     drop(stdin);
     let status = tokio::time::timeout(TIMEOUT, child.wait())
@@ -362,6 +369,75 @@ async fn native_mcp_renders_html_and_svg_without_officecli() {
         "{}",
         String::from_utf8_lossy(&diagnostics)
     );
+}
+
+#[cfg(feature = "mcp")]
+#[allow(clippy::too_many_arguments)]
+async fn render_mcp_session(
+    stdin: &mut tokio::process::ChildStdin,
+    stdout: &mut tokio::io::BufReader<tokio::process::ChildStdout>,
+    first_id: u32,
+    session: &str,
+    file: &Path,
+    mutations: serde_json::Value,
+    kind: &str,
+    expected: &str,
+    timeout: std::time::Duration,
+) {
+    let created = call(
+        stdin,
+        stdout,
+        first_id,
+        "office_create",
+        serde_json::json!({"session":session,"file":file}),
+        timeout,
+    )
+    .await;
+    assert_ne!(created["result"]["isError"], true);
+
+    let applied = call(
+        stdin,
+        stdout,
+        first_id + 1,
+        "office_apply_batch",
+        serde_json::json!({"session":session,"mutations":mutations}),
+        timeout,
+    )
+    .await;
+    assert_ne!(applied["result"]["isError"], true, "{applied}");
+
+    for (offset, mode, marker) in [
+        (2, "html", "<!doctype html>"),
+        (3, "svg", "<?xml version=\"1.0\""),
+    ] {
+        let rendered = call(
+            stdin,
+            stdout,
+            first_id + offset,
+            "office_view",
+            serde_json::json!({"session":session,"view":mode}),
+            timeout,
+        )
+        .await;
+        assert_ne!(rendered["result"]["isError"], true, "{rendered}");
+        let content = rendered["result"]["structuredContent"]["result"]["content"]
+            .as_str()
+            .unwrap();
+        assert!(content.starts_with(marker));
+        assert!(content.contains(expected));
+        assert!(content.contains(&format!("data-document-kind=\"{kind}\"")));
+    }
+
+    let closed = call(
+        stdin,
+        stdout,
+        first_id + 4,
+        "office_close",
+        serde_json::json!({"session":session,"discard":true}),
+        timeout,
+    )
+    .await;
+    assert_eq!(closed["result"]["structuredContent"]["closed"], true);
 }
 
 #[cfg(feature = "mcp")]

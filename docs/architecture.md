@@ -155,12 +155,14 @@ edits the owner XML, then drops an unreferenced relationship, and garbage
 collects media only when the package relationship graph has no remaining target
 edge. The media changes share the editor's atomic rollback boundary. SVG is a
 separate future package representation because OOXML requires a raster
-fallback; this is distinct from the read-only Presentation SVG semantic view.
+fallback; this is distinct from the read-only all-format SVG semantic view.
 
 Semantic rendering is a read-only layer over the same document tree and OPC
-relationship graph. It produces deterministic standalone HTML for all three
-formats and stacked SVG for Presentation, carries stable `data-path` metadata,
-and embeds only validated internal raster parts as `data:` URLs. External
+relationship graph. It produces deterministic standalone HTML and SVG for all
+three formats, carries stable `data-path` metadata, and embeds only validated
+internal raster parts as `data:` URLs. Word SVG stacks semantic regions and
+blocks; Spreadsheet SVG projects observed cells sparsely; Presentation SVG
+uses its slide geometry. External
 relationships are never fetched. Render composition has a 16 MiB bound; CLI
 artifact publication is atomic and no-clobber, while standard MCP applies its
 stricter 8 MiB result bound. The Office crate remains browser-independent. At
@@ -203,7 +205,7 @@ unchanged until the native product gates pass.
 
 The preview MCP adapter has an explicit typed vocabulary rather than a command
 string passthrough. It supports validate, create/open/list, semantic get/query,
-text/outline/statistics views, all-format HTML, Presentation SVG, all-format
+text/outline/statistics views, all-format HTML and SVG, all-format
 bounded issue views, Browser-injected semantic PNG screenshots, constrained raw
 XML inspection, atomic typed mutation batches, immutable-template merge, save,
 and close. A screenshot requires an explicit no-clobber `.png` output and
@@ -279,8 +281,8 @@ Implemented:
     canonical typed subset including basic Presentation tables, cross-format
     native template merge with bounded JSON
     and immutable templates, native PNG/JPEG/GIF add/read/remove with
-    reference-aware media cleanup, deterministic all-format HTML and
-    Presentation SVG semantic rendering, bounded conservative all-format issue
+    reference-aware media cleanup, deterministic all-format HTML and SVG
+    semantic rendering, bounded conservative all-format issue
     analysis, Browser-injected all-format semantic PNG screenshots with
     validated receipts and no-clobber publication, atomic batches, changed-file
     conflict detection, and the dependency-free `office native` CLI.

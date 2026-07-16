@@ -1,14 +1,26 @@
+mod spreadsheet;
+mod text;
+mod word;
+
 use a3s_use_core::UseResult;
 
 use super::image::{resolve, write_data_url};
 use super::output::BoundedOutput;
-use crate::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
+use crate::{DocumentKind, DocumentNode, NativeOfficeDocument, OfficeNodeType};
 
 const CANVAS_WIDTH: f64 = 1_200.0;
 const SLIDE_GAP: f64 = 56.0;
 const LABEL_HEIGHT: f64 = 36.0;
 const DEFAULT_SLIDE_WIDTH_CM: f64 = 33.8667;
 const DEFAULT_SLIDE_HEIGHT_CM: f64 = 19.05;
+
+pub(super) fn render(document: &NativeOfficeDocument, limit: usize) -> UseResult<String> {
+    match document.kind() {
+        DocumentKind::Word => word::render(document, limit),
+        DocumentKind::Spreadsheet => spreadsheet::render(document, limit),
+        DocumentKind::Presentation => render_presentation(document, limit),
+    }
+}
 
 pub(super) fn render_presentation(
     document: &NativeOfficeDocument,
@@ -29,7 +41,7 @@ pub(super) fn render_presentation(
         slides.len() as f64 * (LABEL_HEIGHT + canvas_height)
             + slides.len().saturating_sub(1) as f64 * SLIDE_GAP
     };
-    output.push("<?xml version=\"1.0\" encoding=\"UTF-8\"?><svg xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-labelledby=\"a3s-title a3s-desc\" data-renderer=\"a3s-use-office-semantic-v1\" viewBox=\"0 0 ")?;
+    output.push("<?xml version=\"1.0\" encoding=\"UTF-8\"?><svg xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-labelledby=\"a3s-title a3s-desc\" data-renderer=\"a3s-use-office-semantic-v1\" data-document-kind=\"presentation\" viewBox=\"0 0 ")?;
     output.push_fmt(format_args!("{CANVAS_WIDTH:.4} {total_height:.4}"))?;
     output.push("\"><title id=\"a3s-title\">A3S Native Office presentation semantic preview</title><desc id=\"a3s-desc\">Deterministic semantic preview; it does not claim Microsoft Office layout fidelity.</desc><style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#172033}.slide-label{font-size:22px;font-weight:700}.shape-text{font-size:18px}.table-text{font-size:13px}.placeholder-text{font-size:16px;fill:#526079}.slide-background{fill:#fff;stroke:#8491a5;stroke-width:2}.shape{stroke:#667085;stroke-width:1.5}.placeholder{stroke-dasharray:8 5}.chart{fill:#f3f6fa;stroke:#8491a5;stroke-dasharray:8 5}.connector{stroke:#667085;stroke-width:2}.missing-image{fill:#f8fafc;stroke:#8491a5;stroke-dasharray:8 5}</style>")?;
 

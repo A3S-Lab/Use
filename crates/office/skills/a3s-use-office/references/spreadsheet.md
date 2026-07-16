@@ -49,7 +49,8 @@ and fail closed where safety cannot be proven.
 a3s use office native validate workbook.xlsx --json
 a3s use office native view workbook.xlsx issues --limit 200 --json
 a3s use office native view workbook.xlsx html --output workbook.html --json
+a3s use office native view workbook.xlsx svg --output workbook.svg --json
 ```
 
-HTML and screenshots are sparse semantic previews, not Excel layout or print
-fidelity.
+HTML, SVG, and screenshots are sparse semantic previews, not Excel layout or
+print fidelity.

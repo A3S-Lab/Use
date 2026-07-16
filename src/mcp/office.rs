@@ -227,7 +227,7 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_view",
-        description = "Produce a native text, outline, statistics, bounded issues, standalone HTML, Presentation SVG, or Browser-injected PNG screenshot view for an open session"
+        description = "Produce a native text, outline, statistics, bounded issues, standalone all-format HTML or SVG, or Browser-injected PNG screenshot view for an open session"
     )]
     async fn office_view(
         &self,

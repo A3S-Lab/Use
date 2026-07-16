@@ -260,15 +260,19 @@ crop, effects, floating/advanced anchors, and rich image layout are not
 implemented yet.
 
 Native semantic rendering is now implemented as a separate read-only layer.
-`NativeOfficeDocument::html_view` produces standalone HTML for Word,
-Spreadsheet, and Presentation; `svg_view` currently produces one stacked,
-standalone SVG artifact for Presentation. Word output retains body,
-header/footer, paragraph/run, table, picture, style, and stable-path semantics.
-Spreadsheet output groups only observed rows and cells, so an `A1` plus
-`XFD1048576` workbook cannot force a dense grid allocation. Presentation HTML
-and SVG use bounded semantic transforms for slide cards, text shapes, tables,
-pictures, groups, charts, and connectors. The output is an accessible semantic
-preview and does not claim theme, font, or layout fidelity.
+`NativeOfficeDocument::html_view` and `svg_view` produce standalone artifacts
+for Word, Spreadsheet, and Presentation. Word HTML retains body, header/footer,
+paragraph/run, table, picture, style, and stable-path semantics. Word SVG stacks
+regions, paragraphs, tables, and validated pictures while retaining escaped
+text and stable block paths. Spreadsheet output groups only observed rows and
+cells, so a workbook containing both `A1` and `XFD1048576` cannot force a dense
+grid allocation. Its SVG is likewise a sparse vertical semantic projection
+rather than a dense worksheet canvas.
+Presentation HTML and SVG use bounded semantic transforms for slide cards,
+text shapes, tables, pictures, groups, charts, and connectors. Every SVG is
+well-formed XML with accessible title/description metadata and no script or
+external URL surface. The output does not claim theme, font, pagination, print,
+or layout fidelity.
 
 Artifacts are deterministic and contain no time or source filename. All text
 and attributes are escaped, HTML declares a restrictive CSP with scripts and
@@ -278,7 +282,7 @@ internally related, structurally validated PNG/JPEG/GIF bytes may become
 publishes atomically without replacing an existing path; inline CLI output uses
 the same render bound and MCP retains its stricter 8 MiB structured-result
 bound. Unit and process tests cover hostile markup, deterministic hashes,
-sparse cells, invalid raster parts, all-format HTML, Presentation SVG,
+sparse cells, invalid raster parts, all-format HTML and SVG,
 no-clobber output, standard MCP, and an unusable OfficeCLI path.
 
 Native issue analysis is implemented as a bounded, read-only pass over the
@@ -330,7 +334,7 @@ Browser work starts. Process tests cover DOCX, XLSX, and PPTX CLI screenshots,
 an MCP screenshot lifecycle, PNG hashes, invalid arguments, Browser-disabled
 builds, and no-clobber behavior while setting an unusable OfficeCLI path.
 Screenshots are raster captures of the semantic preview, not Office layout
-fidelity. Word and Spreadsheet SVG, layout goldens, and live watch remain open.
+fidelity. Layout goldens and live watch remain open.
 
 Basic Presentation table structure is deliberately bounded. Table dimensions
 must be positive, no mutation may exceed 5,000 rows, 5,000 columns, or 100,000
@@ -443,11 +447,10 @@ LibreOffice checks confirm that no repair dialog is required.
 Status: native bounded issue analysis, semantic rendering, Browser-injected
 screenshots, the explicit `a3s use mcp serve office-native` target, and the
 packaged `a3s-use-office` Skill are available for evidence gathering. Issue
-reports and HTML cover all three formats, SVG currently covers Presentation,
-and semantic-preview PNG screenshots cover all three formats when the Browser
-provider is ready. They are available through typed Rust APIs, `office native
-view`, `office_view`, and progressive Word/Spreadsheet/Presentation/MCP Skill
-references.
+reports, HTML, SVG, and semantic-preview PNG screenshots cover all three
+formats; PNG requires a ready Browser provider. They are available through
+typed Rust APIs, `office native view`, `office_view`, and progressive
+Word/Spreadsheet/Presentation/MCP Skill references.
 The MCP target's 12 typed tools use bounded in-process sessions for validate,
 create/open/list, semantic reads and issues, constrained raw XML, atomic
 mutation batches, immutable-template merge, save, and close. It limits open
@@ -459,9 +462,9 @@ standard MCP initialize/list/call lifecycle, capture a real PNG when Chrome is
 available, and use an unusable OfficeCLI path. Skill process tests exercise
 bounded `list`, `get --full`, and `path` discovery with the same unusable
 provider, and release archives smoke-check the packaged `SKILL.md`. This preview
-does not complete Gate 6: richer issue parity, Word/Spreadsheet SVG, live watch,
-compatibility corpus, fuzzing, rich-format coverage, layout goldens, and release
-evidence remain open, and the default Office target is not promoted.
+does not complete Gate 6: richer issue parity, live watch, compatibility corpus,
+fuzzing, rich-format coverage, layout goldens, and release evidence remain open,
+and the default Office target is not promoted.
 
 At Gate 6, native becomes the default and `a3s install use/office` no longer
 downloads an engine. The OfficeCLI backend moves to an explicitly named
@@ -489,8 +492,8 @@ add/set/remove/move/copy/swap, Spreadsheet range and row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format
-template merge with `merge`, all-format semantic HTML, Presentation semantic
-SVG, bounded all-format issue reports, all-format Browser-injected semantic PNG
+template merge with `merge`, all-format semantic HTML and SVG, bounded
+all-format issue reports, all-format Browser-injected semantic PNG
 screenshots, plus atomic batches under the native Office route.
 The distribution also packages `a3s-use-office`, with bounded
 `office skills list|get|path` access and a content SHA-256 in the unified

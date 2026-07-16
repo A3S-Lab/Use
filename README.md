@@ -102,7 +102,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
-  HTML/PPTX-SVG semantic previews, bounded typed issue diagnostics,
+  all-format HTML/SVG semantic previews, bounded typed issue diagnostics,
   Browser-injected semantic PNG screenshots, and an explicit typed standard
   MCP preview while retaining the 0.1.x OfficeCLI compatibility backend for
   surfaces not yet promoted
@@ -319,10 +319,10 @@ The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
-dependency-free template merge and semantic rendering today. HTML is available
-for Word, Spreadsheet, and Presentation; SVG is currently Presentation-only;
-the bounded issue view is available for all three formats; and Browser-injected
-PNG screenshots are available for all three formats. `mcp serve office-native`
+dependency-free template merge and semantic rendering today. HTML and SVG are
+available for Word, Spreadsheet, and Presentation; the bounded issue view is
+available for all three formats; and Browser-injected PNG screenshots are
+available for all three formats. `mcp serve office-native`
 exposes the same editor, issue analysis, and screenshot composition through
 typed standard MCP tools and bounded in-memory sessions.
 The packaged `a3s-use-office` Skill exposes the same product boundaries to
@@ -330,9 +330,8 @@ agents without starting OfficeCLI. Discover its metadata with
 `office skills list`, read only its `SKILL.md` with
 `office skills get a3s-use-office`, append its four format/MCP references with
 `--full`, or locate the installed directory with `office skills path`. The
-capability snapshot
-binds the Skill path and lowercase SHA-256 so a resident host can verify the
-bytes before loading them.
+capability snapshot binds the Skill path and lowercase SHA-256 so a resident
+host can verify the bytes before loading them.
 Other `0.1.x` commands and the default `mcp serve office` target still use a
 compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
 boundary, not a native-promotion claim. The default routes will be promoted
@@ -356,6 +355,8 @@ a3s use office native view report.docx issues --json
 a3s use office native view workbook.xlsx issues --type formula_not_evaluated --limit 20 --json
 a3s use office native view report.docx html --output report.html --json
 a3s use office native view workbook.xlsx html --output workbook.html --json
+a3s use office native view report.docx svg --output report.svg --json
+a3s use office native view workbook.xlsx svg --output workbook.svg --json
 a3s use office native view deck.pptx svg --output deck.svg --json
 a3s use office native view report.docx screenshot --output report.png --timeout-ms 30000 --json
 a3s use office native validate deck.pptx --json
@@ -461,8 +462,8 @@ limited to 10,000 mutations and 8 MiB of JSON, and remain unsaved until
 `office_save`. Results are limited to 8 MiB, raw XML responses to 1 MiB, and
 queries to at most 1,000 returned nodes. `office_close` rejects dirty sessions
 unless the caller saves or explicitly sets `discard=true`. `office_view`
-accepts `html` for all three formats and `svg` for Presentation in addition to
-text, outline, and statistics. The `issues` view accepts an optional typed
+accepts `html` and `svg` for all three formats in addition to text, outline,
+and statistics. The `issues` view accepts an optional typed
 `issueType` and a `limit` from 1 through 1,000, defaulting to 200. It also
 accepts `screenshot` for all three formats; that mode requires a no-clobber
 local `output` ending in `.png` and accepts an optional `timeoutMs` from 1
@@ -492,8 +493,8 @@ the same deterministic HTML privately, opens its `file://` URL through the
 existing `PageRenderer`, and validates one regular PNG plus its size and
 SHA-256 receipt before atomic no-clobber publication. It defaults to a 30-second
 deadline, caps the deadline at 120 seconds, and caps the PNG at 64 MiB. It does
-not fetch external relationships or consult OfficeCLI. Word/Spreadsheet SVG,
-layout goldens, and live watch remain open.
+not fetch external relationships or consult OfficeCLI. Layout goldens and live
+watch remain open.
 
 Native batch input is an ordinary JSON document, not an RPC protocol. The
 current schema is:
@@ -563,7 +564,7 @@ regular, non-symlink files no larger than 64 MiB. Normal CLI output never
 contains image data; `createdImage` and batch `createdImages` receipts contain
 only paths, owner/media parts, relationship ID, format, and final dimensions.
 
-OOXML SVG image embedding is not implemented yet; the Presentation SVG semantic
+OOXML SVG image embedding is not implemented yet; the all-format SVG semantic
 preview is an output format and does not alter the package. Correct OOXML SVG
 image support requires an SVG part plus a raster fallback rather than treating
 SVG as an ordinary bitmap.

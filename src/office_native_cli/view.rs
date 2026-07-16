@@ -227,5 +227,5 @@ async fn screenshot(
         "use.browser.disabled",
         "Native Office screenshots require the A3S Use Browser feature.",
     )
-    .with_suggestion("Use an A3S Use build with Browser support, or request html instead."))
+    .with_suggestion("Use an A3S Use build with Browser support, or request html or svg instead."))
 }

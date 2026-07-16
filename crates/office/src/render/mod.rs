@@ -43,14 +43,17 @@ pub struct NativeOfficeRenderedView {
 }
 
 impl NativeOfficeDocument {
+    /// Renders a bounded, deterministic semantic view without an Office runtime.
     pub fn render(&self, format: NativeOfficeRenderFormat) -> UseResult<NativeOfficeRenderedView> {
         render_with_limit(self, format, MAX_NATIVE_OFFICE_RENDER_BYTES)
     }
 
+    /// Renders standalone semantic HTML for Word, Spreadsheet, or Presentation.
     pub fn html_view(&self) -> UseResult<NativeOfficeRenderedView> {
         self.render(NativeOfficeRenderFormat::Html)
     }
 
+    /// Renders standalone semantic SVG for Word, Spreadsheet, or Presentation.
     pub fn svg_view(&self) -> UseResult<NativeOfficeRenderedView> {
         self.render(NativeOfficeRenderFormat::Svg)
     }
@@ -71,16 +74,7 @@ pub(crate) fn render_with_limit(
     }
     let content = match format {
         NativeOfficeRenderFormat::Html => html::render(document, limit)?,
-        NativeOfficeRenderFormat::Svg if document.kind() == DocumentKind::Presentation => {
-            svg::render_presentation(document, limit)?
-        }
-        NativeOfficeRenderFormat::Svg => {
-            return Err(render_error(
-                "use.office.render_format_unsupported",
-                "Native SVG semantic preview currently supports Presentation documents only.",
-            )
-            .with_suggestion("Use the HTML semantic preview for Word or Spreadsheet documents."))
-        }
+        NativeOfficeRenderFormat::Svg => svg::render(document, limit)?,
     };
     let byte_length = content.len();
     let sha256 = format!("{:x}", Sha256::digest(content.as_bytes()));
