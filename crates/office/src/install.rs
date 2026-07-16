@@ -593,32 +593,35 @@ async fn write_receipt(directory: &Path, receipt: &OfficeInstallReceipt) -> UseR
     })
 }
 
+#[cfg(unix)]
 async fn make_executable(path: &Path) -> UseResult<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = tokio::fs::metadata(path)
-            .await
-            .map_err(|error| {
-                office_error(
-                    "use.office.install_failed",
-                    format!("Failed to inspect OfficeCLI '{}': {error}", path.display()),
-                )
-            })?
-            .permissions();
-        permissions.set_mode(0o755);
-        tokio::fs::set_permissions(path, permissions)
-            .await
-            .map_err(|error| {
-                office_error(
-                    "use.office.install_failed",
-                    format!(
-                        "Failed to set OfficeCLI permissions '{}': {error}",
-                        path.display()
-                    ),
-                )
-            })?;
-    }
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = tokio::fs::metadata(path)
+        .await
+        .map_err(|error| {
+            office_error(
+                "use.office.install_failed",
+                format!("Failed to inspect OfficeCLI '{}': {error}", path.display()),
+            )
+        })?
+        .permissions();
+    permissions.set_mode(0o755);
+    tokio::fs::set_permissions(path, permissions)
+        .await
+        .map_err(|error| {
+            office_error(
+                "use.office.install_failed",
+                format!(
+                    "Failed to set OfficeCLI permissions '{}': {error}",
+                    path.display()
+                ),
+            )
+        })?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn make_executable(_path: &Path) -> UseResult<()> {
     Ok(())
 }
 

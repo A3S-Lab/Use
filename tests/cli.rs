@@ -1,5 +1,5 @@
 use std::process::Command;
-#[cfg(feature = "extensions")]
+#[cfg(all(feature = "extensions", unix))]
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
@@ -43,9 +43,13 @@ fn unified_capability_snapshot_projects_builtin_browser_skill() {
         .find(|capability| capability["id"] == "use/browser")
         .unwrap();
     assert_eq!(browser["origin"], "built-in");
-    assert!(browser["skills"][0]["path"]
-        .as_str()
-        .is_some_and(|path| path.ends_with("skills/a3s-use-browser/SKILL.md")));
+    assert!(browser["skills"][0]["path"].as_str().is_some_and(|path| {
+        std::path::Path::new(path).ends_with(
+            std::path::Path::new("skills")
+                .join("a3s-use-browser")
+                .join("SKILL.md"),
+        )
+    }));
     let skill_digest = browser["skills"][0]["sha256"]
         .as_str()
         .expect("the capability registry must bind Skill content, not only its path");
