@@ -19,7 +19,8 @@ const EMU_PER_PIXEL: u64 = 9_525;
 
 mod format;
 
-pub(super) use format::{inspect_image, validate_pixel_bounds};
+pub(crate) use format::inspect_image;
+pub(super) use format::validate_pixel_bounds;
 
 struct PreparedImage {
     bytes: Vec<u8>,

@@ -17,6 +17,8 @@ mod spreadsheet;
 mod types;
 mod word;
 
+pub(crate) use image::inspect_image;
+
 #[cfg(test)]
 mod part_tests;
 

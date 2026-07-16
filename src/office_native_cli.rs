@@ -13,6 +13,7 @@ mod merge;
 mod part;
 mod raw;
 mod replay;
+mod view;
 
 use arguments::{parse_boolean_option, AllowedOptions, ParsedArguments};
 
@@ -24,7 +25,7 @@ const HELP: &str = concat!(
     "usage:\n",
     "  a3s-use office native get <file> [path] [--depth <n>] [--json]\n",
     "  a3s-use office native query <file> <selector> [--json]\n",
-    "  a3s-use office native view <file> text|outline|stats [--json]\n",
+    "  a3s-use office native view <file> text|outline|stats|html|svg [--output <file>] [--json]\n",
     "  a3s-use office native raw <file> <part> [--output <xml-file>] [--json]\n",
     "  a3s-use office native raw-set <file> <part> --input <xml-file> [--output <file>] [--json]\n",
     "  a3s-use office native dump <file> [path] [--output <batch.json>] [--json]\n",
@@ -51,7 +52,7 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         None | Some("help" | "--help" | "-h") => Ok(help()),
         Some("get") => get(args).await,
         Some("query") => query(args).await,
-        Some("view") => view(args).await,
+        Some("view") => view::run(args).await,
         Some("raw") => raw::inspect(args).await,
         Some("raw-set") => raw::replace(args).await,
         Some("dump") => replay::dump(args).await,
@@ -136,59 +137,6 @@ async fn query(args: &[String]) -> UseResult<CommandOutput> {
             "results": results
         }),
     ))
-}
-
-async fn view(args: &[String]) -> UseResult<CommandOutput> {
-    let parsed = ParsedArguments::parse(args, AllowedOptions::NONE)?;
-    if parsed.positionals.len() != 2 {
-        return Err(usage_error(
-            "office native view requires <file> and text, outline, or stats",
-        ));
-    }
-    let document = NativeOfficeDocument::open(&parsed.positionals[0]).await?;
-    match parsed.positionals[1].as_str() {
-        "text" | "t" => {
-            let view = document.text_view();
-            Ok(CommandOutput::success(
-                view.text.clone(),
-                serde_json::json!({ "view": "text", "result": view }),
-            ))
-        }
-        "outline" | "o" => {
-            let outline = document.outline();
-            let human = outline
-                .iter()
-                .map(|entry| {
-                    format!(
-                        "{}{} ({}) {}",
-                        "  ".repeat(entry.level),
-                        entry.path,
-                        entry.node_type.label(),
-                        single_line(&entry.text)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            Ok(CommandOutput::success(
-                human,
-                serde_json::json!({ "view": "outline", "result": outline }),
-            ))
-        }
-        "stats" | "s" => {
-            let statistics = document.statistics();
-            let human = format!(
-                "{} nodes, {} words, {} characters",
-                statistics.node_count, statistics.word_count, statistics.character_count
-            );
-            Ok(CommandOutput::success(
-                human,
-                serde_json::json!({ "view": "stats", "result": statistics }),
-            ))
-        }
-        mode => Err(usage_error(format!(
-            "native Office view mode '{mode}' is not text, outline, or stats"
-        ))),
-    }
 }
 
 async fn validate(args: &[String]) -> UseResult<CommandOutput> {

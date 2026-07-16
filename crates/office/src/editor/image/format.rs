@@ -7,13 +7,13 @@ const MAX_IMAGE_DIMENSION_PX: u32 = 100_000;
 const MAX_IMAGE_PIXELS: u64 = 500_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::editor) struct ImageMetadata {
+pub(crate) struct ImageMetadata {
     pub format: NativeOfficeImageFormat,
     pub width_px: u32,
     pub height_px: u32,
 }
 
-pub(in crate::editor) fn inspect_image(
+pub(crate) fn inspect_image(
     bytes: &[u8],
     expected: Option<NativeOfficeImageFormat>,
 ) -> UseResult<ImageMetadata> {

@@ -19,6 +19,7 @@ mod install;
 mod opc;
 mod opc_edit;
 mod package;
+mod render;
 mod replay;
 mod semantic;
 mod spreadsheet_formula;
@@ -45,6 +46,9 @@ pub use opc::{
     RelationshipTarget,
 };
 pub use package::{NativeOfficePackage, PackageLimits, PackageRevision};
+pub use render::{
+    NativeOfficeRenderFormat, NativeOfficeRenderedView, MAX_NATIVE_OFFICE_RENDER_BYTES,
+};
 pub use replay::{
     NativeOfficeReplayArtifact, NativeOfficeReplayBase, MAX_NATIVE_OFFICE_REPLAY_MUTATIONS,
     NATIVE_OFFICE_REPLAY_FORMAT, NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
@@ -255,6 +259,9 @@ mod presentation_table_tests;
 
 #[cfg(test)]
 mod replay_tests;
+
+#[cfg(test)]
+mod render_tests;
 
 #[cfg(test)]
 mod semantic_tests;

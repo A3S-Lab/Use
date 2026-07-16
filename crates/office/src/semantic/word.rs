@@ -26,6 +26,9 @@ pub(super) fn read(
 
     let mut root = DocumentNode::new("/", "document", OfficeNodeType::Document);
     let mut body_node = DocumentNode::new("/body", "body", OfficeNodeType::Body);
+    body_node
+        .format
+        .insert("part".into(), "word/document.xml".into());
     read_block_children(body, "/body", &styles, &mut body_node.children);
     body_node.text = join_block_text(&body_node.children);
     root.text = body_node.text.clone();
@@ -65,6 +68,7 @@ fn read_headers_and_footers(
         let container = parse_xml_tree(&part)?;
         let path = format!("/{tag}[{index}]");
         let mut node = DocumentNode::new(&path, tag, node_type);
+        node.format.insert("part".into(), part_name.clone());
         read_block_children(&container, &path, styles, &mut node.children);
         node.text = join_block_text(&node.children);
         root.children.push(node);

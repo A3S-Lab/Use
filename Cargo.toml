@@ -87,6 +87,7 @@ getrandom = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 url.workspace = true
 rmcp = { workspace = true, optional = true }

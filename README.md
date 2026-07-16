@@ -55,6 +55,8 @@ a3s use browser close --session research
 # Read and mutate OOXML in-process with no external Office provider.
 a3s use office native create report.docx --json
 a3s use office native view report.docx text --json
+a3s use office native view report.docx html --output report.html --json
+a3s use office native view deck.pptx svg --output deck.svg --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native add report.docx /body --type paragraph --text 'More' --json
@@ -95,9 +97,10 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   `agent-browser` 0.31.2
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
-  native PNG/JPEG/GIF embedding, cross-format template merge, and an explicit
-  typed standard MCP preview while retaining the 0.1.x OfficeCLI compatibility
-  backend for surfaces not yet promoted
+  native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
+  HTML/PPTX-SVG semantic previews, and an explicit typed standard MCP preview
+  while retaining the 0.1.x OfficeCLI compatibility backend for surfaces not
+  yet promoted
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
@@ -288,9 +291,10 @@ metadata, tables, comments, VML notes, drawing anchors, and chart references;
 unsupported pivot and 3D-reference cases fail closed before save. Presentation
 slides, text shapes, and basic tables also support native add/remove. PNG, JPEG,
 and GIF can be embedded as real Word inline pictures, Spreadsheet one-cell
-drawing anchors, and Presentation slide pictures; semantic reads and reference-aware removal use
-the same cross-format `Picture` contract. Saves are atomic and reject a changed
-source revision instead of overwriting another writer.
+drawing anchors, and Presentation slide pictures; semantic reads and
+reference-aware removal use the same cross-format `Picture` contract. Saves are
+atomic and reject a changed source revision instead of overwriting another
+writer.
 Cross-format template merge replaces `{{key}}` text in Word document and
 auxiliary text parts, Spreadsheet string cells, and Presentation slides and
 notes while preserving split-run formatting and reporting unresolved keys.
@@ -303,8 +307,10 @@ The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
-dependency-free template merge today. `mcp serve office-native` exposes the
-same editor through typed standard MCP tools and bounded in-memory sessions.
+dependency-free template merge and semantic rendering today. HTML is available
+for Word, Spreadsheet, and Presentation; SVG is currently Presentation-only.
+`mcp serve office-native` exposes the same editor through typed standard MCP
+tools and bounded in-memory sessions.
 Other `0.1.x` commands and the default `mcp serve office` target still use a
 compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
 boundary, not a native-promotion claim. The default routes will be promoted
@@ -324,6 +330,9 @@ a3s use office native create deck.pptx --json
 a3s use office native get report.docx /body --depth 2 --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native view report.xlsx stats --json
+a3s use office native view report.docx html --output report.html --json
+a3s use office native view workbook.xlsx html --output workbook.html --json
+a3s use office native view deck.pptx svg --output deck.svg --json
 a3s use office native validate deck.pptx --json
 
 # Inspect a safely parsed XML part inline or export its original bytes.
@@ -426,7 +435,21 @@ Each process owns at most 64 sessions. Mutation batches are atomic in memory,
 limited to 10,000 mutations and 8 MiB of JSON, and remain unsaved until
 `office_save`. Results are limited to 8 MiB, raw XML responses to 1 MiB, and
 queries to at most 1,000 returned nodes. `office_close` rejects dirty sessions
-unless the caller saves or explicitly sets `discard=true`.
+unless the caller saves or explicitly sets `discard=true`. `office_view`
+accepts `html` for all three formats and `svg` for Presentation in addition to
+text, outline, and statistics.
+
+Native render artifacts are deterministic, standalone, and network-free. They
+contain no timestamp or source path, escape document text and attributes, carry
+stable semantic paths as `data-path`, and embed only validated internal
+PNG/JPEG/GIF parts as `data:` URLs. HTML declares a restrictive CSP and uses a
+sparse observed-cell representation instead of expanding large Spreadsheet
+gaps. Each render is bounded to 16 MiB while it is composed. CLI `--output`
+publishes through an atomic no-clobber file operation; inline MCP output remains
+subject to the stricter 8 MiB structured-result limit. These are semantic
+previews, not a Microsoft Office layout-fidelity claim. Word/Spreadsheet SVG,
+screenshot generation, and live watch remain open; screenshots will inject the
+existing Browser renderer rather than add another browser runtime.
 
 Native batch input is an ordinary JSON document, not an RPC protocol. The
 current schema is:
@@ -496,11 +519,14 @@ regular, non-symlink files no larger than 64 MiB. Normal CLI output never
 contains image data; `createdImage` and batch `createdImages` receipts contain
 only paths, owner/media parts, relationship ID, format, and final dimensions.
 
-SVG embedding is not implemented yet. Correct OOXML SVG support requires an
-SVG part plus a raster fallback rather than treating SVG as an ordinary bitmap.
+OOXML SVG image embedding is not implemented yet; the Presentation SVG semantic
+preview is an output format and does not alter the package. Correct OOXML SVG
+image support requires an SVG part plus a raster fallback rather than treating
+SVG as an ordinary bitmap.
+
 Image replacement, crop, rotation, effects, compression controls, floating
-Word wrapping, Spreadsheet two-cell sizing, and media rendering also remain
-outside this bounded add/read/remove milestone.
+Word wrapping, Spreadsheet two-cell sizing, and rich layout rendering also
+remain outside this bounded add/read/remove milestone.
 
 `office native dump` produces a stricter versioned batch artifact, also as
 ordinary JSON:
@@ -626,7 +652,7 @@ callers:
 ```rust,no_run
 use a3s_use_office::{
     NativeOfficeDocument, NativeOfficeEditor, NativeOfficeInsertPosition,
-    NativeOfficePackage, NativeOfficeReplayArtifact,
+    NativeOfficePackage, NativeOfficeRenderFormat, NativeOfficeReplayArtifact,
 };
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
@@ -642,6 +668,8 @@ println!("created {:?}", blank.kind());
 
 let document = NativeOfficeDocument::open("report.docx").await?;
 println!("{}", document.text_view().text);
+let html = document.render(NativeOfficeRenderFormat::Html)?;
+println!("{} {} bytes", html.sha256, html.byte_length);
 let headings = document.query("p[style=Heading1]")?;
 println!("{} heading(s)", headings.len());
 

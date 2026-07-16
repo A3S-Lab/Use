@@ -64,6 +64,8 @@ pub(super) enum OfficeView {
     Text,
     Outline,
     Stats,
+    Html,
+    Svg,
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]

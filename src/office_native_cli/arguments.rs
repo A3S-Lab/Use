@@ -224,6 +224,10 @@ impl AllowedOptions {
         depth: true,
         ..Self::NONE
     };
+    pub const VIEW: Self = Self {
+        output: true,
+        ..Self::NONE
+    };
     pub const SET: Self = Self {
         text: true,
         output: true,

@@ -7,7 +7,7 @@ mod support;
 use std::path::Path;
 
 use a3s_use_core::{UseError, UseResult};
-use a3s_use_office::NativeOfficeDocument;
+use a3s_use_office::{NativeOfficeDocument, NativeOfficeRenderFormat};
 use input::{
     OfficeBatchInput, OfficeCloseInput, OfficeCreateInput, OfficeFileInput, OfficeGetInput,
     OfficeMergeTemplateInput, OfficeOpenInput, OfficeQueryInput, OfficeRawXmlInput,
@@ -186,7 +186,7 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_view",
-        description = "Produce a native text, outline, or statistics view for an open session"
+        description = "Produce a native text, outline, statistics, standalone HTML, or Presentation SVG semantic view for an open session"
     )]
     async fn office_view(
         &self,
@@ -201,6 +201,14 @@ impl NativeOfficeMcpServer {
                 OfficeView::Text => ("text", serde_json::to_value(document.text_view())),
                 OfficeView::Outline => ("outline", serde_json::to_value(document.outline())),
                 OfficeView::Stats => ("stats", serde_json::to_value(document.statistics())),
+                OfficeView::Html => (
+                    "html",
+                    serde_json::to_value(document.render(NativeOfficeRenderFormat::Html)?),
+                ),
+                OfficeView::Svg => (
+                    "svg",
+                    serde_json::to_value(document.render(NativeOfficeRenderFormat::Svg)?),
+                ),
             };
             let value = value.map_err(output_encoding_error)?;
             Ok(serde_json::json!({ "session": session, "view": view, "result": value }))

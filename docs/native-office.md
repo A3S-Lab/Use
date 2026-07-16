@@ -133,6 +133,9 @@ runtime in the Office engine.
 10. Template merge never modifies its template in place. It validates all
     replacements transactionally and creates a distinct no-clobber output unless
     the caller explicitly authorizes destination replacement with `--force`.
+11. Render output is bounded while it is composed, contains no source path or
+    timestamp, never fetches an external relationship, and never emits document
+    text as executable markup, style, or script.
 
 ## Delivery gates
 
@@ -248,9 +251,33 @@ part. All XML, relationship, content-type, and media changes participate in the
 existing atomic batch rollback. Process-level tests cover Word, Spreadsheet,
 and Presentation with an unusable OfficeCLI provider path; separate format
 tests cover PNG, JPEG, GIF, dimension inference, invalid data, rollback, and
-batch `createdImages` receipts. SVG is deferred because interoperable OOXML SVG
-requires a raster fallback representation. Replacement, crop, effects,
-floating/advanced anchors, and rich image rendering are not implemented yet.
+batch `createdImages` receipts. OOXML SVG image embedding is deferred because
+interoperable SVG parts require a raster fallback representation. Replacement,
+crop, effects, floating/advanced anchors, and rich image layout are not
+implemented yet.
+
+Native semantic rendering is now implemented as a separate read-only layer.
+`NativeOfficeDocument::html_view` produces standalone HTML for Word,
+Spreadsheet, and Presentation; `svg_view` currently produces one stacked,
+standalone SVG artifact for Presentation. Word output retains body,
+header/footer, paragraph/run, table, picture, style, and stable-path semantics.
+Spreadsheet output groups only observed rows and cells, so an `A1` plus
+`XFD1048576` workbook cannot force a dense grid allocation. Presentation HTML
+and SVG use bounded semantic transforms for slide cards, text shapes, tables,
+pictures, groups, charts, and connectors. The output is an accessible semantic
+preview and does not claim theme, font, or layout fidelity.
+
+Artifacts are deterministic and contain no time or source filename. All text
+and attributes are escaped, HTML declares a restrictive CSP with scripts and
+network access disabled, external relationships remain inert, and only
+internally related, structurally validated PNG/JPEG/GIF bytes may become
+`data:` URLs. Composition stops at 16 MiB. CLI `view ... html|svg --output`
+publishes atomically without replacing an existing path; inline CLI output uses
+the same render bound and MCP retains its stricter 8 MiB structured-result
+bound. Unit and process tests cover hostile markup, deterministic hashes,
+sparse cells, invalid raster parts, all-format HTML, Presentation SVG,
+no-clobber output, standard MCP, and an unusable OfficeCLI path. Word and
+Spreadsheet SVG, screenshots, layout goldens, and live watch remain open.
 
 Basic Presentation table structure is deliberately bounded. Table dimensions
 must be positive, no mutation may exceed 5,000 rows, 5,000 columns, or 100,000
@@ -327,8 +354,8 @@ three formats with an unusable OfficeCLI path and verify template bytes remain
 unchanged.
 
 Cross-parent/reference-graph arrangement beyond the bounded move/copy/swap
-coverage above, advanced image mutation and SVG fallback, complex/custom part
-carriers, Presentation table merges/rich styles, subtree and
+coverage above, advanced image mutation and OOXML SVG fallback, complex/custom
+part carriers, Presentation table merges/rich styles, subtree and
 rich-structure dump, advanced rich-format operations, and
 the formula parser/dependency/recalculation engine remain before their
 respective gates can be promoted. Creation and structural mutation remain
@@ -360,8 +387,11 @@ LibreOffice checks confirm that no repair dialog is required.
 - macOS and Linux release evidence; Windows remains preview until its separate
   platform gate is promoted.
 
-Status: one Gate 6 surface is now available for evidence gathering through the
-explicit `a3s use mcp serve office-native` target. Its 12 typed tools use
+Status: two Gate 6 surfaces are now available for evidence gathering: native
+semantic rendering and the explicit `a3s use mcp serve office-native` target.
+HTML covers all three formats and SVG currently covers Presentation; both are
+bounded, deterministic, standalone, and available through the typed Rust API,
+`office native view`, and `office_view`. The MCP target's 12 typed tools use
 bounded in-process sessions for validate, create/open/list, semantic reads,
 constrained raw XML, atomic mutation batches, immutable-template merge, save,
 and close. It limits open sessions to 64, batch and result JSON to 8 MiB, a
@@ -369,9 +399,10 @@ batch to 10,000 mutations, query output to 1,000 nodes, and raw XML output to
 1 MiB. Mutations are not persisted until `office_save`, and a dirty session
 cannot close without save or explicit discard. Process-level tests complete a
 standard MCP initialize/list/call lifecycle and edit a document with an
-unusable OfficeCLI path. This preview does not complete Gate 6: rendering,
-Office Skills, compatibility corpus, fuzzing, rich-format coverage, and release
-evidence remain open, and the default Office target is not promoted.
+unusable OfficeCLI path. This preview does not complete Gate 6: Word/Spreadsheet
+SVG, screenshot/live-watch rendering, Office Skills, compatibility corpus,
+fuzzing, rich-format coverage, layout goldens, and release evidence remain
+open, and the default Office target is not promoted.
 
 At Gate 6, native becomes the default and `a3s install use/office` no longer
 downloads an engine. The OfficeCLI backend moves to an explicitly named
@@ -399,7 +430,8 @@ add/set/remove/move/copy/swap, Spreadsheet range and row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the
 canonical typed subset, native PNG/JPEG/GIF add/read/remove, cross-format
-template merge with `merge`, plus atomic batches under the native Office route.
+template merge with `merge`, all-format semantic HTML, Presentation semantic
+SVG, plus atomic batches under the native Office route.
 The explicit `mcp serve office-native` target now exposes the current typed
 subset without an external runtime. Other Office commands and the default
 `mcp serve office` target still delegate to the pinned OfficeCLI provider. This

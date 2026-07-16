@@ -146,7 +146,17 @@ relationship ID, name, alternative text, and pixel dimensions. Removal first
 edits the owner XML, then drops an unreferenced relationship, and garbage
 collects media only when the package relationship graph has no remaining target
 edge. The media changes share the editor's atomic rollback boundary. SVG is a
-separate future representation because OOXML requires a raster fallback.
+separate future package representation because OOXML requires a raster
+fallback; this is distinct from the read-only Presentation SVG semantic view.
+
+Semantic rendering is a read-only layer over the same document tree and OPC
+relationship graph. It produces deterministic standalone HTML for all three
+formats and stacked SVG for Presentation, carries stable `data-path` metadata,
+and embeds only validated internal raster parts as `data:` URLs. External
+relationships are never fetched. Render composition has a 16 MiB bound; CLI
+artifact publication is atomic and no-clobber, while standard MCP applies its
+stricter 8 MiB result bound. Screenshot work will inject the existing typed
+Browser renderer and will not add another browser runtime to Office.
 
 Basic Presentation table mutation is a format-owned structural layer over the
 same loss-preserving XML editor. It inserts a real graphic frame and DrawingML
@@ -169,9 +179,10 @@ unchanged until the native product gates pass.
 
 The preview MCP adapter has an explicit typed vocabulary rather than a command
 string passthrough. It supports validate, create/open/list, semantic get/query,
-text/outline/statistics views, constrained raw XML inspection, atomic typed
-mutation batches, immutable-template merge, save, and close. A server process
-owns at most 64 sessions. Batches and structured results are limited to 8 MiB,
+text/outline/statistics views, all-format HTML, Presentation SVG, constrained
+raw XML inspection, atomic typed mutation batches, immutable-template merge,
+save, and close. A server process owns at most 64 sessions. Batches and
+structured results are limited to 8 MiB,
 batches to 10,000 mutations, query output to 1,000 nodes, and inline raw XML to
 1 MiB. Mutations remain in memory until an explicit save, while close fails on
 dirty state unless discard is explicit. These are MCP deployment rules around
@@ -241,7 +252,8 @@ Implemented:
     canonical typed subset including basic Presentation tables, cross-format
     native template merge with bounded JSON
     and immutable templates, native PNG/JPEG/GIF add/read/remove with
-    reference-aware media cleanup, atomic batches, changed-file conflict
+    reference-aware media cleanup, deterministic all-format HTML and
+    Presentation SVG semantic rendering, atomic batches, changed-file conflict
     detection, and the dependency-free `office native` CLI.
 14. An explicit native Office standard MCP preview with bounded typed tools,
     in-process sessions, deferred atomic save, dirty-close protection, and
@@ -251,8 +263,9 @@ Next:
 
 1. Complete native read interoperability and repair-dialog evidence against
    Microsoft Office and the optional CI LibreOffice oracle.
-2. Native Office mutation, formula, rich-format, rendering, MCP promotion, and
-   compatibility gates defined in `docs/native-office.md`.
+2. Native Office mutation, formula, rich-format, screenshot/live-watch
+   rendering, MCP promotion, and compatibility gates defined in
+   `docs/native-office.md`.
 3. Windows real-Chrome persistent sessions. Windows remains a preview build
    until separate `a3s use browser` invocations can open and reuse a session
    with the same runtime guarantees as macOS and Linux. Windows compilation,
