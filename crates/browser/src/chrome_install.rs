@@ -171,8 +171,8 @@ pub(crate) async fn download_latest_chrome() -> UseResult<PathBuf> {
     Ok(executable)
 }
 
+#[cfg(unix)]
 async fn make_executable(path: &Path) -> UseResult<()> {
-    #[cfg(unix)]
     if path.is_file() {
         use std::os::unix::fs::PermissionsExt;
         let mut permissions = tokio::fs::metadata(path)
@@ -184,6 +184,11 @@ async fn make_executable(path: &Path) -> UseResult<()> {
             .await
             .map_err(|error| browser_error(format!("Failed to set Chrome permissions: {error}")))?;
     }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn make_executable(_path: &Path) -> UseResult<()> {
     Ok(())
 }
 

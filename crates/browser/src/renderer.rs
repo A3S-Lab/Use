@@ -191,7 +191,7 @@ impl Drop for PageGuard {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use super::*;
     use crate::{BrowserPoolConfig, BrowserProvider};

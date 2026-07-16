@@ -638,7 +638,10 @@ struct RawSnapshotElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BrowserPoolConfig, BrowserProvider};
+    use crate::BrowserPoolConfig;
+    #[cfg(not(windows))]
+    use crate::BrowserProvider;
+    #[cfg(not(windows))]
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
@@ -673,6 +676,7 @@ mod tests {
         assert_eq!(error.code, "use.browser.sessions_closed");
     }
 
+    #[cfg(not(windows))]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn discovered_chrome_keeps_typed_session_state_when_available() {
         let Some(executable) = crate::detect_chrome() else {

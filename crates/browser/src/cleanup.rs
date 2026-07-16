@@ -138,11 +138,10 @@ pub(crate) async fn finish_child_cleanup(child: Option<tokio::process::Child>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn spawned_child_is_killed_and_reaped() {
         let child = tokio::process::Command::new("sleep")
