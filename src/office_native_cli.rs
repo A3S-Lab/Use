@@ -1,9 +1,7 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
-    DocumentNode, NativeOfficeDocument, NativeOfficeEditor, NativeOfficeMutation,
-    SpreadsheetCellValue,
+    DocumentNode, NativeOfficeDocument, NativeOfficeEditor, SpreadsheetCellValue,
 };
-use serde::Deserialize;
 use tokio::io::AsyncReadExt;
 
 use crate::cli::CommandOutput;
@@ -11,11 +9,11 @@ use crate::cli::CommandOutput;
 mod arguments;
 mod part;
 mod raw;
+mod replay;
 
 use arguments::{parse_boolean_option, AllowedOptions, ParsedArguments};
 
 const MAX_BATCH_INPUT_BYTES: u64 = 8 * 1024 * 1024;
-const MAX_BATCH_MUTATIONS: usize = 10_000;
 
 const HELP: &str = concat!(
     "a3s-use office native — dependency-free OOXML operations\n\n",
@@ -25,6 +23,7 @@ const HELP: &str = concat!(
     "  a3s-use office native view <file> text|outline|stats [--json]\n",
     "  a3s-use office native raw <file> <part> [--output <xml-file>] [--json]\n",
     "  a3s-use office native raw-set <file> <part> --input <xml-file> [--output <file>] [--json]\n",
+    "  a3s-use office native dump <file> [path] [--output <batch.json>] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape [--rows <n>] [--columns <n>] [--name <name>] [--text <value>] [--output <file>] [--json]\n",
@@ -36,7 +35,7 @@ const HELP: &str = concat!(
     "  a3s-use office native rename-sheet <file> <sheet> <new-name> [--output <file>] [--json]\n",
     "  a3s-use office native move-sheet <file> <sheet> <one-based-position> [--output <file>] [--json]\n",
     "  a3s-use office native copy-sheet <file> <sheet> <new-name> [--position <one-based-position>] [--output <file>] [--json]\n",
-    "  a3s-use office native batch <file> --input <mutations.json> [--output <file>] [--json]"
+    "  a3s-use office native batch <file> --input <batch.json> [--output <file>] [--json]"
 );
 
 pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
@@ -47,6 +46,7 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("view") => view(args).await,
         Some("raw") => raw::inspect(args).await,
         Some("raw-set") => raw::replace(args).await,
+        Some("dump") => replay::dump(args).await,
         Some("validate") => validate(args).await,
         Some("create") => create(args).await,
         Some("add") => add(args).await,
@@ -72,7 +72,7 @@ fn help() -> CommandOutput {
         HELP,
         serde_json::json!({
             "commands": [
-                "get", "query", "view", "raw", "raw-set", "validate", "create", "add", "add-part", "set", "remove",
+                "get", "query", "view", "raw", "raw-set", "dump", "validate", "create", "add", "add-part", "set", "remove",
                 "insert-rows", "delete-rows", "insert-columns", "delete-columns",
                 "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],
@@ -601,12 +601,17 @@ async fn batch(args: &[String]) -> UseResult<CommandOutput> {
     let input_path = parsed
         .input
         .as_deref()
-        .ok_or_else(|| usage_error("office native batch requires --input <mutations.json>"))?;
-    let input = read_batch_input(input_path).await?;
+        .ok_or_else(|| usage_error("office native batch requires --input <batch.json>"))?;
+    let input = replay::read_batch_input(input_path).await?;
+    let mutation_count = input.mutation_count();
+    let replayed = matches!(&input, replay::NativeBatchInput::Replay(_));
     let source = &parsed.positionals[0];
     let mut editor = NativeOfficeEditor::open(source).await?;
     let source_path = editor.package().path().to_path_buf();
-    let result = editor.apply_batch(&input.mutations)?;
+    let result = match &input {
+        replay::NativeBatchInput::Mutations(mutations) => editor.apply_batch(mutations)?,
+        replay::NativeBatchInput::Replay(artifact) => editor.apply_replay(artifact)?,
+    };
     save_editor(&mut editor, parsed.output.as_deref()).await?;
     let output_path = editor.package().path().to_path_buf();
     let in_place = output_path == source_path;
@@ -621,6 +626,8 @@ async fn batch(args: &[String]) -> UseResult<CommandOutput> {
             "operation": "batch",
             "changed": result.applied > 0,
             "atomic": true,
+            "replay": replayed,
+            "inputMutations": mutation_count,
             "result": result,
             "kind": editor.package().kind(),
             "outputPath": output_path,
@@ -636,45 +643,6 @@ async fn save_editor(editor: &mut NativeOfficeEditor, output: Option<&str>) -> U
     } else {
         editor.save().await
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct NativeBatchInput {
-    schema_version: u32,
-    mutations: Vec<NativeOfficeMutation>,
-}
-
-async fn read_batch_input(path: &str) -> UseResult<NativeBatchInput> {
-    let bytes = read_bounded_input(path, MAX_BATCH_INPUT_BYTES, NativeInputKind::Batch).await?;
-    let input: NativeBatchInput = serde_json::from_slice(&bytes).map_err(|error| {
-        batch_input_error(
-            "use.office.batch_input_invalid",
-            path,
-            format!("Native Office batch input '{path}' is invalid JSON: {error}"),
-        )
-    })?;
-    if input.schema_version != 1 {
-        return Err(batch_input_error(
-            "use.office.batch_schema_unsupported",
-            path,
-            format!(
-                "Native Office batch schema version {} is not supported; expected 1.",
-                input.schema_version
-            ),
-        ));
-    }
-    if input.mutations.len() > MAX_BATCH_MUTATIONS {
-        return Err(batch_input_error(
-            "use.office.batch_mutation_limit",
-            path,
-            format!(
-                "Native Office batch contains {} mutations; the limit is {MAX_BATCH_MUTATIONS}.",
-                input.mutations.len()
-            ),
-        ));
-    }
-    Ok(input)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -899,17 +867,38 @@ mod tests {
             .as_file()
             .set_len(MAX_BATCH_INPUT_BYTES + 1)
             .unwrap();
-        let error = read_batch_input(oversized.path().to_str().unwrap())
+        let error = replay::read_batch_input(oversized.path().to_str().unwrap())
             .await
             .unwrap_err();
         assert_eq!(error.code, "use.office.batch_input_too_large");
 
         let unsupported = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(unsupported.path(), br#"{"schemaVersion":2,"mutations":[]}"#).unwrap();
-        let error = read_batch_input(unsupported.path().to_str().unwrap())
+        let error = replay::read_batch_input(unsupported.path().to_str().unwrap())
             .await
             .unwrap_err();
         assert_eq!(error.code, "use.office.batch_schema_unsupported");
+
+        let unsupported_replay = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            unsupported_replay.path(),
+            serde_json::to_vec(&serde_json::json!({
+                "format": "a3s.office.native-replay",
+                "schemaVersion": 2,
+                "documentKind": "word",
+                "scope": "/",
+                "base": "blank",
+                "baseSha256": "0".repeat(64),
+                "resultSha256": "0".repeat(64),
+                "mutations": []
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let error = replay::read_batch_input(unsupported_replay.path().to_str().unwrap())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "use.office.replay_schema_unsupported");
 
         let oversized_xml = tempfile::NamedTempFile::new().unwrap();
         oversized_xml

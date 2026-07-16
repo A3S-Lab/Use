@@ -121,7 +121,10 @@ rename/reorder/copy with loss-preserving OPC subgraph ownership. Safe raw XML
 inspection and constrained existing-part replacement use the same typed editor,
 post-mutation validation, and rollback boundary. Known chart/header/footer part
 carriers atomically update content types and owner relationships and return
-typed creation receipts. Unpromoted commands are delegated to OfficeCLI and
+typed creation receipts. Root-scoped native replay artifacts bind an exact
+blank-template part-map fingerprint, typed mutations, and an expected result
+fingerprint; `batch` rejects a wrong base and rolls back a wrong result.
+Unpromoted commands are delegated to OfficeCLI and
 `mcp serve office` launches its standard MCP server. That compatibility process
 remains isolated from the native engine.
 
@@ -183,8 +186,9 @@ Implemented:
     cleanup, Spreadsheet row/column structural edits with formula and
     related-part reference rewriting, Presentation slide/shape mutation, core
     node removal, constrained raw XML inspection/replacement, typed
-    chart/header/footer part carriers, atomic batches, changed-file conflict
-    detection, and the dependency-free `office native` CLI.
+    chart/header/footer part carriers, exact root replay artifacts for the
+    canonical typed subset, atomic batches, changed-file conflict detection,
+    and the dependency-free `office native` CLI.
 
 Next:
 

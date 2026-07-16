@@ -168,6 +168,10 @@ impl AllowedOptions {
         output: true,
         ..Self::NONE
     };
+    pub const DUMP: Self = Self {
+        output: true,
+        ..Self::NONE
+    };
     pub const RAW_SET: Self = Self {
         output: true,
         input: true,

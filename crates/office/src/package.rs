@@ -145,6 +145,24 @@ impl NativeOfficePackage {
         })
     }
 
+    pub(crate) fn blank_in_memory(kind: DocumentKind, limits: PackageLimits) -> UseResult<Self> {
+        validate_limits(limits)?;
+        let parts = crate::template::blank_parts(kind);
+        validate_structure(kind, &parts)?;
+        validate_part_limits(&parts, limits)?;
+        Ok(Self {
+            path: PathBuf::from(format!("a3s-native-replay.{}", kind.extension())),
+            kind,
+            limits,
+            source_revision: PackageRevision {
+                archive_bytes: 0,
+                sha256: content_sha256(&parts),
+            },
+            parts,
+            dirty: false,
+        })
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -159,6 +177,14 @@ impl NativeOfficePackage {
 
     pub fn source_revision(&self) -> &PackageRevision {
         &self.source_revision
+    }
+
+    /// SHA-256 of the ordered, uncompressed OOXML part map.
+    ///
+    /// This fingerprint is independent of ZIP compression and entry metadata.
+    /// It changes when a part name or any part byte changes.
+    pub fn content_sha256(&self) -> String {
+        content_sha256(&self.parts)
     }
 
     pub fn part_names(&self) -> impl Iterator<Item = &str> {
@@ -303,6 +329,19 @@ impl NativeOfficePackage {
         self.dirty = false;
         Ok(())
     }
+}
+
+fn content_sha256(parts: &BTreeMap<String, Arc<[u8]>>) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"a3s-use-office-package-v1\0");
+    digest.update((parts.len() as u64).to_be_bytes());
+    for (name, bytes) in parts {
+        digest.update((name.len() as u64).to_be_bytes());
+        digest.update(name.as_bytes());
+        digest.update((bytes.len() as u64).to_be_bytes());
+        digest.update(bytes);
+    }
+    format!("{:x}", digest.finalize())
 }
 
 fn read_package(path: PathBuf, limits: PackageLimits) -> UseResult<NativeOfficePackage> {

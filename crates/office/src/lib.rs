@@ -19,6 +19,7 @@ mod install;
 mod opc;
 mod opc_edit;
 mod package;
+mod replay;
 mod semantic;
 mod spreadsheet_formula;
 mod spreadsheet_reference;
@@ -42,6 +43,10 @@ pub use opc::{
     RelationshipTarget,
 };
 pub use package::{NativeOfficePackage, PackageLimits, PackageRevision};
+pub use replay::{
+    NativeOfficeReplayArtifact, NativeOfficeReplayBase, MAX_NATIVE_OFFICE_REPLAY_MUTATIONS,
+    NATIVE_OFFICE_REPLAY_FORMAT, NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
+};
 pub use semantic::{
     DocumentNode, DocumentStatistics, NativeOfficeDocument, OfficeNodeType, OutlineEntry,
     TextBlock, TextView,
@@ -234,6 +239,9 @@ mod opc_tests;
 
 #[cfg(test)]
 mod package_tests;
+
+#[cfg(test)]
+mod replay_tests;
 
 #[cfg(test)]
 mod semantic_tests;

@@ -62,6 +62,7 @@ a3s use office native add report.docx /body --type table --rows 2 --columns 3 --
 a3s use office native remove report.docx /body/p[2] --json
 a3s use office native raw report.docx /word/document.xml --json
 a3s use office native add-part report.docx / --type header --json
+a3s use office native dump report.docx --output report.replay.json --json
 
 # Commands not yet promoted to native continue through the compatibility route.
 a3s use office get report.docx /body --json
@@ -269,7 +270,8 @@ interoperability checks and is never part of document execution.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove operations, constrained raw XML access, known typed part
-carriers, and atomic mutation batches today. Other `0.1.x` commands and the
+carriers, exact replay artifacts for a constrained canonical subset, and atomic
+mutation batches today. Other `0.1.x` commands and the
 Office MCP route still use a compatibility backend
 pinned to OfficeCLI `1.0.136`. This is a migration boundary, not the target
 architecture. The default command route will be promoted only after mutation,
@@ -337,6 +339,11 @@ a3s use office native remove deck.pptx '/slide[1]/shape[2]' --json
 # Apply a bounded, versioned mutation document atomically.
 a3s use office native batch deck.pptx --input mutations.json --json
 
+# Dump the exactly replayable root subset, then replay it into a native blank.
+a3s use office native dump report.docx --output report.replay.json --json
+a3s use office native create restored.docx --json
+a3s use office native batch restored.docx --input report.replay.json --json
+
 # Install the current compatibility provider explicitly.
 a3s install use/office
 a3s use office get report.docx /body --json
@@ -377,6 +384,37 @@ and 10,000 mutations. The version 1 mutation set is `set-text`,
 `add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
 `delete-columns`, `rename-worksheet`, `move-worksheet`, `copy-worksheet`,
 `replace-xml-part`, `add-part`, `add-slide`, `add-shape`, and `remove`.
+
+`office native dump` produces a stricter versioned batch artifact, also as
+ordinary JSON:
+
+```json
+{
+  "format": "a3s.office.native-replay",
+  "schemaVersion": 1,
+  "documentKind": "word",
+  "scope": "/",
+  "base": "blank",
+  "baseSha256": "<sha256-of-the-uncompressed-blank-part-map>",
+  "resultSha256": "<sha256-of-the-uncompressed-result-part-map>",
+  "mutations": []
+}
+```
+
+The first dump scope is the complete document (`/`). It accepts only content
+that current typed mutations can reproduce byte-for-byte at the OOXML part-map
+level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets and
+typed cells without styles or cached formula results, and Presentation slides
+with plain one-run text shapes. Headers, notes, media, styles, rich text,
+non-canonical package resources, and every other lossy case fail with
+`use.office.dump_unsupported`; nothing is silently flattened or omitted.
+
+Replay requires the exact A3S blank template identified by `baseSha256`.
+`batch` checks that precondition before mutation and checks `resultSha256`
+afterward. A failed result check restores the original in-memory package before
+any save. Dump files are limited to 8 MiB and 10,000 mutations, refuse to
+overwrite an existing path, and use a 1 MiB inline-output limit. This is a
+portable Office batch artifact, not RPC and not a universal action envelope.
 
 Raw replacement is also available inside the same atomic batch:
 
@@ -438,7 +476,10 @@ The native package, semantic, and editor APIs are available directly to Rust
 callers:
 
 ```rust,no_run
-use a3s_use_office::{NativeOfficeDocument, NativeOfficeEditor, NativeOfficePackage};
+use a3s_use_office::{
+    NativeOfficeDocument, NativeOfficeEditor, NativeOfficePackage,
+    NativeOfficeReplayArtifact,
+};
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
 let mut package = NativeOfficePackage::open("report.docx").await?;
@@ -467,6 +508,11 @@ editor.remove(added)?;
 let table = editor.add_table("/body", 2, 3)?;
 editor.set_text(format!("{table}/tr[1]/tc[1]"), "Name")?;
 editor.save().await?;
+
+let replay = NativeOfficeReplayArtifact::dump(&editor.snapshot()?, "/")?;
+let mut restored = NativeOfficeEditor::create("restored.docx").await?;
+restored.apply_replay(&replay)?;
+restored.save().await?;
 # Ok(())
 # }
 ```

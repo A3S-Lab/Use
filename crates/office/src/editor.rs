@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::discovery::office_error;
 use crate::semantic::NativeOfficeDocument;
-use crate::{DocumentKind, NativeOfficePackage};
+use crate::{DocumentKind, NativeOfficePackage, NativeOfficeReplayArtifact};
 
 mod part;
 mod presentation;
@@ -555,6 +555,49 @@ impl NativeOfficeEditor {
             paths,
             created_parts,
         })
+    }
+
+    /// Applies a dump-produced replay artifact with blank-base and final-state
+    /// fingerprint checks around the existing atomic mutation boundary.
+    pub fn apply_replay(
+        &mut self,
+        artifact: &NativeOfficeReplayArtifact,
+    ) -> UseResult<NativeBatchResult> {
+        artifact.validate()?;
+        if artifact.document_kind != self.package.kind() {
+            return Err(editor_error(
+                "use.office.replay_kind_mismatch",
+                format!(
+                    "Native Office replay targets {:?}, but the document is {:?}.",
+                    artifact.document_kind,
+                    self.package.kind()
+                ),
+            ));
+        }
+
+        let observed_base = self.package.content_sha256();
+        if observed_base != artifact.base_sha256 {
+            return Err(editor_error(
+                "use.office.replay_base_mismatch",
+                "Native Office replay requires the exact blank package recorded by the artifact.",
+            )
+            .with_detail("expectedSha256", artifact.base_sha256.clone())
+            .with_detail("observedSha256", observed_base));
+        }
+
+        let original = self.package.clone();
+        let result = self.apply_batch(&artifact.mutations)?;
+        let observed_result = self.package.content_sha256();
+        if observed_result != artifact.result_sha256 {
+            self.package = original;
+            return Err(editor_error(
+                "use.office.replay_result_mismatch",
+                "Native Office replay did not produce the package fingerprint recorded by the artifact; all mutations were rolled back.",
+            )
+            .with_detail("expectedSha256", artifact.result_sha256.clone())
+            .with_detail("observedSha256", observed_result));
+        }
+        Ok(result)
     }
 
     pub async fn save(&mut self) -> UseResult<()> {

@@ -127,6 +127,9 @@ runtime in the Office engine.
    conflict instead of silently overwriting another writer.
 8. Ambiguous mutation outcomes retain `use.office.outcome_unknown` and are
    never retried automatically.
+9. Replay dump never emits a lossy approximation. A dump is accepted only when
+   replaying its typed mutations from the recorded blank-template fingerprint
+   reproduces the complete uncompressed OOXML part map byte-for-byte.
 
 ## Delivery gates
 
@@ -213,13 +216,26 @@ Spreadsheet/Presentation chart carriers. It allocates collision-free part
 names, writes content-type overrides, creates owner relationships, returns typed
 relationship receipts, handles transitional and strict OOXML namespaces, and
 rolls back every package change on failure. It does not yet insert a visible
-chart frame or Word section reference. Generic node move/copy/swap, image
-creation and mutation, complex/custom part carriers, template merge, dump,
-advanced rich-format operations, and the formula parser/dependency/recalculation
-engine remain before their respective gates can be promoted. Creation and
-structural mutation remain under the interoperability gate until Microsoft
-Office and optional CI LibreOffice checks confirm that no repair dialog is
-required.
+chart frame or Word section reference.
+
+Root-scoped replay dump is implemented for the canonical subset that current
+typed mutations can reproduce exactly: plain Word paragraphs and rectangular
+tables, Spreadsheet worksheets and typed cells without styles or cached formula
+results, and Presentation slides with plain one-run text shapes. The versioned
+artifact records document kind, `/` scope, blank-template part-map SHA-256,
+ordered mutations, and expected result part-map SHA-256. Native `batch` checks
+both fingerprints and restores the original package on a failed result check.
+Unsupported rich or non-canonical content fails with
+`use.office.dump_unsupported`; no element or resource is skipped. Inputs and
+file output are limited to 8 MiB and 10,000 mutations, inline output is limited
+to 1 MiB, and dump refuses to overwrite an existing path.
+
+Generic node move/copy/swap, image creation and mutation, complex/custom part
+carriers, template merge, subtree and rich-structure dump, advanced rich-format
+operations, and the formula parser/dependency/recalculation engine remain before
+their respective gates can be promoted. Creation and structural mutation remain
+under the interoperability gate until Microsoft Office and optional CI
+LibreOffice checks confirm that no repair dialog is required.
 
 ### Gate 3 — Rich Word
 
@@ -270,9 +286,10 @@ compatibility component for one deprecation cycle, then is removed.
 The `0.1.x` CLI exposes native blank creation, reads, typed add/set/remove,
 Spreadsheet range and row/column structure edits, worksheet rename/reorder, and
 loss-preserving worksheet copy through `copy-sheet`, safe `raw`/`raw-set`, known
-`add-part` carriers, plus atomic batches under `office native`; other Office
-commands and MCP startup still delegate to the pinned OfficeCLI provider. This
-keeps existing users functional while native coverage grows. The native APIs
-are deliberately not advertised as full Office readiness, and `doctor`
-continues to report compatibility-provider readiness until the native read and
-mutation gates are met.
+`add-part` carriers, exact root replay dump for the canonical typed subset, plus
+atomic batches under `office native`; other Office commands and MCP startup
+still delegate to the pinned OfficeCLI provider. This keeps existing users
+functional while native coverage grows. The native APIs are deliberately not
+advertised as full Office readiness, and `doctor` continues to report
+compatibility-provider readiness until the native read and mutation gates are
+met.

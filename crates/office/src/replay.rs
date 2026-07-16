@@ -1,0 +1,554 @@
+use std::collections::BTreeSet;
+
+use a3s_use_core::{UseError, UseResult};
+use serde::{Deserialize, Serialize};
+
+use crate::discovery::office_error;
+use crate::editor::{NativeOfficeEditor, NativeOfficeMutation, SpreadsheetCellValue};
+use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
+use crate::{DocumentKind, NativeOfficePackage};
+
+pub const NATIVE_OFFICE_REPLAY_FORMAT: &str = "a3s.office.native-replay";
+pub const NATIVE_OFFICE_REPLAY_SCHEMA_VERSION: u32 = 1;
+pub const MAX_NATIVE_OFFICE_REPLAY_MUTATIONS: usize = 10_000;
+
+const EMPTY_PRESENTATION_TITLE_SEED: &str = "a3s-replay-title";
+
+/// Required starting state for a native replay artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeOfficeReplayBase {
+    Blank,
+}
+
+/// A versioned, non-RPC batch artifact that exactly recreates a supported
+/// native OOXML package from the A3S blank template named by `baseSha256`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeOfficeReplayArtifact {
+    pub format: String,
+    pub schema_version: u32,
+    pub document_kind: DocumentKind,
+    pub scope: String,
+    pub base: NativeOfficeReplayBase,
+    pub base_sha256: String,
+    pub result_sha256: String,
+    pub mutations: Vec<NativeOfficeMutation>,
+}
+
+impl NativeOfficeReplayArtifact {
+    /// Emits a replay artifact only when current typed mutations reproduce the
+    /// complete uncompressed OOXML part map byte-for-byte.
+    pub fn dump(document: &NativeOfficeDocument, scope: &str) -> UseResult<Self> {
+        if scope != "/" {
+            return Err(replay_error(
+                "use.office.dump_scope_unsupported",
+                "Native replay dump currently supports only the complete document scope '/'.",
+            )
+            .with_detail("scope", scope));
+        }
+
+        let mutations = emit_mutations(document)?;
+        if mutations.len() > MAX_NATIVE_OFFICE_REPLAY_MUTATIONS {
+            return Err(replay_error(
+                "use.office.dump_mutation_limit",
+                format!(
+                    "Native replay dump requires {} mutations; the limit is {MAX_NATIVE_OFFICE_REPLAY_MUTATIONS}.",
+                    mutations.len()
+                ),
+            )
+            .with_detail("mutations", mutations.len()));
+        }
+
+        let blank =
+            NativeOfficePackage::blank_in_memory(document.kind(), document.package().limits())?;
+        let base_sha256 = blank.content_sha256();
+        let mut candidate = NativeOfficeEditor::from_package(blank)?;
+        if let Err(error) = candidate.apply_batch(&mutations) {
+            return Err(dump_unsupported(
+                "/",
+                format!("The current typed mutations could not reconstruct this document: {error}"),
+            )
+            .with_detail("causeCode", error.code));
+        }
+
+        let source_sha256 = document.package().content_sha256();
+        let result_sha256 = candidate.package().content_sha256();
+        if result_sha256 != source_sha256 {
+            let part = first_differing_part(document.package(), candidate.package())
+                .unwrap_or_else(|| "<unknown>".to_string());
+            return Err(dump_unsupported(
+                "/",
+                format!(
+                    "OOXML part '{part}' cannot yet be recreated exactly by native replay mutations."
+                ),
+            )
+            .with_detail("part", part)
+            .with_detail("sourceSha256", source_sha256)
+            .with_detail("replaySha256", result_sha256));
+        }
+
+        Ok(Self {
+            format: NATIVE_OFFICE_REPLAY_FORMAT.to_string(),
+            schema_version: NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
+            document_kind: document.kind(),
+            scope: scope.to_string(),
+            base: NativeOfficeReplayBase::Blank,
+            base_sha256,
+            result_sha256,
+            mutations,
+        })
+    }
+
+    /// Validates artifact identity, schema, scope, fingerprints, and limits
+    /// without applying any mutation.
+    pub fn validate(&self) -> UseResult<()> {
+        if self.format != NATIVE_OFFICE_REPLAY_FORMAT {
+            return Err(replay_error(
+                "use.office.replay_format_unsupported",
+                format!(
+                    "Native Office replay format '{}' is not supported; expected '{NATIVE_OFFICE_REPLAY_FORMAT}'.",
+                    self.format
+                ),
+            ));
+        }
+        if self.schema_version != NATIVE_OFFICE_REPLAY_SCHEMA_VERSION {
+            return Err(replay_error(
+                "use.office.replay_schema_unsupported",
+                format!(
+                    "Native Office replay schema version {} is not supported; expected {NATIVE_OFFICE_REPLAY_SCHEMA_VERSION}.",
+                    self.schema_version
+                ),
+            ));
+        }
+        if self.scope != "/" {
+            return Err(replay_error(
+                "use.office.replay_scope_unsupported",
+                "Native Office replay currently supports only the complete document scope '/'.",
+            )
+            .with_detail("scope", self.scope.clone()));
+        }
+        if !valid_sha256(&self.base_sha256) || !valid_sha256(&self.result_sha256) {
+            return Err(replay_error(
+                "use.office.replay_fingerprint_invalid",
+                "Native Office replay fingerprints must be lowercase SHA-256 values.",
+            ));
+        }
+        if self.mutations.len() > MAX_NATIVE_OFFICE_REPLAY_MUTATIONS {
+            return Err(replay_error(
+                "use.office.replay_mutation_limit",
+                format!(
+                    "Native Office replay contains {} mutations; the limit is {MAX_NATIVE_OFFICE_REPLAY_MUTATIONS}.",
+                    self.mutations.len()
+                ),
+            )
+            .with_detail("mutations", self.mutations.len()));
+        }
+        Ok(())
+    }
+}
+
+fn emit_mutations(document: &NativeOfficeDocument) -> UseResult<Vec<NativeOfficeMutation>> {
+    match document.kind() {
+        DocumentKind::Word => emit_word(document.root()),
+        DocumentKind::Spreadsheet => emit_spreadsheet(document.root()),
+        DocumentKind::Presentation => emit_presentation(document.root()),
+    }
+}
+
+fn emit_word(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>> {
+    let Some(body) = root
+        .children
+        .iter()
+        .find(|node| node.node_type == OfficeNodeType::Body)
+    else {
+        return Err(dump_unsupported(
+            "/",
+            "Word document has no replayable body.",
+        ));
+    };
+    if root.children.len() != 1 {
+        let unsupported = root
+            .children
+            .iter()
+            .find(|node| node.node_type != OfficeNodeType::Body)
+            .map_or("/", |node| node.path.as_str());
+        return Err(dump_unsupported(
+            unsupported,
+            "Word headers, footers, and other sibling resources are not replayable yet.",
+        ));
+    }
+
+    let preserve_blank_paragraph = body
+        .children
+        .first()
+        .is_some_and(|node| node.node_type == OfficeNodeType::Paragraph);
+    let mut mutations = Vec::new();
+    if !preserve_blank_paragraph {
+        mutations.push(NativeOfficeMutation::Remove {
+            path: "/body/p[1]".to_string(),
+        });
+    }
+
+    for (offset, block) in body.children.iter().enumerate() {
+        match block.node_type {
+            OfficeNodeType::Paragraph => {
+                let needs_text = validate_word_paragraph(block)?;
+                if offset == 0 && preserve_blank_paragraph {
+                    if needs_text {
+                        mutations.push(NativeOfficeMutation::SetText {
+                            path: block.path.clone(),
+                            text: block.text.clone(),
+                        });
+                    }
+                } else {
+                    if !needs_text {
+                        return Err(dump_unsupported(
+                            &block.path,
+                            "A later empty Word paragraph without a run cannot be recreated by the current add-paragraph mutation.",
+                        ));
+                    }
+                    mutations.push(NativeOfficeMutation::AddParagraph {
+                        parent: "/body".to_string(),
+                        text: block.text.clone(),
+                    });
+                }
+            }
+            OfficeNodeType::Table => emit_word_table(block, &mut mutations)?,
+            _ => {
+                return Err(dump_unsupported(
+                    &block.path,
+                    format!(
+                        "Word node type '{}' is not exactly replayable yet.",
+                        block.node_type.label()
+                    ),
+                ))
+            }
+        }
+    }
+    Ok(mutations)
+}
+
+fn validate_word_paragraph(paragraph: &DocumentNode) -> UseResult<bool> {
+    require_plain_node(paragraph, OfficeNodeType::Paragraph)?;
+    match paragraph.children.as_slice() {
+        [] if paragraph.text.is_empty() => Ok(false),
+        [run] if run.node_type == OfficeNodeType::Run => {
+            require_plain_node(run, OfficeNodeType::Run)?;
+            if !run.children.is_empty() || run.text != paragraph.text {
+                return Err(dump_unsupported(
+                    &paragraph.path,
+                    "Word paragraph text does not map to one plain run.",
+                ));
+            }
+            Ok(true)
+        }
+        _ => Err(dump_unsupported(
+            &paragraph.path,
+            "Word replay currently requires each paragraph to contain zero or one plain run.",
+        )),
+    }
+}
+
+fn emit_word_table(
+    table: &DocumentNode,
+    mutations: &mut Vec<NativeOfficeMutation>,
+) -> UseResult<()> {
+    require_plain_node(table, OfficeNodeType::Table)?;
+    if table.children.is_empty() {
+        return Err(dump_unsupported(
+            &table.path,
+            "Word replay does not support a table without rows.",
+        ));
+    }
+    let columns = table.children[0].children.len();
+    if columns == 0
+        || table
+            .children
+            .iter()
+            .any(|row| row.node_type != OfficeNodeType::TableRow || row.children.len() != columns)
+    {
+        return Err(dump_unsupported(
+            &table.path,
+            "Word replay currently requires a non-empty rectangular table.",
+        ));
+    }
+
+    mutations.push(NativeOfficeMutation::AddTable {
+        parent: "/body".to_string(),
+        rows: table.children.len(),
+        columns,
+    });
+    for row in &table.children {
+        require_plain_node(row, OfficeNodeType::TableRow)?;
+        for cell in &row.children {
+            require_plain_node(cell, OfficeNodeType::TableCell)?;
+            let [paragraph] = cell.children.as_slice() else {
+                return Err(dump_unsupported(
+                    &cell.path,
+                    "Word replay requires each table cell to contain exactly one paragraph.",
+                ));
+            };
+            let needs_text = validate_word_paragraph(paragraph)?;
+            if paragraph.text != cell.text {
+                return Err(dump_unsupported(
+                    &cell.path,
+                    "Word table-cell text does not map to its single paragraph.",
+                ));
+            }
+            if needs_text && !cell.text.is_empty() {
+                mutations.push(NativeOfficeMutation::SetText {
+                    path: cell.path.clone(),
+                    text: cell.text.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>> {
+    if root.children.is_empty() {
+        return Err(dump_unsupported(
+            "/",
+            "Spreadsheet replay requires at least one worksheet.",
+        ));
+    }
+    let mut mutations = Vec::new();
+    for (sheet_offset, sheet) in root.children.iter().enumerate() {
+        if sheet.node_type != OfficeNodeType::Worksheet {
+            return Err(dump_unsupported(
+                &sheet.path,
+                "Spreadsheet root contains a non-worksheet node.",
+            ));
+        }
+        let name = sheet
+            .path
+            .strip_prefix('/')
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| {
+                dump_unsupported(&sheet.path, "Spreadsheet worksheet path has no name.")
+            })?;
+        if sheet_offset == 0 {
+            if name != "Sheet1" {
+                mutations.push(NativeOfficeMutation::RenameWorksheet {
+                    path: "/Sheet1".to_string(),
+                    name: name.to_string(),
+                });
+            }
+        } else {
+            mutations.push(NativeOfficeMutation::AddWorksheet {
+                name: name.to_string(),
+            });
+        }
+
+        for row in &sheet.children {
+            require_plain_node(row, OfficeNodeType::Row)?;
+            for cell in &row.children {
+                require_spreadsheet_cell(cell)?;
+                mutations.push(NativeOfficeMutation::SetCellValue {
+                    path: cell.path.clone(),
+                    value: spreadsheet_value(cell)?,
+                });
+            }
+        }
+    }
+    Ok(mutations)
+}
+
+fn require_spreadsheet_cell(cell: &DocumentNode) -> UseResult<()> {
+    if cell.node_type != OfficeNodeType::Cell || cell.style.is_some() || !cell.children.is_empty() {
+        return Err(dump_unsupported(
+            &cell.path,
+            "Spreadsheet replay requires a leaf cell without semantic child nodes.",
+        ));
+    }
+    let allowed = ["column", "row", "valueType", "empty", "formula"];
+    if let Some(key) = cell
+        .format
+        .keys()
+        .find(|key| !allowed.contains(&key.as_str()))
+    {
+        return Err(dump_unsupported(
+            &cell.path,
+            format!("Spreadsheet cell property '{key}' is not replayable yet."),
+        ));
+    }
+    Ok(())
+}
+
+fn spreadsheet_value(cell: &DocumentNode) -> UseResult<SpreadsheetCellValue> {
+    if let Some(expression) = cell.format.get("formula") {
+        if !cell.text.is_empty() {
+            return Err(dump_unsupported(
+                &cell.path,
+                "Spreadsheet formulas with cached results are not exactly replayable yet.",
+            ));
+        }
+        return Ok(SpreadsheetCellValue::Formula {
+            expression: expression.clone(),
+        });
+    }
+    match cell.format.get("valueType").map(String::as_str) {
+        Some("String") => Ok(SpreadsheetCellValue::Text {
+            value: cell.text.clone(),
+        }),
+        Some("Number") if !cell.text.is_empty() => Ok(SpreadsheetCellValue::Number {
+            value: cell.text.clone(),
+        }),
+        Some("Boolean") => match cell.text.as_str() {
+            "true" => Ok(SpreadsheetCellValue::Boolean { value: true }),
+            "false" => Ok(SpreadsheetCellValue::Boolean { value: false }),
+            _ => Err(dump_unsupported(
+                &cell.path,
+                "Spreadsheet boolean cell is not normalized to true or false.",
+            )),
+        },
+        Some(value_type) => Err(dump_unsupported(
+            &cell.path,
+            format!("Spreadsheet value type '{value_type}' is not replayable yet."),
+        )),
+        None => Err(dump_unsupported(
+            &cell.path,
+            "Spreadsheet cell has no value type.",
+        )),
+    }
+}
+
+fn emit_presentation(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>> {
+    let mut mutations = Vec::new();
+    for slide in &root.children {
+        if slide.node_type != OfficeNodeType::Slide {
+            return Err(dump_unsupported(
+                &slide.path,
+                "Presentation root contains a non-slide node.",
+            ));
+        }
+        for child in &slide.children {
+            validate_presentation_shape(child)?;
+        }
+
+        let title = slide.children.first().filter(|shape| {
+            shape.format.get("id").is_some_and(|value| value == "2")
+                && shape
+                    .format
+                    .get("name")
+                    .is_some_and(|value| value == "Title 1")
+        });
+        let title_text = title.map_or("", |shape| shape.text.as_str());
+        let seeded_empty_title = title.is_some() && title_text.is_empty();
+        mutations.push(NativeOfficeMutation::AddSlide {
+            parent: "/".to_string(),
+            title: if seeded_empty_title {
+                EMPTY_PRESENTATION_TITLE_SEED.to_string()
+            } else {
+                title_text.to_string()
+            },
+        });
+        if seeded_empty_title {
+            mutations.push(NativeOfficeMutation::SetText {
+                path: format!("{}/shape[1]", slide.path),
+                text: String::new(),
+            });
+        }
+        for shape in slide.children.iter().skip(usize::from(title.is_some())) {
+            mutations.push(NativeOfficeMutation::AddShape {
+                parent: slide.path.clone(),
+                text: shape.text.clone(),
+            });
+        }
+    }
+    Ok(mutations)
+}
+
+fn validate_presentation_shape(shape: &DocumentNode) -> UseResult<()> {
+    if shape.node_type != OfficeNodeType::Shape || shape.style.is_some() {
+        return Err(dump_unsupported(
+            &shape.path,
+            format!(
+                "Presentation node type '{}' is not exactly replayable yet.",
+                shape.node_type.label()
+            ),
+        ));
+    }
+    let [paragraph] = shape.children.as_slice() else {
+        return Err(dump_unsupported(
+            &shape.path,
+            "Presentation replay requires each text shape to contain one paragraph.",
+        ));
+    };
+    if paragraph.node_type != OfficeNodeType::Paragraph
+        || paragraph.style.is_some()
+        || !paragraph.format.is_empty()
+    {
+        return Err(dump_unsupported(
+            &paragraph.path,
+            "Presentation replay requires a plain shape paragraph.",
+        ));
+    }
+    let [run] = paragraph.children.as_slice() else {
+        return Err(dump_unsupported(
+            &paragraph.path,
+            "Presentation replay requires each shape paragraph to contain one run.",
+        ));
+    };
+    let allowed_run_format = ["language", "size"];
+    if run.node_type != OfficeNodeType::Run
+        || run.style.is_some()
+        || !run.children.is_empty()
+        || run
+            .format
+            .keys()
+            .any(|key| !allowed_run_format.contains(&key.as_str()))
+        || run.text != paragraph.text
+        || paragraph.text != shape.text
+    {
+        return Err(dump_unsupported(
+            &run.path,
+            "Presentation shape text does not map to one plain run.",
+        ));
+    }
+    Ok(())
+}
+
+fn require_plain_node(node: &DocumentNode, expected: OfficeNodeType) -> UseResult<()> {
+    if node.node_type != expected || node.style.is_some() || !node.format.is_empty() {
+        return Err(dump_unsupported(
+            &node.path,
+            format!(
+                "{} formatting or node metadata is not exactly replayable yet.",
+                expected.label()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn first_differing_part(
+    source: &NativeOfficePackage,
+    replay: &NativeOfficePackage,
+) -> Option<String> {
+    let names = source
+        .part_names()
+        .chain(replay.part_names())
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    names
+        .into_iter()
+        .find(|name| source.part(name).ok() != replay.part(name).ok())
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn dump_unsupported(path: &str, message: impl Into<String>) -> UseError {
+    replay_error("use.office.dump_unsupported", message).with_detail("path", path)
+}
+
+fn replay_error(code: &str, message: impl Into<String>) -> UseError {
+    office_error(code, message)
+}
