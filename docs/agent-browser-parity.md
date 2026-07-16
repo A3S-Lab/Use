@@ -7,8 +7,8 @@ because it vendors the same source files.
 ## Locked upstream
 
 - Repository: `https://github.com/vercel-labs/agent-browser`
-- Version: `0.31.2`
-- Commit: `3591f0f4b719c94bcb9aec83ebe811c5dd7f587a`
+- Version: `0.32.1`
+- Commit: `2b202640ee89dc7aadb5e8c9d600e089e9056985`
 - License: Apache-2.0
 - Imported engine provenance: `crates/browser-driver/UPSTREAM.md`
 
@@ -32,6 +32,17 @@ server identity, documentation, filesystem layout, configuration, and primary
 environment variables are A3S-owned. Legacy environment variables may remain
 as lower-precedence input aliases only.
 
+The 0.32.1 containment baseline requires `allowedDomains` parity across CLI,
+MCP, and Skills. A filtered Chromium launch installs controls before resuming
+pages, popups, workers, out-of-process iframes, restored targets, and new
+targets; blocks `RTCPeerConnection`; and forces Chrome's
+`disable_non_proxied_udp` policy. Existing CDP sessions, auto-connect,
+profiles, restore/state replay, direct-page providers, unsafe startup
+arguments, iOS, and Safari must fail closed because they cannot guarantee
+equivalent early containment. Lifecycle waits for `load` and
+`domcontentloaded` must first probe `document.readyState` so completed pages do
+not wait for an event that has already fired.
+
 ## Automated gates
 
 `crates/browser-driver/tests/upstream_parity.rs` launches the packaged driver
@@ -40,7 +51,7 @@ then pins names, schemas, required fields, defaults, annotations, and pagination
 to this structural digest:
 
 ```text
-cf4e1d7cdf91f4f5c4c18fe0765b0317ac9ef0a6a49965f6d48bc7332eb8e8cf
+29c1947ac94366538d7e73a12254613a0180dbc28293b8efdc3d3077b907b620
 ```
 
 The command parser independently pins the sorted command vocabulary to:
@@ -52,6 +63,10 @@ b2f7a70d563cd6f436e9841616d34d06781ecafc08dc28837ca08f53226b23c4
 The parity integration test also loads every packaged skill through the actual
 CLI. These gates detect removal or schema drift; they do not replace real
 browser tests.
+
+On pushes to `main`, the Browser 0.32 regression job installs managed Chrome
+through the A3S component lifecycle and runs the domain-containment and
+completed-page lifecycle tests serially on both macOS and Linux.
 
 ## Completion evidence
 

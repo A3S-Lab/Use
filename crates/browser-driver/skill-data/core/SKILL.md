@@ -58,7 +58,7 @@ a3s use browser mcp --tools all
 a3s use browser mcp --tools core,network,react
 ```
 
-Configure the MCP client with executable `a3s` and arguments `["use", "browser", "mcp"]`. The server defaults to MCP protocol 2025-11-25 and accepts older supported client protocol versions during initialization. The default tools profile is `core`, which keeps MCP context small for everyday browser automation. Use `--tools all` for the full typed CLI parity surface, or combine profiles with commas, such as `--tools core,network,react`. Profiles are `core`, `network`, `state`, `debug`, `tabs`, `react`, `mobile`, and `all`; the `debug` profile includes plugin registry and command.run tools. Each tool accepts typed arguments plus `extraArgs` for advanced CLI flags and exact CLI parity. Tool discovery is paginated and includes read-only/open-world annotations so modern MCP clients can load the large typed surface incrementally. Use the tool `session` argument or `A3S_USE_BROWSER_SESSION` to isolate browser sessions.
+Configure the MCP client with executable `a3s` and arguments `["use", "browser", "mcp"]`. The server defaults to MCP protocol 2025-11-25 and accepts older supported client protocol versions during initialization. The default tools profile is `core`, which keeps MCP context small for everyday browser automation. Use `--tools all` for the full typed CLI parity surface, or combine profiles with commas, such as `--tools core,network,react`. Profiles are `core`, `network`, `state`, `debug`, `tabs`, `react`, `mobile`, and `all`; the `debug` profile includes plugin registry and command.run tools. Each tool accepts typed arguments plus `extraArgs` for advanced CLI flags and exact CLI parity. The common `allowedDomains` array maps to `--allowed-domains` and activates the same WebRTC containment and launch-mode restrictions. Tool discovery is paginated and includes read-only/open-world annotations so modern MCP clients can load the large typed surface incrementally. Use the tool `session` argument or `A3S_USE_BROWSER_SESSION` to isolate browser sessions.
 
 ## Eve agent integration
 
@@ -108,6 +108,8 @@ a3s use browser get count ".item"           # count matching elements
 ```
 
 Use `read [url]` when you need to consume documentation or other text pages rather than interact with a rendered UI. Omit the URL to read the rendered DOM of the active tab in the current browser session, including browser auth state and client-side updates. Explicit URL reads send `Accept: text/markdown`, try the same URL with `.md` appended when the first response is not markdown, walk ancestor paths toward `/` to find the nearest `llms.txt` for a matching docs link, print markdown/plain text when available, and fall back to readable text extracted from HTML without launching Chrome. Add `--filter <text>` to narrow a page to matching heading sections, `--outline` for compact headings on one page, `--llms index` for a compact nearest-ancestor `llms.txt` link list, and `--llms full` only when you explicitly need `llms-full.txt`. With `--llms` or `--require-md`, omitting the URL uses the active tab URL because those modes depend on HTTP resources. With `--llms` or `--outline`, `--filter <text>` narrows links, sections, or headings. Add `--require-md` when you specifically want to verify markdown negotiation, `--raw` when you need the response body unchanged, and `--json` when you need metadata such as `source` and `contentType`. Global safeguards such as `--allowed-domains`, `--content-boundaries`, and `--max-output` also apply to read fetches and output.
+
+For sessions that handle sensitive data, use `--allowed-domains` to restrict navigations and page-initiated network traffic. Supported Chromium sessions also disable `RTCPeerConnection` while the allowlist is active so WebRTC STUN, TURN, and related DNS traffic cannot bypass the HTTP filter. Dedicated and shared workers are guarded with a bootstrap wrapper; if a page CSP forbids that wrapper, the worker fails closed rather than running without the allowlist guard. Pre-existing CDP sessions, auto-connect, Chrome profiles, direct-page provider plugins, A3S restore or state-file replay, raw Chrome args that select profiles, restore sessions, or open startup pages, iOS, and Safari reject this option because equivalent containment cannot be installed before page scripts run. This is browser-level containment, not an operating-system firewall; see [Trust boundaries](references/trust-boundaries.md) for deployment guidance.
 
 ## Interacting
 
@@ -175,6 +177,8 @@ After any page-changing action, pick one:
 - Wait for a specific element you expect to appear: `wait @ref` or `wait --text "..."`.
 - Wait for URL change: `wait --url "**/new-page"`.
 - Wait for network idle (catch-all for SPA navigation): `wait --load networkidle`.
+
+Standalone `wait --load load` and `wait --load domcontentloaded` probe `document.readyState` and return immediately when the active document has already reached that state; they do not wait for a second lifecycle event.
 
 Avoid bare `wait 2000` except when debugging — it makes scripts slow and flaky. Timeouts default to 25 seconds.
 

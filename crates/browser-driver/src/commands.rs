@@ -3089,7 +3089,7 @@ mod tests {
         assert_eq!(
             format!("{digest:x}"),
             "b2f7a70d563cd6f436e9841616d34d06781ecafc08dc28837ca08f53226b23c4",
-            "the public command vocabulary diverged from agent-browser 0.31.2"
+            "the public command vocabulary diverged from agent-browser 0.32.1"
         );
     }
 

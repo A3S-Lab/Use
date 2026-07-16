@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 const UPSTREAM_MCP_TOOL_COUNT: usize = 151;
 const UPSTREAM_MCP_STRUCTURAL_SHA256: &str =
-    "cf4e1d7cdf91f4f5c4c18fe0765b0317ac9ef0a6a49965f6d48bc7332eb8e8cf";
+    "29c1947ac94366538d7e73a12254613a0180dbc28293b8efdc3d3077b907b620";
 const UPSTREAM_SKILLS: &[&str] = &[
     "agentcore",
     "core",
@@ -114,7 +114,7 @@ fn mcp_all_profile_matches_locked_upstream_tool_contract() {
     assert_eq!(
         format!("{:x}", Sha256::digest(bytes)),
         UPSTREAM_MCP_STRUCTURAL_SHA256,
-        "MCP names, schemas, or annotations diverged from agent-browser 0.31.2"
+        "MCP names, schemas, or annotations diverged from agent-browser 0.32.1"
     );
 }
 
@@ -150,6 +150,16 @@ fn packaged_skills_match_locked_upstream_inventory() {
             "packaged skill '{skill}' is unavailable: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+
+        if *skill == "core" {
+            let contents = String::from_utf8_lossy(&output.stdout);
+            for marker in ["allowedDomains", "RTCPeerConnection", "document.readyState"] {
+                assert!(
+                    contents.contains(marker),
+                    "core Skill is missing the agent-browser 0.32.1 compatibility marker '{marker}'"
+                );
+            }
+        }
     }
 }
 

@@ -3535,7 +3535,7 @@ Options:
   --download-path <path>     Default download directory (or A3S_USE_BROWSER_DOWNLOAD_PATH)
   --content-boundaries       Wrap page output in boundary markers (or A3S_USE_BROWSER_CONTENT_BOUNDARIES)
   --max-output <chars>       Truncate page output to N chars (or A3S_USE_BROWSER_MAX_OUTPUT)
-  --allowed-domains <list>   Restrict navigation domains (or A3S_USE_BROWSER_ALLOWED_DOMAINS)
+  --allowed-domains <list>   Restrict network domains; rejects CDP, auto-connect, profiles, restore/state replay, direct-page providers, unsafe startup args, iOS/Safari (or A3S_USE_BROWSER_ALLOWED_DOMAINS)
   --action-policy <path>     Action policy JSON file (or A3S_USE_BROWSER_ACTION_POLICY)
   --confirm-actions <list>   Categories requiring confirmation (or A3S_USE_BROWSER_CONFIRM_ACTIONS)
   --confirm-interactive      Interactive confirmation prompts; auto-denies if stdin is not a TTY (or A3S_USE_BROWSER_CONFIRM_INTERACTIVE)
@@ -3621,7 +3621,7 @@ Environment:
   A3S_USE_BROWSER_IOS_UDID         Default iOS device UDID
   A3S_USE_BROWSER_CONTENT_BOUNDARIES Wrap page output in boundary markers
   A3S_USE_BROWSER_MAX_OUTPUT       Max characters for page output
-  A3S_USE_BROWSER_ALLOWED_DOMAINS  Comma-separated allowed domain patterns
+  A3S_USE_BROWSER_ALLOWED_DOMAINS  Comma-separated allowed domain patterns; requires a fresh controllable browser context without profile/session startup args, restore/state replay, or direct-page provider plugins
   A3S_USE_BROWSER_ACTION_POLICY    Path to action policy JSON file
   A3S_USE_BROWSER_CONFIRM_ACTIONS  Action categories requiring confirmation
   A3S_USE_BROWSER_CONFIRM_INTERACTIVE Enable interactive confirmation prompts

@@ -101,7 +101,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   without starting a CLI process or an MCP server
 - **Agent Browser Compatibility**: Provide the locked 82-command vocabulary,
   151 MCP tools, six packaged Skills, Dashboard, and interactive runtime from
-  `agent-browser` 0.31.2
+  `agent-browser` 0.32.1
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   typed cross-format text formatting,
@@ -243,11 +243,20 @@ Browser has two deliberately separate integration levels:
 
 The compatibility driver tracks
 [vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser)
-`0.31.2` at commit
-`3591f0f4b719c94bcb9aec83ebe811c5dd7f587a`. Automated parity gates pin 82
+`0.32.1` at commit
+`2b202640ee89dc7aadb5e8c9d600e089e9056985`. Automated parity gates pin 82
 accepted top-level commands, 151 typed MCP tools, and the `core`, `electron`,
 `slack`, `dogfood`, `vercel-sandbox`, and `agentcore` Skills. Existing MCP
 clients retain the `agent_browser_*` tool names.
+
+With `--allowed-domains`, locally launched Chromium applies network controls
+before paused pages, popups, workers, and out-of-process iframes resume. It
+also blocks peer-connection constructors and non-proxied WebRTC UDP. Modes
+that cannot guarantee early containment—including existing CDP sessions,
+auto-connect, profiles, restore/state replay, direct-page providers, unsafe
+startup arguments, iOS, and Safari—are rejected explicitly. Standalone
+`wait --load load` and `wait --load domcontentloaded` also resolve immediately
+when the active document has already reached the requested state.
 
 `a3s-use mcp serve browser` exposes the A3S-owned standard MCP server over
 stdio. `mcp start`, `mcp status`, and `mcp stop` manage its optional persistent

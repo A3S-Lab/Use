@@ -283,7 +283,7 @@ Implemented:
 6. Direct standard-MCP launch for Office and external packages.
 7. Authenticated loopback standard MCP Streamable HTTP for persistent Browser
    CLI sessions.
-8. The complete locked agent-browser `0.31.2` command, MCP, Skill, Dashboard,
+8. The complete locked agent-browser `0.32.1` command, MCP, Skill, Dashboard,
    lifecycle, and interactive Browser surface behind `a3s use browser`.
 9. Generation-based extension hot plug with enable, disable, watch, graceful
    route draining, and crash reconciliation.

@@ -131,6 +131,8 @@ a3s use browser wait --load networkidle      # Wait for network idle (or -l)
 a3s use browser wait --fn "window.ready"     # Wait for JS condition (or -f)
 ```
 
+`wait --load load` and `wait --load domcontentloaded` first inspect `document.readyState`, so an already-loaded page resolves immediately instead of waiting for another lifecycle event.
+
 ## Mouse Control
 
 ```bash
@@ -358,7 +360,7 @@ Common tools include:
 - `agent_browser_eval`
 - `agent_browser_close`
 
-Tool calls use the same config files and environment variables as the CLI. Each tool accepts typed arguments plus `extraArgs` for advanced CLI flags and exact CLI parity. Tool discovery is paginated and includes read-only/open-world annotations so modern MCP clients can load the large typed surface incrementally. Use the `session` tool argument or `A3S_USE_BROWSER_SESSION` to isolate browser state.
+Tool calls use the same config files and environment variables as the CLI. Each tool accepts typed arguments plus `extraArgs` for advanced CLI flags and exact CLI parity. The common `allowedDomains` array maps to `--allowed-domains` and activates the same WebRTC containment and launch-mode restrictions. Tool discovery is paginated and includes read-only/open-world annotations so modern MCP clients can load the large typed surface incrementally. Use the `session` tool argument or `A3S_USE_BROWSER_SESSION` to isolate browser state.
 
 ## Global Options
 
@@ -376,6 +378,7 @@ a3s use browser --executable-path <p>   # Custom browser executable
 a3s use browser --extension <path> ...  # Load browser extension (repeatable)
 a3s use browser --ignore-https-errors   # Ignore SSL certificate errors
 a3s use browser --hide-scrollbars false # Keep native scrollbars visible in headless Chromium screenshots
+a3s use browser --allowed-domains example.com,*.example.org open https://example.com
 a3s use browser --help                  # Show help (-h)
 a3s use browser --version               # Show version (-V)
 a3s use browser <command> --help        # Show detailed help for a command
@@ -456,5 +459,6 @@ A3S_USE_BROWSER_PROVIDER="browserbase"         # Browser provider or configured 
 A3S_USE_BROWSER_STREAM_PORT="9223"             # Override WebSocket streaming port (default: OS-assigned)
 A3S_USE_BROWSER_CONFIG="./a3s use browser.json"  # Custom config file
 A3S_USE_BROWSER_CDP="9222"                     # Connect daemon to CDP port or WebSocket URL
+A3S_USE_BROWSER_ALLOWED_DOMAINS="example.com"  # Restrict network domains; requires a fresh controllable context without profiles, restore/state replay, or direct-page providers
 A3S_USE_BROWSER_PLUGINS='[{"name":"vault","command":"agent-browser-plugin-vault","capabilities":["credential.read"]},{"name":"stealth","command":"agent-browser-plugin-stealth","capabilities":["launch.mutate"]}]'
 ```
