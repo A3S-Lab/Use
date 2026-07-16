@@ -77,6 +77,9 @@ pub(super) fn virtual_get(
     path: &str,
     depth: usize,
 ) -> UseResult<Option<DocumentNode>> {
+    if let Some(column) = virtual_table_column(root, path)? {
+        return Ok(Some(column));
+    }
     let Some((slide_path, requested)) = path.rsplit_once("/placeholder[") else {
         return Ok(None);
     };
@@ -109,6 +112,54 @@ pub(super) fn virtual_get(
         })
     };
     Ok(found.map(|node| node.clone_to_depth(depth)))
+}
+
+fn virtual_table_column(root: &DocumentNode, path: &str) -> UseResult<Option<DocumentNode>> {
+    let Some((table_path, requested)) = path.rsplit_once("/col[") else {
+        return Ok(None);
+    };
+    let Some(requested) = requested.strip_suffix(']') else {
+        return Err(semantic_error(
+            "use.office.path_invalid",
+            format!("Presentation table-column path '{path}' is missing ']'."),
+        ));
+    };
+    let position = requested
+        .parse::<usize>()
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| {
+            semantic_error(
+                "use.office.path_invalid",
+                "Presentation table-column positions are one-based positive integers.",
+            )
+        })?;
+    let Some(table) =
+        find_node(root, table_path).filter(|node| node.node_type == OfficeNodeType::Table)
+    else {
+        return Ok(None);
+    };
+    let widths = table
+        .format
+        .get("columnWidthsEmu")
+        .map(|value| value.split(',').collect::<Vec<_>>())
+        .unwrap_or_default();
+    let Some(width) = widths.get(position - 1) else {
+        return Ok(None);
+    };
+    let mut column = DocumentNode::new(path, "col", OfficeNodeType::TableColumn);
+    column.format.insert("index".into(), position.to_string());
+    column.format.insert("widthEmu".into(), (*width).into());
+    Ok(Some(column))
+}
+
+fn find_node<'a>(node: &'a DocumentNode, path: &str) -> Option<&'a DocumentNode> {
+    if node.path == path {
+        return Some(node);
+    }
+    node.children
+        .iter()
+        .find_map(|child| find_node(child, path))
 }
 
 fn collect_placeholders<'a>(node: &'a DocumentNode, output: &mut Vec<&'a DocumentNode>) {
@@ -353,6 +404,16 @@ fn read_table(frame: &XmlElement, path: &str) -> DocumentNode {
     let Some(table) = find_descendant(frame, "tbl") else {
         return node;
     };
+    if let Some(grid) = table.child("tblGrid") {
+        let widths = grid
+            .children_named("gridCol")
+            .map(|column| column.attribute("w").unwrap_or("0"))
+            .collect::<Vec<_>>();
+        node.format
+            .insert("columns".into(), widths.len().to_string());
+        node.format
+            .insert("columnWidthsEmu".into(), widths.join(","));
+    }
     for (row_offset, row) in table.children_named("tr").enumerate() {
         let row_path = format!("{path}/tr[{}]", row_offset + 1);
         let mut row_node = DocumentNode::new(&row_path, "tr", OfficeNodeType::TableRow);

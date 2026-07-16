@@ -153,10 +153,13 @@ same loss-preserving XML editor. It inserts a real graphic frame and DrawingML
 table into the slide shape tree, allocates a collision-free non-visual ID,
 keeps row width aligned with `a:tblGrid`, and updates graphic-frame height after
 row changes. Empty cell text insertion preserves DrawingML child ordering.
-Operations that would underfill a normal row or invalidate merged-cell spans
-fail before save; column and merge rewriting remain outside this bounded
-milestone. These mutations use the existing typed batch transaction and do not
-introduce another protocol or runtime.
+Columns are virtual semantic nodes backed by one grid column plus one cell per
+row. Insert, remove, same-table move/copy/swap, and positive-EMU width mutation
+update those physical elements in lockstep and keep graphic-frame width equal
+to the grid-width sum. Operations that would underfill a normal row or require
+merged-span rewriting fail before save; merge editing remains outside this
+bounded milestone. These mutations use the existing typed batch transaction
+and do not introduce another protocol or runtime.
 
 Unpromoted commands are delegated to OfficeCLI and
 `mcp serve office` launches its standard MCP server. That compatibility process
@@ -219,7 +222,8 @@ Implemented:
     worksheet add/remove/rename/reorder/copy with owned OPC-subgraph cloning and
     cleanup, bounded cross-format move/copy/swap arrangement, Spreadsheet
     row/column structural edits with formula and related-part reference
-    rewriting, Presentation slide/shape and basic DrawingML table mutation,
+    rewriting, Presentation slide/shape and DrawingML table row/cell/column
+    mutation,
     core node removal, constrained raw XML inspection/replacement, typed
     chart/header/footer part carriers, exact root replay artifacts for the
     canonical typed subset including basic Presentation tables, cross-format

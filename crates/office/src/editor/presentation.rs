@@ -34,6 +34,23 @@ pub(super) fn add_table_row(
     table::add_row(package, parent, columns)
 }
 
+pub(super) fn add_table_column(
+    package: &mut NativeOfficePackage,
+    parent: &str,
+    index: Option<usize>,
+    text: &str,
+) -> UseResult<String> {
+    table::add_column(package, parent, index, text)
+}
+
+pub(super) fn set_table_column_width(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    width_emu: u64,
+) -> UseResult<()> {
+    table::set_column_width(package, path, width_emu)
+}
+
 pub(super) fn add_table_cell(
     package: &mut NativeOfficePackage,
     parent: &str,
@@ -250,11 +267,12 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
         OfficeNodeType::Shape => remove_object(package, &snapshot, &requested.path),
         OfficeNodeType::Table
         | OfficeNodeType::TableRow
+        | OfficeNodeType::TableColumn
         | OfficeNodeType::TableCell => table::remove(package, &snapshot, &requested),
         OfficeNodeType::Slide => remove_slide(package, &requested.path),
         _ => Err(editor_error(
             "use.office.mutation_type_unsupported",
-            "Native Presentation remove currently supports slides, shapes, tables, rows, and grid-safe cells.",
+            "Native Presentation remove currently supports slides, shapes, tables, rows, columns, and grid-safe cells.",
         )),
     }
 }

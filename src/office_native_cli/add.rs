@@ -39,6 +39,11 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
                 editor.add_table_row(parent, parsed.columns)?,
                 None,
             ),
+            "column" | "col" => (
+                "add-table-column",
+                editor.add_table_column(parent, parsed.index, text)?,
+                None,
+            ),
             "cell" | "tc" => ("add-table-cell", editor.add_table_cell(parent, text)?, None),
             "sheet" | "worksheet" => {
                 if parent != "/" {
@@ -108,10 +113,11 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
     let is_picture = matches!(node_type, "picture" | "image" | "img");
     let accepts_rows = matches!(node_type, "table" | "tbl");
     let accepts_columns = matches!(node_type, "table" | "tbl" | "row" | "tr");
+    let accepts_index = matches!(node_type, "column" | "col");
     let accepts_name = is_picture || matches!(node_type, "sheet" | "worksheet");
     let accepts_text = matches!(
         node_type,
-        "paragraph" | "p" | "cell" | "tc" | "slide" | "shape"
+        "paragraph" | "p" | "column" | "col" | "cell" | "tc" | "slide" | "shape"
     );
     if parsed.rows.is_some() && !accepts_rows {
         return Err(usage_error(format!(
@@ -121,6 +127,11 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
     if parsed.columns.is_some() && !accepts_columns {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept --columns"
+        )));
+    }
+    if parsed.index.is_some() && !accepts_index {
+        return Err(usage_error(format!(
+            "native Office add type '{node_type}' does not accept --index"
         )));
     }
     if parsed.name.is_some() && !accepts_name {

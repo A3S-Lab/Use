@@ -138,6 +138,116 @@ fn native_cli_structurally_edits_presentation_tables_without_officecli() {
     );
     assert_eq!(updated["data"]["node"]["text"], "Added row");
 
+    let column = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "add",
+            document.to_str().unwrap(),
+            "/slide[1]/table[1]",
+            "--type",
+            "column",
+            "--index",
+            "1",
+            "--text",
+            "Inserted",
+            "--json",
+        ],
+    );
+    assert_eq!(column["data"]["operation"], "add-table-column");
+    assert_eq!(column["data"]["path"], "/slide[1]/table[1]/col[2]");
+    assert_eq!(column["data"]["node"]["type"], "table-column");
+    assert_eq!(column["data"]["node"]["format"]["widthEmu"], "4114800");
+
+    let resized = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            document.to_str().unwrap(),
+            "/slide[1]/table[1]/col[2]",
+            "--width-emu",
+            "2000000",
+            "--json",
+        ],
+    );
+    assert_eq!(resized["data"]["operation"], "set-table-column-width");
+    assert_eq!(resized["data"]["node"]["format"]["widthEmu"], "2000000");
+
+    let inserted = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "get",
+            document.to_str().unwrap(),
+            "/slide[1]/table[1]/tr[1]/tc[2]",
+            "--json",
+        ],
+    );
+    assert_eq!(inserted["data"]["node"]["text"], "Inserted");
+
+    run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "remove",
+            document.to_str().unwrap(),
+            "/slide[1]/table[1]/col[2]",
+            "--json",
+        ],
+    );
+
+    let moved = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "move",
+            document.to_str().unwrap(),
+            "/slide[1]/table[1]/col[1]",
+            "--after",
+            "/slide[1]/table[1]/col[2]",
+            "--json",
+        ],
+    );
+    assert_eq!(moved["data"]["resultPath"], "/slide[1]/table[1]/col[2]");
+    let copied = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "copy",
+            document.to_str().unwrap(),
+            "/slide[1]/table[1]/col[2]",
+            "--json",
+        ],
+    );
+    assert_eq!(copied["data"]["resultPath"], "/slide[1]/table[1]/col[3]");
+    let swapped = run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "swap",
+            document.to_str().unwrap(),
+            "/slide[1]/table[1]/col[1]",
+            "/slide[1]/table[1]/col[3]",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        swapped["data"]["result"]["first"],
+        "/slide[1]/table[1]/col[3]"
+    );
+    assert_eq!(
+        swapped["data"]["result"]["second"],
+        "/slide[1]/table[1]/col[1]"
+    );
+
     let full_row = run_failure(
         &provider,
         &[
@@ -242,6 +352,17 @@ fn native_cli_batches_presentation_tables_atomically_without_officecli() {
                     "operation": "set-text",
                     "path": "/slide[1]/table[1]/tr[1]/tc[2]",
                     "text": "Value"
+                },
+                {
+                    "operation": "add-table-column",
+                    "parent": "/slide[1]/table[1]",
+                    "index": 1,
+                    "text": "Inserted"
+                },
+                {
+                    "operation": "set-table-column-width",
+                    "path": "/slide[1]/table[1]/col[2]",
+                    "widthEmu": 2000000
                 }
             ]
         }))
@@ -260,8 +381,12 @@ fn native_cli_batches_presentation_tables_atomically_without_officecli() {
             "--json",
         ],
     );
-    assert_eq!(result["data"]["result"]["applied"], 3);
+    assert_eq!(result["data"]["result"]["applied"], 5);
     assert_eq!(result["data"]["result"]["paths"][0], "/slide[1]/table[1]");
+    assert_eq!(
+        result["data"]["result"]["paths"][3],
+        "/slide[1]/table[1]/col[2]"
+    );
 
     std::fs::write(
         &failed_batch,

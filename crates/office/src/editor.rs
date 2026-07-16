@@ -74,6 +74,19 @@ impl NativeOfficeEditor {
         Ok(())
     }
 
+    /// Sets one Presentation table-grid column width in English Metric Units.
+    pub fn set_table_column_width(
+        &mut self,
+        path: impl Into<String>,
+        width_emu: u64,
+    ) -> UseResult<()> {
+        self.apply_batch(&[NativeOfficeMutation::SetTableColumnWidth {
+            path: path.into(),
+            width_emu,
+        }])?;
+        Ok(())
+    }
+
     pub fn set_cell_value(
         &mut self,
         path: impl Into<String>,
@@ -152,6 +165,29 @@ impl NativeOfficeEditor {
             editor_error(
                 "use.office.batch_validation_failed",
                 "Native Office table-row mutation returned no path.",
+            )
+        })
+    }
+
+    /// Inserts one Presentation table column at a zero-based grid position.
+    ///
+    /// Omitting `index` appends the column. Every row receives one new cell so
+    /// the DrawingML table grid remains rectangular.
+    pub fn add_table_column(
+        &mut self,
+        parent: impl Into<String>,
+        index: Option<usize>,
+        text: impl Into<String>,
+    ) -> UseResult<String> {
+        let result = self.apply_batch(&[NativeOfficeMutation::AddTableColumn {
+            parent: parent.into(),
+            index,
+            text: text.into(),
+        }])?;
+        result.paths.into_iter().next().ok_or_else(|| {
+            editor_error(
+                "use.office.batch_validation_failed",
+                "Native Office table-column mutation returned no path.",
             )
         })
     }
@@ -427,6 +463,10 @@ impl NativeOfficeEditor {
                 NativeOfficeMutation::SetText { path, text } => {
                     set_text(&mut self.package, path, text).map(|()| path.clone())
                 }
+                NativeOfficeMutation::SetTableColumnWidth { path, width_emu } => {
+                    presentation::set_table_column_width(&mut self.package, path, *width_emu)
+                        .map(|()| path.clone())
+                }
                 NativeOfficeMutation::SetCellValue { path, value } => {
                     spreadsheet::set_cell_value(&mut self.package, path, value)
                         .map(|()| path.clone())
@@ -452,6 +492,11 @@ impl NativeOfficeEditor {
                         _ => word::add_table_row(&mut self.package, parent, *columns),
                     }
                 }
+                NativeOfficeMutation::AddTableColumn {
+                    parent,
+                    index,
+                    text,
+                } => presentation::add_table_column(&mut self.package, parent, *index, text),
                 NativeOfficeMutation::AddTableCell { parent, text } => match self.package.kind() {
                     DocumentKind::Presentation => {
                         presentation::add_table_cell(&mut self.package, parent, text)

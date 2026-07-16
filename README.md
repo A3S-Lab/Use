@@ -261,9 +261,12 @@ part carriers can be created together with their content type and owner
 relationship. The typed mutation layer also adds and removes Word paragraphs
 and basic table/row/cell structures,
 creates real Presentation DrawingML tables, appends grid-conformant rows,
-fills underfull rows, edits cell text, and removes tables or structurally safe
-rows/cells. It upserts typed Spreadsheet text, number, boolean, and formula
-cells, removes cells and bounded cell ranges, structurally inserts or deletes rows and columns,
+fills underfull rows, edits cell text, and exposes table columns as stable
+virtual paths. Columns can be inserted, resized in EMUs, removed, moved,
+copied, or swapped while the grid, every row, and the graphic-frame width stay
+in sync. Tables and structurally safe rows/cells can also be removed. It
+upserts typed Spreadsheet text, number, boolean, and formula cells, removes
+cells and bounded cell ranges, structurally inserts or deletes rows and columns,
 and adds, removes, renames, reorders, or copies worksheets. It also exposes
 typed `move`, `copy`, and `swap` mutations with zero-based or path-relative
 placement. Word supports same-parent paragraph, table, row, cell, and run
@@ -363,6 +366,10 @@ a3s use office native add deck.pptx '/slide[1]' --type shape --text '42%' --json
 a3s use office native add deck.pptx '/slide[1]' --type table --rows 3 --columns 2 --json
 a3s use office native set deck.pptx '/slide[1]/table[1]/tr[1]/tc[1]' --text 'Metric' --json
 a3s use office native add deck.pptx '/slide[1]/table[1]' --type row --columns 2 --json
+a3s use office native add deck.pptx '/slide[1]/table[1]' --type column --index 1 --text 'Q2' --json
+a3s use office native set deck.pptx '/slide[1]/table[1]/col[2]' --width-emu 2000000 --json
+a3s use office native move deck.pptx '/slide[1]/table[1]/col[1]' --after '/slide[1]/table[1]/col[2]' --json
+a3s use office native remove deck.pptx '/slide[1]/table[1]/col[3]' --json
 a3s use office native remove deck.pptx '/slide[1]/table[1]/tr[4]' --json
 a3s use office native remove workbook.xlsx /Data --json
 a3s use office native remove deck.pptx '/slide[1]/shape[2]' --json

@@ -243,13 +243,14 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         parsed.number.is_some(),
         parsed.boolean.is_some(),
         parsed.formula.is_some(),
+        parsed.width_emu.is_some(),
     ]
     .into_iter()
     .filter(|present| *present)
     .count();
     if value_count != 1 {
         return Err(usage_error(
-            "office native set requires exactly one of --text, --number, --boolean, or --formula",
+            "office native set requires exactly one of --text, --number, --boolean, --formula, or --width-emu",
         ));
     }
     let typed_value = if let Some(value) = parsed.number.as_ref() {
@@ -272,7 +273,10 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let path = &parsed.positionals[1];
     let mut editor = NativeOfficeEditor::open(source).await?;
     let source_path = editor.package().path().to_path_buf();
-    let operation = if let Some(value) = typed_value {
+    let operation = if let Some(width_emu) = parsed.width_emu {
+        editor.set_table_column_width(path, width_emu)?;
+        "set-table-column-width"
+    } else if let Some(value) = typed_value {
         editor.set_cell_value(path, value)?;
         "set-cell-value"
     } else {

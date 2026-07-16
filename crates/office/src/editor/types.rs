@@ -146,6 +146,11 @@ pub enum NativeOfficeMutation {
         path: String,
         text: String,
     },
+    SetTableColumnWidth {
+        path: String,
+        #[serde(rename = "widthEmu")]
+        width_emu: u64,
+    },
     SetCellValue {
         path: String,
         value: SpreadsheetCellValue,
@@ -163,6 +168,13 @@ pub enum NativeOfficeMutation {
         parent: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         columns: Option<usize>,
+    },
+    AddTableColumn {
+        parent: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        text: String,
     },
     AddTableCell {
         parent: String,

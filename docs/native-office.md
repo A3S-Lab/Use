@@ -207,8 +207,12 @@ and worksheets and Presentation slides, text shapes, and basic DrawingML tables
 also support native add/remove. Presentation table creation emits a real
 `p:graphicFrame` and `a:tbl`; row creation follows the existing `a:tblGrid`,
 blank cells accept native text replacement, and row removal updates the frame
-height. Slide and worksheet removal updates their OPC relationships,
-content types, and owned parts. The typed editor and `office native batch`
+height. Presentation columns are stable virtual `/table[N]/col[M]` nodes backed
+by one `a:gridCol` and the corresponding cell in every row. Native insertion,
+EMU width mutation, removal, same-table move/copy/swap, and semantic `get`
+update the grid, all affected rows, and the graphic-frame width together. Slide
+and worksheet removal updates their OPC relationships, content types, and owned
+parts. The typed editor and `office native batch`
 provide all-or-nothing in-memory rollback, bounded versioned inputs, atomic
 save/save-as, revision-conflict detection, and byte preservation for untouched
 package parts and XML subtrees. Safe raw XML inspection and replacement are now
@@ -254,10 +258,15 @@ cells, and an explicit row width must equal the parent grid. `add --type cell`
 only fills an underfull row; a full row rejects the append because PowerPoint
 would silently discard a cell beyond `a:tblGrid`. Direct cell removal is
 similarly limited to repairing an overflow row. Removing the final row is
-rejected, and row/cell removal fails closed when merged-cell spans would need
-rewriting. Column insertion/removal, merged-cell editing, custom dimensions,
-table styles, fills, borders, and rich cell formatting remain later
-Presentation work. None of these operations invokes OfficeCLI or LibreOffice.
+rejected. Column insertion accepts a zero-based slot or appends, uses the
+average existing grid width, and creates a cell in every row. Column removal
+retains at least one column; column move/copy/swap remains within one table.
+These structural column operations require a rectangular unmerged table and
+fail closed when merged-cell spans would need rewriting. Explicit column width
+mutation uses a positive signed-64-bit EMU value and keeps frame width equal to
+the grid-width sum. Merged-cell editing, custom row heights, table styles,
+fills, borders, and rich cell formatting remain later Presentation work. None
+of these operations invokes OfficeCLI or LibreOffice.
 
 Typed move/copy/swap is implemented as a bounded arrangement layer. `Index` is
 zero-based and is evaluated after source removal for a move; `Before` and
@@ -319,7 +328,7 @@ unchanged.
 
 Cross-parent/reference-graph arrangement beyond the bounded move/copy/swap
 coverage above, advanced image mutation and SVG fallback, complex/custom part
-carriers, Presentation table columns/merges/rich styles, subtree and
+carriers, Presentation table merges/rich styles, subtree and
 rich-structure dump, advanced rich-format operations, and
 the formula parser/dependency/recalculation engine remain before their
 respective gates can be promoted. Creation and structural mutation remain

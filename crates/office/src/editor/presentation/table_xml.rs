@@ -64,6 +64,11 @@ pub(super) fn row_xml(columns: usize, drawing_prefix: Option<&str>) -> String {
     format!("<{row} h=\"{DEFAULT_ROW_HEIGHT_EMU}\">{cells}</{row}>")
 }
 
+pub(super) fn grid_column_xml(width: u64, drawing_prefix: Option<&str>) -> String {
+    let column = qualified(drawing_prefix, "gridCol");
+    format!("<{column} w=\"{width}\"/>")
+}
+
 pub(super) fn cell_xml(text: &str, drawing_prefix: Option<&str>) -> String {
     let paragraph_tag = qualified(drawing_prefix, "p");
     let run_tag = qualified(drawing_prefix, "r");

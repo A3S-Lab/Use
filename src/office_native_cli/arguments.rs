@@ -13,6 +13,7 @@ pub(super) struct ParsedArguments {
     pub name: Option<String>,
     pub alt: Option<String>,
     pub width: Option<u32>,
+    pub width_emu: Option<u64>,
     pub height: Option<u32>,
     pub rows: Option<usize>,
     pub columns: Option<usize>,
@@ -90,6 +91,10 @@ impl ParsedArguments {
                 }
                 "--width" if allowed.width => {
                     set_u32_option(&mut parsed.width, args, index, "--width")?;
+                    index += 2;
+                }
+                "--width-emu" if allowed.width_emu => {
+                    set_u64_option(&mut parsed.width_emu, args, index, "--width-emu")?;
                     index += 2;
                 }
                 "--height" if allowed.height => {
@@ -172,6 +177,7 @@ pub(super) struct AllowedOptions {
     name: bool,
     alt: bool,
     width: bool,
+    width_emu: bool,
     height: bool,
     rows: bool,
     columns: bool,
@@ -198,6 +204,7 @@ impl AllowedOptions {
         name: false,
         alt: false,
         width: false,
+        width_emu: false,
         height: false,
         rows: false,
         columns: false,
@@ -223,6 +230,7 @@ impl AllowedOptions {
         number: true,
         boolean: true,
         formula: true,
+        width_emu: true,
         ..Self::NONE
     };
     pub const BATCH: Self = Self {
@@ -254,6 +262,7 @@ impl AllowedOptions {
         height: true,
         rows: true,
         columns: true,
+        index: true,
         ..Self::NONE
     };
     pub const ADD_PART: Self = Self {
@@ -357,6 +366,24 @@ fn set_u32_option(
     }
     let value = option_value(args, index, option)?;
     *target = Some(value.parse::<u32>().map_err(|_| {
+        usage_error(format!(
+            "{option} requires a non-negative integer, received '{value}'"
+        ))
+    })?);
+    Ok(())
+}
+
+fn set_u64_option(
+    target: &mut Option<u64>,
+    args: &[String],
+    index: usize,
+    option: &str,
+) -> UseResult<()> {
+    if target.is_some() {
+        return Err(usage_error(format!("{option} may be specified only once")));
+    }
+    let value = option_value(args, index, option)?;
+    *target = Some(value.parse::<u64>().map_err(|_| {
         usage_error(format!(
             "{option} requires a non-negative integer, received '{value}'"
         ))
