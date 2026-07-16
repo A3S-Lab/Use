@@ -11,8 +11,36 @@ use crate::xml_edit::{
 use crate::{DocumentKind, NativeOfficePackage};
 
 mod arrange;
+mod table;
+mod table_xml;
+mod text;
 
 pub(super) use arrange::{copy_node, move_node, swap_nodes};
+
+pub(super) fn add_table(
+    package: &mut NativeOfficePackage,
+    parent: &str,
+    rows: usize,
+    columns: usize,
+) -> UseResult<String> {
+    table::add_table(package, parent, rows, columns)
+}
+
+pub(super) fn add_table_row(
+    package: &mut NativeOfficePackage,
+    parent: &str,
+    columns: Option<usize>,
+) -> UseResult<String> {
+    table::add_row(package, parent, columns)
+}
+
+pub(super) fn add_table_cell(
+    package: &mut NativeOfficePackage,
+    parent: &str,
+    text: &str,
+) -> UseResult<String> {
+    table::add_cell(package, parent, text)
+}
 
 pub(super) fn add_slide(
     package: &mut NativeOfficePackage,
@@ -207,6 +235,10 @@ pub(super) fn set_text(package: &mut NativeOfficePackage, path: &str, text: &str
     let part = package.xml_part(part_name)?;
     let index = index_xml(&part)?;
     let target = locate_path(&index, &requested.path)?;
+    if target.descendant("t").is_none() {
+        let edited = text::insert_into_empty_target(&part, target, text)?;
+        return package.set_part(part_name, edited);
+    }
     let edited = replace_text_descendants(&part, target, "t", text, None)?;
     package.set_part(part_name, edited)
 }
@@ -215,16 +247,19 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
     let snapshot = NativeOfficeDocument::from_package(package.clone())?;
     let requested = snapshot.get(path, 0)?;
     match requested.node_type {
-        OfficeNodeType::Shape => remove_shape(package, &snapshot, &requested.path),
+        OfficeNodeType::Shape => remove_object(package, &snapshot, &requested.path),
+        OfficeNodeType::Table
+        | OfficeNodeType::TableRow
+        | OfficeNodeType::TableCell => table::remove(package, &snapshot, &requested),
         OfficeNodeType::Slide => remove_slide(package, &requested.path),
         _ => Err(editor_error(
             "use.office.mutation_type_unsupported",
-            "Native Presentation remove currently supports slides and shapes.",
+            "Native Presentation remove currently supports slides, shapes, tables, rows, and grid-safe cells.",
         )),
     }
 }
 
-fn remove_shape(
+fn remove_object(
     package: &mut NativeOfficePackage,
     snapshot: &NativeOfficeDocument,
     path: &str,
@@ -375,22 +410,42 @@ pub(super) fn locate_path<'a>(
         .descendant("spTree")
         .ok_or_else(|| node_not_found(path))?;
     for segment in segments {
+        let position = segment.position.unwrap_or(1);
         current = match segment.name.as_str() {
             "shape" => current
-                .child("sp", segment.position.unwrap_or(1))
+                .child("sp", position)
                 .ok_or_else(|| node_not_found(path))?,
             "picture" => current
-                .child("pic", segment.position.unwrap_or(1))
+                .child("pic", position)
                 .ok_or_else(|| node_not_found(path))?,
             "group" => current
-                .child("grpSp", segment.position.unwrap_or(1))
+                .child("grpSp", position)
+                .ok_or_else(|| node_not_found(path))?,
+            "table" | "tbl" => position
+                .checked_sub(1)
+                .and_then(|index| {
+                    current
+                        .children
+                        .iter()
+                        .filter(|child| {
+                            child.local_name == "graphicFrame" && child.descendant("tbl").is_some()
+                        })
+                        .nth(index)
+                })
+                .ok_or_else(|| node_not_found(path))?,
+            "tr" | "row" => current
+                .descendant("tbl")
+                .and_then(|table| table.child("tr", position))
+                .ok_or_else(|| node_not_found(path))?,
+            "tc" | "cell" => current
+                .child("tc", position)
                 .ok_or_else(|| node_not_found(path))?,
             "paragraph" | "p" => current
                 .descendant("txBody")
-                .and_then(|body| body.child("p", segment.position.unwrap_or(1)))
+                .and_then(|body| body.child("p", position))
                 .ok_or_else(|| node_not_found(path))?,
             "run" | "r" => current
-                .child_any(&["r", "fld"], segment.position.unwrap_or(1))
+                .child_any(&["r", "fld"], position)
                 .ok_or_else(|| node_not_found(path))?,
             name => {
                 return Err(editor_error(

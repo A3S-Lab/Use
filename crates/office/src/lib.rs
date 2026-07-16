@@ -251,6 +251,9 @@ mod opc_tests;
 mod package_tests;
 
 #[cfg(test)]
+mod presentation_table_tests;
+
+#[cfg(test)]
 mod replay_tests;
 
 #[cfg(test)]

@@ -203,8 +203,11 @@ closed and roll back.
 Native add supports Word paragraphs and bounded table/row/cell structures,
 while remove supports Word paragraphs, runs, tables, rows, and cells with
 structural last-child invariants and table-grid maintenance. Spreadsheet cells
-and worksheets and Presentation slides and text shapes also support native
-add/remove. Slide and worksheet removal updates their OPC relationships,
+and worksheets and Presentation slides, text shapes, and basic DrawingML tables
+also support native add/remove. Presentation table creation emits a real
+`p:graphicFrame` and `a:tbl`; row creation follows the existing `a:tblGrid`,
+blank cells accept native text replacement, and row removal updates the frame
+height. Slide and worksheet removal updates their OPC relationships,
 content types, and owned parts. The typed editor and `office native batch`
 provide all-or-nothing in-memory rollback, bounded versioned inputs, atomic
 save/save-as, revision-conflict detection, and byte preservation for untouched
@@ -245,6 +248,17 @@ batch `createdImages` receipts. SVG is deferred because interoperable OOXML SVG
 requires a raster fallback representation. Replacement, crop, effects,
 floating/advanced anchors, and rich image rendering are not implemented yet.
 
+Basic Presentation table structure is deliberately bounded. Table dimensions
+must be positive, no mutation may exceed 5,000 rows, 5,000 columns, or 100,000
+cells, and an explicit row width must equal the parent grid. `add --type cell`
+only fills an underfull row; a full row rejects the append because PowerPoint
+would silently discard a cell beyond `a:tblGrid`. Direct cell removal is
+similarly limited to repairing an overflow row. Removing the final row is
+rejected, and row/cell removal fails closed when merged-cell spans would need
+rewriting. Column insertion/removal, merged-cell editing, custom dimensions,
+table styles, fills, borders, and rich cell formatting remain later
+Presentation work. None of these operations invokes OfficeCLI or LibreOffice.
+
 Typed move/copy/swap is implemented as a bounded arrangement layer. `Index` is
 zero-based and is evaluated after source removal for a move; `Before` and
 `After` resolve stable semantic paths before mutation. A copy with no position
@@ -274,7 +288,8 @@ same atomic batch rollback and semantic post-validation as add/set/remove.
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
 tables, Spreadsheet worksheets and typed cells without styles or cached formula
-results, and Presentation slides with plain one-run text shapes. The versioned
+results, and Presentation slides with plain one-run text shapes and canonical
+basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
 ordered mutations, and expected result part-map SHA-256. Native `batch` checks
 both fingerprints and restores the original package on a failed result check.
@@ -304,7 +319,8 @@ unchanged.
 
 Cross-parent/reference-graph arrangement beyond the bounded move/copy/swap
 coverage above, advanced image mutation and SVG fallback, complex/custom part
-carriers, subtree and rich-structure dump, advanced rich-format operations, and
+carriers, Presentation table columns/merges/rich styles, subtree and
+rich-structure dump, advanced rich-format operations, and
 the formula parser/dependency/recalculation engine remain before their
 respective gates can be promoted. Creation and structural mutation remain
 under the interoperability gate until Microsoft Office and optional CI

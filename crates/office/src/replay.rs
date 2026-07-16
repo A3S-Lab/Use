@@ -425,7 +425,19 @@ fn emit_presentation(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>
             ));
         }
         for child in &slide.children {
-            validate_presentation_shape(child)?;
+            match child.node_type {
+                OfficeNodeType::Shape => validate_presentation_shape(child)?,
+                OfficeNodeType::Table => validate_presentation_table(child)?,
+                _ => {
+                    return Err(dump_unsupported(
+                        &child.path,
+                        format!(
+                            "Presentation node type '{}' is not exactly replayable yet.",
+                            child.node_type.label()
+                        ),
+                    ))
+                }
+            }
         }
 
         let title = slide.children.first().filter(|shape| {
@@ -451,14 +463,86 @@ fn emit_presentation(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>
                 text: String::new(),
             });
         }
-        for shape in slide.children.iter().skip(usize::from(title.is_some())) {
-            mutations.push(NativeOfficeMutation::AddShape {
-                parent: slide.path.clone(),
-                text: shape.text.clone(),
-            });
+        for child in slide.children.iter().skip(usize::from(title.is_some())) {
+            match child.node_type {
+                OfficeNodeType::Shape => mutations.push(NativeOfficeMutation::AddShape {
+                    parent: slide.path.clone(),
+                    text: child.text.clone(),
+                }),
+                OfficeNodeType::Table => {
+                    emit_presentation_table(child, &slide.path, &mut mutations)?
+                }
+                _ => {
+                    return Err(dump_unsupported(
+                        &child.path,
+                        "Presentation replay encountered an unsupported node after validation.",
+                    ))
+                }
+            }
         }
     }
     Ok(mutations)
+}
+
+fn emit_presentation_table(
+    table: &DocumentNode,
+    slide_path: &str,
+    mutations: &mut Vec<NativeOfficeMutation>,
+) -> UseResult<()> {
+    let rows = table.children.len();
+    let columns = table.children.first().map_or(0, |row| row.children.len());
+    mutations.push(NativeOfficeMutation::AddTable {
+        parent: slide_path.to_string(),
+        rows,
+        columns,
+    });
+    for row in &table.children {
+        for cell in &row.children {
+            if !cell.text.is_empty() {
+                mutations.push(NativeOfficeMutation::SetText {
+                    path: cell.path.clone(),
+                    text: cell.text.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_presentation_table(table: &DocumentNode) -> UseResult<()> {
+    if table.style.is_some() || table.children.is_empty() {
+        return Err(dump_unsupported(
+            &table.path,
+            "Presentation replay requires a non-empty basic table.",
+        ));
+    }
+    let columns = table.children[0].children.len();
+    if columns == 0 {
+        return Err(dump_unsupported(
+            &table.path,
+            "Presentation replay requires at least one table column.",
+        ));
+    }
+    for row in &table.children {
+        if row.node_type != OfficeNodeType::TableRow
+            || row.style.is_some()
+            || row.children.len() != columns
+        {
+            return Err(dump_unsupported(
+                &row.path,
+                "Presentation replay requires a rectangular table with plain rows.",
+            ));
+        }
+        for cell in &row.children {
+            if cell.node_type != OfficeNodeType::TableCell || cell.style.is_some() {
+                return Err(dump_unsupported(
+                    &cell.path,
+                    "Presentation replay requires plain table cells.",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_presentation_shape(shape: &DocumentNode) -> UseResult<()> {

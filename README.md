@@ -258,10 +258,12 @@ existing Word, Spreadsheet, and Presentation nodes. It can safely inspect
 existing XML parts and replace non-OPC-metadata XML parts while preserving the
 root QName and validating the final document. Known chart, header, and footer
 part carriers can be created together with their content type and owner
-relationship. The typed mutation layer
-also adds and removes Word paragraphs and basic table/row/cell structures,
-upserts typed Spreadsheet text, number, boolean, and formula cells, removes
-cells and bounded cell ranges, structurally inserts or deletes rows and columns,
+relationship. The typed mutation layer also adds and removes Word paragraphs
+and basic table/row/cell structures,
+creates real Presentation DrawingML tables, appends grid-conformant rows,
+fills underfull rows, edits cell text, and removes tables or structurally safe
+rows/cells. It upserts typed Spreadsheet text, number, boolean, and formula
+cells, removes cells and bounded cell ranges, structurally inserts or deletes rows and columns,
 and adds, removes, renames, reorders, or copies worksheets. It also exposes
 typed `move`, `copy`, and `swap` mutations with zero-based or path-relative
 placement. Word supports same-parent paragraph, table, row, cell, and run
@@ -278,9 +280,9 @@ resources; removal garbage-collects only unshared descendants. Structural
 Spreadsheet edits rewrite affected A1 formulas, defined names, worksheet
 metadata, tables, comments, VML notes, drawing anchors, and chart references;
 unsupported pivot and 3D-reference cases fail closed before save. Presentation
-slides and text shapes also support native add/remove. PNG, JPEG, and GIF can be
-embedded as real Word inline pictures, Spreadsheet one-cell drawing anchors,
-and Presentation slide pictures; semantic reads and reference-aware removal use
+slides, text shapes, and basic tables also support native add/remove. PNG, JPEG,
+and GIF can be embedded as real Word inline pictures, Spreadsheet one-cell
+drawing anchors, and Presentation slide pictures; semantic reads and reference-aware removal use
 the same cross-format `Picture` contract. Saves are atomic and reject a changed
 source revision instead of overwriting another writer.
 Cross-format template merge replaces `{{key}}` text in Word document and
@@ -358,6 +360,10 @@ a3s use office native add report.docx '/body/tbl[1]/tr[3]' --type cell --text 'T
 a3s use office native add workbook.xlsx / --type sheet --name Data --json
 a3s use office native add deck.pptx / --type slide --text 'Results' --json
 a3s use office native add deck.pptx '/slide[1]' --type shape --text '42%' --json
+a3s use office native add deck.pptx '/slide[1]' --type table --rows 3 --columns 2 --json
+a3s use office native set deck.pptx '/slide[1]/table[1]/tr[1]/tc[1]' --text 'Metric' --json
+a3s use office native add deck.pptx '/slide[1]/table[1]' --type row --columns 2 --json
+a3s use office native remove deck.pptx '/slide[1]/table[1]/tr[4]' --json
 a3s use office native remove workbook.xlsx /Data --json
 a3s use office native remove deck.pptx '/slide[1]/shape[2]' --json
 
@@ -491,8 +497,9 @@ The first dump scope is the complete document (`/`). It accepts only content
 that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets and
 typed cells without styles or cached formula results, and Presentation slides
-with plain one-run text shapes. Headers, notes, media, styles, rich text,
-non-canonical package resources, and every other lossy case fail with
+with plain one-run text shapes and canonical basic tables. Headers, notes,
+media, non-canonical table styling, rich text, non-canonical package resources,
+and every other lossy case fail with
 `use.office.dump_unsupported`; nothing is silently flattened or omitted.
 
 Replay requires the exact A3S blank template identified by `baseSha256`.

@@ -438,13 +438,26 @@ impl NativeOfficeEditor {
                     parent,
                     rows,
                     columns,
-                } => word::add_table(&mut self.package, parent, *rows, *columns),
+                } => match self.package.kind() {
+                    DocumentKind::Presentation => {
+                        presentation::add_table(&mut self.package, parent, *rows, *columns)
+                    }
+                    _ => word::add_table(&mut self.package, parent, *rows, *columns),
+                },
                 NativeOfficeMutation::AddTableRow { parent, columns } => {
-                    word::add_table_row(&mut self.package, parent, *columns)
+                    match self.package.kind() {
+                        DocumentKind::Presentation => {
+                            presentation::add_table_row(&mut self.package, parent, *columns)
+                        }
+                        _ => word::add_table_row(&mut self.package, parent, *columns),
+                    }
                 }
-                NativeOfficeMutation::AddTableCell { parent, text } => {
-                    word::add_table_cell(&mut self.package, parent, text)
-                }
+                NativeOfficeMutation::AddTableCell { parent, text } => match self.package.kind() {
+                    DocumentKind::Presentation => {
+                        presentation::add_table_cell(&mut self.package, parent, text)
+                    }
+                    _ => word::add_table_cell(&mut self.package, parent, text),
+                },
                 NativeOfficeMutation::AddSlide { parent, title } => {
                     presentation::add_slide(&mut self.package, parent, title)
                 }

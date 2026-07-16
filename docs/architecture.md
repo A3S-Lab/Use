@@ -148,6 +148,16 @@ collects media only when the package relationship graph has no remaining target
 edge. The media changes share the editor's atomic rollback boundary. SVG is a
 separate future representation because OOXML requires a raster fallback.
 
+Basic Presentation table mutation is a format-owned structural layer over the
+same loss-preserving XML editor. It inserts a real graphic frame and DrawingML
+table into the slide shape tree, allocates a collision-free non-visual ID,
+keeps row width aligned with `a:tblGrid`, and updates graphic-frame height after
+row changes. Empty cell text insertion preserves DrawingML child ordering.
+Operations that would underfill a normal row or invalidate merged-cell spans
+fail before save; column and merge rewriting remain outside this bounded
+milestone. These mutations use the existing typed batch transaction and do not
+introduce another protocol or runtime.
+
 Unpromoted commands are delegated to OfficeCLI and
 `mcp serve office` launches its standard MCP server. That compatibility process
 remains isolated from the native engine.
@@ -209,10 +219,11 @@ Implemented:
     worksheet add/remove/rename/reorder/copy with owned OPC-subgraph cloning and
     cleanup, bounded cross-format move/copy/swap arrangement, Spreadsheet
     row/column structural edits with formula and related-part reference
-    rewriting, Presentation slide/shape mutation, core node removal, constrained
-    raw XML inspection/replacement, typed
+    rewriting, Presentation slide/shape and basic DrawingML table mutation,
+    core node removal, constrained raw XML inspection/replacement, typed
     chart/header/footer part carriers, exact root replay artifacts for the
-    canonical typed subset, cross-format native template merge with bounded JSON
+    canonical typed subset including basic Presentation tables, cross-format
+    native template merge with bounded JSON
     and immutable templates, native PNG/JPEG/GIF add/read/remove with
     reference-aware media cleanup, atomic batches, changed-file conflict
     detection, and the dependency-free `office native` CLI.

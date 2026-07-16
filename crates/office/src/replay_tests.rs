@@ -94,6 +94,19 @@ async fn presentation_dump_replays_slides_and_text_shapes_exactly() {
     let mut source = NativeOfficeEditor::create(&source_path).await.unwrap();
     source.add_slide("/", "Quarterly review").unwrap();
     source.add_shape("/slide[1]", "Revenue increased").unwrap();
+    source.add_table("/slide[1]", 2, 2).unwrap();
+    source
+        .set_text("/slide[1]/table[1]/tr[1]/tc[1]", "Metric")
+        .unwrap();
+    source
+        .set_text("/slide[1]/table[1]/tr[1]/tc[2]", "Value")
+        .unwrap();
+    source
+        .set_text("/slide[1]/table[1]/tr[2]/tc[1]", "Revenue")
+        .unwrap();
+    source
+        .set_text("/slide[1]/table[1]/tr[2]/tc[2]", "42")
+        .unwrap();
     source.add_slide("/", "").unwrap();
     source.add_shape("/slide[2]", "Appendix").unwrap();
 
