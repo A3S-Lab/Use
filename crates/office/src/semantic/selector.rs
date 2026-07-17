@@ -217,9 +217,12 @@ fn node_value<'a>(node: &'a DocumentNode, key: &str) -> Option<&'a str> {
             .get("valueType")
             .map(String::as_str)
             .or_else(|| {
-                (node.node_type == OfficeNodeType::DataValidation)
-                    .then(|| node.format.get("type").map(String::as_str))
-                    .flatten()
+                (matches!(
+                    node.node_type,
+                    OfficeNodeType::DataValidation | OfficeNodeType::ConditionalFormatting
+                ))
+                .then(|| node.format.get("type").map(String::as_str))
+                .flatten()
             })
             .or_else(|| Some(node.node_type.label())),
         "style" => node.style.as_deref(),

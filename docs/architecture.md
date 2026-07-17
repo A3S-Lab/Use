@@ -122,8 +122,8 @@ documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
 XML access, bounded annotated and issue analysis, typed text formatting,
-typed Spreadsheet cell presentation, data validation, scoped defined names,
-and exact merged-cell editing, typed scoped text replacement, typed hyperlinks,
+typed Spreadsheet cell presentation, data validation, conditional formatting,
+scoped defined names, and exact merged-cell editing, typed scoped text replacement, typed hyperlinks,
 and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
@@ -175,7 +175,22 @@ attributes, failing closed when replacement or final collection removal would
 discard unknown children or collection data. Semantic projection adds stable
 `dataValidation` nodes plus sparse observed/virtual-cell annotations; HTML and
 SVG carry only inert metadata. This contract neither evaluates formulas nor
-implies conditional-formatting, filter, table, chart, or pivot support.
+implies filter, table, chart, or pivot support.
+Spreadsheet conditional formatting is a separate closed domain value,
+represented by `add-conditional-format` and `set-conditional-format`; deletion
+reuses typed `remove`. Comparison/formula rules, text and statistical
+predicates, blank/error/date predicates, data bars, two/three-color scales, and
+standard three/four/five-icon sets cross Rust, versioned batch JSON, CLI,
+standard MCP, replay, and Skill surfaces without a property bag. Thresholds,
+operators, time periods, icon sets, RGB colors, and differential fill/font/bold
+formatting are closed types. The writer allocates collision-free priorities and
+deduplicates `dxfs`; canonical replay requires sequential priorities. It retains
+strict/transitional SpreadsheetML and unknown
+attributes, and fails closed when mutation would discard unsupported rule or
+collection content. Semantic projection adds stable `conditionalFormatting`
+nodes at `/Sheet/cf[N]` and supports typed `type` selectors. Formula storage is
+not formula evaluation; x14-only data-bar axes/colors and Excel rendering
+fidelity remain outside this contract.
 Spreadsheet defined names are a separate closed value represented by
 `add-named-range` and `set-named-range`; deletion reuses ordinary typed
 `remove`. Workbook-global and worksheet-local scopes map explicitly to the
@@ -327,8 +342,8 @@ string passthrough. It supports validate, create/open/list, semantic get/query,
 bounded annotated plus text/outline/statistics views, all-format HTML and SVG,
 all-format bounded issue views, Browser-injected semantic PNG screenshots,
 constrained raw XML inspection, atomic typed mutation batches,
-including typed Spreadsheet data-validation, scoped defined names, and exact
-merge/unmerge,
+including typed Spreadsheet data-validation and conditional formatting, scoped
+defined names, and exact merge/unmerge,
 immutable-template merge, save, and close. A screenshot requires an explicit
 no-clobber `.png` output and
 releases the Office session lock before Browser rendering. A server process
@@ -397,8 +412,10 @@ Implemented:
     formatting, Word/Presentation highlight, text case, and language, plus
     format-bounded strikethrough, typed Spreadsheet number/fill/border/alignment
     and cell-presentation formatting, typed Spreadsheet data-validation
-    add/set/remove with sparse semantic readback, typed scoped Spreadsheet
-    defined-name add/set/remove with stable semantic selectors, exact Spreadsheet merged-cell editing,
+    add/set/remove with sparse semantic readback, typed Spreadsheet
+    conditional-format add/set/remove with stable semantic readback, typed
+    scoped Spreadsheet defined-name add/set/remove with stable semantic
+    selectors, exact Spreadsheet merged-cell editing,
     and typed Spreadsheet text/number/boolean/formula cell and range mutation,
     typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment

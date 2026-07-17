@@ -69,6 +69,28 @@ pub(super) struct ParsedArguments {
     pub named_range_scope: Option<String>,
     pub named_range_comment: Option<String>,
     pub named_range_volatile: Option<String>,
+    pub conditional_format_type: Option<String>,
+    pub conditional_stop_if_true: Option<String>,
+    pub conditional_rank: Option<u32>,
+    pub conditional_percent: Option<String>,
+    pub conditional_bottom: Option<String>,
+    pub conditional_above: Option<String>,
+    pub conditional_equal: Option<String>,
+    pub conditional_standard_deviations: Option<u32>,
+    pub conditional_period: Option<String>,
+    pub conditional_color: Option<String>,
+    pub conditional_min: Option<String>,
+    pub conditional_max: Option<String>,
+    pub conditional_show_value: Option<String>,
+    pub conditional_min_length: Option<u32>,
+    pub conditional_max_length: Option<u32>,
+    pub conditional_min_color: Option<String>,
+    pub conditional_mid_color: Option<String>,
+    pub conditional_max_color: Option<String>,
+    pub conditional_midpoint: Option<String>,
+    pub conditional_icon_set: Option<String>,
+    pub conditional_reverse: Option<String>,
+    pub conditional_thresholds: Vec<String>,
     pub url: Option<String>,
     pub location: Option<String>,
     pub display: Option<String>,
@@ -261,7 +283,9 @@ impl ParsedArguments {
                     set_string_option(&mut parsed.merge_cells, args, index, "--merge-cells")?;
                     index += 2;
                 }
-                "--range" | "--sqref" if allowed.data_validation => {
+                "--range" | "--sqref"
+                    if allowed.data_validation || allowed.conditional_formatting =>
+                {
                     parsed
                         .validation_ranges
                         .push(option_value(args, index, "--range")?.to_string());
@@ -276,15 +300,15 @@ impl ParsedArguments {
                     )?;
                     index += 2;
                 }
-                "--operator" if allowed.data_validation => {
+                "--operator" if allowed.data_validation || allowed.conditional_formatting => {
                     set_string_option(&mut parsed.validation_operator, args, index, "--operator")?;
                     index += 2;
                 }
-                "--formula1" if allowed.data_validation => {
+                "--formula1" if allowed.data_validation || allowed.conditional_formatting => {
                     set_string_option(&mut parsed.validation_formula1, args, index, "--formula1")?;
                     index += 2;
                 }
-                "--formula2" if allowed.data_validation => {
+                "--formula2" if allowed.data_validation || allowed.conditional_formatting => {
                     set_string_option(&mut parsed.validation_formula2, args, index, "--formula2")?;
                     index += 2;
                 }
@@ -378,6 +402,146 @@ impl ParsedArguments {
                 }
                 "--volatile" if allowed.named_range => {
                     set_string_option(&mut parsed.named_range_volatile, args, index, "--volatile")?;
+                    index += 2;
+                }
+                "--rule-type" | "--cf-type" if allowed.conditional_formatting => {
+                    set_string_option(
+                        &mut parsed.conditional_format_type,
+                        args,
+                        index,
+                        "--rule-type",
+                    )?;
+                    index += 2;
+                }
+                "--stop-if-true" if allowed.conditional_formatting => {
+                    set_string_option(
+                        &mut parsed.conditional_stop_if_true,
+                        args,
+                        index,
+                        "--stop-if-true",
+                    )?;
+                    index += 2;
+                }
+                "--rank" if allowed.conditional_formatting => {
+                    set_u32_option(&mut parsed.conditional_rank, args, index, "--rank")?;
+                    index += 2;
+                }
+                "--percent" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_percent, args, index, "--percent")?;
+                    index += 2;
+                }
+                "--bottom" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_bottom, args, index, "--bottom")?;
+                    index += 2;
+                }
+                "--above" | "--above-average" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_above, args, index, "--above")?;
+                    index += 2;
+                }
+                "--equal-average" if allowed.conditional_formatting => {
+                    set_string_option(
+                        &mut parsed.conditional_equal,
+                        args,
+                        index,
+                        "--equal-average",
+                    )?;
+                    index += 2;
+                }
+                "--std-dev" | "--standard-deviations" if allowed.conditional_formatting => {
+                    set_u32_option(
+                        &mut parsed.conditional_standard_deviations,
+                        args,
+                        index,
+                        "--std-dev",
+                    )?;
+                    index += 2;
+                }
+                "--period" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_period, args, index, "--period")?;
+                    index += 2;
+                }
+                "--color" | "--bar-color" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_color, args, index, "--color")?;
+                    index += 2;
+                }
+                "--min" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_min, args, index, "--min")?;
+                    index += 2;
+                }
+                "--max" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_max, args, index, "--max")?;
+                    index += 2;
+                }
+                "--show-value" if allowed.conditional_formatting => {
+                    set_string_option(
+                        &mut parsed.conditional_show_value,
+                        args,
+                        index,
+                        "--show-value",
+                    )?;
+                    index += 2;
+                }
+                "--min-length" if allowed.conditional_formatting => {
+                    set_u32_option(
+                        &mut parsed.conditional_min_length,
+                        args,
+                        index,
+                        "--min-length",
+                    )?;
+                    index += 2;
+                }
+                "--max-length" if allowed.conditional_formatting => {
+                    set_u32_option(
+                        &mut parsed.conditional_max_length,
+                        args,
+                        index,
+                        "--max-length",
+                    )?;
+                    index += 2;
+                }
+                "--min-color" if allowed.conditional_formatting => {
+                    set_string_option(
+                        &mut parsed.conditional_min_color,
+                        args,
+                        index,
+                        "--min-color",
+                    )?;
+                    index += 2;
+                }
+                "--mid-color" if allowed.conditional_formatting => {
+                    set_string_option(
+                        &mut parsed.conditional_mid_color,
+                        args,
+                        index,
+                        "--mid-color",
+                    )?;
+                    index += 2;
+                }
+                "--max-color" if allowed.conditional_formatting => {
+                    set_string_option(
+                        &mut parsed.conditional_max_color,
+                        args,
+                        index,
+                        "--max-color",
+                    )?;
+                    index += 2;
+                }
+                "--midpoint" | "--mid-point" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_midpoint, args, index, "--midpoint")?;
+                    index += 2;
+                }
+                "--icon-set" | "--icons" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_icon_set, args, index, "--icon-set")?;
+                    index += 2;
+                }
+                "--reverse" if allowed.conditional_formatting => {
+                    set_string_option(&mut parsed.conditional_reverse, args, index, "--reverse")?;
+                    index += 2;
+                }
+                "--threshold" if allowed.conditional_formatting => {
+                    parsed
+                        .conditional_thresholds
+                        .push(option_value(args, index, "--threshold")?.to_string());
                     index += 2;
                 }
                 "--url" | "--link" | "--href" if allowed.url => {
@@ -517,11 +681,18 @@ impl ParsedArguments {
     }
 
     pub(super) fn has_data_validation_options(&self) -> bool {
+        self.has_shared_rule_options() || self.has_data_validation_specific_options()
+    }
+
+    pub(super) fn has_shared_rule_options(&self) -> bool {
         !self.validation_ranges.is_empty()
-            || self.validation_type.is_some()
             || self.validation_operator.is_some()
             || self.validation_formula1.is_some()
             || self.validation_formula2.is_some()
+    }
+
+    pub(super) fn has_data_validation_specific_options(&self) -> bool {
+        self.validation_type.is_some()
             || self.validation_allow_blank.is_some()
             || self.validation_show_input.is_some()
             || self.validation_show_error.is_some()
@@ -539,6 +710,41 @@ impl ParsedArguments {
             || self.named_range_scope.is_some()
             || self.named_range_comment.is_some()
             || self.named_range_volatile.is_some()
+    }
+
+    pub(super) fn has_conditional_format_options(&self) -> bool {
+        self.conditional_format_type.is_some()
+            || self.conditional_stop_if_true.is_some()
+            || self.conditional_rank.is_some()
+            || self.conditional_percent.is_some()
+            || self.conditional_bottom.is_some()
+            || self.conditional_above.is_some()
+            || self.conditional_equal.is_some()
+            || self.conditional_standard_deviations.is_some()
+            || self.conditional_period.is_some()
+            || self.conditional_color.is_some()
+            || self.conditional_min.is_some()
+            || self.conditional_max.is_some()
+            || self.conditional_show_value.is_some()
+            || self.conditional_min_length.is_some()
+            || self.conditional_max_length.is_some()
+            || self.conditional_min_color.is_some()
+            || self.conditional_mid_color.is_some()
+            || self.conditional_max_color.is_some()
+            || self.conditional_midpoint.is_some()
+            || self.conditional_icon_set.is_some()
+            || self.conditional_reverse.is_some()
+            || !self.conditional_thresholds.is_empty()
+    }
+
+    pub(super) fn has_conditional_format_update_options(&self) -> bool {
+        self.has_conditional_format_options()
+            || self.has_shared_rule_options()
+            || self.text.is_some()
+            || self.formula.is_some()
+            || self.fill.is_some()
+            || self.text_color.is_some()
+            || self.bold.is_some()
     }
 }
 
@@ -605,6 +811,7 @@ pub(super) struct AllowedOptions {
     regex: bool,
     data_validation: bool,
     named_range: bool,
+    conditional_formatting: bool,
 }
 
 impl AllowedOptions {
@@ -670,6 +877,7 @@ impl AllowedOptions {
         regex: false,
         data_validation: false,
         named_range: false,
+        conditional_formatting: false,
     };
     pub const GET: Self = Self {
         depth: true,
@@ -725,6 +933,7 @@ impl AllowedOptions {
         regex: true,
         data_validation: true,
         named_range: true,
+        conditional_formatting: true,
         name: true,
         ..Self::NONE
     };
@@ -768,6 +977,11 @@ impl AllowedOptions {
         y_emu: true,
         data_validation: true,
         named_range: true,
+        conditional_formatting: true,
+        formula: true,
+        bold: true,
+        text_color: true,
+        fill: true,
         ..Self::NONE
     };
     pub const ADD_PART: Self = Self {

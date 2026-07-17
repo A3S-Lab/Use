@@ -4,8 +4,9 @@ use a3s_use_office::{
     NativeOfficeHyperlinkTarget, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextCase,
     NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextScript,
     NativeOfficeUnderline, NativeSpreadsheetBorder, NativeSpreadsheetBorderLine,
-    NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
-    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder,
+    NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat,
+    NativeSpreadsheetConditionalFormatOperator, NativeSpreadsheetConditionalFormatRule,
+    NativeSpreadsheetFill, NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder,
     NativeSpreadsheetVerticalAlignment,
 };
 
@@ -344,6 +345,83 @@ fn office_batch_schema_exposes_typed_spreadsheet_data_validation() {
                 "ranges": ["A1"],
                 "formula1": "A,B",
                 "script": "alert(1)"
+            }
+        }]
+    }));
+    assert!(unknown.is_err());
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_spreadsheet_conditional_formatting() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "add-conditional-format",
+        "set-conditional-format",
+        "conditionalFormat",
+        "cellIs",
+        "containsText",
+        "last7Days",
+        "dataBar",
+        "colorScale",
+        "iconSet",
+        "3TrafficLights1",
+        "fontColor",
+        "percentile",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "add-conditional-format",
+            "sheet": "/Sheet1",
+            "conditionalFormat": {
+                "ranges": ["A2:A20"],
+                "stopIfTrue": true,
+                "rule": {
+                    "type": "cellIs",
+                    "operator": "greaterThan",
+                    "formula1": "80",
+                    "format": {
+                        "fill": {"red": 198, "green": 239, "blue": 206},
+                        "fontColor": {"red": 0, "green": 97, "blue": 0},
+                        "bold": true
+                    }
+                }
+            }
+        }]
+    }))
+    .unwrap();
+    assert!(matches!(
+        input.mutations[0].clone().into_native().unwrap(),
+        NativeOfficeMutation::AddConditionalFormat {
+            ref sheet,
+            conditional_format: a3s_use_office::NativeSpreadsheetConditionalFormat {
+                stop_if_true: true,
+                rule: NativeSpreadsheetConditionalFormatRule::CellIs {
+                    operator: NativeSpreadsheetConditionalFormatOperator::GreaterThan,
+                    ref formula1,
+                    ref format,
+                    ..
+                },
+                ..
+            }
+        } if sheet == "/Sheet1"
+            && formula1 == "80"
+            && format.fill == Some(NativeOfficeRgbColor::new(198, 239, 206))
+            && format.bold == Some(true)
+    ));
+
+    let unknown = serde_json::from_value::<OfficeBatchInput>(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "add-conditional-format",
+            "sheet": "/Sheet1",
+            "conditionalFormat": {
+                "ranges": ["A1"],
+                "rule": {"type": "script", "formula": "TRUE"}
             }
         }]
     }));

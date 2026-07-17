@@ -6,6 +6,7 @@ use a3s_use_office::{
 
 use super::arguments::{AllowedOptions, ParsedArguments};
 use super::bounded_input::{read_bounded_input, NativeInputKind};
+use super::conditional_formatting;
 use super::data_validation;
 use super::format::parse_hyperlink;
 use super::named_range;
@@ -105,6 +106,12 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
                 editor.add_data_validation(parent, data_validation::build_new(&parsed)?)?,
                 None,
             ),
+            "conditional-format" | "conditional-formatting" | "conditionalformatting" | "cf" => (
+                "add-conditional-format",
+                editor
+                    .add_conditional_format(parent, conditional_formatting::build_new(&parsed)?)?,
+                None,
+            ),
             "named-range" | "namedrange" | "defined-name" | "definedname" => (
                 "add-named-range",
                 editor.add_named_range(named_range::build_new(parent, &parsed)?)?,
@@ -170,6 +177,10 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
         node_type,
         "data-validation" | "datavalidation" | "validation"
     );
+    let is_conditional_format = matches!(
+        node_type,
+        "conditional-format" | "conditional-formatting" | "conditionalformatting" | "cf"
+    );
     let is_named_range = matches!(
         node_type,
         "named-range" | "namedrange" | "defined-name" | "definedname"
@@ -192,7 +203,7 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
             | "link"
             | "comment"
             | "note-comment"
-    );
+    ) || is_conditional_format;
     if parsed.rows.is_some() && !accepts_rows {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept --rows"
@@ -218,10 +229,32 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
             "native Office add type '{node_type}' does not accept --text"
         )));
     }
-    if parsed.has_data_validation_options() && !is_data_validation {
+    if parsed.has_data_validation_specific_options() && !is_data_validation {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept data-validation options"
         )));
+    }
+    if parsed.has_shared_rule_options() && !is_data_validation && !is_conditional_format {
+        return Err(usage_error(format!(
+            "native Office add type '{node_type}' does not accept --range, --operator, --formula1, or --formula2"
+        )));
+    }
+    if parsed.has_conditional_format_options() && !is_conditional_format {
+        return Err(usage_error(format!(
+            "native Office add type '{node_type}' does not accept conditional-format options"
+        )));
+    }
+    for (present, option) in [
+        (parsed.formula.is_some(), "--formula"),
+        (parsed.fill.is_some(), "--fill"),
+        (parsed.text_color.is_some(), "--text-color"),
+        (parsed.bold.is_some(), "--bold"),
+    ] {
+        if present && !is_conditional_format {
+            return Err(usage_error(format!(
+                "native Office add type '{node_type}' does not accept {option}"
+            )));
+        }
     }
     if parsed.has_named_range_options() && !is_named_range && parsed.name.is_none() {
         return Err(usage_error(format!(

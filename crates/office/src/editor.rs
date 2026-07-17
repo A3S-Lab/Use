@@ -41,8 +41,12 @@ pub use types::{
     NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextReplacementResult,
     NativeOfficeTextScript, NativeOfficeUnderline, NativeSpreadsheetBorder,
     NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat,
-    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
-    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
+    NativeSpreadsheetConditionalFormat, NativeSpreadsheetConditionalFormatIconSet,
+    NativeSpreadsheetConditionalFormatOperator, NativeSpreadsheetConditionalFormatRule,
+    NativeSpreadsheetConditionalFormatThreshold, NativeSpreadsheetConditionalFormatThresholdKind,
+    NativeSpreadsheetConditionalFormatTimePeriod, NativeSpreadsheetDataValidation,
+    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
+    NativeSpreadsheetDataValidationType, NativeSpreadsheetDifferentialFormat,
     NativeSpreadsheetFill, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
     NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
     MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
@@ -212,6 +216,31 @@ impl NativeOfficeEditor {
         self.single_path(NativeOfficeMutation::SetNamedRange {
             path: path.into(),
             named_range,
+        })
+    }
+
+    /// Adds one complete typed Spreadsheet conditional-formatting rule.
+    pub fn add_conditional_format(
+        &mut self,
+        sheet: impl Into<String>,
+        conditional_format: NativeSpreadsheetConditionalFormat,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::AddConditionalFormat {
+            sheet: sheet.into(),
+            conditional_format,
+        })
+    }
+
+    /// Replaces one existing Spreadsheet conditional-formatting rule while
+    /// retaining its worksheet priority.
+    pub fn set_conditional_format(
+        &mut self,
+        path: impl Into<String>,
+        conditional_format: NativeSpreadsheetConditionalFormat,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SetConditionalFormat {
+            path: path.into(),
+            conditional_format,
         })
     }
 
@@ -679,6 +708,20 @@ impl NativeOfficeEditor {
                 }
                 NativeOfficeMutation::SetNamedRange { path, named_range } => {
                     spreadsheet::set_named_range(&mut self.package, path, named_range)
+                }
+                NativeOfficeMutation::AddConditionalFormat {
+                    sheet,
+                    conditional_format,
+                } => spreadsheet::add_conditional_format(
+                    &mut self.package,
+                    sheet,
+                    conditional_format,
+                ),
+                NativeOfficeMutation::SetConditionalFormat {
+                    path,
+                    conditional_format,
+                } => {
+                    spreadsheet::set_conditional_format(&mut self.package, path, conditional_format)
                 }
                 NativeOfficeMutation::AddDataValidation { sheet, validation } => {
                     spreadsheet::add_data_validation(&mut self.package, sheet, validation)

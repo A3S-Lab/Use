@@ -23,6 +23,7 @@ mod package;
 mod render;
 mod replay;
 mod semantic;
+mod spreadsheet_conditional_format;
 mod spreadsheet_formula;
 mod spreadsheet_named_range;
 mod spreadsheet_reference;
@@ -47,9 +48,13 @@ pub use editor::{
     NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextReplacement,
     NativeOfficeTextReplacementResult, NativeOfficeTextScript, NativeOfficeUnderline,
     NativeRawXmlPart, NativeSpreadsheetBorder, NativeSpreadsheetBorderLine,
-    NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetDataValidation,
-    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
-    NativeSpreadsheetDataValidationType, NativeSpreadsheetFill, NativeSpreadsheetNamedRange,
+    NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetConditionalFormat,
+    NativeSpreadsheetConditionalFormatIconSet, NativeSpreadsheetConditionalFormatOperator,
+    NativeSpreadsheetConditionalFormatRule, NativeSpreadsheetConditionalFormatThreshold,
+    NativeSpreadsheetConditionalFormatThresholdKind, NativeSpreadsheetConditionalFormatTimePeriod,
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
+    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
+    NativeSpreadsheetDifferentialFormat, NativeSpreadsheetFill, NativeSpreadsheetNamedRange,
     NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder,
     NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES,
     MAX_NATIVE_OFFICE_REPLACEMENT_BYTES, MAX_NATIVE_OFFICE_TEXT_MATCHES,
@@ -274,6 +279,8 @@ mod cell_format_tests;
 mod cell_merge_tests;
 #[cfg(test)]
 mod comment_tests;
+#[cfg(test)]
+mod conditional_formatting_tests;
 #[cfg(test)]
 mod data_validation_tests;
 #[cfg(test)]

@@ -11,6 +11,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 - [Cell Presentation Formatting](#cell-presentation-formatting)
 - [Merged Cells](#merged-cells)
 - [Data Validation](#data-validation)
+- [Conditional Formatting](#conditional-formatting)
 - [Named Ranges](#named-ranges)
 - [Structure](#structure)
 - [Verify](#verify)
@@ -90,8 +91,9 @@ single strikethrough, font family, point size, RGB text color, and horizontal
 alignment. Run-only text case, highlight, language, and double strikethrough
 fail atomically with `use.office.spreadsheet_run_format_unsupported`; they are
 not silently flattened into a cell style. Use the separate cell-presentation
-options below for non-text properties. Conditional formatting, named styles,
-and gradient/pattern/theme fills remain outside the native subset.
+options below for non-text properties and the typed conditional-format contract
+for rule-based differential styling. Named styles and gradient/pattern/theme
+fills remain outside the native subset.
 
 ## Cell Presentation Formatting
 
@@ -274,9 +276,121 @@ metadata.
 Updates preserve unknown rule attributes. Replacement fails if unknown rule
 children would be lost, and final removal fails if unknown collection data
 would be discarded. Strict/transitional OOXML, atomic batch rollback, and
-exact replay are supported. This capability does not add conditional
-formatting, table or filter authoring, charts, pivots, formula evaluation, or
-Excel layout fidelity.
+exact replay are supported. This capability does not add table or filter
+authoring, charts, pivots, formula evaluation, or Excel layout fidelity.
+
+## Conditional Formatting
+
+Use a closed rule family rather than a generic style or formula property map:
+
+```bash
+# Highlight values above 80 with a differential fill and font style.
+a3s use office native add workbook.xlsx /Sheet1 \
+  --type conditional-format \
+  --rule-type cell-is \
+  --range A2:A20 \
+  --operator greater-than \
+  --formula1 80 \
+  --fill C6EFCE \
+  --text-color 006100 \
+  --bold true \
+  --stop-if-true true \
+  --json
+
+# Add the three broad visual forms.
+a3s use office native add workbook.xlsx /Sheet1 \
+  --type conditional-format --rule-type data-bar --range B2:B20 \
+  --color 638EC6 --min min --max number:100 --show-value true --json
+a3s use office native add workbook.xlsx /Sheet1 \
+  --type conditional-format --rule-type color-scale --range C2:C20 \
+  --min-color F8696B --midpoint percentile:50 --mid-color FFEB84 \
+  --max-color 63BE7B --json
+a3s use office native add workbook.xlsx /Sheet1 \
+  --type conditional-format --rule-type icon-set --range D2:D20 \
+  --icon-set 3-traffic-lights-1 --reverse true --show-value false --json
+
+# Discover stable rules and partially update one through the CLI adapter.
+a3s use office native query workbook.xlsx \
+  'conditionalFormatting[type=iconSet]' --json
+a3s use office native get workbook.xlsx '/Sheet1/cf[1]' --json
+a3s use office native set workbook.xlsx '/Sheet1/cf[1]' \
+  --formula1 90 --fill FFEB9C --stop-if-true false --json
+
+# Remove exactly one rule.
+a3s use office native remove workbook.xlsx '/Sheet1/cf[2]' --json
+```
+
+Classic `--rule-type` values are `cell-is`, `formula`, `contains-text`,
+`not-contains-text`, `begins-with`, `ends-with`, `top`, `bottom`,
+`above-average`, `below-average`, `duplicate-values`, `unique-values`,
+`contains-blanks`, `not-contains-blanks`, `contains-errors`,
+`not-contains-errors`, and `time-period`. Formula rules use `--formula` or
+`--formula1`. Text predicates use `--text`. Top/bottom rules use `--rank`,
+`--percent`, and `--bottom`; average rules use `--above`, `--equal-average`, and
+`--std-dev`; time rules use `--period`. Classic rules accept only `--fill`,
+`--text-color`, and `--bold` as differential formatting. Use `none` to clear a
+differential color or bold state during a partial CLI update.
+
+`cell-is` supports `between`, `not-between`, `equal`, `not-equal`,
+`greater-than`, `greater-than-or-equal`, `less-than`, and
+`less-than-or-equal`. Between and not-between require `--formula2`; the other
+operators reject it. Formula bodies omit a leading `=`. A3S stores them and
+does not evaluate whether a rule matches.
+
+Visual rule types are `data-bar`, `color-scale`, and `icon-set`. Thresholds use
+`min`, `max`, `number:<value>`, `percent:<0..100>`,
+`percentile:<0..100>`, or `formula:<expression>`. A data bar accepts
+`--color`, `--min`, `--max`, `--show-value`, and optional 0–100
+`--min-length`/`--max-length`. A color scale becomes three-color only when both
+`--midpoint` and `--mid-color` are present; set either to `none` to return to a
+two-color scale. An icon set accepts a standard 3/4/5-icon name and one repeated
+`--threshold` per icon. Omit thresholds to generate evenly spaced percent
+defaults. Visual rules reject `--fill`, `--text-color`, and `--bold` rather than
+ignoring them.
+
+The native batch and standard MCP value is fully typed:
+
+```json
+{
+  "operation": "add-conditional-format",
+  "sheet": "/Sheet1",
+  "conditionalFormat": {
+    "ranges": ["A2:A20", "C2:C20"],
+    "stopIfTrue": true,
+    "rule": {
+      "type": "cellIs",
+      "operator": "greaterThan",
+      "formula1": "80",
+      "format": {
+        "fill": {"red": 198, "green": 239, "blue": 206},
+        "fontColor": {"red": 0, "green": 97, "blue": 0},
+        "bold": true
+      }
+    }
+  }
+}
+```
+
+Use `set-conditional-format` with a stable `path` and a complete
+`conditionalFormat` value for batch or MCP replacement; only the CLI adapter
+merges omitted fields. Use ordinary `remove` for deletion. Each rule accepts
+1–1,024 internally disjoint normalized A1 areas; a worksheet accepts at most
+65,534 rules. Different rules may overlap and remain ordered by unique
+priority. `stopIfTrue` preserves Excel's later-rule suppression semantics.
+
+Semantic nodes use `/SheetName/cf[N]`, expose the normalized `ref`, priority,
+rule-specific fields, and `nativeMutable`, and support
+`conditionalFormatting[type=...]` selectors. Unsupported extension-only rules
+remain readable with `nativeMutable=false`; never replace them through raw XML
+to bypass a typed mutation failure. Unknown attributes and strict/transitional
+SpreadsheetML are preserved. Unknown child or collection content that cannot
+survive a set/remove operation fails closed. Imported multi-rule carriers share
+one range: keep that range unchanged when updating one child rule.
+
+Canonical replay, atomic rollback, CLI, and standard MCP are supported. This
+does not calculate formulas, reproduce Excel's rendered appearance, or support
+x14-only negative data-bar axes/colors, custom icon sets, table/chart/pivot
+formatting, or complete OfficeCLI/Spreadsheet parity.
 
 ## Named Ranges
 
@@ -363,9 +477,9 @@ a3s use office native add workbook.xlsx /Sheet1/A1 --type picture --input chart.
 ```
 
 Supported structural edits rewrite bounded A1 references and related metadata.
-Pivot-table changes, unsafe 3D references, rich conditional formatting, full
-chart authoring, and complete recalculation remain outside the native subset
-and fail closed where safety cannot be proven.
+Pivot-table changes, unsafe 3D references, x14-only conditional-format
+extensions, full chart authoring, and complete recalculation remain outside the
+native subset and fail closed where safety cannot be proven.
 
 ## Verify
 

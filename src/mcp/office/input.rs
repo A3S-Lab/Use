@@ -12,9 +12,11 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
 mod cell_format;
+mod conditional_formatting;
 mod data_validation;
 
 use cell_format::OfficeCellFormat;
+use conditional_formatting::OfficeConditionalFormat;
 use data_validation::OfficeDataValidation;
 
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
@@ -708,6 +710,18 @@ pub(super) enum OfficeMutation {
         path: String,
         validation: OfficeDataValidation,
     },
+    AddConditionalFormat {
+        /// Existing Spreadsheet worksheet path such as `/Sheet1`.
+        sheet: String,
+        #[serde(rename = "conditionalFormat")]
+        conditional_format: OfficeConditionalFormat,
+    },
+    SetConditionalFormat {
+        /// Existing Spreadsheet conditional-format path such as `/Sheet1/cf[1]`.
+        path: String,
+        #[serde(rename = "conditionalFormat")]
+        conditional_format: OfficeConditionalFormat,
+    },
     MergeCells {
         /// Spreadsheet range path such as `/Sheet1/A1:B2`.
         path: String,
@@ -872,6 +886,20 @@ impl OfficeMutation {
                     validation: validation.into(),
                 }
             }
+            Self::AddConditionalFormat {
+                sheet,
+                conditional_format,
+            } => NativeOfficeMutation::AddConditionalFormat {
+                sheet,
+                conditional_format: conditional_format.into(),
+            },
+            Self::SetConditionalFormat {
+                path,
+                conditional_format,
+            } => NativeOfficeMutation::SetConditionalFormat {
+                path,
+                conditional_format: conditional_format.into(),
+            },
             Self::MergeCells { path } => NativeOfficeMutation::MergeCells { path },
             Self::UnmergeCells { path } => NativeOfficeMutation::UnmergeCells { path },
             Self::AddParagraph { parent, text } => {

@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::discovery::office_error;
 use crate::editor::{
-    NativeOfficeEditor, NativeOfficeMutation, NativeSpreadsheetDataValidation,
-    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
-    NativeSpreadsheetDataValidationType, NativeSpreadsheetNamedRange,
-    NativeSpreadsheetNamedRangeScope, SpreadsheetCellValue,
+    NativeOfficeEditor, NativeOfficeMutation, NativeSpreadsheetConditionalFormat,
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
+    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
+    NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope, SpreadsheetCellValue,
 };
 use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
 use crate::{DocumentKind, NativeOfficePackage};
@@ -347,6 +347,7 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
         }
 
         let mut merged_ranges = Vec::new();
+        let mut conditional_formats = Vec::new();
         let mut validations = Vec::new();
         for child in &sheet.children {
             match child.node_type {
@@ -381,6 +382,32 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                 OfficeNodeType::DataValidation => {
                     validations.push(spreadsheet_data_validation(child)?);
                 }
+                OfficeNodeType::ConditionalFormatting => {
+                    let expected_priority = conditional_formats.len() + 1;
+                    if child
+                        .format
+                        .get("priority")
+                        .and_then(|value| value.parse::<usize>().ok())
+                        != Some(expected_priority)
+                    {
+                        return Err(dump_unsupported(
+                            &child.path,
+                            "Spreadsheet replay requires canonical sequential conditional-format priorities.",
+                        ));
+                    }
+                    conditional_formats.push(
+                        NativeSpreadsheetConditionalFormat::from_semantic_node(child).map_err(
+                            |error| {
+                                dump_unsupported(
+                                    &child.path,
+                                    format!(
+                                        "Spreadsheet conditional format is not replayable: {error}"
+                                    ),
+                                )
+                            },
+                        )?,
+                    );
+                }
                 _ => {
                     return Err(dump_unsupported(
                         &child.path,
@@ -394,6 +421,12 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                 .into_iter()
                 .map(|path| NativeOfficeMutation::MergeCells { path }),
         );
+        mutations.extend(conditional_formats.into_iter().map(|conditional_format| {
+            NativeOfficeMutation::AddConditionalFormat {
+                sheet: sheet.path.clone(),
+                conditional_format,
+            }
+        }));
         mutations.extend(validations.into_iter().map(|validation| {
             NativeOfficeMutation::AddDataValidation {
                 sheet: sheet.path.clone(),

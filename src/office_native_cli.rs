@@ -11,6 +11,7 @@ mod add;
 mod arguments;
 mod arrange;
 mod bounded_input;
+mod conditional_formatting;
 mod data_validation;
 mod format;
 mod merge;
@@ -40,12 +41,14 @@ const HELP: &str = concat!(
     "  a3s-use office native merge <template> <output> --data <json|@file.json> [--force] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
-    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment|data-validation|named-range [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment|data-validation|conditional-format|named-range [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add <file.xlsx> <sheet> --type data-validation --validation-type list|whole|decimal|date|time|text-length|custom --range <A1-range> [--range <A1-range>] --formula1 <value> [--operator <comparison>] [--formula2 <value>] [--allow-blank <true|false>] [--show-input <true|false>] [--show-error <true|false>] [--prompt-title <text>] [--prompt <text>] [--error-title <text>] [--error-message <text>] [--error-style stop|warning|information] [--in-cell-dropdown <true|false>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file.xlsx> <sheet> --type conditional-format --rule-type cell-is|formula|contains-text|not-contains-text|begins-with|ends-with|top|bottom|above-average|below-average|duplicate-values|unique-values|contains-blanks|not-contains-blanks|contains-errors|not-contains-errors|time-period|data-bar|color-scale|icon-set --range <A1-range> [rule-specific options] [--stop-if-true <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add <file.xlsx> </|sheet> --type named-range --name <name> --ref <expression> [--scope workbook|worksheet:workbook|<sheet>] [--comment <text>] [--volatile <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
     "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--number-format <code>] [--fill <none|RRGGBB>] [--border-all <style>] [--border-color <RRGGBB>] [--border-left|--border-right|--border-top|--border-bottom <style>] [--border-left-color|--border-right-color|--border-top-color|--border-bottom-color <RRGGBB>] [--border-diagonal <style>] [--border-diagonal-color <RRGGBB>] [--border-diagonal-up <true|false>] [--border-diagonal-down <true|false>] [--vertical-align <top|center|bottom|justify|distributed>] [--wrap-text <true|false>] [--text-rotation <0..180|255>] [--indent <0..255>] [--shrink-to-fit <true|false>] [--reading-order <context|ltr|rtl>] [--merge-cells <true|false>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <sheet/dataValidation[N]> [data-validation options from add; unspecified fields are preserved, use none or an empty value to clear optional text/formula2] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file.xlsx> <sheet/cf[N]> [conditional-format options from add; unspecified fields are preserved] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <namedrange-selector> [--name <name>] [--ref <expression>] [--scope workbook|worksheet:workbook|<sheet>] [--comment <text|none>] [--volatile <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -247,11 +250,17 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let mut editor = NativeOfficeEditor::open(source).await?;
     let source_path = editor.package().path().to_path_buf();
     let snapshot = editor.snapshot()?;
+    let conditional_format_path = conditional_formatting::canonical_path(path);
     let validation_path = data_validation::canonical_path(path);
     let named_range_path = named_range::is_path(path);
-    let target_path = validation_path.as_deref().unwrap_or(path);
+    let target_path = conditional_format_path
+        .as_deref()
+        .or(validation_path.as_deref())
+        .unwrap_or(path);
     let target_node = snapshot.get(target_path, 0).ok();
-    if (validation_path.is_some() || named_range_path) && target_node.is_none() {
+    if (conditional_format_path.is_some() || validation_path.is_some() || named_range_path)
+        && target_node.is_none()
+    {
         snapshot.get(target_path, 0)?;
     }
     let is_comment = target_node
@@ -260,10 +269,14 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let is_data_validation = target_node
         .as_ref()
         .is_some_and(|node| node.node_type == OfficeNodeType::DataValidation);
+    let is_conditional_format = target_node
+        .as_ref()
+        .is_some_and(|node| node.node_type == OfficeNodeType::ConditionalFormatting);
     let is_named_range = target_node
         .as_ref()
         .is_some_and(|node| node.node_type == OfficeNodeType::NamedRange);
     let has_data_validation_options = parsed.has_data_validation_options();
+    let has_conditional_format_options = parsed.has_conditional_format_options();
     let has_named_range_options = parsed.has_named_range_options();
     let has_comment_options = parsed.author.is_some()
         || parsed.initials.is_some()
@@ -288,6 +301,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             || merge_cells.is_some()
             || has_comment_options
             || has_data_validation_options
+            || has_conditional_format_options
         {
             return Err(usage_error(
                 "native named-range set cannot be combined with content, formatting, hyperlink, merge, width, comment-node, or data-validation options",
@@ -299,6 +313,33 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         let named_range = named_range::merge_existing(node, &parsed)?;
         result_path = editor.set_named_range(&node.path, named_range)?;
         "set-named-range"
+    } else if is_conditional_format
+        || conditional_format_path.is_some()
+        || has_conditional_format_options
+    {
+        if !is_conditional_format {
+            return Err(usage_error(
+                "conditional-format options require an existing /Sheet/cf[N] path",
+            ));
+        }
+        if !parsed.has_conditional_format_update_options() {
+            return Err(usage_error(
+                "native conditional-format set requires at least one conditional-format option",
+            ));
+        }
+        if has_conditional_format_conflicts(&parsed) {
+            return Err(usage_error(
+                "native conditional-format set cannot be combined with cell values, regular text/cell formatting, hyperlinks, merges, comments, data-validation-only options, or named-range options",
+            ));
+        }
+        let node = target_node.as_ref().ok_or_else(|| {
+            usage_error(
+                "native conditional-format set requires an existing conditional-format node",
+            )
+        })?;
+        let conditional_format = conditional_formatting::merge_existing(node, &parsed)?;
+        result_path = editor.set_conditional_format(&node.path, conditional_format)?;
+        "set-conditional-format"
     } else if is_data_validation || validation_path.is_some() || has_data_validation_options {
         if !is_data_validation {
             return Err(usage_error(
@@ -546,6 +587,9 @@ async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
         parsed.initials.is_some(),
         parsed.x_emu.is_some(),
         parsed.y_emu.is_some(),
+        parsed.has_data_validation_options(),
+        parsed.has_named_range_options(),
+        parsed.has_conditional_format_options(),
     ]
     .into_iter()
     .any(|present| present)
@@ -604,6 +648,46 @@ fn parse_merge_cells(value: &str) -> UseResult<bool> {
             "--merge-cells requires true or false, received '{value}'"
         ))),
     }
+}
+
+fn has_conditional_format_conflicts(parsed: &ParsedArguments) -> bool {
+    [
+        parsed.number.is_some(),
+        parsed.boolean.is_some(),
+        parsed.width_emu.is_some(),
+        parsed.italic.is_some(),
+        parsed.underline.is_some(),
+        parsed.script.is_some(),
+        parsed.strikethrough.is_some(),
+        parsed.double_strikethrough.is_some(),
+        parsed.text_case.is_some(),
+        parsed.highlight.is_some(),
+        parsed.language.is_some(),
+        parsed.font_family.is_some(),
+        parsed.font_size.is_some(),
+        parsed.alignment.is_some(),
+        parsed.number_format.is_some(),
+        parsed.border.is_present(),
+        parsed.vertical_alignment.is_some(),
+        parsed.wrap_text.is_some(),
+        parsed.text_rotation.is_some(),
+        parsed.indent.is_some(),
+        parsed.shrink_to_fit.is_some(),
+        parsed.reading_order.is_some(),
+        parsed.merge_cells.is_some(),
+        parsed.url.is_some(),
+        parsed.location.is_some(),
+        parsed.display.is_some(),
+        parsed.tooltip.is_some(),
+        parsed.author.is_some(),
+        parsed.initials.is_some(),
+        parsed.x_emu.is_some(),
+        parsed.y_emu.is_some(),
+        parsed.has_data_validation_specific_options(),
+        parsed.has_named_range_options(),
+    ]
+    .into_iter()
+    .any(|present| present)
 }
 
 async fn remove(args: &[String]) -> UseResult<CommandOutput> {

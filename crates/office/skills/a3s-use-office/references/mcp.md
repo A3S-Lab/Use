@@ -186,6 +186,59 @@ unsaved semantic readback. Covered observed and virtual blank cells expose
 fail closed when unknown children or final collection data cannot be preserved.
 All mutations remain in memory until `office_save`.
 
+Spreadsheet conditional formatting uses the separate
+`add-conditional-format` and `set-conditional-format` mutations:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "add-conditional-format",
+    "sheet": "/Sheet1",
+    "conditionalFormat": {
+      "ranges": ["A2:A20", "C2:C20"],
+      "stopIfTrue": true,
+      "rule": {
+        "type": "cellIs",
+        "operator": "greaterThan",
+        "formula1": "80",
+        "format": {
+          "fill": {"red": 198, "green": 239, "blue": 206},
+          "fontColor": {"red": 0, "green": 97, "blue": 0},
+          "bold": true
+        }
+      }
+    }
+  }]
+}
+```
+
+Use `set-conditional-format` with a stable path such as `/Sheet1/cf[1]` and a
+complete `conditionalFormat` value. MCP set is not a partial patch. Delete with
+the ordinary `remove` mutation. Classic rule types cover cell comparison,
+expression formula, contains/not-contains/begins-with/ends-with text,
+top/bottom, above/below average, duplicate/unique values, blanks, errors, and
+date windows. Their only differential-format properties are `fill`,
+`fontColor`, and `bold`.
+
+Visual rule types are `dataBar`, `colorScale`, and `iconSet`. They use closed
+RGB colors and min/max/number/percent/percentile/formula thresholds. Data bars
+own value visibility and optional lengths. Color scales require midpoint and
+midpoint color together for a three-color scale. Icon sets accept only standard
+legacy 3/4/5-icon names and exactly the corresponding threshold count, or an
+empty threshold array that generates percent defaults. Unknown fields and
+unsupported rule variants fail MCP schema decoding before mutation.
+
+Each rule owns 1–1,024 internally disjoint A1 areas; different rules may
+overlap and remain ordered by priority. Query `conditionalFormatting` or
+`conditionalFormatting[type=dataBar]`, then inspect `nativeMutable` before
+updating imported content. Unsupported extension rules remain readable with
+`nativeMutable=false`. Unknown child or collection content, or a range change
+to one child in an imported shared-range carrier, fails the complete batch
+rather than dropping sibling or extension data. Rule formulas are stored but
+not evaluated, and semantic views do not prove Excel rendering. Mutations stay
+unsaved until `office_save`.
+
 Spreadsheet defined names use the separate `add-named-range` and
 `set-named-range` mutations:
 

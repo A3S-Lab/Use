@@ -193,7 +193,7 @@ pub(super) fn parse_hyperlink(
     Ok(hyperlink)
 }
 
-fn parse_format_boolean(option: &str, value: &str) -> UseResult<bool> {
+pub(super) fn parse_format_boolean(option: &str, value: &str) -> UseResult<bool> {
     match value.to_ascii_lowercase().as_str() {
         "true" => Ok(true),
         "false" => Ok(false),
@@ -246,7 +246,7 @@ fn parse_text_color(value: &str) -> UseResult<NativeOfficeRgbColor> {
     parse_rgb_color("--text-color", value)
 }
 
-fn parse_rgb_color(option: &str, value: &str) -> UseResult<NativeOfficeRgbColor> {
+pub(super) fn parse_rgb_color(option: &str, value: &str) -> UseResult<NativeOfficeRgbColor> {
     let value = value.strip_prefix('#').unwrap_or(value);
     if value.len() != 6 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(usage_error(format!(

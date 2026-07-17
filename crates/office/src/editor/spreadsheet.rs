@@ -14,6 +14,7 @@ use crate::{DocumentKind, NativeOfficePackage};
 const MAX_RANGE_MUTATION_CELLS: usize = 100_000;
 
 mod arrange;
+mod conditional_formatting;
 mod data_validation;
 mod merge;
 mod named_range;
@@ -24,6 +25,22 @@ mod worksheet;
 pub(super) use arrange::{copy_node, move_node, swap_nodes};
 pub(super) use structure::{delete_columns, delete_rows, insert_columns, insert_rows};
 pub(super) use worksheet::{copy_worksheet, move_worksheet, rename_worksheet};
+
+pub(super) fn add_conditional_format(
+    package: &mut NativeOfficePackage,
+    sheet: &str,
+    value: &super::NativeSpreadsheetConditionalFormat,
+) -> UseResult<String> {
+    conditional_formatting::add(package, sheet, value)
+}
+
+pub(super) fn set_conditional_format(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    value: &super::NativeSpreadsheetConditionalFormat,
+) -> UseResult<String> {
+    conditional_formatting::set(package, path, value)
+}
 
 pub(super) fn add_data_validation(
     package: &mut NativeOfficePackage,
@@ -142,6 +159,8 @@ pub(super) fn set_cell_value(
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
     if named_range::is_path(path) {
         named_range::remove(package, path)
+    } else if conditional_formatting::is_path(path) {
+        conditional_formatting::remove(package, path)
     } else if data_validation::is_path(path) {
         data_validation::remove(package, path)
     } else if path.trim_start_matches('/').contains('/') {

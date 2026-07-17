@@ -5,10 +5,17 @@ use url::Url;
 
 use super::part::{NativeCreatedPart, NativeOfficePartType};
 
+mod conditional_formatting;
 mod data_validation;
 mod formatting;
 mod named_range;
 
+pub use conditional_formatting::{
+    NativeSpreadsheetConditionalFormat, NativeSpreadsheetConditionalFormatIconSet,
+    NativeSpreadsheetConditionalFormatOperator, NativeSpreadsheetConditionalFormatRule,
+    NativeSpreadsheetConditionalFormatThreshold, NativeSpreadsheetConditionalFormatThresholdKind,
+    NativeSpreadsheetConditionalFormatTimePeriod, NativeSpreadsheetDifferentialFormat,
+};
 pub use data_validation::{
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
@@ -665,6 +672,16 @@ pub enum NativeOfficeMutation {
         path: String,
         #[serde(rename = "namedRange")]
         named_range: NativeSpreadsheetNamedRange,
+    },
+    AddConditionalFormat {
+        sheet: String,
+        #[serde(rename = "conditionalFormat")]
+        conditional_format: NativeSpreadsheetConditionalFormat,
+    },
+    SetConditionalFormat {
+        path: String,
+        #[serde(rename = "conditionalFormat")]
+        conditional_format: NativeSpreadsheetConditionalFormat,
     },
     AddDataValidation {
         sheet: String,

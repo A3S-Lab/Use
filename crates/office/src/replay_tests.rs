@@ -1,10 +1,13 @@
 use std::path::Path;
 
 use crate::{
-    NativeOfficeDocument, NativeOfficeEditor, NativeOfficeReplayArtifact,
+    NativeOfficeDocument, NativeOfficeEditor, NativeOfficeReplayArtifact, NativeOfficeRgbColor,
+    NativeSpreadsheetConditionalFormat, NativeSpreadsheetConditionalFormatOperator,
+    NativeSpreadsheetConditionalFormatRule, NativeSpreadsheetConditionalFormatThreshold,
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationType,
-    NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope, SpreadsheetCellValue,
-    NATIVE_OFFICE_REPLAY_FORMAT, NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
+    NativeSpreadsheetDifferentialFormat, NativeSpreadsheetNamedRange,
+    NativeSpreadsheetNamedRangeScope, SpreadsheetCellValue, NATIVE_OFFICE_REPLAY_FORMAT,
+    NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
 };
 
 async fn assert_exact_replay(
@@ -95,6 +98,37 @@ async fn spreadsheet_dump_replays_sheets_and_typed_cells_exactly() {
         )
         .unwrap();
     source
+        .add_conditional_format(
+            "/Summary",
+            NativeSpreadsheetConditionalFormat::new(
+                "D1:D10",
+                NativeSpreadsheetConditionalFormatRule::CellIs {
+                    operator: NativeSpreadsheetConditionalFormatOperator::GreaterThan,
+                    formula1: "50".into(),
+                    formula2: None,
+                    format: NativeSpreadsheetDifferentialFormat::default()
+                        .with_fill(NativeOfficeRgbColor::new(198, 239, 206)),
+                },
+            ),
+        )
+        .unwrap();
+    source
+        .add_conditional_format(
+            "/Summary",
+            NativeSpreadsheetConditionalFormat::new(
+                "E1:E10",
+                NativeSpreadsheetConditionalFormatRule::DataBar {
+                    color: NativeOfficeRgbColor::new(99, 142, 198),
+                    min: NativeSpreadsheetConditionalFormatThreshold::min(),
+                    max: NativeSpreadsheetConditionalFormatThreshold::max(),
+                    show_value: true,
+                    min_length: None,
+                    max_length: None,
+                },
+            ),
+        )
+        .unwrap();
+    source
         .add_named_range(
             NativeSpreadsheetNamedRange::new("Revenue", "'Data'!$B$2")
                 .with_comment("Workbook total"),
@@ -116,6 +150,10 @@ async fn spreadsheet_dump_replays_sheets_and_typed_cells_exactly() {
     assert!(artifact.mutations.iter().any(|mutation| matches!(
         mutation,
         crate::NativeOfficeMutation::AddDataValidation { sheet, .. } if sheet == "/Summary"
+    )));
+    assert!(artifact.mutations.iter().any(|mutation| matches!(
+        mutation,
+        crate::NativeOfficeMutation::AddConditionalFormat { sheet, .. } if sheet == "/Summary"
     )));
     assert!(artifact.mutations.iter().any(|mutation| matches!(
         mutation,

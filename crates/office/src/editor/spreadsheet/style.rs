@@ -30,6 +30,9 @@ const WORKBOOK_RELATIONSHIPS: &str = "xl/_rels/workbook.xml.rels";
 const MAX_STYLE_RECORDS: usize = 65_000;
 
 mod cell_format;
+mod differential;
+
+pub(super) use differential::find_or_append as find_or_append_differential_format;
 
 const FONT_PROPERTY_ORDER: &[&str] = &[
     "name",

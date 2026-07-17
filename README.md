@@ -112,7 +112,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   scoped cross-format literal/regex replacement, typed text formatting,
   Spreadsheet number/fill/border/alignment formatting, exact merged-cell
-  editing, typed data validation, scoped defined names, inert hyperlinks, and
+  editing, typed data validation and conditional formatting, scoped defined
+  names, inert hyperlinks, and
   legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
@@ -327,9 +328,25 @@ atomically. Semantic reads expose stable `/Sheet/dataValidation[N]` nodes,
 annotate observed and virtual blank cells, and project inert metadata into
 HTML/SVG. Native add/set/remove, batch, exact replay, CLI, Rust, and standard
 MCP use the same closed contract while retaining strict/transitional
-SpreadsheetML and unknown attributes. This is not native
-conditional-formatting, table-authoring, filtering, chart, or pivot-table
-parity. Native Spreadsheet defined names use a separate typed contract for
+SpreadsheetML and unknown attributes. It stores validation formulas but does
+not evaluate them.
+
+A separate typed Spreadsheet conditional-format contract owns comparison and
+formula rules; text, rank, average, duplicate/unique, blank/error, and time
+predicates; data bars; two- or three-color scales; and standard three-, four-,
+or five-icon sets. Classic rules apply a differential solid fill, font color,
+and bold state. Visual rules use typed thresholds, colors, and display flags.
+One rule can cover multiple disjoint A1 areas and can stop later rule
+evaluation. Semantic reads expose stable `/Sheet/cf[N]` nodes and selectors
+such as `conditionalFormatting[type=dataBar]`. Rust, versioned batch, CLI,
+standard MCP, exact replay, and the Office Skill share the closed value. The
+writer deduplicates differential formats, preserves strict or transitional
+SpreadsheetML plus unknown attributes, and fails closed when unsupported child
+or collection content would be lost. This milestone does not evaluate rule
+formulas, reproduce Excel rendering, or cover x14-only data-bar axes/colors,
+tables, filters, charts, pivots, or complete Spreadsheet parity.
+
+Native Spreadsheet defined names use a separate typed contract for
 workbook-global and worksheet-local scopes. Stable selectors include both name
 and scope, while compatibility selectors remain available when the name is
 unambiguous. `worksheet:workbook` disambiguates a local scope when the
@@ -411,7 +428,8 @@ Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
-rich-text, exact Spreadsheet merged-cell, data-validation, hyperlink, and legacy-comment
+rich-text, exact Spreadsheet merged-cell, data-validation, conditional-format,
+hyperlink, and legacy-comment
 operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
@@ -513,6 +531,16 @@ a3s use office native query workbook.xlsx 'dataValidation[type=list]' --json
 a3s use office native get workbook.xlsx /Sheet1/C3 --json
 a3s use office native set workbook.xlsx '/Sheet1/dataValidation[1]' --validation-type whole --range B2:B50 --operator between --formula1 18 --formula2 120 --allow-blank false --error-style warning --json
 a3s use office native remove workbook.xlsx '/Sheet1/dataValidation[1]' --json
+
+# Add, query, partially update, and remove native Spreadsheet conditional
+# formats. Rule-specific options are closed and validated before atomic save.
+a3s use office native add workbook.xlsx /Sheet1 --type conditional-format --rule-type cell-is --range A2:A20 --operator greater-than --formula1 80 --fill C6EFCE --text-color 006100 --bold true --json
+a3s use office native add workbook.xlsx /Sheet1 --type conditional-format --rule-type data-bar --range B2:B20 --color 638EC6 --min min --max number:100 --json
+a3s use office native add workbook.xlsx /Sheet1 --type conditional-format --rule-type color-scale --range C2:C20 --min-color F8696B --midpoint percentile:50 --mid-color FFEB84 --max-color 63BE7B --json
+a3s use office native add workbook.xlsx /Sheet1 --type conditional-format --rule-type icon-set --range D2:D20 --icon-set 3-traffic-lights-1 --reverse true --json
+a3s use office native query workbook.xlsx 'conditionalFormatting[type=iconSet]' --json
+a3s use office native set workbook.xlsx '/Sheet1/cf[1]' --formula1 90 --fill FFEB9C --stop-if-true true --json
+a3s use office native remove workbook.xlsx '/Sheet1/cf[2]' --json
 
 # Add, inspect, update, and remove typed Spreadsheet defined names. A sheet
 # parent defaults to local scope and qualifies a bare A1 ref automatically.
@@ -726,7 +754,8 @@ current schema is:
 The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `set-text-format`, `set-cell-format`, `add-data-validation`,
-`set-data-validation`, `add-named-range`, `set-named-range`, `merge-cells`,
+`set-data-validation`, `add-conditional-format`, `set-conditional-format`,
+`add-named-range`, `set-named-range`, `merge-cells`,
 `unmerge-cells`,
 `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
@@ -761,6 +790,35 @@ Each rule accepts 1–1,024 disjoint ranges and each worksheet accepts at most
 operators and `formula2`; comparison rules require an operator and require
 `formula2` only for `between` or `notBetween`. Invalid or overlapping input
 rolls back the complete in-memory batch.
+
+A conditional-format mutation uses one complete closed rule value. CLI `set`
+can merge omitted options, while batch and standard MCP set replace the complete
+value:
+
+```json
+{
+  "operation": "add-conditional-format",
+  "sheet": "/Sheet1",
+  "conditionalFormat": {
+    "ranges": ["A2:A20"],
+    "stopIfTrue": true,
+    "rule": {
+      "type": "cellIs",
+      "operator": "greaterThan",
+      "formula1": "80",
+      "format": {
+        "fill": {"red": 198, "green": 239, "blue": 206},
+        "bold": true
+      }
+    }
+  }
+}
+```
+
+Closed classic predicates plus data bars, two/three-color scales, and standard
+3/4/5-icon sets are supported. Threshold, range, priority, shared-range, and
+loss-preservation failures roll back the whole batch. Rule formulas are stored,
+not evaluated, and the semantic preview is not Excel rendering evidence.
 
 A named-range mutation uses one complete scoped value. Deletion reuses the
 ordinary typed `remove` mutation:
@@ -841,9 +899,10 @@ ordinary JSON:
 The first dump scope is the complete document (`/`). It accepts only content
 that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
-typed defined names, typed cells, merged ranges, and typed data-validation
-rules without styles or cached formula results, and
-Presentation slides with plain one-run text shapes and canonical basic tables.
+typed defined names, typed cells, merged ranges, typed data-validation rules,
+and canonical typed conditional-format rules without cached formula results;
+plus Presentation slides with plain one-run text shapes and canonical basic
+tables.
 Headers, notes,
 media, non-canonical table styling, rich text, non-canonical package resources,
 and every other lossy case fail with

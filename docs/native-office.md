@@ -316,9 +316,9 @@ attributes. Tests cover stable JSON, every native line style, range writes,
 style/number/fill/border deduplication, explicit clearing, unknown style and
 border preservation, invalid-value rollback, standard MCP schema conversion,
 native CLI and batch execution, wrong-document rejection, and an unusable
-OfficeCLI provider. Gradient/pattern/theme fills, conditional formatting,
-named styles, locale-derived formats, and Excel layout fidelity remain outside
-this milestone.
+OfficeCLI provider. Gradient/pattern/theme fills, named styles, locale-derived
+formats, and Excel layout fidelity remain outside this cell-format milestone;
+conditional formatting uses the separate typed contract below.
 
 Native `add-data-validation` and `set-data-validation` form a closed typed
 Rust, versioned batch, CLI, and standard MCP contract. Ordinary typed `remove`
@@ -368,9 +368,79 @@ semantic/HTML/SVG readback, replay, CLI atomic batches, and a complete standard
 MCP lifecycle with an unusable OfficeCLI provider.
 
 This milestone is cell data-validation structure, not complete rich
-Spreadsheet or OfficeCLI parity. Conditional formatting, table authoring,
-filter and sort authoring, charts, pivot tables, slicers, sparklines, formula
-evaluation, CSV/TSV import, and Excel layout fidelity remain separate work.
+Spreadsheet or OfficeCLI parity. Table authoring, filter and sort authoring,
+charts, pivot tables, slicers, sparklines, formula evaluation, CSV/TSV import,
+and Excel layout fidelity remain separate work.
+
+Native `add-conditional-format` and `set-conditional-format` form a separate
+closed typed Rust, versioned batch, CLI, and standard MCP contract. Ordinary
+typed `remove` deletes one rule through its stable `/SheetName/cf[N]` path. The
+CLI adds a rule below a worksheet with `--type conditional-format`, one
+`--rule-type`, and repeated `--range` values. CLI `set` reads the current
+semantic node and carries forward omitted fields; Rust, batch, and MCP set use
+one complete `conditionalFormat` value. Conditional-format updates cannot be
+mixed with ordinary cell values, cell/text formatting outside the differential
+fill/font-color/bold subset, hyperlinks, merges, comments, data-validation-only
+options, or defined-name options.
+
+The classic families are `cellIs`, expression formula, contains/not-contains/
+begins-with/ends-with text, top/bottom rank or percentage, above/below average,
+duplicate/unique values, contains/not-contains blanks, contains/not-contains
+errors, and ten date windows. Cell comparison uses the same eight closed
+comparison operators as data validation. Between and not-between require a
+second formula; every other operator rejects it. Formula bodies contain 1–8,192
+characters without surrounding whitespace or a leading `=`. Text predicates
+contain 1–255 XML-safe characters. Rank is 1–1,000, or 1–100 for percentages;
+average rules accept zero through three standard deviations. Classic rules
+carry only a differential solid RGB fill, RGB font color, and optional bold
+state. This is intentionally not a generic style property bag.
+
+The visual families are data bars, two- or three-color scales, and the standard
+legacy three-, four-, and five-icon sets. Thresholds are closed values:
+`min`, `max`, finite number, 0–100 percent, 0–100 percentile, or formula. A data
+bar owns its RGB color, minimum and maximum thresholds, value visibility, and
+optional 0–100 minimum/maximum lengths. A three-color scale requires both its
+midpoint and midpoint color; omitting both creates a two-color scale. An icon
+set accepts exactly its icon count in thresholds, or generates evenly spaced
+percent thresholds when none are supplied. Visual rules reject differential
+fill/font/bold fields instead of ignoring them. Advanced x14-only negative
+data-bar colors, axes, borders, directions, and custom icon sets are not native.
+
+One rule accepts 1–1,024 normalized, internally disjoint rectangular A1 areas,
+and one worksheet accepts at most 65,534 rules. Different rules may overlap so
+priority and `stopIfTrue` retain Excel semantics. A3S allocates a collision-free
+priority and emits one `conditionalFormatting` carrier per new rule; canonical
+A3S-created sequences are sequential. Imported carriers containing multiple
+rules remain readable. Their shared
+`sqref` cannot be changed through one rule because that would implicitly alter
+its siblings; content replacement with the same ranges and precise rule
+removal remain supported when the carrier can be retained losslessly.
+
+Semantic reads expose a typed `ConditionalFormatting` node at
+`/SheetName/cf[N]`, including normalized ranges, priority, `stopIfTrue`, rule
+type, family-specific fields, differential colors/font state, and
+`nativeMutable`. Query supports `conditionalFormatting` and selectors such as
+`conditionalFormatting[type=iconSet]`. Unsupported or extension-only rules are
+still visible with `nativeMutable=false`; mutation fails closed rather than
+converting or dropping their content.
+
+The loss-preserving writer retains strict or transitional SpreadsheetML,
+unknown rule/container attributes, schema child order, and unrelated worksheet
+content. It creates or deduplicates differential formats in `styles.xml` and
+keeps existing unknown style data. Unknown rule children or container content
+that cannot survive set/remove produce
+`use.office.spreadsheet_conditional_format_unknown_content`. Canonical replay
+emits typed rules with sequential priorities. Tests cover all classic families,
+all four broad visual families, threshold and range validation, add/set/query/
+remove/reopen, strict OOXML, unknown-content preservation, shared `sqref`,
+atomic rollback, exact canonical replay, CLI lifecycle and atomic batch, MCP
+schema conversion, and a complete standard MCP lifecycle with an unusable
+OfficeCLI provider path.
+
+This milestone stores conditional-format formulas but does not evaluate them or
+render Excel's visual result. It does not provide x14 advanced visual options,
+table/chart/pivot formatting, formula calculation, or full Excel rendering and
+layout fidelity, and therefore is not complete OfficeCLI or Spreadsheet parity.
 
 Native `add-named-range` and `set-named-range` form a separate closed typed
 Rust, versioned batch, CLI, and standard MCP contract for Spreadsheet defined
@@ -720,7 +790,8 @@ same atomic batch rollback and semantic post-validation as add/set/remove.
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
 tables, Spreadsheet worksheets, typed defined names, typed cells, merged
-ranges, and typed data-validation rules without styles or cached formula results, and
+ranges, typed data-validation rules, and canonical typed conditional-format
+rules without cached formula results, and
 Presentation slides with plain one-run text
 shapes and canonical basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
@@ -835,7 +906,8 @@ The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
 cross-format text formatting, typed Spreadsheet number/fill/border/alignment
 and cell-presentation formatting, exact Spreadsheet merged-cell editing, typed
-Spreadsheet data-validation and scoped defined-name editing, inert hyperlinks,
+Spreadsheet data-validation, conditional-formatting, and scoped defined-name
+editing, inert hyperlinks,
 typed cross-format
 legacy comments, Spreadsheet range and
 row/column structure edits,

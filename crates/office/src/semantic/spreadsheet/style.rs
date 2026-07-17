@@ -7,6 +7,12 @@ use crate::semantic::semantic_error;
 use crate::xml_tree::{parse_xml_tree, XmlElement};
 use crate::NativeOfficePackage;
 
+#[derive(Debug, Clone)]
+pub(super) struct DifferentialFormat {
+    pub(super) values: BTreeMap<String, String>,
+    pub(super) supported: bool,
+}
+
 pub(super) fn read_styles(
     package: &NativeOfficePackage,
 ) -> UseResult<Vec<BTreeMap<String, String>>> {
@@ -152,6 +158,61 @@ pub(super) fn read_styles(
     } else {
         Ok(styles)
     }
+}
+
+pub(super) fn read_differential_formats(
+    package: &NativeOfficePackage,
+) -> UseResult<Vec<DifferentialFormat>> {
+    if !package.contains_part("xl/styles.xml") {
+        return Ok(Vec::new());
+    }
+    let part = package.xml_part("xl/styles.xml")?;
+    let root = parse_xml_tree(&part)?;
+    require_spreadsheet_element(&root, "styleSheet", part.name())?;
+    let Some(dxfs) = root.child("dxfs") else {
+        return Ok(Vec::new());
+    };
+    let rules = dxfs.children_named("dxf").collect::<Vec<_>>();
+    if rules.len() > 65_000 {
+        return Err(semantic_error(
+            "use.office.spreadsheet_conditional_format_dxf_limit",
+            "Spreadsheet styles contain more than 65000 differential formats.",
+        ));
+    }
+    Ok(rules
+        .into_iter()
+        .map(|dxf| {
+            let mut values = BTreeMap::new();
+            let mut supported = true;
+            for child in dxf.child_elements() {
+                match child.local_name.as_str() {
+                    "font" => {
+                        let font = read_font(child);
+                        if font
+                            .keys()
+                            .any(|key| !matches!(key.as_str(), "bold" | "color"))
+                        {
+                            supported = false;
+                        }
+                        if let Some(value) = font.get("bold") {
+                            values.insert("fontBold".into(), value.clone());
+                        }
+                        if let Some(value) = font.get("color") {
+                            values.insert("fontColor".into(), value.clone());
+                        }
+                    }
+                    "fill" => match read_fill(child) {
+                        Some(value) => {
+                            values.insert("fill".into(), value);
+                        }
+                        None => supported = false,
+                    },
+                    _ => supported = false,
+                }
+            }
+            DifferentialFormat { values, supported }
+        })
+        .collect())
 }
 
 fn read_border(border: &XmlElement) -> BTreeMap<String, String> {

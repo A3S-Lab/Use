@@ -90,6 +90,13 @@ available.
   update/remove, and keep every rule area disjoint. Use typed list, comparison,
   or custom rules; do not work around an overlap or formula/type error with raw
   XML. Validate and read back one covered cell after mutation.
+- Treat Spreadsheet conditional formatting as ordered worksheet structure, not
+  evaluated styling. Query `conditionalFormatting` first, use the returned
+  `/Sheet/cf[N]` path, preserve rule priority and `stopIfTrue`, and use only the
+  closed classic/data-bar/color-scale/icon-set fields. Do not mutate a node
+  whose semantic readback reports `nativeMutable=false`, bypass a shared-range
+  or unknown-content error with raw XML, or claim that a semantic preview proves
+  Excel's rendered result.
 - Treat Spreadsheet defined names as scoped workbook identities. Query
   `namedrange` first and use the returned `@name` plus `@scope` path for
   update/remove. Do not edit `_xlnm.*` or `Slicer_*` names, collide with a table
@@ -110,9 +117,13 @@ portable highlight, and primary-language formatting. It also owns typed inert
 hyperlinks, typed legacy comments, typed Spreadsheet number formats, solid or
 cleared fills, cardinal and diagonal borders, vertical alignment, wrapping,
 rotation, indentation, shrink-to-fit, reading order, and exact merged-cell
-editing. It owns typed Spreadsheet list, whole, decimal, date, time,
-text-length, and custom data-validation rules over disjoint A1 ranges, with
-stable rule paths and sparse cell readback. It owns workbook-global and
+  editing. It owns typed Spreadsheet list, whole, decimal, date, time,
+  text-length, and custom data-validation rules over disjoint A1 ranges, with
+  stable rule paths and sparse cell readback. It also owns typed Spreadsheet
+  comparison/formula/text/statistical/date conditional-format rules, data bars,
+  two/three-color scales, standard 3/4/5-icon sets, differential fill/font/bold,
+  typed thresholds, stable paths, semantic queries, and exact canonical replay.
+  It owns workbook-global and
 worksheet-local Spreadsheet defined names with stable scoped paths, typed
 add/set/remove, semantic readback, and exact replay. It also owns template merge,
 constrained XML access,
@@ -123,7 +134,7 @@ cells or bounded ranges and internal locations, and external Presentation shape
 clicks or internal jumps to existing slides. Remaining boundaries include
 modern threaded comments, replies/resolution, writable comment dates,
 rich comment bodies, Word header/footer comment anchors,
-gradient/pattern/theme fills, conditional and named styles, complete formula
+gradient/pattern/theme fills, advanced x14 conditional-format visuals, named styles, complete formula
 calculation, table/filter/sort authoring, advanced charts, pivots, and media,
 interactive preview editing/annotations, and full Office layout fidelity. Fail
 closed or use the explicit compatibility route rather than inventing

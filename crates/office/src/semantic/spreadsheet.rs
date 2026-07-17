@@ -13,11 +13,12 @@ use crate::spreadsheet_reference::{
 use crate::xml_tree::{parse_xml_tree, XmlElement, XmlNode};
 use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, RelationshipTarget};
 
+mod conditional_formatting;
 mod data_validation;
 mod named_range;
 mod style;
 
-use style::read_styles;
+use style::{read_differential_formats, read_styles};
 
 const SPREADSHEET_NAMESPACE: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const STRICT_SPREADSHEET_NAMESPACE: &str = "http://purl.oclc.org/ooxml/spreadsheetml/main";
@@ -58,6 +59,7 @@ pub(super) fn read(
     require_spreadsheet_element(&workbook, "workbook", workbook_part.name())?;
     let shared_strings = read_shared_strings(package)?;
     let styles = read_styles(package)?;
+    let differential_formats = read_differential_formats(package)?;
     let source = RelationshipSource::Part {
         part_name: "xl/workbook.xml".to_string(),
     };
@@ -102,8 +104,15 @@ pub(super) fn read(
                 format!("Spreadsheet sheet '{name}' cannot use an external relationship."),
             ));
         };
-        let mut sheet_node =
-            read_worksheet(package, opc, part_name, name, &shared_strings, &styles)?;
+        let mut sheet_node = read_worksheet(
+            package,
+            opc,
+            part_name,
+            name,
+            &shared_strings,
+            &styles,
+            &differential_formats,
+        )?;
         if let Some(sheet_id) = sheet.attribute("sheetId") {
             sheet_node.format.insert("sheetId".into(), sheet_id.into());
         }
@@ -325,6 +334,7 @@ fn read_worksheet(
     sheet_name: &str,
     shared_strings: &[String],
     styles: &[BTreeMap<String, String>],
+    differential_formats: &[style::DifferentialFormat],
 ) -> UseResult<DocumentNode> {
     let part = package.xml_part(part_name)?;
     let worksheet = parse_xml_tree(&part)?;
@@ -397,6 +407,15 @@ fn read_worksheet(
         node.format.insert("ref".into(), merged.range.a1());
         node.format.insert("merge".into(), "true".into());
         sheet_node.children.push(node);
+    }
+    let conditional_formats =
+        conditional_formatting::read(&worksheet, part_name, &sheet_path, differential_formats)?;
+    if !conditional_formats.is_empty() {
+        sheet_node.format.insert(
+            "conditionalFormatCount".into(),
+            conditional_formats.len().to_string(),
+        );
+        sheet_node.children.extend(conditional_formats);
     }
     let validations = data_validation::read(&worksheet, part_name, &sheet_path)?;
     if !validations.is_empty() {
