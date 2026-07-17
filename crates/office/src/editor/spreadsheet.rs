@@ -14,6 +14,7 @@ use crate::{DocumentKind, NativeOfficePackage};
 const MAX_RANGE_MUTATION_CELLS: usize = 100_000;
 
 mod arrange;
+mod merge;
 mod structure;
 mod style;
 mod worksheet;
@@ -21,6 +22,14 @@ mod worksheet;
 pub(super) use arrange::{copy_node, move_node, swap_nodes};
 pub(super) use structure::{delete_columns, delete_rows, insert_columns, insert_rows};
 pub(super) use worksheet::{copy_worksheet, move_worksheet, rename_worksheet};
+
+pub(super) fn merge_cells(package: &mut NativeOfficePackage, path: &str) -> UseResult<String> {
+    merge::merge_cells(package, path)
+}
+
+pub(super) fn unmerge_cells(package: &mut NativeOfficePackage, path: &str) -> UseResult<String> {
+    merge::unmerge_cells(package, path)
+}
 
 pub(super) fn set_text_format(
     package: &mut NativeOfficePackage,

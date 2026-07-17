@@ -1,3 +1,8 @@
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BinaryHeap},
+};
+
 use a3s_use_core::{UseError, UseResult};
 
 use crate::discovery::office_error;
@@ -80,6 +85,13 @@ impl CellRange {
             && (self.start.row..=self.end.row).contains(&cell.row)
     }
 
+    pub fn intersects(self, other: Self) -> bool {
+        self.start.column <= other.end.column
+            && other.start.column <= self.end.column
+            && self.start.row <= other.end.row
+            && other.start.row <= self.end.row
+    }
+
     pub fn cell_count(self) -> UseResult<usize> {
         let columns = u64::from(self.end.column - self.start.column + 1);
         let rows = u64::from(self.end.row - self.start.row + 1);
@@ -98,6 +110,46 @@ impl CellRange {
             format!("{}:{}", self.start.a1(), self.end.a1())
         }
     }
+}
+
+pub(crate) fn first_intersecting_ranges(ranges: &[CellRange]) -> Option<(usize, usize)> {
+    let mut ordered = (0..ranges.len()).collect::<Vec<_>>();
+    ordered.sort_unstable_by_key(|index| {
+        let range = ranges[*index];
+        (
+            range.start.row,
+            range.start.column,
+            range.end.row,
+            range.end.column,
+        )
+    });
+
+    let mut active_by_column = BTreeMap::<u32, usize>::new();
+    let mut expiration = BinaryHeap::<Reverse<(u32, usize)>>::new();
+    for index in ordered {
+        let current = ranges[index];
+        while let Some(Reverse((end_row, expired))) = expiration.peek().copied() {
+            if end_row >= current.start.row {
+                break;
+            }
+            expiration.pop();
+            let start_column = ranges[expired].start.column;
+            if active_by_column.get(&start_column).copied() == Some(expired) {
+                active_by_column.remove(&start_column);
+            }
+        }
+
+        if let Some((_, existing)) = active_by_column.range(..=current.end.column).next_back() {
+            let existing = *existing;
+            if ranges[existing].end.column >= current.start.column {
+                return Some((existing, index));
+            }
+        }
+
+        active_by_column.insert(current.start.column, index);
+        expiration.push(Reverse((current.end.row, index)));
+    }
+    None
 }
 
 pub(crate) fn parse_column(value: &str) -> UseResult<u32> {
@@ -169,6 +221,12 @@ mod tests {
         );
         assert_eq!(CellRange::parse("B3:A1").unwrap().a1(), "A1:B3");
         assert_eq!(CellRange::parse("C7").unwrap().cell_count().unwrap(), 1);
+        assert!(CellRange::parse("A1:B2")
+            .unwrap()
+            .intersects(CellRange::parse("B2:C3").unwrap()));
+        assert!(!CellRange::parse("A1:B2")
+            .unwrap()
+            .intersects(CellRange::parse("C1:D2").unwrap()));
         assert_eq!(parse_column("XFD").unwrap(), MAX_COLUMNS);
         assert_eq!(parse_column("16384").unwrap(), MAX_COLUMNS);
 
@@ -178,5 +236,31 @@ mod tests {
         for invalid in ["0", "16385", "XFE", "A1"] {
             assert!(parse_column(invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn finds_rectangle_intersections_with_a_bounded_sweep() {
+        let disjoint = (1..=20_000)
+            .map(|row| CellRange {
+                start: CellReference { column: 1, row },
+                end: CellReference { column: 2, row },
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(first_intersecting_ranges(&disjoint), None);
+
+        let overlapping = [
+            CellRange::parse("A1:C2").unwrap(),
+            CellRange::parse("D1:E2").unwrap(),
+            CellRange::parse("B2:B3").unwrap(),
+        ];
+        let (left, right) = first_intersecting_ranges(&overlapping).unwrap();
+        assert!(overlapping[left].intersects(overlapping[right]));
+
+        let separated = [
+            CellRange::parse("A1:C2").unwrap(),
+            CellRange::parse("A3:C4").unwrap(),
+            CellRange::parse("D1:E4").unwrap(),
+        ];
+        assert_eq!(first_intersecting_ranges(&separated), None);
     }
 }

@@ -40,7 +40,7 @@ const HELP: &str = concat!(
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
-    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--number-format <code>] [--fill <none|RRGGBB>] [--border-all <style>] [--border-color <RRGGBB>] [--border-left|--border-right|--border-top|--border-bottom <style>] [--border-left-color|--border-right-color|--border-top-color|--border-bottom-color <RRGGBB>] [--border-diagonal <style>] [--border-diagonal-color <RRGGBB>] [--border-diagonal-up <true|false>] [--border-diagonal-down <true|false>] [--vertical-align <top|center|bottom|justify|distributed>] [--wrap-text <true|false>] [--text-rotation <0..180|255>] [--indent <0..255>] [--shrink-to-fit <true|false>] [--reading-order <context|ltr|rtl>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--number-format <code>] [--fill <none|RRGGBB>] [--border-all <style>] [--border-color <RRGGBB>] [--border-left|--border-right|--border-top|--border-bottom <style>] [--border-left-color|--border-right-color|--border-top-color|--border-bottom-color <RRGGBB>] [--border-diagonal <style>] [--border-diagonal-color <RRGGBB>] [--border-diagonal-up <true|false>] [--border-diagonal-down <true|false>] [--vertical-align <top|center|bottom|justify|distributed>] [--wrap-text <true|false>] [--text-rotation <0..180|255>] [--indent <0..255>] [--shrink-to-fit <true|false>] [--reading-order <context|ltr|rtl>] [--merge-cells <true|false>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -210,6 +210,11 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let format = parse_text_format(&parsed)?;
     let cell_format = parse_cell_format(&parsed)?;
     let hyperlink = parse_hyperlink(&parsed, parsed.display.as_deref())?;
+    let merge_cells = parsed
+        .merge_cells
+        .as_deref()
+        .map(parse_merge_cells)
+        .transpose()?;
     if value_count > 1 {
         return Err(usage_error(
             "office native set accepts at most one of --text, --number, --boolean, --formula, or --width-emu",
@@ -256,6 +261,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             || format.is_some()
             || cell_format.is_some()
             || hyperlink.is_some()
+            || merge_cells.is_some()
         {
             return Err(usage_error(
                 "native comment set accepts only --text, --author, --initials, --x-emu, and --y-emu",
@@ -281,7 +287,8 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         )?;
         "set-comment"
     } else if let Some(width_emu) = parsed.width_emu {
-        if format.is_some() || cell_format.is_some() || hyperlink.is_some() {
+        if format.is_some() || cell_format.is_some() || hyperlink.is_some() || merge_cells.is_some()
+        {
             return Err(usage_error(
                 "--width-emu cannot be combined with formatting or hyperlink options",
             ));
@@ -289,12 +296,17 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         editor.set_table_column_width(path, width_emu)?;
         "set-table-column-width"
     } else {
-        if value_count == 0 && format.is_none() && cell_format.is_none() && hyperlink.is_none() {
+        if value_count == 0
+            && format.is_none()
+            && cell_format.is_none()
+            && hyperlink.is_none()
+            && merge_cells.is_none()
+        {
             return Err(usage_error(
-                "office native set requires content, width, typed formatting, a hyperlink target, or comment properties",
+                "office native set requires content, width, typed formatting, a merged-cell state, a hyperlink target, or comment properties",
             ));
         }
-        let mut mutations = Vec::with_capacity(4);
+        let mut mutations = Vec::with_capacity(5);
         if let Some(value) = typed_value {
             mutations.push(NativeOfficeMutation::SetCellValue {
                 path: path.clone(),
@@ -324,7 +336,19 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
                 hyperlink,
             });
         }
+        if let Some(merge) = merge_cells {
+            mutations.push(if merge {
+                NativeOfficeMutation::MergeCells { path: path.clone() }
+            } else {
+                NativeOfficeMutation::UnmergeCells { path: path.clone() }
+            });
+        }
         editor.apply_batch(&mutations)?;
+        let has_merge = mutations.iter().find_map(|mutation| match mutation {
+            NativeOfficeMutation::MergeCells { .. } => Some(true),
+            NativeOfficeMutation::UnmergeCells { .. } => Some(false),
+            _ => None,
+        });
         let has_format = mutations
             .iter()
             .any(|mutation| matches!(mutation, NativeOfficeMutation::SetTextFormat { .. }));
@@ -340,7 +364,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
                 NativeOfficeMutation::SetText { .. } | NativeOfficeMutation::SetCellValue { .. }
             )
         });
-        if has_cell_format {
+        let base_operation = if has_cell_format {
             match (has_content, has_format, has_hyperlink) {
                 (false, false, false) => "set-cell-format",
                 (false, true, false) => "set-text-and-cell-format",
@@ -364,9 +388,17 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
                 }
                 _ => "set-text",
             }
+        };
+        match (has_merge, mutations.len()) {
+            (Some(true), 1) => "merge-cells",
+            (Some(false), 1) => "unmerge-cells",
+            (Some(true), _) => "set-and-merge-cells",
+            (Some(false), _) => "set-and-unmerge-cells",
+            (None, _) => base_operation,
         }
     };
     let node = editor.snapshot()?.get(path, 0)?;
+    let changed = editor.is_dirty();
     save_editor(&mut editor, parsed.output.as_deref()).await?;
     let output_path = editor.package().path().to_path_buf();
     let in_place = output_path == source_path;
@@ -375,7 +407,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         format!("Updated {path} and saved '{}'.", output_path.display()),
         serde_json::json!({
             "operation": operation,
-            "changed": true,
+            "changed": changed,
             "path": path,
             "node": node,
             "kind": editor.package().kind(),
@@ -423,6 +455,7 @@ async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
         parsed.indent.is_some(),
         parsed.shrink_to_fit.is_some(),
         parsed.reading_order.is_some(),
+        parsed.merge_cells.is_some(),
         parsed.url.is_some(),
         parsed.location.is_some(),
         parsed.display.is_some(),
@@ -479,6 +512,16 @@ async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
             "revision": editor.package().source_revision()
         }),
     ))
+}
+
+fn parse_merge_cells(value: &str) -> UseResult<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(usage_error(format!(
+            "--merge-cells requires true or false, received '{value}'"
+        ))),
+    }
 }
 
 async fn remove(args: &[String]) -> UseResult<CommandOutput> {

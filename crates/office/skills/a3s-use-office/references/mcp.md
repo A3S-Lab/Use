@@ -117,6 +117,30 @@ mutations. Unknown fields, invalid values, empty format objects, and
 non-Spreadsheet targets fail the entire in-memory batch; no change persists
 until `office_save`.
 
+Spreadsheet merged cells use the separate `merge-cells` and `unmerge-cells`
+mutations:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "merge-cells",
+    "path": "/Sheet1/A1:C1"
+  }]
+}
+```
+
+The path is normalized. An exact repeated merge is idempotent; a geometric
+overlap or ListObject table intersection fails the complete batch. Use
+`unmerge-cells` only with one exact existing range. Any non-exact intersecting
+range fails with `use.office.spreadsheet_merge_not_exact` and reports `validRanges`; it
+never sweeps multiple merges. Merge state can share one `office_apply_batch`
+call with content, text-format, cell-format, and hyperlink mutations. Query
+`mergeCell` for stable nodes, or read a covered cell to inspect `merge` and
+`mergeAnchor`. Blank covered cells remain virtual. All changes stay unsaved
+until `office_save`, and unknown merge collection data is preserved or causes a
+fail-closed error when exact removal cannot be lossless.
+
 General find/replace uses the typed `replace-text` mutation. Keep `mode`
 explicit and prefer `literal` for ordinary text:
 

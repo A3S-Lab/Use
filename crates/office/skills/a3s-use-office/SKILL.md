@@ -81,6 +81,10 @@ available.
 - Treat a zero-match replacement as an unchanged successful receipt, not as a
   claimed edit. Keep Spreadsheet scopes narrow when only selected cells should
   change; the engine protects shared-string aliases outside the scope.
+- Merge Spreadsheet cells only through a normalized cell/range path. Use
+  `--merge-cells false` only with the exact existing range reported by
+  `mergeCell` query results; do not approximate a destructive unmerge sweep.
+  Merges that overlap another merge or a Spreadsheet table must fail closed.
 - Keep the default OfficeCLI compatibility route separate from the native
   engine. Do not depend on OfficeCLI's private resident protocol.
 
@@ -94,7 +98,8 @@ strikethrough, Word double strikethrough, and Word/Presentation display case,
 portable highlight, and primary-language formatting. It also owns typed inert
 hyperlinks, typed legacy comments, typed Spreadsheet number formats, solid or
 cleared fills, cardinal and diagonal borders, vertical alignment, wrapping,
-rotation, indentation, shrink-to-fit, and reading order, template merge,
+rotation, indentation, shrink-to-fit, reading order, and exact merged-cell
+editing, template merge,
 constrained XML access,
 deterministic all-format HTML/SVG, Browser-injected semantic screenshots, and
 authenticated loopback live watch for saved files.

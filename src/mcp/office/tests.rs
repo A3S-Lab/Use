@@ -259,6 +259,32 @@ fn office_batch_schema_exposes_typed_spreadsheet_cell_formatting() {
 }
 
 #[test]
+fn office_batch_schema_exposes_typed_spreadsheet_merges() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in ["merge-cells", "unmerge-cells"] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "workbook",
+        "mutations": [
+            { "operation": "merge-cells", "path": "/Sheet1/A1:B2" },
+            { "operation": "unmerge-cells", "path": "/Sheet1/C1:D2" }
+        ]
+    }))
+    .unwrap();
+    assert!(matches!(
+        input.mutations[0].clone().into_native().unwrap(),
+        NativeOfficeMutation::MergeCells { ref path } if path == "/Sheet1/A1:B2"
+    ));
+    assert!(matches!(
+        input.mutations[1].clone().into_native().unwrap(),
+        NativeOfficeMutation::UnmergeCells { ref path } if path == "/Sheet1/C1:D2"
+    ));
+}
+
+#[test]
 fn office_batch_schema_exposes_typed_text_replacement() {
     let schema = schemars::schema_for!(OfficeBatchInput);
     let encoded = serde_json::to_string(&schema).unwrap();

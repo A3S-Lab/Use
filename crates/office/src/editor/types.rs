@@ -650,6 +650,12 @@ pub enum NativeOfficeMutation {
         path: String,
         value: SpreadsheetCellValue,
     },
+    MergeCells {
+        path: String,
+    },
+    UnmergeCells {
+        path: String,
+    },
     AddParagraph {
         parent: String,
         text: String,

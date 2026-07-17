@@ -217,6 +217,8 @@ fn render_cell(
         ("data-indent", "indent"),
         ("data-shrink-to-fit", "shrinkToFit"),
         ("data-reading-order", "readingOrder"),
+        ("data-merge", "merge"),
+        ("data-merge-anchor", "mergeAnchor"),
     ] {
         if let Some(value) = cell.format.get(key) {
             write_data_attribute(output, name, value)?;

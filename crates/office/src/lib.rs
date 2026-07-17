@@ -268,6 +268,8 @@ mod cell_border_tests;
 #[cfg(test)]
 mod cell_format_tests;
 #[cfg(test)]
+mod cell_merge_tests;
+#[cfg(test)]
 mod comment_tests;
 #[cfg(test)]
 mod format_tests;

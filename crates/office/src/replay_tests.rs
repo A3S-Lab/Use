@@ -81,8 +81,13 @@ async fn spreadsheet_dump_replays_sheets_and_typed_cells_exactly() {
             },
         )
         .unwrap();
+    source.merge_cells("/Data/A1:B2").unwrap();
 
     let artifact = NativeOfficeReplayArtifact::dump(&source.snapshot().unwrap(), "/").unwrap();
+    assert!(artifact.mutations.iter().any(|mutation| matches!(
+        mutation,
+        crate::NativeOfficeMutation::MergeCells { path } if path == "/Data/A1:B2"
+    )));
     assert_exact_replay(&source, &artifact, &target_path).await;
 }
 

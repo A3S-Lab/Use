@@ -88,6 +88,8 @@ fn render_cell(output: &mut BoundedOutput, cell: &DocumentNode) -> UseResult<()>
         ("data-indent", "indent"),
         ("data-shrink-to-fit", "shrinkToFit"),
         ("data-reading-order", "readingOrder"),
+        ("data-merge", "merge"),
+        ("data-merge-anchor", "mergeAnchor"),
     ] {
         write_optional_attribute(output, attribute, cell.format.get(key).map(String::as_str))?;
     }

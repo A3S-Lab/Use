@@ -342,16 +342,50 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
             });
         }
 
-        for row in &sheet.children {
-            require_plain_node(row, OfficeNodeType::Row)?;
-            for cell in &row.children {
-                require_spreadsheet_cell(cell)?;
-                mutations.push(NativeOfficeMutation::SetCellValue {
-                    path: cell.path.clone(),
-                    value: spreadsheet_value(cell)?,
-                });
+        let mut merged_ranges = Vec::new();
+        for child in &sheet.children {
+            match child.node_type {
+                OfficeNodeType::Row => {
+                    require_plain_node(child, OfficeNodeType::Row)?;
+                    for cell in &child.children {
+                        require_spreadsheet_cell(cell)?;
+                        mutations.push(NativeOfficeMutation::SetCellValue {
+                            path: cell.path.clone(),
+                            value: spreadsheet_value(cell)?,
+                        });
+                    }
+                }
+                OfficeNodeType::Range if child.tag == "mergeCell" => {
+                    if child.style.is_some()
+                        || !child.children.is_empty()
+                        || child
+                            .format
+                            .keys()
+                            .any(|key| !matches!(key.as_str(), "ref" | "merge"))
+                    {
+                        return Err(dump_unsupported(
+                            &child.path,
+                            "Spreadsheet merged range contains unsupported semantic data.",
+                        ));
+                    }
+                    let reference = child.format.get("ref").ok_or_else(|| {
+                        dump_unsupported(&child.path, "Spreadsheet merged range has no reference.")
+                    })?;
+                    merged_ranges.push(format!("{}/{}", sheet.path, reference));
+                }
+                _ => {
+                    return Err(dump_unsupported(
+                        &child.path,
+                        "Spreadsheet worksheet contains an unsupported semantic node.",
+                    ));
+                }
             }
         }
+        mutations.extend(
+            merged_ranges
+                .into_iter()
+                .map(|path| NativeOfficeMutation::MergeCells { path }),
+        );
     }
     Ok(mutations)
 }
@@ -363,7 +397,15 @@ fn require_spreadsheet_cell(cell: &DocumentNode) -> UseResult<()> {
             "Spreadsheet replay requires a leaf cell without semantic child nodes.",
         ));
     }
-    let allowed = ["column", "row", "valueType", "empty", "formula"];
+    let allowed = [
+        "column",
+        "row",
+        "valueType",
+        "empty",
+        "formula",
+        "merge",
+        "mergeAnchor",
+    ];
     if let Some(key) = cell
         .format
         .keys()

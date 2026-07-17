@@ -1,10 +1,14 @@
-use std::collections::BTreeMap;
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BinaryHeap},
+};
 
 use a3s_use_core::UseResult;
 
 use super::{semantic_error, DocumentNode, OfficeNodeType};
 use crate::spreadsheet_reference::{
-    column_name as a1_column_name, parse_column, CellRange, CellReference, MAX_COLUMNS,
+    column_name as a1_column_name, first_intersecting_ranges, parse_column, CellRange,
+    CellReference, MAX_COLUMNS,
 };
 use crate::xml_tree::{parse_xml_tree, XmlElement, XmlNode};
 use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, RelationshipTarget};
@@ -23,6 +27,19 @@ const RELATIONSHIPS_NAMESPACE: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const STRICT_RELATIONSHIPS_NAMESPACE: &str =
     "http://purl.oclc.org/ooxml/officeDocument/relationships";
+const MAX_MERGED_RANGES: usize = 100_000;
+
+#[derive(Debug, Clone, Copy)]
+struct MergedRange {
+    range: CellRange,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ObservedCell {
+    reference: CellReference,
+    row_index: usize,
+    cell_index: usize,
+}
 
 pub(super) fn read(
     package: &NativeOfficePackage,
@@ -110,6 +127,25 @@ pub(super) fn virtual_get(
     }) else {
         return Ok(None);
     };
+    if !target.contains(':') {
+        if let Ok(reference) = CellReference::parse(target) {
+            if let Some(merged) =
+                merged_ranges(sheet).find(|merged| merged.range.contains(reference))
+            {
+                let mut node = DocumentNode::new(
+                    format!("{}/{}", sheet.path, reference.a1()),
+                    "cell",
+                    OfficeNodeType::Cell,
+                );
+                node.format
+                    .insert("column".into(), column_name(reference.column)?);
+                node.format.insert("row".into(), reference.row.to_string());
+                node.format.insert("empty".into(), "true".into());
+                annotate_cell_merge(&mut node, reference, &merged);
+                return Ok(Some(node));
+            }
+        }
+    }
     if let Some(column) = target
         .strip_prefix("col[")
         .and_then(|value| value.strip_suffix(']'))
@@ -194,6 +230,22 @@ fn virtual_range(
             max_row
         ),
     );
+    let requested_range = CellRange {
+        start: CellReference {
+            column: min_column,
+            row: min_row,
+        },
+        end: CellReference {
+            column: max_column,
+            row: max_row,
+        },
+    };
+    node.format.insert(
+        "merge".into(),
+        merged_ranges(sheet)
+            .any(|merged| merged.range == requested_range)
+            .to_string(),
+    );
     let matching = cells(sheet)
         .into_iter()
         .filter(|cell| {
@@ -250,6 +302,13 @@ fn read_worksheet(
     let sheet_path = format!("/{sheet_name}");
     let mut sheet_node = DocumentNode::new(&sheet_path, "sheet", OfficeNodeType::Worksheet);
     sheet_node.format.insert("part".into(), part_name.into());
+    let merged = read_merged_ranges(&worksheet, part_name)?;
+    if !merged.is_empty() {
+        sheet_node
+            .format
+            .insert("mergeCount".into(), merged.len().to_string());
+    }
+    let mut observed_cells = Vec::new();
     if let Some(sheet_data) = worksheet.child("sheetData") {
         let mut inferred_row = 0_u32;
         for row in sheet_data.children_named("row") {
@@ -279,13 +338,14 @@ fn read_worksheet(
                     }
                 };
                 inferred_column = column_number(&reference).unwrap_or(inferred_column);
-                row_node.children.push(read_cell(
-                    cell,
-                    &sheet_path,
-                    &reference,
-                    shared_strings,
-                    styles,
-                )?);
+                let cell_node = read_cell(cell, &sheet_path, &reference, shared_strings, styles)?;
+                let cell_reference = CellReference::parse(&reference)?;
+                observed_cells.push(ObservedCell {
+                    reference: cell_reference,
+                    row_index: sheet_node.children.len(),
+                    cell_index: row_node.children.len(),
+                });
+                row_node.children.push(cell_node);
             }
             row_node.text = row_node
                 .children
@@ -295,6 +355,18 @@ fn read_worksheet(
                 .join("\t");
             sheet_node.children.push(row_node);
         }
+    }
+    annotate_merged_cells(&mut sheet_node, &observed_cells, &merged);
+    for (offset, merged) in merged.iter().enumerate() {
+        let mut node = DocumentNode::new(
+            format!("{sheet_path}/mergeCell[{}]", offset + 1),
+            "mergeCell",
+            OfficeNodeType::Range,
+        );
+        node.text = merged.range.a1();
+        node.format.insert("ref".into(), merged.range.a1());
+        node.format.insert("merge".into(), "true".into());
+        sheet_node.children.push(node);
     }
     append_worksheet_hyperlinks(opc, &worksheet, part_name, &sheet_path, &mut sheet_node)?;
     append_worksheet_comments(package, opc, part_name, &sheet_path, &mut sheet_node)?;
@@ -314,6 +386,150 @@ fn read_worksheet(
         .collect::<Vec<_>>()
         .join("\n");
     Ok(sheet_node)
+}
+
+fn read_merged_ranges(worksheet: &XmlElement, part_name: &str) -> UseResult<Vec<MergedRange>> {
+    let containers = worksheet
+        .child_elements()
+        .filter(|element| {
+            element.local_name == "mergeCells" && element.namespace == worksheet.namespace
+        })
+        .collect::<Vec<_>>();
+    if containers.len() > 1 {
+        return Err(semantic_error(
+            "use.office.spreadsheet_merge_invalid",
+            format!("Worksheet part '{part_name}' contains multiple mergeCells collections."),
+        ));
+    }
+    let Some(container) = containers.first() else {
+        return Ok(Vec::new());
+    };
+    let elements = container
+        .child_elements()
+        .filter(|element| {
+            element.local_name == "mergeCell" && element.namespace == worksheet.namespace
+        })
+        .collect::<Vec<_>>();
+    if elements.len() > MAX_MERGED_RANGES {
+        return Err(semantic_error(
+            "use.office.spreadsheet_merge_limit",
+            format!(
+                "Worksheet part '{part_name}' contains {} merged ranges; the limit is {MAX_MERGED_RANGES}.",
+                elements.len()
+            ),
+        ));
+    }
+    let mut merged = Vec::with_capacity(elements.len());
+    for element in elements {
+        let reference = element.attribute("ref").ok_or_else(|| {
+            semantic_error(
+                "use.office.spreadsheet_merge_invalid",
+                format!("Worksheet part '{part_name}' contains a mergeCell without ref."),
+            )
+        })?;
+        let range = CellRange::parse(reference).map_err(|error| {
+            semantic_error(
+                "use.office.spreadsheet_merge_invalid",
+                format!(
+                    "Worksheet part '{part_name}' contains invalid merged range '{reference}': {error}"
+                ),
+            )
+        })?;
+        merged.push(MergedRange { range });
+    }
+    let ranges = merged.iter().map(|merged| merged.range).collect::<Vec<_>>();
+    if let Some((left, right)) = first_intersecting_ranges(&ranges) {
+        return Err(semantic_error(
+            "use.office.spreadsheet_merge_invalid",
+            format!(
+                "Worksheet part '{part_name}' contains overlapping merged ranges '{}' and '{}'.",
+                ranges[left].a1(),
+                ranges[right].a1()
+            ),
+        ));
+    }
+    Ok(merged)
+}
+
+fn annotate_merged_cells(
+    sheet: &mut DocumentNode,
+    observed_cells: &[ObservedCell],
+    merged: &[MergedRange],
+) {
+    let mut cells = (0..observed_cells.len()).collect::<Vec<_>>();
+    cells.sort_unstable_by_key(|index| {
+        let reference = observed_cells[*index].reference;
+        (reference.row, reference.column)
+    });
+    let mut ranges = (0..merged.len()).collect::<Vec<_>>();
+    ranges.sort_unstable_by_key(|index| {
+        let range = merged[*index].range;
+        (
+            range.start.row,
+            range.start.column,
+            range.end.row,
+            range.end.column,
+        )
+    });
+
+    let mut next_range = 0_usize;
+    let mut active_by_column = BTreeMap::<u32, usize>::new();
+    let mut expiration = BinaryHeap::<Reverse<(u32, usize)>>::new();
+    for cell_index in cells {
+        let observed = observed_cells[cell_index];
+        while let Some(Reverse((end_row, expired))) = expiration.peek().copied() {
+            if end_row >= observed.reference.row {
+                break;
+            }
+            expiration.pop();
+            let start_column = merged[expired].range.start.column;
+            if active_by_column.get(&start_column).copied() == Some(expired) {
+                active_by_column.remove(&start_column);
+            }
+        }
+        while next_range < ranges.len()
+            && merged[ranges[next_range]].range.start.row <= observed.reference.row
+        {
+            let index = ranges[next_range];
+            let range = merged[index].range;
+            if range.end.row >= observed.reference.row {
+                active_by_column.insert(range.start.column, index);
+                expiration.push(Reverse((range.end.row, index)));
+            }
+            next_range += 1;
+        }
+
+        let Some((_, merge_index)) = active_by_column
+            .range(..=observed.reference.column)
+            .next_back()
+        else {
+            continue;
+        };
+        let merged = &merged[*merge_index];
+        if merged.range.end.column < observed.reference.column {
+            continue;
+        }
+        let node = &mut sheet.children[observed.row_index].children[observed.cell_index];
+        annotate_cell_merge(node, observed.reference, merged);
+    }
+}
+
+fn annotate_cell_merge(node: &mut DocumentNode, reference: CellReference, merged: &MergedRange) {
+    node.format.insert("merge".into(), merged.range.a1());
+    node.format.insert(
+        "mergeAnchor".into(),
+        (reference == merged.range.start).to_string(),
+    );
+}
+
+fn merged_ranges(sheet: &DocumentNode) -> impl Iterator<Item = MergedRange> + '_ {
+    sheet
+        .children
+        .iter()
+        .filter(|node| node.tag == "mergeCell" && node.node_type == OfficeNodeType::Range)
+        .filter_map(|node| node.format.get("ref"))
+        .filter_map(|reference| CellRange::parse(reference).ok())
+        .map(|range| MergedRange { range })
 }
 
 fn append_worksheet_comments(

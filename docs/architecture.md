@@ -122,8 +122,8 @@ documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
 XML access, bounded annotated and issue analysis, typed text formatting,
-typed Spreadsheet cell presentation, typed scoped text replacement, typed
-hyperlinks, and atomic mutation batches
+typed Spreadsheet cell presentation and exact merged-cell editing, typed scoped
+text replacement, typed hyperlinks, and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
 same typed contract reads unsaved native MCP session state without a private
@@ -162,6 +162,18 @@ and preserves unknown style data. Content, text format, cell format, and
 hyperlink changes can share one editor transaction; validation and
 post-mutation semantic reads occur before any atomic save. This remains a typed
 Spreadsheet contract, not a generic property map or a private RPC method.
+Merged cells are another closed Spreadsheet mutation variant, represented by
+`merge-cells` and `unmerge-cells`, rather than a style flag or universal action.
+The editor normalizes A1 ranges, rejects geometric overlap and ListObject table
+intersection, and makes exact repeated merges idempotent. Unmerge removes only
+one exact range; non-exact intersecting requests return the valid exact ranges
+instead of sweeping them. The loss-preserving XML patch keeps schema order,
+OOXML dialect, and unknown merge collection data, failing closed when the final collection
+cannot be removed losslessly. Semantic projection adds stable `mergeCell`
+nodes and virtual blank covered cells without expanding the worksheet. Ordered
+range sweeps keep validation and observed-cell annotation bounded at the
+100,000-merge admission limit. The same variants cross versioned batch JSON,
+CLI, standard MCP, replay dump, and Skill surfaces without a private protocol.
 General text replacement is a separate closed mutation variant. A compiled
 literal or Rust-regex matcher feeds the shared split-segment patch layer, which
 maps every matched byte span back to its original OOXML text owner and assigns
@@ -269,9 +281,9 @@ Columns are virtual semantic nodes backed by one grid column plus one cell per
 row. Insert, remove, same-table move/copy/swap, and positive-EMU width mutation
 update those physical elements in lockstep and keep graphic-frame width equal
 to the grid-width sum. Operations that would underfill a normal row or require
-merged-span rewriting fail before save; merge editing remains outside this
-bounded milestone. These mutations use the existing typed batch transaction
-and do not introduce another protocol or runtime.
+merged-span rewriting fail before save; Presentation table merge editing
+remains outside this bounded milestone. These mutations use the existing typed
+batch transaction and do not introduce another protocol or runtime.
 
 Unpromoted commands are delegated to OfficeCLI and `mcp serve office` launches
 its standard MCP server. That compatibility process remains isolated from the
@@ -284,7 +296,8 @@ string passthrough. It supports validate, create/open/list, semantic get/query,
 bounded annotated plus text/outline/statistics views, all-format HTML and SVG,
 all-format bounded issue views, Browser-injected semantic PNG screenshots,
 constrained raw XML inspection, atomic typed mutation batches,
-immutable-template merge, save, and close. A screenshot requires an explicit
+including exact Spreadsheet merge/unmerge, immutable-template merge, save, and
+close. A screenshot requires an explicit
 no-clobber `.png` output and
 releases the Office session lock before Browser rendering. A server process
 owns at most 64 sessions. Batches and structured results are limited to 8 MiB,
@@ -350,9 +363,10 @@ Implemented:
     creation, scoped cross-format literal/regex replacement with split-run and
     shared-string safety, typed cross-format underline and vertical-script
     formatting, Word/Presentation highlight, text case, and language, plus
-    format-bounded strikethrough, typed Spreadsheet number/fill/border/alignment and
-    cell-presentation formatting, and typed Spreadsheet text/number/boolean/formula
-    cell and range mutation, typed Word/Spreadsheet/Presentation hyperlink
+    format-bounded strikethrough, typed Spreadsheet number/fill/border/alignment
+    and cell-presentation formatting, exact Spreadsheet merged-cell editing,
+    and typed Spreadsheet text/number/boolean/formula cell and range mutation,
+    typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment
     read/add/update/remove with format-owned anchors, authors, positions, and
     resource cleanup, Word paragraph and

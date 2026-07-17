@@ -68,6 +68,7 @@ a3s use office native set report.docx /body --find 'Q1 2025' --replace 'Q1 2026'
 a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --underline double --script superscript --strikethrough true --double-strikethrough false --text-case small-caps --highlight yellow --language en-US --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color C9B458 --vertical-align center --wrap-text true --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
 a3s use office native set report.docx '/comments/comment[1]' --author Bob --text 'Reviewed' --json
@@ -110,8 +111,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   scoped cross-format literal/regex replacement, typed text formatting,
-  Spreadsheet number/fill/border/alignment formatting, inert hyperlinks, and legacy
-  comments,
+  Spreadsheet number/fill/border/alignment formatting and exact merged-cell
+  editing, inert hyperlinks, and legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
   bounded typed issue diagnostics, Browser-injected semantic PNG screenshots,
@@ -310,7 +311,12 @@ borders, vertical alignment, wrap text, rotation, indentation, shrink-to-fit,
 and reading order. These properties apply to a cell or bounded rectangular
 range, compose atomically with content and text formatting, preserve unknown
 style data, and deduplicate number-format, fill, border, and cell-style
-records. It also creates, updates, reads,
+records. Spreadsheet merged cells use a separate typed contract: rectangular
+A1 ranges are normalized, exact repeated merges are idempotent, and unmerge
+requires one exact existing range. Geometric overlaps and ListObject table
+intersections fail closed. Semantic reads expose stable `mergeCell` nodes and
+anchor metadata without materializing every blank covered cell. The engine also
+creates, updates, reads,
 queries, and removes typed hyperlinks. Word owns
 external HTTP/HTTPS/mailto links and internal bookmark targets in body,
 header, and footer paragraphs, with display text and tooltips; Spreadsheet
@@ -379,7 +385,8 @@ Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
-rich-text, hyperlink, and legacy-comment operations, constrained raw XML access,
+rich-text, exact Spreadsheet merged-cell, hyperlink, and legacy-comment
+operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML and SVG are
@@ -466,6 +473,12 @@ a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align ce
 a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color 808080 --border-bottom double --border-bottom-color 000000 --vertical-align center --wrap-text true --text-rotation 0 --indent 1 --shrink-to-fit false --reading-order ltr --json
 a3s use office native set workbook.xlsx /Sheet1/D1 --number 0.125 --bold true --number-format percent --fill 0066CC --json
 a3s use office native set workbook.xlsx /Sheet1/E1 --border-diagonal slant-dash-dot --border-diagonal-color FF0000 --border-diagonal-up true --border-diagonal-down false --json
+
+# Merge one normalized Spreadsheet range, or unmerge the exact same range.
+# Content, text format, cell format, hyperlink, and merge state can share one
+# atomic set command.
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --merge-cells false --json
 
 # Add or update inert hyperlinks. External targets accept only absolute
 # HTTP/HTTPS/mailto URIs without credentials. Word internal targets are bookmark
@@ -669,7 +682,8 @@ current schema is:
 
 The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
-`set-text-format`, `set-cell-format`, `set-hyperlink`, `set-comment`, `set-table-column-width`,
+`set-text-format`, `set-cell-format`, `merge-cells`, `unmerge-cells`,
+`set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
 `add-table`, `add-table-row`, `add-table-column`, `add-table-cell`,
 `add-comment`, `add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
@@ -731,9 +745,10 @@ ordinary JSON:
 
 The first dump scope is the complete document (`/`). It accepts only content
 that current typed mutations can reproduce byte-for-byte at the OOXML part-map
-level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets and
-typed cells without styles or cached formula results, and Presentation slides
-with plain one-run text shapes and canonical basic tables. Headers, notes,
+level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
+typed cells, and merged ranges without styles or cached formula results, and
+Presentation slides with plain one-run text shapes and canonical basic tables.
+Headers, notes,
 media, non-canonical table styling, rich text, non-canonical package resources,
 and every other lossy case fail with
 `use.office.dump_unsupported`; nothing is silently flattened or omitted.
@@ -924,6 +939,28 @@ targets fail the whole batch. Native semantic HTML/SVG previews expose the
 observed values as inert `data-*` attributes; they do not claim Excel layout
 fidelity.
 
+Spreadsheet merged cells are batchable through two closed mutations:
+
+```json
+{
+  "operation": "merge-cells",
+  "path": "/Sheet1/A1:C1"
+}
+```
+
+Use `unmerge-cells` with the exact same path to remove the merge. Range order
+and case are normalized. An exact repeated merge and an absent exact unmerge
+are unchanged successes. A partial overlap, a range intersecting a Spreadsheet
+table, or any unmerge range that intersects but does not exactly equal an
+existing merge fails the complete batch. The latter error reports
+`validRanges`; callers must unmerge each exact range rather than request a
+destructive sweep. Strict and
+transitional OOXML are retained, unknown `mergeCells` data is preserved, and
+removing the final merge fails closed if deleting its container would discard
+unknown attributes or children. Semantic cell reads expose `merge` and
+`mergeAnchor`; range reads expose `merge=true|false`; and `mergeCell` queries
+return stable nodes. HTML/SVG carry the same facts only as inert attributes.
+
 Hyperlinks use the same typed batch contract and remain inert data:
 
 ```json
@@ -1044,6 +1081,7 @@ workbook.set_cell_format(
         ..NativeSpreadsheetCellFormat::default()
     },
 )?;
+workbook.merge_cells("/Sheet1/A1:C3")?;
 workbook.save().await?;
 
 let document = NativeOfficeDocument::open("report.docx").await?;

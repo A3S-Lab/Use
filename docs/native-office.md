@@ -62,7 +62,8 @@ BCP-47 language tags, and RTL layout.
 ### Spreadsheet
 
 Spreadsheet coverage includes workbooks, worksheets, cells, ranges, row and
-column mutation, formulas, defined names, styles and number formats, tables,
+column mutation, formulas, defined names, styles and number formats, merged
+cells, tables,
 sorting, filters, validation, conditional formatting, hyperlinks, drawings,
 images, charts, pivot tables and caches, slicers, sparklines, comments, OLE
 preservation, and CSV/TSV import.
@@ -318,6 +319,41 @@ native CLI and batch execution, wrong-document rejection, and an unusable
 OfficeCLI provider. Gradient/pattern/theme fills, conditional formatting,
 named styles, locale-derived formats, and Excel layout fidelity remain outside
 this milestone.
+
+Native `merge-cells` and `unmerge-cells` form a separate typed Rust, batch,
+CLI, and standard MCP contract. The CLI projects them as
+`office native set <file> <range> --merge-cells true|false`, so merge state can
+compose atomically with one content write, text formatting, cell presentation,
+and a hyperlink. The path must identify a Spreadsheet cell or rectangular A1
+range and is normalized before mutation. Repeating an exact merge is
+idempotent. Any non-identical geometric overlap fails with
+`use.office.spreadsheet_merge_overlap`; a range intersecting a ListObject table
+fails with `use.office.spreadsheet_merge_table_overlap` rather than producing
+an invalid workbook.
+
+Unmerge is intentionally exact and non-destructive. An absent exact range is an
+unchanged success only when it is disjoint from every merge. If the requested
+range intersects but does not exactly equal an existing merge,
+`use.office.spreadsheet_merge_not_exact` returns the intersecting `validRanges`
+so the caller can remove each one explicitly. It never performs a sweep. The XML
+writer retains strict or transitional SpreadsheetML, schema child order,
+unknown `mergeCells` attributes, extension children, and unrelated worksheet
+data. Removing the last merge removes the collection only when its remaining
+bytes are known to be whitespace and its only attribute is `count`; otherwise
+`use.office.spreadsheet_merge_unknown_content` fails closed.
+
+Semantic reads expose each merge as `/SheetName/mergeCell[N]`, annotate an
+observed or virtual covered cell with `merge=<normalized-ref>` and
+`mergeAnchor=true|false`, and report `merge=true|false` on exact range reads.
+Blank covered cells are virtual and do not expand sparse `sheetData`. HTML and
+SVG project the same metadata only as inert `data-merge` and
+`data-merge-anchor` attributes. Merge collections are bounded to 100,000
+ranges; overlap validation and observed-cell annotation use ordered sweeps
+rather than a cell-by-range product. Versioned replay dump emits exact merge
+mutations after cell values. Tests cover strict OOXML, unknown data, table and
+range conflicts, idempotence, exact unmerge, rollback, replay, semantic
+readback, CLI, and a complete standard MCP lifecycle with an unusable
+OfficeCLI provider.
 
 Native `set-hyperlink` is implemented through one typed Rust, batch, CLI, and
 standard MCP contract. Word adds an external HTTP/HTTPS/mailto relationship or
@@ -579,9 +615,9 @@ same atomic batch rollback and semantic post-validation as add/set/remove.
 
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
-tables, Spreadsheet worksheets and typed cells without styles or cached formula
-results, and Presentation slides with plain one-run text shapes and canonical
-basic tables. The versioned
+tables, Spreadsheet worksheets, typed cells, and merged ranges without styles
+or cached formula results, and Presentation slides with plain one-run text
+shapes and canonical basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
 ordered mutations, and expected result part-map SHA-256. Native `batch` checks
 both fingerprints and restores the original package on a failed result check.
@@ -692,9 +728,9 @@ compatibility component for one deprecation cycle, then is removed.
 
 The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
-cross-format text formatting, typed Spreadsheet number/fill/border/alignment and cell
-presentation formatting, typed inert
-hyperlinks, typed cross-format legacy comments, Spreadsheet range and
+cross-format text formatting, typed Spreadsheet number/fill/border/alignment
+and cell-presentation formatting, exact Spreadsheet merged-cell editing, typed
+inert hyperlinks, typed cross-format legacy comments, Spreadsheet range and
 row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the

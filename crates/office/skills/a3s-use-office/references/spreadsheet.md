@@ -9,6 +9,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 - [Values and Formulas](#values-and-formulas)
 - [Cell Text Formatting](#cell-text-formatting)
 - [Cell Presentation Formatting](#cell-presentation-formatting)
+- [Merged Cells](#merged-cells)
 - [Structure](#structure)
 - [Verify](#verify)
 
@@ -100,7 +101,8 @@ a3s use office native set workbook.xlsx /Sheet1/A1:C3 --fill none --wrap-text fa
 ```
 
 Cell presentation accepts one cell or a bounded rectangular range and may be
-combined atomically with one content write, text formatting, and a hyperlink.
+combined atomically with one content write, text formatting, a hyperlink, and
+merged-cell state.
 Use `--number-format` for an explicit Excel format code or one of `general`,
 `number`, `currency`, `accounting`, `percent`, `scientific`, `text`, `date`,
 `time`, or `datetime`. Codes may contain at most four sections and must keep
@@ -131,6 +133,47 @@ target kind, or any other mutation failure rolls back the complete in-memory
 batch before save. Verify with a targeted `get`; HTML/SVG expose observed
 values as inert `data-*` attributes but remain semantic previews rather than
 Excel layout evidence.
+
+## Merged Cells
+
+```bash
+# Merge, optionally composing content and formatting in the same atomic set.
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
+
+# Inspect the anchor, a blank covered cell, the exact range, and stable merges.
+a3s use office native get workbook.xlsx /Sheet1/A1 --json
+a3s use office native get workbook.xlsx /Sheet1/B1 --json
+a3s use office native get workbook.xlsx /Sheet1/A1:C1 --json
+a3s use office native query workbook.xlsx mergeCell --json
+
+# Unmerge only the exact existing range.
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --merge-cells false --json
+```
+
+Paths are case-insensitive and their A1 endpoints are normalized. Repeating an
+exact merge is an unchanged success. A non-identical overlapping merge fails
+with `use.office.spreadsheet_merge_overlap`; any range intersecting a
+ListObject table fails with `use.office.spreadsheet_merge_table_overlap`.
+Unmerge is deliberately precise: an absent exact range is unchanged, while a
+range that intersects but does not exactly equal an existing merge fails with
+`use.office.spreadsheet_merge_not_exact` and reports `validRanges`. Unmerge
+those returned ranges individually; there is no destructive sweep operation.
+
+Semantic query results expose `/SheetName/mergeCell[N]` with a normalized
+`ref`. Covered cell reads expose the normalized range in `format.merge` and
+whether the cell is the top-left anchor in `format.mergeAnchor`. A blank
+covered cell is returned virtually without creating every covered cell in
+`sheetData`. An exact range read reports `format.merge=true`; an unmerged range
+reports `false`. HTML/SVG use inert `data-merge` and `data-merge-anchor`
+attributes only and do not claim Excel layout fidelity.
+
+Merge/unmerge participates in normal batch rollback, strict/transitional OOXML
+preservation, and replay dump. Unknown merge collection attributes and
+extension children are retained. If removing the final merge would also delete
+unknown collection data, the operation fails with
+`use.office.spreadsheet_merge_unknown_content` instead of discarding it. This
+is merged-cell structure support, not complete rich Spreadsheet or OfficeCLI
+parity.
 
 ## Structure
 

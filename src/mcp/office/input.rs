@@ -650,6 +650,14 @@ pub(super) enum OfficeMutation {
         path: String,
         value: OfficeCellValue,
     },
+    MergeCells {
+        /// Spreadsheet range path such as `/Sheet1/A1:B2`.
+        path: String,
+    },
+    UnmergeCells {
+        /// Exact existing Spreadsheet merged-range path.
+        path: String,
+    },
     AddParagraph {
         parent: String,
         text: String,
@@ -787,6 +795,8 @@ impl OfficeMutation {
                 path,
                 value: value.into(),
             },
+            Self::MergeCells { path } => NativeOfficeMutation::MergeCells { path },
+            Self::UnmergeCells { path } => NativeOfficeMutation::UnmergeCells { path },
             Self::AddParagraph { parent, text } => {
                 NativeOfficeMutation::AddParagraph { parent, text }
             }

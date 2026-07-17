@@ -192,6 +192,22 @@ impl NativeOfficeEditor {
         Ok(())
     }
 
+    /// Adds one normalized SpreadsheetML merged-cell range.
+    ///
+    /// Repeating the exact range is idempotent. A geometrically overlapping
+    /// range or a range intersecting a Spreadsheet table fails closed.
+    pub fn merge_cells(&mut self, path: impl Into<String>) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::MergeCells { path: path.into() })
+    }
+
+    /// Removes one exact SpreadsheetML merged-cell range.
+    ///
+    /// A non-exact range intersecting any merge is rejected with the exact
+    /// references instead of destructively sweeping or partially changing it.
+    pub fn unmerge_cells(&mut self, path: impl Into<String>) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::UnmergeCells { path: path.into() })
+    }
+
     pub fn add_paragraph(
         &mut self,
         parent: impl Into<String>,
@@ -610,6 +626,12 @@ impl NativeOfficeEditor {
                 NativeOfficeMutation::SetCellValue { path, value } => {
                     spreadsheet::set_cell_value(&mut self.package, path, value)
                         .map(|()| path.clone())
+                }
+                NativeOfficeMutation::MergeCells { path } => {
+                    spreadsheet::merge_cells(&mut self.package, path)
+                }
+                NativeOfficeMutation::UnmergeCells { path } => {
+                    spreadsheet::unmerge_cells(&mut self.package, path)
                 }
                 NativeOfficeMutation::AddParagraph { parent, text } => {
                     word::add_paragraph(&mut self.package, parent, text)

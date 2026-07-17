@@ -50,6 +50,7 @@ pub(super) struct ParsedArguments {
     pub indent: Option<String>,
     pub shrink_to_fit: Option<String>,
     pub reading_order: Option<String>,
+    pub merge_cells: Option<String>,
     pub url: Option<String>,
     pub location: Option<String>,
     pub display: Option<String>,
@@ -238,6 +239,10 @@ impl ParsedArguments {
                     set_string_option(&mut parsed.reading_order, args, index, "--reading-order")?;
                     index += 2;
                 }
+                "--merge-cells" if allowed.merge_cells => {
+                    set_string_option(&mut parsed.merge_cells, args, index, "--merge-cells")?;
+                    index += 2;
+                }
                 "--url" | "--link" | "--href" if allowed.url => {
                     set_string_option(&mut parsed.url, args, index, "--url")?;
                     index += 2;
@@ -418,6 +423,7 @@ pub(super) struct AllowedOptions {
     indent: bool,
     shrink_to_fit: bool,
     reading_order: bool,
+    merge_cells: bool,
     url: bool,
     location: bool,
     display: bool,
@@ -480,6 +486,7 @@ impl AllowedOptions {
         indent: false,
         shrink_to_fit: false,
         reading_order: false,
+        merge_cells: false,
         url: false,
         location: false,
         display: false,
@@ -539,6 +546,7 @@ impl AllowedOptions {
         indent: true,
         shrink_to_fit: true,
         reading_order: true,
+        merge_cells: true,
         url: true,
         location: true,
         display: true,
