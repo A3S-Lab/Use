@@ -68,13 +68,11 @@ impl NativeSpreadsheetTableStyle {
             .and_then(|suffix| suffix.parse::<u8>().ok())
         {
             Self::Medium { number }
-        } else if let Some(number) = value
-            .strip_prefix("TableStyleDark")
-            .and_then(|suffix| suffix.parse::<u8>().ok())
-        {
-            Self::Dark { number }
         } else {
-            return None;
+            let number = value
+                .strip_prefix("TableStyleDark")
+                .and_then(|suffix| suffix.parse::<u8>().ok())?;
+            Self::Dark { number }
         };
         style.validate().ok().map(|()| style)
     }
