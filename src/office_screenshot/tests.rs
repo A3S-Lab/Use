@@ -152,7 +152,7 @@ async fn discovered_chrome_captures_office_semantic_html_when_available() {
     let result = renderer
         .render(
             &editor.snapshot().unwrap(),
-            NativeOfficeScreenshotRequest::new(&output).with_timeout_ms(10_000),
+            NativeOfficeScreenshotRequest::new(&output),
         )
         .await;
     pool.shutdown().await;
