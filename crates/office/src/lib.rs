@@ -24,6 +24,7 @@ mod render;
 mod replay;
 mod semantic;
 mod spreadsheet_conditional_format;
+mod spreadsheet_filter;
 mod spreadsheet_formula;
 mod spreadsheet_named_range;
 mod spreadsheet_reference;
@@ -48,17 +49,19 @@ pub use editor::{
     NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextCase,
     NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextReplacement,
     NativeOfficeTextReplacementResult, NativeOfficeTextScript, NativeOfficeUnderline,
-    NativeRawXmlPart, NativeSpreadsheetBorder, NativeSpreadsheetBorderLine,
-    NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetConditionalFormat,
-    NativeSpreadsheetConditionalFormatIconSet, NativeSpreadsheetConditionalFormatOperator,
-    NativeSpreadsheetConditionalFormatRule, NativeSpreadsheetConditionalFormatThreshold,
-    NativeSpreadsheetConditionalFormatThresholdKind, NativeSpreadsheetConditionalFormatTimePeriod,
-    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
-    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
-    NativeSpreadsheetDifferentialFormat, NativeSpreadsheetFill, NativeSpreadsheetNamedRange,
-    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder, NativeSpreadsheetTable,
-    NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment,
-    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    NativeRawXmlPart, NativeSpreadsheetAutoFilter, NativeSpreadsheetBorder,
+    NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat,
+    NativeSpreadsheetConditionalFormat, NativeSpreadsheetConditionalFormatIconSet,
+    NativeSpreadsheetConditionalFormatOperator, NativeSpreadsheetConditionalFormatRule,
+    NativeSpreadsheetConditionalFormatThreshold, NativeSpreadsheetConditionalFormatThresholdKind,
+    NativeSpreadsheetConditionalFormatTimePeriod, NativeSpreadsheetDataValidation,
+    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
+    NativeSpreadsheetDataValidationType, NativeSpreadsheetDifferentialFormat,
+    NativeSpreadsheetDynamicFilter, NativeSpreadsheetFill, NativeSpreadsheetFilterColumn,
+    NativeSpreadsheetFilterCriteria, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetTable, NativeSpreadsheetTableColumn,
+    NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
+    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
@@ -297,6 +300,9 @@ mod issues_tests;
 mod named_range_tests;
 #[cfg(test)]
 mod spreadsheet_edit_tests;
+
+#[cfg(test)]
+mod spreadsheet_filter_tests;
 
 #[cfg(test)]
 mod spreadsheet_table_tests;

@@ -10,12 +10,12 @@ fn binary() -> &'static str {
 }
 
 #[tokio::test]
-async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
+async fn standard_mcp_manages_spreadsheet_filters_without_officecli() {
     const TIMEOUT: Duration = Duration::from_secs(15);
 
     let temp = tempfile::tempdir().unwrap();
     let provider = temp.path().join("must-not-be-invoked");
-    let document = temp.path().join("mcp-tables.xlsx");
+    let document = temp.path().join("mcp-filter.xlsx");
     let mut child = tokio::process::Command::new(binary())
         .args(["mcp", "serve", "office-native"])
         .env("A3S_OFFICECLI_EXECUTABLE", &provider)
@@ -39,7 +39,7 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
             "params": {
                 "protocolVersion": "2025-06-18",
                 "capabilities": {},
-                "clientInfo": { "name": "office-table-test", "version": "1" }
+                "clientInfo": { "name": "office-filter-test", "version": "1" }
             }
         }),
         TIMEOUT,
@@ -67,10 +67,10 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
         .find(|tool| tool["name"] == "office_apply_batch")
         .unwrap()["inputSchema"]
         .to_string();
-    assert!(schema.contains("add-spreadsheet-table"));
-    assert!(schema.contains("set-spreadsheet-table"));
-    assert!(schema.contains("showColumnStripes"));
-    assert!(schema.contains("filters"));
+    assert!(schema.contains("add-spreadsheet-auto-filter"));
+    assert!(schema.contains("set-spreadsheet-auto-filter"));
+    assert!(schema.contains("does-not-contain"));
+    assert!(schema.contains("above-average"));
 
     let created = call(
         &mut stdin,
@@ -91,22 +91,24 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
         serde_json::json!({
             "session": "workbook",
             "mutations": [{
-                "operation": "add-spreadsheet-table",
+                "operation": "add-spreadsheet-auto-filter",
                 "sheet": "/Sheet1",
-                "table": {
-                    "name": "Sales",
-                    "range": "A1:C4",
+                "filter": {
+                    "range": "A1:C50",
                     "columns": [
-                        {"name": "Name"},
-                        {"name": "Qty"},
-                        {"name": "Price"}
-                    ],
-                    "filters": [{
-                        "column": 1,
-                        "criteria": {"type": "top", "count": 10}
-                    }],
-                    "style": {"family": "medium", "number": 4},
-                    "showLastColumn": true
+                        {
+                            "column": 0,
+                            "criteria": {
+                                "type": "values",
+                                "values": ["Open", "Closed"],
+                                "includeBlanks": true
+                            }
+                        },
+                        {
+                            "column": 2,
+                            "criteria": {"type": "between", "lower": "10", "upper": "100"}
+                        }
+                    ]
                 }
             }]
         }),
@@ -115,10 +117,9 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
     .await;
     assert_ne!(added["result"]["isError"], true, "{added}");
     assert_eq!(
-        added["result"]["structuredContent"]["result"]["paths"],
-        serde_json::json!(["/Sheet1/table[1]"])
+        added["result"]["structuredContent"]["result"]["paths"][0],
+        "/Sheet1/autofilter"
     );
-    assert_eq!(added["result"]["structuredContent"]["persisted"], false);
 
     let read = call(
         &mut stdin,
@@ -127,45 +128,49 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
         "office_get",
         serde_json::json!({
             "session": "workbook",
-            "path": "/Sheet1/table[1]",
+            "path": "/Sheet1/autofilter",
             "depth": 2
         }),
         TIMEOUT,
     )
     .await;
+    assert_ne!(read["result"]["isError"], true, "{read}");
     let node = &read["result"]["structuredContent"]["node"];
-    assert_eq!(node["type"], "table");
-    assert_eq!(node["format"]["name"], "Sales");
-    assert_eq!(node["children"][2]["text"], "Price");
-    assert_eq!(node["children"][3]["type"], "auto-filter");
-    assert_eq!(
-        node["children"][3]["children"][0]["format"]["criteriaType"],
-        "top"
-    );
+    assert_eq!(node["type"], "auto-filter");
+    assert_eq!(node["format"]["ref"], "A1:C50");
+    assert_eq!(node["children"][0]["children"][1]["text"], "Closed");
+
+    let queried = call(
+        &mut stdin,
+        &mut stdout,
+        6,
+        "office_query",
+        serde_json::json!({
+            "session": "workbook",
+            "selector": "filtercolumn[criteriaType=between]"
+        }),
+        TIMEOUT,
+    )
+    .await;
+    assert_ne!(queried["result"]["isError"], true, "{queried}");
+    assert_eq!(queried["result"]["structuredContent"]["matches"], 1);
 
     let updated = call(
         &mut stdin,
         &mut stdout,
-        6,
+        7,
         "office_apply_batch",
         serde_json::json!({
             "session": "workbook",
             "mutations": [{
-                "operation": "set-spreadsheet-table",
-                "path": "/Sheet1/table[1]",
-                "table": {
-                    "name": "Inventory",
-                    "displayName": "InventoryView",
-                    "range": "B2:D6",
-                    "columns": [
-                        {"name": "Item"},
-                        {"name": "Units"},
-                        {"name": "Cost"}
-                    ],
-                    "totalsRow": true,
-                    "style": {"family": "dark", "number": 2},
-                    "showRowStripes": false,
-                    "showColumnStripes": true
+                "operation": "set-spreadsheet-auto-filter",
+                "path": "/Sheet1/autofilter",
+                "filter": {
+                    "range": "B2:D30",
+                    "columns": [{
+                        "column": 1,
+                        "criteria": {"type": "dynamic", "kind": "this-month"}
+                    }]
                 }
             }]
         }),
@@ -173,21 +178,6 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
     )
     .await;
     assert_ne!(updated["result"]["isError"], true, "{updated}");
-
-    let queried = call(
-        &mut stdin,
-        &mut stdout,
-        7,
-        "office_query",
-        serde_json::json!({
-            "session": "workbook",
-            "selector": "table[name=Inventory]",
-            "limit": 10
-        }),
-        TIMEOUT,
-    )
-    .await;
-    assert_eq!(queried["result"]["structuredContent"]["matches"], 1);
 
     let saved = call(
         &mut stdin,
@@ -199,7 +189,7 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
     )
     .await;
     assert_ne!(saved["result"]["isError"], true, "{saved}");
-    call(
+    let closed = call(
         &mut stdin,
         &mut stdout,
         9,
@@ -208,6 +198,7 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
         TIMEOUT,
     )
     .await;
+    assert_eq!(closed["result"]["structuredContent"]["closed"], true);
 
     let reopened = call(
         &mut stdin,
@@ -226,16 +217,18 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
         "office_get",
         serde_json::json!({
             "session": "reopened",
-            "path": "/Sheet1/table[1]",
-            "depth": 0
+            "path": "/Sheet1/autofilter",
+            "depth": 1
         }),
         TIMEOUT,
     )
     .await;
+    assert_ne!(persisted["result"]["isError"], true, "{persisted}");
     assert_eq!(
-        persisted["result"]["structuredContent"]["node"]["format"]["displayName"],
-        "InventoryView"
+        persisted["result"]["structuredContent"]["node"]["format"]["ref"],
+        "B2:D30"
     );
+
     let removed = call(
         &mut stdin,
         &mut stdout,
@@ -243,13 +236,16 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
         "office_apply_batch",
         serde_json::json!({
             "session": "reopened",
-            "mutations": [{"operation":"remove","path":"/Sheet1/table[1]"}]
+            "mutations": [{
+                "operation": "remove",
+                "path": "/Sheet1/autofilter"
+            }]
         }),
         TIMEOUT,
     )
     .await;
     assert_ne!(removed["result"]["isError"], true, "{removed}");
-    call(
+    let saved = call(
         &mut stdin,
         &mut stdout,
         13,
@@ -258,7 +254,8 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
         TIMEOUT,
     )
     .await;
-    call(
+    assert_ne!(saved["result"]["isError"], true, "{saved}");
+    let closed = call(
         &mut stdin,
         &mut stdout,
         14,
@@ -267,6 +264,7 @@ async fn standard_mcp_manages_spreadsheet_tables_without_officecli() {
         TIMEOUT,
     )
     .await;
+    assert_eq!(closed["result"]["structuredContent"]["closed"], true);
 
     drop(stdin);
     let status = tokio::time::timeout(TIMEOUT, child.wait())

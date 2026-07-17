@@ -279,6 +279,49 @@ batch. Call `office_get` or `office_query` before `office_save` to verify the
 unsaved scoped value, then save explicitly. Closing a dirty session still
 requires save or explicit discard.
 
+Spreadsheet worksheet AutoFilters use the separate
+`add-spreadsheet-auto-filter` and `set-spreadsheet-auto-filter` mutations.
+ListObject table `filters` use the same filter-column values:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "add-spreadsheet-auto-filter",
+    "sheet": "/Sheet1",
+    "filter": {
+      "range": "A1:C20",
+      "columns": [
+        {
+          "column": 0,
+          "criteria": {
+            "type": "values",
+            "values": ["Open", "Closed"],
+            "includeBlanks": true
+          }
+        },
+        {
+          "column": 2,
+          "criteria": {"type": "greater-than", "value": "100"}
+        }
+      ]
+    }
+  }]
+}
+```
+
+Use `set-spreadsheet-auto-filter` with the stable `/Sheet/autofilter` path and
+one complete `filter` value; MCP set is not a partial patch. Delete with
+ordinary typed `remove`. Columns are unique zero-based offsets inside the
+normalized range. Closed criteria cover exact values/blanks, text and ordered
+comparisons, between/not-between, blanks/non-blanks, top/bottom count or
+percentage, and dynamic average/date/month/quarter families. A worksheet
+accepts one filter and rejects table or merge overlap. Use `office_get` with
+depth 2 or `office_query` for `autofilter`/`filtercolumn` before saving. Do not
+replace a node whose semantic `nativeMutable` flag is false. Date-group,
+color/icon, extension, unknown-content, and embedded sort-state imports fail
+closed; persisted physical row sorting is a separate contract.
+
 Spreadsheet ListObject tables use the separate `add-spreadsheet-table` and
 `set-spreadsheet-table` mutations:
 
@@ -295,6 +338,9 @@ Spreadsheet ListObject tables use the separate `add-spreadsheet-table` and
         {"name": "Name"},
         {"name": "Qty"},
         {"name": "Price"}
+      ],
+      "filters": [
+        {"column": 1, "criteria": {"type": "top", "count": 10}}
       ],
       "headerRow": true,
       "totalsRow": false,
@@ -319,9 +365,10 @@ are validated before mutation.
 Use `office_get` with depth 1 or `office_query` with `table[name=Sales]` to
 inspect the unsaved table and its column children. Do not replace a node whose
 semantic `nativeMutable` flag is false. Header stamping, OPC table parts, and
-the table-owned AutoFilter stay inside the same editor transaction. Calculated
-columns, totals functions, filter criteria, sort state, custom styles, and
-external/query-table data remain outside the typed value. See
+the typed table-owned AutoFilter stay inside the same editor transaction.
+Calculated columns, totals functions, date-group/color/icon filters, persisted
+sort state, custom styles, and external/query-table data remain outside the
+typed value. See
 [spreadsheet.md](spreadsheet.md#tables) for the complete boundary.
 
 General find/replace uses the typed `replace-text` mutation. Keep `mode`

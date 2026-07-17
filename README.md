@@ -113,8 +113,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   scoped cross-format literal/regex replacement, typed text formatting,
   Spreadsheet number/fill/border/alignment formatting, exact merged-cell
-  editing, typed data validation and conditional formatting, scoped defined
-  names, native Spreadsheet ListObject table lifecycle, inert hyperlinks, and
+  editing, typed worksheet and table AutoFilters, typed data validation and
+  conditional formatting, scoped defined names, native Spreadsheet ListObject
+  table lifecycle, inert hyperlinks, and
   legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
@@ -362,13 +363,30 @@ content fails closed when it cannot be preserved. This is defined-name
 lifecycle support, not formula evaluation, external-link authoring, or complete
 Spreadsheet parity.
 
+Native Spreadsheet AutoFilters use a closed typed contract shared by worksheet
+filters and ListObject tables. One value owns a normalized rectangular A1
+range plus at most one criterion for each zero-based range column. Supported
+criteria are exact value sets with optional blanks; equality, text, and ordered
+comparisons; between/not-between; blanks/non-blanks; top/bottom count or
+percentage; and closed dynamic average, relative-date, month, and quarter
+families. Worksheet lifecycle uses stable `/Sheet/autofilter` and
+`/Sheet/autofilter/filterColumn[N]` paths; table filters appear below
+`/Sheet/table[N]/autofilter`. Rust, versioned batch, CLI, standard MCP, exact
+replay, and the Office Skill use the same value. The strict/transitional writer
+sorts columns deterministically, escapes wildcard literals, rejects duplicate
+or out-of-range columns, protects table/merge geometry, and fails closed for
+imported date-group items, color/icon filters, persisted sort state,
+extensions, comments, or unknown attributes. Persisted row sorting remains a
+separate contract.
+
 Native Spreadsheet tables use a separate closed ListObject contract. Add and
 set own the workbook-wide `name`, optional distinct `displayName`, final
 rectangular A1 range, one exact column identity per range column, header/totals
-row state, built-in light/medium/dark style identity, and first/last-column plus
-row/column-stripe flags; ordinary typed `remove` owns deletion. When a header
-is enabled, its names are stamped into the first row and the table-owned
-AutoFilter range excludes an enabled totals row. The editor rejects
+row state, typed filter criteria, built-in light/medium/dark style identity,
+and first/last-column plus row/column-stripe flags; ordinary typed `remove`
+owns deletion. When a header is enabled, its names are stamped into the first
+row and the table-owned AutoFilter range excludes an enabled totals row. The
+editor rejects
 Excel-identifier and A1/R1C1 name errors,
 case-insensitive table/defined-name collisions, duplicate columns, missing data
 rows, table/merge/worksheet-AutoFilter overlap, and unsafe relationship graphs.
@@ -376,9 +394,9 @@ Semantic reads expose stable `/Sheet/table[N]` and child column paths. Rust,
 versioned batch, CLI, standard MCP, exact replay, and the Office Skill share the
 same value while strict/transitional SpreadsheetML and supported unknown root
 or style data are retained. Imported calculated columns, totals functions,
-filter criteria, sort state, custom styles, query tables, and external data
-remain explicit gaps and fail closed when a lossless typed mutation cannot be
-proved.
+date-group/color/icon filters, persisted sort state, custom styles, query
+tables, and external data remain explicit gaps and fail closed when a lossless
+typed mutation cannot be proved.
 
 The engine also creates, updates, reads,
 queries, and removes typed hyperlinks. Word owns
@@ -449,8 +467,9 @@ Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
-rich-text, exact Spreadsheet merged-cell, data-validation, conditional-format,
-defined-name, ListObject table, hyperlink, and legacy-comment
+rich-text, exact Spreadsheet merged-cell, worksheet/table AutoFilter,
+data-validation, conditional-format, defined-name, ListObject table, hyperlink,
+and legacy-comment
 operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
@@ -545,10 +564,20 @@ a3s use office native set workbook.xlsx /Sheet1/E1 --border-diagonal slant-dash-
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --merge-cells false --json
 
+# Add, inspect, replace, clear, and remove one worksheet AutoFilter. Each
+# --filter is a strict JSON object with a zero-based column and typed criteria.
+a3s use office native add workbook.xlsx /Sheet1 --type auto-filter --range A1:C20 --filter '{"column":0,"criteria":{"type":"values","values":["Open","Closed"],"includeBlanks":true}}' --filter '{"column":2,"criteria":{"type":"greater-than","value":"100"}}' --json
+a3s use office native query workbook.xlsx 'filtercolumn[criteriaType=greater-than]' --json
+a3s use office native get workbook.xlsx /Sheet1/autofilter --depth 2 --json
+a3s use office native set workbook.xlsx /Sheet1/autofilter --range B2:D30 --filter '{"column":1,"criteria":{"type":"dynamic","kind":"this-month"}}' --json
+a3s use office native set workbook.xlsx /Sheet1/autofilter --clear-filters --json
+a3s use office native remove workbook.xlsx /Sheet1/autofilter --json
+
 # Add, inspect, replace, and remove one native Spreadsheet ListObject table.
 # The range is final and includes enabled header/totals rows. Repeat
-# --table-column exactly once for every range column.
-a3s use office native add workbook.xlsx /Sheet1 --type table --name Sales --range F1:H4 --table-column Name --table-column Qty --table-column Price --style medium:4 --json
+# --table-column exactly once for every range column. Table --filter values use
+# the same strict zero-based contract as worksheet AutoFilters.
+a3s use office native add workbook.xlsx /Sheet1 --type table --name Sales --range F1:H4 --table-column Name --table-column Qty --table-column Price --filter '{"column":1,"criteria":{"type":"top","count":10}}' --style medium:4 --json
 a3s use office native query workbook.xlsx 'table[name=Sales]' --json
 a3s use office native get workbook.xlsx '/Sheet1/table[1]' --depth 1 --json
 a3s use office native set workbook.xlsx '/Sheet1/table[1]' --name Inventory --display-name InventoryView --range B2:D6 --table-column Item --table-column Units --table-column Cost --totals-row true --style dark:2 --show-row-stripes false --show-column-stripes true --json
@@ -786,7 +815,8 @@ and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `set-text-format`, `set-cell-format`, `add-data-validation`,
 `set-data-validation`, `add-conditional-format`, `set-conditional-format`,
 `add-named-range`, `set-named-range`, `add-spreadsheet-table`,
-`set-spreadsheet-table`, `merge-cells`,
+`set-spreadsheet-table`, `add-spreadsheet-auto-filter`,
+`set-spreadsheet-auto-filter`, `merge-cells`,
 `unmerge-cells`,
 `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
@@ -875,6 +905,41 @@ duplicate `(name, scope)` identities, and ListObject table-name collisions fail
 atomically. Use the explicit scope `worksheet:workbook` for a local name on a
 worksheet literally named `workbook`.
 
+A worksheet AutoFilter mutation uses one complete range-and-columns value.
+Table `filters` use the same column objects:
+
+```json
+{
+  "operation": "add-spreadsheet-auto-filter",
+  "sheet": "/Sheet1",
+  "filter": {
+    "range": "A1:C20",
+    "columns": [
+      {
+        "column": 0,
+        "criteria": {
+          "type": "values",
+          "values": ["Open", "Closed"],
+          "includeBlanks": true
+        }
+      },
+      {
+        "column": 2,
+        "criteria": {"type": "between", "lower": "10", "upper": "100"}
+      }
+    ]
+  }
+}
+```
+
+Use `set-spreadsheet-auto-filter` with `/Sheet/autofilter` and a complete
+`filter`; ordinary typed `remove` deletes it. CLI `set` preserves an omitted
+range, replaces all criteria when one or more `--filter` objects are supplied,
+and uses `--clear-filters` for an explicit empty criterion list. Column offsets
+are zero-based and unique inside the range. Imported date-group/color/icon
+filters, sort state, extensions, and unknown content are readable but
+`nativeMutable=false`; persisted row sorting is not part of this contract.
+
 A Spreadsheet table mutation uses one complete ListObject value. CLI `set`
 preserves omitted fields; batch, Rust, and standard MCP replacements supply the
 complete table:
@@ -891,6 +956,9 @@ complete table:
       {"name": "Qty"},
       {"name": "Price"}
     ],
+    "filters": [
+      {"column": 1, "criteria": {"type": "top", "count": 10}}
+    ],
     "headerRow": true,
     "totalsRow": false,
     "style": {"family": "medium", "number": 4},
@@ -906,7 +974,9 @@ Use `set-spreadsheet-table` with a stable `path` and complete `table`; use
 ordinary typed `remove` for deletion. Styles are `none`, light 1–21, medium
 1–28, or dark 1–11. `none` requires all style flags to be false. The final range
 must leave at least one data row after enabled header and totals rows and must
-not intersect another table, a merge, or a worksheet-level AutoFilter.
+not intersect another table, a merge, or a worksheet-level AutoFilter. Table
+filters require an enabled header; `--clear-filters` clears their criteria
+without removing the table-owned AutoFilter range.
 
 An image mutation uses the same versioned batch boundary:
 
@@ -963,9 +1033,9 @@ ordinary JSON:
 The first dump scope is the complete document (`/`). It accepts only content
 that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
-typed defined names, typed cells, typed ListObject tables, merged ranges, typed
-data-validation rules, and canonical typed conditional-format rules without
-cached formula results;
+typed defined names, typed cells, typed worksheet/table AutoFilters, typed
+ListObject tables, merged ranges, typed data-validation rules, and canonical
+typed conditional-format rules without cached formula results;
 plus Presentation slides with plain one-run text shapes and canonical basic
 tables.
 Headers, notes,

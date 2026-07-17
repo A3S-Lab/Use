@@ -19,6 +19,7 @@ mod named_range;
 mod part;
 mod raw;
 mod replay;
+mod spreadsheet_filter;
 mod spreadsheet_table;
 mod view;
 mod watch;
@@ -42,17 +43,19 @@ const HELP: &str = concat!(
     "  a3s-use office native merge <template> <output> --data <json|@file.json> [--force] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
-    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment|data-validation|conditional-format|named-range [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment|data-validation|conditional-format|named-range|auto-filter [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add <file.xlsx> <sheet> --type data-validation --validation-type list|whole|decimal|date|time|text-length|custom --range <A1-range> [--range <A1-range>] --formula1 <value> [--operator <comparison>] [--formula2 <value>] [--allow-blank <true|false>] [--show-input <true|false>] [--show-error <true|false>] [--prompt-title <text>] [--prompt <text>] [--error-title <text>] [--error-message <text>] [--error-style stop|warning|information] [--in-cell-dropdown <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add <file.xlsx> <sheet> --type conditional-format --rule-type cell-is|formula|contains-text|not-contains-text|begins-with|ends-with|top|bottom|above-average|below-average|duplicate-values|unique-values|contains-blanks|not-contains-blanks|contains-errors|not-contains-errors|time-period|data-bar|color-scale|icon-set --range <A1-range> [rule-specific options] [--stop-if-true <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add <file.xlsx> </|sheet> --type named-range --name <name> --ref <expression> [--scope workbook|worksheet:workbook|<sheet>] [--comment <text>] [--volatile <true|false>] [--output <file>] [--json]\n",
-    "  a3s-use office native add <file.xlsx> <sheet> --type table --name <name> --range <A1-range> --table-column <name> [--table-column <name> ...] [--display-name <name>] [--header-row <true|false>] [--totals-row <true|false>] [--style none|light:<1-21>|medium:<1-28>|dark:<1-11>] [--show-first-column <true|false>] [--show-last-column <true|false>] [--show-row-stripes <true|false>] [--show-column-stripes <true|false>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file.xlsx> <sheet> --type auto-filter --range <A1-range> [--filter <strict-json-column> ...] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file.xlsx> <sheet> --type table --name <name> --range <A1-range> --table-column <name> [--table-column <name> ...] [--filter <strict-json-column> ...] [--display-name <name>] [--header-row <true|false>] [--totals-row <true|false>] [--style none|light:<1-21>|medium:<1-28>|dark:<1-11>] [--show-first-column <true|false>] [--show-last-column <true|false>] [--show-row-stripes <true|false>] [--show-column-stripes <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
     "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--number-format <code>] [--fill <none|RRGGBB>] [--border-all <style>] [--border-color <RRGGBB>] [--border-left|--border-right|--border-top|--border-bottom <style>] [--border-left-color|--border-right-color|--border-top-color|--border-bottom-color <RRGGBB>] [--border-diagonal <style>] [--border-diagonal-color <RRGGBB>] [--border-diagonal-up <true|false>] [--border-diagonal-down <true|false>] [--vertical-align <top|center|bottom|justify|distributed>] [--wrap-text <true|false>] [--text-rotation <0..180|255>] [--indent <0..255>] [--shrink-to-fit <true|false>] [--reading-order <context|ltr|rtl>] [--merge-cells <true|false>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <sheet/dataValidation[N]> [data-validation options from add; unspecified fields are preserved, use none or an empty value to clear optional text/formula2] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <sheet/cf[N]> [conditional-format options from add; unspecified fields are preserved] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <namedrange-selector> [--name <name>] [--ref <expression>] [--scope workbook|worksheet:workbook|<sheet>] [--comment <text|none>] [--volatile <true|false>] [--output <file>] [--json]\n",
-    "  a3s-use office native set <file.xlsx> <sheet/table[N]> [--name <name>] [--display-name <name|none>] [--range <A1-range>] [--table-column <name> ...] [--header-row <true|false>] [--totals-row <true|false>] [--style none|light:<1-21>|medium:<1-28>|dark:<1-11>] [--show-first-column <true|false>] [--show-last-column <true|false>] [--show-row-stripes <true|false>] [--show-column-stripes <true|false>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file.xlsx> <sheet/autofilter> [--range <A1-range>] [--filter <strict-json-column> ...|--clear-filters] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file.xlsx> <sheet/table[N]> [--name <name>] [--display-name <name|none>] [--range <A1-range>] [--table-column <name> ...] [--filter <strict-json-column> ...|--clear-filters] [--header-row <true|false>] [--totals-row <true|false>] [--style none|light:<1-21>|medium:<1-28>|dark:<1-11>] [--show-first-column <true|false>] [--show-last-column <true|false>] [--show-row-stripes <true|false>] [--show-column-stripes <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -255,13 +258,18 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let snapshot = editor.snapshot()?;
     let conditional_format_path = conditional_formatting::canonical_path(path);
     let validation_path = data_validation::canonical_path(path);
+    let auto_filter_path = spreadsheet_filter::canonical_path(path);
     let named_range_path = named_range::is_path(path);
     let target_path = conditional_format_path
         .as_deref()
         .or(validation_path.as_deref())
+        .or(auto_filter_path.as_deref())
         .unwrap_or(path);
     let target_node = snapshot.get(target_path, 0).ok();
-    if (conditional_format_path.is_some() || validation_path.is_some() || named_range_path)
+    if (conditional_format_path.is_some()
+        || validation_path.is_some()
+        || auto_filter_path.is_some()
+        || named_range_path)
         && target_node.is_none()
     {
         snapshot.get(target_path, 0)?;
@@ -278,6 +286,9 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let is_named_range = target_node
         .as_ref()
         .is_some_and(|node| node.node_type == OfficeNodeType::NamedRange);
+    let is_spreadsheet_auto_filter = target_node
+        .as_ref()
+        .is_some_and(|node| node.node_type == OfficeNodeType::AutoFilter);
     let is_spreadsheet_table = editor.package().kind() == DocumentKind::Spreadsheet
         && target_node
             .as_ref()
@@ -286,12 +297,39 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let has_conditional_format_options = parsed.has_conditional_format_options();
     let has_named_range_options = parsed.has_named_range_options();
     let has_spreadsheet_table_options = parsed.has_spreadsheet_table_options();
+    let has_spreadsheet_filter_options = parsed.has_spreadsheet_filter_options();
     let has_comment_options = parsed.author.is_some()
         || parsed.initials.is_some()
         || parsed.x_emu.is_some()
         || parsed.y_emu.is_some();
     let mut result_path = path.clone();
-    let operation = if is_spreadsheet_table || parsed.has_spreadsheet_table_specific_options() {
+    let operation = if is_spreadsheet_auto_filter
+        || auto_filter_path.is_some()
+        || (parsed.has_spreadsheet_filter_specific_options() && !is_spreadsheet_table)
+    {
+        if !is_spreadsheet_auto_filter {
+            return Err(usage_error(
+                "Spreadsheet filter options require an existing /Sheet/autofilter path or Spreadsheet table",
+            ));
+        }
+        if !has_spreadsheet_filter_options {
+            return Err(usage_error(
+                "native Spreadsheet AutoFilter set requires --range, --filter, or --clear-filters",
+            ));
+        }
+        if has_spreadsheet_filter_conflicts(&parsed) {
+            return Err(usage_error(
+                "native Spreadsheet AutoFilter set cannot be combined with content, formatting, hyperlink, merge, comment, validation, conditional-format, named-range, or table-only options",
+            ));
+        }
+        let node = target_node.as_ref().ok_or_else(|| {
+            usage_error("native Spreadsheet AutoFilter set requires an existing AutoFilter node")
+        })?;
+        let filter_node = snapshot.get(&node.path, 2)?;
+        let filter = spreadsheet_filter::merge_existing(&filter_node, &parsed)?;
+        result_path = editor.set_spreadsheet_auto_filter(&node.path, filter)?;
+        "set-spreadsheet-auto-filter"
+    } else if is_spreadsheet_table || parsed.has_spreadsheet_table_specific_options() {
         if !is_spreadsheet_table {
             return Err(usage_error(
                 "Spreadsheet table options require an existing /Sheet/table[N] path",
@@ -325,7 +363,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         let node = target_node.as_ref().ok_or_else(|| {
             usage_error("native Spreadsheet table set requires an existing table node")
         })?;
-        let table_node = snapshot.get(&node.path, 1)?;
+        let table_node = snapshot.get(&node.path, 2)?;
         let table = spreadsheet_table::merge_existing(&table_node, &parsed)?;
         result_path = editor.set_spreadsheet_table(&node.path, table)?;
         "set-spreadsheet-table"
@@ -348,6 +386,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             || has_comment_options
             || has_data_validation_options
             || has_conditional_format_options
+            || parsed.has_spreadsheet_filter_specific_options()
         {
             return Err(usage_error(
                 "native named-range set cannot be combined with content, formatting, hyperlink, merge, width, comment-node, or data-validation options",
@@ -403,6 +442,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             || hyperlink.is_some()
             || merge_cells.is_some()
             || has_comment_options
+            || parsed.has_spreadsheet_filter_specific_options()
         {
             return Err(usage_error(
                 "native data-validation set cannot be combined with content, formatting, hyperlink, merge, width, or comment options",
@@ -731,6 +771,57 @@ fn has_conditional_format_conflicts(parsed: &ParsedArguments) -> bool {
         parsed.x_emu.is_some(),
         parsed.y_emu.is_some(),
         parsed.has_data_validation_specific_options(),
+        parsed.has_named_range_options(),
+        parsed.has_spreadsheet_table_specific_options(),
+        parsed.has_spreadsheet_filter_specific_options(),
+    ]
+    .into_iter()
+    .any(|present| present)
+}
+
+fn has_spreadsheet_filter_conflicts(parsed: &ParsedArguments) -> bool {
+    [
+        parsed.text.is_some(),
+        parsed.number.is_some(),
+        parsed.boolean.is_some(),
+        parsed.formula.is_some(),
+        parsed.width_emu.is_some(),
+        parsed.bold.is_some(),
+        parsed.italic.is_some(),
+        parsed.underline.is_some(),
+        parsed.script.is_some(),
+        parsed.strikethrough.is_some(),
+        parsed.double_strikethrough.is_some(),
+        parsed.text_case.is_some(),
+        parsed.highlight.is_some(),
+        parsed.language.is_some(),
+        parsed.font_family.is_some(),
+        parsed.font_size.is_some(),
+        parsed.text_color.is_some(),
+        parsed.alignment.is_some(),
+        parsed.number_format.is_some(),
+        parsed.fill.is_some(),
+        parsed.border.is_present(),
+        parsed.vertical_alignment.is_some(),
+        parsed.wrap_text.is_some(),
+        parsed.text_rotation.is_some(),
+        parsed.indent.is_some(),
+        parsed.shrink_to_fit.is_some(),
+        parsed.reading_order.is_some(),
+        parsed.merge_cells.is_some(),
+        parsed.url.is_some(),
+        parsed.location.is_some(),
+        parsed.display.is_some(),
+        parsed.tooltip.is_some(),
+        parsed.author.is_some(),
+        parsed.initials.is_some(),
+        parsed.x_emu.is_some(),
+        parsed.y_emu.is_some(),
+        parsed.has_data_validation_specific_options(),
+        parsed.validation_operator.is_some(),
+        parsed.validation_formula1.is_some(),
+        parsed.validation_formula2.is_some(),
+        parsed.has_conditional_format_options(),
         parsed.has_named_range_options(),
         parsed.has_spreadsheet_table_specific_options(),
     ]

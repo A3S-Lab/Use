@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::discovery::office_error;
 use crate::editor::{
-    NativeOfficeEditor, NativeOfficeMutation, NativeSpreadsheetConditionalFormat,
-    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
-    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
-    NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope, NativeSpreadsheetTable,
-    SpreadsheetCellValue,
+    NativeOfficeEditor, NativeOfficeMutation, NativeSpreadsheetAutoFilter,
+    NativeSpreadsheetConditionalFormat, NativeSpreadsheetDataValidation,
+    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
+    NativeSpreadsheetDataValidationType, NativeSpreadsheetNamedRange,
+    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetTable, SpreadsheetCellValue,
 };
 use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
 use crate::{DocumentKind, NativeOfficePackage};
@@ -348,6 +348,7 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
         }
 
         let mut merged_ranges = Vec::new();
+        let mut auto_filter = None;
         let mut conditional_formats = Vec::new();
         let mut tables = Vec::new();
         let mut validations = Vec::new();
@@ -420,6 +421,24 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                         },
                     )?);
                 }
+                OfficeNodeType::AutoFilter => {
+                    if auto_filter.is_some() {
+                        return Err(dump_unsupported(
+                            &child.path,
+                            "Spreadsheet replay found multiple worksheet AutoFilters.",
+                        ));
+                    }
+                    auto_filter = Some(
+                        NativeSpreadsheetAutoFilter::from_semantic_node(child).map_err(
+                            |error| {
+                                dump_unsupported(
+                                    &child.path,
+                                    format!("Spreadsheet AutoFilter is not replayable: {error}"),
+                                )
+                            },
+                        )?,
+                    );
+                }
                 _ => {
                     return Err(dump_unsupported(
                         &child.path,
@@ -445,6 +464,12 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                 validation,
             }
         }));
+        if let Some(filter) = auto_filter {
+            mutations.push(NativeOfficeMutation::AddSpreadsheetAutoFilter {
+                sheet: sheet.path.clone(),
+                filter,
+            });
+        }
         mutations.extend(tables.into_iter().map(|table| {
             NativeOfficeMutation::AddSpreadsheetTable {
                 sheet: sheet.path.clone(),

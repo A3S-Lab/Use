@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::spreadsheet_reference::CellRange;
 
+use super::{NativeSpreadsheetAutoFilter, NativeSpreadsheetFilterColumn};
+
 const MAX_TABLE_NAME_CHARACTERS: usize = 255;
 const MAX_TABLE_COLUMN_NAME_CHARACTERS: usize = 255;
 
@@ -104,6 +106,8 @@ pub struct NativeSpreadsheetTable {
     pub display_name: Option<String>,
     pub range: String,
     pub columns: Vec<NativeSpreadsheetTableColumn>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<NativeSpreadsheetFilterColumn>,
     #[serde(default = "default_true")]
     pub header_row: bool,
     #[serde(default)]
@@ -134,6 +138,7 @@ impl NativeSpreadsheetTable {
                 .into_iter()
                 .map(|name| NativeSpreadsheetTableColumn::new(name.into()))
                 .collect(),
+            filters: Vec::new(),
             header_row: true,
             totals_row: false,
             style: NativeSpreadsheetTableStyle::default(),
@@ -156,6 +161,16 @@ impl NativeSpreadsheetTable {
 
     pub fn with_totals_row(mut self, enabled: bool) -> Self {
         self.totals_row = enabled;
+        self
+    }
+
+    pub fn with_filter(
+        mut self,
+        column: u32,
+        criteria: super::NativeSpreadsheetFilterCriteria,
+    ) -> Self {
+        self.filters
+            .push(NativeSpreadsheetFilterColumn::new(column, criteria));
         self
     }
 
@@ -226,6 +241,17 @@ impl NativeSpreadsheetTable {
                 ),
             ));
         }
+        if !self.header_row && !self.filters.is_empty() {
+            return Err(super::super::editor_error(
+                "use.office.spreadsheet_table_filter_header_required",
+                "Spreadsheet table filters require an enabled header row.",
+            ));
+        }
+        NativeSpreadsheetAutoFilter {
+            range: range.a1(),
+            columns: self.filters.clone(),
+        }
+        .validate_for_width(width)?;
         let height = u64::from(range.end.row - range.start.row + 1);
         let structural_rows = u64::from(self.header_row) + u64::from(self.totals_row);
         if height <= structural_rows {

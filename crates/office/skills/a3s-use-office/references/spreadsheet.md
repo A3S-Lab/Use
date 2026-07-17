@@ -10,6 +10,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 - [Cell Text Formatting](#cell-text-formatting)
 - [Cell Presentation Formatting](#cell-presentation-formatting)
 - [Merged Cells](#merged-cells)
+- [AutoFilters](#autofilters)
 - [Tables](#tables)
 - [Data Validation](#data-validation)
 - [Conditional Formatting](#conditional-formatting)
@@ -180,6 +181,84 @@ unknown collection data, the operation fails with
 is merged-cell structure support, not complete rich Spreadsheet or OfficeCLI
 parity.
 
+## AutoFilters
+
+Use the typed worksheet lifecycle instead of editing `<autoFilter>` directly.
+Every repeated `--filter` value is one strict JSON object with a unique
+zero-based column offset and one closed criterion:
+
+```bash
+a3s use office native add workbook.xlsx /Sheet1 \
+  --type auto-filter \
+  --range A1:C20 \
+  --filter '{"column":0,"criteria":{"type":"values","values":["Open","Closed"],"includeBlanks":true}}' \
+  --filter '{"column":2,"criteria":{"type":"greater-than","value":"100"}}' \
+  --json
+
+a3s use office native get workbook.xlsx /Sheet1/autofilter --depth 2 --json
+a3s use office native query workbook.xlsx \
+  'filtercolumn[criteriaType=greater-than]' --json
+
+# Omitted range is preserved; repeated filters replace the complete list.
+a3s use office native set workbook.xlsx /Sheet1/autofilter \
+  --range B2:D30 \
+  --filter '{"column":1,"criteria":{"type":"dynamic","kind":"this-month"}}' \
+  --json
+
+# Clearing criteria is explicit and preserves the worksheet AutoFilter range.
+a3s use office native set workbook.xlsx /Sheet1/autofilter \
+  --clear-filters --json
+a3s use office native remove workbook.xlsx /Sheet1/autofilter --json
+```
+
+Criteria types are `values` with optional `includeBlanks`; `equals`,
+`not-equals`, `contains`, `does-not-contain`, `begins-with`, `ends-with`,
+`greater-than`, `greater-than-or-equal`, `less-than`, and
+`less-than-or-equal`; `between`/`not-between` with `lower` and `upper`;
+`blanks`/`non-blanks`; `top`/`bottom` with `count` 1–500;
+`top-percent`/`bottom-percent` with `percent` 1–100; and `dynamic` with a closed
+average/date/month/quarter kind such as `above-average`, `today`,
+`this-month`, `year-to-date`, `quarter1`, or `month12`. Values are XML-safe,
+bounded, and wildcard literals are escaped rather than interpreted as an
+unrequested pattern.
+
+Batch, standard MCP, and Rust use one complete value:
+
+```json
+{
+  "operation": "add-spreadsheet-auto-filter",
+  "sheet": "/Sheet1",
+  "filter": {
+    "range": "A1:C20",
+    "columns": [
+      {
+        "column": 0,
+        "criteria": {
+          "type": "values",
+          "values": ["Open", "Closed"],
+          "includeBlanks": true
+        }
+      },
+      {
+        "column": 2,
+        "criteria": {"type": "between", "lower": "10", "upper": "100"}
+      }
+    ]
+  }
+}
+```
+
+Use `set-spreadsheet-auto-filter` with a complete `filter` value for batch or
+MCP replacement. A worksheet accepts one AutoFilter; its range may not
+intersect a table or merged range. Semantic nodes expose
+`/SheetName/autofilter`, `/SheetName/autofilter/filterColumn[N]`, value
+children, normalized `ref`, criterion metadata, and `nativeMutable`. Table
+AutoFilters use `/SheetName/table[N]/autofilter` and the identical column
+value. Do not mutate a node with `nativeMutable=false`. Imported date-group,
+color/icon, extension, unknown-content, and sort-state forms fail closed.
+Filter definitions are native; persisted physical row sorting remains a
+separate capability.
+
 ## Tables
 
 Use the closed ListObject lifecycle for an Excel table rather than editing its
@@ -194,6 +273,7 @@ a3s use office native add workbook.xlsx /Sheet1 \
   --table-column Name \
   --table-column Qty \
   --table-column Price \
+  --filter '{"column":1,"criteria":{"type":"top","count":10}}' \
   --style medium:4 \
   --show-row-stripes true \
   --json
@@ -215,6 +295,13 @@ a3s use office native set workbook.xlsx '/Sheet1/table[1]' \
   --show-row-stripes false \
   --show-column-stripes true \
   --json
+
+# Replace all table criteria, or clear them explicitly.
+a3s use office native set workbook.xlsx '/Sheet1/table[1]' \
+  --filter '{"column":0,"criteria":{"type":"contains","value":"West"}}' \
+  --json
+a3s use office native set workbook.xlsx '/Sheet1/table[1]' \
+  --clear-filters --json
 
 a3s use office native remove workbook.xlsx '/Sheet1/table[1]' --json
 ```
@@ -253,6 +340,9 @@ Batch, standard MCP, and Rust use the complete typed value:
       {"name": "Qty"},
       {"name": "Price"}
     ],
+    "filters": [
+      {"column": 1, "criteria": {"type": "top", "count": 10}}
+    ],
     "headerRow": true,
     "totalsRow": false,
     "style": {"family": "medium", "number": 4},
@@ -268,8 +358,8 @@ Use `set-spreadsheet-table` with a stable `path` and a complete `table` value
 for batch or MCP replacement; use ordinary `remove` for deletion. Semantic
 nodes expose `/SheetName/table[N]`, children such as
 `/SheetName/table[N]/column[M]`, normalized `ref`, style and structural flags,
-and `nativeMutable`. Do not set a table whose readback reports
-`nativeMutable=false`.
+the table-owned AutoFilter and criteria, and `nativeMutable`. Do not set a table
+whose readback reports `nativeMutable=false`.
 
 The writer owns the table part, content type, worksheet relationship,
 `tableParts`, header cells, and table AutoFilter while preserving strict or
@@ -277,8 +367,8 @@ transitional OOXML and supported unknown root/style/extension content. It fails
 closed for unknown column metadata, unsafe relationship graphs, or collection
 data that cannot be retained. Exact replay, CLI atomic batches, and standard MCP
 sessions use the same contract. Calculated columns, totals labels/functions,
-filter criteria, persisted sort state, custom table styles, query tables,
-external data, slicers, and pivot integration are not yet native.
+date-group/color/icon filters, persisted sort state, custom table styles, query
+tables, external data, slicers, and pivot integration are not yet native.
 
 ## Data Validation
 
@@ -378,8 +468,8 @@ Updates preserve unknown rule attributes. Replacement fails if unknown rule
 children would be lost, and final removal fails if unknown collection data
 would be discarded. Strict/transitional OOXML, atomic batch rollback, and
 exact replay are supported. This capability does not add table calculated
-columns/totals functions, filter criteria, sort state, charts, pivots, formula
-evaluation, or Excel layout fidelity.
+columns/totals functions, date-group/color/icon filters, persisted sort state,
+charts, pivots, formula evaluation, or Excel layout fidelity.
 
 ## Conditional Formatting
 

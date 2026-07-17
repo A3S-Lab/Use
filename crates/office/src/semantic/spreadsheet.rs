@@ -13,6 +13,7 @@ use crate::spreadsheet_reference::{
 use crate::xml_tree::{parse_xml_tree, XmlElement, XmlNode};
 use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, RelationshipTarget};
 
+mod auto_filter;
 mod conditional_formatting;
 mod data_validation;
 mod named_range;
@@ -425,6 +426,12 @@ fn read_worksheet(
             .format
             .insert("dataValidationCount".into(), validations.len().to_string());
         sheet_node.children.extend(validations);
+    }
+    if let Some(filter) = auto_filter::read(&worksheet, part_name, &sheet_path)? {
+        sheet_node
+            .format
+            .insert("autoFilterRef".into(), filter.format["ref"].clone());
+        sheet_node.children.push(filter);
     }
     let tables = table::read(package, opc, &worksheet, part_name, &sheet_path)?;
     if !tables.is_empty() {

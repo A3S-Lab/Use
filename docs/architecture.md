@@ -123,7 +123,8 @@ starting a provider. During the 0.1.x migration, Office blank creation, reads,
 typed add/set/remove/move/copy/swap operations, constrained raw XML access,
 bounded annotated and issue analysis, typed text formatting, typed Spreadsheet
 cell presentation, data validation, conditional formatting, scoped defined
-names, ListObject tables, exact merged-cell editing, typed scoped text
+names, worksheet/table AutoFilters, ListObject tables, exact merged-cell
+editing, typed scoped text
 replacement, typed hyperlinks, and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
@@ -208,20 +209,34 @@ loss-preserving writer retains strict/transitional SpreadsheetML and unknown
 defined-name attributes and fails closed for unknown collection or child
 content. This capability stores defined-name expressions and requests
 recalculation; it neither evaluates formulas nor authors external links.
+Spreadsheet AutoFilters are a separate closed value represented by
+`add-spreadsheet-auto-filter` and `set-spreadsheet-auto-filter`; deletion reuses
+ordinary typed `remove`. Worksheet filters own one A1 range, while ListObject
+tables embed the same unique zero-based filter-column values. Exact value sets,
+text/comparison predicates, ranges, blanks, top/bottom limits, and dynamic
+average/date/month/quarter families cross Rust, versioned batch JSON, CLI,
+standard MCP, exact replay, and the Office Skill without an action envelope or
+property bag. Semantic projection exposes `AutoFilter`, `FilterColumn`, and
+`FilterValue` nodes at stable worksheet and table-owned paths. The
+loss-preserving writer retains strict/transitional SpreadsheetML and fails
+closed for unknown attributes/comments, date-group/color/icon criteria,
+extensions, and embedded sort state. Persisted physical row sorting remains a
+separate typed contract.
 Spreadsheet ListObject tables are another closed value represented by
 `add-spreadsheet-table` and `set-spreadsheet-table`; deletion reuses ordinary
 typed `remove`. The value owns workbook-wide name/display identity, one final A1
-range, exact ordered column names, header/totals state, a closed built-in style,
-and its style display flags. Identity, range width, data-row, table overlap,
-merge overlap, worksheet-AutoFilter overlap, and shared defined-name namespace
-invariants are checked before mutation. The OPC layer owns table parts, content
-types, worksheet relationships, `tableParts`, header stamping, and the
-table-owned AutoFilter range. Semantic projection exposes stable
-`/Sheet/table[N]` and child column nodes. Rust, versioned batch JSON, CLI,
-standard MCP, exact replay, and the Office Skill share the same value. The
-loss-preserving writer retains strict/transitional dialects and supported
-unknown root/style content, while calculated columns, totals functions, custom
-styles, filter criteria, sort state, query tables, external data, and unsafe
+range, exact ordered column names, header/totals state, typed filter criteria, a
+closed built-in style, and its style display flags. Identity, range width,
+data-row, table overlap, merge overlap, worksheet-AutoFilter overlap, filter
+column, and shared defined-name namespace invariants are checked before
+mutation. The OPC layer owns table parts, content types, worksheet
+relationships, `tableParts`, header stamping, and the table-owned AutoFilter
+range. Semantic projection exposes stable `/Sheet/table[N]`, child column, and
+table AutoFilter nodes. Rust, versioned batch JSON, CLI, standard MCP, exact
+replay, and the Office Skill share the same value. The loss-preserving writer
+retains strict/transitional dialects and supported unknown root/style content,
+while calculated columns, totals functions, date-group/color/icon filters,
+persisted sort state, custom styles, query tables, external data, and unsafe
 relationship graphs fail closed rather than becoming generic properties.
 Merged cells are another closed Spreadsheet mutation variant, represented by
 `merge-cells` and `unmerge-cells`, rather than a style flag or universal action.
@@ -358,8 +373,8 @@ bounded annotated plus text/outline/statistics views, all-format HTML and SVG,
 all-format bounded issue views, Browser-injected semantic PNG screenshots,
 constrained raw XML inspection, atomic typed mutation batches, including typed
 Spreadsheet data-validation and conditional formatting, scoped defined names,
-ListObject tables, and exact merge/unmerge, immutable-template merge, save, and
-close. A screenshot requires an explicit
+worksheet/table AutoFilters, ListObject tables, and exact merge/unmerge,
+immutable-template merge, save, and close. A screenshot requires an explicit
 no-clobber `.png` output and
 releases the Office session lock before Browser rendering. A server process
 owns at most 64 sessions. Batches and structured results are limited to 8 MiB,
@@ -430,8 +445,10 @@ Implemented:
     add/set/remove with sparse semantic readback, typed Spreadsheet
     conditional-format add/set/remove with stable semantic readback, typed
     scoped Spreadsheet defined-name add/set/remove with stable semantic
-    selectors, typed Spreadsheet ListObject add/set/remove with stable table and
-    column paths, exact Spreadsheet merged-cell editing,
+    selectors, typed worksheet/table Spreadsheet AutoFilters with closed
+    criteria, stable filter-column paths, and exact replay, typed Spreadsheet
+    ListObject add/set/remove with stable table and column paths, exact
+    Spreadsheet merged-cell editing,
     and typed Spreadsheet text/number/boolean/formula cell and range mutation,
     typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment

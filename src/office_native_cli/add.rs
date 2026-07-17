@@ -10,6 +10,7 @@ use super::conditional_formatting;
 use super::data_validation;
 use super::format::parse_hyperlink;
 use super::named_range;
+use super::spreadsheet_filter;
 use super::spreadsheet_table;
 use super::{save_editor, usage_error, MAX_IMAGE_INPUT_BYTES};
 use crate::cli::CommandOutput;
@@ -129,6 +130,12 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
                 editor.add_data_validation(parent, data_validation::build_new(&parsed)?)?,
                 None,
             ),
+            "auto-filter" | "autofilter" | "filter" => (
+                "add-spreadsheet-auto-filter",
+                editor
+                    .add_spreadsheet_auto_filter(parent, spreadsheet_filter::build_new(&parsed)?)?,
+                None,
+            ),
             "conditional-format" | "conditional-formatting" | "conditionalformatting" | "cf" => (
                 "add-conditional-format",
                 editor
@@ -204,6 +211,7 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
         node_type,
         "conditional-format" | "conditional-formatting" | "conditionalformatting" | "cf"
     );
+    let is_auto_filter = matches!(node_type, "auto-filter" | "autofilter" | "filter");
     let is_named_range = matches!(
         node_type,
         "named-range" | "namedrange" | "defined-name" | "definedname"
@@ -263,18 +271,19 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
         && !is_data_validation
         && !is_conditional_format
         && !is_table
+        && !is_auto_filter
     {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept --range, --operator, --formula1, or --formula2"
         )));
     }
-    if is_table
+    if (is_table || is_auto_filter)
         && (parsed.validation_operator.is_some()
             || parsed.validation_formula1.is_some()
             || parsed.validation_formula2.is_some())
     {
         return Err(usage_error(
-            "native Spreadsheet table add accepts --range but not --operator, --formula1, or --formula2",
+            "native Spreadsheet table and AutoFilter add accept --range but not --operator, --formula1, or --formula2",
         ));
     }
     if parsed.has_conditional_format_options() && !is_conditional_format {
@@ -285,6 +294,11 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
     if parsed.has_spreadsheet_table_specific_options() && !is_table {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept Spreadsheet table options"
+        )));
+    }
+    if parsed.has_spreadsheet_filter_specific_options() && !is_table && !is_auto_filter {
+        return Err(usage_error(format!(
+            "native Office add type '{node_type}' does not accept Spreadsheet filter options"
         )));
     }
     for (present, option) in [

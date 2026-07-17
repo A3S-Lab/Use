@@ -80,8 +80,9 @@ async fn spreadsheet_tables_have_a_native_typed_lifecycle() {
     assert_eq!(table.format["styleFamily"], "medium");
     assert_eq!(table.format["styleNumber"], "2");
     assert_eq!(table.format["nativeMutable"], "true");
-    assert_eq!(table.children.len(), 3);
+    assert_eq!(table.children.len(), 4);
     assert_eq!(table.children[2].text, "Price");
+    assert_eq!(table.children[3].node_type, OfficeNodeType::AutoFilter);
     assert_eq!(snapshot.get("/Sheet1/A1", 0).unwrap().text, "Name");
     assert_eq!(snapshot.query("table[name=Sales]").unwrap().len(), 1);
     assert!(editor.package().contains_part("xl/tables/table1.xml"));
@@ -409,7 +410,7 @@ async fn spreadsheet_tables_preserve_strict_ooxml_and_unknown_owned_boundaries()
 }
 
 #[tokio::test]
-async fn spreadsheet_tables_fail_closed_for_filter_criteria_and_sort_state() {
+async fn spreadsheet_tables_fail_closed_for_unsupported_imported_state() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("unsupported-table-state.xlsx");
     let mut editor = NativeOfficeEditor::create(&path).await.unwrap();
@@ -424,7 +425,7 @@ async fn spreadsheet_tables_fail_closed_for_filter_criteria_and_sort_state() {
     let variants = [
         table_xml.replace(
             "<autoFilter ref=\"A1:B3\"/>",
-            "<autoFilter ref=\"A1:B3\"><filterColumn colId=\"0\"><filters><filter val=\"One\"/></filters></filterColumn></autoFilter>",
+            "<autoFilter ref=\"A1:B3\"><filterColumn colId=\"0\"><filters><dateGroupItem year=\"2026\" month=\"7\" dateTimeGrouping=\"month\"/></filters></filterColumn></autoFilter>",
         ),
         table_xml.replace(
             "<tableColumns",

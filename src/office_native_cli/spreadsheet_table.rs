@@ -4,6 +4,7 @@ use a3s_use_office::{
 };
 
 use super::arguments::ParsedArguments;
+use super::spreadsheet_filter;
 use super::usage_error;
 
 pub(super) fn build_new(parsed: &ParsedArguments) -> UseResult<NativeSpreadsheetTable> {
@@ -19,6 +20,7 @@ pub(super) fn build_new(parsed: &ParsedArguments) -> UseResult<NativeSpreadsheet
         ));
     }
     let mut table = NativeSpreadsheetTable::new(name, range, parsed.table_columns.clone());
+    table.filters = spreadsheet_filter::new_columns(parsed)?;
     if let Some(display_name) = &parsed.table_display_name {
         table.display_name = Some(display_name.clone());
     }
@@ -53,6 +55,7 @@ pub(super) fn merge_existing(
             .map(NativeSpreadsheetTableColumn::new)
             .collect();
     }
+    spreadsheet_filter::update_existing_columns(&mut table.filters, parsed)?;
     apply_updates(&mut table, parsed)?;
     normalize_none_style(&mut table, parsed);
     Ok(table)

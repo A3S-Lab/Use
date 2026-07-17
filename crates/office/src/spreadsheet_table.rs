@@ -1,8 +1,8 @@
 use a3s_use_core::UseResult;
 
 use crate::{
-    DocumentNode, NativeSpreadsheetTable, NativeSpreadsheetTableColumn,
-    NativeSpreadsheetTableStyle, OfficeNodeType,
+    DocumentNode, NativeSpreadsheetAutoFilter, NativeSpreadsheetTable,
+    NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle, OfficeNodeType,
 };
 
 impl NativeSpreadsheetTable {
@@ -48,6 +48,7 @@ impl NativeSpreadsheetTable {
         let columns = node
             .children
             .iter()
+            .filter(|column| column.node_type == OfficeNodeType::TableColumn)
             .map(|column| {
                 if column.node_type != OfficeNodeType::TableColumn
                     || column.tag != "column"
@@ -63,11 +64,36 @@ impl NativeSpreadsheetTable {
                 })
             })
             .collect::<UseResult<Vec<_>>>()?;
+        let filter_nodes = node
+            .children
+            .iter()
+            .filter(|child| child.node_type == OfficeNodeType::AutoFilter)
+            .collect::<Vec<_>>();
+        if filter_nodes.len() > 1
+            || node.children.iter().any(|child| {
+                !matches!(
+                    child.node_type,
+                    OfficeNodeType::TableColumn | OfficeNodeType::AutoFilter
+                )
+            })
+        {
+            return Err(semantic_table_error(
+                node,
+                "contains unsupported table children",
+            ));
+        }
+        let filters = filter_nodes
+            .first()
+            .map(|filter| NativeSpreadsheetAutoFilter::from_semantic_node(filter))
+            .transpose()?
+            .map(|filter| filter.columns)
+            .unwrap_or_default();
         let table = Self {
             name: name.clone(),
             display_name: (display_name != name).then(|| display_name.to_string()),
             range,
             columns,
+            filters,
             header_row,
             totals_row,
             style,

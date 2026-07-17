@@ -103,13 +103,21 @@ available.
   name, add a formula-bar leading `=`, or use raw XML to bypass a typed
   identity/ref error. Defined-name formulas are stored and marked for
   recalculation, not evaluated by A3S.
+- Treat Spreadsheet AutoFilters as typed worksheet or table structure. Query
+  `autofilter` or `filtercolumn` first and inspect `nativeMutable`; use the
+  stable `/Sheet/autofilter` or `/Sheet/table[N]` path for updates. Every
+  `--filter` is one strict JSON object containing a unique zero-based `column`
+  and closed `criteria`. Repeated values replace the complete criterion list;
+  use `--clear-filters` explicitly to clear it. Do not use raw XML to flatten
+  imported date groups, color/icon filters, extensions, or sort state.
 - Treat Spreadsheet ListObject tables as owned worksheet structures. Query
   `table` first and use the returned `/Sheet/table[N]` path for set/remove. The
   final range includes enabled header and totals rows; provide exactly one
   unique `--table-column` per range column and leave at least one data row. Do
   not overlap another table, a merge, or a worksheet AutoFilter, and do not use
   raw XML to bypass `nativeMutable=false` or an unknown-content/relationship
-  error. Table filter criteria and sort state are not yet native.
+  error. Table criteria use the same typed filter-column values as worksheet
+  AutoFilters; persisted sort state is not yet native.
 - Keep the default OfficeCLI compatibility route separate from the native
   engine. Do not depend on OfficeCLI's private resident protocol.
 
@@ -133,8 +141,11 @@ typed thresholds, stable paths, semantic queries, and exact canonical replay.
 It owns workbook-global and
 worksheet-local Spreadsheet defined names with stable scoped paths, typed
 add/set/remove, semantic readback, and exact replay. It owns typed Spreadsheet
-ListObject names, ranges, column identities, header/totals state, built-in
-styles, stable table/column paths, add/set/remove, and exact replay. It also
+worksheet and table AutoFilters with closed value, comparison, top/bottom, and
+dynamic criteria, stable filter paths, add/set/remove, and exact replay. It
+owns typed Spreadsheet ListObject names, ranges, column identities,
+header/totals state, filter criteria, built-in styles, stable table/column
+paths, add/set/remove, and exact replay. It also
 owns template merge, constrained XML access,
 deterministic all-format HTML/SVG, Browser-injected semantic screenshots, and
 authenticated loopback live watch for saved files.
@@ -144,8 +155,9 @@ clicks or internal jumps to existing slides. Remaining boundaries include
 modern threaded comments, replies/resolution, writable comment dates,
 rich comment bodies, Word header/footer comment anchors,
 gradient/pattern/theme fills, advanced x14 conditional-format visuals, named styles, complete formula
-calculation, table calculated columns/totals functions, filter criteria and sort
-state, custom table styles, query tables/external data, advanced charts, pivots,
+calculation, table calculated columns/totals functions, date-group/color/icon
+filters and persisted sort state, custom table styles, query tables/external
+data, advanced charts, pivots,
 and media,
 interactive preview editing/annotations, and full Office layout fidelity. Fail
 closed or use the explicit compatibility route rather than inventing

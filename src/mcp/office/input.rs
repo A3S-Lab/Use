@@ -15,10 +15,12 @@ use serde::{Deserialize, Serialize};
 mod cell_format;
 mod conditional_formatting;
 mod data_validation;
+mod spreadsheet_filter;
 
 use cell_format::OfficeCellFormat;
 use conditional_formatting::OfficeConditionalFormat;
 use data_validation::OfficeDataValidation;
+use spreadsheet_filter::{OfficeSpreadsheetAutoFilter, OfficeSpreadsheetFilterColumn};
 
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -285,6 +287,9 @@ pub(super) struct OfficeSpreadsheetTable {
     pub(super) range: String,
     /// Exactly one unique name per range column.
     pub(super) columns: Vec<OfficeSpreadsheetTableColumn>,
+    /// At most one criterion per zero-based table column.
+    #[serde(default)]
+    pub(super) filters: Vec<OfficeSpreadsheetFilterColumn>,
     #[serde(default = "default_true")]
     pub(super) header_row: bool,
     #[serde(default)]
@@ -312,6 +317,7 @@ impl From<OfficeSpreadsheetTable> for NativeSpreadsheetTable {
                 .into_iter()
                 .map(|column| NativeSpreadsheetTableColumn { name: column.name })
                 .collect(),
+            filters: value.filters.into_iter().map(Into::into).collect(),
             header_row: value.header_row,
             totals_row: value.totals_row,
             style: value.style.into(),
@@ -787,6 +793,16 @@ pub(super) enum OfficeMutation {
         path: String,
         table: OfficeSpreadsheetTable,
     },
+    AddSpreadsheetAutoFilter {
+        /// Existing Spreadsheet worksheet path such as `/Sheet1`.
+        sheet: String,
+        filter: OfficeSpreadsheetAutoFilter,
+    },
+    SetSpreadsheetAutoFilter {
+        /// Existing worksheet AutoFilter path such as `/Sheet1/autofilter`.
+        path: String,
+        filter: OfficeSpreadsheetAutoFilter,
+    },
     AddNamedRange {
         #[serde(rename = "namedRange")]
         named_range: OfficeNamedRange,
@@ -973,6 +989,18 @@ impl OfficeMutation {
                 NativeOfficeMutation::SetSpreadsheetTable {
                     path,
                     table: table.into(),
+                }
+            }
+            Self::AddSpreadsheetAutoFilter { sheet, filter } => {
+                NativeOfficeMutation::AddSpreadsheetAutoFilter {
+                    sheet,
+                    filter: filter.into(),
+                }
+            }
+            Self::SetSpreadsheetAutoFilter { path, filter } => {
+                NativeOfficeMutation::SetSpreadsheetAutoFilter {
+                    path,
+                    filter: filter.into(),
                 }
             }
             Self::AddNamedRange { named_range } => NativeOfficeMutation::AddNamedRange {

@@ -39,18 +39,19 @@ pub use types::{
     NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
     NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextCase, NativeOfficeTextFormat,
     NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextReplacementResult,
-    NativeOfficeTextScript, NativeOfficeUnderline, NativeSpreadsheetBorder,
-    NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat,
-    NativeSpreadsheetConditionalFormat, NativeSpreadsheetConditionalFormatIconSet,
-    NativeSpreadsheetConditionalFormatOperator, NativeSpreadsheetConditionalFormatRule,
-    NativeSpreadsheetConditionalFormatThreshold, NativeSpreadsheetConditionalFormatThresholdKind,
-    NativeSpreadsheetConditionalFormatTimePeriod, NativeSpreadsheetDataValidation,
-    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
-    NativeSpreadsheetDataValidationType, NativeSpreadsheetDifferentialFormat,
-    NativeSpreadsheetFill, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
-    NativeSpreadsheetReadingOrder, NativeSpreadsheetTable, NativeSpreadsheetTableColumn,
-    NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
-    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    NativeOfficeTextScript, NativeOfficeUnderline, NativeSpreadsheetAutoFilter,
+    NativeSpreadsheetBorder, NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle,
+    NativeSpreadsheetCellFormat, NativeSpreadsheetConditionalFormat,
+    NativeSpreadsheetConditionalFormatIconSet, NativeSpreadsheetConditionalFormatOperator,
+    NativeSpreadsheetConditionalFormatRule, NativeSpreadsheetConditionalFormatThreshold,
+    NativeSpreadsheetConditionalFormatThresholdKind, NativeSpreadsheetConditionalFormatTimePeriod,
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
+    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
+    NativeSpreadsheetDifferentialFormat, NativeSpreadsheetDynamicFilter, NativeSpreadsheetFill,
+    NativeSpreadsheetFilterColumn, NativeSpreadsheetFilterCriteria, NativeSpreadsheetNamedRange,
+    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder, NativeSpreadsheetTable,
+    NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment,
+    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
@@ -221,6 +222,30 @@ impl NativeOfficeEditor {
         self.single_path(NativeOfficeMutation::SetSpreadsheetTable {
             path: path.into(),
             table,
+        })
+    }
+
+    /// Adds the single typed worksheet AutoFilter.
+    pub fn add_spreadsheet_auto_filter(
+        &mut self,
+        sheet: impl Into<String>,
+        filter: NativeSpreadsheetAutoFilter,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::AddSpreadsheetAutoFilter {
+            sheet: sheet.into(),
+            filter,
+        })
+    }
+
+    /// Replaces one worksheet AutoFilter and all supported column criteria.
+    pub fn set_spreadsheet_auto_filter(
+        &mut self,
+        path: impl Into<String>,
+        filter: NativeSpreadsheetAutoFilter,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SetSpreadsheetAutoFilter {
+            path: path.into(),
+            filter,
         })
     }
 
@@ -733,6 +758,12 @@ impl NativeOfficeEditor {
                 }
                 NativeOfficeMutation::SetSpreadsheetTable { path, table } => {
                     spreadsheet::set_table(&mut self.package, path, table)
+                }
+                NativeOfficeMutation::AddSpreadsheetAutoFilter { sheet, filter } => {
+                    spreadsheet::add_auto_filter(&mut self.package, sheet, filter)
+                }
+                NativeOfficeMutation::SetSpreadsheetAutoFilter { path, filter } => {
+                    spreadsheet::set_auto_filter(&mut self.package, path, filter)
                 }
                 NativeOfficeMutation::AddNamedRange { named_range } => {
                     spreadsheet::add_named_range(&mut self.package, named_range)

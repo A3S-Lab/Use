@@ -14,8 +14,10 @@ use crate::{DocumentKind, NativeOfficePackage};
 const MAX_RANGE_MUTATION_CELLS: usize = 100_000;
 
 mod arrange;
+mod auto_filter;
 mod conditional_formatting;
 mod data_validation;
+mod filter_xml;
 mod merge;
 mod named_range;
 mod structure;
@@ -26,6 +28,22 @@ mod worksheet;
 pub(super) use arrange::{copy_node, move_node, swap_nodes};
 pub(super) use structure::{delete_columns, delete_rows, insert_columns, insert_rows};
 pub(super) use worksheet::{copy_worksheet, move_worksheet, rename_worksheet};
+
+pub(super) fn add_auto_filter(
+    package: &mut NativeOfficePackage,
+    sheet: &str,
+    filter: &super::NativeSpreadsheetAutoFilter,
+) -> UseResult<String> {
+    auto_filter::add(package, sheet, filter)
+}
+
+pub(super) fn set_auto_filter(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    filter: &super::NativeSpreadsheetAutoFilter,
+) -> UseResult<String> {
+    auto_filter::set(package, path, filter)
+}
 
 pub(super) fn add_conditional_format(
     package: &mut NativeOfficePackage,
@@ -174,7 +192,9 @@ pub(super) fn set_cell_value(
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
-    if table::is_path(path) {
+    if auto_filter::is_path(path) {
+        auto_filter::remove(package, path)
+    } else if table::is_path(path) {
         table::remove(package, path)
     } else if named_range::is_path(path) {
         named_range::remove(package, path)

@@ -156,8 +156,7 @@ fn read_table(
     let mut mutable = header_count <= 1
         && totals_count <= 1
         && totals_state_supported
-        && root_supports_typed_mutation(&table)
-        && auto_filter_supports_typed_mutation(&table, part_name, range, header_row, totals_row)?;
+        && root_supports_typed_mutation(&table);
     let mut node = DocumentNode::new(
         format!("{sheet_path}/table[{position}]"),
         "table",
@@ -263,6 +262,12 @@ fn read_table(
             }
         }
     }
+    let (filter, filter_mutable) =
+        read_auto_filter(&table, part_name, &node.path, range, header_row, totals_row)?;
+    mutable &= filter_mutable;
+    if let Some(filter) = filter {
+        node.children.push(filter);
+    }
     node.format
         .insert("nativeMutable".into(), mutable.to_string());
     Ok(node)
@@ -295,13 +300,14 @@ fn root_supports_typed_mutation(table: &XmlElement) -> bool {
     attributes_supported && table_type_supported && children_supported
 }
 
-fn auto_filter_supports_typed_mutation(
+fn read_auto_filter(
     table: &XmlElement,
     part_name: &str,
+    table_path: &str,
     range: CellRange,
     header_row: bool,
     totals_row: bool,
-) -> UseResult<bool> {
+) -> UseResult<(Option<DocumentNode>, bool)> {
     let filters = table
         .children_named("autoFilter")
         .filter(|filter| filter.namespace == table.namespace)
@@ -313,26 +319,21 @@ fn auto_filter_supports_typed_mutation(
         ));
     }
     let Some(filter) = filters.first() else {
-        return Ok(!header_row);
+        return Ok((None, !header_row));
     };
-    if !header_row {
-        return Ok(false);
-    }
-    let supported_shape = filter.child_elements().next().is_none()
-        && filter
-            .attributes
-            .iter()
-            .all(|attribute| attribute.namespace.is_some() || attribute.local_name == "ref");
-    let Some(observed_range) = filter
-        .attribute("ref")
-        .and_then(|value| CellRange::parse(value).ok())
-    else {
-        return Ok(false);
-    };
+    let node =
+        super::auto_filter::read_element(filter, part_name, &format!("{table_path}/autofilter"))?;
+    let observed_range = node
+        .format
+        .get("ref")
+        .and_then(|value| CellRange::parse(value).ok());
     let Some(expected_range) = table_filter_range(range, totals_row) else {
-        return Ok(false);
+        return Ok((Some(node), false));
     };
-    Ok(supported_shape && observed_range == expected_range)
+    let mutable = header_row
+        && observed_range == Some(expected_range)
+        && node.format.get("nativeMutable").map(String::as_str) == Some("true");
+    Ok((Some(node), mutable))
 }
 
 fn table_filter_range(mut range: CellRange, totals_row: bool) -> Option<CellRange> {

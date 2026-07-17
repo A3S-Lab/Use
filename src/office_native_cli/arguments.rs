@@ -78,6 +78,8 @@ pub(super) struct ParsedArguments {
     pub table_show_last_column: Option<String>,
     pub table_show_row_stripes: Option<String>,
     pub table_show_column_stripes: Option<String>,
+    pub spreadsheet_filters: Vec<String>,
+    pub clear_filters: bool,
     pub conditional_format_type: Option<String>,
     pub conditional_stop_if_true: Option<String>,
     pub conditional_rank: Option<u32>,
@@ -293,7 +295,9 @@ impl ParsedArguments {
                     index += 2;
                 }
                 "--range" | "--sqref"
-                    if allowed.data_validation || allowed.conditional_formatting =>
+                    if allowed.data_validation
+                        || allowed.conditional_formatting
+                        || allowed.spreadsheet_filter =>
                 {
                     parsed
                         .validation_ranges
@@ -475,6 +479,19 @@ impl ParsedArguments {
                         "--show-column-stripes",
                     )?;
                     index += 2;
+                }
+                "--filter" if allowed.spreadsheet_filter => {
+                    parsed
+                        .spreadsheet_filters
+                        .push(option_value(args, index, "--filter")?.to_string());
+                    index += 2;
+                }
+                "--clear-filters" if allowed.spreadsheet_filter => {
+                    if parsed.clear_filters {
+                        return Err(usage_error("--clear-filters may be specified only once"));
+                    }
+                    parsed.clear_filters = true;
+                    index += 1;
                 }
                 "--rule-type" | "--cf-type" if allowed.conditional_formatting => {
                     set_string_option(
@@ -796,6 +813,7 @@ impl ParsedArguments {
             || self.table_show_last_column.is_some()
             || self.table_show_row_stripes.is_some()
             || self.table_show_column_stripes.is_some()
+            || self.has_spreadsheet_filter_specific_options()
     }
 
     pub(super) fn has_spreadsheet_table_specific_options(&self) -> bool {
@@ -808,6 +826,14 @@ impl ParsedArguments {
             || self.table_show_last_column.is_some()
             || self.table_show_row_stripes.is_some()
             || self.table_show_column_stripes.is_some()
+    }
+
+    pub(super) fn has_spreadsheet_filter_options(&self) -> bool {
+        !self.validation_ranges.is_empty() || self.has_spreadsheet_filter_specific_options()
+    }
+
+    pub(super) fn has_spreadsheet_filter_specific_options(&self) -> bool {
+        !self.spreadsheet_filters.is_empty() || self.clear_filters
     }
 
     pub(super) fn has_conditional_format_options(&self) -> bool {
@@ -911,6 +937,7 @@ pub(super) struct AllowedOptions {
     named_range: bool,
     conditional_formatting: bool,
     spreadsheet_table: bool,
+    spreadsheet_filter: bool,
 }
 
 impl AllowedOptions {
@@ -978,6 +1005,7 @@ impl AllowedOptions {
         named_range: false,
         conditional_formatting: false,
         spreadsheet_table: false,
+        spreadsheet_filter: false,
     };
     pub const GET: Self = Self {
         depth: true,
@@ -1036,6 +1064,7 @@ impl AllowedOptions {
         conditional_formatting: true,
         name: true,
         spreadsheet_table: true,
+        spreadsheet_filter: true,
         ..Self::NONE
     };
     pub const BATCH: Self = Self {
@@ -1080,6 +1109,7 @@ impl AllowedOptions {
         named_range: true,
         conditional_formatting: true,
         spreadsheet_table: true,
+        spreadsheet_filter: true,
         formula: true,
         bold: true,
         text_color: true,

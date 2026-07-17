@@ -24,15 +24,15 @@ pub(super) fn new_table_xml(
     id: u32,
     table: &NativeSpreadsheetTable,
     range: CellRange,
-) -> Vec<u8> {
+) -> UseResult<Vec<u8>> {
     let namespace = dialect.spreadsheet_namespace();
     let display_name = table.display_name.as_deref().unwrap_or(&table.name);
     let mut children = String::new();
     if table.header_row {
-        children.push_str(&format!(
-            "<autoFilter ref=\"{}\"/>",
-            filter_ref(table, range)
-        ));
+        children.push_str(&super::super::filter_xml::fragment(
+            None,
+            &table_filter(table, range),
+        )?);
     }
     children.push_str(&table_columns_fragment(None, table));
     if let Some(style_name) = table.style.ooxml_name() {
@@ -45,7 +45,7 @@ pub(super) fn new_table_xml(
             bool_token(table.show_row_stripes),
         ));
     }
-    format!(
+    Ok(format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><table displayName=\"{}\" headerRowCount=\"{}\" id=\"{id}\" name=\"{}\" ref=\"{}\" totalsRowCount=\"{}\" totalsRowShown=\"{}\" xmlns=\"{namespace}\">{children}</table>",
         escape_attribute(display_name),
         bool_token(table.header_row),
@@ -54,7 +54,7 @@ pub(super) fn new_table_xml(
         bool_token(table.totals_row),
         bool_token(table.totals_row),
     )
-    .into_bytes()
+    .into_bytes())
 }
 
 pub(super) fn replace_table(
@@ -116,17 +116,26 @@ fn patch_auto_filter(
     let root = index_xml(&part)?;
     let existing = single_child(&root, "autoFilter", part.name())?;
     let bytes = match (table.header_row, existing) {
-        (true, Some(existing)) => patch_start_tag_attributes(
-            &part,
-            existing,
-            &BTreeMap::from([("ref".to_string(), Some(filter_ref(table, range)))]),
-        )?,
+        (true, Some(existing)) => {
+            super::super::filter_xml::validate_mutable(&part, existing)?;
+            apply_patches(
+                &part,
+                vec![XmlPatch::new(
+                    existing.full_range.clone(),
+                    super::super::filter_xml::fragment(
+                        root.qualified_name
+                            .rsplit_once(':')
+                            .map(|(prefix, _)| prefix),
+                        &table_filter(table, range),
+                    )?,
+                )],
+            )?
+        }
         (true, None) => {
             let prefix = root
                 .qualified_name
                 .rsplit_once(':')
                 .map(|(prefix, _)| prefix);
-            let name = qualified(prefix, "autoFilter");
             let columns = root
                 .children
                 .iter()
@@ -136,20 +145,12 @@ fn patch_auto_filter(
                 &part,
                 vec![XmlPatch::new(
                     columns.full_range.start..columns.full_range.start,
-                    format!(
-                        "<{name} ref=\"{}\"/>",
-                        escape_attribute(&filter_ref(table, range))
-                    ),
+                    super::super::filter_xml::fragment(prefix, &table_filter(table, range))?,
                 )],
             )?
         }
         (false, Some(existing)) => {
-            if !removable_element(&part, existing, &["ref"]) {
-                return Err(unknown_content(
-                    part.name(),
-                    "The table autoFilter cannot be removed without discarding filter criteria or unknown data.",
-                ));
-            }
+            super::super::filter_xml::validate_mutable(&part, existing)?;
             apply_patches(
                 &part,
                 vec![XmlPatch::new(existing.full_range.clone(), Vec::new())],
@@ -415,12 +416,18 @@ fn table_columns_fragment(prefix: Option<&str>, table: &NativeSpreadsheetTable) 
     )
 }
 
-fn filter_ref(table: &NativeSpreadsheetTable, range: CellRange) -> String {
+fn table_filter(
+    table: &NativeSpreadsheetTable,
+    range: CellRange,
+) -> crate::NativeSpreadsheetAutoFilter {
     let mut filter = range;
     if table.totals_row {
         filter.end.row -= 1;
     }
-    filter.a1()
+    crate::NativeSpreadsheetAutoFilter {
+        range: filter.a1(),
+        columns: table.filters.clone(),
+    }
 }
 
 fn single_child<'a>(

@@ -369,7 +369,8 @@ MCP lifecycle with an unusable OfficeCLI provider.
 
 This milestone is cell data-validation structure, not complete rich
 Spreadsheet or OfficeCLI parity. Table calculated columns and totals functions,
-filter criteria and persisted sort state, charts, pivot tables, slicers,
+persisted sort state and unsupported date-group/color/icon filter families,
+charts, pivot tables, slicers,
 sparklines, formula evaluation, CSV/TSV import, and Excel layout fidelity remain
 separate work.
 
@@ -495,6 +496,44 @@ This milestone is defined-name lifecycle and storage, not a formula parser,
 dependency graph, evaluator, external-link authoring, or complete rich
 Spreadsheet parity.
 
+Native `add-spreadsheet-auto-filter` and `set-spreadsheet-auto-filter` form a
+closed typed Rust, versioned batch, CLI, and standard MCP contract. Ordinary
+typed `remove` deletes the single worksheet filter through its stable
+`/SheetName/autofilter` path. The same filter-column values live inside
+ListObject table replacements and project below
+`/SheetName/table[N]/autofilter`. CLI add uses `--type auto-filter`, one
+`--range`, and repeated strict JSON `--filter` objects. CLI set preserves an
+omitted range, replaces the full criterion list when `--filter` is present, and
+requires `--clear-filters` to clear criteria explicitly. Rust, batch, and MCP
+set always supply the complete filter value.
+
+One value owns a rectangular normalized A1 range and zero or more unique
+zero-based column offsets. The closed criteria are value sets with optional
+blanks; equals/not-equals; contains/does-not-contain; begins/ends-with;
+greater/less-than with inclusive variants; between/not-between;
+blanks/non-blanks; top/bottom count or percentage; and dynamic average,
+relative-day/week/month/quarter/year, year-to-date, numbered-quarter, and
+numbered-month families. Value, column, percentage, count, aggregate text, and
+range-width limits are enforced before mutation. Comparison and wildcard text
+is XML-escaped, literal `~`, `*`, and `?` characters are preserved, and column
+elements are serialized in deterministic index order.
+
+A worksheet accepts one AutoFilter. Its range cannot intersect a ListObject
+table or merged range. A table filter requires a header and uses the table
+range minus an enabled totals row. Table and worksheet filter regions cannot
+overlap. Semantic reads expose `AutoFilter`, `FilterColumn`, and `FilterValue`
+nodes, including `/Sheet/autofilter/filterColumn[N]`, normalized refs, typed
+criterion metadata, and `nativeMutable`. Exact replay reconstructs worksheet
+and table filters from those nodes. The writer retains strict or transitional
+SpreadsheetML and fails closed for unknown attributes or comments, extensions,
+date-group items, color/icon filters, and embedded sort state. Those imported
+forms remain readable but are not flattened into the supported type.
+
+This milestone owns filter definitions, not physical row rearrangement or
+persisted sort-state authoring. A future sort contract must define key order,
+header/totals behavior, formula/reference effects, stable-row semantics, and
+rollback independently.
+
 Native `add-spreadsheet-table` and `set-spreadsheet-table` form a separate
 closed typed Rust, versioned batch, CLI, and standard MCP contract for
 Spreadsheet ListObject tables. Ordinary typed `remove` deletes one table
@@ -506,9 +545,10 @@ complete `table` value.
 
 The value owns a workbook-wide `name`, an optional distinct `displayName`, the
 final rectangular A1 range, exact ordered column names, header and totals-row
-flags, one closed built-in style, and first/last-column plus row/column-stripe
-flags. New tables default to a header, no totals row, `TableStyleMedium2`, and
-row stripes. Styles are `none`, light 1–21, medium 1–28, or dark 1–11; `none`
+flags, typed filter criteria, one closed built-in style, and first/last-column
+plus row/column-stripe flags. New tables default to a header, no totals row,
+`TableStyleMedium2`, and row stripes. Styles are `none`, light 1–21, medium
+1–28, or dark 1–11; `none`
 omits `tableStyleInfo` and therefore requires every style flag to be false. The
 range includes enabled header and totals rows and must retain at least one data
 row. When a header is enabled, column names are stamped into its cells and the
@@ -536,20 +576,21 @@ the semantic node non-mutable or fail with
 `use.office.spreadsheet_table_unknown_content` instead of being flattened.
 
 Semantic reads expose table nodes and stable child column nodes, including
-name/display name, normalized range, header/totals state, built-in style,
-display flags, table ID, and `nativeMutable`. Query supports selectors such as
-`table[name=Sales]`. Exact replay emits tables after worksheet creation and
-cell values so header stamping and final supported part maps reproduce
-canonically. Tests cover typed lifecycle, multi-worksheet path identity,
+name/display name, normalized range, header/totals state, filter children,
+built-in style, display flags, table ID, and `nativeMutable`. Query supports
+selectors such as `table[name=Sales]` and
+`filtercolumn[criteriaType=between]`. Exact replay emits tables after worksheet
+creation and cell values so header stamping and final supported part maps
+reproduce canonically. Tests cover typed lifecycle, multi-worksheet path identity,
 validation and rollback, namespace and range collisions, strict OOXML, unknown
 content and relationship safety, replay after table replacement, native CLI
 lifecycle and atomic batch, and a complete standard MCP unsaved/save/reopen/
 remove lifecycle with an unusable OfficeCLI provider.
 
 This milestone does not own calculated-column formulas, totals-row labels or
-functions, filter criteria, persisted sort state, custom table styles, query
-tables, external data, slicers, or pivot-table integration. Those remain
-separate closed contracts rather than generic table properties.
+functions, date-group/color/icon filters, persisted sort state, custom table
+styles, query tables, external data, slicers, or pivot-table integration. Those
+remain separate closed contracts rather than generic table properties.
 
 Native `merge-cells` and `unmerge-cells` form a separate typed Rust, batch,
 CLI, and standard MCP contract. The CLI projects them as
@@ -847,8 +888,9 @@ same atomic batch rollback and semantic post-validation as add/set/remove.
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
 tables, Spreadsheet worksheets, typed defined names, typed cells, typed
-ListObject tables, merged ranges, typed data-validation rules, and canonical
-typed conditional-format rules without cached formula results, and
+worksheet/table AutoFilters, ListObject tables, merged ranges, typed
+data-validation rules, and canonical typed conditional-format rules without
+cached formula results, and
 Presentation slides with plain one-run text
 shapes and canonical basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
@@ -963,8 +1005,9 @@ The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
 cross-format text formatting, typed Spreadsheet number/fill/border/alignment
 and cell-presentation formatting, exact Spreadsheet merged-cell editing, typed
-Spreadsheet data-validation, conditional-formatting, and scoped defined-name
-editing, typed ListObject table lifecycle, inert hyperlinks,
+Spreadsheet worksheet/table AutoFilters, data-validation,
+conditional-formatting, and scoped defined-name editing, typed ListObject table
+lifecycle, inert hyperlinks,
 typed cross-format
 legacy comments, Spreadsheet range and
 row/column structure edits,

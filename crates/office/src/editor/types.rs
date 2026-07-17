@@ -9,6 +9,7 @@ mod conditional_formatting;
 mod data_validation;
 mod formatting;
 mod named_range;
+mod spreadsheet_filter;
 mod spreadsheet_table;
 
 pub use conditional_formatting::{
@@ -29,6 +30,10 @@ pub use formatting::{
     NativeSpreadsheetVerticalAlignment,
 };
 pub use named_range::{NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope};
+pub use spreadsheet_filter::{
+    NativeSpreadsheetAutoFilter, NativeSpreadsheetDynamicFilter, NativeSpreadsheetFilterColumn,
+    NativeSpreadsheetFilterCriteria,
+};
 pub use spreadsheet_table::{
     NativeSpreadsheetTable, NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle,
 };
@@ -675,6 +680,14 @@ pub enum NativeOfficeMutation {
     SetSpreadsheetTable {
         path: String,
         table: NativeSpreadsheetTable,
+    },
+    AddSpreadsheetAutoFilter {
+        sheet: String,
+        filter: NativeSpreadsheetAutoFilter,
+    },
+    SetSpreadsheetAutoFilter {
+        path: String,
+        filter: NativeSpreadsheetAutoFilter,
     },
     AddNamedRange {
         #[serde(rename = "namedRange")]

@@ -59,7 +59,7 @@ pub(super) fn add(
 
     let table_id = next_table_id(package)?;
     let table_part = allocate_table_part(package)?;
-    let table_xml = xml::new_table_xml(dialect(package)?, table_id, &table, range);
+    let table_xml = xml::new_table_xml(dialect(package)?, table_id, &table, range)?;
     crate::LosslessXmlPart::parse(table_part.clone(), table_xml.clone())?;
     crate::opc_edit::add_content_type_override(package, &table_part, xml::content_type())?;
     package.set_part(&table_part, table_xml)?;
