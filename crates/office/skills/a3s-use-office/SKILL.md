@@ -93,15 +93,16 @@ script, font, size, RGB, and alignment formatting, Word/Spreadsheet single
 strikethrough, Word double strikethrough, and Word/Presentation display case,
 portable highlight, and primary-language formatting. It also owns typed inert
 hyperlinks, typed legacy comments, typed Spreadsheet number formats, solid or
-cleared fills, vertical alignment, wrapping, rotation, indentation,
-shrink-to-fit, and reading order, template merge, constrained XML access,
+cleared fills, cardinal and diagonal borders, vertical alignment, wrapping,
+rotation, indentation, shrink-to-fit, and reading order, template merge,
+constrained XML access,
 deterministic all-format HTML/SVG, Browser-injected semantic screenshots, and
 authenticated loopback live watch for saved files.
 Hyperlinks cover Word body/header/footer paragraphs and bookmarks, Spreadsheet
 cells or bounded ranges and internal locations, and external Presentation shape
 clicks or internal jumps to existing slides. Remaining boundaries include
 modern threaded comments, replies/resolution, writable comment dates,
-rich comment bodies, Word header/footer comment anchors, borders,
+rich comment bodies, Word header/footer comment anchors,
 gradient/pattern/theme fills, conditional and named styles, complete formula
 calculation, advanced charts/media,
 interactive preview editing/annotations, and full Office layout fidelity. Fail

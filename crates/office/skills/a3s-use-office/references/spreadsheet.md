@@ -3,6 +3,15 @@
 Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 `/Sheet1/A1:C20`. Preserve value types instead of writing every value as text.
 
+## Contents
+
+- [Inspect](#inspect)
+- [Values and Formulas](#values-and-formulas)
+- [Cell Text Formatting](#cell-text-formatting)
+- [Cell Presentation Formatting](#cell-presentation-formatting)
+- [Structure](#structure)
+- [Verify](#verify)
+
 ## Inspect
 
 ```bash
@@ -78,14 +87,15 @@ single strikethrough, font family, point size, RGB text color, and horizontal
 alignment. Run-only text case, highlight, language, and double strikethrough
 fail atomically with `use.office.spreadsheet_run_format_unsupported`; they are
 not silently flattened into a cell style. Use the separate cell-presentation
-options below for non-text properties. Borders, conditional formatting, named
-styles, and gradient/pattern/theme fills remain outside the native subset.
+options below for non-text properties. Conditional formatting, named styles,
+and gradient/pattern/theme fills remain outside the native subset.
 
 ## Cell Presentation Formatting
 
 ```bash
-a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --vertical-align center --wrap-text true --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color 808080 --border-bottom double --border-bottom-color 000000 --vertical-align center --wrap-text true --json
 a3s use office native set workbook.xlsx /Sheet1/D1 --number 0.125 --bold true --number-format percent --fill 0066CC --text-rotation 45 --indent 1 --shrink-to-fit false --reading-order rtl --json
+a3s use office native set workbook.xlsx /Sheet1/E1 --border-diagonal slant-dash-dot --border-diagonal-color FF0000 --border-diagonal-up true --border-diagonal-down false --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C3 --fill none --wrap-text false --reading-order context --json
 ```
 
@@ -97,6 +107,16 @@ Use `--number-format` for an explicit Excel format code or one of `general`,
 quotes and square brackets balanced.
 
 `--fill` accepts `none` or exactly six hexadecimal RGB digits.
+`--border-all` (alias `--border`) sets all four cardinal line styles;
+`--border-color` supplies their default RGB color. Override one side with
+`--border-left`, `--border-right`, `--border-top`, or `--border-bottom` and the
+matching `-color` option. Use `none` to clear a line. Styles are `thin`,
+`medium`, `thick`, `double`, `dashed`, `dotted`, `dash-dot`, `dash-dot-dot`,
+`hair`, `medium-dashed`, `medium-dash-dot`, `medium-dash-dot-dot`, and
+`slant-dash-dot`. The shared diagonal line uses `--border-diagonal` and
+`--border-diagonal-color`; explicitly select its direction with
+`--border-diagonal-up` and `--border-diagonal-down`. A color option requires a
+non-`none` style in the same command.
 `--vertical-align` accepts `top`, `center`, `bottom`, `justify`, or
 `distributed`. `--wrap-text` and `--shrink-to-fit` require an explicit boolean;
 `--text-rotation` accepts 0–180 or 255 for stacked text; `--indent` accepts
@@ -104,8 +124,9 @@ quotes and square brackets balanced.
 `none`, `false`, zero, and `context` values clear or reset the corresponding
 property instead of being treated as omitted.
 
-The writer preserves unknown style data and deduplicates number-format, fill,
-and cell-style records. Invalid values, an empty cell-format object, a bad
+The writer preserves unknown style and border data and deduplicates
+number-format, fill, border, and cell-style records. Invalid values, an empty
+cell-format or border object, a bad
 target kind, or any other mutation failure rolls back the complete in-memory
 batch before save. Verify with a targeted `get`; HTML/SVG expose observed
 values as inert `data-*` attributes but remain semantic previews rather than

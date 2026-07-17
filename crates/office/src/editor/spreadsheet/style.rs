@@ -358,11 +358,17 @@ fn style_index_for_format(
         font_id = Some(find_or_append_child(package, "fonts", "font", candidate)?);
     }
 
+    let border_id = cell_format
+        .and_then(|format| format.border.as_ref())
+        .map(|border| cell_format::border_index(package, base_style, border))
+        .transpose()?;
+
     let part = package.xml_part(STYLES_PART)?;
     let candidate = cell_format::derive_xf_fragment(
         &part,
         base_style,
         font_id,
+        border_id,
         text_format,
         cell_format,
         resolved_cell_format,

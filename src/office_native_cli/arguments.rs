@@ -2,6 +2,10 @@ use a3s_use_core::UseResult;
 
 use super::usage_error;
 
+mod border;
+
+pub(super) use border::BorderArguments;
+
 #[derive(Debug, Default)]
 pub(super) struct ParsedArguments {
     pub positionals: Vec<String>,
@@ -39,6 +43,7 @@ pub(super) struct ParsedArguments {
     pub alignment: Option<String>,
     pub number_format: Option<String>,
     pub fill: Option<String>,
+    pub border: BorderArguments,
     pub vertical_alignment: Option<String>,
     pub wrap_text: Option<String>,
     pub text_rotation: Option<String>,
@@ -182,6 +187,26 @@ impl ParsedArguments {
                 }
                 "--fill" | "--fill-color" if allowed.fill => {
                     set_string_option(&mut parsed.fill, args, index, "--fill")?;
+                    index += 2;
+                }
+                "--border"
+                | "--border-all"
+                | "--border-color"
+                | "--border-left"
+                | "--border-left-color"
+                | "--border-right"
+                | "--border-right-color"
+                | "--border-top"
+                | "--border-top-color"
+                | "--border-bottom"
+                | "--border-bottom-color"
+                | "--border-diagonal"
+                | "--border-diagonal-color"
+                | "--border-diagonal-up"
+                | "--border-diagonal-down"
+                    if allowed.border =>
+                {
+                    parsed.border.parse(&args[index], args, index)?;
                     index += 2;
                 }
                 "--vertical-align" | "--valign" if allowed.vertical_alignment => {
@@ -386,6 +411,7 @@ pub(super) struct AllowedOptions {
     alignment: bool,
     number_format: bool,
     fill: bool,
+    border: bool,
     vertical_alignment: bool,
     wrap_text: bool,
     text_rotation: bool,
@@ -447,6 +473,7 @@ impl AllowedOptions {
         alignment: false,
         number_format: false,
         fill: false,
+        border: false,
         vertical_alignment: false,
         wrap_text: false,
         text_rotation: false,
@@ -505,6 +532,7 @@ impl AllowedOptions {
         alignment: true,
         number_format: true,
         fill: true,
+        border: true,
         vertical_alignment: true,
         wrap_text: true,
         text_rotation: true,

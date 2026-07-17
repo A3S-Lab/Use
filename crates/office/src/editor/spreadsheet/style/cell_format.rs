@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use a3s_use_core::UseResult;
 
 use crate::editor::{
-    NativeOfficeHorizontalAlignment, NativeSpreadsheetFill, NativeSpreadsheetReadingOrder,
-    NativeSpreadsheetVerticalAlignment,
+    NativeOfficeHorizontalAlignment, NativeSpreadsheetBorder, NativeSpreadsheetFill,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
 };
 
 use super::{
@@ -39,6 +39,8 @@ const STYLE_CHILDREN_AFTER_FILLS: &[&str] = &[
     "extLst",
 ];
 
+mod border;
+
 #[derive(Debug, Default)]
 pub(super) struct ResolvedCellFormat {
     number_format_id: Option<u32>,
@@ -71,6 +73,7 @@ pub(super) fn derive_xf_fragment(
     part: &LosslessXmlPart,
     style_index: usize,
     font_id: Option<usize>,
+    border_id: Option<usize>,
     text_format: Option<&NativeOfficeTextFormat>,
     cell_format: Option<&NativeSpreadsheetCellFormat>,
     resolved: &ResolvedCellFormat,
@@ -89,6 +92,10 @@ pub(super) fn derive_xf_fragment(
         updates.insert("fillId".to_string(), Some(fill_id.to_string()));
         updates.insert("applyFill".to_string(), Some("1".to_string()));
     }
+    if let Some(border_id) = border_id {
+        updates.insert("borderId".to_string(), Some(border_id.to_string()));
+        updates.insert("applyBorder".to_string(), Some("1".to_string()));
+    }
     let has_alignment = text_format.is_some_and(|format| format.alignment.is_some())
         || cell_format.is_some_and(NativeSpreadsheetCellFormat::has_alignment_properties);
     if has_alignment {
@@ -101,6 +108,14 @@ pub(super) fn derive_xf_fragment(
     let derived = LosslessXmlPart::parse(STYLES_PART.to_string(), bytes)?;
     let element = require_collection_child(&derived, "cellXfs", "xf", style_index)?;
     Ok(element_fragment(&derived, &element)?.to_vec())
+}
+
+pub(super) fn border_index(
+    package: &mut NativeOfficePackage,
+    base_style: usize,
+    border: &NativeSpreadsheetBorder,
+) -> UseResult<usize> {
+    border::index(package, base_style, border)
 }
 
 fn patch_alignment(

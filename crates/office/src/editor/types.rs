@@ -10,6 +10,7 @@ mod formatting;
 pub use formatting::{
     NativeOfficeHighlightColor, NativeOfficeHorizontalAlignment, NativeOfficeRgbColor,
     NativeOfficeTextCase, NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
+    NativeSpreadsheetBorder, NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle,
     NativeSpreadsheetCellFormat, NativeSpreadsheetFill, NativeSpreadsheetReadingOrder,
     NativeSpreadsheetVerticalAlignment,
 };

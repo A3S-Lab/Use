@@ -3,7 +3,8 @@ use a3s_use_office::{
     NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeHighlightColor,
     NativeOfficeHyperlinkTarget, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextCase,
     NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextScript,
-    NativeOfficeUnderline, NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
+    NativeOfficeUnderline, NativeSpreadsheetBorder, NativeSpreadsheetBorderLine,
+    NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
     NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
 };
 
@@ -163,6 +164,10 @@ fn office_batch_schema_exposes_typed_spreadsheet_cell_formatting() {
         "numberFormat",
         "fill",
         "solid",
+        "border",
+        "diagonalUp",
+        "mediumDashDotDot",
+        "slantDashDot",
         "verticalAlignment",
         "distributed",
         "wrapText",
@@ -186,6 +191,15 @@ fn office_batch_schema_exposes_typed_spreadsheet_cell_formatting() {
                     "kind": "solid",
                     "color": { "red": 18, "green": 52, "blue": 86 }
                 },
+                "border": {
+                    "left": {
+                        "kind": "line",
+                        "style": "dashDot",
+                        "color": { "red": 1, "green": 2, "blue": 3 }
+                    },
+                    "bottom": { "kind": "none" },
+                    "diagonalUp": true
+                },
                 "verticalAlignment": "distributed",
                 "wrapText": true,
                 "textRotation": 45,
@@ -208,6 +222,19 @@ fn office_batch_schema_exposes_typed_spreadsheet_cell_formatting() {
                         green: 52,
                         blue: 86,
                     },
+                }),
+                border: Some(NativeSpreadsheetBorder {
+                    left: Some(NativeSpreadsheetBorderLine::Line {
+                        style: NativeSpreadsheetBorderStyle::DashDot,
+                        color: Some(NativeOfficeRgbColor {
+                            red: 1,
+                            green: 2,
+                            blue: 3,
+                        }),
+                    }),
+                    bottom: Some(NativeSpreadsheetBorderLine::None),
+                    diagonal_up: Some(true),
+                    ..
                 }),
                 vertical_alignment: Some(NativeSpreadsheetVerticalAlignment::Distributed),
                 wrap_text: Some(true),

@@ -8,6 +8,8 @@ use a3s_use_office::{
 
 use super::{usage_error, ParsedArguments};
 
+mod border;
+
 pub(super) fn parse_text_format(
     parsed: &ParsedArguments,
 ) -> UseResult<Option<NativeOfficeTextFormat>> {
@@ -79,6 +81,7 @@ pub(super) fn parse_cell_format(
     let format = NativeSpreadsheetCellFormat {
         number_format: parsed.number_format.clone(),
         fill: parsed.fill.as_deref().map(parse_cell_fill).transpose()?,
+        border: border::parse(parsed)?,
         vertical_alignment: parsed
             .vertical_alignment
             .as_deref()

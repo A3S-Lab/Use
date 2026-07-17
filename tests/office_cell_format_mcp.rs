@@ -71,6 +71,10 @@ async fn native_standard_mcp_applies_typed_spreadsheet_cell_format_without_offic
         "set-cell-format",
         "numberFormat",
         "fill",
+        "border",
+        "diagonalUp",
+        "mediumDashDotDot",
+        "slantDashDot",
         "verticalAlignment",
         "wrapText",
         "textRotation",
@@ -119,6 +123,20 @@ async fn native_standard_mcp_applies_typed_spreadsheet_cell_format_without_offic
                             "kind": "solid",
                             "color": { "red": 170, "green": 187, "blue": 204 }
                         },
+                        "border": {
+                            "left": {
+                                "kind": "line",
+                                "style": "mediumDashDotDot",
+                                "color": { "red": 17, "green": 34, "blue": 51 }
+                            },
+                            "right": { "kind": "none" },
+                            "diagonal": {
+                                "kind": "line",
+                                "style": "slantDashDot"
+                            },
+                            "diagonalUp": true,
+                            "diagonalDown": false
+                        },
                         "verticalAlignment": "distributed",
                         "wrapText": true,
                         "textRotation": 45,
@@ -158,6 +176,12 @@ async fn native_standard_mcp_applies_typed_spreadsheet_cell_format_without_offic
     assert_eq!(node["format"]["bold"], "true");
     assert_eq!(node["format"]["numberFormat"], "\"$\"#,##0.00");
     assert_eq!(node["format"]["fill"], "AABBCC");
+    assert_eq!(node["format"]["borderLeft"], "mediumDashDotDot");
+    assert_eq!(node["format"]["borderLeftColor"], "112233");
+    assert!(node["format"].get("borderRight").is_none());
+    assert_eq!(node["format"]["borderDiagonal"], "slantDashDot");
+    assert_eq!(node["format"]["borderDiagonalUp"], "true");
+    assert_eq!(node["format"]["borderDiagonalDown"], "false");
     assert_eq!(node["format"]["verticalAlignment"], "distributed");
     assert_eq!(node["format"]["wrapText"], "true");
     assert_eq!(node["format"]["textRotation"], "45");

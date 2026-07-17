@@ -67,7 +67,7 @@ a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native set report.docx /body --find 'Q1 2025' --replace 'Q1 2026' --json
 a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --underline double --script superscript --strikethrough true --double-strikethrough false --text-case small-caps --highlight yellow --language en-US --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
-a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --vertical-align center --wrap-text true --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color C9B458 --vertical-align center --wrap-text true --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
 a3s use office native set report.docx '/comments/comment[1]' --author Bob --text 'Reviewed' --json
@@ -110,7 +110,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   scoped cross-format literal/regex replacement, typed text formatting,
-  Spreadsheet number/fill/alignment formatting, inert hyperlinks, and legacy
+  Spreadsheet number/fill/border/alignment formatting, inert hyperlinks, and legacy
   comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
@@ -305,11 +305,12 @@ paragraph paths; Spreadsheet applies the same contract to cells or bounded A1
 ranges,
 creating and deduplicating OOXML font and cell-style records when necessary. It
 also exposes a separate typed Spreadsheet cell-presentation contract for
-number formats, solid RGB fill or explicit fill removal, vertical alignment,
-wrap text, rotation, indentation, shrink-to-fit, and reading order. These
-properties apply to a cell or bounded rectangular range, compose atomically
-with content and text formatting, preserve unknown style data, and deduplicate
-number-format, fill, and cell-style records. It also creates, updates, reads,
+number formats, solid RGB fill or explicit fill removal, cardinal and diagonal
+borders, vertical alignment, wrap text, rotation, indentation, shrink-to-fit,
+and reading order. These properties apply to a cell or bounded rectangular
+range, compose atomically with content and text formatting, preserve unknown
+style data, and deduplicate number-format, fill, border, and cell-style
+records. It also creates, updates, reads,
 queries, and removes typed hyperlinks. Word owns
 external HTTP/HTTPS/mailto links and internal bookmark targets in body,
 header, and footer paragraphs, with display text and tooltips; Spreadsheet
@@ -461,9 +462,10 @@ a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --i
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
 
 # Apply Spreadsheet cell presentation independently or in the same atomic set
-# as content/text formatting. Fill accepts none or six-digit RGB.
-a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --vertical-align center --wrap-text true --text-rotation 0 --indent 1 --shrink-to-fit false --reading-order ltr --json
+# as content/text formatting. Fill and border colors accept six-digit RGB.
+a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color 808080 --border-bottom double --border-bottom-color 000000 --vertical-align center --wrap-text true --text-rotation 0 --indent 1 --shrink-to-fit false --reading-order ltr --json
 a3s use office native set workbook.xlsx /Sheet1/D1 --number 0.125 --bold true --number-format percent --fill 0066CC --json
+a3s use office native set workbook.xlsx /Sheet1/E1 --border-diagonal slant-dash-dot --border-diagonal-color FF0000 --border-diagonal-up true --border-diagonal-down false --json
 
 # Add or update inert hyperlinks. External targets accept only absolute
 # HTTP/HTTPS/mailto URIs without credentials. Word internal targets are bookmark
@@ -883,6 +885,18 @@ non-text properties to `set-text-format`:
       "kind": "solid",
       "color": { "red": 255, "green": 242, "blue": 204 }
     },
+    "border": {
+      "left": {
+        "kind": "line",
+        "style": "thin",
+        "color": { "red": 128, "green": 128, "blue": 128 }
+      },
+      "right": { "kind": "line", "style": "thin" },
+      "top": { "kind": "line", "style": "thin" },
+      "bottom": { "kind": "line", "style": "double" },
+      "diagonalUp": false,
+      "diagonalDown": false
+    },
     "verticalAlignment": "center",
     "wrapText": true,
     "textRotation": 0,
@@ -897,7 +911,12 @@ non-text properties to `set-text-format`:
 `currency`, `accounting`, `percent`, `scientific`, `text`, `date`, `time`, or
 `datetime`. Format codes are limited to 255 characters, four sections, and
 balanced quotes/brackets. Fill is either `none` or one solid 24-bit RGB color.
-Vertical alignment accepts `top`, `center`, `bottom`, `justify`, or
+Each border side is an explicit `none` or `line` value. Lines accept `thin`,
+`medium`, `thick`, `double`, `dashed`, `dotted`, `dashDot`, `dashDotDot`,
+`hair`, `mediumDashed`, `mediumDashDot`, `mediumDashDotDot`, or
+`slantDashDot`, plus an optional 24-bit RGB color. The shared diagonal line is
+controlled independently from `diagonalUp` and `diagonalDown`. Vertical
+alignment accepts `top`, `center`, `bottom`, `justify`, or
 `distributed`; rotation accepts 0–180 or 255 for stacked text; indentation is
 0–255; and reading order is `context`, `left-to-right`, or `right-to-left`.
 Unknown fields, empty format objects, invalid values, and non-Spreadsheet
@@ -988,6 +1007,7 @@ use a3s_use_office::{
     NativeOfficeInsertPosition, NativeOfficePackage, NativeOfficeRenderFormat,
     NativeOfficeReplayArtifact, NativeOfficeRgbColor, NativeOfficeTextCase,
     NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
+    NativeSpreadsheetBorder, NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle,
     NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
     NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
 };
@@ -1010,6 +1030,13 @@ workbook.set_cell_format(
         number_format: Some("currency".into()),
         fill: Some(NativeSpreadsheetFill::Solid {
             color: NativeOfficeRgbColor::new(0xFF, 0xF2, 0xCC),
+        }),
+        border: Some(NativeSpreadsheetBorder {
+            bottom: Some(NativeSpreadsheetBorderLine::Line {
+                style: NativeSpreadsheetBorderStyle::Double,
+                color: Some(NativeOfficeRgbColor::new(0x80, 0x80, 0x80)),
+            }),
+            ..NativeSpreadsheetBorder::default()
         }),
         vertical_alignment: Some(NativeSpreadsheetVerticalAlignment::Center),
         wrap_text: Some(true),

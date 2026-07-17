@@ -678,6 +678,13 @@ async fn native_spreadsheet_formatting_preserves_the_strict_ooxml_dialect() {
                 fill: Some(super::NativeSpreadsheetFill::Solid {
                     color: NativeOfficeRgbColor::new(0x12, 0x34, 0x56),
                 }),
+                border: Some(super::NativeSpreadsheetBorder {
+                    top: Some(super::NativeSpreadsheetBorderLine::Line {
+                        style: super::NativeSpreadsheetBorderStyle::Double,
+                        color: Some(NativeOfficeRgbColor::new(0x65, 0x43, 0x21)),
+                    }),
+                    ..super::NativeSpreadsheetBorder::default()
+                }),
                 vertical_alignment: Some(super::NativeSpreadsheetVerticalAlignment::Distributed),
                 ..super::NativeSpreadsheetCellFormat::default()
             },
@@ -697,6 +704,7 @@ async fn native_spreadsheet_formatting_preserves_the_strict_ooxml_dialect() {
     assert!(styles.contains(STRICT_SPREADSHEET));
     assert!(!styles.contains(TRANSITIONAL_SPREADSHEET));
     assert!(styles.contains("rgb=\"FF123456\""));
+    assert!(styles.contains("<top style=\"double\"><color rgb=\"FF654321\"/></top>"));
     assert!(styles.contains("vertical=\"distributed\""));
     assert!(relationships.contains(&format!("{STRICT_RELATIONSHIPS}/styles")));
 }

@@ -67,6 +67,24 @@ fn native_cli_combines_content_text_and_cell_format_without_officecli() {
             "currency",
             "--fill",
             "AABBCC",
+            "--border-all",
+            "thin",
+            "--border-color",
+            "112233",
+            "--border-right",
+            "medium-dashed",
+            "--border-right-color",
+            "445566",
+            "--border-bottom",
+            "none",
+            "--border-diagonal",
+            "slant-dash-dot",
+            "--border-diagonal-color",
+            "778899",
+            "--border-diagonal-up",
+            "true",
+            "--border-diagonal-down",
+            "false",
             "--vertical-align",
             "distributed",
             "--wrap-text",
@@ -94,6 +112,17 @@ fn native_cli_combines_content_text_and_cell_format_without_officecli() {
     assert_eq!(node["format"]["alignment"], "right");
     assert_eq!(node["format"]["numberFormat"], "\"$\"#,##0.00");
     assert_eq!(node["format"]["fill"], "AABBCC");
+    assert_eq!(node["format"]["borderLeft"], "thin");
+    assert_eq!(node["format"]["borderLeftColor"], "112233");
+    assert_eq!(node["format"]["borderRight"], "mediumDashed");
+    assert_eq!(node["format"]["borderRightColor"], "445566");
+    assert_eq!(node["format"]["borderTop"], "thin");
+    assert_eq!(node["format"]["borderTopColor"], "112233");
+    assert!(node["format"].get("borderBottom").is_none());
+    assert_eq!(node["format"]["borderDiagonal"], "slantDashDot");
+    assert_eq!(node["format"]["borderDiagonalColor"], "778899");
+    assert_eq!(node["format"]["borderDiagonalUp"], "true");
+    assert_eq!(node["format"]["borderDiagonalDown"], "false");
     assert_eq!(node["format"]["verticalAlignment"], "distributed");
     assert_eq!(node["format"]["wrapText"], "true");
     assert_eq!(node["format"]["textRotation"], "45");
@@ -133,6 +162,15 @@ fn native_cell_format_batch_uses_the_typed_json_contract() {
                         "fill": {
                             "kind": "solid",
                             "color": { "red": 1, "green": 2, "blue": 3 }
+                        },
+                        "border": {
+                            "left": {
+                                "kind": "line",
+                                "style": "dashDot",
+                                "color": { "red": 4, "green": 5, "blue": 6 }
+                            },
+                            "bottom": { "kind": "none" },
+                            "diagonalUp": false
                         },
                         "verticalAlignment": "center",
                         "wrapText": false,
@@ -179,6 +217,10 @@ fn native_cell_format_batch_uses_the_typed_json_contract() {
     assert_eq!(node["format"]["italic"], "true");
     assert_eq!(node["format"]["numberFormat"], "0.00%");
     assert_eq!(node["format"]["fill"], "010203");
+    assert_eq!(node["format"]["borderLeft"], "dashDot");
+    assert_eq!(node["format"]["borderLeftColor"], "040506");
+    assert!(node["format"].get("borderBottom").is_none());
+    assert_eq!(node["format"]["borderDiagonalUp"], "false");
     assert_eq!(node["format"]["verticalAlignment"], "center");
     assert_eq!(node["format"]["wrapText"], "false");
     assert_eq!(node["format"]["textRotation"], "255");
@@ -233,6 +275,41 @@ fn invalid_or_wrong_document_cell_format_never_writes() {
     assert_eq!(
         invalid_rotation["error"]["code"],
         "use.office.text_rotation_invalid"
+    );
+    assert_eq!(std::fs::read(&spreadsheet).unwrap(), before);
+
+    let invalid_border = run_failure(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            spreadsheet.to_str().unwrap(),
+            "/Sheet1/A1",
+            "--border-top",
+            "triple",
+            "--json",
+        ],
+    );
+    assert_eq!(invalid_border["error"]["code"], "use.cli.invalid_usage");
+    assert_eq!(std::fs::read(&spreadsheet).unwrap(), before);
+
+    let orphan_border_color = run_failure(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            spreadsheet.to_str().unwrap(),
+            "/Sheet1/A1",
+            "--border-top-color",
+            "FF0000",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        orphan_border_color["error"]["code"],
+        "use.cli.invalid_usage"
     );
     assert_eq!(std::fs::read(&spreadsheet).unwrap(), before);
 

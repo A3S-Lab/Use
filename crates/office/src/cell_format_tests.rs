@@ -1,7 +1,7 @@
 use super::{
-    NativeOfficeEditor, NativeOfficeMutation, NativeOfficeRgbColor, NativeSpreadsheetCellFormat,
-    NativeSpreadsheetFill, NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
-    SpreadsheetCellValue,
+    NativeOfficeEditor, NativeOfficeMutation, NativeOfficeRgbColor, NativeSpreadsheetBorder,
+    NativeSpreadsheetCellFormat, NativeSpreadsheetFill, NativeSpreadsheetReadingOrder,
+    NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
 };
 
 fn rich_cell_format() -> NativeSpreadsheetCellFormat {
@@ -10,6 +10,7 @@ fn rich_cell_format() -> NativeSpreadsheetCellFormat {
         fill: Some(NativeSpreadsheetFill::Solid {
             color: NativeOfficeRgbColor::new(0xAA, 0xBB, 0xCC),
         }),
+        border: None,
         vertical_alignment: Some(NativeSpreadsheetVerticalAlignment::Distributed),
         wrap_text: Some(true),
         text_rotation: Some(45),
@@ -344,5 +345,23 @@ async fn invalid_cell_format_rolls_back_the_entire_batch() {
         )
         .unwrap_err();
     assert_eq!(error.code, "use.office.text_rotation_invalid");
+    assert_package_unchanged(editor.package(), &original);
+
+    let error = editor
+        .apply_batch(&[
+            NativeOfficeMutation::SetText {
+                path: "/Sheet1/A1".into(),
+                text: "Changed again".into(),
+            },
+            NativeOfficeMutation::SetCellFormat {
+                path: "/Sheet1/A1".into(),
+                format: NativeSpreadsheetCellFormat {
+                    border: Some(NativeSpreadsheetBorder::default()),
+                    ..NativeSpreadsheetCellFormat::default()
+                },
+            },
+        ])
+        .unwrap_err();
+    assert_eq!(error.code, "use.office.cell_border_empty");
     assert_package_unchanged(editor.package(), &original);
 }

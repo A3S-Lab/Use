@@ -41,6 +41,10 @@ pub(super) fn read_styles(
         .child("fills")
         .map(|fills| fills.children_named("fill").map(read_fill).collect())
         .unwrap_or_else(|| vec![None]);
+    let borders = root
+        .child("borders")
+        .map(|borders| borders.children_named("border").map(read_border).collect())
+        .unwrap_or_else(|| vec![BTreeMap::new()]);
     let mut styles = Vec::new();
     if let Some(cell_xfs) = root.child("cellXfs") {
         for style in cell_xfs.children_named("xf") {
@@ -86,6 +90,21 @@ pub(super) fn read_styles(
                 if let Some(color) = fill {
                     values.insert("fill".into(), color.clone());
                 }
+            }
+            if let Some(border_id) = style.attribute("borderId") {
+                let index = border_id.parse::<usize>().map_err(|error| {
+                    semantic_error(
+                        "use.office.spreadsheet_style_invalid",
+                        format!("Spreadsheet style has invalid borderId '{border_id}': {error}"),
+                    )
+                })?;
+                let border = borders.get(index).ok_or_else(|| {
+                    semantic_error(
+                        "use.office.spreadsheet_style_invalid",
+                        format!("Spreadsheet style references missing border {index}."),
+                    )
+                })?;
+                values.extend(border.clone());
             }
             if let Some(number_format_id) = style.attribute("numFmtId") {
                 values.insert("numberFormatId".into(), number_format_id.into());
@@ -133,6 +152,41 @@ pub(super) fn read_styles(
     } else {
         Ok(styles)
     }
+}
+
+fn read_border(border: &XmlElement) -> BTreeMap<String, String> {
+    let mut values = BTreeMap::new();
+    for (name, key) in [
+        ("left", "borderLeft"),
+        ("right", "borderRight"),
+        ("top", "borderTop"),
+        ("bottom", "borderBottom"),
+        ("diagonal", "borderDiagonal"),
+    ] {
+        let Some(line) = border.child(name) else {
+            continue;
+        };
+        let Some(style) = line.attribute("style").filter(|style| *style != "none") else {
+            continue;
+        };
+        values.insert(key.into(), style.into());
+        if let Some(color) = line
+            .child("color")
+            .and_then(|color| color.attribute("rgb"))
+            .and_then(normalize_font_rgb)
+        {
+            values.insert(format!("{key}Color"), color);
+        }
+    }
+    for (attribute, key) in [
+        ("diagonalUp", "borderDiagonalUp"),
+        ("diagonalDown", "borderDiagonalDown"),
+    ] {
+        if let Some(value) = border.attribute(attribute) {
+            values.insert(key.into(), spreadsheet_attribute_bool(value).to_string());
+        }
+    }
+    values
 }
 
 fn read_fill(fill: &XmlElement) -> Option<String> {

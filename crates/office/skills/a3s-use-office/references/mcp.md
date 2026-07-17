@@ -1,5 +1,13 @@
 # Native Office MCP
 
+## Contents
+
+- [Session Workflow](#session-workflow)
+- [Typed Mutations](#typed-mutations)
+- [Views and Compatibility](#views-and-compatibility)
+
+## Session Workflow
+
 Start the explicit native standard MCP server:
 
 ```bash
@@ -21,6 +29,8 @@ Use its typed tools rather than passing shell command strings:
 Mutations remain unsaved until `office_save`. Do not discard a dirty session
 unless the user explicitly accepts losing its changes. Release the session as
 soon as the workflow finishes.
+
+## Typed Mutations
 
 Rich-text changes use the typed `set-text-format` mutation inside
 `office_apply_batch`; do not send generic property maps:
@@ -72,6 +82,18 @@ mutation. Do not put these properties in `set-text-format`:
         "kind": "solid",
         "color": { "red": 255, "green": 242, "blue": 204 }
       },
+      "border": {
+        "left": {
+          "kind": "line",
+          "style": "thin",
+          "color": { "red": 128, "green": 128, "blue": 128 }
+        },
+        "right": { "kind": "line", "style": "thin" },
+        "top": { "kind": "line", "style": "thin" },
+        "bottom": { "kind": "line", "style": "double" },
+        "diagonalUp": false,
+        "diagonalDown": false
+      },
       "verticalAlignment": "center",
       "wrapText": true,
       "textRotation": 0,
@@ -85,8 +107,11 @@ mutation. Do not put these properties in `set-text-format`:
 
 Use `{ "kind": "none" }` to remove a fill. `numberFormat` accepts a validated
 Excel format code or the native aliases documented in
-[spreadsheet.md](spreadsheet.md). Rotation accepts 0–180 or 255, indentation is
-0–255, and reading order is `context`, `left-to-right`, or `right-to-left`.
+[spreadsheet.md](spreadsheet.md). Each border side is an explicit `none` or
+`line` object. A line contains one typed SpreadsheetML style and an optional
+RGB color; `diagonalUp` and `diagonalDown` control the shared diagonal line.
+Rotation accepts 0–180 or 255, indentation is 0–255, and reading order is
+`context`, `left-to-right`, or `right-to-left`.
 The same `office_apply_batch` call may also include content and text-format
 mutations. Unknown fields, invalid values, empty format objects, and
 non-Spreadsheet targets fail the entire in-memory batch; no change persists
@@ -168,6 +193,8 @@ anchors, Spreadsheet accepts classic cell notes, and Presentation accepts
 legacy slide comments with optional coordinates. Remove a comment with the
 ordinary `remove` mutation. Modern threaded comments and replies are outside
 this contract. Comment changes remain unsaved until `office_save`.
+
+## Views and Compatibility
 
 `office_view` supports text, bounded annotated entries, outline, stats, issues,
 all-format HTML/SVG, and all-format semantic screenshots. Annotated and issue

@@ -269,17 +269,19 @@ cover explicit off/baseline/none values, the complete portable highlight
 mapping, invalid language and format combinations, unknown style attributes,
 strict OOXML, CLI execution without OfficeCLI, and a complete standard MCP
 session. Advanced named styles, inheritance, arbitrary or scheme highlights,
-borders, extended underline variants, per-script Word languages, character
-spacing, and arbitrary property maps remain outside this milestone.
+extended underline variants, per-script Word languages, character spacing,
+and arbitrary property maps remain outside this text-format milestone.
+Spreadsheet borders use the separate cell-format contract below.
 
 Native `set-cell-format` is a separate typed Rust, batch, CLI, and standard MCP
 contract for Spreadsheet presentation properties that are not text-run
 formatting. One cell or a bounded rectangular range accepts an Excel number
-format, explicit solid RGB fill or fill removal, vertical alignment, wrap-text
-state, text rotation, indentation, shrink-to-fit state, and reading order. The
-CLI can compose these properties with one typed content write, text formatting,
-and a hyperlink in the editor's existing atomic batch; a failure rolls back
-every mutation before save. Word and Presentation reject this mutation with
+format, explicit solid RGB fill or fill removal, cardinal and diagonal borders,
+vertical alignment, wrap-text state, text rotation, indentation, shrink-to-fit
+state, and reading order. The CLI can compose these properties with one typed
+content write, text formatting, and a hyperlink in the editor's existing
+atomic batch; a failure rolls back every mutation before save. Word and
+Presentation reject this mutation with
 `use.office.mutation_type_unsupported` rather than ignoring its properties.
 
 Number formats accept an explicit code or the normalized aliases `general`,
@@ -288,24 +290,34 @@ Number formats accept an explicit code or the normalized aliases `general`,
 four semicolon-separated sections, balanced quotes and square brackets, and
 XML-safe characters. The style writer reuses built-in IDs where possible,
 deduplicates custom `numFmt` records, maintains the collection count, and
-retains unrelated records. Fill is a closed `none` or solid 24-bit RGB value;
-vertical alignment is `top`, `center`, `bottom`, `justify`, or `distributed`;
+retains unrelated records. Fill is a closed `none` or solid 24-bit RGB value.
+Borders provide explicit left, right, top, bottom, and shared diagonal line
+updates. A line is either `none` or one of all 13 SpreadsheetML line styles,
+with an optional 24-bit RGB color; diagonal-up and diagonal-down flags are
+independent explicit booleans. The CLI provides `--border-all`/`--border` and
+`--border-color` cardinal shorthands plus per-side style/color flags. A
+per-side flag overrides the all-sides shorthand, and an explicit `none` clears
+that line. Vertical alignment is `top`, `center`, `bottom`, `justify`, or `distributed`;
 rotation is 0 through 180 or 255 for stacked text; indentation is 0 through
 255; and reading order is contextual, left-to-right, or right-to-left.
 
-The writer clones and deduplicates `fills` and `cellXfs`, sets only the relevant
-apply flags, and merges alignment attributes without dropping unknown XF,
-alignment, or extension data. Explicit false, zero, contextual reading order,
-and fill removal are preserved as intentional changes. Strict and transitional
-OOXML dialects continue through the existing loss-preserving style path.
-Semantic reads normalize the observed properties, and HTML/SVG semantic
-previews expose them as inert `data-*` attributes. Tests cover stable JSON,
-range writes, style/number/fill deduplication, explicit clearing, unknown style
-preservation, invalid-value rollback, standard MCP schema conversion, native
-CLI and batch execution, wrong-document rejection, and an unusable OfficeCLI
-provider. Borders, gradient/pattern/theme fills, conditional formatting, named
-styles, locale-derived formats, and Excel layout fidelity remain outside this
-milestone.
+The writer clones and deduplicates `fills`, `borders`, and `cellXfs`, sets only
+the relevant apply flags, and merges alignment or border updates without
+dropping unknown XF, alignment, border, color, extension, start/end, or
+vertical/horizontal-border data. A line update is a complete typed value, so a
+`line` without `color` clears the prior explicit color while omitted sides are
+preserved. Explicit false, zero, contextual reading order, fill removal, and
+border removal are intentional changes. Strict and transitional OOXML dialects
+continue through the existing loss-preserving style path. Semantic reads
+normalize observed border styles, RGB colors, and diagonal flags alongside the
+other properties, and HTML/SVG semantic previews expose them as inert `data-*`
+attributes. Tests cover stable JSON, every native line style, range writes,
+style/number/fill/border deduplication, explicit clearing, unknown style and
+border preservation, invalid-value rollback, standard MCP schema conversion,
+native CLI and batch execution, wrong-document rejection, and an unusable
+OfficeCLI provider. Gradient/pattern/theme fills, conditional formatting,
+named styles, locale-derived formats, and Excel layout fidelity remain outside
+this milestone.
 
 Native `set-hyperlink` is implemented through one typed Rust, batch, CLI, and
 standard MCP contract. Word adds an external HTTP/HTTPS/mailto relationship or
@@ -680,7 +692,7 @@ compatibility component for one deprecation cycle, then is removed.
 
 The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
-cross-format text formatting, typed Spreadsheet number/fill/alignment and cell
+cross-format text formatting, typed Spreadsheet number/fill/border/alignment and cell
 presentation formatting, typed inert
 hyperlinks, typed cross-format legacy comments, Spreadsheet range and
 row/column structure edits,

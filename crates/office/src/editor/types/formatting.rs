@@ -262,6 +262,90 @@ pub enum NativeSpreadsheetFill {
     Solid { color: NativeOfficeRgbColor },
 }
 
+/// Native Spreadsheet border line styles supported by SpreadsheetML.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NativeSpreadsheetBorderStyle {
+    Thin,
+    Medium,
+    Thick,
+    Double,
+    Dashed,
+    Dotted,
+    DashDot,
+    DashDotDot,
+    Hair,
+    MediumDashed,
+    MediumDashDot,
+    MediumDashDotDot,
+    SlantDashDot,
+}
+
+impl NativeSpreadsheetBorderStyle {
+    pub(crate) const fn spreadsheet_value(self) -> &'static str {
+        match self {
+            Self::Thin => "thin",
+            Self::Medium => "medium",
+            Self::Thick => "thick",
+            Self::Double => "double",
+            Self::Dashed => "dashed",
+            Self::Dotted => "dotted",
+            Self::DashDot => "dashDot",
+            Self::DashDotDot => "dashDotDot",
+            Self::Hair => "hair",
+            Self::MediumDashed => "mediumDashed",
+            Self::MediumDashDot => "mediumDashDot",
+            Self::MediumDashDotDot => "mediumDashDotDot",
+            Self::SlantDashDot => "slantDashDot",
+        }
+    }
+}
+
+/// One explicitly cleared or styled Spreadsheet cell-border line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum NativeSpreadsheetBorderLine {
+    None,
+    Line {
+        style: NativeSpreadsheetBorderStyle,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color: Option<NativeOfficeRgbColor>,
+    },
+}
+
+/// Partial update for the five Spreadsheet cell-border lines and diagonal
+/// direction flags.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeSpreadsheetBorder {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<NativeSpreadsheetBorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<NativeSpreadsheetBorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<NativeSpreadsheetBorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<NativeSpreadsheetBorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagonal: Option<NativeSpreadsheetBorderLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagonal_up: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagonal_down: Option<bool>,
+}
+
+impl NativeSpreadsheetBorder {
+    pub fn is_empty(&self) -> bool {
+        self.left.is_none()
+            && self.right.is_none()
+            && self.top.is_none()
+            && self.bottom.is_none()
+            && self.diagonal.is_none()
+            && self.diagonal_up.is_none()
+            && self.diagonal_down.is_none()
+    }
+}
+
 /// Vertical alignment supported by Spreadsheet cell styles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -292,6 +376,8 @@ pub struct NativeSpreadsheetCellFormat {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fill: Option<NativeSpreadsheetFill>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border: Option<NativeSpreadsheetBorder>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vertical_alignment: Option<NativeSpreadsheetVerticalAlignment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrap_text: Option<bool>,
@@ -309,6 +395,7 @@ impl NativeSpreadsheetCellFormat {
     pub fn is_empty(&self) -> bool {
         self.number_format.is_none()
             && self.fill.is_none()
+            && self.border.is_none()
             && self.vertical_alignment.is_none()
             && self.wrap_text.is_none()
             && self.text_rotation.is_none()
@@ -326,6 +413,16 @@ impl NativeSpreadsheetCellFormat {
         }
         if let Some(number_format) = &self.number_format {
             validate_number_format(&normalize_number_format(number_format)?)?;
+        }
+        if self
+            .border
+            .as_ref()
+            .is_some_and(NativeSpreadsheetBorder::is_empty)
+        {
+            return Err(editor_error(
+                "use.office.cell_border_empty",
+                "Native Spreadsheet cell borders require at least one typed line or diagonal direction property.",
+            ));
         }
         if self
             .text_rotation
