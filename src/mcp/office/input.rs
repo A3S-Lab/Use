@@ -11,8 +11,10 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
 mod cell_format;
+mod data_validation;
 
 use cell_format::OfficeCellFormat;
+use data_validation::OfficeDataValidation;
 
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -650,6 +652,16 @@ pub(super) enum OfficeMutation {
         path: String,
         value: OfficeCellValue,
     },
+    AddDataValidation {
+        /// Existing Spreadsheet worksheet path such as `/Sheet1`.
+        sheet: String,
+        validation: OfficeDataValidation,
+    },
+    SetDataValidation {
+        /// Existing Spreadsheet validation path such as `/Sheet1/dataValidation[1]`.
+        path: String,
+        validation: OfficeDataValidation,
+    },
     MergeCells {
         /// Spreadsheet range path such as `/Sheet1/A1:B2`.
         path: String,
@@ -795,6 +807,18 @@ impl OfficeMutation {
                 path,
                 value: value.into(),
             },
+            Self::AddDataValidation { sheet, validation } => {
+                NativeOfficeMutation::AddDataValidation {
+                    sheet,
+                    validation: validation.into(),
+                }
+            }
+            Self::SetDataValidation { path, validation } => {
+                NativeOfficeMutation::SetDataValidation {
+                    path,
+                    validation: validation.into(),
+                }
+            }
             Self::MergeCells { path } => NativeOfficeMutation::MergeCells { path },
             Self::UnmergeCells { path } => NativeOfficeMutation::UnmergeCells { path },
             Self::AddParagraph { parent, text } => {

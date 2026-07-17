@@ -90,6 +90,8 @@ fn render_cell(output: &mut BoundedOutput, cell: &DocumentNode) -> UseResult<()>
         ("data-reading-order", "readingOrder"),
         ("data-merge", "merge"),
         ("data-merge-anchor", "mergeAnchor"),
+        ("data-validation", "dataValidation"),
+        ("data-validation-type", "validationType"),
     ] {
         write_optional_attribute(output, attribute, cell.format.get(key).map(String::as_str))?;
     }

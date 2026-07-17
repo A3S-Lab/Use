@@ -5,8 +5,13 @@ use url::Url;
 
 use super::part::{NativeCreatedPart, NativeOfficePartType};
 
+mod data_validation;
 mod formatting;
 
+pub use data_validation::{
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
+    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
+};
 pub use formatting::{
     NativeOfficeHighlightColor, NativeOfficeHorizontalAlignment, NativeOfficeRgbColor,
     NativeOfficeTextCase, NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
@@ -649,6 +654,14 @@ pub enum NativeOfficeMutation {
     SetCellValue {
         path: String,
         value: SpreadsheetCellValue,
+    },
+    AddDataValidation {
+        sheet: String,
+        validation: NativeSpreadsheetDataValidation,
+    },
+    SetDataValidation {
+        path: String,
+        validation: NativeSpreadsheetDataValidation,
     },
     MergeCells {
         path: String,

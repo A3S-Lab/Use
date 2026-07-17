@@ -10,6 +10,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 - [Cell Text Formatting](#cell-text-formatting)
 - [Cell Presentation Formatting](#cell-presentation-formatting)
 - [Merged Cells](#merged-cells)
+- [Data Validation](#data-validation)
 - [Structure](#structure)
 - [Verify](#verify)
 
@@ -174,6 +175,107 @@ unknown collection data, the operation fails with
 `use.office.spreadsheet_merge_unknown_content` instead of discarding it. This
 is merged-cell structure support, not complete rich Spreadsheet or OfficeCLI
 parity.
+
+## Data Validation
+
+Use one typed rule for one or more disjoint areas on the same worksheet:
+
+```bash
+# Add a list rule. Inline comma-separated values are quoted by the writer.
+a3s use office native add workbook.xlsx /Sheet1 \
+  --type data-validation \
+  --validation-type list \
+  --range A2:A20 \
+  --range C2:C20 \
+  --formula1 'Draft,Review,Approved' \
+  --prompt-title Status \
+  --prompt 'Choose a workflow state' \
+  --error-title 'Invalid status' \
+  --error-message 'Choose one of the listed states' \
+  --error-style stop \
+  --json
+
+# Discover the stable rule and read an otherwise blank validated cell.
+a3s use office native query workbook.xlsx 'dataValidation[type=list]' --json
+a3s use office native get workbook.xlsx '/Sheet1/dataValidation[1]' --json
+a3s use office native get workbook.xlsx /Sheet1/C3 --json
+
+# Replace the rule through its stable path. Omitted CLI fields are preserved.
+a3s use office native set workbook.xlsx '/Sheet1/dataValidation[1]' \
+  --validation-type whole \
+  --range B2:B50 \
+  --operator between \
+  --formula1 18 \
+  --formula2 120 \
+  --allow-blank false \
+  --error-style warning \
+  --json
+
+# Remove exactly one discovered rule.
+a3s use office native remove workbook.xlsx '/Sheet1/dataValidation[1]' --json
+```
+
+Rule types are `list`, `whole`, `decimal`, `date`, `time`, `text-length`, and
+`custom`. List and custom rules do not accept an operator or `formula2`.
+Comparison rules require `between`, `not-between`, `equal`, `not-equal`,
+`greater-than`, `greater-than-or-equal`, `less-than`, or
+`less-than-or-equal`; the first two require `formula2` and the others reject
+it. `--error-style` accepts `stop`, `warning`, or `information`. Blank,
+input-message, error-message, and list-dropdown flags default to true for a new
+A3S rule. Only list rules accept `--in-cell-dropdown false`.
+
+For a list, `formula1` may be inline comma-separated text, an A1 source such as
+`=$H$2:$H$5`, or a defined name. Embedded double quotes in an inline list are
+rejected; use cells as the list source instead. Date inputs in valid
+`YYYY-MM-DD` form from 1900 through 9999 become serial dates under the
+workbook's declared 1900 or 1904 date system. Time inputs in `HH:MM` or
+`HH:MM:SS` form become day fractions. Range, defined-name, dynamic spill, and
+function sources such as `INDIRECT(...)` remain formulas. Other formula text is
+stored after removing one optional leading `=` and is never evaluated by A3S.
+
+Each rule accepts 1–1,024 normalized rectangular A1 areas and a worksheet
+accepts at most 65,534 rules. Formula fields are limited to 255 characters;
+titles to 32, prompt text to 255, and error text to 225. Areas must not overlap
+inside one rule or across rules. An invalid range, operator/formula mismatch,
+XML-forbidden character, or overlap rolls back the whole batch. Use `none` or
+an empty CLI value to clear optional text or `formula2`; use `--operator none`
+to clear an operator when changing to a list or custom rule.
+
+The native batch and standard MCP payload is the same closed value:
+
+```json
+{
+  "operation": "add-data-validation",
+  "sheet": "/Sheet1",
+  "validation": {
+    "type": "date",
+    "ranges": ["D2:D100"],
+    "operator": "between",
+    "formula1": "2026-01-01",
+    "formula2": "2026-12-31",
+    "allowBlank": false,
+    "showInput": true,
+    "showError": true,
+    "errorStyle": "stop",
+    "inCellDropdown": true
+  }
+}
+```
+
+Use `set-data-validation` with `path` and a complete `validation` value for a
+typed batch replacement. Use ordinary `remove` for deletion. A rule appears as
+`/SheetName/dataValidation[N]` with normalized `ref`, type, operator, formulas,
+messages, and flags. Covered cells expose `dataValidation` and
+`validationType`; requesting a covered blank cell returns a virtual cell and
+does not populate the worksheet. HTML/SVG emit only inert `data-validation`
+metadata.
+
+Updates preserve unknown rule attributes. Replacement fails if unknown rule
+children would be lost, and final removal fails if unknown collection data
+would be discarded. Strict/transitional OOXML, atomic batch rollback, and
+exact replay are supported. This capability does not add conditional
+formatting, table or filter authoring, charts, pivots, formula evaluation, or
+Excel layout fidelity.
 
 ## Structure
 

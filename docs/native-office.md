@@ -320,6 +320,58 @@ OfficeCLI provider. Gradient/pattern/theme fills, conditional formatting,
 named styles, locale-derived formats, and Excel layout fidelity remain outside
 this milestone.
 
+Native `add-data-validation` and `set-data-validation` form a closed typed
+Rust, versioned batch, CLI, and standard MCP contract. Ordinary typed `remove`
+deletes one rule through its stable `/SheetName/dataValidation[N]` path. The
+CLI adds a rule beneath a worksheet with `--type data-validation`, repeated
+`--range` values, `--validation-type`, and `--formula1`; `set` replaces the
+complete domain value while its CLI adapter first carries forward unspecified
+fields from the existing semantic node. Data-validation options cannot be
+combined with unrelated `set` content, format, hyperlink, merge, width, or
+comment options.
+
+The closed rule families are list, whole number, decimal, date, time,
+text length, and custom formula. List and custom rules reject comparison
+operators and `formula2`. Whole, decimal, date, time, and text-length rules
+require one of eight typed comparison operators; only `between` and
+`notBetween` require and accept `formula2`. Inline list text is quoted for
+SpreadsheetML, while cell-range and defined-name sources remain formulas. An
+optional leading `=` is removed from comparison and custom formulas. Valid ISO
+dates from 1900 through 9999 become serial dates using the workbook's declared
+1900 or 1904 date system; 1900 mode retains Excel's historical leap-day offset.
+`HH:MM` and `HH:MM:SS` values become day fractions. No formula is evaluated.
+
+One rule carries typed blank, input-message, error-message, error-style, and
+list-dropdown state. New A3S rules default `allowBlank`, `showInput`,
+`showError`, and `inCellDropdown` to true and error style to `stop`.
+`inCellDropdown=false` is valid only for list rules. Formula text is limited to
+255 characters, prompt and error titles to 32, prompt text to 255, and error
+text to 225; present values must be XML-safe and non-empty. A worksheet accepts
+at most 65,534 rules and one rule accepts 1–1,024 normalized rectangular A1
+ranges. Areas inside one rule must be disjoint, and no rule may overlap an area
+owned by another rule. Any violation rolls back the complete editor batch.
+
+Semantic reads expose each rule as a typed node, support selectors such as
+`dataValidation[type=list]`, annotate observed cells with `dataValidation` and
+`validationType`, and create a virtual annotated cell when a requested blank
+cell is covered. Exact range reads carry the same rule metadata. HTML and SVG
+surface it only through inert `data-validation` attributes. Ordered range
+sweeps retain the sparse-cell model instead of expanding every covered cell.
+Strict and transitional SpreadsheetML QNames are retained. Updates preserve
+unknown rule attributes and unrelated collection data; an unknown rule child
+blocks replacement, and removal of the final rule fails with
+`use.office.spreadsheet_validation_unknown_content` if deleting its collection
+would discard unknown attributes or children. Exact replay emits typed rules
+after cell and merge mutations. Tests cover rule normalization, all lifecycle
+surfaces, strict OOXML, unknown-data preservation, overlap rollback, sparse
+semantic/HTML/SVG readback, replay, CLI atomic batches, and a complete standard
+MCP lifecycle with an unusable OfficeCLI provider.
+
+This milestone is cell data-validation structure, not complete rich
+Spreadsheet or OfficeCLI parity. Conditional formatting, table authoring,
+filter and sort authoring, charts, pivot tables, slicers, sparklines, formula
+evaluation, CSV/TSV import, and Excel layout fidelity remain separate work.
+
 Native `merge-cells` and `unmerge-cells` form a separate typed Rust, batch,
 CLI, and standard MCP contract. The CLI projects them as
 `office native set <file> <range> --merge-cells true|false`, so merge state can
@@ -615,8 +667,9 @@ same atomic batch rollback and semantic post-validation as add/set/remove.
 
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
-tables, Spreadsheet worksheets, typed cells, and merged ranges without styles
-or cached formula results, and Presentation slides with plain one-run text
+tables, Spreadsheet worksheets, typed cells, merged ranges, and typed
+data-validation rules without styles or cached formula results, and
+Presentation slides with plain one-run text
 shapes and canonical basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
 ordered mutations, and expected result part-map SHA-256. Native `batch` checks
@@ -730,7 +783,8 @@ The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
 cross-format text formatting, typed Spreadsheet number/fill/border/alignment
 and cell-presentation formatting, exact Spreadsheet merged-cell editing, typed
-inert hyperlinks, typed cross-format legacy comments, Spreadsheet range and
+Spreadsheet data-validation editing, inert hyperlinks, typed cross-format
+legacy comments, Spreadsheet range and
 row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe
 `raw`/`raw-set`, known `add-part` carriers, exact root replay dump for the

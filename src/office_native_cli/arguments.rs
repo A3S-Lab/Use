@@ -51,6 +51,20 @@ pub(super) struct ParsedArguments {
     pub shrink_to_fit: Option<String>,
     pub reading_order: Option<String>,
     pub merge_cells: Option<String>,
+    pub validation_ranges: Vec<String>,
+    pub validation_type: Option<String>,
+    pub validation_operator: Option<String>,
+    pub validation_formula1: Option<String>,
+    pub validation_formula2: Option<String>,
+    pub validation_allow_blank: Option<String>,
+    pub validation_show_input: Option<String>,
+    pub validation_show_error: Option<String>,
+    pub validation_prompt_title: Option<String>,
+    pub validation_prompt: Option<String>,
+    pub validation_error_title: Option<String>,
+    pub validation_error_message: Option<String>,
+    pub validation_error_style: Option<String>,
+    pub validation_in_cell_dropdown: Option<String>,
     pub url: Option<String>,
     pub location: Option<String>,
     pub display: Option<String>,
@@ -243,6 +257,109 @@ impl ParsedArguments {
                     set_string_option(&mut parsed.merge_cells, args, index, "--merge-cells")?;
                     index += 2;
                 }
+                "--range" | "--sqref" if allowed.data_validation => {
+                    parsed
+                        .validation_ranges
+                        .push(option_value(args, index, "--range")?.to_string());
+                    index += 2;
+                }
+                "--validation-type" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_type,
+                        args,
+                        index,
+                        "--validation-type",
+                    )?;
+                    index += 2;
+                }
+                "--operator" if allowed.data_validation => {
+                    set_string_option(&mut parsed.validation_operator, args, index, "--operator")?;
+                    index += 2;
+                }
+                "--formula1" if allowed.data_validation => {
+                    set_string_option(&mut parsed.validation_formula1, args, index, "--formula1")?;
+                    index += 2;
+                }
+                "--formula2" if allowed.data_validation => {
+                    set_string_option(&mut parsed.validation_formula2, args, index, "--formula2")?;
+                    index += 2;
+                }
+                "--allow-blank" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_allow_blank,
+                        args,
+                        index,
+                        "--allow-blank",
+                    )?;
+                    index += 2;
+                }
+                "--show-input" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_show_input,
+                        args,
+                        index,
+                        "--show-input",
+                    )?;
+                    index += 2;
+                }
+                "--show-error" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_show_error,
+                        args,
+                        index,
+                        "--show-error",
+                    )?;
+                    index += 2;
+                }
+                "--prompt-title" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_prompt_title,
+                        args,
+                        index,
+                        "--prompt-title",
+                    )?;
+                    index += 2;
+                }
+                "--prompt" if allowed.data_validation => {
+                    set_string_option(&mut parsed.validation_prompt, args, index, "--prompt")?;
+                    index += 2;
+                }
+                "--error-title" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_error_title,
+                        args,
+                        index,
+                        "--error-title",
+                    )?;
+                    index += 2;
+                }
+                "--error-message" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_error_message,
+                        args,
+                        index,
+                        "--error-message",
+                    )?;
+                    index += 2;
+                }
+                "--error-style" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_error_style,
+                        args,
+                        index,
+                        "--error-style",
+                    )?;
+                    index += 2;
+                }
+                "--in-cell-dropdown" if allowed.data_validation => {
+                    set_string_option(
+                        &mut parsed.validation_in_cell_dropdown,
+                        args,
+                        index,
+                        "--in-cell-dropdown",
+                    )?;
+                    index += 2;
+                }
                 "--url" | "--link" | "--href" if allowed.url => {
                     set_string_option(&mut parsed.url, args, index, "--url")?;
                     index += 2;
@@ -378,6 +495,23 @@ impl ParsedArguments {
         }
         Ok(parsed)
     }
+
+    pub(super) fn has_data_validation_options(&self) -> bool {
+        !self.validation_ranges.is_empty()
+            || self.validation_type.is_some()
+            || self.validation_operator.is_some()
+            || self.validation_formula1.is_some()
+            || self.validation_formula2.is_some()
+            || self.validation_allow_blank.is_some()
+            || self.validation_show_input.is_some()
+            || self.validation_show_error.is_some()
+            || self.validation_prompt_title.is_some()
+            || self.validation_prompt.is_some()
+            || self.validation_error_title.is_some()
+            || self.validation_error_message.is_some()
+            || self.validation_error_style.is_some()
+            || self.validation_in_cell_dropdown.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -441,6 +575,7 @@ pub(super) struct AllowedOptions {
     data: bool,
     force: bool,
     regex: bool,
+    data_validation: bool,
 }
 
 impl AllowedOptions {
@@ -504,6 +639,7 @@ impl AllowedOptions {
         data: false,
         force: false,
         regex: false,
+        data_validation: false,
     };
     pub const GET: Self = Self {
         depth: true,
@@ -557,6 +693,7 @@ impl AllowedOptions {
         y_emu: true,
         width_emu: true,
         regex: true,
+        data_validation: true,
         ..Self::NONE
     };
     pub const BATCH: Self = Self {
@@ -597,6 +734,7 @@ impl AllowedOptions {
         initials: true,
         x_emu: true,
         y_emu: true,
+        data_validation: true,
         ..Self::NONE
     };
     pub const ADD_PART: Self = Self {

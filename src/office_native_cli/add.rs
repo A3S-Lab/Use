@@ -6,6 +6,7 @@ use a3s_use_office::{
 
 use super::arguments::{AllowedOptions, ParsedArguments};
 use super::bounded_input::{read_bounded_input, NativeInputKind};
+use super::data_validation;
 use super::format::parse_hyperlink;
 use super::{save_editor, usage_error, MAX_IMAGE_INPUT_BYTES};
 use crate::cli::CommandOutput;
@@ -98,6 +99,11 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
                 }
                 ("add-comment", editor.add_comment(parent, comment)?, None)
             }
+            "data-validation" | "datavalidation" | "validation" => (
+                "add-data-validation",
+                editor.add_data_validation(parent, data_validation::build_new(&parsed)?)?,
+                None,
+            ),
             "picture" | "image" | "img" => {
                 let input = parsed.input.as_deref().ok_or_else(|| {
                     usage_error("native picture add requires --input <png|jpeg|gif>")
@@ -154,6 +160,10 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
     let is_picture = matches!(node_type, "picture" | "image" | "img");
     let is_hyperlink = matches!(node_type, "hyperlink" | "link");
     let is_comment = matches!(node_type, "comment" | "note-comment");
+    let is_data_validation = matches!(
+        node_type,
+        "data-validation" | "datavalidation" | "validation"
+    );
     let accepts_rows = matches!(node_type, "table" | "tbl");
     let accepts_columns = matches!(node_type, "table" | "tbl" | "row" | "tr");
     let accepts_index = matches!(node_type, "column" | "col");
@@ -196,6 +206,11 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
     if parsed.text.is_some() && !accepts_text {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept --text"
+        )));
+    }
+    if parsed.has_data_validation_options() && !is_data_validation {
+        return Err(usage_error(format!(
+            "native Office add type '{node_type}' does not accept data-validation options"
         )));
     }
     if is_hyperlink && parsed.text.is_some() && parsed.display.is_some() {

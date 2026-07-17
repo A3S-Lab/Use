@@ -41,6 +41,8 @@ pub use types::{
     NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextReplacementResult,
     NativeOfficeTextScript, NativeOfficeUnderline, NativeSpreadsheetBorder,
     NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat,
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
+    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
     NativeSpreadsheetFill, NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
     SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
@@ -190,6 +192,30 @@ impl NativeOfficeEditor {
             value,
         }])?;
         Ok(())
+    }
+
+    /// Adds one complete typed Spreadsheet data-validation rule.
+    pub fn add_data_validation(
+        &mut self,
+        sheet: impl Into<String>,
+        validation: NativeSpreadsheetDataValidation,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::AddDataValidation {
+            sheet: sheet.into(),
+            validation,
+        })
+    }
+
+    /// Replaces one existing Spreadsheet data-validation rule completely.
+    pub fn set_data_validation(
+        &mut self,
+        path: impl Into<String>,
+        validation: NativeSpreadsheetDataValidation,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SetDataValidation {
+            path: path.into(),
+            validation,
+        })
     }
 
     /// Adds one normalized SpreadsheetML merged-cell range.
@@ -626,6 +652,12 @@ impl NativeOfficeEditor {
                 NativeOfficeMutation::SetCellValue { path, value } => {
                     spreadsheet::set_cell_value(&mut self.package, path, value)
                         .map(|()| path.clone())
+                }
+                NativeOfficeMutation::AddDataValidation { sheet, validation } => {
+                    spreadsheet::add_data_validation(&mut self.package, sheet, validation)
+                }
+                NativeOfficeMutation::SetDataValidation { path, validation } => {
+                    spreadsheet::set_data_validation(&mut self.package, path, validation)
                 }
                 NativeOfficeMutation::MergeCells { path } => {
                     spreadsheet::merge_cells(&mut self.package, path)

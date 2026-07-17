@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use crate::{
-    NativeOfficeDocument, NativeOfficeEditor, NativeOfficeReplayArtifact, SpreadsheetCellValue,
+    NativeOfficeDocument, NativeOfficeEditor, NativeOfficeReplayArtifact,
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationType, SpreadsheetCellValue,
     NATIVE_OFFICE_REPLAY_FORMAT, NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
 };
 
@@ -82,11 +83,25 @@ async fn spreadsheet_dump_replays_sheets_and_typed_cells_exactly() {
         )
         .unwrap();
     source.merge_cells("/Data/A1:B2").unwrap();
+    source
+        .add_data_validation(
+            "/Summary",
+            NativeSpreadsheetDataValidation::new(
+                NativeSpreadsheetDataValidationType::List,
+                "C1:C10",
+                "Ready,Blocked",
+            ),
+        )
+        .unwrap();
 
     let artifact = NativeOfficeReplayArtifact::dump(&source.snapshot().unwrap(), "/").unwrap();
     assert!(artifact.mutations.iter().any(|mutation| matches!(
         mutation,
         crate::NativeOfficeMutation::MergeCells { path } if path == "/Data/A1:B2"
+    )));
+    assert!(artifact.mutations.iter().any(|mutation| matches!(
+        mutation,
+        crate::NativeOfficeMutation::AddDataValidation { sheet, .. } if sheet == "/Summary"
     )));
     assert_exact_replay(&source, &artifact, &target_path).await;
 }

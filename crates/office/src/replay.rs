@@ -4,7 +4,11 @@ use a3s_use_core::{UseError, UseResult};
 use serde::{Deserialize, Serialize};
 
 use crate::discovery::office_error;
-use crate::editor::{NativeOfficeEditor, NativeOfficeMutation, SpreadsheetCellValue};
+use crate::editor::{
+    NativeOfficeEditor, NativeOfficeMutation, NativeSpreadsheetDataValidation,
+    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
+    NativeSpreadsheetDataValidationType, SpreadsheetCellValue,
+};
 use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
 use crate::{DocumentKind, NativeOfficePackage};
 
@@ -343,6 +347,7 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
         }
 
         let mut merged_ranges = Vec::new();
+        let mut validations = Vec::new();
         for child in &sheet.children {
             match child.node_type {
                 OfficeNodeType::Row => {
@@ -373,6 +378,9 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                     })?;
                     merged_ranges.push(format!("{}/{}", sheet.path, reference));
                 }
+                OfficeNodeType::DataValidation => {
+                    validations.push(spreadsheet_data_validation(child)?);
+                }
                 _ => {
                     return Err(dump_unsupported(
                         &child.path,
@@ -386,8 +394,134 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                 .into_iter()
                 .map(|path| NativeOfficeMutation::MergeCells { path }),
         );
+        mutations.extend(validations.into_iter().map(|validation| {
+            NativeOfficeMutation::AddDataValidation {
+                sheet: sheet.path.clone(),
+                validation,
+            }
+        }));
     }
     Ok(mutations)
+}
+
+fn spreadsheet_data_validation(node: &DocumentNode) -> UseResult<NativeSpreadsheetDataValidation> {
+    if node.style.is_some() || !node.children.is_empty() {
+        return Err(dump_unsupported(
+            &node.path,
+            "Spreadsheet data validation contains unsupported semantic children or style data.",
+        ));
+    }
+    let allowed = [
+        "ref",
+        "type",
+        "operator",
+        "formula1",
+        "formula2",
+        "allowBlank",
+        "showInput",
+        "showError",
+        "promptTitle",
+        "prompt",
+        "errorTitle",
+        "error",
+        "errorStyle",
+        "inCellDropdown",
+    ];
+    if let Some(key) = node
+        .format
+        .keys()
+        .find(|key| !allowed.contains(&key.as_str()))
+    {
+        return Err(dump_unsupported(
+            &node.path,
+            format!("Spreadsheet data-validation property '{key}' is not replayable yet."),
+        ));
+    }
+    let validation_type = match required_format(node, "type")? {
+        "list" => NativeSpreadsheetDataValidationType::List,
+        "whole" => NativeSpreadsheetDataValidationType::Whole,
+        "decimal" => NativeSpreadsheetDataValidationType::Decimal,
+        "date" => NativeSpreadsheetDataValidationType::Date,
+        "time" => NativeSpreadsheetDataValidationType::Time,
+        "textLength" => NativeSpreadsheetDataValidationType::TextLength,
+        "custom" => NativeSpreadsheetDataValidationType::Custom,
+        value => {
+            return Err(dump_unsupported(
+                &node.path,
+                format!("Spreadsheet data-validation type '{value}' is not replayable."),
+            ))
+        }
+    };
+    let operator = node
+        .format
+        .get("operator")
+        .map(|value| match value.as_str() {
+            "between" => Ok(NativeSpreadsheetDataValidationOperator::Between),
+            "notBetween" => Ok(NativeSpreadsheetDataValidationOperator::NotBetween),
+            "equal" => Ok(NativeSpreadsheetDataValidationOperator::Equal),
+            "notEqual" => Ok(NativeSpreadsheetDataValidationOperator::NotEqual),
+            "greaterThan" => Ok(NativeSpreadsheetDataValidationOperator::GreaterThan),
+            "greaterThanOrEqual" => Ok(NativeSpreadsheetDataValidationOperator::GreaterThanOrEqual),
+            "lessThan" => Ok(NativeSpreadsheetDataValidationOperator::LessThan),
+            "lessThanOrEqual" => Ok(NativeSpreadsheetDataValidationOperator::LessThanOrEqual),
+            value => Err(dump_unsupported(
+                &node.path,
+                format!("Spreadsheet data-validation operator '{value}' is not replayable."),
+            )),
+        })
+        .transpose()?;
+    let error_style = match node.format.get("errorStyle").map(String::as_str) {
+        None | Some("stop") => NativeSpreadsheetDataValidationErrorStyle::Stop,
+        Some("warning") => NativeSpreadsheetDataValidationErrorStyle::Warning,
+        Some("information") => NativeSpreadsheetDataValidationErrorStyle::Information,
+        Some(value) => {
+            return Err(dump_unsupported(
+                &node.path,
+                format!("Spreadsheet data-validation error style '{value}' is not replayable."),
+            ))
+        }
+    };
+    let ranges = required_format(node, "ref")?
+        .split_ascii_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let formula1 = required_format(node, "formula1")?.to_string();
+    Ok(NativeSpreadsheetDataValidation {
+        validation_type,
+        ranges,
+        operator,
+        formula1,
+        formula2: node.format.get("formula2").cloned(),
+        allow_blank: replay_bool(node, "allowBlank")?,
+        show_input: replay_bool(node, "showInput")?,
+        show_error: replay_bool(node, "showError")?,
+        prompt_title: node.format.get("promptTitle").cloned(),
+        prompt: node.format.get("prompt").cloned(),
+        error_title: node.format.get("errorTitle").cloned(),
+        error: node.format.get("error").cloned(),
+        error_style,
+        in_cell_dropdown: replay_bool(node, "inCellDropdown")?,
+    })
+}
+
+fn required_format<'a>(node: &'a DocumentNode, key: &str) -> UseResult<&'a str> {
+    node.format.get(key).map(String::as_str).ok_or_else(|| {
+        dump_unsupported(
+            &node.path,
+            format!("Spreadsheet data validation has no '{key}' property."),
+        )
+    })
+}
+
+fn replay_bool(node: &DocumentNode, key: &str) -> UseResult<bool> {
+    match required_format(node, key)? {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        value => Err(dump_unsupported(
+            &node.path,
+            format!("Spreadsheet data-validation property '{key}' is not boolean: '{value}'."),
+        )),
+    }
 }
 
 fn require_spreadsheet_cell(cell: &DocumentNode) -> UseResult<()> {
@@ -405,6 +539,8 @@ fn require_spreadsheet_cell(cell: &DocumentNode) -> UseResult<()> {
         "formula",
         "merge",
         "mergeAnchor",
+        "dataValidation",
+        "validationType",
     ];
     if let Some(key) = cell
         .format

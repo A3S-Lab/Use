@@ -122,8 +122,8 @@ documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
 XML access, bounded annotated and issue analysis, typed text formatting,
-typed Spreadsheet cell presentation and exact merged-cell editing, typed scoped
-text replacement, typed hyperlinks, and atomic mutation batches
+typed Spreadsheet cell presentation, data validation, and exact merged-cell
+editing, typed scoped text replacement, typed hyperlinks, and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
 same typed contract reads unsaved native MCP session state without a private
@@ -162,6 +162,19 @@ and preserves unknown style data. Content, text format, cell format, and
 hyperlink changes can share one editor transaction; validation and
 post-mutation semantic reads occur before any atomic save. This remains a typed
 Spreadsheet contract, not a generic property map or a private RPC method.
+Spreadsheet data validation is another closed domain value, represented by
+`add-data-validation` and `set-data-validation`; deletion reuses typed
+`remove`. Seven rule families, eight comparison operators, three error styles,
+disjoint A1 areas, formulas, messages, blank handling, and dropdown visibility
+cross Rust, versioned batch JSON, CLI, standard MCP, replay, and Skill surfaces
+without a property bag. The format layer normalizes inline lists, dates, times,
+and A1 ranges, rejects every overlapping area, and bounds both rules and areas.
+The loss-preserving writer retains the worksheet dialect and unknown rule
+attributes, failing closed when replacement or final collection removal would
+discard unknown children or collection data. Semantic projection adds stable
+`dataValidation` nodes plus sparse observed/virtual-cell annotations; HTML and
+SVG carry only inert metadata. This contract neither evaluates formulas nor
+implies conditional-formatting, filter, table, chart, or pivot support.
 Merged cells are another closed Spreadsheet mutation variant, represented by
 `merge-cells` and `unmerge-cells`, rather than a style flag or universal action.
 The editor normalizes A1 ranges, rejects geometric overlap and ListObject table
@@ -296,8 +309,8 @@ string passthrough. It supports validate, create/open/list, semantic get/query,
 bounded annotated plus text/outline/statistics views, all-format HTML and SVG,
 all-format bounded issue views, Browser-injected semantic PNG screenshots,
 constrained raw XML inspection, atomic typed mutation batches,
-including exact Spreadsheet merge/unmerge, immutable-template merge, save, and
-close. A screenshot requires an explicit
+including typed Spreadsheet data-validation and exact merge/unmerge,
+immutable-template merge, save, and close. A screenshot requires an explicit
 no-clobber `.png` output and
 releases the Office session lock before Browser rendering. A server process
 owns at most 64 sessions. Batches and structured results are limited to 8 MiB,
@@ -364,7 +377,8 @@ Implemented:
     shared-string safety, typed cross-format underline and vertical-script
     formatting, Word/Presentation highlight, text case, and language, plus
     format-bounded strikethrough, typed Spreadsheet number/fill/border/alignment
-    and cell-presentation formatting, exact Spreadsheet merged-cell editing,
+    and cell-presentation formatting, typed Spreadsheet data-validation
+    add/set/remove with sparse semantic readback, exact Spreadsheet merged-cell editing,
     and typed Spreadsheet text/number/boolean/formula cell and range mutation,
     typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment

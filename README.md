@@ -111,8 +111,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   scoped cross-format literal/regex replacement, typed text formatting,
-  Spreadsheet number/fill/border/alignment formatting and exact merged-cell
-  editing, inert hyperlinks, and legacy comments,
+  Spreadsheet number/fill/border/alignment formatting, exact merged-cell
+  editing, typed data validation, inert hyperlinks, and legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
   bounded typed issue diagnostics, Browser-injected semantic PNG screenshots,
@@ -315,8 +315,20 @@ records. Spreadsheet merged cells use a separate typed contract: rectangular
 A1 ranges are normalized, exact repeated merges are idempotent, and unmerge
 requires one exact existing range. Geometric overlaps and ListObject table
 intersections fail closed. Semantic reads expose stable `mergeCell` nodes and
-anchor metadata without materializing every blank covered cell. The engine also
-creates, updates, reads,
+anchor metadata without materializing every blank covered cell. A third typed
+Spreadsheet contract owns data-validation rules for list, whole-number,
+decimal, date, time, text-length, and custom-formula constraints. One rule may
+target multiple disjoint normalized A1 ranges and carries typed comparison
+operators, prompt/error messages, alert style, blank handling, and
+list-dropdown state. Inline lists are quoted safely, ISO dates and clock times
+are normalized to Spreadsheet serial values, and overlapping rule ranges fail
+atomically. Semantic reads expose stable `/Sheet/dataValidation[N]` nodes,
+annotate observed and virtual blank cells, and project inert metadata into
+HTML/SVG. Native add/set/remove, batch, exact replay, CLI, Rust, and standard
+MCP use the same closed contract while retaining strict/transitional
+SpreadsheetML and unknown attributes. This is not native
+conditional-formatting, table-authoring, filtering, chart, or pivot-table
+parity. The engine also creates, updates, reads,
 queries, and removes typed hyperlinks. Word owns
 external HTTP/HTTPS/mailto links and internal bookmark targets in body,
 header, and footer paragraphs, with display text and tooltips; Spreadsheet
@@ -385,7 +397,7 @@ Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
-rich-text, exact Spreadsheet merged-cell, hyperlink, and legacy-comment
+rich-text, exact Spreadsheet merged-cell, data-validation, hyperlink, and legacy-comment
 operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
@@ -479,6 +491,14 @@ a3s use office native set workbook.xlsx /Sheet1/E1 --border-diagonal slant-dash-
 # atomic set command.
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --merge-cells false --json
+
+# Add, inspect, update, and remove typed Spreadsheet data validation. Repeated
+# --range values form one rule over disjoint areas; set preserves omitted fields.
+a3s use office native add workbook.xlsx /Sheet1 --type data-validation --validation-type list --range A2:A20 --range C2:C20 --formula1 'Draft,Review,Approved' --prompt-title Status --prompt 'Choose a workflow state' --error-title 'Invalid status' --error-message 'Choose a listed state' --json
+a3s use office native query workbook.xlsx 'dataValidation[type=list]' --json
+a3s use office native get workbook.xlsx /Sheet1/C3 --json
+a3s use office native set workbook.xlsx '/Sheet1/dataValidation[1]' --validation-type whole --range B2:B50 --operator between --formula1 18 --formula2 120 --allow-blank false --error-style warning --json
+a3s use office native remove workbook.xlsx '/Sheet1/dataValidation[1]' --json
 
 # Add or update inert hyperlinks. External targets accept only absolute
 # HTTP/HTTPS/mailto URIs without credentials. Word internal targets are bookmark
@@ -682,7 +702,8 @@ current schema is:
 
 The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
-`set-text-format`, `set-cell-format`, `merge-cells`, `unmerge-cells`,
+`set-text-format`, `set-cell-format`, `add-data-validation`,
+`set-data-validation`, `merge-cells`, `unmerge-cells`,
 `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
 `add-table`, `add-table-row`, `add-table-column`, `add-table-cell`,
@@ -690,6 +711,32 @@ and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `delete-columns`, `rename-worksheet`, `move-worksheet`, `copy-worksheet`,
 `move`, `copy`, `swap`, `replace-xml-part`, `add-part`, `add-slide`, `add-shape`,
 `add-image`, and `remove`.
+
+A data-validation mutation uses the same atomic document and standard MCP
+payload. Remove a rule with the ordinary typed `remove` mutation:
+
+```json
+{
+  "operation": "add-data-validation",
+  "sheet": "/Sheet1",
+  "validation": {
+    "type": "whole",
+    "ranges": ["B2:B50", "D2:D50"],
+    "operator": "between",
+    "formula1": "18",
+    "formula2": "120",
+    "allowBlank": false,
+    "errorStyle": "warning"
+  }
+}
+```
+
+Each rule accepts 1–1,024 disjoint ranges and each worksheet accepts at most
+65,534 rules. Formulas are limited to 255 characters; prompt/error titles to
+32, prompts to 255, and error messages to 225. List and custom rules reject
+operators and `formula2`; comparison rules require an operator and require
+`formula2` only for `between` or `notBetween`. Invalid or overlapping input
+rolls back the complete in-memory batch.
 
 An image mutation uses the same versioned batch boundary:
 
@@ -746,7 +793,8 @@ ordinary JSON:
 The first dump scope is the complete document (`/`). It accepts only content
 that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
-typed cells, and merged ranges without styles or cached formula results, and
+typed cells, merged ranges, and typed data-validation rules without styles or
+cached formula results, and
 Presentation slides with plain one-run text shapes and canonical basic tables.
 Headers, notes,
 media, non-canonical table styling, rich text, non-canonical package resources,
@@ -1046,6 +1094,8 @@ use a3s_use_office::{
     NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
     NativeSpreadsheetBorder, NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle,
     NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
+    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
     NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
 };
 
@@ -1082,6 +1132,23 @@ workbook.set_cell_format(
     },
 )?;
 workbook.merge_cells("/Sheet1/A1:C3")?;
+let validation_path = workbook.add_data_validation(
+    "/Sheet1",
+    NativeSpreadsheetDataValidation::new(
+        NativeSpreadsheetDataValidationType::Whole,
+        "D2:D50",
+        "18",
+    )
+    .with_operator(NativeSpreadsheetDataValidationOperator::Between)
+    .with_formula2("120")
+    .with_allow_blank(false)
+    .with_error_message(
+        NativeSpreadsheetDataValidationErrorStyle::Warning,
+        "Age outside range",
+        "Enter an age from 18 through 120",
+    ),
+)?;
+println!("created {validation_path}");
 workbook.save().await?;
 
 let document = NativeOfficeDocument::open("report.docx").await?;

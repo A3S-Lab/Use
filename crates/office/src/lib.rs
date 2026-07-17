@@ -46,11 +46,12 @@ pub use editor::{
     NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextReplacement,
     NativeOfficeTextReplacementResult, NativeOfficeTextScript, NativeOfficeUnderline,
     NativeRawXmlPart, NativeSpreadsheetBorder, NativeSpreadsheetBorderLine,
-    NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
-    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
-    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
-    MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
-    MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
+    NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetDataValidation,
+    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
+    NativeSpreadsheetDataValidationType, NativeSpreadsheetFill, NativeSpreadsheetReadingOrder,
+    NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES,
+    MAX_NATIVE_OFFICE_REPLACEMENT_BYTES, MAX_NATIVE_OFFICE_TEXT_MATCHES,
+    MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES, MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 pub use issues::{
@@ -271,6 +272,8 @@ mod cell_format_tests;
 mod cell_merge_tests;
 #[cfg(test)]
 mod comment_tests;
+#[cfg(test)]
+mod data_validation_tests;
 #[cfg(test)]
 mod format_tests;
 #[cfg(test)]

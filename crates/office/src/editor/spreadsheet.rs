@@ -14,6 +14,7 @@ use crate::{DocumentKind, NativeOfficePackage};
 const MAX_RANGE_MUTATION_CELLS: usize = 100_000;
 
 mod arrange;
+mod data_validation;
 mod merge;
 mod structure;
 mod style;
@@ -22,6 +23,22 @@ mod worksheet;
 pub(super) use arrange::{copy_node, move_node, swap_nodes};
 pub(super) use structure::{delete_columns, delete_rows, insert_columns, insert_rows};
 pub(super) use worksheet::{copy_worksheet, move_worksheet, rename_worksheet};
+
+pub(super) fn add_data_validation(
+    package: &mut NativeOfficePackage,
+    sheet: &str,
+    validation: &super::NativeSpreadsheetDataValidation,
+) -> UseResult<String> {
+    data_validation::add(package, sheet, validation)
+}
+
+pub(super) fn set_data_validation(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    validation: &super::NativeSpreadsheetDataValidation,
+) -> UseResult<String> {
+    data_validation::set(package, path, validation)
+}
 
 pub(super) fn merge_cells(package: &mut NativeOfficePackage, path: &str) -> UseResult<String> {
     merge::merge_cells(package, path)
@@ -107,7 +124,9 @@ pub(super) fn set_cell_value(
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
-    if path.trim_start_matches('/').contains('/') {
+    if data_validation::is_path(path) {
+        data_validation::remove(package, path)
+    } else if path.trim_start_matches('/').contains('/') {
         remove_cell(package, path)
     } else {
         remove_worksheet(package, path)

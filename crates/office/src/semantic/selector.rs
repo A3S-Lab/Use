@@ -216,6 +216,11 @@ fn node_value<'a>(node: &'a DocumentNode, key: &str) -> Option<&'a str> {
             .format
             .get("valueType")
             .map(String::as_str)
+            .or_else(|| {
+                (node.node_type == OfficeNodeType::DataValidation)
+                    .then(|| node.format.get("type").map(String::as_str))
+                    .flatten()
+            })
             .or_else(|| Some(node.node_type.label())),
         "style" => node.style.as_deref(),
         "path" => Some(&node.path),
@@ -246,6 +251,9 @@ fn kind_matches(kind: &str, node: &DocumentNode) -> bool {
             node.node_type,
             OfficeNodeType::Cell | OfficeNodeType::TableCell
         ),
+        "datavalidation" | "data-validation" | "validation" => {
+            node.node_type == OfficeNodeType::DataValidation
+        }
         "sheet" | "worksheet" => node.node_type == OfficeNodeType::Worksheet,
         "slide" => node.node_type == OfficeNodeType::Slide,
         "shape" | "textbox" => matches!(

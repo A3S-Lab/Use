@@ -219,6 +219,8 @@ fn render_cell(
         ("data-reading-order", "readingOrder"),
         ("data-merge", "merge"),
         ("data-merge-anchor", "mergeAnchor"),
+        ("data-validation", "dataValidation"),
+        ("data-validation-type", "validationType"),
     ] {
         if let Some(value) = cell.format.get(key) {
             write_data_attribute(output, name, value)?;

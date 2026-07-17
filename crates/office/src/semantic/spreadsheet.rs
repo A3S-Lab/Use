@@ -13,6 +13,7 @@ use crate::spreadsheet_reference::{
 use crate::xml_tree::{parse_xml_tree, XmlElement, XmlNode};
 use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, RelationshipTarget};
 
+mod data_validation;
 mod style;
 
 use style::read_styles;
@@ -39,6 +40,12 @@ struct ObservedCell {
     reference: CellReference,
     row_index: usize,
     cell_index: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ValidationArea {
+    range: CellRange,
+    validation_index: usize,
 }
 
 pub(super) fn read(
@@ -129,9 +136,11 @@ pub(super) fn virtual_get(
     };
     if !target.contains(':') {
         if let Ok(reference) = CellReference::parse(target) {
-            if let Some(merged) =
-                merged_ranges(sheet).find(|merged| merged.range.contains(reference))
-            {
+            let merged = merged_ranges(sheet).find(|merged| merged.range.contains(reference));
+            let validation = validation_areas(sheet)
+                .into_iter()
+                .find(|(range, _)| range.contains(reference));
+            if merged.is_some() || validation.is_some() {
                 let mut node = DocumentNode::new(
                     format!("{}/{}", sheet.path, reference.a1()),
                     "cell",
@@ -141,7 +150,12 @@ pub(super) fn virtual_get(
                     .insert("column".into(), column_name(reference.column)?);
                 node.format.insert("row".into(), reference.row.to_string());
                 node.format.insert("empty".into(), "true".into());
-                annotate_cell_merge(&mut node, reference, &merged);
+                if let Some(merged) = merged {
+                    annotate_cell_merge(&mut node, reference, &merged);
+                }
+                if let Some((_, validation)) = validation {
+                    annotate_cell_validation(&mut node, validation);
+                }
                 return Ok(Some(node));
             }
         }
@@ -246,6 +260,12 @@ fn virtual_range(
             .any(|merged| merged.range == requested_range)
             .to_string(),
     );
+    if let Some((_, validation)) = validation_areas(sheet)
+        .into_iter()
+        .find(|(range, _)| *range == requested_range)
+    {
+        annotate_cell_validation(&mut node, validation);
+    }
     let matching = cells(sheet)
         .into_iter()
         .filter(|cell| {
@@ -367,6 +387,14 @@ fn read_worksheet(
         node.format.insert("ref".into(), merged.range.a1());
         node.format.insert("merge".into(), "true".into());
         sheet_node.children.push(node);
+    }
+    let validations = data_validation::read(&worksheet, part_name, &sheet_path)?;
+    if !validations.is_empty() {
+        annotate_data_validations(&mut sheet_node, &observed_cells, &validations);
+        sheet_node
+            .format
+            .insert("dataValidationCount".into(), validations.len().to_string());
+        sheet_node.children.extend(validations);
     }
     append_worksheet_hyperlinks(opc, &worksheet, part_name, &sheet_path, &mut sheet_node)?;
     append_worksheet_comments(package, opc, part_name, &sheet_path, &mut sheet_node)?;
@@ -530,6 +558,106 @@ fn merged_ranges(sheet: &DocumentNode) -> impl Iterator<Item = MergedRange> + '_
         .filter_map(|node| node.format.get("ref"))
         .filter_map(|reference| CellRange::parse(reference).ok())
         .map(|range| MergedRange { range })
+}
+
+fn annotate_data_validations(
+    sheet: &mut DocumentNode,
+    observed_cells: &[ObservedCell],
+    validations: &[DocumentNode],
+) {
+    let mut areas = validations
+        .iter()
+        .enumerate()
+        .flat_map(|(validation_index, validation)| {
+            validation
+                .format
+                .get("ref")
+                .into_iter()
+                .flat_map(|reference| reference.split_ascii_whitespace())
+                .filter_map(|reference| CellRange::parse(reference).ok())
+                .map(move |range| ValidationArea {
+                    range,
+                    validation_index,
+                })
+        })
+        .collect::<Vec<_>>();
+    areas.sort_unstable_by_key(|area| {
+        (
+            area.range.start.row,
+            area.range.start.column,
+            area.range.end.row,
+            area.range.end.column,
+        )
+    });
+    let mut cells = (0..observed_cells.len()).collect::<Vec<_>>();
+    cells.sort_unstable_by_key(|index| {
+        let reference = observed_cells[*index].reference;
+        (reference.row, reference.column)
+    });
+
+    let mut next_area = 0_usize;
+    let mut active_by_column = BTreeMap::<u32, usize>::new();
+    let mut expiration = BinaryHeap::<Reverse<(u32, usize)>>::new();
+    for cell_index in cells {
+        let observed = observed_cells[cell_index];
+        while let Some(Reverse((end_row, expired))) = expiration.peek().copied() {
+            if end_row >= observed.reference.row {
+                break;
+            }
+            expiration.pop();
+            let start_column = areas[expired].range.start.column;
+            if active_by_column.get(&start_column).copied() == Some(expired) {
+                active_by_column.remove(&start_column);
+            }
+        }
+        while next_area < areas.len() && areas[next_area].range.start.row <= observed.reference.row
+        {
+            let area = areas[next_area];
+            if area.range.end.row >= observed.reference.row {
+                active_by_column.insert(area.range.start.column, next_area);
+                expiration.push(Reverse((area.range.end.row, next_area)));
+            }
+            next_area += 1;
+        }
+        let Some((_, area_index)) = active_by_column
+            .range(..=observed.reference.column)
+            .next_back()
+        else {
+            continue;
+        };
+        let area = areas[*area_index];
+        if area.range.end.column < observed.reference.column {
+            continue;
+        }
+        let node = &mut sheet.children[observed.row_index].children[observed.cell_index];
+        annotate_cell_validation(node, &validations[area.validation_index]);
+    }
+}
+
+fn validation_areas(sheet: &DocumentNode) -> Vec<(CellRange, &DocumentNode)> {
+    sheet
+        .children
+        .iter()
+        .filter(|node| node.node_type == OfficeNodeType::DataValidation)
+        .flat_map(|validation| {
+            validation
+                .format
+                .get("ref")
+                .into_iter()
+                .flat_map(|reference| reference.split_ascii_whitespace())
+                .filter_map(|reference| CellRange::parse(reference).ok())
+                .map(move |range| (range, validation))
+        })
+        .collect()
+}
+
+fn annotate_cell_validation(node: &mut DocumentNode, validation: &DocumentNode) {
+    node.format
+        .insert("dataValidation".into(), validation.path.clone());
+    if let Some(validation_type) = validation.format.get("type") {
+        node.format
+            .insert("validationType".into(), validation_type.clone());
+    }
 }
 
 fn append_worksheet_comments(

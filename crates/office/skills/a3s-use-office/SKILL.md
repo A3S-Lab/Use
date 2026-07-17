@@ -85,6 +85,11 @@ available.
   `--merge-cells false` only with the exact existing range reported by
   `mergeCell` query results; do not approximate a destructive unmerge sweep.
   Merges that overlap another merge or a Spreadsheet table must fail closed.
+- Treat Spreadsheet data validation as worksheet structure, not formula
+  execution. Query `dataValidation` first, use the returned stable path for
+  update/remove, and keep every rule area disjoint. Use typed list, comparison,
+  or custom rules; do not work around an overlap or formula/type error with raw
+  XML. Validate and read back one covered cell after mutation.
 - Keep the default OfficeCLI compatibility route separate from the native
   engine. Do not depend on OfficeCLI's private resident protocol.
 
@@ -99,7 +104,9 @@ portable highlight, and primary-language formatting. It also owns typed inert
 hyperlinks, typed legacy comments, typed Spreadsheet number formats, solid or
 cleared fills, cardinal and diagonal borders, vertical alignment, wrapping,
 rotation, indentation, shrink-to-fit, reading order, and exact merged-cell
-editing, template merge,
+editing. It owns typed Spreadsheet list, whole, decimal, date, time,
+text-length, and custom data-validation rules over disjoint A1 ranges, with
+stable rule paths and sparse cell readback. It also owns template merge,
 constrained XML access,
 deterministic all-format HTML/SVG, Browser-injected semantic screenshots, and
 authenticated loopback live watch for saved files.
@@ -109,7 +116,7 @@ clicks or internal jumps to existing slides. Remaining boundaries include
 modern threaded comments, replies/resolution, writable comment dates,
 rich comment bodies, Word header/footer comment anchors,
 gradient/pattern/theme fills, conditional and named styles, complete formula
-calculation, advanced charts/media,
+calculation, table/filter/sort authoring, advanced charts, pivots, and media,
 interactive preview editing/annotations, and full Office layout fidelity. Fail
 closed or use the explicit compatibility route rather than inventing
 unsupported native behavior.

@@ -285,6 +285,71 @@ fn office_batch_schema_exposes_typed_spreadsheet_merges() {
 }
 
 #[test]
+fn office_batch_schema_exposes_typed_spreadsheet_data_validation() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "add-data-validation",
+        "set-data-validation",
+        "textLength",
+        "notBetween",
+        "inCellDropdown",
+        "information",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "add-data-validation",
+            "sheet": "/Sheet1",
+            "validation": {
+                "type": "whole",
+                "ranges": ["A2:A20"],
+                "operator": "between",
+                "formula1": "1",
+                "formula2": "100",
+                "allowBlank": false,
+                "errorStyle": "warning"
+            }
+        }]
+    }))
+    .unwrap();
+    assert!(matches!(
+        input.mutations[0].clone().into_native().unwrap(),
+        NativeOfficeMutation::AddDataValidation {
+            ref sheet,
+            validation: a3s_use_office::NativeSpreadsheetDataValidation {
+                validation_type: a3s_use_office::NativeSpreadsheetDataValidationType::Whole,
+                operator: Some(
+                    a3s_use_office::NativeSpreadsheetDataValidationOperator::Between
+                ),
+                allow_blank: false,
+                error_style:
+                    a3s_use_office::NativeSpreadsheetDataValidationErrorStyle::Warning,
+                ..
+            }
+        } if sheet == "/Sheet1"
+    ));
+
+    let unknown = serde_json::from_value::<OfficeBatchInput>(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "add-data-validation",
+            "sheet": "/Sheet1",
+            "validation": {
+                "type": "list",
+                "ranges": ["A1"],
+                "formula1": "A,B",
+                "script": "alert(1)"
+            }
+        }]
+    }));
+    assert!(unknown.is_err());
+}
+
+#[test]
 fn office_batch_schema_exposes_typed_text_replacement() {
     let schema = schemars::schema_for!(OfficeBatchInput);
     let encoded = serde_json::to_string(&schema).unwrap();

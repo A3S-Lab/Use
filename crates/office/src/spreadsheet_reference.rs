@@ -9,6 +9,8 @@ use crate::discovery::office_error;
 
 pub(crate) const MAX_COLUMNS: u32 = 16_384;
 pub(crate) const MAX_ROWS: u32 = 1_048_576;
+pub(crate) const MAX_DATA_VALIDATIONS: usize = 65_534;
+pub(crate) const MAX_DATA_VALIDATION_RANGES: usize = 1_024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct CellReference {

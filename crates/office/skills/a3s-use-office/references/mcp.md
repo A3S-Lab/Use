@@ -141,6 +141,51 @@ call with content, text-format, cell-format, and hyperlink mutations. Query
 until `office_save`, and unknown merge collection data is preserved or causes a
 fail-closed error when exact removal cannot be lossless.
 
+Spreadsheet data validation uses the separate `add-data-validation` and
+`set-data-validation` mutations:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "add-data-validation",
+    "sheet": "/Sheet1",
+    "validation": {
+      "type": "list",
+      "ranges": ["A2:A20", "C2:C20"],
+      "formula1": "Draft,Review,Approved",
+      "allowBlank": true,
+      "showInput": true,
+      "showError": true,
+      "promptTitle": "Status",
+      "prompt": "Choose a workflow state",
+      "errorTitle": "Invalid status",
+      "error": "Choose a listed state",
+      "errorStyle": "stop",
+      "inCellDropdown": true
+    }
+  }]
+}
+```
+
+Use `set-data-validation` with a stable `path` such as
+`/Sheet1/dataValidation[1]` and a complete `validation` value. Set is not a
+partial property patch. Delete with the ordinary `remove` mutation. The seven
+types are `list`, `whole`, `decimal`, `date`, `time`, `textLength`, and
+`custom`; operators and error styles are closed camelCase enums. List and
+custom reject operators and `formula2`. The five comparison types require an
+operator, and only `between` or `notBetween` accept and require `formula2`.
+
+Rules and ranges are bounded, normalized, and globally non-overlapping within
+one worksheet. Invalid formulas, flags, messages, XML text, ranges, or overlap
+fail the complete `office_apply_batch`. Inline lists, ISO dates, and clock
+times are normalized but formulas are never evaluated. Query
+`dataValidation[type=list]` or call `office_get` on the returned path for
+unsaved semantic readback. Covered observed and virtual blank cells expose
+`dataValidation` and `validationType`. Updates retain unknown attributes and
+fail closed when unknown children or final collection data cannot be preserved.
+All mutations remain in memory until `office_save`.
+
 General find/replace uses the typed `replace-text` mutation. Keep `mode`
 explicit and prefer `literal` for ordinary text:
 

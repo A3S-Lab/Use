@@ -11,6 +11,7 @@ mod add;
 mod arguments;
 mod arrange;
 mod bounded_input;
+mod data_validation;
 mod format;
 mod merge;
 mod part;
@@ -38,9 +39,11 @@ const HELP: &str = concat!(
     "  a3s-use office native merge <template> <output> --data <json|@file.json> [--force] [--json]\n",
     "  a3s-use office native validate <file> [--json]\n",
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
-    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment|data-validation [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file.xlsx> <sheet> --type data-validation --validation-type list|whole|decimal|date|time|text-length|custom --range <A1-range> [--range <A1-range>] --formula1 <value> [--operator <comparison>] [--formula2 <value>] [--allow-blank <true|false>] [--show-input <true|false>] [--show-error <true|false>] [--prompt-title <text>] [--prompt <text>] [--error-title <text>] [--error-message <text>] [--error-style stop|warning|information] [--in-cell-dropdown <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
     "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--number-format <code>] [--fill <none|RRGGBB>] [--border-all <style>] [--border-color <RRGGBB>] [--border-left|--border-right|--border-top|--border-bottom <style>] [--border-left-color|--border-right-color|--border-top-color|--border-bottom-color <RRGGBB>] [--border-diagonal <style>] [--border-diagonal-color <RRGGBB>] [--border-diagonal-up <true|false>] [--border-diagonal-down <true|false>] [--vertical-align <top|center|bottom|justify|distributed>] [--wrap-text <true|false>] [--text-rotation <0..180|255>] [--indent <0..255>] [--shrink-to-fit <true|false>] [--reading-order <context|ltr|rtl>] [--merge-cells <true|false>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file.xlsx> <sheet/dataValidation[N]> [data-validation options from add; unspecified fields are preserved, use none or an empty value to clear optional text/formula2] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -240,15 +243,57 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let path = &parsed.positionals[1];
     let mut editor = NativeOfficeEditor::open(source).await?;
     let source_path = editor.package().path().to_path_buf();
-    let is_comment = editor
-        .snapshot()?
-        .get(path, 0)
-        .is_ok_and(|node| node.node_type == OfficeNodeType::Comment);
+    let snapshot = editor.snapshot()?;
+    let validation_path = data_validation::canonical_path(path);
+    let target_path = validation_path.as_deref().unwrap_or(path);
+    let target_node = snapshot.get(target_path, 0).ok();
+    if validation_path.is_some() && target_node.is_none() {
+        snapshot.get(target_path, 0)?;
+    }
+    let is_comment = target_node
+        .as_ref()
+        .is_some_and(|node| node.node_type == OfficeNodeType::Comment);
+    let is_data_validation = target_node
+        .as_ref()
+        .is_some_and(|node| node.node_type == OfficeNodeType::DataValidation);
+    let has_data_validation_options = parsed.has_data_validation_options();
     let has_comment_options = parsed.author.is_some()
         || parsed.initials.is_some()
         || parsed.x_emu.is_some()
         || parsed.y_emu.is_some();
-    let operation = if is_comment || has_comment_options {
+    let mut result_path = path.clone();
+    let operation = if is_data_validation
+        || validation_path.is_some()
+        || has_data_validation_options
+    {
+        if !is_data_validation {
+            return Err(usage_error(
+                "data-validation options require an existing /Sheet/dataValidation[N] path",
+            ));
+        }
+        if !has_data_validation_options {
+            return Err(usage_error(
+                "native data-validation set requires at least one data-validation option",
+            ));
+        }
+        if value_count > 0
+            || format.is_some()
+            || cell_format.is_some()
+            || hyperlink.is_some()
+            || merge_cells.is_some()
+            || has_comment_options
+        {
+            return Err(usage_error(
+                "native data-validation set cannot be combined with content, formatting, hyperlink, merge, width, or comment options",
+            ));
+        }
+        let node = target_node.as_ref().ok_or_else(|| {
+            usage_error("native data-validation set requires an existing validation node")
+        })?;
+        let validation = data_validation::merge_existing(node, &parsed)?;
+        result_path = editor.set_data_validation(&node.path, validation)?;
+        "set-data-validation"
+    } else if is_comment || has_comment_options {
         if !is_comment {
             return Err(usage_error(
                 "--author, --initials, --x-emu, and --y-emu require an existing comment path",
@@ -397,18 +442,21 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             (None, _) => base_operation,
         }
     };
-    let node = editor.snapshot()?.get(path, 0)?;
+    let node = editor.snapshot()?.get(&result_path, 0)?;
     let changed = editor.is_dirty();
     save_editor(&mut editor, parsed.output.as_deref()).await?;
     let output_path = editor.package().path().to_path_buf();
     let in_place = output_path == source_path;
 
     Ok(CommandOutput::success(
-        format!("Updated {path} and saved '{}'.", output_path.display()),
+        format!(
+            "Updated {result_path} and saved '{}'.",
+            output_path.display()
+        ),
         serde_json::json!({
             "operation": operation,
             "changed": changed,
-            "path": path,
+            "path": result_path,
             "node": node,
             "kind": editor.package().kind(),
             "outputPath": output_path,
