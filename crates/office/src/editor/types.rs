@@ -7,6 +7,7 @@ use super::part::{NativeCreatedPart, NativeOfficePartType};
 
 mod data_validation;
 mod formatting;
+mod named_range;
 
 pub use data_validation::{
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
@@ -19,6 +20,7 @@ pub use formatting::{
     NativeSpreadsheetCellFormat, NativeSpreadsheetFill, NativeSpreadsheetReadingOrder,
     NativeSpreadsheetVerticalAlignment,
 };
+pub use named_range::{NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope};
 
 /// A hyperlink destination represented without executing or resolving it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -654,6 +656,15 @@ pub enum NativeOfficeMutation {
     SetCellValue {
         path: String,
         value: SpreadsheetCellValue,
+    },
+    AddNamedRange {
+        #[serde(rename = "namedRange")]
+        named_range: NativeSpreadsheetNamedRange,
+    },
+    SetNamedRange {
+        path: String,
+        #[serde(rename = "namedRange")]
+        named_range: NativeSpreadsheetNamedRange,
     },
     AddDataValidation {
         sheet: String,

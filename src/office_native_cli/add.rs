@@ -8,6 +8,7 @@ use super::arguments::{AllowedOptions, ParsedArguments};
 use super::bounded_input::{read_bounded_input, NativeInputKind};
 use super::data_validation;
 use super::format::parse_hyperlink;
+use super::named_range;
 use super::{save_editor, usage_error, MAX_IMAGE_INPUT_BYTES};
 use crate::cli::CommandOutput;
 
@@ -104,6 +105,11 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
                 editor.add_data_validation(parent, data_validation::build_new(&parsed)?)?,
                 None,
             ),
+            "named-range" | "namedrange" | "defined-name" | "definedname" => (
+                "add-named-range",
+                editor.add_named_range(named_range::build_new(parent, &parsed)?)?,
+                None,
+            ),
             "picture" | "image" | "img" => {
                 let input = parsed.input.as_deref().ok_or_else(|| {
                     usage_error("native picture add requires --input <png|jpeg|gif>")
@@ -164,10 +170,14 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
         node_type,
         "data-validation" | "datavalidation" | "validation"
     );
+    let is_named_range = matches!(
+        node_type,
+        "named-range" | "namedrange" | "defined-name" | "definedname"
+    );
     let accepts_rows = matches!(node_type, "table" | "tbl");
     let accepts_columns = matches!(node_type, "table" | "tbl" | "row" | "tr");
     let accepts_index = matches!(node_type, "column" | "col");
-    let accepts_name = is_picture || matches!(node_type, "sheet" | "worksheet");
+    let accepts_name = is_picture || is_named_range || matches!(node_type, "sheet" | "worksheet");
     let accepts_text = matches!(
         node_type,
         "paragraph"
@@ -212,6 +222,23 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept data-validation options"
         )));
+    }
+    if parsed.has_named_range_options() && !is_named_range && parsed.name.is_none() {
+        return Err(usage_error(format!(
+            "native Office add type '{node_type}' does not accept named-range options"
+        )));
+    }
+    for (present, option) in [
+        (parsed.named_range_ref.is_some(), "--ref"),
+        (parsed.named_range_scope.is_some(), "--scope"),
+        (parsed.named_range_comment.is_some(), "--comment"),
+        (parsed.named_range_volatile.is_some(), "--volatile"),
+    ] {
+        if present && !is_named_range {
+            return Err(usage_error(format!(
+                "native Office add type '{node_type}' does not accept {option}"
+            )));
+        }
     }
     if is_hyperlink && parsed.text.is_some() && parsed.display.is_some() {
         return Err(usage_error(

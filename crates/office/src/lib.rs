@@ -24,6 +24,7 @@ mod render;
 mod replay;
 mod semantic;
 mod spreadsheet_formula;
+mod spreadsheet_named_range;
 mod spreadsheet_reference;
 mod template;
 mod template_merge;
@@ -48,7 +49,8 @@ pub use editor::{
     NativeRawXmlPart, NativeSpreadsheetBorder, NativeSpreadsheetBorderLine,
     NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetDataValidation,
     NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
-    NativeSpreadsheetDataValidationType, NativeSpreadsheetFill, NativeSpreadsheetReadingOrder,
+    NativeSpreadsheetDataValidationType, NativeSpreadsheetFill, NativeSpreadsheetNamedRange,
+    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder,
     NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES,
     MAX_NATIVE_OFFICE_REPLACEMENT_BYTES, MAX_NATIVE_OFFICE_TEXT_MATCHES,
     MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES, MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
@@ -282,6 +284,8 @@ mod hyperlink_tests;
 mod image_tests;
 #[cfg(test)]
 mod issues_tests;
+#[cfg(test)]
+mod named_range_tests;
 #[cfg(test)]
 mod spreadsheet_edit_tests;
 

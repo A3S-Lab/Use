@@ -65,6 +65,10 @@ pub(super) struct ParsedArguments {
     pub validation_error_message: Option<String>,
     pub validation_error_style: Option<String>,
     pub validation_in_cell_dropdown: Option<String>,
+    pub named_range_ref: Option<String>,
+    pub named_range_scope: Option<String>,
+    pub named_range_comment: Option<String>,
+    pub named_range_volatile: Option<String>,
     pub url: Option<String>,
     pub location: Option<String>,
     pub display: Option<String>,
@@ -360,6 +364,22 @@ impl ParsedArguments {
                     )?;
                     index += 2;
                 }
+                "--ref" | "--refers-to" if allowed.named_range => {
+                    set_string_option(&mut parsed.named_range_ref, args, index, "--ref")?;
+                    index += 2;
+                }
+                "--scope" if allowed.named_range => {
+                    set_string_option(&mut parsed.named_range_scope, args, index, "--scope")?;
+                    index += 2;
+                }
+                "--comment" if allowed.named_range => {
+                    set_string_option(&mut parsed.named_range_comment, args, index, "--comment")?;
+                    index += 2;
+                }
+                "--volatile" if allowed.named_range => {
+                    set_string_option(&mut parsed.named_range_volatile, args, index, "--volatile")?;
+                    index += 2;
+                }
                 "--url" | "--link" | "--href" if allowed.url => {
                     set_string_option(&mut parsed.url, args, index, "--url")?;
                     index += 2;
@@ -512,6 +532,14 @@ impl ParsedArguments {
             || self.validation_error_style.is_some()
             || self.validation_in_cell_dropdown.is_some()
     }
+
+    pub(super) fn has_named_range_options(&self) -> bool {
+        self.name.is_some()
+            || self.named_range_ref.is_some()
+            || self.named_range_scope.is_some()
+            || self.named_range_comment.is_some()
+            || self.named_range_volatile.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -576,6 +604,7 @@ pub(super) struct AllowedOptions {
     force: bool,
     regex: bool,
     data_validation: bool,
+    named_range: bool,
 }
 
 impl AllowedOptions {
@@ -640,6 +669,7 @@ impl AllowedOptions {
         force: false,
         regex: false,
         data_validation: false,
+        named_range: false,
     };
     pub const GET: Self = Self {
         depth: true,
@@ -694,6 +724,8 @@ impl AllowedOptions {
         width_emu: true,
         regex: true,
         data_validation: true,
+        named_range: true,
+        name: true,
         ..Self::NONE
     };
     pub const BATCH: Self = Self {
@@ -735,6 +767,7 @@ impl AllowedOptions {
         x_emu: true,
         y_emu: true,
         data_validation: true,
+        named_range: true,
         ..Self::NONE
     };
     pub const ADD_PART: Self = Self {

@@ -186,6 +186,46 @@ unsaved semantic readback. Covered observed and virtual blank cells expose
 fail closed when unknown children or final collection data cannot be preserved.
 All mutations remain in memory until `office_save`.
 
+Spreadsheet defined names use the separate `add-named-range` and
+`set-named-range` mutations:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "add-named-range",
+    "namedRange": {
+      "name": "Revenue",
+      "ref": "'Sheet1'!$A$2:$A$20",
+      "scope": "workbook",
+      "comment": "Workbook revenue",
+      "volatile": false
+    }
+  }]
+}
+```
+
+Use `set-named-range` with the canonical scoped `path` returned by the batch or
+an `office_query` call and one complete `namedRange` value. The scope is
+`workbook` or an existing worksheet name. Delete with the ordinary typed
+`remove` mutation. Name-only compatibility paths are ambiguous when the same
+name exists at workbook and worksheet scope, so prefer
+`/namedrange[@name=NAME][@scope=SCOPE]`.
+Use the explicit scope `worksheet:workbook` for a worksheet literally named
+`workbook`; the same escaped label appears in semantic readback and its
+canonical path.
+
+Identifiers, refs, comments, collection size, case-insensitive `(name, scope)`
+identity, ListObject table-name collisions, reserved `_xlnm.*`/`Slicer_*`
+names, and unsupported cross-workbook refs are validated before mutation.
+Workbook-scoped bare A1 refs are rejected; worksheet-local bare A1 refs are
+qualified automatically by the domain layer. The mutation requests workbook
+recalculation but does not evaluate the expression. Unknown OOXML attributes
+are retained, while unknown content that cannot be preserved fails the whole
+batch. Call `office_get` or `office_query` before `office_save` to verify the
+unsaved scoped value, then save explicitly. Closing a dirty session still
+requires save or explicit discard.
+
 General find/replace uses the typed `replace-text` mutation. Keep `mode`
 explicit and prefer `literal` for ordinary text:
 

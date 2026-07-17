@@ -5,7 +5,8 @@ use a3s_use_office::{
     NativeOfficeImage, NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
     NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextCase, NativeOfficeTextFormat,
     NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextScript,
-    NativeOfficeUnderline, SpreadsheetCellValue,
+    NativeOfficeUnderline, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
+    SpreadsheetCellValue,
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -200,6 +201,42 @@ impl From<OfficeCellValue> for SpreadsheetCellValue {
             OfficeCellValue::Formula { expression } => Self::Formula { expression },
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeNamedRange {
+    /// ECMA-376 defined-name identifier.
+    pub(super) name: String,
+    /// Defined-name expression without a leading `=`.
+    #[serde(rename = "ref")]
+    pub(super) reference: String,
+    /// `workbook`, an existing worksheet name, or `worksheet:workbook` for a
+    /// worksheet literally named `workbook`.
+    #[serde(default = "default_named_range_scope")]
+    pub(super) scope: String,
+    pub(super) comment: Option<String>,
+    #[serde(default)]
+    pub(super) volatile: bool,
+}
+
+impl OfficeNamedRange {
+    fn into_native(self) -> UseResult<NativeSpreadsheetNamedRange> {
+        let scope = NativeSpreadsheetNamedRangeScope::try_from(self.scope).map_err(|error| {
+            UseError::new("use.office.spreadsheet_named_range_scope_invalid", error)
+        })?;
+        Ok(NativeSpreadsheetNamedRange {
+            name: self.name,
+            reference: self.reference,
+            scope,
+            comment: self.comment,
+            volatile: self.volatile,
+        })
+    }
+}
+
+fn default_named_range_scope() -> String {
+    "workbook".to_string()
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
@@ -652,6 +689,15 @@ pub(super) enum OfficeMutation {
         path: String,
         value: OfficeCellValue,
     },
+    AddNamedRange {
+        #[serde(rename = "namedRange")]
+        named_range: OfficeNamedRange,
+    },
+    SetNamedRange {
+        path: String,
+        #[serde(rename = "namedRange")]
+        named_range: OfficeNamedRange,
+    },
     AddDataValidation {
         /// Existing Spreadsheet worksheet path such as `/Sheet1`.
         sheet: String,
@@ -806,6 +852,13 @@ impl OfficeMutation {
             Self::SetCellValue { path, value } => NativeOfficeMutation::SetCellValue {
                 path,
                 value: value.into(),
+            },
+            Self::AddNamedRange { named_range } => NativeOfficeMutation::AddNamedRange {
+                named_range: named_range.into_native()?,
+            },
+            Self::SetNamedRange { path, named_range } => NativeOfficeMutation::SetNamedRange {
+                path,
+                named_range: named_range.into_native()?,
             },
             Self::AddDataValidation { sheet, validation } => {
                 NativeOfficeMutation::AddDataValidation {

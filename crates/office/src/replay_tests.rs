@@ -2,7 +2,8 @@ use std::path::Path;
 
 use crate::{
     NativeOfficeDocument, NativeOfficeEditor, NativeOfficeReplayArtifact,
-    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationType, SpreadsheetCellValue,
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationType,
+    NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope, SpreadsheetCellValue,
     NATIVE_OFFICE_REPLAY_FORMAT, NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
 };
 
@@ -93,6 +94,19 @@ async fn spreadsheet_dump_replays_sheets_and_typed_cells_exactly() {
             ),
         )
         .unwrap();
+    source
+        .add_named_range(
+            NativeSpreadsheetNamedRange::new("Revenue", "'Data'!$B$2")
+                .with_comment("Workbook total"),
+        )
+        .unwrap();
+    source
+        .add_named_range(
+            NativeSpreadsheetNamedRange::new("Status", "C1:C10")
+                .with_scope(NativeSpreadsheetNamedRangeScope::worksheet("Summary"))
+                .with_volatile(true),
+        )
+        .unwrap();
 
     let artifact = NativeOfficeReplayArtifact::dump(&source.snapshot().unwrap(), "/").unwrap();
     assert!(artifact.mutations.iter().any(|mutation| matches!(
@@ -102,6 +116,13 @@ async fn spreadsheet_dump_replays_sheets_and_typed_cells_exactly() {
     assert!(artifact.mutations.iter().any(|mutation| matches!(
         mutation,
         crate::NativeOfficeMutation::AddDataValidation { sheet, .. } if sheet == "/Summary"
+    )));
+    assert!(artifact.mutations.iter().any(|mutation| matches!(
+        mutation,
+        crate::NativeOfficeMutation::AddNamedRange { named_range }
+            if named_range.name == "Status"
+                && named_range.scope
+                    == NativeSpreadsheetNamedRangeScope::worksheet("Summary")
     )));
     assert_exact_replay(&source, &artifact, &target_path).await;
 }

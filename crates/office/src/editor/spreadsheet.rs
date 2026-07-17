@@ -16,6 +16,7 @@ const MAX_RANGE_MUTATION_CELLS: usize = 100_000;
 mod arrange;
 mod data_validation;
 mod merge;
+mod named_range;
 mod structure;
 mod style;
 mod worksheet;
@@ -38,6 +39,21 @@ pub(super) fn set_data_validation(
     validation: &super::NativeSpreadsheetDataValidation,
 ) -> UseResult<String> {
     data_validation::set(package, path, validation)
+}
+
+pub(super) fn add_named_range(
+    package: &mut NativeOfficePackage,
+    named_range: &super::NativeSpreadsheetNamedRange,
+) -> UseResult<String> {
+    named_range::add(package, named_range)
+}
+
+pub(super) fn set_named_range(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    named_range: &super::NativeSpreadsheetNamedRange,
+) -> UseResult<String> {
+    named_range::set(package, path, named_range)
 }
 
 pub(super) fn merge_cells(package: &mut NativeOfficePackage, path: &str) -> UseResult<String> {
@@ -124,7 +140,9 @@ pub(super) fn set_cell_value(
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
-    if data_validation::is_path(path) {
+    if named_range::is_path(path) {
+        named_range::remove(package, path)
+    } else if data_validation::is_path(path) {
         data_validation::remove(package, path)
     } else if path.trim_start_matches('/').contains('/') {
         remove_cell(package, path)

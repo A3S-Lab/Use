@@ -43,8 +43,9 @@ pub use types::{
     NativeSpreadsheetBorderLine, NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat,
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
-    NativeSpreadsheetFill, NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
-    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    NativeSpreadsheetFill, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
+    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
@@ -192,6 +193,26 @@ impl NativeOfficeEditor {
             value,
         }])?;
         Ok(())
+    }
+
+    /// Adds one complete typed Spreadsheet defined name.
+    pub fn add_named_range(
+        &mut self,
+        named_range: NativeSpreadsheetNamedRange,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::AddNamedRange { named_range })
+    }
+
+    /// Replaces one existing Spreadsheet defined name completely.
+    pub fn set_named_range(
+        &mut self,
+        path: impl Into<String>,
+        named_range: NativeSpreadsheetNamedRange,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SetNamedRange {
+            path: path.into(),
+            named_range,
+        })
     }
 
     /// Adds one complete typed Spreadsheet data-validation rule.
@@ -652,6 +673,12 @@ impl NativeOfficeEditor {
                 NativeOfficeMutation::SetCellValue { path, value } => {
                     spreadsheet::set_cell_value(&mut self.package, path, value)
                         .map(|()| path.clone())
+                }
+                NativeOfficeMutation::AddNamedRange { named_range } => {
+                    spreadsheet::add_named_range(&mut self.package, named_range)
+                }
+                NativeOfficeMutation::SetNamedRange { path, named_range } => {
+                    spreadsheet::set_named_range(&mut self.package, path, named_range)
                 }
                 NativeOfficeMutation::AddDataValidation { sheet, validation } => {
                     spreadsheet::add_data_validation(&mut self.package, sheet, validation)

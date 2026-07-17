@@ -14,6 +14,7 @@ use crate::xml_tree::{parse_xml_tree, XmlElement, XmlNode};
 use crate::{NativeOfficePackage, OpcPackageModel, RelationshipSource, RelationshipTarget};
 
 mod data_validation;
+mod named_range;
 mod style;
 
 use style::read_styles;
@@ -68,6 +69,7 @@ pub(super) fn read(
             "Spreadsheet workbook has no sheets collection.",
         )
     })?;
+    let mut sheet_names = Vec::new();
     for sheet in sheets.children_named("sheet") {
         let name = sheet.attribute("name").ok_or_else(|| {
             semantic_error(
@@ -76,6 +78,7 @@ pub(super) fn read(
             )
         })?;
         validate_sheet_name(name)?;
+        sheet_names.push(name.to_string());
         let relationship_id = relationship_attribute(sheet, "id").ok_or_else(|| {
             semantic_error(
                 "use.office.spreadsheet_sheet_invalid",
@@ -109,9 +112,13 @@ pub(super) fn read(
         }
         root.children.push(sheet_node);
     }
+    if let Some(collection) = named_range::read(&workbook, &sheet_names)? {
+        root.children.push(collection);
+    }
     root.text = root
         .children
         .iter()
+        .filter(|node| node.node_type == OfficeNodeType::Worksheet)
         .map(|sheet| sheet.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
@@ -123,6 +130,9 @@ pub(super) fn virtual_get(
     path: &str,
     depth: usize,
 ) -> UseResult<Option<DocumentNode>> {
+    if let Some(node) = named_range::virtual_get(root, path, depth)? {
+        return Ok(Some(node));
+    }
     let Some((requested_sheet, target)) =
         path.strip_prefix('/').and_then(|path| path.split_once('/'))
     else {

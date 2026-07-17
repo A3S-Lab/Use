@@ -112,7 +112,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   scoped cross-format literal/regex replacement, typed text formatting,
   Spreadsheet number/fill/border/alignment formatting, exact merged-cell
-  editing, typed data validation, inert hyperlinks, and legacy comments,
+  editing, typed data validation, scoped defined names, inert hyperlinks, and
+  legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
   bounded typed issue diagnostics, Browser-injected semantic PNG screenshots,
@@ -328,7 +329,20 @@ HTML/SVG. Native add/set/remove, batch, exact replay, CLI, Rust, and standard
 MCP use the same closed contract while retaining strict/transitional
 SpreadsheetML and unknown attributes. This is not native
 conditional-formatting, table-authoring, filtering, chart, or pivot-table
-parity. The engine also creates, updates, reads,
+parity. Native Spreadsheet defined names use a separate typed contract for
+workbook-global and worksheet-local scopes. Stable selectors include both name
+and scope, while compatibility selectors remain available when the name is
+unambiguous. `worksheet:workbook` disambiguates a local scope when the
+worksheet itself is literally named `workbook`. The writer validates Excel identifier and reference limits,
+qualifies a bare A1 range only for a local scope, enforces case-insensitive
+uniqueness by `(name, scope)`, rejects ListObject table-name collisions, and
+protects `_xlnm.*` and `Slicer_*` names owned by other Office features.
+Semantic get/query, ordinary typed remove, batch, exact replay, CLI, Rust, and
+standard MCP share the same value. Strict/transitional SpreadsheetML and
+unknown defined-name attributes are retained; unknown collection or child
+content fails closed when it cannot be preserved. This is defined-name
+lifecycle support, not formula evaluation, table authoring, or complete
+Spreadsheet parity. The engine also creates, updates, reads,
 queries, and removes typed hyperlinks. Word owns
 external HTTP/HTTPS/mailto links and internal bookmark targets in body,
 header, and footer paragraphs, with display text and tooltips; Spreadsheet
@@ -499,6 +513,15 @@ a3s use office native query workbook.xlsx 'dataValidation[type=list]' --json
 a3s use office native get workbook.xlsx /Sheet1/C3 --json
 a3s use office native set workbook.xlsx '/Sheet1/dataValidation[1]' --validation-type whole --range B2:B50 --operator between --formula1 18 --formula2 120 --allow-blank false --error-style warning --json
 a3s use office native remove workbook.xlsx '/Sheet1/dataValidation[1]' --json
+
+# Add, inspect, update, and remove typed Spreadsheet defined names. A sheet
+# parent defaults to local scope and qualifies a bare A1 ref automatically.
+a3s use office native add workbook.xlsx / --type named-range --name Revenue --ref 'Sheet1!$A$2:$A$20' --scope workbook --comment 'Workbook revenue' --json
+a3s use office native add workbook.xlsx /Sheet1 --type named-range --name Status --ref A2:A20 --json
+a3s use office native query workbook.xlsx 'namedrange[scope=Sheet1]' --json
+a3s use office native get workbook.xlsx '/namedrange[@name=Revenue][@scope=workbook]' --json
+a3s use office native set workbook.xlsx '/namedrange[@name=Status][@scope=Sheet1]' --name WorkflowStatus --ref B2:B20 --volatile false --json
+a3s use office native remove workbook.xlsx '/namedrange[@name=Revenue][@scope=workbook]' --json
 
 # Add or update inert hyperlinks. External targets accept only absolute
 # HTTP/HTTPS/mailto URIs without credentials. Word internal targets are bookmark
@@ -703,7 +726,8 @@ current schema is:
 The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `set-text-format`, `set-cell-format`, `add-data-validation`,
-`set-data-validation`, `merge-cells`, `unmerge-cells`,
+`set-data-validation`, `add-named-range`, `set-named-range`, `merge-cells`,
+`unmerge-cells`,
 `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
 `add-table`, `add-table-row`, `add-table-column`, `add-table-cell`,
@@ -737,6 +761,30 @@ Each rule accepts 1–1,024 disjoint ranges and each worksheet accepts at most
 operators and `formula2`; comparison rules require an operator and require
 `formula2` only for `between` or `notBetween`. Invalid or overlapping input
 rolls back the complete in-memory batch.
+
+A named-range mutation uses one complete scoped value. Deletion reuses the
+ordinary typed `remove` mutation:
+
+```json
+{
+  "operation": "add-named-range",
+  "namedRange": {
+    "name": "Revenue",
+    "ref": "'Sheet1'!$A$2:$A$20",
+    "scope": "workbook",
+    "comment": "Workbook revenue",
+    "volatile": false
+  }
+}
+```
+
+Use `set-named-range` with a stable `path` and a complete `namedRange` value.
+Names are limited to 255 characters, refs to 8,192, comments to 255, and a
+workbook to 65,536 defined names. Workbook-scoped bare A1 refs, leading `=`,
+cross-workbook refs without external-link parts, reserved Office-managed names,
+duplicate `(name, scope)` identities, and ListObject table-name collisions fail
+atomically. Use the explicit scope `worksheet:workbook` for a local name on a
+worksheet literally named `workbook`.
 
 An image mutation uses the same versioned batch boundary:
 
@@ -793,8 +841,8 @@ ordinary JSON:
 The first dump scope is the complete document (`/`). It accepts only content
 that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
-typed cells, merged ranges, and typed data-validation rules without styles or
-cached formula results, and
+typed defined names, typed cells, merged ranges, and typed data-validation
+rules without styles or cached formula results, and
 Presentation slides with plain one-run text shapes and canonical basic tables.
 Headers, notes,
 media, non-canonical table styling, rich text, non-canonical package resources,
@@ -1096,6 +1144,7 @@ use a3s_use_office::{
     NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
+    NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
     NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
 };
 
@@ -1149,6 +1198,12 @@ let validation_path = workbook.add_data_validation(
     ),
 )?;
 println!("created {validation_path}");
+let named_range_path = workbook.add_named_range(
+    NativeSpreadsheetNamedRange::new("Revenue", "'Sheet1'!$A$2:$A$20")
+        .with_scope(NativeSpreadsheetNamedRangeScope::Workbook)
+        .with_comment("Workbook revenue"),
+)?;
+println!("created {named_range_path}");
 workbook.save().await?;
 
 let document = NativeOfficeDocument::open("report.docx").await?;

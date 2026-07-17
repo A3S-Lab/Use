@@ -7,7 +7,8 @@ use crate::discovery::office_error;
 use crate::editor::{
     NativeOfficeEditor, NativeOfficeMutation, NativeSpreadsheetDataValidation,
     NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
-    NativeSpreadsheetDataValidationType, SpreadsheetCellValue,
+    NativeSpreadsheetDataValidationType, NativeSpreadsheetNamedRange,
+    NativeSpreadsheetNamedRangeScope, SpreadsheetCellValue,
 };
 use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
 use crate::{DocumentKind, NativeOfficePackage};
@@ -312,20 +313,19 @@ fn emit_word_table(
 }
 
 fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>> {
-    if root.children.is_empty() {
+    let sheets = root
+        .children
+        .iter()
+        .filter(|node| node.node_type == OfficeNodeType::Worksheet)
+        .collect::<Vec<_>>();
+    if sheets.is_empty() {
         return Err(dump_unsupported(
             "/",
             "Spreadsheet replay requires at least one worksheet.",
         ));
     }
     let mut mutations = Vec::new();
-    for (sheet_offset, sheet) in root.children.iter().enumerate() {
-        if sheet.node_type != OfficeNodeType::Worksheet {
-            return Err(dump_unsupported(
-                &sheet.path,
-                "Spreadsheet root contains a non-worksheet node.",
-            ));
-        }
+    for (sheet_offset, sheet) in sheets.into_iter().enumerate() {
         let name = sheet
             .path
             .strip_prefix('/')
@@ -401,7 +401,94 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
             }
         }));
     }
+    let name_collections = root
+        .children
+        .iter()
+        .filter(|node| node.node_type == OfficeNodeType::NamedRangeCollection)
+        .collect::<Vec<_>>();
+    if name_collections.len() > 1 {
+        return Err(dump_unsupported(
+            "/namedrange",
+            "Spreadsheet replay found multiple named-range collections.",
+        ));
+    }
+    if let Some(collection) = name_collections.first() {
+        if collection.path != "/namedrange"
+            || collection.tag != "namedranges"
+            || collection.style.is_some()
+            || !collection.text.is_empty()
+        {
+            return Err(dump_unsupported(
+                &collection.path,
+                "Spreadsheet named-range collection contains unsupported semantic data.",
+            ));
+        }
+        for node in &collection.children {
+            mutations.push(NativeOfficeMutation::AddNamedRange {
+                named_range: spreadsheet_named_range(node)?,
+            });
+        }
+    }
+    if let Some(unsupported) = root.children.iter().find(|node| {
+        !matches!(
+            node.node_type,
+            OfficeNodeType::Worksheet | OfficeNodeType::NamedRangeCollection
+        )
+    }) {
+        return Err(dump_unsupported(
+            &unsupported.path,
+            "Spreadsheet root contains an unsupported semantic node.",
+        ));
+    }
     Ok(mutations)
+}
+
+fn spreadsheet_named_range(node: &DocumentNode) -> UseResult<NativeSpreadsheetNamedRange> {
+    if node.node_type != OfficeNodeType::NamedRange
+        || node.tag != "namedrange"
+        || node.style.is_some()
+        || !node.children.is_empty()
+    {
+        return Err(dump_unsupported(
+            &node.path,
+            "Spreadsheet named range contains unsupported semantic children or style data.",
+        ));
+    }
+    let allowed = ["name", "ref", "scope", "comment", "volatile"];
+    if let Some(key) = node
+        .format
+        .keys()
+        .find(|key| !allowed.contains(&key.as_str()))
+    {
+        return Err(dump_unsupported(
+            &node.path,
+            format!("Spreadsheet named-range property '{key}' is not replayable."),
+        ));
+    }
+    let name = required_format(node, "name")?.to_string();
+    let reference = required_format(node, "ref")?.to_string();
+    if node.text != reference {
+        return Err(dump_unsupported(
+            &node.path,
+            "Spreadsheet named-range text does not match its ref property.",
+        ));
+    }
+    let scope_value = required_format(node, "scope")?;
+    let scope =
+        NativeSpreadsheetNamedRangeScope::try_from(scope_value.to_string()).map_err(|error| {
+            dump_unsupported(
+                &node.path,
+                format!("Spreadsheet named-range scope is not replayable: {error}"),
+            )
+        })?;
+    let volatile = parse_bool_format(node, "volatile", false)?;
+    Ok(NativeSpreadsheetNamedRange {
+        name,
+        reference,
+        scope,
+        comment: node.format.get("comment").cloned(),
+        volatile,
+    })
 }
 
 fn spreadsheet_data_validation(node: &DocumentNode) -> UseResult<NativeSpreadsheetDataValidation> {
@@ -520,6 +607,18 @@ fn replay_bool(node: &DocumentNode, key: &str) -> UseResult<bool> {
         value => Err(dump_unsupported(
             &node.path,
             format!("Spreadsheet data-validation property '{key}' is not boolean: '{value}'."),
+        )),
+    }
+}
+
+fn parse_bool_format(node: &DocumentNode, key: &str, default: bool) -> UseResult<bool> {
+    match node.format.get(key).map(String::as_str) {
+        None => Ok(default),
+        Some("true") => Ok(true),
+        Some("false") => Ok(false),
+        Some(value) => Err(dump_unsupported(
+            &node.path,
+            format!("Spreadsheet property '{key}' is not boolean: '{value}'."),
         )),
     }
 }

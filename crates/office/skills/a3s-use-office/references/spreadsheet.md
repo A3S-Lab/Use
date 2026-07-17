@@ -11,6 +11,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 - [Cell Presentation Formatting](#cell-presentation-formatting)
 - [Merged Cells](#merged-cells)
 - [Data Validation](#data-validation)
+- [Named Ranges](#named-ranges)
 - [Structure](#structure)
 - [Verify](#verify)
 
@@ -276,6 +277,78 @@ would be discarded. Strict/transitional OOXML, atomic batch rollback, and
 exact replay are supported. This capability does not add conditional
 formatting, table or filter authoring, charts, pivots, formula evaluation, or
 Excel layout fidelity.
+
+## Named Ranges
+
+Use a scoped defined name when formulas or validation rules need a stable
+workbook identifier:
+
+```bash
+# Workbook-global name: the A1 ref must include its worksheet.
+a3s use office native add workbook.xlsx / \
+  --type named-range \
+  --name Revenue \
+  --ref 'Sheet1!$A$2:$A$20' \
+  --scope workbook \
+  --comment 'Workbook revenue' \
+  --json
+
+# A worksheet parent defaults to local scope and qualifies a bare A1 ref.
+a3s use office native add workbook.xlsx /Sheet1 \
+  --type named-range \
+  --name Status \
+  --ref A2:A20 \
+  --json
+
+# Discover and address the complete scoped identity.
+a3s use office native query workbook.xlsx 'namedrange[name=Revenue]' --json
+a3s use office native get workbook.xlsx \
+  '/namedrange[@name=Revenue][@scope=workbook]' --json
+
+# CLI set preserves omitted fields; use `none` to clear the comment.
+a3s use office native set workbook.xlsx \
+  '/namedrange[@name=Status][@scope=Sheet1]' \
+  --name WorkflowStatus \
+  --ref B2:B20 \
+  --volatile false \
+  --json
+
+a3s use office native remove workbook.xlsx \
+  '/namedrange[@name=Revenue][@scope=workbook]' --json
+```
+
+Canonical paths carry both `@name` and `@scope`. Name-only paths such as
+`/namedrange[Revenue]`, `@name` paths, and one-based positional paths remain
+compatible, but an unscoped path fails with
+`use.office.spreadsheet_named_range_ambiguous` when the same name exists in
+multiple scopes. Use the canonical path returned by add/query for update and
+remove. Path values are percent-encoded when a name or worksheet requires it.
+If the worksheet is literally named `workbook`, use `--scope
+worksheet:workbook`; semantic readback and its canonical path use the same
+escaped scope so it cannot collide with the global identity.
+
+Names may contain Unicode letters and digits plus underscore, period, and
+backslash, must begin with a letter, underscore, or backslash, may not resemble
+A1/R1C1 notation, and are limited to 255 characters. Refs omit the formula-bar
+leading `=` and are limited to 8,192 characters. A workbook-scoped bare A1 ref
+is invalid; a local bare A1 ref is qualified with its scope worksheet. Simple
+qualified refs must target an existing sheet. Cross-workbook refs requiring an
+external-link part are not native. Comments are limited to 255 characters.
+
+The identity is case-insensitively unique by `(name, scope)`. A defined name
+also may not collide with a ListObject table `name` or `displayName`. Do not
+edit or remove `_xlnm.*` print/filter definitions or `Slicer_*` sentinels;
+manage the owning typed feature instead. `--volatile true` maps to the OOXML
+defined-name function flag and requests recalculation. No named-range formula
+is evaluated by A3S.
+
+Batch, standard MCP, and Rust use one complete typed value for add/set and
+ordinary typed `remove` for deletion. The writer preserves strict/transitional
+SpreadsheetML and unknown attributes. Unknown collection or child content
+fails closed when an edit cannot retain it. Exact replay includes supported
+defined names. This remains defined-name lifecycle support, not table
+authoring, external-link authoring, formula evaluation, or complete
+Spreadsheet parity.
 
 ## Structure
 

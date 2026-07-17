@@ -5,7 +5,8 @@ use a3s_use_office::{
     NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextScript,
     NativeOfficeUnderline, NativeSpreadsheetBorder, NativeSpreadsheetBorderLine,
     NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
-    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
+    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder,
+    NativeSpreadsheetVerticalAlignment,
 };
 
 #[test]
@@ -342,6 +343,62 @@ fn office_batch_schema_exposes_typed_spreadsheet_data_validation() {
                 "type": "list",
                 "ranges": ["A1"],
                 "formula1": "A,B",
+                "script": "alert(1)"
+            }
+        }]
+    }));
+    assert!(unknown.is_err());
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_spreadsheet_named_ranges() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "add-named-range",
+        "set-named-range",
+        "namedRange",
+        "scope",
+        "comment",
+        "volatile",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "add-named-range",
+            "namedRange": {
+                "name": "Status",
+                "ref": "A2:A20",
+                "scope": "Sheet1",
+                "comment": "Workflow status",
+                "volatile": true
+            }
+        }]
+    }))
+    .unwrap();
+    assert!(matches!(
+        input.mutations[0].clone().into_native().unwrap(),
+        NativeOfficeMutation::AddNamedRange {
+            named_range: a3s_use_office::NativeSpreadsheetNamedRange {
+                ref name,
+                ref reference,
+                scope: NativeSpreadsheetNamedRangeScope::Worksheet(ref sheet),
+                volatile: true,
+                ..
+            }
+        } if name == "Status" && reference == "A2:A20" && sheet == "Sheet1"
+    ));
+
+    let unknown = serde_json::from_value::<OfficeBatchInput>(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "add-named-range",
+            "namedRange": {
+                "name": "Status",
+                "ref": "'Sheet1'!$A$1",
                 "script": "alert(1)"
             }
         }]

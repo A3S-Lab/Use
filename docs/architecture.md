@@ -122,8 +122,9 @@ documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
 XML access, bounded annotated and issue analysis, typed text formatting,
-typed Spreadsheet cell presentation, data validation, and exact merged-cell
-editing, typed scoped text replacement, typed hyperlinks, and atomic mutation batches
+typed Spreadsheet cell presentation, data validation, scoped defined names,
+and exact merged-cell editing, typed scoped text replacement, typed hyperlinks,
+and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
 same typed contract reads unsaved native MCP session state without a private
@@ -175,6 +176,23 @@ discard unknown children or collection data. Semantic projection adds stable
 `dataValidation` nodes plus sparse observed/virtual-cell annotations; HTML and
 SVG carry only inert metadata. This contract neither evaluates formulas nor
 implies conditional-formatting, filter, table, chart, or pivot support.
+Spreadsheet defined names are a separate closed value represented by
+`add-named-range` and `set-named-range`; deletion reuses ordinary typed
+`remove`. Workbook-global and worksheet-local scopes map explicitly to the
+OOXML `localSheetId` identity. Stable paths include the percent-encoded name and
+scope, while name-only and positional compatibility selectors remain available
+when they are unambiguous. The escaped scope `worksheet:workbook` preserves the
+distinction for a worksheet literally named `workbook`. Identifier, ref, comment, and collection limits are
+enforced before mutation. Workbook-scoped bare A1 refs, leading `=`, unsupported
+cross-workbook refs, duplicate `(name, scope)` identities, and collisions with
+ListObject table names fail atomically. `_xlnm.*` and `Slicer_*` names remain
+owned by their higher-level Office features and cannot be edited through this
+contract. Semantic get/query, Rust, versioned batch JSON, CLI, standard MCP,
+exact replay, and the Office Skill share the same typed value. The
+loss-preserving writer retains strict/transitional SpreadsheetML and unknown
+defined-name attributes and fails closed for unknown collection or child
+content. This capability stores defined-name expressions and requests
+recalculation; it neither evaluates formulas nor implies table authoring.
 Merged cells are another closed Spreadsheet mutation variant, represented by
 `merge-cells` and `unmerge-cells`, rather than a style flag or universal action.
 The editor normalizes A1 ranges, rejects geometric overlap and ListObject table
@@ -309,7 +327,8 @@ string passthrough. It supports validate, create/open/list, semantic get/query,
 bounded annotated plus text/outline/statistics views, all-format HTML and SVG,
 all-format bounded issue views, Browser-injected semantic PNG screenshots,
 constrained raw XML inspection, atomic typed mutation batches,
-including typed Spreadsheet data-validation and exact merge/unmerge,
+including typed Spreadsheet data-validation, scoped defined names, and exact
+merge/unmerge,
 immutable-template merge, save, and close. A screenshot requires an explicit
 no-clobber `.png` output and
 releases the Office session lock before Browser rendering. A server process
@@ -378,7 +397,8 @@ Implemented:
     formatting, Word/Presentation highlight, text case, and language, plus
     format-bounded strikethrough, typed Spreadsheet number/fill/border/alignment
     and cell-presentation formatting, typed Spreadsheet data-validation
-    add/set/remove with sparse semantic readback, exact Spreadsheet merged-cell editing,
+    add/set/remove with sparse semantic readback, typed scoped Spreadsheet
+    defined-name add/set/remove with stable semantic selectors, exact Spreadsheet merged-cell editing,
     and typed Spreadsheet text/number/boolean/formula cell and range mutation,
     typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment

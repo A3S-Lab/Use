@@ -372,6 +372,58 @@ Spreadsheet or OfficeCLI parity. Conditional formatting, table authoring,
 filter and sort authoring, charts, pivot tables, slicers, sparklines, formula
 evaluation, CSV/TSV import, and Excel layout fidelity remain separate work.
 
+Native `add-named-range` and `set-named-range` form a separate closed typed
+Rust, versioned batch, CLI, and standard MCP contract for Spreadsheet defined
+names. Ordinary typed `remove` deletes one name through its stable scoped path.
+The CLI adds a name with `--type named-range`, `--name`, and `--ref`; `--scope`
+accepts `workbook` or an existing worksheet. A worksheet parent becomes the
+default local scope and automatically qualifies a bare A1 range. CLI `set`
+carries forward omitted fields, while Rust, batch, and MCP replacements use one
+complete value containing `name`, `ref`, `scope`, optional `comment`, and a
+typed `volatile` flag.
+
+Workbook-global and worksheet-local names are distinct identities. The latter
+store the worksheet's zero-based `localSheetId`. Canonical paths include both
+dimensions, for example `/namedrange[@name=Revenue][@scope=workbook]` and
+`/namedrange[@name=Revenue][@scope=Sheet1]`; selector values are percent-encoded
+when required. A local name on a worksheet literally named `workbook` uses the
+escaped scope `worksheet:workbook`, keeping it distinct from the global scope
+in JSON, CLI, MCP, semantic readback, and canonical paths. Name-only, `@name`, and one-based positional compatibility paths
+remain available. If the same name exists in more than one scope, an unscoped
+lookup fails with `use.office.spreadsheet_named_range_ambiguous` and requires an
+explicit scope instead of choosing one silently. Semantic `get` and `query`
+return the normalized name, ref, scope, comment, volatile state, and protection
+metadata.
+
+Defined-name identifiers follow Excel's 255-character Unicode letter/digit,
+underscore, period, and backslash grammar and may not resemble A1 or R1C1
+notation. Refs contain the formula body without a leading `=`, are bounded to
+8,192 characters, and may be a qualified range, constant, or formula body.
+Workbook-scoped bare A1 refs are rejected; local bare refs are sheet-qualified.
+Simple sheet-qualified A1 refs must target an existing worksheet, and
+cross-workbook refs that require unsupported external-link parts are rejected.
+Comments are limited to 255 characters and each workbook to 65,536 names.
+Identity uniqueness is case-insensitive by `(name, scope)`, and the shared
+Excel namespace also rejects collisions with ListObject `name` or
+`displayName`. `_xlnm.*` print/filter definitions and `Slicer_*` sentinels are
+protected because their owning typed features must manage them.
+
+Every mutation marks the workbook for full recalculation without evaluating a
+formula. The loss-preserving writer keeps workbook child order, strict or
+transitional SpreadsheetML QNames, untouched defined names, and unknown
+attributes. Unknown collection children or non-text name content fail closed;
+removing the final name also fails if deleting `definedNames` would discard
+unknown collection attributes. Exact replay emits named ranges after worksheet
+creation and reproduces the supported part map byte-for-byte. Tests cover
+scoped identity and ambiguity, validation and rollback, reserved names, unknown
+data, strict OOXML, table-name collisions, replay, native CLI batch atomicity,
+and a complete standard MCP unsaved/save/close lifecycle with an unusable
+OfficeCLI provider.
+
+This milestone is defined-name lifecycle and storage, not a formula parser,
+dependency graph, evaluator, external-link authoring, table authoring, or
+complete rich Spreadsheet parity.
+
 Native `merge-cells` and `unmerge-cells` form a separate typed Rust, batch,
 CLI, and standard MCP contract. The CLI projects them as
 `office native set <file> <range> --merge-cells true|false`, so merge state can
@@ -667,8 +719,8 @@ same atomic batch rollback and semantic post-validation as add/set/remove.
 
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
-tables, Spreadsheet worksheets, typed cells, merged ranges, and typed
-data-validation rules without styles or cached formula results, and
+tables, Spreadsheet worksheets, typed defined names, typed cells, merged
+ranges, and typed data-validation rules without styles or cached formula results, and
 Presentation slides with plain one-run text
 shapes and canonical basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
@@ -783,7 +835,8 @@ The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
 cross-format text formatting, typed Spreadsheet number/fill/border/alignment
 and cell-presentation formatting, exact Spreadsheet merged-cell editing, typed
-Spreadsheet data-validation editing, inert hyperlinks, typed cross-format
+Spreadsheet data-validation and scoped defined-name editing, inert hyperlinks,
+typed cross-format
 legacy comments, Spreadsheet range and
 row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe

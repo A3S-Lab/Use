@@ -90,6 +90,12 @@ available.
   update/remove, and keep every rule area disjoint. Use typed list, comparison,
   or custom rules; do not work around an overlap or formula/type error with raw
   XML. Validate and read back one covered cell after mutation.
+- Treat Spreadsheet defined names as scoped workbook identities. Query
+  `namedrange` first and use the returned `@name` plus `@scope` path for
+  update/remove. Do not edit `_xlnm.*` or `Slicer_*` names, collide with a table
+  name, add a formula-bar leading `=`, or use raw XML to bypass a typed
+  identity/ref error. Defined-name formulas are stored and marked for
+  recalculation, not evaluated by A3S.
 - Keep the default OfficeCLI compatibility route separate from the native
   engine. Do not depend on OfficeCLI's private resident protocol.
 
@@ -106,7 +112,9 @@ cleared fills, cardinal and diagonal borders, vertical alignment, wrapping,
 rotation, indentation, shrink-to-fit, reading order, and exact merged-cell
 editing. It owns typed Spreadsheet list, whole, decimal, date, time,
 text-length, and custom data-validation rules over disjoint A1 ranges, with
-stable rule paths and sparse cell readback. It also owns template merge,
+stable rule paths and sparse cell readback. It owns workbook-global and
+worksheet-local Spreadsheet defined names with stable scoped paths, typed
+add/set/remove, semantic readback, and exact replay. It also owns template merge,
 constrained XML access,
 deterministic all-format HTML/SVG, Browser-injected semantic screenshots, and
 authenticated loopback live watch for saved files.

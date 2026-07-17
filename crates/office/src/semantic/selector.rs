@@ -254,6 +254,12 @@ fn kind_matches(kind: &str, node: &DocumentNode) -> bool {
         "datavalidation" | "data-validation" | "validation" => {
             node.node_type == OfficeNodeType::DataValidation
         }
+        "namedrange" | "named-range" | "definedname" | "defined-name" => {
+            node.node_type == OfficeNodeType::NamedRange
+        }
+        "namedranges" | "named-range-list" | "definednames" => {
+            node.node_type == OfficeNodeType::NamedRangeCollection
+        }
         "sheet" | "worksheet" => node.node_type == OfficeNodeType::Worksheet,
         "slide" => node.node_type == OfficeNodeType::Slide,
         "shape" | "textbox" => matches!(
