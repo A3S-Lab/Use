@@ -5,6 +5,7 @@ use a3s_use_core::UseResult;
 use super::{
     editor_error, escape_attribute, node_not_found, parse_segments, prefix,
     preserve_space_attribute, qualified, NativeOfficeHorizontalAlignment, NativeOfficeTextFormat,
+    NativeOfficeTextScript, NativeOfficeUnderline,
 };
 use crate::semantic::{NativeOfficeDocument, OfficeNodeType};
 use crate::xml_edit::{
@@ -293,6 +294,12 @@ pub(super) fn set_text_format(
     path: &str,
     format: &NativeOfficeTextFormat,
 ) -> UseResult<()> {
+    if format.strikethrough.is_some() {
+        return Err(editor_error(
+            "use.office.presentation_strikethrough_unsupported",
+            "Native Presentation text formatting does not support strikethrough yet.",
+        ));
+    }
     let snapshot = NativeOfficeDocument::from_package(package.clone())?;
     let requested = snapshot.get(path, 0)?;
     match requested.node_type {
@@ -353,6 +360,24 @@ pub(super) fn set_text_format(
                 if italic { "1" } else { "0" },
             )?;
         }
+        if let Some(underline) = format.underline {
+            bytes = set_character_attribute(
+                part_name,
+                bytes,
+                path,
+                "u",
+                presentation_underline(underline),
+            )?;
+        }
+        if let Some(script) = format.script {
+            bytes = set_character_attribute(
+                part_name,
+                bytes,
+                path,
+                "baseline",
+                presentation_baseline(script),
+            )?;
+        }
         if let Some(size) = format.font_size_centipoints {
             bytes = set_character_attribute(part_name, bytes, path, "sz", &size.to_string())?;
         }
@@ -366,6 +391,22 @@ pub(super) fn set_text_format(
         }
     }
     package.set_part(part_name, bytes)
+}
+
+fn presentation_underline(underline: NativeOfficeUnderline) -> &'static str {
+    match underline {
+        NativeOfficeUnderline::None => "none",
+        NativeOfficeUnderline::Single => "sng",
+        NativeOfficeUnderline::Double => "dbl",
+    }
+}
+
+fn presentation_baseline(script: NativeOfficeTextScript) -> &'static str {
+    match script {
+        NativeOfficeTextScript::Baseline => "0",
+        NativeOfficeTextScript::Superscript => "30000",
+        NativeOfficeTextScript::Subscript => "-25000",
+    }
 }
 
 fn set_presentation_alignment(

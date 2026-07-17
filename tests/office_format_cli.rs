@@ -64,6 +64,12 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
             "true",
             "--italic",
             "false",
+            "--underline",
+            "double",
+            "--script",
+            "superscript",
+            "--strikethrough",
+            "true",
             "--font-family",
             "Aptos",
             "--font-size",
@@ -75,6 +81,9 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
     );
     assert_eq!(word_run["data"]["operation"], "set-text-format");
     assert_eq!(word_run["data"]["node"]["format"]["bold"], "true");
+    assert_eq!(word_run["data"]["node"]["format"]["underline"], "double");
+    assert_eq!(word_run["data"]["node"]["format"]["script"], "superscript");
+    assert_eq!(word_run["data"]["node"]["format"]["strike"], "true");
     assert_eq!(word_run["data"]["node"]["format"]["font"], "Aptos");
     assert_eq!(word_run["data"]["node"]["format"]["size"], "14pt");
     assert_eq!(word_run["data"]["node"]["format"]["color"], "123456");
@@ -112,6 +121,12 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
             "Revenue",
             "--bold",
             "true",
+            "--underline",
+            "single",
+            "--script",
+            "subscript",
+            "--strikethrough",
+            "false",
             "--font-size",
             "11.5",
             "--text-color",
@@ -124,6 +139,9 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
     assert_eq!(cell["data"]["operation"], "set-content-and-text-format");
     assert_eq!(cell["data"]["node"]["text"], "Revenue");
     assert_eq!(cell["data"]["node"]["format"]["bold"], "true");
+    assert_eq!(cell["data"]["node"]["format"]["underline"], "single");
+    assert_eq!(cell["data"]["node"]["format"]["script"], "subscript");
+    assert_eq!(cell["data"]["node"]["format"]["strike"], "false");
     assert_eq!(cell["data"]["node"]["format"]["size"], "11.5pt");
     assert_eq!(cell["data"]["node"]["format"]["color"], "0066CC");
     assert_eq!(cell["data"]["node"]["format"]["alignment"], "right");
@@ -157,6 +175,10 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
             "/slide[1]/shape[1]/paragraph[1]/run[1]",
             "--italic",
             "true",
+            "--underline",
+            "double",
+            "--script",
+            "superscript",
             "--font-family",
             "Aptos Display",
             "--font-size",
@@ -167,6 +189,8 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
         ],
     );
     assert_eq!(slide_run["data"]["node"]["format"]["italic"], "1");
+    assert_eq!(slide_run["data"]["node"]["format"]["underline"], "double");
+    assert_eq!(slide_run["data"]["node"]["format"]["script"], "superscript");
     assert_eq!(slide_run["data"]["node"]["format"]["font"], "Aptos Display");
     assert_eq!(slide_run["data"]["node"]["format"]["size"], "20pt");
     assert_eq!(slide_run["data"]["node"]["format"]["color"], "AA2200");
@@ -220,6 +244,9 @@ fn native_format_batch_is_typed_and_invalid_word_sizes_do_not_write() {
                 "path": "/Sheet1/B2",
                 "format": {
                     "bold": true,
+                    "underline": "double",
+                    "script": "subscript",
+                    "strikethrough": true,
                     "fontSizeCentipoints": 1200,
                     "textColor": { "red": 17, "green": 34, "blue": 51 },
                     "alignment": "center"
@@ -255,6 +282,9 @@ fn native_format_batch_is_typed_and_invalid_word_sizes_do_not_write() {
         ],
     );
     assert_eq!(cell["data"]["node"]["format"]["bold"], "true");
+    assert_eq!(cell["data"]["node"]["format"]["underline"], "double");
+    assert_eq!(cell["data"]["node"]["format"]["script"], "subscript");
+    assert_eq!(cell["data"]["node"]["format"]["strike"], "true");
     assert_eq!(cell["data"]["node"]["format"]["color"], "112233");
 
     let word = temp.path().join("invalid.docx");
@@ -289,5 +319,46 @@ fn native_format_batch_is_typed_and_invalid_word_sizes_do_not_write() {
     );
     assert_eq!(error["error"]["code"], "use.office.font_size_unsupported");
     assert_eq!(std::fs::read(word).unwrap(), before);
+
+    let presentation = temp.path().join("unsupported-strike.pptx");
+    let presentation = presentation.to_str().unwrap();
+    run(
+        &provider,
+        &["office", "native", "create", presentation, "--json"],
+    );
+    run(
+        &provider,
+        &[
+            "office",
+            "native",
+            "add",
+            presentation,
+            "/",
+            "--type",
+            "slide",
+            "--text",
+            "Unchanged",
+            "--json",
+        ],
+    );
+    let before = std::fs::read(presentation).unwrap();
+    let error = run_failure(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            presentation,
+            "/slide[1]/shape[1]/paragraph[1]/run[1]",
+            "--strikethrough",
+            "true",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        error["error"]["code"],
+        "use.office.presentation_strikethrough_unsupported"
+    );
+    assert_eq!(std::fs::read(presentation).unwrap(), before);
     assert!(!provider.exists());
 }

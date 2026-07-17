@@ -5,6 +5,7 @@ use a3s_use_core::UseResult;
 use super::{
     editor_error, node_not_found, parse_segments, prefix, preserve_space_attribute, qualified,
     validate_mutation_path, NativeOfficeHorizontalAlignment, NativeOfficeTextFormat,
+    NativeOfficeTextScript, NativeOfficeUnderline,
 };
 use crate::xml_edit::{
     apply_patches, index_xml, insert_child, insert_ordered_child, patch_start_tag_attributes,
@@ -226,6 +227,9 @@ pub(super) fn set_text_format(
             bytes = set_run_boolean(bytes, path, "i", italic)?;
             bytes = set_run_boolean(bytes, path, "iCs", italic)?;
         }
+        if let Some(strikethrough) = format.strikethrough {
+            bytes = set_run_boolean(bytes, path, "strike", strikethrough)?;
+        }
         if let Some(family) = &format.font_family {
             bytes = set_run_fonts(bytes, path, family)?;
         }
@@ -243,8 +247,30 @@ pub(super) fn set_text_format(
                 &["themeColor", "themeTint", "themeShade"],
             )?;
         }
+        if let Some(underline) = format.underline {
+            bytes = set_run_value(bytes, path, "u", word_underline(underline), &[])?;
+        }
+        if let Some(script) = format.script {
+            bytes = set_run_value(bytes, path, "vertAlign", word_script(script), &[])?;
+        }
     }
     package.set_part(DOCUMENT_PART, bytes)
+}
+
+fn word_underline(underline: NativeOfficeUnderline) -> &'static str {
+    match underline {
+        NativeOfficeUnderline::None => "none",
+        NativeOfficeUnderline::Single => "single",
+        NativeOfficeUnderline::Double => "double",
+    }
+}
+
+fn word_script(script: NativeOfficeTextScript) -> &'static str {
+    match script {
+        NativeOfficeTextScript::Baseline => "baseline",
+        NativeOfficeTextScript::Superscript => "superscript",
+        NativeOfficeTextScript::Subscript => "subscript",
+    }
 }
 
 fn set_paragraph_alignment(

@@ -4,7 +4,8 @@ use a3s_use_office::{
     NativeOfficeHorizontalAlignment, NativeOfficeHyperlink, NativeOfficeImage,
     NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
     NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextFormat, NativeOfficeTextMatchMode,
-    NativeOfficeTextReplacement, SpreadsheetCellValue,
+    NativeOfficeTextReplacement, NativeOfficeTextScript, NativeOfficeUnderline,
+    SpreadsheetCellValue,
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -204,6 +205,42 @@ pub(super) enum OfficeHorizontalAlignment {
     Justify,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum OfficeUnderline {
+    None,
+    Single,
+    Double,
+}
+
+impl From<OfficeUnderline> for NativeOfficeUnderline {
+    fn from(value: OfficeUnderline) -> Self {
+        match value {
+            OfficeUnderline::None => Self::None,
+            OfficeUnderline::Single => Self::Single,
+            OfficeUnderline::Double => Self::Double,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum OfficeTextScript {
+    Baseline,
+    Superscript,
+    Subscript,
+}
+
+impl From<OfficeTextScript> for NativeOfficeTextScript {
+    fn from(value: OfficeTextScript) -> Self {
+        match value {
+            OfficeTextScript::Baseline => Self::Baseline,
+            OfficeTextScript::Superscript => Self::Superscript,
+            OfficeTextScript::Subscript => Self::Subscript,
+        }
+    }
+}
+
 impl From<OfficeHorizontalAlignment> for NativeOfficeHorizontalAlignment {
     fn from(value: OfficeHorizontalAlignment) -> Self {
         match value {
@@ -233,6 +270,12 @@ pub(super) struct OfficeTextFormat {
     bold: Option<bool>,
     /// Explicitly enable or disable italic text.
     italic: Option<bool>,
+    /// Explicit underline style shared by Word, Spreadsheet, and Presentation.
+    underline: Option<OfficeUnderline>,
+    /// Baseline, superscript, or subscript text.
+    script: Option<OfficeTextScript>,
+    /// Explicitly enable or disable strikethrough in Word and Spreadsheet.
+    strikethrough: Option<bool>,
     /// Font family applied to the supported script slots.
     font_family: Option<String>,
     /// Exact font size in centipoints (1/100 point), from 100 through 40000.
@@ -248,6 +291,9 @@ impl From<OfficeTextFormat> for NativeOfficeTextFormat {
         Self {
             bold: value.bold,
             italic: value.italic,
+            underline: value.underline.map(Into::into),
+            script: value.script.map(Into::into),
+            strikethrough: value.strikethrough,
             font_family: value.font_family,
             font_size_centipoints: value.font_size_centipoints,
             text_color: value

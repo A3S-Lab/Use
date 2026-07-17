@@ -1,12 +1,15 @@
 use super::{
     NativeOfficeEditor, NativeOfficeHorizontalAlignment, NativeOfficeMutation,
-    NativeOfficeRgbColor, NativeOfficeTextFormat,
+    NativeOfficeRgbColor, NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
 };
 
 fn rich_format() -> NativeOfficeTextFormat {
     NativeOfficeTextFormat {
         bold: Some(true),
         italic: Some(false),
+        underline: Some(NativeOfficeUnderline::Double),
+        script: Some(NativeOfficeTextScript::Superscript),
+        strikethrough: None,
         font_family: Some("Aptos".into()),
         font_size_centipoints: Some(1_400),
         text_color: Some(NativeOfficeRgbColor::new(0x12, 0x34, 0x56)),
@@ -27,6 +30,7 @@ fn text_format_mutation_has_a_typed_stable_json_contract() {
         path: "/body/p[1]/r[1]".into(),
         format: NativeOfficeTextFormat {
             alignment: Some(NativeOfficeHorizontalAlignment::Justify),
+            strikethrough: Some(true),
             ..rich_format()
         },
     };
@@ -38,6 +42,9 @@ fn text_format_mutation_has_a_typed_stable_json_contract() {
             "format": {
                 "bold": true,
                 "italic": false,
+                "underline": "double",
+                "script": "superscript",
+                "strikethrough": true,
                 "fontFamily": "Aptos",
                 "fontSizeCentipoints": 1400,
                 "textColor": { "red": 18, "green": 52, "blue": 86 },
@@ -63,7 +70,13 @@ async fn native_word_writes_run_format_and_paragraph_alignment_losslessly() {
     editor.set_text("/body/p[1]", "Native Word").unwrap();
 
     editor
-        .set_text_format("/body/p[1]/r[1]", rich_format())
+        .set_text_format(
+            "/body/p[1]/r[1]",
+            NativeOfficeTextFormat {
+                strikethrough: Some(true),
+                ..rich_format()
+            },
+        )
         .unwrap();
     editor.set_text_format("/body/p[1]", centered()).unwrap();
 
@@ -73,6 +86,9 @@ async fn native_word_writes_run_format_and_paragraph_alignment_losslessly() {
     assert_eq!(paragraph.format["alignment"], "center");
     assert_eq!(run.format["bold"], "true");
     assert_eq!(run.format["italic"], "false");
+    assert_eq!(run.format["underline"], "double");
+    assert_eq!(run.format["script"], "superscript");
+    assert_eq!(run.format["strike"], "true");
     assert_eq!(run.format["font"], "Aptos");
     assert_eq!(run.format["size"], "14pt");
     assert_eq!(run.format["color"], "123456");
@@ -82,6 +98,9 @@ async fn native_word_writes_run_format_and_paragraph_alignment_losslessly() {
     assert!(xml.contains("<w:sectPr>"));
     assert_eq!(xml.matches("<w:rPr").count(), 1);
     assert_eq!(xml.matches("<w:pPr").count(), 1);
+    assert!(xml.contains("<w:strike w:val=\"1\"/>"));
+    assert!(xml.contains("<w:u w:val=\"double\"/>"));
+    assert!(xml.contains("<w:vertAlign w:val=\"superscript\"/>"));
 }
 
 #[tokio::test]
@@ -162,9 +181,22 @@ async fn native_presentation_writes_run_format_and_paragraph_alignment() {
     assert_eq!(paragraph.format["alignment"], "ctr");
     assert_eq!(run.format["bold"], "1");
     assert_eq!(run.format["italic"], "0");
+    assert_eq!(run.format["underline"], "double");
+    assert_eq!(run.format["script"], "superscript");
     assert_eq!(run.format["font"], "Aptos");
     assert_eq!(run.format["size"], "14pt");
     assert_eq!(run.format["color"], "123456");
+
+    let xml = String::from_utf8(
+        editor
+            .package()
+            .part("ppt/slides/slide1.xml")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(xml.contains("u=\"dbl\""));
+    assert!(xml.contains("baseline=\"30000\""));
 }
 
 #[tokio::test]
@@ -225,6 +257,7 @@ async fn native_spreadsheet_creates_and_deduplicates_cell_styles() {
             "/Sheet1/A1:B2",
             NativeOfficeTextFormat {
                 alignment: Some(NativeOfficeHorizontalAlignment::Center),
+                strikethrough: Some(false),
                 ..rich_format()
             },
         )
@@ -234,6 +267,9 @@ async fn native_spreadsheet_creates_and_deduplicates_cell_styles() {
         let cell = editor.snapshot().unwrap().get(cell_path, 0).unwrap();
         assert_eq!(cell.format["bold"], "true");
         assert_eq!(cell.format["italic"], "false");
+        assert_eq!(cell.format["underline"], "double");
+        assert_eq!(cell.format["script"], "superscript");
+        assert_eq!(cell.format["strike"], "false");
         assert_eq!(cell.format["font"], "Aptos");
         assert_eq!(cell.format["size"], "14pt");
         assert_eq!(cell.format["color"], "123456");
@@ -249,6 +285,7 @@ async fn native_spreadsheet_creates_and_deduplicates_cell_styles() {
             "/Sheet1/A1:B2",
             NativeOfficeTextFormat {
                 alignment: Some(NativeOfficeHorizontalAlignment::Center),
+                strikethrough: Some(false),
                 ..rich_format()
             },
         )
@@ -257,6 +294,74 @@ async fn native_spreadsheet_creates_and_deduplicates_cell_styles() {
         editor.package().part("xl/styles.xml").unwrap(),
         first_styles
     );
+}
+
+#[tokio::test]
+async fn native_formats_explicitly_clear_underline_and_vertical_script() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let word_path = temp.path().join("clear.docx");
+    let mut word = NativeOfficeEditor::create(&word_path).await.unwrap();
+    word.set_text("/body/p[1]", "Word").unwrap();
+    word.set_text_format(
+        "/body/p[1]/r[1]",
+        NativeOfficeTextFormat {
+            underline: Some(NativeOfficeUnderline::None),
+            script: Some(NativeOfficeTextScript::Baseline),
+            strikethrough: Some(false),
+            ..NativeOfficeTextFormat::default()
+        },
+    )
+    .unwrap();
+    let run = word.snapshot().unwrap().get("/body/p[1]/r[1]", 0).unwrap();
+    assert_eq!(run.format["underline"], "none");
+    assert_eq!(run.format["script"], "baseline");
+    assert_eq!(run.format["strike"], "false");
+
+    let spreadsheet_path = temp.path().join("clear.xlsx");
+    let mut spreadsheet = NativeOfficeEditor::create(&spreadsheet_path).await.unwrap();
+    spreadsheet
+        .set_text_format(
+            "/Sheet1/A1",
+            NativeOfficeTextFormat {
+                underline: Some(NativeOfficeUnderline::None),
+                script: Some(NativeOfficeTextScript::Baseline),
+                strikethrough: Some(false),
+                ..NativeOfficeTextFormat::default()
+            },
+        )
+        .unwrap();
+    let cell = spreadsheet
+        .snapshot()
+        .unwrap()
+        .get("/Sheet1/A1", 0)
+        .unwrap();
+    assert_eq!(cell.format["underline"], "none");
+    assert_eq!(cell.format["script"], "baseline");
+    assert_eq!(cell.format["strike"], "false");
+
+    let presentation_path = temp.path().join("clear.pptx");
+    let mut presentation = NativeOfficeEditor::create(&presentation_path)
+        .await
+        .unwrap();
+    presentation.add_slide("/", "Presentation").unwrap();
+    presentation
+        .set_text_format(
+            "/slide[1]/shape[1]/paragraph[1]/run[1]",
+            NativeOfficeTextFormat {
+                underline: Some(NativeOfficeUnderline::None),
+                script: Some(NativeOfficeTextScript::Baseline),
+                ..NativeOfficeTextFormat::default()
+            },
+        )
+        .unwrap();
+    let run = presentation
+        .snapshot()
+        .unwrap()
+        .get("/slide[1]/shape[1]/paragraph[1]/run[1]", 0)
+        .unwrap();
+    assert_eq!(run.format["underline"], "none");
+    assert_eq!(run.format["script"], "baseline");
 }
 
 #[tokio::test]
@@ -313,8 +418,14 @@ async fn spreadsheet_style_cloning_preserves_unknown_font_and_xf_data() {
     let mut styles = String::from_utf8(package.part("xl/styles.xml").unwrap().to_vec()).unwrap();
     let font_start = styles.rfind("<font>").unwrap() + "<font".len();
     styles.insert_str(font_start, " dataKeep=\"font\"");
-    let font_end = styles.rfind("</font>").unwrap();
-    styles.insert_str(font_end, "<vertAlign val=\"superscript\"/>");
+    styles = styles.replace(
+        "<u val=\"double\"/>",
+        "<u val=\"double\" dataKeep=\"underline\"/>",
+    );
+    styles = styles.replace(
+        "<vertAlign val=\"superscript\"/>",
+        "<vertAlign val=\"superscript\" dataKeep=\"script\"/>",
+    );
     let cell_xfs_end = styles.find("</cellXfs>").unwrap();
     let xf_start = styles[..cell_xfs_end].rfind("<xf ").unwrap();
     let xf_end = xf_start + styles[xf_start..].find('>').unwrap();
@@ -334,6 +445,7 @@ async fn spreadsheet_style_cloning_preserves_unknown_font_and_xf_data() {
             "/Sheet1/A1",
             NativeOfficeTextFormat {
                 italic: Some(true),
+                underline: Some(NativeOfficeUnderline::Single),
                 ..NativeOfficeTextFormat::default()
             },
         )
@@ -341,12 +453,48 @@ async fn spreadsheet_style_cloning_preserves_unknown_font_and_xf_data() {
     let styles =
         String::from_utf8(editor.package().part("xl/styles.xml").unwrap().to_vec()).unwrap();
     assert_eq!(styles.matches("dataKeep=\"font\"").count(), 2);
-    assert_eq!(
-        styles.matches("<vertAlign val=\"superscript\"/>").count(),
-        2
-    );
+    assert_eq!(styles.matches("dataKeep=\"underline\"").count(), 2);
+    assert!(styles.split("<u ").skip(1).any(|fragment| {
+        fragment.split("/>").next().is_some_and(|tag| {
+            tag.contains("val=\"single\"") && tag.contains("dataKeep=\"underline\"")
+        })
+    }));
+    assert_eq!(styles.matches("dataKeep=\"script\"").count(), 2);
+    assert_eq!(styles.matches("val=\"superscript\"").count(), 2);
     assert_eq!(styles.matches("dataKeep=\"xf\"").count(), 2);
     assert_eq!(styles.matches("quotePrefix=\"1\"").count(), 2);
+}
+
+#[tokio::test]
+async fn unsupported_presentation_strikethrough_rolls_back_an_entire_native_batch() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("atomic.pptx");
+    let mut editor = NativeOfficeEditor::create(&path).await.unwrap();
+    editor.add_slide("/", "Before").unwrap();
+    let slide_part = "ppt/slides/slide1.xml";
+    let original = editor.package().part(slide_part).unwrap().to_vec();
+    let run_path = "/slide[1]/shape[1]/paragraph[1]/run[1]";
+
+    let error = editor
+        .apply_batch(&[
+            NativeOfficeMutation::SetText {
+                path: run_path.into(),
+                text: "After".into(),
+            },
+            NativeOfficeMutation::SetTextFormat {
+                path: run_path.into(),
+                format: NativeOfficeTextFormat {
+                    strikethrough: Some(true),
+                    ..NativeOfficeTextFormat::default()
+                },
+            },
+        ])
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.office.presentation_strikethrough_unsupported"
+    );
+    assert_eq!(editor.package().part(slide_part).unwrap(), original);
 }
 
 #[tokio::test]

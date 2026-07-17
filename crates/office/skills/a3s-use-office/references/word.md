@@ -23,7 +23,7 @@ a3s use office native add report.docx /body --type table --rows 2 --columns 3 --
 a3s use office native set report.docx '/body/p[1]' --text 'Updated summary' --json
 a3s use office native set report.docx /body --find Draft --replace Final --json
 a3s use office native set report.docx / --find 'Q([1-4]) 2025' --replace 'Q$1 2026' --regex --json
-a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --font-family Aptos --font-size 14 --text-color 123456 --json
+a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --underline double --script superscript --strikethrough true --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com/report --display 'Open report' --tooltip 'A3S report' --json
 a3s use office native set report.docx '/body/p[1]/hyperlink[1]' --location section_1 --display 'Jump to section' --json
@@ -48,10 +48,11 @@ Zero matches return an unchanged success.
 
 Character formatting targets a run returned by `get --depth 2`. Paragraph
 alignment targets the paragraph itself. Supported typed properties are bold,
-italic, font family, RGB text color, and font size; Word sizes must be exact
-half-point increments. Advanced styles, inheritance, highlight, underline,
-language, and RTL mutation still require an explicitly supported native
-operation or the compatibility route.
+italic, `none`/single/double underline, baseline/superscript/subscript, explicit
+single strikethrough, font family, RGB text color, and font size; Word sizes
+must be exact half-point increments. Advanced styles, inheritance, highlight,
+extended underline variants, double strike, language, and RTL mutation still
+require an explicitly supported native operation or the compatibility route.
 
 Hyperlink creation accepts a body, header, or footer paragraph path and returns
 a stable `/hyperlink[N]` child path for update or removal. Each part stores and

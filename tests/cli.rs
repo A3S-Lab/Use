@@ -1893,6 +1893,10 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
         "array"
     );
     assert!(apply["inputSchema"]["properties"].get("command").is_none());
+    let apply_schema = apply["inputSchema"].to_string();
+    for expected in ["underline", "script", "strikethrough", "superscript"] {
+        assert!(apply_schema.contains(expected), "missing {expected}");
+    }
 
     let created = standard_mcp_request(
         &mut stdin,
@@ -1929,11 +1933,22 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
                 "name": "office_apply_batch",
                 "arguments": {
                     "session": "native_test",
-                    "mutations": [{
-                        "operation": "add-paragraph",
-                        "parent": "/body",
-                        "text": "Native MCP"
-                    }]
+                    "mutations": [
+                        {
+                            "operation": "add-paragraph",
+                            "parent": "/body",
+                            "text": "Native MCP"
+                        },
+                        {
+                            "operation": "set-text-format",
+                            "path": "/body/p[2]/r[1]",
+                            "format": {
+                                "underline": "double",
+                                "script": "superscript",
+                                "strikethrough": true
+                            }
+                        }
+                    ]
                 }
             }
         }),
@@ -1943,16 +1958,41 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
     assert_ne!(applied["result"]["isError"], true);
     assert_eq!(
         applied["result"]["structuredContent"]["result"]["applied"],
-        1
+        2
     );
     assert_eq!(applied["result"]["structuredContent"]["persisted"], false);
+
+    let formatted = standard_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+                "name": "office_get",
+                "arguments": {
+                    "session": "native_test",
+                    "path": "/body/p[2]/r[1]",
+                    "depth": 0
+                }
+            }
+        }),
+        RESPONSE_TIMEOUT,
+    )
+    .await;
+    assert_ne!(formatted["result"]["isError"], true);
+    let format = &formatted["result"]["structuredContent"]["node"]["format"];
+    assert_eq!(format["underline"], "double");
+    assert_eq!(format["script"], "superscript");
+    assert_eq!(format["strike"], "true");
 
     let unsaved_close = standard_mcp_request(
         &mut stdin,
         &mut stdout,
         serde_json::json!({
             "jsonrpc": "2.0",
-            "id": 5,
+            "id": 6,
             "method": "tools/call",
             "params": {
                 "name": "office_close",
@@ -1973,7 +2013,7 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
         &mut stdout,
         serde_json::json!({
             "jsonrpc": "2.0",
-            "id": 6,
+            "id": 7,
             "method": "tools/call",
             "params": {
                 "name": "office_save",
@@ -1990,7 +2030,7 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
         &mut stdout,
         serde_json::json!({
             "jsonrpc": "2.0",
-            "id": 7,
+            "id": 8,
             "method": "tools/call",
             "params": {
                 "name": "office_close",

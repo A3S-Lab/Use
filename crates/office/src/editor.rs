@@ -34,7 +34,8 @@ pub use types::{
     NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
     NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat,
     NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextReplacementResult,
-    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    NativeOfficeTextScript, NativeOfficeUnderline, SpreadsheetCellValue,
+    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };

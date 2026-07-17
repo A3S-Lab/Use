@@ -828,10 +828,22 @@ fn read_styles(package: &NativeOfficePackage) -> UseResult<Vec<BTreeMap<String, 
 
 fn read_font(font: &XmlElement) -> BTreeMap<String, String> {
     let mut values = BTreeMap::new();
-    for (child_name, key) in [("b", "bold"), ("i", "italic")] {
+    for (child_name, key) in [("b", "bold"), ("i", "italic"), ("strike", "strike")] {
         if let Some(property) = font.child(child_name) {
             values.insert(key.into(), spreadsheet_bool_value(property).to_string());
         }
+    }
+    if let Some(underline) = font.child("u") {
+        values.insert(
+            "underline".into(),
+            underline.attribute("val").unwrap_or("single").into(),
+        );
+    }
+    if let Some(script) = font
+        .child("vertAlign")
+        .and_then(|property| property.attribute("val"))
+    {
+        values.insert("script".into(), script.into());
     }
     if let Some(name) = font.child("name").and_then(|name| name.attribute("val")) {
         values.insert("font".into(), name.into());

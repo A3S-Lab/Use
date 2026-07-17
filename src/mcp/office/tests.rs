@@ -2,6 +2,7 @@ use super::*;
 use a3s_use_office::{
     NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeHyperlinkTarget,
     NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat, NativeOfficeTextMatchMode,
+    NativeOfficeTextScript, NativeOfficeUnderline,
 };
 
 #[test]
@@ -90,6 +91,10 @@ fn office_batch_schema_exposes_typed_text_formatting() {
         "fontSizeCentipoints",
         "textColor",
         "alignment",
+        "underline",
+        "script",
+        "strikethrough",
+        "superscript",
         "justify",
     ] {
         assert!(encoded.contains(expected), "missing {expected}");
@@ -102,6 +107,9 @@ fn office_batch_schema_exposes_typed_text_formatting() {
             "path": "/body/p[1]/r[1]",
             "format": {
                 "bold": true,
+                "underline": "double",
+                "script": "superscript",
+                "strikethrough": false,
                 "fontSizeCentipoints": 1200,
                 "textColor": { "red": 18, "green": 52, "blue": 86 }
             }
@@ -114,6 +122,9 @@ fn office_batch_schema_exposes_typed_text_formatting() {
         NativeOfficeMutation::SetTextFormat {
             format: NativeOfficeTextFormat {
                 bold: Some(true),
+                underline: Some(NativeOfficeUnderline::Double),
+                script: Some(NativeOfficeTextScript::Superscript),
+                strikethrough: Some(false),
                 font_size_centipoints: Some(1200),
                 text_color: Some(NativeOfficeRgbColor {
                     red: 18,

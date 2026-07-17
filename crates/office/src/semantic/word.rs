@@ -575,6 +575,13 @@ fn apply_run_properties(properties: &XmlElement, node: &mut DocumentNode) {
             .insert("size".into(), format!("{}pt", size / 2.0));
     }
     copy_child_value(properties, "color", "color", node);
+    if let Some(underline) = properties.child("u") {
+        node.format.insert(
+            "underline".into(),
+            underline.attribute("val").unwrap_or("single").into(),
+        );
+    }
+    copy_child_value(properties, "vertAlign", "script", node);
     if let Some(language) = properties.child("lang") {
         for (attribute, key) in [
             ("val", "language"),

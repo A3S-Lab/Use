@@ -24,7 +24,7 @@ a3s use office native add deck.pptx '/slide[1]' --type picture --input diagram.p
 a3s use office native set deck.pptx '/slide[1]/shape[1]' --text 'Updated roadmap' --json
 a3s use office native set deck.pptx '/slide[1]' --find Draft --replace Final --json
 a3s use office native set deck.pptx '/slide[1]/notes' --find internal --replace confidential --json
-a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --bold true --font-family 'Aptos Display' --font-size 20 --text-color AA2200 --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --bold true --underline double --script subscript --font-family 'Aptos Display' --font-size 20 --text-color AA2200 --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]' --url https://example.com/slides --tooltip 'Open slides' --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/hyperlink' --location 'slide[2]' --tooltip 'Next slide' --json
@@ -46,9 +46,11 @@ success.
 
 Character formatting targets a run path; alignment targets its paragraph.
 This works for shape and table-cell text returned by a semantic read. The typed
-subset covers bold, italic, font family, exact centipoint size, RGB text color,
-and horizontal alignment. Shape-wide propagation, theme authoring, fills,
-outlines, and effects remain incomplete.
+subset covers bold, italic, `none`/single/double underline,
+baseline/superscript/subscript, font family, exact centipoint size, RGB text
+color, and horizontal alignment. Presentation strikethrough is not yet native
+and is rejected explicitly rather than ignored. Shape-wide propagation, theme
+authoring, fills, outlines, and effects remain incomplete.
 
 Native Presentation hyperlinks are shape-wide click links. Target a shape or
 its returned `/hyperlink` child path and use an optional tooltip. External

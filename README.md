@@ -65,7 +65,7 @@ a3s use office native view report.docx screenshot --output report.png --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native set report.docx /body --find 'Q1 2025' --replace 'Q1 2026' --json
-a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --font-family Aptos --font-size 14 --text-color 123456 --json
+a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --underline double --script superscript --strikethrough true --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
@@ -289,8 +289,12 @@ stable selectors, semantic `get`, `query`, `text`, `outline`, and `stats`
 reads, bounded `issues` reports, safe blank-document creation, and
 loss-preserving text assignment plus scoped literal/regex replacement for Word,
 Spreadsheet, and Presentation. Matches may span rich-text runs without
-flattening their formatting. Typed rich-text mutation covers bold, italic, font
-family, exact centipoint font size, RGB text color, and horizontal alignment.
+flattening their formatting. Typed rich-text mutation covers bold, italic,
+`none`/single/double underline, baseline/superscript/subscript, font family,
+exact centipoint font size, RGB text color, and horizontal alignment. Word and
+Spreadsheet also support an explicit single-strikethrough boolean;
+Presentation rejects that property with a typed error instead of silently
+dropping it.
 Word and Presentation apply character properties to run paths and alignment to
 paragraph paths; Spreadsheet applies the same contract to cells or bounded A1
 ranges,
@@ -438,10 +442,11 @@ a3s use office native set deck.pptx '/slide[1]/notes' --find internal --replace 
 # Apply typed text formatting. Word and Presentation character properties use
 # run paths; their alignment uses paragraph paths. Word sizes must be exact
 # half-point increments. Spreadsheet ranges may combine content and formatting.
-a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --font-family Aptos --font-size 14 --text-color 123456 --json
+# Strikethrough is native for Word and Spreadsheet, but not Presentation.
+a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --underline double --script superscript --strikethrough true --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
-a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --font-size 11.5 --text-color 0066CC --align center --json
-a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --italic true --font-family 'Aptos Display' --font-size 20 --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --underline single --script baseline --strikethrough false --font-size 11.5 --text-color 0066CC --align center --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --italic true --underline double --script subscript --font-family 'Aptos Display' --font-size 20 --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
 
 # Add or update inert hyperlinks. External targets accept only absolute
@@ -822,6 +827,9 @@ Typed formatting is batchable through the same public mutation contract:
   "path": "/Sheet1/A1:C1",
   "format": {
     "bold": true,
+    "underline": "double",
+    "script": "superscript",
+    "strikethrough": true,
     "fontFamily": "Aptos",
     "fontSizeCentipoints": 1150,
     "textColor": { "red": 0, "green": 102, "blue": 204 },
@@ -831,7 +839,10 @@ Typed formatting is batchable through the same public mutation contract:
 ```
 
 `fontSizeCentipoints` is an integer count of 1/100 point; the CLI accepts the
-equivalent point value through `--font-size`. An empty `format` object, unknown
+equivalent point value through `--font-size`. `underline` accepts `none`,
+`single`, or `double`, and `script` accepts `baseline`, `superscript`, or
+`subscript`. `strikethrough` is supported by Word and Spreadsheet;
+Presentation rejects it before mutation. An empty `format` object, unknown
 properties, invalid RGB components, and unsupported target/property
 combinations fail the whole batch. Spreadsheet style records are cloned and
 deduplicated without replacing unrelated style children or attributes.
@@ -917,6 +928,7 @@ use a3s_use_office::{
     NativeOfficeEditor, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
     NativeOfficeInsertPosition, NativeOfficePackage, NativeOfficeRenderFormat,
     NativeOfficeReplayArtifact, NativeOfficeRgbColor, NativeOfficeTextFormat,
+    NativeOfficeTextScript, NativeOfficeUnderline,
 };
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
@@ -947,6 +959,9 @@ editor.set_text_format(
     "/body/p[1]/r[1]",
     NativeOfficeTextFormat {
         bold: Some(true),
+        underline: Some(NativeOfficeUnderline::Double),
+        script: Some(NativeOfficeTextScript::Superscript),
+        strikethrough: Some(true),
         font_family: Some("Aptos".into()),
         font_size_centipoints: Some(1400),
         text_color: Some(NativeOfficeRgbColor::new(0x12, 0x34, 0x56)),

@@ -33,6 +33,9 @@ Rich-text changes use the typed `set-text-format` mutation inside
     "path": "/body/p[1]/r[1]",
     "format": {
       "bold": true,
+      "underline": "double",
+      "script": "superscript",
+      "strikethrough": true,
       "fontFamily": "Aptos",
       "fontSizeCentipoints": 1400,
       "textColor": { "red": 18, "green": 52, "blue": 86 }
@@ -43,6 +46,9 @@ Rich-text changes use the typed `set-text-format` mutation inside
 
 Use a run path for Word/Presentation character properties, a paragraph path
 for their alignment, and a cell or bounded range path for Spreadsheet.
+Underline accepts `none`, `single`, or `double`; script accepts `baseline`,
+`superscript`, or `subscript`. Strikethrough is native for Word and Spreadsheet
+and is rejected for Presentation.
 
 General find/replace uses the typed `replace-text` mutation. Keep `mode`
 explicit and prefer `literal` for ordinary text:

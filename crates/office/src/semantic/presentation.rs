@@ -766,6 +766,25 @@ fn apply_run_properties(properties: &XmlElement, node: &mut DocumentNode) {
             node.format.insert(key.into(), value.into());
         }
     }
+    if let Some(underline) = properties.attribute("u") {
+        let normalized = match underline {
+            "sng" => "single",
+            "dbl" => "double",
+            value => value,
+        };
+        node.format.insert("underline".into(), normalized.into());
+    }
+    if let Some(baseline) = properties
+        .attribute("baseline")
+        .and_then(|value| value.parse::<i32>().ok())
+    {
+        let script = match baseline.cmp(&0) {
+            std::cmp::Ordering::Greater => "superscript",
+            std::cmp::Ordering::Less => "subscript",
+            std::cmp::Ordering::Equal => "baseline",
+        };
+        node.format.insert("script".into(), script.into());
+    }
     if let Some(size) = properties
         .attribute("sz")
         .and_then(|value| value.parse::<f64>().ok())

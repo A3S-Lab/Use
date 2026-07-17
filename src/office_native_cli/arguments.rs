@@ -26,6 +26,9 @@ pub(super) struct ParsedArguments {
     pub formula: Option<String>,
     pub bold: Option<String>,
     pub italic: Option<String>,
+    pub underline: Option<String>,
+    pub script: Option<String>,
+    pub strikethrough: Option<String>,
     pub font_family: Option<String>,
     pub font_size: Option<String>,
     pub text_color: Option<String>,
@@ -110,6 +113,18 @@ impl ParsedArguments {
                 }
                 "--italic" if allowed.italic => {
                     set_string_option(&mut parsed.italic, args, index, "--italic")?;
+                    index += 2;
+                }
+                "--underline" if allowed.underline => {
+                    set_string_option(&mut parsed.underline, args, index, "--underline")?;
+                    index += 2;
+                }
+                "--script" if allowed.script => {
+                    set_string_option(&mut parsed.script, args, index, "--script")?;
+                    index += 2;
+                }
+                "--strikethrough" if allowed.strikethrough => {
+                    set_string_option(&mut parsed.strikethrough, args, index, "--strikethrough")?;
                     index += 2;
                 }
                 "--font-family" if allowed.font_family => {
@@ -288,6 +303,9 @@ pub(super) struct AllowedOptions {
     formula: bool,
     bold: bool,
     italic: bool,
+    underline: bool,
+    script: bool,
+    strikethrough: bool,
     font_family: bool,
     font_size: bool,
     text_color: bool,
@@ -334,6 +352,9 @@ impl AllowedOptions {
         formula: false,
         bold: false,
         italic: false,
+        underline: false,
+        script: false,
+        strikethrough: false,
         font_family: false,
         font_size: false,
         text_color: false,
@@ -377,6 +398,9 @@ impl AllowedOptions {
         formula: true,
         bold: true,
         italic: true,
+        underline: true,
+        script: true,
+        strikethrough: true,
         font_family: true,
         font_size: true,
         text_color: true,

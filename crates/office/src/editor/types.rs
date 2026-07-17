@@ -15,6 +15,24 @@ pub enum NativeOfficeHorizontalAlignment {
     Justify,
 }
 
+/// Explicit underline style supported consistently by native Office formats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeOfficeUnderline {
+    None,
+    Single,
+    Double,
+}
+
+/// Vertical text script supported consistently by native Office formats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeOfficeTextScript {
+    Baseline,
+    Superscript,
+    Subscript,
+}
+
 /// An exact 24-bit RGB text color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -48,6 +66,12 @@ pub struct NativeOfficeTextFormat {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub italic: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub underline: Option<NativeOfficeUnderline>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<NativeOfficeTextScript>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strikethrough: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_family: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_size_centipoints: Option<u32>,
@@ -61,6 +85,9 @@ impl NativeOfficeTextFormat {
     pub fn is_empty(&self) -> bool {
         self.bold.is_none()
             && self.italic.is_none()
+            && self.underline.is_none()
+            && self.script.is_none()
+            && self.strikethrough.is_none()
             && self.font_family.is_none()
             && self.font_size_centipoints.is_none()
             && self.text_color.is_none()
@@ -100,6 +127,9 @@ impl NativeOfficeTextFormat {
     pub(crate) fn has_character_properties(&self) -> bool {
         self.bold.is_some()
             || self.italic.is_some()
+            || self.underline.is_some()
+            || self.script.is_some()
+            || self.strikethrough.is_some()
             || self.font_family.is_some()
             || self.font_size_centipoints.is_some()
             || self.text_color.is_some()

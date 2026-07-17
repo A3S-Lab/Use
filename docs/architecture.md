@@ -140,12 +140,14 @@ typed creation receipts. Root-scoped native replay artifacts bind an exact
 blank-template part-map fingerprint, typed mutations, and an expected result
 fingerprint; `batch` rejects a wrong base and rolls back a wrong result.
 Rich-text mutation is one closed Rust enum variant rather than a generic
-property envelope. Bold, italic, font family, centipoint size, RGB color, and
-horizontal alignment flow unchanged through Rust, batch JSON, CLI parsing,
-standard MCP schemas, and the Office Skill. Word and Presentation patch run or
-paragraph properties in place. Spreadsheet clones and deduplicates `fonts` and
-`cellXfs`, retaining unknown style data and the document's strict or
-transitional OOXML dialect.
+property envelope. Bold, italic, typed underline, typed vertical script, font
+family, centipoint size, RGB color, and horizontal alignment flow unchanged
+through Rust, batch JSON, CLI parsing, standard MCP schemas, and the Office
+Skill. Word and Spreadsheet also accept explicit single strikethrough;
+Presentation rejects it with a stable typed error. Word and Presentation patch
+run or paragraph properties in place. Spreadsheet clones and deduplicates
+`fonts` and `cellXfs`, retaining unknown style data and the document's strict
+or transitional OOXML dialect.
 General text replacement is a separate closed mutation variant. A compiled
 literal or Rust-regex matcher feeds the shared split-segment patch layer, which
 maps every matched byte span back to its original OOXML text owner and assigns
@@ -332,7 +334,9 @@ Implemented:
 13. Native content-type and relationship graphs, safe loss-preserving XML,
     common selectors, semantic Word/Spreadsheet/Presentation reads, safe blank
     creation, scoped cross-format literal/regex replacement with split-run and
-    shared-string safety, and typed Spreadsheet text/number/boolean/formula
+    shared-string safety, typed cross-format underline and vertical-script
+    formatting plus Word/Spreadsheet strikethrough, and typed Spreadsheet
+    text/number/boolean/formula
     cell and range mutation, typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment
     read/add/update/remove with format-owned anchors, authors, positions, and

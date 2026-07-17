@@ -6,7 +6,10 @@ use super::{
     editor_error, expanded_element, indexed_cells, indexed_cells_in_row, indexed_rows,
     node_not_found, prefix, qualified, update_dimension, validate_range_size,
 };
-use crate::editor::{NativeOfficeHorizontalAlignment, NativeOfficeTextFormat};
+use crate::editor::{
+    NativeOfficeHorizontalAlignment, NativeOfficeTextFormat, NativeOfficeTextScript,
+    NativeOfficeUnderline,
+};
 use crate::semantic::{NativeOfficeDocument, OfficeNodeType};
 use crate::spreadsheet_reference::{CellRange, CellReference};
 use crate::xml_edit::{
@@ -328,6 +331,15 @@ fn derive_font_fragment(
     if let Some(value) = format.italic {
         bytes = set_font_value(bytes, font_index, "i", if value { "1" } else { "0" }, &[])?;
     }
+    if let Some(value) = format.strikethrough {
+        bytes = set_font_value(
+            bytes,
+            font_index,
+            "strike",
+            if value { "1" } else { "0" },
+            &[],
+        )?;
+    }
     if let Some(family) = &format.font_family {
         bytes = set_font_value(bytes, font_index, "name", family, &[])?;
         bytes = remove_font_property(bytes, font_index, "scheme")?;
@@ -344,9 +356,43 @@ fn derive_font_fragment(
             &["theme", "indexed", "tint", "auto"],
         )?;
     }
+    if let Some(underline) = format.underline {
+        bytes = set_font_value(
+            bytes,
+            font_index,
+            "u",
+            spreadsheet_underline(underline),
+            &[],
+        )?;
+    }
+    if let Some(script) = format.script {
+        bytes = set_font_value(
+            bytes,
+            font_index,
+            "vertAlign",
+            spreadsheet_script(script),
+            &[],
+        )?;
+    }
     let derived = LosslessXmlPart::parse(STYLES_PART.to_string(), bytes)?;
     let element = require_collection_child(&derived, "fonts", "font", font_index)?;
     Ok(element_fragment(&derived, &element)?.to_vec())
+}
+
+fn spreadsheet_underline(underline: NativeOfficeUnderline) -> &'static str {
+    match underline {
+        NativeOfficeUnderline::None => "none",
+        NativeOfficeUnderline::Single => "single",
+        NativeOfficeUnderline::Double => "double",
+    }
+}
+
+fn spreadsheet_script(script: NativeOfficeTextScript) -> &'static str {
+    match script {
+        NativeOfficeTextScript::Baseline => "baseline",
+        NativeOfficeTextScript::Superscript => "superscript",
+        NativeOfficeTextScript::Subscript => "subscript",
+    }
 }
 
 fn set_font_value(

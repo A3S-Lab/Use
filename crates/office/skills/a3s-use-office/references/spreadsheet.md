@@ -66,16 +66,17 @@ comments, replies, writable dates, and rich bodies are not yet native.
 ## Cell Text Formatting
 
 ```bash
-a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --font-family Aptos --font-size 11.5 --text-color 0066CC --align center --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --underline double --script superscript --strikethrough true --font-family Aptos --font-size 11.5 --text-color 0066CC --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A2 --text 'Total' --bold true --align right --json
 ```
 
 Formatting accepts one cell or a bounded rectangular range and may be combined
 with one content write. It auto-creates empty styled cells and deduplicates
 OOXML font and cell-style records. The native typed subset covers bold, italic,
-font family, point size, RGB text color, and horizontal alignment. Number
-formats, fills, borders, vertical alignment, wrapping, and conditional styles
-remain separate work.
+`none`/single/double underline, baseline/superscript/subscript text, explicit
+single strikethrough, font family, point size, RGB text color, and horizontal
+alignment. Number formats, fills, borders, cell vertical alignment, wrapping,
+and conditional styles remain separate work.
 
 ## Structure
 

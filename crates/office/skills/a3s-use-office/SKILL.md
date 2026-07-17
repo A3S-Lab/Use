@@ -88,8 +88,9 @@ available.
 
 The native engine currently owns safe OPC/ZIP admission, semantic reads,
 bounded annotated and issue analysis, common typed mutations, atomic batches,
-scoped literal/regex replacement, typed bold/italic/font/size/RGB/alignment
-formatting, typed inert hyperlinks, typed legacy comments, template merge,
+scoped literal/regex replacement, typed bold, italic, underline, vertical
+script, font, size, RGB, and alignment formatting, Word/Spreadsheet
+strikethrough, typed inert hyperlinks, typed legacy comments, template merge,
 constrained XML access, deterministic all-format HTML/SVG, and Browser-injected
 semantic screenshots, plus authenticated loopback live watch for saved files.
 Hyperlinks cover Word body/header/footer paragraphs and bookmarks, Spreadsheet

@@ -32,8 +32,9 @@ formats:
 - create, semantic view, get, query, set, add, remove, move, copy, and swap;
 - bounded, scoped literal and regular-expression text replacement that
   preserves rich-text run ownership;
-- typed bold, italic, font-family, exact-size, RGB text-color, and alignment
-  mutation without generic property maps;
+- typed bold, italic, underline, vertical-script, strikethrough where supported,
+  font-family, exact-size, RGB text-color, and alignment mutation without
+  generic property maps;
 - typed inert hyperlinks with format-specific external and internal targets;
 - typed legacy comments with format-specific anchors, authors, and positions;
 - typed selectors with stable, one-based document paths;
@@ -245,20 +246,26 @@ rollback, the CLI on all formats, and a complete unsaved/save/close standard
 MCP lifecycle with an unusable OfficeCLI provider path.
 
 Native `set-text-format` is implemented through one typed Rust, batch, CLI,
-and MCP contract. It supports explicit bold and italic state, font family,
+and standard MCP contract. It supports explicit bold and italic state,
+`none`/single/double underline, baseline/superscript/subscript, font family,
 integer centipoint size, 24-bit RGB text color, and
-left/center/right/justify alignment. Word and Presentation character
-properties target semantic run paths; alignment targets their paragraph paths.
-Word accepts only sizes divisible by 50 centipoints because
-WordprocessingML stores half-points. Spreadsheet accepts single cells and
-bounded rectangular ranges, auto-vivifies empty styled cells, creates
-`xl/styles.xml` and its workbook relationship when absent, clones the base
-font/cell XF without dropping unknown properties, and deduplicates derived
-font and style records. Transitional and strict OOXML namespaces are retained.
-All three formats provide semantic readback and use normal batch rollback and
-post-mutation validation. Advanced named styles, inheritance, highlights,
-fills, borders, underline/strike, vertical alignment, and arbitrary property
-maps remain outside this milestone.
+left/center/right/justify alignment. Word and Spreadsheet additionally support
+an explicit single-strikethrough boolean. Presentation rejects
+`strikethrough` with `use.office.presentation_strikethrough_unsupported` before
+changing a package. Word and Presentation character properties target semantic
+run paths; alignment targets their paragraph paths. Word accepts only sizes
+divisible by 50 centipoints because WordprocessingML stores half-points.
+Spreadsheet accepts single cells and bounded rectangular ranges, auto-vivifies
+empty styled cells, creates `xl/styles.xml` and its workbook relationship when
+absent, clones the base font/cell XF without dropping unknown properties, and
+deduplicates derived font and style records. Transitional and strict OOXML
+namespaces are retained. All three formats provide normalized semantic
+readback and use normal batch rollback and post-mutation validation. Tests
+cover explicit off/baseline values, unknown style attributes, strict OOXML,
+CLI execution without OfficeCLI, and a complete standard MCP session. Advanced
+named styles, inheritance, highlights, fills, borders, extended underline
+variants, double strike, character spacing, and arbitrary property maps remain
+outside this milestone.
 
 Native `set-hyperlink` is implemented through one typed Rust, batch, CLI, and
 standard MCP contract. Word adds an external HTTP/HTTPS/mailto relationship or
@@ -606,8 +613,9 @@ available, and use an unusable OfficeCLI path. Skill process tests exercise
 bounded `list`, `get --full`, and `path` discovery with the same unusable
 provider, and release archives smoke-check the packaged `SKILL.md`. This preview
 does not complete Gate 6: richer issue parity, interactive-watch parity,
-compatibility corpus, fuzzing, rich-format coverage, layout goldens, and release
-evidence remain open, and the default Office target is not promoted.
+compatibility corpus, fuzzing, advanced rich-format coverage, layout goldens,
+and release evidence remain open, and the default Office target is not
+promoted.
 
 At Gate 6, native becomes the default and `a3s install use/office` no longer
 downloads an engine. The OfficeCLI backend moves to an explicitly named

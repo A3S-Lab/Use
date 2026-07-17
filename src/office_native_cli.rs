@@ -3,7 +3,8 @@ use a3s_use_office::{
     DocumentNode, NativeOfficeCommentPosition, NativeOfficeCommentUpdate, NativeOfficeDocument,
     NativeOfficeEditor, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
     NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
-    NativeOfficeTextReplacement, OfficeNodeType, SpreadsheetCellValue,
+    NativeOfficeTextReplacement, NativeOfficeTextScript, NativeOfficeUnderline, OfficeNodeType,
+    SpreadsheetCellValue,
 };
 use tokio::io::AsyncReadExt;
 
@@ -39,7 +40,7 @@ const HELP: &str = concat!(
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
-    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -378,6 +379,9 @@ async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
         parsed.width_emu.is_some(),
         parsed.bold.is_some(),
         parsed.italic.is_some(),
+        parsed.underline.is_some(),
+        parsed.script.is_some(),
+        parsed.strikethrough.is_some(),
         parsed.font_family.is_some(),
         parsed.font_size.is_some(),
         parsed.text_color.is_some(),
@@ -451,6 +455,21 @@ fn parse_text_format(parsed: &ParsedArguments) -> UseResult<Option<NativeOfficeT
             .italic
             .as_deref()
             .map(|value| parse_format_boolean("--italic", value))
+            .transpose()?,
+        underline: parsed
+            .underline
+            .as_deref()
+            .map(parse_underline)
+            .transpose()?,
+        script: parsed
+            .script
+            .as_deref()
+            .map(parse_text_script)
+            .transpose()?,
+        strikethrough: parsed
+            .strikethrough
+            .as_deref()
+            .map(|value| parse_format_boolean("--strikethrough", value))
             .transpose()?,
         font_family: parsed.font_family.clone(),
         font_size_centipoints: parsed
@@ -582,6 +601,28 @@ fn parse_alignment(value: &str) -> UseResult<NativeOfficeHorizontalAlignment> {
         "justify" | "justified" => Ok(NativeOfficeHorizontalAlignment::Justify),
         _ => Err(usage_error(format!(
             "--align requires left, center, right, or justify, received '{value}'"
+        ))),
+    }
+}
+
+fn parse_underline(value: &str) -> UseResult<NativeOfficeUnderline> {
+    match value.to_ascii_lowercase().as_str() {
+        "none" => Ok(NativeOfficeUnderline::None),
+        "single" => Ok(NativeOfficeUnderline::Single),
+        "double" => Ok(NativeOfficeUnderline::Double),
+        _ => Err(usage_error(format!(
+            "--underline requires none, single, or double, received '{value}'"
+        ))),
+    }
+}
+
+fn parse_text_script(value: &str) -> UseResult<NativeOfficeTextScript> {
+    match value.to_ascii_lowercase().as_str() {
+        "baseline" => Ok(NativeOfficeTextScript::Baseline),
+        "superscript" => Ok(NativeOfficeTextScript::Superscript),
+        "subscript" => Ok(NativeOfficeTextScript::Subscript),
+        _ => Err(usage_error(format!(
+            "--script requires baseline, superscript, or subscript, received '{value}'"
         ))),
     }
 }
