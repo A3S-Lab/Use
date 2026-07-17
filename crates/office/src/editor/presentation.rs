@@ -4,7 +4,8 @@ use a3s_use_core::UseResult;
 
 use super::{
     editor_error, escape_attribute, node_not_found, parse_segments, prefix,
-    preserve_space_attribute, qualified, NativeOfficeHorizontalAlignment, NativeOfficeTextFormat,
+    preserve_space_attribute, qualified, NativeOfficeHighlightColor,
+    NativeOfficeHorizontalAlignment, NativeOfficeTextCase, NativeOfficeTextFormat,
     NativeOfficeTextScript, NativeOfficeUnderline,
 };
 use crate::semantic::{NativeOfficeDocument, OfficeNodeType};
@@ -300,6 +301,12 @@ pub(super) fn set_text_format(
             "Native Presentation text formatting does not support strikethrough yet.",
         ));
     }
+    if format.double_strikethrough.is_some() {
+        return Err(editor_error(
+            "use.office.presentation_double_strikethrough_unsupported",
+            "Native Presentation text formatting does not support double strikethrough.",
+        ));
+    }
     let snapshot = NativeOfficeDocument::from_package(package.clone())?;
     let requested = snapshot.get(path, 0)?;
     match requested.node_type {
@@ -378,6 +385,17 @@ pub(super) fn set_text_format(
                 presentation_baseline(script),
             )?;
         }
+        if let Some(text_case) = format.text_case {
+            let value = match text_case {
+                NativeOfficeTextCase::None => "none",
+                NativeOfficeTextCase::SmallCaps => "small",
+                NativeOfficeTextCase::AllCaps => "all",
+            };
+            bytes = set_character_attribute(part_name, bytes, path, "cap", value)?;
+        }
+        if let Some(language) = &format.language {
+            bytes = set_character_attribute(part_name, bytes, path, "lang", language)?;
+        }
         if let Some(size) = format.font_size_centipoints {
             bytes = set_character_attribute(part_name, bytes, path, "sz", &size.to_string())?;
         }
@@ -388,6 +406,9 @@ pub(super) fn set_text_format(
         }
         if let Some(color) = format.text_color {
             bytes = set_character_color(part_name, bytes, path, &color.hex())?;
+        }
+        if let Some(highlight) = format.highlight {
+            bytes = set_character_highlight(part_name, bytes, path, highlight)?;
         }
     }
     package.set_part(part_name, bytes)
@@ -586,6 +607,57 @@ fn set_character_color(
         );
     }
     insert_character_property(&part, properties, "solidFill", fragment)
+}
+
+fn set_character_highlight(
+    part_name: &str,
+    bytes: Vec<u8>,
+    path: &str,
+    highlight: NativeOfficeHighlightColor,
+) -> UseResult<Vec<u8>> {
+    let part = LosslessXmlPart::parse(part_name.to_string(), bytes)?;
+    let index = index_xml(&part)?;
+    let run = locate_path(&index, path)?;
+    let properties = run.child("rPr", 1).ok_or_else(|| {
+        editor_error(
+            "use.office.presentation_run_properties_missing",
+            format!("Presentation run '{path}' has no properties element."),
+        )
+    })?;
+    let Some(color) = highlight.rgb_hex() else {
+        let Some(existing) = properties.child("highlight", 1) else {
+            return Ok(part.raw().to_vec());
+        };
+        return apply_patches(
+            &part,
+            vec![XmlPatch::new(existing.full_range.clone(), Vec::new())],
+        );
+    };
+    let drawing_prefix = prefix(&properties.qualified_name);
+    let highlight_tag = qualified(drawing_prefix, "highlight");
+    let color_tag = qualified(drawing_prefix, "srgbClr");
+    let color_fragment = format!("<{color_tag} val=\"{color}\"/>");
+    let fragment = format!("<{highlight_tag}>{color_fragment}</{highlight_tag}>");
+    let Some(existing) = properties.child("highlight", 1) else {
+        return insert_character_property(&part, properties, "highlight", fragment);
+    };
+    if let Some(existing_color) = existing.child("srgbClr", 1) {
+        return patch_start_tag_attributes(
+            &part,
+            existing_color,
+            &BTreeMap::from([("val".to_string(), Some(color.to_string()))]),
+        );
+    }
+    if let Some(existing_color) = existing.children.first() {
+        return apply_patches(
+            &part,
+            vec![XmlPatch::new(
+                existing_color.full_range.clone(),
+                color_fragment,
+            )],
+        );
+    }
+    insert_child(&part, existing, color_fragment)
 }
 
 fn insert_character_property(

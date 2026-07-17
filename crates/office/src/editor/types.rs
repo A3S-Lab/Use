@@ -33,6 +33,84 @@ pub enum NativeOfficeTextScript {
     Subscript,
 }
 
+/// Display-only capitalization shared by native Word and Presentation runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeOfficeTextCase {
+    None,
+    SmallCaps,
+    AllCaps,
+}
+
+/// Portable highlight colors shared by native Word and Presentation runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeOfficeHighlightColor {
+    None,
+    Black,
+    Blue,
+    Cyan,
+    DarkBlue,
+    DarkCyan,
+    DarkGray,
+    DarkGreen,
+    DarkMagenta,
+    DarkRed,
+    DarkYellow,
+    Green,
+    LightGray,
+    Magenta,
+    Red,
+    White,
+    Yellow,
+}
+
+impl NativeOfficeHighlightColor {
+    pub(crate) const fn word_value(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Black => "black",
+            Self::Blue => "blue",
+            Self::Cyan => "cyan",
+            Self::DarkBlue => "darkBlue",
+            Self::DarkCyan => "darkCyan",
+            Self::DarkGray => "darkGray",
+            Self::DarkGreen => "darkGreen",
+            Self::DarkMagenta => "darkMagenta",
+            Self::DarkRed => "darkRed",
+            Self::DarkYellow => "darkYellow",
+            Self::Green => "green",
+            Self::LightGray => "lightGray",
+            Self::Magenta => "magenta",
+            Self::Red => "red",
+            Self::White => "white",
+            Self::Yellow => "yellow",
+        }
+    }
+
+    pub(crate) const fn rgb_hex(self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Black => Some("000000"),
+            Self::Blue => Some("0000FF"),
+            Self::Cyan => Some("00FFFF"),
+            Self::DarkBlue => Some("000080"),
+            Self::DarkCyan => Some("008080"),
+            Self::DarkGray => Some("808080"),
+            Self::DarkGreen => Some("008000"),
+            Self::DarkMagenta => Some("800080"),
+            Self::DarkRed => Some("800000"),
+            Self::DarkYellow => Some("808000"),
+            Self::Green => Some("00FF00"),
+            Self::LightGray => Some("C0C0C0"),
+            Self::Magenta => Some("FF00FF"),
+            Self::Red => Some("FF0000"),
+            Self::White => Some("FFFFFF"),
+            Self::Yellow => Some("FFFF00"),
+        }
+    }
+}
+
 /// An exact 24-bit RGB text color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -72,6 +150,14 @@ pub struct NativeOfficeTextFormat {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strikethrough: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub double_strikethrough: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_case: Option<NativeOfficeTextCase>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<NativeOfficeHighlightColor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_family: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_size_centipoints: Option<u32>,
@@ -88,6 +174,10 @@ impl NativeOfficeTextFormat {
             && self.underline.is_none()
             && self.script.is_none()
             && self.strikethrough.is_none()
+            && self.double_strikethrough.is_none()
+            && self.text_case.is_none()
+            && self.highlight.is_none()
+            && self.language.is_none()
             && self.font_family.is_none()
             && self.font_size_centipoints.is_none()
             && self.text_color.is_none()
@@ -113,6 +203,14 @@ impl NativeOfficeTextFormat {
                 ));
             }
         }
+        if let Some(language) = &self.language {
+            if !is_language_tag(language) {
+                return Err(super::editor_error(
+                    "use.office.language_invalid",
+                    "Native Office language tags must use a conservative 2-35 character BCP-47 shape.",
+                ));
+            }
+        }
         if let Some(size) = self.font_size_centipoints {
             if !(100..=40_000).contains(&size) {
                 return Err(super::editor_error(
@@ -130,10 +228,32 @@ impl NativeOfficeTextFormat {
             || self.underline.is_some()
             || self.script.is_some()
             || self.strikethrough.is_some()
+            || self.double_strikethrough.is_some()
+            || self.text_case.is_some()
+            || self.highlight.is_some()
+            || self.language.is_some()
             || self.font_family.is_some()
             || self.font_size_centipoints.is_some()
             || self.text_color.is_some()
     }
+}
+
+fn is_language_tag(value: &str) -> bool {
+    if !(2..=35).contains(&value.len()) || !value.is_ascii() {
+        return false;
+    }
+    let mut subtags = value.split('-');
+    let Some(primary) = subtags.next() else {
+        return false;
+    };
+    if !((2..=8).contains(&primary.len()) && primary.bytes().all(|byte| byte.is_ascii_alphabetic())
+        || primary.eq_ignore_ascii_case("x"))
+    {
+        return false;
+    }
+    subtags.all(|subtag| {
+        (1..=8).contains(&subtag.len()) && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    })
 }
 
 /// A hyperlink destination represented without executing or resolving it.

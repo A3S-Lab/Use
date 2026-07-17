@@ -1,10 +1,10 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
     DocumentNode, NativeOfficeCommentPosition, NativeOfficeCommentUpdate, NativeOfficeDocument,
-    NativeOfficeEditor, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
-    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat,
-    NativeOfficeTextReplacement, NativeOfficeTextScript, NativeOfficeUnderline, OfficeNodeType,
-    SpreadsheetCellValue,
+    NativeOfficeEditor, NativeOfficeHighlightColor, NativeOfficeHorizontalAlignment,
+    NativeOfficeHyperlink, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextCase,
+    NativeOfficeTextFormat, NativeOfficeTextReplacement, NativeOfficeTextScript,
+    NativeOfficeUnderline, OfficeNodeType, SpreadsheetCellValue,
 };
 use tokio::io::AsyncReadExt;
 
@@ -40,7 +40,7 @@ const HELP: &str = concat!(
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
-    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -382,6 +382,10 @@ async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
         parsed.underline.is_some(),
         parsed.script.is_some(),
         parsed.strikethrough.is_some(),
+        parsed.double_strikethrough.is_some(),
+        parsed.text_case.is_some(),
+        parsed.highlight.is_some(),
+        parsed.language.is_some(),
         parsed.font_family.is_some(),
         parsed.font_size.is_some(),
         parsed.text_color.is_some(),
@@ -471,6 +475,22 @@ fn parse_text_format(parsed: &ParsedArguments) -> UseResult<Option<NativeOfficeT
             .as_deref()
             .map(|value| parse_format_boolean("--strikethrough", value))
             .transpose()?,
+        double_strikethrough: parsed
+            .double_strikethrough
+            .as_deref()
+            .map(|value| parse_format_boolean("--double-strikethrough", value))
+            .transpose()?,
+        text_case: parsed
+            .text_case
+            .as_deref()
+            .map(parse_text_case)
+            .transpose()?,
+        highlight: parsed
+            .highlight
+            .as_deref()
+            .map(parse_highlight)
+            .transpose()?,
+        language: parsed.language.clone(),
         font_family: parsed.font_family.clone(),
         font_size_centipoints: parsed
             .font_size
@@ -623,6 +643,43 @@ fn parse_text_script(value: &str) -> UseResult<NativeOfficeTextScript> {
         "subscript" => Ok(NativeOfficeTextScript::Subscript),
         _ => Err(usage_error(format!(
             "--script requires baseline, superscript, or subscript, received '{value}'"
+        ))),
+    }
+}
+
+fn parse_text_case(value: &str) -> UseResult<NativeOfficeTextCase> {
+    match value.to_ascii_lowercase().replace(['-', '_'], "").as_str() {
+        "none" => Ok(NativeOfficeTextCase::None),
+        "small" | "smallcaps" => Ok(NativeOfficeTextCase::SmallCaps),
+        "all" | "allcaps" => Ok(NativeOfficeTextCase::AllCaps),
+        _ => Err(usage_error(format!(
+            "--text-case requires none, small-caps, or all-caps, received '{value}'"
+        ))),
+    }
+}
+
+fn parse_highlight(value: &str) -> UseResult<NativeOfficeHighlightColor> {
+    let normalized = value.to_ascii_lowercase().replace(['-', '_'], "");
+    match normalized.as_str() {
+        "none" => Ok(NativeOfficeHighlightColor::None),
+        "black" => Ok(NativeOfficeHighlightColor::Black),
+        "blue" => Ok(NativeOfficeHighlightColor::Blue),
+        "cyan" => Ok(NativeOfficeHighlightColor::Cyan),
+        "darkblue" => Ok(NativeOfficeHighlightColor::DarkBlue),
+        "darkcyan" => Ok(NativeOfficeHighlightColor::DarkCyan),
+        "darkgray" | "darkgrey" => Ok(NativeOfficeHighlightColor::DarkGray),
+        "darkgreen" => Ok(NativeOfficeHighlightColor::DarkGreen),
+        "darkmagenta" => Ok(NativeOfficeHighlightColor::DarkMagenta),
+        "darkred" => Ok(NativeOfficeHighlightColor::DarkRed),
+        "darkyellow" => Ok(NativeOfficeHighlightColor::DarkYellow),
+        "green" => Ok(NativeOfficeHighlightColor::Green),
+        "lightgray" | "lightgrey" => Ok(NativeOfficeHighlightColor::LightGray),
+        "magenta" => Ok(NativeOfficeHighlightColor::Magenta),
+        "red" => Ok(NativeOfficeHighlightColor::Red),
+        "white" => Ok(NativeOfficeHighlightColor::White),
+        "yellow" => Ok(NativeOfficeHighlightColor::Yellow),
+        _ => Err(usage_error(format!(
+            "--highlight requires a portable Word highlight color or none, received '{value}'"
         ))),
     }
 }

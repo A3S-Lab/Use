@@ -89,16 +89,18 @@ available.
 The native engine currently owns safe OPC/ZIP admission, semantic reads,
 bounded annotated and issue analysis, common typed mutations, atomic batches,
 scoped literal/regex replacement, typed bold, italic, underline, vertical
-script, font, size, RGB, and alignment formatting, Word/Spreadsheet
-strikethrough, typed inert hyperlinks, typed legacy comments, template merge,
-constrained XML access, deterministic all-format HTML/SVG, and Browser-injected
-semantic screenshots, plus authenticated loopback live watch for saved files.
+script, font, size, RGB, and alignment formatting, Word/Spreadsheet single
+strikethrough, Word double strikethrough, and Word/Presentation display case,
+portable highlight, and primary-language formatting. It also owns typed inert
+hyperlinks, typed legacy comments, template merge, constrained XML access,
+deterministic all-format HTML/SVG, Browser-injected semantic screenshots, and
+authenticated loopback live watch for saved files.
 Hyperlinks cover Word body/header/footer paragraphs and bookmarks, Spreadsheet
 cells or bounded ranges and internal locations, and external Presentation shape
 clicks or internal jumps to existing slides. Remaining boundaries include
 modern threaded comments, replies/resolution, writable comment dates,
-rich comment bodies, Word header/footer comment anchors, advanced formatting,
-complete formula calculation, advanced charts/media, interactive preview
-editing/annotations, and full Office layout fidelity. Fail
+rich comment bodies, Word header/footer comment anchors, advanced styles and
+theme formatting, complete formula calculation, advanced charts/media,
+interactive preview editing/annotations, and full Office layout fidelity. Fail
 closed or use the explicit compatibility route rather than inventing
 unsupported native behavior.

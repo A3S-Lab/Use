@@ -547,6 +547,7 @@ fn apply_run_properties(properties: &XmlElement, node: &mut DocumentNode) {
         ("b", "bold"),
         ("i", "italic"),
         ("strike", "strike"),
+        ("dstrike", "doubleStrike"),
         ("vanish", "hidden"),
         ("rtl", "rtl"),
     ] {
@@ -554,6 +555,18 @@ fn apply_run_properties(properties: &XmlElement, node: &mut DocumentNode) {
             node.format
                 .insert(key.into(), bool_value(property).to_string());
         }
+    }
+    let caps = properties.child("caps").map(bool_value);
+    let small_caps = properties.child("smallCaps").map(bool_value);
+    if caps.is_some() || small_caps.is_some() {
+        let text_case = if caps == Some(true) {
+            "all-caps"
+        } else if small_caps == Some(true) {
+            "small-caps"
+        } else {
+            "none"
+        };
+        node.format.insert("textCase".into(), text_case.into());
     }
     if let Some(fonts) = properties.child("rFonts") {
         for (attribute, key) in [
@@ -575,6 +588,15 @@ fn apply_run_properties(properties: &XmlElement, node: &mut DocumentNode) {
             .insert("size".into(), format!("{}pt", size / 2.0));
     }
     copy_child_value(properties, "color", "color", node);
+    if let Some(highlight) = properties
+        .child("highlight")
+        .and_then(|property| property.attribute("val"))
+    {
+        node.format.insert(
+            "highlight".into(),
+            normalize_highlight_name(highlight).into(),
+        );
+    }
     if let Some(underline) = properties.child("u") {
         node.format.insert(
             "underline".into(),
@@ -592,6 +614,20 @@ fn apply_run_properties(properties: &XmlElement, node: &mut DocumentNode) {
                 node.format.insert(key.into(), value.into());
             }
         }
+    }
+}
+
+fn normalize_highlight_name(value: &str) -> &str {
+    match value {
+        "darkBlue" => "dark-blue",
+        "darkCyan" => "dark-cyan",
+        "darkGray" => "dark-gray",
+        "darkGreen" => "dark-green",
+        "darkMagenta" => "dark-magenta",
+        "darkRed" => "dark-red",
+        "darkYellow" => "dark-yellow",
+        "lightGray" => "light-gray",
+        _ => value,
     }
 }
 

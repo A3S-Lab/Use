@@ -33,8 +33,8 @@ formats:
 - bounded, scoped literal and regular-expression text replacement that
   preserves rich-text run ownership;
 - typed bold, italic, underline, vertical-script, strikethrough where supported,
-  font-family, exact-size, RGB text-color, and alignment mutation without
-  generic property maps;
+  portable highlight, text case, primary language, font-family, exact-size, RGB
+  text-color, and alignment mutation without generic property maps;
 - typed inert hyperlinks with format-specific external and internal targets;
 - typed legacy comments with format-specific anchors, authors, and positions;
 - typed selectors with stable, one-based document paths;
@@ -252,7 +252,11 @@ integer centipoint size, 24-bit RGB text color, and
 left/center/right/justify alignment. Word and Spreadsheet additionally support
 an explicit single-strikethrough boolean. Presentation rejects
 `strikethrough` with `use.office.presentation_strikethrough_unsupported` before
-changing a package. Word and Presentation character properties target semantic
+changing a package. Word and Presentation additionally share display-only
+`none`/small-caps/all-caps, a closed 17-color highlight palette, and a
+conservatively validated BCP-47 primary-language tag. Word alone supports
+double strikethrough; Presentation and Spreadsheet reject that format rather
+than ignoring it. Word and Presentation character properties target semantic
 run paths; alignment targets their paragraph paths. Word accepts only sizes
 divisible by 50 centipoints because WordprocessingML stores half-points.
 Spreadsheet accepts single cells and bounded rectangular ranges, auto-vivifies
@@ -261,11 +265,12 @@ absent, clones the base font/cell XF without dropping unknown properties, and
 deduplicates derived font and style records. Transitional and strict OOXML
 namespaces are retained. All three formats provide normalized semantic
 readback and use normal batch rollback and post-mutation validation. Tests
-cover explicit off/baseline values, unknown style attributes, strict OOXML,
-CLI execution without OfficeCLI, and a complete standard MCP session. Advanced
-named styles, inheritance, highlights, fills, borders, extended underline
-variants, double strike, character spacing, and arbitrary property maps remain
-outside this milestone.
+cover explicit off/baseline/none values, the complete portable highlight
+mapping, invalid language and format combinations, unknown style attributes,
+strict OOXML, CLI execution without OfficeCLI, and a complete standard MCP
+session. Advanced named styles, inheritance, arbitrary or scheme highlights,
+fills, borders, extended underline variants, per-script Word languages,
+character spacing, and arbitrary property maps remain outside this milestone.
 
 Native `set-hyperlink` is implemented through one typed Rust, batch, CLI, and
 standard MCP contract. Word adds an external HTTP/HTTPS/mailto relationship or

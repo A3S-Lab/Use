@@ -1894,7 +1894,16 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
     );
     assert!(apply["inputSchema"]["properties"].get("command").is_none());
     let apply_schema = apply["inputSchema"].to_string();
-    for expected in ["underline", "script", "strikethrough", "superscript"] {
+    for expected in [
+        "underline",
+        "script",
+        "strikethrough",
+        "doubleStrikethrough",
+        "textCase",
+        "highlight",
+        "language",
+        "superscript",
+    ] {
         assert!(apply_schema.contains(expected), "missing {expected}");
     }
 
@@ -1945,7 +1954,11 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
                             "format": {
                                 "underline": "double",
                                 "script": "superscript",
-                                "strikethrough": true
+                                "strikethrough": true,
+                                "doubleStrikethrough": true,
+                                "textCase": "small-caps",
+                                "highlight": "yellow",
+                                "language": "en-US"
                             }
                         }
                     ]
@@ -1986,6 +1999,10 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
     assert_eq!(format["underline"], "double");
     assert_eq!(format["script"], "superscript");
     assert_eq!(format["strike"], "true");
+    assert_eq!(format["doubleStrike"], "true");
+    assert_eq!(format["textCase"], "small-caps");
+    assert_eq!(format["highlight"], "yellow");
+    assert_eq!(format["language"], "en-US");
 
     let unsaved_close = standard_mcp_request(
         &mut stdin,

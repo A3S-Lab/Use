@@ -29,6 +29,10 @@ pub(super) struct ParsedArguments {
     pub underline: Option<String>,
     pub script: Option<String>,
     pub strikethrough: Option<String>,
+    pub double_strikethrough: Option<String>,
+    pub text_case: Option<String>,
+    pub highlight: Option<String>,
+    pub language: Option<String>,
     pub font_family: Option<String>,
     pub font_size: Option<String>,
     pub text_color: Option<String>,
@@ -125,6 +129,27 @@ impl ParsedArguments {
                 }
                 "--strikethrough" if allowed.strikethrough => {
                     set_string_option(&mut parsed.strikethrough, args, index, "--strikethrough")?;
+                    index += 2;
+                }
+                "--double-strikethrough" if allowed.double_strikethrough => {
+                    set_string_option(
+                        &mut parsed.double_strikethrough,
+                        args,
+                        index,
+                        "--double-strikethrough",
+                    )?;
+                    index += 2;
+                }
+                "--text-case" if allowed.text_case => {
+                    set_string_option(&mut parsed.text_case, args, index, "--text-case")?;
+                    index += 2;
+                }
+                "--highlight" if allowed.highlight => {
+                    set_string_option(&mut parsed.highlight, args, index, "--highlight")?;
+                    index += 2;
+                }
+                "--language" | "--lang" if allowed.language => {
+                    set_string_option(&mut parsed.language, args, index, "--language")?;
                     index += 2;
                 }
                 "--font-family" if allowed.font_family => {
@@ -306,6 +331,10 @@ pub(super) struct AllowedOptions {
     underline: bool,
     script: bool,
     strikethrough: bool,
+    double_strikethrough: bool,
+    text_case: bool,
+    highlight: bool,
+    language: bool,
     font_family: bool,
     font_size: bool,
     text_color: bool,
@@ -355,6 +384,10 @@ impl AllowedOptions {
         underline: false,
         script: false,
         strikethrough: false,
+        double_strikethrough: false,
+        text_case: false,
+        highlight: false,
+        language: false,
         font_family: false,
         font_size: false,
         text_color: false,
@@ -401,6 +434,10 @@ impl AllowedOptions {
         underline: true,
         script: true,
         strikethrough: true,
+        double_strikethrough: true,
+        text_case: true,
+        highlight: true,
+        language: true,
         font_family: true,
         font_size: true,
         text_color: true,

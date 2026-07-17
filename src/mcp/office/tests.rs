@@ -1,8 +1,9 @@
 use super::*;
 use a3s_use_office::{
-    NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeHyperlinkTarget,
-    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextFormat, NativeOfficeTextMatchMode,
-    NativeOfficeTextScript, NativeOfficeUnderline,
+    NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeHighlightColor,
+    NativeOfficeHyperlinkTarget, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextCase,
+    NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextScript,
+    NativeOfficeUnderline,
 };
 
 #[test]
@@ -94,6 +95,11 @@ fn office_batch_schema_exposes_typed_text_formatting() {
         "underline",
         "script",
         "strikethrough",
+        "doubleStrikethrough",
+        "textCase",
+        "highlight",
+        "language",
+        "small-caps",
         "superscript",
         "justify",
     ] {
@@ -110,6 +116,10 @@ fn office_batch_schema_exposes_typed_text_formatting() {
                 "underline": "double",
                 "script": "superscript",
                 "strikethrough": false,
+                "doubleStrikethrough": true,
+                "textCase": "small-caps",
+                "highlight": "yellow",
+                "language": "en-US",
                 "fontSizeCentipoints": 1200,
                 "textColor": { "red": 18, "green": 52, "blue": 86 }
             }
@@ -117,14 +127,19 @@ fn office_batch_schema_exposes_typed_text_formatting() {
     }))
     .unwrap();
     let mutation = input.mutations.into_iter().next().unwrap();
+    let native = mutation.into_native().unwrap();
     assert!(matches!(
-        mutation.into_native().unwrap(),
+        native,
         NativeOfficeMutation::SetTextFormat {
             format: NativeOfficeTextFormat {
                 bold: Some(true),
                 underline: Some(NativeOfficeUnderline::Double),
                 script: Some(NativeOfficeTextScript::Superscript),
                 strikethrough: Some(false),
+                double_strikethrough: Some(true),
+                text_case: Some(NativeOfficeTextCase::SmallCaps),
+                highlight: Some(NativeOfficeHighlightColor::Yellow),
+                language: Some(ref language),
                 font_size_centipoints: Some(1200),
                 text_color: Some(NativeOfficeRgbColor {
                     red: 18,
@@ -134,7 +149,7 @@ fn office_batch_schema_exposes_typed_text_formatting() {
                 ..
             },
             ..
-        }
+        } if language == "en-US"
     ));
 }
 

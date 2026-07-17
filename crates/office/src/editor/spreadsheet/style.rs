@@ -89,6 +89,16 @@ pub(super) fn set_text_format(
             "Native cell text formatting is available only for Spreadsheet documents.",
         ));
     }
+    if format.double_strikethrough.is_some()
+        || format.text_case.is_some()
+        || format.highlight.is_some()
+        || format.language.is_some()
+    {
+        return Err(editor_error(
+            "use.office.spreadsheet_run_format_unsupported",
+            "Spreadsheet cells do not support double strikethrough, run text case, run highlight, or run language through the native text-format contract.",
+        ));
+    }
     let (sheet_path, reference) = path.rsplit_once('/').ok_or_else(|| node_not_found(path))?;
     if sheet_path.is_empty() {
         return Err(editor_error(

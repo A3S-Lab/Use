@@ -1,11 +1,11 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
     NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeCommentUpdate,
-    NativeOfficeHorizontalAlignment, NativeOfficeHyperlink, NativeOfficeImage,
-    NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
-    NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextFormat, NativeOfficeTextMatchMode,
-    NativeOfficeTextReplacement, NativeOfficeTextScript, NativeOfficeUnderline,
-    SpreadsheetCellValue,
+    NativeOfficeHighlightColor, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
+    NativeOfficeImage, NativeOfficeInsertPosition, NativeOfficeIssueFilter, NativeOfficeMutation,
+    NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextCase, NativeOfficeTextFormat,
+    NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextScript,
+    NativeOfficeUnderline, SpreadsheetCellValue,
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -231,6 +231,70 @@ pub(super) enum OfficeTextScript {
     Subscript,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum OfficeTextCase {
+    None,
+    SmallCaps,
+    AllCaps,
+}
+
+impl From<OfficeTextCase> for NativeOfficeTextCase {
+    fn from(value: OfficeTextCase) -> Self {
+        match value {
+            OfficeTextCase::None => Self::None,
+            OfficeTextCase::SmallCaps => Self::SmallCaps,
+            OfficeTextCase::AllCaps => Self::AllCaps,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum OfficeHighlightColor {
+    None,
+    Black,
+    Blue,
+    Cyan,
+    DarkBlue,
+    DarkCyan,
+    DarkGray,
+    DarkGreen,
+    DarkMagenta,
+    DarkRed,
+    DarkYellow,
+    Green,
+    LightGray,
+    Magenta,
+    Red,
+    White,
+    Yellow,
+}
+
+impl From<OfficeHighlightColor> for NativeOfficeHighlightColor {
+    fn from(value: OfficeHighlightColor) -> Self {
+        match value {
+            OfficeHighlightColor::None => Self::None,
+            OfficeHighlightColor::Black => Self::Black,
+            OfficeHighlightColor::Blue => Self::Blue,
+            OfficeHighlightColor::Cyan => Self::Cyan,
+            OfficeHighlightColor::DarkBlue => Self::DarkBlue,
+            OfficeHighlightColor::DarkCyan => Self::DarkCyan,
+            OfficeHighlightColor::DarkGray => Self::DarkGray,
+            OfficeHighlightColor::DarkGreen => Self::DarkGreen,
+            OfficeHighlightColor::DarkMagenta => Self::DarkMagenta,
+            OfficeHighlightColor::DarkRed => Self::DarkRed,
+            OfficeHighlightColor::DarkYellow => Self::DarkYellow,
+            OfficeHighlightColor::Green => Self::Green,
+            OfficeHighlightColor::LightGray => Self::LightGray,
+            OfficeHighlightColor::Magenta => Self::Magenta,
+            OfficeHighlightColor::Red => Self::Red,
+            OfficeHighlightColor::White => Self::White,
+            OfficeHighlightColor::Yellow => Self::Yellow,
+        }
+    }
+}
+
 impl From<OfficeTextScript> for NativeOfficeTextScript {
     fn from(value: OfficeTextScript) -> Self {
         match value {
@@ -276,6 +340,14 @@ pub(super) struct OfficeTextFormat {
     script: Option<OfficeTextScript>,
     /// Explicitly enable or disable strikethrough in Word and Spreadsheet.
     strikethrough: Option<bool>,
+    /// Explicitly enable or disable double strikethrough in Word.
+    double_strikethrough: Option<bool>,
+    /// Display-only capitalization for Word and Presentation runs.
+    text_case: Option<OfficeTextCase>,
+    /// Portable highlight color for Word and Presentation runs.
+    highlight: Option<OfficeHighlightColor>,
+    /// Conservative BCP-47 language tag for Word and Presentation runs.
+    language: Option<String>,
     /// Font family applied to the supported script slots.
     font_family: Option<String>,
     /// Exact font size in centipoints (1/100 point), from 100 through 40000.
@@ -294,6 +366,10 @@ impl From<OfficeTextFormat> for NativeOfficeTextFormat {
             underline: value.underline.map(Into::into),
             script: value.script.map(Into::into),
             strikethrough: value.strikethrough,
+            double_strikethrough: value.double_strikethrough,
+            text_case: value.text_case.map(Into::into),
+            highlight: value.highlight.map(Into::into),
+            language: value.language,
             font_family: value.font_family,
             font_size_centipoints: value.font_size_centipoints,
             text_color: value

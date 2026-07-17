@@ -70,6 +70,14 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
             "superscript",
             "--strikethrough",
             "true",
+            "--double-strikethrough",
+            "true",
+            "--text-case",
+            "small-caps",
+            "--highlight",
+            "yellow",
+            "--language",
+            "en-US",
             "--font-family",
             "Aptos",
             "--font-size",
@@ -84,6 +92,10 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
     assert_eq!(word_run["data"]["node"]["format"]["underline"], "double");
     assert_eq!(word_run["data"]["node"]["format"]["script"], "superscript");
     assert_eq!(word_run["data"]["node"]["format"]["strike"], "true");
+    assert_eq!(word_run["data"]["node"]["format"]["doubleStrike"], "true");
+    assert_eq!(word_run["data"]["node"]["format"]["textCase"], "small-caps");
+    assert_eq!(word_run["data"]["node"]["format"]["highlight"], "yellow");
+    assert_eq!(word_run["data"]["node"]["format"]["language"], "en-US");
     assert_eq!(word_run["data"]["node"]["format"]["font"], "Aptos");
     assert_eq!(word_run["data"]["node"]["format"]["size"], "14pt");
     assert_eq!(word_run["data"]["node"]["format"]["color"], "123456");
@@ -179,6 +191,12 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
             "double",
             "--script",
             "superscript",
+            "--text-case",
+            "all-caps",
+            "--highlight",
+            "cyan",
+            "--language",
+            "zh-CN",
             "--font-family",
             "Aptos Display",
             "--font-size",
@@ -191,6 +209,9 @@ fn native_cli_formats_word_spreadsheet_and_presentation_without_officecli() {
     assert_eq!(slide_run["data"]["node"]["format"]["italic"], "1");
     assert_eq!(slide_run["data"]["node"]["format"]["underline"], "double");
     assert_eq!(slide_run["data"]["node"]["format"]["script"], "superscript");
+    assert_eq!(slide_run["data"]["node"]["format"]["textCase"], "all-caps");
+    assert_eq!(slide_run["data"]["node"]["format"]["highlight"], "cyan");
+    assert_eq!(slide_run["data"]["node"]["format"]["language"], "zh-CN");
     assert_eq!(slide_run["data"]["node"]["format"]["font"], "Aptos Display");
     assert_eq!(slide_run["data"]["node"]["format"]["size"], "20pt");
     assert_eq!(slide_run["data"]["node"]["format"]["color"], "AA2200");
@@ -287,6 +308,26 @@ fn native_format_batch_is_typed_and_invalid_word_sizes_do_not_write() {
     assert_eq!(cell["data"]["node"]["format"]["strike"], "true");
     assert_eq!(cell["data"]["node"]["format"]["color"], "112233");
 
+    let before = std::fs::read(spreadsheet).unwrap();
+    let error = run_failure(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            spreadsheet,
+            "/Sheet1/B2",
+            "--highlight",
+            "yellow",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        error["error"]["code"],
+        "use.office.spreadsheet_run_format_unsupported"
+    );
+    assert_eq!(std::fs::read(spreadsheet).unwrap(), before);
+
     let word = temp.path().join("invalid.docx");
     let word = word.to_str().unwrap();
     run(&provider, &["office", "native", "create", word, "--json"]);
@@ -358,6 +399,24 @@ fn native_format_batch_is_typed_and_invalid_word_sizes_do_not_write() {
     assert_eq!(
         error["error"]["code"],
         "use.office.presentation_strikethrough_unsupported"
+    );
+    assert_eq!(std::fs::read(presentation).unwrap(), before);
+    let error = run_failure(
+        &provider,
+        &[
+            "office",
+            "native",
+            "set",
+            presentation,
+            "/slide[1]/shape[1]/paragraph[1]/run[1]",
+            "--double-strikethrough",
+            "true",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        error["error"]["code"],
+        "use.office.presentation_double_strikethrough_unsupported"
     );
     assert_eq!(std::fs::read(presentation).unwrap(), before);
     assert!(!provider.exists());

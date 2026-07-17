@@ -65,7 +65,7 @@ a3s use office native view report.docx screenshot --output report.png --json
 a3s use office native query report.docx 'p[style=Heading1]' --json
 a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native set report.docx /body --find 'Q1 2025' --replace 'Q1 2026' --json
-a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --underline double --script superscript --strikethrough true --font-family Aptos --font-size 14 --text-color 123456 --json
+a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --underline double --script superscript --strikethrough true --double-strikethrough false --text-case small-caps --highlight yellow --language en-US --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
@@ -294,7 +294,10 @@ flattening their formatting. Typed rich-text mutation covers bold, italic,
 exact centipoint font size, RGB text color, and horizontal alignment. Word and
 Spreadsheet also support an explicit single-strikethrough boolean;
 Presentation rejects that property with a typed error instead of silently
-dropping it.
+dropping it. Word and Presentation additionally share a portable 17-color
+highlight palette, display-only text case, and conservative BCP-47 primary
+language tags. Word alone supports explicit double strikethrough; Spreadsheet
+and Presentation reject it through format-specific typed errors.
 Word and Presentation apply character properties to run paths and alignment to
 paragraph paths; Spreadsheet applies the same contract to cells or bounded A1
 ranges,
@@ -443,10 +446,10 @@ a3s use office native set deck.pptx '/slide[1]/notes' --find internal --replace 
 # run paths; their alignment uses paragraph paths. Word sizes must be exact
 # half-point increments. Spreadsheet ranges may combine content and formatting.
 # Strikethrough is native for Word and Spreadsheet, but not Presentation.
-a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --underline double --script superscript --strikethrough true --font-family Aptos --font-size 14 --text-color 123456 --json
+a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --italic false --underline double --script superscript --strikethrough true --double-strikethrough false --text-case small-caps --highlight yellow --language en-US --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --underline single --script baseline --strikethrough false --font-size 11.5 --text-color 0066CC --align center --json
-a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --italic true --underline double --script subscript --font-family 'Aptos Display' --font-size 20 --json
+a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --italic true --underline double --script subscript --text-case all-caps --highlight cyan --language zh-CN --font-family 'Aptos Display' --font-size 20 --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
 
 # Add or update inert hyperlinks. External targets accept only absolute
@@ -824,16 +827,19 @@ Typed formatting is batchable through the same public mutation contract:
 ```json
 {
   "operation": "set-text-format",
-  "path": "/Sheet1/A1:C1",
+  "path": "/body/p[1]/r[1]",
   "format": {
     "bold": true,
     "underline": "double",
     "script": "superscript",
     "strikethrough": true,
+    "doubleStrikethrough": false,
+    "textCase": "small-caps",
+    "highlight": "yellow",
+    "language": "en-US",
     "fontFamily": "Aptos",
     "fontSizeCentipoints": 1150,
-    "textColor": { "red": 0, "green": 102, "blue": 204 },
-    "alignment": "center"
+    "textColor": { "red": 0, "green": 102, "blue": 204 }
   }
 }
 ```
@@ -842,10 +848,14 @@ Typed formatting is batchable through the same public mutation contract:
 equivalent point value through `--font-size`. `underline` accepts `none`,
 `single`, or `double`, and `script` accepts `baseline`, `superscript`, or
 `subscript`. `strikethrough` is supported by Word and Spreadsheet;
-Presentation rejects it before mutation. An empty `format` object, unknown
-properties, invalid RGB components, and unsupported target/property
-combinations fail the whole batch. Spreadsheet style records are cloned and
-deduplicated without replacing unrelated style children or attributes.
+Presentation rejects it before mutation. `textCase`, `highlight`, and
+`language` apply to Word and Presentation runs. `doubleStrikethrough` applies
+only to Word. The portable highlight palette is `none`, the six bright colors,
+black/white, and the dark or light gray/color variants exposed by the typed
+schema. An empty `format` object, invalid BCP-47 shape, unknown properties,
+invalid RGB components, and unsupported target/property combinations fail the
+whole batch. Spreadsheet style records are cloned and deduplicated without
+replacing unrelated style children or attributes.
 
 Hyperlinks use the same typed batch contract and remain inert data:
 
@@ -925,10 +935,11 @@ callers:
 ```rust,no_run
 use a3s_use_office::{
     NativeOfficeComment, NativeOfficeCommentUpdate, NativeOfficeDocument,
-    NativeOfficeEditor, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
+    NativeOfficeEditor, NativeOfficeHighlightColor, NativeOfficeHorizontalAlignment,
+    NativeOfficeHyperlink,
     NativeOfficeInsertPosition, NativeOfficePackage, NativeOfficeRenderFormat,
-    NativeOfficeReplayArtifact, NativeOfficeRgbColor, NativeOfficeTextFormat,
-    NativeOfficeTextScript, NativeOfficeUnderline,
+    NativeOfficeReplayArtifact, NativeOfficeRgbColor, NativeOfficeTextCase,
+    NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
 };
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
@@ -962,6 +973,10 @@ editor.set_text_format(
         underline: Some(NativeOfficeUnderline::Double),
         script: Some(NativeOfficeTextScript::Superscript),
         strikethrough: Some(true),
+        double_strikethrough: Some(false),
+        text_case: Some(NativeOfficeTextCase::SmallCaps),
+        highlight: Some(NativeOfficeHighlightColor::Yellow),
+        language: Some("en-US".into()),
         font_family: Some("Aptos".into()),
         font_size_centipoints: Some(1400),
         text_color: Some(NativeOfficeRgbColor::new(0x12, 0x34, 0x56)),

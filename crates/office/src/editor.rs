@@ -29,10 +29,10 @@ pub use part::{NativeCreatedPart, NativeOfficePartType};
 pub use raw::NativeRawXmlPart;
 pub use types::{
     NativeBatchResult, NativeCreatedImage, NativeOfficeComment, NativeOfficeCommentPosition,
-    NativeOfficeCommentUpdate, NativeOfficeHorizontalAlignment, NativeOfficeHyperlink,
-    NativeOfficeHyperlinkTarget, NativeOfficeImage, NativeOfficeImageFormat,
+    NativeOfficeCommentUpdate, NativeOfficeHighlightColor, NativeOfficeHorizontalAlignment,
+    NativeOfficeHyperlink, NativeOfficeHyperlinkTarget, NativeOfficeImage, NativeOfficeImageFormat,
     NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
-    NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextFormat,
+    NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextCase, NativeOfficeTextFormat,
     NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextReplacementResult,
     NativeOfficeTextScript, NativeOfficeUnderline, SpreadsheetCellValue,
     MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,

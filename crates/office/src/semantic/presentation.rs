@@ -774,6 +774,14 @@ fn apply_run_properties(properties: &XmlElement, node: &mut DocumentNode) {
         };
         node.format.insert("underline".into(), normalized.into());
     }
+    if let Some(value) = properties.attribute("cap") {
+        let text_case = match value {
+            "small" => "small-caps",
+            "all" => "all-caps",
+            _ => "none",
+        };
+        node.format.insert("textCase".into(), text_case.into());
+    }
     if let Some(baseline) = properties
         .attribute("baseline")
         .and_then(|value| value.parse::<i32>().ok())
@@ -804,6 +812,41 @@ fn apply_run_properties(properties: &XmlElement, node: &mut DocumentNode) {
         .and_then(|color| color.attribute("val"))
     {
         node.format.insert("color".into(), color.into());
+    }
+    if let Some(highlight) = properties.child("highlight") {
+        if let Some(rgb) = highlight
+            .child("srgbClr")
+            .and_then(|color| color.attribute("val"))
+        {
+            node.format
+                .insert("highlight".into(), highlight_name(rgb).into());
+        } else if let Some(color) = highlight.child_elements().next() {
+            if let Some(value) = color.attribute("val") {
+                node.format.insert("highlight".into(), value.into());
+            }
+        }
+    }
+}
+
+fn highlight_name(rgb: &str) -> &str {
+    match rgb.to_ascii_uppercase().as_str() {
+        "000000" => "black",
+        "0000FF" => "blue",
+        "00FFFF" => "cyan",
+        "000080" => "dark-blue",
+        "008080" => "dark-cyan",
+        "808080" => "dark-gray",
+        "008000" => "dark-green",
+        "800080" => "dark-magenta",
+        "800000" => "dark-red",
+        "808000" => "dark-yellow",
+        "00FF00" => "green",
+        "C0C0C0" => "light-gray",
+        "FF00FF" => "magenta",
+        "FF0000" => "red",
+        "FFFFFF" => "white",
+        "FFFF00" => "yellow",
+        _ => rgb,
     }
 }
 

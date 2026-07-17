@@ -1,6 +1,7 @@
 use super::{
-    NativeOfficeEditor, NativeOfficeHorizontalAlignment, NativeOfficeMutation,
-    NativeOfficeRgbColor, NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
+    NativeOfficeEditor, NativeOfficeHighlightColor, NativeOfficeHorizontalAlignment,
+    NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextCase, NativeOfficeTextFormat,
+    NativeOfficeTextScript, NativeOfficeUnderline,
 };
 
 fn rich_format() -> NativeOfficeTextFormat {
@@ -10,10 +11,24 @@ fn rich_format() -> NativeOfficeTextFormat {
         underline: Some(NativeOfficeUnderline::Double),
         script: Some(NativeOfficeTextScript::Superscript),
         strikethrough: None,
+        double_strikethrough: None,
+        text_case: None,
+        highlight: None,
+        language: None,
         font_family: Some("Aptos".into()),
         font_size_centipoints: Some(1_400),
         text_color: Some(NativeOfficeRgbColor::new(0x12, 0x34, 0x56)),
         alignment: None,
+    }
+}
+
+fn advanced_word_run_format() -> NativeOfficeTextFormat {
+    NativeOfficeTextFormat {
+        double_strikethrough: Some(true),
+        text_case: Some(NativeOfficeTextCase::SmallCaps),
+        highlight: Some(NativeOfficeHighlightColor::Yellow),
+        language: Some("en-US".into()),
+        ..rich_format()
     }
 }
 
@@ -31,7 +46,7 @@ fn text_format_mutation_has_a_typed_stable_json_contract() {
         format: NativeOfficeTextFormat {
             alignment: Some(NativeOfficeHorizontalAlignment::Justify),
             strikethrough: Some(true),
-            ..rich_format()
+            ..advanced_word_run_format()
         },
     };
     assert_eq!(
@@ -45,6 +60,10 @@ fn text_format_mutation_has_a_typed_stable_json_contract() {
                 "underline": "double",
                 "script": "superscript",
                 "strikethrough": true,
+                "doubleStrikethrough": true,
+                "textCase": "small-caps",
+                "highlight": "yellow",
+                "language": "en-US",
                 "fontFamily": "Aptos",
                 "fontSizeCentipoints": 1400,
                 "textColor": { "red": 18, "green": 52, "blue": 86 },
@@ -62,6 +81,68 @@ fn text_format_mutation_has_a_typed_stable_json_contract() {
     );
 }
 
+#[test]
+fn portable_highlight_palette_has_stable_word_and_rgb_mappings() {
+    for (color, word, rgb) in [
+        (NativeOfficeHighlightColor::None, "none", None),
+        (NativeOfficeHighlightColor::Black, "black", Some("000000")),
+        (NativeOfficeHighlightColor::Blue, "blue", Some("0000FF")),
+        (NativeOfficeHighlightColor::Cyan, "cyan", Some("00FFFF")),
+        (
+            NativeOfficeHighlightColor::DarkBlue,
+            "darkBlue",
+            Some("000080"),
+        ),
+        (
+            NativeOfficeHighlightColor::DarkCyan,
+            "darkCyan",
+            Some("008080"),
+        ),
+        (
+            NativeOfficeHighlightColor::DarkGray,
+            "darkGray",
+            Some("808080"),
+        ),
+        (
+            NativeOfficeHighlightColor::DarkGreen,
+            "darkGreen",
+            Some("008000"),
+        ),
+        (
+            NativeOfficeHighlightColor::DarkMagenta,
+            "darkMagenta",
+            Some("800080"),
+        ),
+        (
+            NativeOfficeHighlightColor::DarkRed,
+            "darkRed",
+            Some("800000"),
+        ),
+        (
+            NativeOfficeHighlightColor::DarkYellow,
+            "darkYellow",
+            Some("808000"),
+        ),
+        (NativeOfficeHighlightColor::Green, "green", Some("00FF00")),
+        (
+            NativeOfficeHighlightColor::LightGray,
+            "lightGray",
+            Some("C0C0C0"),
+        ),
+        (
+            NativeOfficeHighlightColor::Magenta,
+            "magenta",
+            Some("FF00FF"),
+        ),
+        (NativeOfficeHighlightColor::Red, "red", Some("FF0000")),
+        (NativeOfficeHighlightColor::White, "white", Some("FFFFFF")),
+        (NativeOfficeHighlightColor::Yellow, "yellow", Some("FFFF00")),
+    ] {
+        assert_eq!(color.word_value(), word);
+        assert_eq!(color.rgb_hex(), rgb);
+    }
+}
+
 #[tokio::test]
 async fn native_word_writes_run_format_and_paragraph_alignment_losslessly() {
     let temp = tempfile::tempdir().unwrap();
@@ -74,7 +155,7 @@ async fn native_word_writes_run_format_and_paragraph_alignment_losslessly() {
             "/body/p[1]/r[1]",
             NativeOfficeTextFormat {
                 strikethrough: Some(true),
-                ..rich_format()
+                ..advanced_word_run_format()
             },
         )
         .unwrap();
@@ -89,6 +170,10 @@ async fn native_word_writes_run_format_and_paragraph_alignment_losslessly() {
     assert_eq!(run.format["underline"], "double");
     assert_eq!(run.format["script"], "superscript");
     assert_eq!(run.format["strike"], "true");
+    assert_eq!(run.format["doubleStrike"], "true");
+    assert_eq!(run.format["textCase"], "small-caps");
+    assert_eq!(run.format["highlight"], "yellow");
+    assert_eq!(run.format["language"], "en-US");
     assert_eq!(run.format["font"], "Aptos");
     assert_eq!(run.format["size"], "14pt");
     assert_eq!(run.format["color"], "123456");
@@ -99,6 +184,11 @@ async fn native_word_writes_run_format_and_paragraph_alignment_losslessly() {
     assert_eq!(xml.matches("<w:rPr").count(), 1);
     assert_eq!(xml.matches("<w:pPr").count(), 1);
     assert!(xml.contains("<w:strike w:val=\"1\"/>"));
+    assert!(xml.contains("<w:dstrike w:val=\"1\"/>"));
+    assert!(xml.contains("<w:caps w:val=\"0\"/>"));
+    assert!(xml.contains("<w:smallCaps w:val=\"1\"/>"));
+    assert!(xml.contains("<w:highlight w:val=\"yellow\"/>"));
+    assert!(xml.contains("<w:lang w:val=\"en-US\"/>"));
     assert!(xml.contains("<w:u w:val=\"double\"/>"));
     assert!(xml.contains("<w:vertAlign w:val=\"superscript\"/>"));
 }
@@ -167,7 +257,13 @@ async fn native_presentation_writes_run_format_and_paragraph_alignment() {
     editor.add_slide("/", "Native Slides").unwrap();
 
     editor
-        .set_text_format("/slide[1]/shape[1]/paragraph[1]/run[1]", rich_format())
+        .set_text_format(
+            "/slide[1]/shape[1]/paragraph[1]/run[1]",
+            NativeOfficeTextFormat {
+                double_strikethrough: None,
+                ..advanced_word_run_format()
+            },
+        )
         .unwrap();
     editor
         .set_text_format("/slide[1]/shape[1]/paragraph[1]", centered())
@@ -183,6 +279,9 @@ async fn native_presentation_writes_run_format_and_paragraph_alignment() {
     assert_eq!(run.format["italic"], "0");
     assert_eq!(run.format["underline"], "double");
     assert_eq!(run.format["script"], "superscript");
+    assert_eq!(run.format["textCase"], "small-caps");
+    assert_eq!(run.format["highlight"], "yellow");
+    assert_eq!(run.format["language"], "en-US");
     assert_eq!(run.format["font"], "Aptos");
     assert_eq!(run.format["size"], "14pt");
     assert_eq!(run.format["color"], "123456");
@@ -197,6 +296,9 @@ async fn native_presentation_writes_run_format_and_paragraph_alignment() {
     .unwrap();
     assert!(xml.contains("u=\"dbl\""));
     assert!(xml.contains("baseline=\"30000\""));
+    assert!(xml.contains("cap=\"small\""));
+    assert!(xml.contains("lang=\"en-US\""));
+    assert!(xml.contains("<a:highlight><a:srgbClr val=\"FFFF00\"/></a:highlight>"));
 }
 
 #[tokio::test]
@@ -243,6 +345,60 @@ async fn presentation_color_update_preserves_existing_attributes_and_transforms(
     assert!(color.contains("val=\"123456\""));
     assert!(color.contains("dataKeep=\"color\""));
     assert!(color.contains("<a:alpha val=\"50000\"/>"));
+}
+
+#[tokio::test]
+async fn presentation_highlight_update_preserves_existing_attributes_and_transforms() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("preserve-highlight.pptx");
+    let mut seed = NativeOfficeEditor::create(&path).await.unwrap();
+    seed.add_slide("/", "Native Slides").unwrap();
+    let run_path = "/slide[1]/shape[1]/paragraph[1]/run[1]";
+    seed.set_text_format(
+        run_path,
+        NativeOfficeTextFormat {
+            highlight: Some(NativeOfficeHighlightColor::Black),
+            ..NativeOfficeTextFormat::default()
+        },
+    )
+    .unwrap();
+
+    let mut package = seed.package().clone();
+    let slide_part = "ppt/slides/slide1.xml";
+    let slide = String::from_utf8(package.part(slide_part).unwrap().to_vec())
+        .unwrap()
+        .replace(
+            "<a:highlight><a:srgbClr val=\"000000\"/></a:highlight>",
+            concat!(
+                "<a:highlight dataKeep=\"highlight\">",
+                "<a:srgbClr val=\"000000\" dataKeep=\"color\">",
+                "<a:alpha val=\"50000\"/>",
+                "</a:srgbClr></a:highlight>"
+            ),
+        );
+    package.set_part(slide_part, slide.into_bytes()).unwrap();
+
+    let mut editor = NativeOfficeEditor::from_package(package).unwrap();
+    editor
+        .set_text_format(
+            run_path,
+            NativeOfficeTextFormat {
+                highlight: Some(NativeOfficeHighlightColor::Cyan),
+                ..NativeOfficeTextFormat::default()
+            },
+        )
+        .unwrap();
+
+    let slide = String::from_utf8(editor.package().part(slide_part).unwrap().to_vec()).unwrap();
+    assert!(slide.contains("<a:highlight dataKeep=\"highlight\">"));
+    let highlight_start = slide.find("<a:highlight").unwrap();
+    let highlight_end = slide[highlight_start..].find("</a:highlight>").unwrap() + highlight_start;
+    let highlight = &slide[highlight_start..highlight_end];
+    assert!(highlight.contains("val=\"00FFFF\""));
+    assert!(highlight.contains("dataKeep=\"color\""));
+    assert!(highlight.contains("<a:alpha val=\"50000\"/>"));
+    let run = editor.snapshot().unwrap().get(run_path, 0).unwrap();
+    assert_eq!(run.format["highlight"], "cyan");
 }
 
 #[tokio::test]
@@ -362,6 +518,129 @@ async fn native_formats_explicitly_clear_underline_and_vertical_script() {
         .unwrap();
     assert_eq!(run.format["underline"], "none");
     assert_eq!(run.format["script"], "baseline");
+}
+
+#[tokio::test]
+async fn native_word_and_presentation_clear_highlight_and_text_case() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let word_path = temp.path().join("clear-highlight.docx");
+    let mut word = NativeOfficeEditor::create(&word_path).await.unwrap();
+    word.set_text("/body/p[1]", "Word").unwrap();
+    word.set_text_format("/body/p[1]/r[1]", advanced_word_run_format())
+        .unwrap();
+    word.set_text_format(
+        "/body/p[1]/r[1]",
+        NativeOfficeTextFormat {
+            text_case: Some(NativeOfficeTextCase::None),
+            highlight: Some(NativeOfficeHighlightColor::None),
+            language: Some("zh-Hant-CN".into()),
+            ..NativeOfficeTextFormat::default()
+        },
+    )
+    .unwrap();
+    let run = word.snapshot().unwrap().get("/body/p[1]/r[1]", 0).unwrap();
+    assert_eq!(run.format["textCase"], "none");
+    assert_eq!(run.format["highlight"], "none");
+    assert_eq!(run.format["language"], "zh-Hant-CN");
+
+    let presentation_path = temp.path().join("clear-highlight.pptx");
+    let mut presentation = NativeOfficeEditor::create(&presentation_path)
+        .await
+        .unwrap();
+    presentation.add_slide("/", "Presentation").unwrap();
+    let run_path = "/slide[1]/shape[1]/paragraph[1]/run[1]";
+    presentation
+        .set_text_format(
+            run_path,
+            NativeOfficeTextFormat {
+                double_strikethrough: None,
+                ..advanced_word_run_format()
+            },
+        )
+        .unwrap();
+    presentation
+        .set_text_format(
+            run_path,
+            NativeOfficeTextFormat {
+                text_case: Some(NativeOfficeTextCase::None),
+                highlight: Some(NativeOfficeHighlightColor::None),
+                language: Some("zh-Hant-CN".into()),
+                ..NativeOfficeTextFormat::default()
+            },
+        )
+        .unwrap();
+    let run = presentation.snapshot().unwrap().get(run_path, 0).unwrap();
+    assert_eq!(run.format["textCase"], "none");
+    assert!(!run.format.contains_key("highlight"));
+    assert_eq!(run.format["language"], "zh-Hant-CN");
+    let slide = String::from_utf8(
+        presentation
+            .package()
+            .part("ppt/slides/slide1.xml")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(!slide.contains("<a:highlight>"));
+}
+
+#[tokio::test]
+async fn invalid_language_and_spreadsheet_run_only_formatting_are_atomic() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let word_path = temp.path().join("invalid-language.docx");
+    let mut word = NativeOfficeEditor::create(&word_path).await.unwrap();
+    word.set_text("/body/p[1]", "Before").unwrap();
+    let original = word.package().part("word/document.xml").unwrap().to_vec();
+    let error = word
+        .apply_batch(&[
+            NativeOfficeMutation::SetText {
+                path: "/body/p[1]/r[1]".into(),
+                text: "After".into(),
+            },
+            NativeOfficeMutation::SetTextFormat {
+                path: "/body/p[1]/r[1]".into(),
+                format: NativeOfficeTextFormat {
+                    language: Some("not_a_language".into()),
+                    ..NativeOfficeTextFormat::default()
+                },
+            },
+        ])
+        .unwrap_err();
+    assert_eq!(error.code, "use.office.language_invalid");
+    assert_eq!(word.package().part("word/document.xml").unwrap(), original);
+
+    let spreadsheet_path = temp.path().join("unsupported-run-format.xlsx");
+    let mut spreadsheet = NativeOfficeEditor::create(&spreadsheet_path).await.unwrap();
+    let original = spreadsheet
+        .package()
+        .part("xl/worksheets/sheet1.xml")
+        .unwrap()
+        .to_vec();
+    let error = spreadsheet
+        .apply_batch(&[
+            NativeOfficeMutation::SetText {
+                path: "/Sheet1/A1".into(),
+                text: "After".into(),
+            },
+            NativeOfficeMutation::SetTextFormat {
+                path: "/Sheet1/A1".into(),
+                format: NativeOfficeTextFormat {
+                    highlight: Some(NativeOfficeHighlightColor::Yellow),
+                    ..NativeOfficeTextFormat::default()
+                },
+            },
+        ])
+        .unwrap_err();
+    assert_eq!(error.code, "use.office.spreadsheet_run_format_unsupported");
+    assert_eq!(
+        spreadsheet
+            .package()
+            .part("xl/worksheets/sheet1.xml")
+            .unwrap(),
+        original
+    );
 }
 
 #[tokio::test]
@@ -493,6 +772,21 @@ async fn unsupported_presentation_strikethrough_rolls_back_an_entire_native_batc
     assert_eq!(
         error.code,
         "use.office.presentation_strikethrough_unsupported"
+    );
+    assert_eq!(editor.package().part(slide_part).unwrap(), original);
+
+    let error = editor
+        .set_text_format(
+            run_path,
+            NativeOfficeTextFormat {
+                double_strikethrough: Some(true),
+                ..NativeOfficeTextFormat::default()
+            },
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.office.presentation_double_strikethrough_unsupported"
     );
     assert_eq!(editor.package().part(slide_part).unwrap(), original);
 }

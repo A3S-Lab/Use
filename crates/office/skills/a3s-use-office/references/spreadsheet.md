@@ -75,8 +75,10 @@ with one content write. It auto-creates empty styled cells and deduplicates
 OOXML font and cell-style records. The native typed subset covers bold, italic,
 `none`/single/double underline, baseline/superscript/subscript text, explicit
 single strikethrough, font family, point size, RGB text color, and horizontal
-alignment. Number formats, fills, borders, cell vertical alignment, wrapping,
-and conditional styles remain separate work.
+alignment. Run-only text case, highlight, language, and double strikethrough
+fail atomically with `use.office.spreadsheet_run_format_unsupported`; they are
+not silently flattened into a cell style. Number formats, fills, borders, cell
+vertical alignment, wrapping, and conditional styles remain separate work.
 
 ## Structure
 

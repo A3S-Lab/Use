@@ -4,8 +4,8 @@ use a3s_use_core::UseResult;
 
 use super::{
     editor_error, node_not_found, parse_segments, prefix, preserve_space_attribute, qualified,
-    validate_mutation_path, NativeOfficeHorizontalAlignment, NativeOfficeTextFormat,
-    NativeOfficeTextScript, NativeOfficeUnderline,
+    validate_mutation_path, NativeOfficeHorizontalAlignment, NativeOfficeTextCase,
+    NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
 };
 use crate::xml_edit::{
     apply_patches, index_xml, insert_child, insert_ordered_child, patch_start_tag_attributes,
@@ -230,6 +230,18 @@ pub(super) fn set_text_format(
         if let Some(strikethrough) = format.strikethrough {
             bytes = set_run_boolean(bytes, path, "strike", strikethrough)?;
         }
+        if let Some(double_strikethrough) = format.double_strikethrough {
+            bytes = set_run_boolean(bytes, path, "dstrike", double_strikethrough)?;
+        }
+        if let Some(text_case) = format.text_case {
+            let (caps, small_caps) = match text_case {
+                NativeOfficeTextCase::None => (false, false),
+                NativeOfficeTextCase::SmallCaps => (false, true),
+                NativeOfficeTextCase::AllCaps => (true, false),
+            };
+            bytes = set_run_boolean(bytes, path, "caps", caps)?;
+            bytes = set_run_boolean(bytes, path, "smallCaps", small_caps)?;
+        }
         if let Some(family) = &format.font_family {
             bytes = set_run_fonts(bytes, path, family)?;
         }
@@ -247,11 +259,17 @@ pub(super) fn set_text_format(
                 &["themeColor", "themeTint", "themeShade"],
             )?;
         }
+        if let Some(highlight) = format.highlight {
+            bytes = set_run_value(bytes, path, "highlight", highlight.word_value(), &[])?;
+        }
         if let Some(underline) = format.underline {
             bytes = set_run_value(bytes, path, "u", word_underline(underline), &[])?;
         }
         if let Some(script) = format.script {
             bytes = set_run_value(bytes, path, "vertAlign", word_script(script), &[])?;
+        }
+        if let Some(language) = &format.language {
+            bytes = set_run_value(bytes, path, "lang", language, &[])?;
         }
     }
     package.set_part(DOCUMENT_PART, bytes)
