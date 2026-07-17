@@ -5,10 +5,9 @@ use a3s_use_office::{
 };
 
 use super::arguments::{AllowedOptions, ParsedArguments};
-use super::{
-    parse_hyperlink, read_bounded_input, save_editor, usage_error, NativeInputKind,
-    MAX_IMAGE_INPUT_BYTES,
-};
+use super::bounded_input::{read_bounded_input, NativeInputKind};
+use super::format::parse_hyperlink;
+use super::{save_editor, usage_error, MAX_IMAGE_INPUT_BYTES};
 use crate::cli::CommandOutput;
 
 pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {

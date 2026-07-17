@@ -67,6 +67,7 @@ a3s use office native set report.docx /body/p[1] --text 'Updated' --json
 a3s use office native set report.docx /body --find 'Q1 2025' --replace 'Q1 2026' --json
 a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --underline double --script superscript --strikethrough true --double-strikethrough false --text-case small-caps --highlight yellow --language en-US --font-family Aptos --font-size 14 --text-color 123456 --json
 a3s use office native set report.docx '/body/p[1]' --align center --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --vertical-align center --wrap-text true --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
 a3s use office native set report.docx '/comments/comment[1]' --author Bob --text 'Reviewed' --json
@@ -108,8 +109,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   `agent-browser` 0.32.1
 - **A3S-Native Office Foundation**: Own safe OOXML package, XML, relationship,
   selector, semantic read, transactional add/set/remove/move/copy/swap,
-  scoped cross-format literal/regex replacement, typed text formatting, inert
-  hyperlinks, and legacy comments,
+  scoped cross-format literal/regex replacement, typed text formatting,
+  Spreadsheet number/fill/alignment formatting, inert hyperlinks, and legacy
+  comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
   bounded typed issue diagnostics, Browser-injected semantic PNG screenshots,
@@ -302,7 +304,13 @@ Word and Presentation apply character properties to run paths and alignment to
 paragraph paths; Spreadsheet applies the same contract to cells or bounded A1
 ranges,
 creating and deduplicating OOXML font and cell-style records when necessary. It
-also creates, updates, reads, queries, and removes typed hyperlinks. Word owns
+also exposes a separate typed Spreadsheet cell-presentation contract for
+number formats, solid RGB fill or explicit fill removal, vertical alignment,
+wrap text, rotation, indentation, shrink-to-fit, and reading order. These
+properties apply to a cell or bounded rectangular range, compose atomically
+with content and text formatting, preserve unknown style data, and deduplicate
+number-format, fill, and cell-style records. It also creates, updates, reads,
+queries, and removes typed hyperlinks. Word owns
 external HTTP/HTTPS/mailto links and internal bookmark targets in body,
 header, and footer paragraphs, with display text and tooltips; Spreadsheet
 owns external links and internal workbook locations on cells or bounded
@@ -451,6 +459,11 @@ a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --bold true --underline single --script baseline --strikethrough false --font-size 11.5 --text-color 0066CC --align center --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]/run[1]' --italic true --underline double --script subscript --text-case all-caps --highlight cyan --language zh-CN --font-family 'Aptos Display' --font-size 20 --json
 a3s use office native set deck.pptx '/slide[1]/shape[1]/paragraph[1]' --align center --json
+
+# Apply Spreadsheet cell presentation independently or in the same atomic set
+# as content/text formatting. Fill accepts none or six-digit RGB.
+a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --vertical-align center --wrap-text true --text-rotation 0 --indent 1 --shrink-to-fit false --reading-order ltr --json
+a3s use office native set workbook.xlsx /Sheet1/D1 --number 0.125 --bold true --number-format percent --fill 0066CC --json
 
 # Add or update inert hyperlinks. External targets accept only absolute
 # HTTP/HTTPS/mailto URIs without credentials. Word internal targets are bookmark
@@ -654,7 +667,7 @@ current schema is:
 
 The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
-`set-text-format`, `set-hyperlink`, `set-comment`, `set-table-column-width`,
+`set-text-format`, `set-cell-format`, `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
 `add-table`, `add-table-row`, `add-table-column`, `add-table-cell`,
 `add-comment`, `add-worksheet`, `insert-rows`, `delete-rows`, `insert-columns`,
@@ -857,6 +870,41 @@ invalid RGB components, and unsupported target/property combinations fail the
 whole batch. Spreadsheet style records are cloned and deduplicated without
 replacing unrelated style children or attributes.
 
+Spreadsheet cell presentation uses its own typed mutation rather than adding
+non-text properties to `set-text-format`:
+
+```json
+{
+  "operation": "set-cell-format",
+  "path": "/Sheet1/A1:C3",
+  "format": {
+    "numberFormat": "currency",
+    "fill": {
+      "kind": "solid",
+      "color": { "red": 255, "green": 242, "blue": 204 }
+    },
+    "verticalAlignment": "center",
+    "wrapText": true,
+    "textRotation": 0,
+    "indent": 1,
+    "shrinkToFit": false,
+    "readingOrder": "left-to-right"
+  }
+}
+```
+
+`numberFormat` accepts an explicit Excel format code or `general`, `number`,
+`currency`, `accounting`, `percent`, `scientific`, `text`, `date`, `time`, or
+`datetime`. Format codes are limited to 255 characters, four sections, and
+balanced quotes/brackets. Fill is either `none` or one solid 24-bit RGB color.
+Vertical alignment accepts `top`, `center`, `bottom`, `justify`, or
+`distributed`; rotation accepts 0–180 or 255 for stacked text; indentation is
+0–255; and reading order is `context`, `left-to-right`, or `right-to-left`.
+Unknown fields, empty format objects, invalid values, and non-Spreadsheet
+targets fail the whole batch. Native semantic HTML/SVG previews expose the
+observed values as inert `data-*` attributes; they do not claim Excel layout
+fidelity.
+
 Hyperlinks use the same typed batch contract and remain inert data:
 
 ```json
@@ -940,6 +988,8 @@ use a3s_use_office::{
     NativeOfficeInsertPosition, NativeOfficePackage, NativeOfficeRenderFormat,
     NativeOfficeReplayArtifact, NativeOfficeRgbColor, NativeOfficeTextCase,
     NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
+    NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
 };
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
@@ -952,6 +1002,22 @@ package.save().await?;
 
 let blank = NativeOfficePackage::create("blank.xlsx").await?;
 println!("created {:?}", blank.kind());
+
+let mut workbook = NativeOfficeEditor::create("styled.xlsx").await?;
+workbook.set_cell_format(
+    "/Sheet1/A1:C3",
+    NativeSpreadsheetCellFormat {
+        number_format: Some("currency".into()),
+        fill: Some(NativeSpreadsheetFill::Solid {
+            color: NativeOfficeRgbColor::new(0xFF, 0xF2, 0xCC),
+        }),
+        vertical_alignment: Some(NativeSpreadsheetVerticalAlignment::Center),
+        wrap_text: Some(true),
+        reading_order: Some(NativeSpreadsheetReadingOrder::LeftToRight),
+        ..NativeSpreadsheetCellFormat::default()
+    },
+)?;
+workbook.save().await?;
 
 let document = NativeOfficeDocument::open("report.docx").await?;
 println!("{}", document.text_view().text);

@@ -8,10 +8,8 @@ use a3s_use_office::{
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
-use super::{
-    batch_input_error, read_bounded_input, usage_error, AllowedOptions, CommandOutput,
-    NativeInputKind, ParsedArguments, MAX_BATCH_INPUT_BYTES,
-};
+use super::bounded_input::{batch_input_error, read_bounded_input, NativeInputKind};
+use super::{usage_error, AllowedOptions, CommandOutput, ParsedArguments, MAX_BATCH_INPUT_BYTES};
 
 const MAX_DUMP_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_INLINE_DUMP_OUTPUT_BYTES: usize = 1024 * 1024;

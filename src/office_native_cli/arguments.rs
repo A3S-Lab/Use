@@ -37,6 +37,14 @@ pub(super) struct ParsedArguments {
     pub font_size: Option<String>,
     pub text_color: Option<String>,
     pub alignment: Option<String>,
+    pub number_format: Option<String>,
+    pub fill: Option<String>,
+    pub vertical_alignment: Option<String>,
+    pub wrap_text: Option<String>,
+    pub text_rotation: Option<String>,
+    pub indent: Option<String>,
+    pub shrink_to_fit: Option<String>,
+    pub reading_order: Option<String>,
     pub url: Option<String>,
     pub location: Option<String>,
     pub display: Option<String>,
@@ -166,6 +174,43 @@ impl ParsedArguments {
                 }
                 "--align" | "--alignment" if allowed.alignment => {
                     set_string_option(&mut parsed.alignment, args, index, "--align")?;
+                    index += 2;
+                }
+                "--number-format" | "--numfmt" if allowed.number_format => {
+                    set_string_option(&mut parsed.number_format, args, index, "--number-format")?;
+                    index += 2;
+                }
+                "--fill" | "--fill-color" if allowed.fill => {
+                    set_string_option(&mut parsed.fill, args, index, "--fill")?;
+                    index += 2;
+                }
+                "--vertical-align" | "--valign" if allowed.vertical_alignment => {
+                    set_string_option(
+                        &mut parsed.vertical_alignment,
+                        args,
+                        index,
+                        "--vertical-align",
+                    )?;
+                    index += 2;
+                }
+                "--wrap-text" | "--wrap" if allowed.wrap_text => {
+                    set_string_option(&mut parsed.wrap_text, args, index, "--wrap-text")?;
+                    index += 2;
+                }
+                "--text-rotation" | "--rotation" if allowed.text_rotation => {
+                    set_string_option(&mut parsed.text_rotation, args, index, "--text-rotation")?;
+                    index += 2;
+                }
+                "--indent" if allowed.indent => {
+                    set_string_option(&mut parsed.indent, args, index, "--indent")?;
+                    index += 2;
+                }
+                "--shrink-to-fit" if allowed.shrink_to_fit => {
+                    set_string_option(&mut parsed.shrink_to_fit, args, index, "--shrink-to-fit")?;
+                    index += 2;
+                }
+                "--reading-order" | "--cell-direction" if allowed.reading_order => {
+                    set_string_option(&mut parsed.reading_order, args, index, "--reading-order")?;
                     index += 2;
                 }
                 "--url" | "--link" | "--href" if allowed.url => {
@@ -339,6 +384,14 @@ pub(super) struct AllowedOptions {
     font_size: bool,
     text_color: bool,
     alignment: bool,
+    number_format: bool,
+    fill: bool,
+    vertical_alignment: bool,
+    wrap_text: bool,
+    text_rotation: bool,
+    indent: bool,
+    shrink_to_fit: bool,
+    reading_order: bool,
     url: bool,
     location: bool,
     display: bool,
@@ -392,6 +445,14 @@ impl AllowedOptions {
         font_size: false,
         text_color: false,
         alignment: false,
+        number_format: false,
+        fill: false,
+        vertical_alignment: false,
+        wrap_text: false,
+        text_rotation: false,
+        indent: false,
+        shrink_to_fit: false,
+        reading_order: false,
         url: false,
         location: false,
         display: false,
@@ -442,6 +503,14 @@ impl AllowedOptions {
         font_size: true,
         text_color: true,
         alignment: true,
+        number_format: true,
+        fill: true,
+        vertical_alignment: true,
+        wrap_text: true,
+        text_rotation: true,
+        indent: true,
+        shrink_to_fit: true,
+        reading_order: true,
         url: true,
         location: true,
         display: true,

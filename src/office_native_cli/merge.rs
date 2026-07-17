@@ -3,10 +3,8 @@ use std::path::{Path, PathBuf};
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::NativeOfficeEditor;
 
-use super::{
-    input_error, input_too_large, read_bounded_input, usage_error, AllowedOptions, CommandOutput,
-    NativeInputKind, ParsedArguments,
-};
+use super::bounded_input::{input_error, input_too_large, read_bounded_input, NativeInputKind};
+use super::{usage_error, AllowedOptions, CommandOutput, ParsedArguments};
 
 pub(super) const MAX_TEMPLATE_DATA_INPUT_BYTES: u64 = 8 * 1024 * 1024;
 

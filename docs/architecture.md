@@ -122,7 +122,8 @@ documents the explicit compatibility fallback without changing authority or
 starting a provider. During the 0.1.x migration, Office blank
 creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
 XML access, bounded annotated and issue analysis, typed text formatting,
-typed scoped text replacement, typed hyperlinks, and atomic mutation batches
+typed Spreadsheet cell presentation, typed scoped text replacement, typed
+hyperlinks, and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
 same typed contract reads unsaved native MCP session state without a private
@@ -150,6 +151,16 @@ Format-specific unsupported combinations return stable errors. Word and
 Presentation patch run or paragraph properties in place. Spreadsheet clones and deduplicates
 `fonts` and `cellXfs`, retaining unknown style data and the document's strict
 or transitional OOXML dialect.
+Spreadsheet cell presentation is a second closed mutation variant instead of
+an extension to the text-format object. Number format, solid/cleared fill,
+vertical alignment, wrapping, rotation, indentation, shrink-to-fit, and reading
+order flow through the same Rust, versioned batch JSON, CLI, standard MCP, and
+Skill surfaces. The style layer reuses built-in number-format IDs, deduplicates
+custom `numFmts`, `fills`, and `cellXfs`, merges only owned alignment
+attributes, and preserves unknown style data. Content, text format, cell format,
+and hyperlink changes can share one editor transaction; validation and
+post-mutation semantic reads occur before any atomic save. This remains a typed
+Spreadsheet contract, not a generic property map or a private RPC method.
 General text replacement is a separate closed mutation variant. A compiled
 literal or Rust-regex matcher feeds the shared split-segment patch layer, which
 maps every matched byte span back to its original OOXML text owner and assigns
@@ -338,7 +349,8 @@ Implemented:
     creation, scoped cross-format literal/regex replacement with split-run and
     shared-string safety, typed cross-format underline and vertical-script
     formatting, Word/Presentation highlight, text case, and language, plus
-    format-bounded strikethrough, and typed Spreadsheet text/number/boolean/formula
+    format-bounded strikethrough, typed Spreadsheet number/fill/alignment and
+    cell-presentation formatting, and typed Spreadsheet text/number/boolean/formula
     cell and range mutation, typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment
     read/add/update/remove with format-owned anchors, authors, positions, and

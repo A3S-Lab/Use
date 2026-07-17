@@ -57,6 +57,41 @@ native for Word and Presentation runs. `doubleStrikethrough` is native only for
 Word. Unsupported format/property combinations fail the whole batch through a
 typed error.
 
+Spreadsheet cell presentation uses the separate typed `set-cell-format`
+mutation. Do not put these properties in `set-text-format`:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "set-cell-format",
+    "path": "/Sheet1/A1:C3",
+    "format": {
+      "numberFormat": "currency",
+      "fill": {
+        "kind": "solid",
+        "color": { "red": 255, "green": 242, "blue": 204 }
+      },
+      "verticalAlignment": "center",
+      "wrapText": true,
+      "textRotation": 0,
+      "indent": 1,
+      "shrinkToFit": false,
+      "readingOrder": "left-to-right"
+    }
+  }]
+}
+```
+
+Use `{ "kind": "none" }` to remove a fill. `numberFormat` accepts a validated
+Excel format code or the native aliases documented in
+[spreadsheet.md](spreadsheet.md). Rotation accepts 0–180 or 255, indentation is
+0–255, and reading order is `context`, `left-to-right`, or `right-to-left`.
+The same `office_apply_batch` call may also include content and text-format
+mutations. Unknown fields, invalid values, empty format objects, and
+non-Spreadsheet targets fail the entire in-memory batch; no change persists
+until `office_save`.
+
 General find/replace uses the typed `replace-text` mutation. Keep `mode`
 explicit and prefer `literal` for ordinary text:
 

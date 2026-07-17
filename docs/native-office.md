@@ -269,8 +269,43 @@ cover explicit off/baseline/none values, the complete portable highlight
 mapping, invalid language and format combinations, unknown style attributes,
 strict OOXML, CLI execution without OfficeCLI, and a complete standard MCP
 session. Advanced named styles, inheritance, arbitrary or scheme highlights,
-fills, borders, extended underline variants, per-script Word languages,
-character spacing, and arbitrary property maps remain outside this milestone.
+borders, extended underline variants, per-script Word languages, character
+spacing, and arbitrary property maps remain outside this milestone.
+
+Native `set-cell-format` is a separate typed Rust, batch, CLI, and standard MCP
+contract for Spreadsheet presentation properties that are not text-run
+formatting. One cell or a bounded rectangular range accepts an Excel number
+format, explicit solid RGB fill or fill removal, vertical alignment, wrap-text
+state, text rotation, indentation, shrink-to-fit state, and reading order. The
+CLI can compose these properties with one typed content write, text formatting,
+and a hyperlink in the editor's existing atomic batch; a failure rolls back
+every mutation before save. Word and Presentation reject this mutation with
+`use.office.mutation_type_unsupported` rather than ignoring its properties.
+
+Number formats accept an explicit code or the normalized aliases `general`,
+`number`, `currency`, `accounting`, `percent`, `scientific`, `text`, `date`,
+`time`, and `datetime`. Codes are limited to 255 Unicode scalar values, at most
+four semicolon-separated sections, balanced quotes and square brackets, and
+XML-safe characters. The style writer reuses built-in IDs where possible,
+deduplicates custom `numFmt` records, maintains the collection count, and
+retains unrelated records. Fill is a closed `none` or solid 24-bit RGB value;
+vertical alignment is `top`, `center`, `bottom`, `justify`, or `distributed`;
+rotation is 0 through 180 or 255 for stacked text; indentation is 0 through
+255; and reading order is contextual, left-to-right, or right-to-left.
+
+The writer clones and deduplicates `fills` and `cellXfs`, sets only the relevant
+apply flags, and merges alignment attributes without dropping unknown XF,
+alignment, or extension data. Explicit false, zero, contextual reading order,
+and fill removal are preserved as intentional changes. Strict and transitional
+OOXML dialects continue through the existing loss-preserving style path.
+Semantic reads normalize the observed properties, and HTML/SVG semantic
+previews expose them as inert `data-*` attributes. Tests cover stable JSON,
+range writes, style/number/fill deduplication, explicit clearing, unknown style
+preservation, invalid-value rollback, standard MCP schema conversion, native
+CLI and batch execution, wrong-document rejection, and an unusable OfficeCLI
+provider. Borders, gradient/pattern/theme fills, conditional formatting, named
+styles, locale-derived formats, and Excel layout fidelity remain outside this
+milestone.
 
 Native `set-hyperlink` is implemented through one typed Rust, batch, CLI, and
 standard MCP contract. Word adds an external HTTP/HTTPS/mailto relationship or
@@ -645,7 +680,8 @@ compatibility component for one deprecation cycle, then is removed.
 
 The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
-cross-format text formatting, typed inert
+cross-format text formatting, typed Spreadsheet number/fill/alignment and cell
+presentation formatting, typed inert
 hyperlinks, typed cross-format legacy comments, Spreadsheet range and
 row/column structure edits,
 worksheet rename/reorder and loss-preserving worksheet copy, safe

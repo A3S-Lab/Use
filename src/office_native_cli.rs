@@ -1,18 +1,17 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
     DocumentNode, NativeOfficeCommentPosition, NativeOfficeCommentUpdate, NativeOfficeDocument,
-    NativeOfficeEditor, NativeOfficeHighlightColor, NativeOfficeHorizontalAlignment,
-    NativeOfficeHyperlink, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextCase,
-    NativeOfficeTextFormat, NativeOfficeTextReplacement, NativeOfficeTextScript,
-    NativeOfficeUnderline, OfficeNodeType, SpreadsheetCellValue,
+    NativeOfficeEditor, NativeOfficeMutation, NativeOfficeTextReplacement, OfficeNodeType,
+    SpreadsheetCellValue,
 };
-use tokio::io::AsyncReadExt;
 
 use crate::cli::CommandOutput;
 
 mod add;
 mod arguments;
 mod arrange;
+mod bounded_input;
+mod format;
 mod merge;
 mod part;
 mod raw;
@@ -21,6 +20,7 @@ mod view;
 mod watch;
 
 use arguments::{parse_boolean_option, AllowedOptions, ParsedArguments};
+use format::{parse_cell_format, parse_hyperlink, parse_text_format};
 
 const MAX_BATCH_INPUT_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_IMAGE_INPUT_BYTES: u64 = 64 * 1024 * 1024;
@@ -40,7 +40,7 @@ const HELP: &str = concat!(
     "  a3s-use office native create <file.docx|file.xlsx|file.pptx> [--json]\n",
     "  a3s-use office native add <file> <parent> --type paragraph|table|row|cell|sheet|slide|shape|picture|hyperlink|comment [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--input <image>] [--name <name>] [--alt <text>] [--width <pixels>] [--height <pixels>] [--rows <n>] [--columns <n>] [--text <value>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
-    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--number-format <code>] [--fill <none|RRGGBB>] [--vertical-align <top|center|bottom|justify|distributed>] [--wrap-text <true|false>] [--text-rotation <0..180|255>] [--indent <0..255>] [--shrink-to-fit <true|false>] [--reading-order <context|ltr|rtl>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -208,6 +208,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     .filter(|present| *present)
     .count();
     let format = parse_text_format(&parsed)?;
+    let cell_format = parse_cell_format(&parsed)?;
     let hyperlink = parse_hyperlink(&parsed, parsed.display.as_deref())?;
     if value_count > 1 {
         return Err(usage_error(
@@ -253,6 +254,7 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
             || parsed.formula.is_some()
             || parsed.width_emu.is_some()
             || format.is_some()
+            || cell_format.is_some()
             || hyperlink.is_some()
         {
             return Err(usage_error(
@@ -279,20 +281,20 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         )?;
         "set-comment"
     } else if let Some(width_emu) = parsed.width_emu {
-        if format.is_some() || hyperlink.is_some() {
+        if format.is_some() || cell_format.is_some() || hyperlink.is_some() {
             return Err(usage_error(
-                "--width-emu cannot be combined with text formatting or hyperlink options",
+                "--width-emu cannot be combined with formatting or hyperlink options",
             ));
         }
         editor.set_table_column_width(path, width_emu)?;
         "set-table-column-width"
     } else {
-        if value_count == 0 && format.is_none() && hyperlink.is_none() {
+        if value_count == 0 && format.is_none() && cell_format.is_none() && hyperlink.is_none() {
             return Err(usage_error(
                 "office native set requires content, width, typed formatting, a hyperlink target, or comment properties",
             ));
         }
-        let mut mutations = Vec::with_capacity(3);
+        let mut mutations = Vec::with_capacity(4);
         if let Some(value) = typed_value {
             mutations.push(NativeOfficeMutation::SetCellValue {
                 path: path.clone(),
@@ -310,6 +312,12 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
                 format,
             });
         }
+        if let Some(format) = cell_format {
+            mutations.push(NativeOfficeMutation::SetCellFormat {
+                path: path.clone(),
+                format,
+            });
+        }
         if let Some(hyperlink) = hyperlink {
             mutations.push(NativeOfficeMutation::SetHyperlink {
                 path: path.clone(),
@@ -323,23 +331,39 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
         let has_hyperlink = mutations
             .iter()
             .any(|mutation| matches!(mutation, NativeOfficeMutation::SetHyperlink { .. }));
+        let has_cell_format = mutations
+            .iter()
+            .any(|mutation| matches!(mutation, NativeOfficeMutation::SetCellFormat { .. }));
         let has_content = mutations.iter().any(|mutation| {
             matches!(
                 mutation,
                 NativeOfficeMutation::SetText { .. } | NativeOfficeMutation::SetCellValue { .. }
             )
         });
-        match (has_content, has_format, has_hyperlink, mutations.first()) {
-            (false, false, true, _) => "set-hyperlink",
-            (false, true, false, _) => "set-text-format",
-            (false, true, true, _) => "set-text-format-and-hyperlink",
-            (true, false, true, _) => "set-content-and-hyperlink",
-            (true, true, true, _) => "set-content-format-and-hyperlink",
-            (true, true, false, _) => "set-content-and-text-format",
-            (true, false, false, Some(NativeOfficeMutation::SetCellValue { .. })) => {
-                "set-cell-value"
+        if has_cell_format {
+            match (has_content, has_format, has_hyperlink) {
+                (false, false, false) => "set-cell-format",
+                (false, true, false) => "set-text-and-cell-format",
+                (true, false, false) => "set-content-and-cell-format",
+                (true, true, false) => "set-content-and-text-and-cell-format",
+                (false, false, true) => "set-cell-format-and-hyperlink",
+                (false, true, true) => "set-text-and-cell-format-and-hyperlink",
+                (true, false, true) => "set-content-and-cell-format-and-hyperlink",
+                (true, true, true) => "set-content-and-text-and-cell-format-and-hyperlink",
             }
-            _ => "set-text",
+        } else {
+            match (has_content, has_format, has_hyperlink, mutations.first()) {
+                (false, false, true, _) => "set-hyperlink",
+                (false, true, false, _) => "set-text-format",
+                (false, true, true, _) => "set-text-format-and-hyperlink",
+                (true, false, true, _) => "set-content-and-hyperlink",
+                (true, true, true, _) => "set-content-format-and-hyperlink",
+                (true, true, false, _) => "set-content-and-text-format",
+                (true, false, false, Some(NativeOfficeMutation::SetCellValue { .. })) => {
+                    "set-cell-value"
+                }
+                _ => "set-text",
+            }
         }
     };
     let node = editor.snapshot()?.get(path, 0)?;
@@ -390,6 +414,14 @@ async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
         parsed.font_size.is_some(),
         parsed.text_color.is_some(),
         parsed.alignment.is_some(),
+        parsed.number_format.is_some(),
+        parsed.fill.is_some(),
+        parsed.vertical_alignment.is_some(),
+        parsed.wrap_text.is_some(),
+        parsed.text_rotation.is_some(),
+        parsed.indent.is_some(),
+        parsed.shrink_to_fit.is_some(),
+        parsed.reading_order.is_some(),
         parsed.url.is_some(),
         parsed.location.is_some(),
         parsed.display.is_some(),
@@ -446,242 +478,6 @@ async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
             "revision": editor.package().source_revision()
         }),
     ))
-}
-
-fn parse_text_format(parsed: &ParsedArguments) -> UseResult<Option<NativeOfficeTextFormat>> {
-    let format = NativeOfficeTextFormat {
-        bold: parsed
-            .bold
-            .as_deref()
-            .map(|value| parse_format_boolean("--bold", value))
-            .transpose()?,
-        italic: parsed
-            .italic
-            .as_deref()
-            .map(|value| parse_format_boolean("--italic", value))
-            .transpose()?,
-        underline: parsed
-            .underline
-            .as_deref()
-            .map(parse_underline)
-            .transpose()?,
-        script: parsed
-            .script
-            .as_deref()
-            .map(parse_text_script)
-            .transpose()?,
-        strikethrough: parsed
-            .strikethrough
-            .as_deref()
-            .map(|value| parse_format_boolean("--strikethrough", value))
-            .transpose()?,
-        double_strikethrough: parsed
-            .double_strikethrough
-            .as_deref()
-            .map(|value| parse_format_boolean("--double-strikethrough", value))
-            .transpose()?,
-        text_case: parsed
-            .text_case
-            .as_deref()
-            .map(parse_text_case)
-            .transpose()?,
-        highlight: parsed
-            .highlight
-            .as_deref()
-            .map(parse_highlight)
-            .transpose()?,
-        language: parsed.language.clone(),
-        font_family: parsed.font_family.clone(),
-        font_size_centipoints: parsed
-            .font_size
-            .as_deref()
-            .map(parse_font_size)
-            .transpose()?,
-        text_color: parsed
-            .text_color
-            .as_deref()
-            .map(parse_text_color)
-            .transpose()?,
-        alignment: parsed
-            .alignment
-            .as_deref()
-            .map(parse_alignment)
-            .transpose()?,
-    };
-    Ok((!format.is_empty()).then_some(format))
-}
-
-fn parse_hyperlink(
-    parsed: &ParsedArguments,
-    display: Option<&str>,
-) -> UseResult<Option<NativeOfficeHyperlink>> {
-    if parsed.url.is_some() && parsed.location.is_some() {
-        return Err(usage_error(
-            "native Office hyperlink accepts exactly one of --url or --location",
-        ));
-    }
-    let mut hyperlink = if let Some(uri) = &parsed.url {
-        Some(NativeOfficeHyperlink::external(uri)?)
-    } else if let Some(location) = &parsed.location {
-        Some(NativeOfficeHyperlink::internal(location)?)
-    } else {
-        None
-    };
-    if hyperlink.is_none() && (display.is_some() || parsed.tooltip.is_some()) {
-        return Err(usage_error(
-            "--display and --tooltip require --url or --location",
-        ));
-    }
-    if let Some(value) = hyperlink.as_mut() {
-        if let Some(display) = display {
-            *value = value.clone().with_display(display);
-        }
-        if let Some(tooltip) = &parsed.tooltip {
-            *value = value.clone().with_tooltip(tooltip);
-        }
-    }
-    Ok(hyperlink)
-}
-
-fn parse_format_boolean(option: &str, value: &str) -> UseResult<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(usage_error(format!(
-            "{option} requires true or false, received '{value}'"
-        ))),
-    }
-}
-
-fn parse_font_size(value: &str) -> UseResult<u32> {
-    let normalized = value
-        .strip_suffix("pt")
-        .or_else(|| value.strip_suffix("pT"))
-        .or_else(|| value.strip_suffix("Pt"))
-        .or_else(|| value.strip_suffix("PT"))
-        .unwrap_or(value);
-    let (whole, fraction) = normalized
-        .split_once('.')
-        .map_or((normalized, ""), |(whole, fraction)| (whole, fraction));
-    if whole.is_empty()
-        || !whole.bytes().all(|byte| byte.is_ascii_digit())
-        || fraction.len() > 2
-        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return Err(usage_error(format!(
-            "--font-size requires points with at most two decimals, received '{value}'"
-        )));
-    }
-    let whole = whole.parse::<u32>().map_err(|_| {
-        usage_error(format!(
-            "--font-size requires points with at most two decimals, received '{value}'"
-        ))
-    })?;
-    let fraction = match fraction.len() {
-        0 => 0,
-        1 => fraction.parse::<u32>().unwrap_or_default() * 10,
-        _ => fraction.parse::<u32>().unwrap_or_default(),
-    };
-    let centipoints = whole
-        .checked_mul(100)
-        .and_then(|value| value.checked_add(fraction))
-        .ok_or_else(|| usage_error("--font-size is too large"))?;
-    if !(100..=40_000).contains(&centipoints) {
-        return Err(usage_error("--font-size must be from 1 through 400 points"));
-    }
-    Ok(centipoints)
-}
-
-fn parse_text_color(value: &str) -> UseResult<NativeOfficeRgbColor> {
-    let value = value.strip_prefix('#').unwrap_or(value);
-    if value.len() != 6 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(usage_error(format!(
-            "--text-color requires exactly six hexadecimal RGB digits, received '{value}'"
-        )));
-    }
-    let component = |range: std::ops::Range<usize>| {
-        u8::from_str_radix(&value[range], 16).map_err(|_| {
-            usage_error(format!(
-                "--text-color requires exactly six hexadecimal RGB digits, received '{value}'"
-            ))
-        })
-    };
-    Ok(NativeOfficeRgbColor::new(
-        component(0..2)?,
-        component(2..4)?,
-        component(4..6)?,
-    ))
-}
-
-fn parse_alignment(value: &str) -> UseResult<NativeOfficeHorizontalAlignment> {
-    match value.to_ascii_lowercase().as_str() {
-        "left" => Ok(NativeOfficeHorizontalAlignment::Left),
-        "center" | "centre" => Ok(NativeOfficeHorizontalAlignment::Center),
-        "right" => Ok(NativeOfficeHorizontalAlignment::Right),
-        "justify" | "justified" => Ok(NativeOfficeHorizontalAlignment::Justify),
-        _ => Err(usage_error(format!(
-            "--align requires left, center, right, or justify, received '{value}'"
-        ))),
-    }
-}
-
-fn parse_underline(value: &str) -> UseResult<NativeOfficeUnderline> {
-    match value.to_ascii_lowercase().as_str() {
-        "none" => Ok(NativeOfficeUnderline::None),
-        "single" => Ok(NativeOfficeUnderline::Single),
-        "double" => Ok(NativeOfficeUnderline::Double),
-        _ => Err(usage_error(format!(
-            "--underline requires none, single, or double, received '{value}'"
-        ))),
-    }
-}
-
-fn parse_text_script(value: &str) -> UseResult<NativeOfficeTextScript> {
-    match value.to_ascii_lowercase().as_str() {
-        "baseline" => Ok(NativeOfficeTextScript::Baseline),
-        "superscript" => Ok(NativeOfficeTextScript::Superscript),
-        "subscript" => Ok(NativeOfficeTextScript::Subscript),
-        _ => Err(usage_error(format!(
-            "--script requires baseline, superscript, or subscript, received '{value}'"
-        ))),
-    }
-}
-
-fn parse_text_case(value: &str) -> UseResult<NativeOfficeTextCase> {
-    match value.to_ascii_lowercase().replace(['-', '_'], "").as_str() {
-        "none" => Ok(NativeOfficeTextCase::None),
-        "small" | "smallcaps" => Ok(NativeOfficeTextCase::SmallCaps),
-        "all" | "allcaps" => Ok(NativeOfficeTextCase::AllCaps),
-        _ => Err(usage_error(format!(
-            "--text-case requires none, small-caps, or all-caps, received '{value}'"
-        ))),
-    }
-}
-
-fn parse_highlight(value: &str) -> UseResult<NativeOfficeHighlightColor> {
-    let normalized = value.to_ascii_lowercase().replace(['-', '_'], "");
-    match normalized.as_str() {
-        "none" => Ok(NativeOfficeHighlightColor::None),
-        "black" => Ok(NativeOfficeHighlightColor::Black),
-        "blue" => Ok(NativeOfficeHighlightColor::Blue),
-        "cyan" => Ok(NativeOfficeHighlightColor::Cyan),
-        "darkblue" => Ok(NativeOfficeHighlightColor::DarkBlue),
-        "darkcyan" => Ok(NativeOfficeHighlightColor::DarkCyan),
-        "darkgray" | "darkgrey" => Ok(NativeOfficeHighlightColor::DarkGray),
-        "darkgreen" => Ok(NativeOfficeHighlightColor::DarkGreen),
-        "darkmagenta" => Ok(NativeOfficeHighlightColor::DarkMagenta),
-        "darkred" => Ok(NativeOfficeHighlightColor::DarkRed),
-        "darkyellow" => Ok(NativeOfficeHighlightColor::DarkYellow),
-        "green" => Ok(NativeOfficeHighlightColor::Green),
-        "lightgray" | "lightgrey" => Ok(NativeOfficeHighlightColor::LightGray),
-        "magenta" => Ok(NativeOfficeHighlightColor::Magenta),
-        "red" => Ok(NativeOfficeHighlightColor::Red),
-        "white" => Ok(NativeOfficeHighlightColor::White),
-        "yellow" => Ok(NativeOfficeHighlightColor::Yellow),
-        _ => Err(usage_error(format!(
-            "--highlight requires a portable Word highlight color or none, received '{value}'"
-        ))),
-    }
 }
 
 async fn remove(args: &[String]) -> UseResult<CommandOutput> {
@@ -953,121 +749,6 @@ async fn save_editor(editor: &mut NativeOfficeEditor, output: Option<&str>) -> U
     } else {
         editor.save().await
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum NativeInputKind {
-    Batch,
-    Image,
-    RawXml,
-    TemplateData,
-}
-
-impl NativeInputKind {
-    fn code_prefix(self) -> &'static str {
-        match self {
-            Self::Batch => "use.office.batch_input",
-            Self::Image => "use.office.image_input",
-            Self::RawXml => "use.office.raw_input",
-            Self::TemplateData => "use.office.template_data_input",
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Batch => "Native Office batch input",
-            Self::Image => "Native Office image input",
-            Self::RawXml => "Native Office raw XML input",
-            Self::TemplateData => "Native Office template data input",
-        }
-    }
-}
-
-async fn read_bounded_input(path: &str, limit: u64, kind: NativeInputKind) -> UseResult<Vec<u8>> {
-    let path_metadata = tokio::fs::symlink_metadata(path).await.map_err(|error| {
-        input_error(
-            kind,
-            "open_failed",
-            path,
-            format!("Failed to inspect {} '{path}': {error}", kind.label()),
-        )
-    })?;
-    if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
-        return Err(input_error(
-            kind,
-            "invalid",
-            path,
-            format!("{} must be a regular, non-symlink file.", kind.label()),
-        ));
-    }
-    if path_metadata.len() > limit {
-        return Err(input_too_large(kind, path, limit));
-    }
-
-    let file = tokio::fs::File::open(path).await.map_err(|error| {
-        input_error(
-            kind,
-            "open_failed",
-            path,
-            format!("Failed to open {} '{path}': {error}", kind.label()),
-        )
-    })?;
-    let metadata = file.metadata().await.map_err(|error| {
-        input_error(
-            kind,
-            "open_failed",
-            path,
-            format!("Failed to inspect {} '{path}': {error}", kind.label()),
-        )
-    })?;
-    if !metadata.is_file() {
-        return Err(input_error(
-            kind,
-            "invalid",
-            path,
-            format!("{} changed and is no longer a regular file.", kind.label()),
-        ));
-    }
-    if metadata.len() > limit {
-        return Err(input_too_large(kind, path, limit));
-    }
-
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    let mut reader = file.take(limit + 1);
-    reader.read_to_end(&mut bytes).await.map_err(|error| {
-        input_error(
-            kind,
-            "read_failed",
-            path,
-            format!("Failed to read {} '{path}': {error}", kind.label()),
-        )
-    })?;
-    if bytes.len() as u64 > limit {
-        return Err(input_too_large(kind, path, limit));
-    }
-    Ok(bytes)
-}
-
-fn input_too_large(kind: NativeInputKind, path: &str, limit: u64) -> UseError {
-    input_error(
-        kind,
-        "too_large",
-        path,
-        format!("{} exceeds the {limit}-byte limit.", kind.label()),
-    )
-}
-
-fn input_error(
-    kind: NativeInputKind,
-    suffix: &str,
-    path: &str,
-    message: impl Into<String>,
-) -> UseError {
-    UseError::new(format!("{}_{suffix}", kind.code_prefix()), message).with_detail("input", path)
-}
-
-fn batch_input_error(code: &str, path: &str, message: impl Into<String>) -> UseError {
-    UseError::new(code, message).with_detail("input", path)
 }
 
 fn format_node(node: &DocumentNode, level: usize) -> String {

@@ -1,8 +1,7 @@
 use std::path::Path;
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::UseResult;
 
-use crate::discovery::office_error;
 use crate::semantic::NativeOfficeDocument;
 use crate::{
     template_merge, DocumentKind, NativeOfficePackage, NativeOfficeReplayArtifact,
@@ -16,11 +15,17 @@ mod part;
 mod presentation;
 mod raw;
 mod spreadsheet;
+mod support;
 mod text_replace;
 mod types;
 mod word;
 
 pub(crate) use image::inspect_image;
+
+use support::{
+    editor_error, escape_attribute, node_not_found, parse_segments, prefix,
+    preserve_space_attribute, qualified, validate_mutation_path,
+};
 
 #[cfg(test)]
 mod part_tests;
@@ -34,8 +39,9 @@ pub use types::{
     NativeOfficeImageMetadata, NativeOfficeInsertPosition, NativeOfficeMutation,
     NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextCase, NativeOfficeTextFormat,
     NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextReplacementResult,
-    NativeOfficeTextScript, NativeOfficeUnderline, SpreadsheetCellValue,
-    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    NativeOfficeTextScript, NativeOfficeUnderline, NativeSpreadsheetCellFormat,
+    NativeSpreadsheetFill, NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
+    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
@@ -116,6 +122,20 @@ impl NativeOfficeEditor {
         format: NativeOfficeTextFormat,
     ) -> UseResult<()> {
         self.apply_batch(&[NativeOfficeMutation::SetTextFormat {
+            path: path.into(),
+            format,
+        }])?;
+        Ok(())
+    }
+
+    /// Applies typed Spreadsheet cell presentation properties without changing
+    /// cell contents.
+    pub fn set_cell_format(
+        &mut self,
+        path: impl Into<String>,
+        format: NativeSpreadsheetCellFormat,
+    ) -> UseResult<()> {
+        self.apply_batch(&[NativeOfficeMutation::SetCellFormat {
             path: path.into(),
             format,
         }])?;
@@ -572,6 +592,10 @@ impl NativeOfficeEditor {
                         }
                     })
                     .map(|()| path.clone()),
+                NativeOfficeMutation::SetCellFormat { path, format } => format
+                    .validate()
+                    .and_then(|()| spreadsheet::set_cell_format(&mut self.package, path, format))
+                    .map(|()| path.clone()),
                 NativeOfficeMutation::SetHyperlink { path, hyperlink } => hyperlink
                     .validate()
                     .and_then(|()| hyperlink::set(&mut self.package, path, hyperlink)),
@@ -908,105 +932,4 @@ fn swap_nodes(
         DocumentKind::Spreadsheet => spreadsheet::swap_nodes(package, path, with),
         DocumentKind::Presentation => presentation::swap_nodes(package, path, with),
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PathSegment {
-    name: String,
-    position: Option<usize>,
-}
-
-fn parse_segments(path: &str) -> UseResult<Vec<PathSegment>> {
-    validate_mutation_path(path)?;
-    path.trim_start_matches('/')
-        .split('/')
-        .map(|segment| {
-            if let Some((name, position)) = segment.split_once('[') {
-                let position = position.strip_suffix(']').ok_or_else(|| {
-                    editor_error(
-                        "use.office.path_invalid",
-                        format!("Office path segment '{segment}' is missing ']'."),
-                    )
-                })?;
-                let position = position.parse::<usize>().map_err(|_| {
-                    editor_error(
-                        "use.office.path_invalid",
-                        format!("Office mutation path segment '{segment}' is not numeric."),
-                    )
-                })?;
-                if name.is_empty() || position == 0 {
-                    return Err(editor_error(
-                        "use.office.path_invalid",
-                        "Office mutation paths use non-empty, one-based segments.",
-                    ));
-                }
-                Ok(PathSegment {
-                    name: name.to_ascii_lowercase(),
-                    position: Some(position),
-                })
-            } else if segment.is_empty() {
-                Err(editor_error(
-                    "use.office.path_invalid",
-                    "Office mutation paths cannot contain empty segments.",
-                ))
-            } else {
-                Ok(PathSegment {
-                    name: segment.to_ascii_lowercase(),
-                    position: None,
-                })
-            }
-        })
-        .collect()
-}
-
-fn validate_mutation_path(path: &str) -> UseResult<()> {
-    if path.is_empty()
-        || path == "/"
-        || !path.starts_with('/')
-        || path.len() > 4_096
-        || path.contains('\\')
-        || path.chars().any(char::is_control)
-        || path.split('/').any(|segment| matches!(segment, "." | ".."))
-    {
-        return Err(editor_error(
-            "use.office.path_invalid",
-            "Office mutation path must be absolute, bounded, and traversal-free.",
-        ));
-    }
-    Ok(())
-}
-
-fn prefix(qualified_name: &str) -> Option<&str> {
-    qualified_name.rsplit_once(':').map(|(prefix, _)| prefix)
-}
-
-fn qualified(prefix: Option<&str>, local_name: &str) -> String {
-    prefix.map_or_else(
-        || local_name.to_string(),
-        |prefix| format!("{prefix}:{local_name}"),
-    )
-}
-
-fn preserve_space_attribute(text: &str) -> &'static str {
-    if text.starts_with(char::is_whitespace) || text.ends_with(char::is_whitespace) {
-        " xml:space=\"preserve\""
-    } else {
-        ""
-    }
-}
-
-fn escape_attribute(value: &str) -> String {
-    quick_xml::escape::escape(value).into_owned()
-}
-
-fn node_not_found(path: &str) -> UseError {
-    editor_error(
-        "use.office.node_not_found",
-        format!("Office semantic path '{path}' does not exist."),
-    )
-    .with_detail("path", path)
-}
-
-fn editor_error(code: &str, message: impl Into<String>) -> UseError {
-    office_error(code, message)
 }

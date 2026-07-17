@@ -30,6 +30,14 @@ pub(super) fn set_text_format(
     style::set_text_format(package, path, format)
 }
 
+pub(super) fn set_cell_format(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    format: &super::NativeSpreadsheetCellFormat,
+) -> UseResult<()> {
+    style::set_cell_format(package, path, format)
+}
+
 pub(super) fn set_text(package: &mut NativeOfficePackage, path: &str, text: &str) -> UseResult<()> {
     set_cell_value(
         package,

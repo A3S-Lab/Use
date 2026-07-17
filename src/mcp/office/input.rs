@@ -10,6 +10,10 @@ use a3s_use_office::{
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
+mod cell_format;
+
+use cell_format::OfficeCellFormat;
+
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
@@ -625,6 +629,10 @@ pub(super) enum OfficeMutation {
         path: String,
         format: OfficeTextFormat,
     },
+    SetCellFormat {
+        path: String,
+        format: OfficeCellFormat,
+    },
     SetHyperlink {
         path: String,
         hyperlink: OfficeHyperlink,
@@ -757,6 +765,10 @@ impl OfficeMutation {
             },
             Self::SetText { path, text } => NativeOfficeMutation::SetText { path, text },
             Self::SetTextFormat { path, format } => NativeOfficeMutation::SetTextFormat {
+                path,
+                format: format.into(),
+            },
+            Self::SetCellFormat { path, format } => NativeOfficeMutation::SetCellFormat {
                 path,
                 format: format.into(),
             },

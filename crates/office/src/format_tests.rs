@@ -670,6 +670,19 @@ async fn native_spreadsheet_formatting_preserves_the_strict_ooxml_dialect() {
     }
     let mut editor = NativeOfficeEditor::from_package(package).unwrap();
     editor.set_text_format("/Sheet1/A1", rich_format()).unwrap();
+    editor
+        .set_cell_format(
+            "/Sheet1/A1",
+            super::NativeSpreadsheetCellFormat {
+                number_format: Some("scientific".into()),
+                fill: Some(super::NativeSpreadsheetFill::Solid {
+                    color: NativeOfficeRgbColor::new(0x12, 0x34, 0x56),
+                }),
+                vertical_alignment: Some(super::NativeSpreadsheetVerticalAlignment::Distributed),
+                ..super::NativeSpreadsheetCellFormat::default()
+            },
+        )
+        .unwrap();
 
     let styles =
         String::from_utf8(editor.package().part("xl/styles.xml").unwrap().to_vec()).unwrap();
@@ -683,6 +696,8 @@ async fn native_spreadsheet_formatting_preserves_the_strict_ooxml_dialect() {
     .unwrap();
     assert!(styles.contains(STRICT_SPREADSHEET));
     assert!(!styles.contains(TRANSITIONAL_SPREADSHEET));
+    assert!(styles.contains("rgb=\"FF123456\""));
+    assert!(styles.contains("vertical=\"distributed\""));
     assert!(relationships.contains(&format!("{STRICT_RELATIONSHIPS}/styles")));
 }
 

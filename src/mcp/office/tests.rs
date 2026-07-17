@@ -3,7 +3,8 @@ use a3s_use_office::{
     NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeHighlightColor,
     NativeOfficeHyperlinkTarget, NativeOfficeMutation, NativeOfficeRgbColor, NativeOfficeTextCase,
     NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextScript,
-    NativeOfficeUnderline,
+    NativeOfficeUnderline, NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
 };
 
 #[test]
@@ -151,6 +152,83 @@ fn office_batch_schema_exposes_typed_text_formatting() {
             ..
         } if language == "en-US"
     ));
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_spreadsheet_cell_formatting() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "set-cell-format",
+        "numberFormat",
+        "fill",
+        "solid",
+        "verticalAlignment",
+        "distributed",
+        "wrapText",
+        "textRotation",
+        "indent",
+        "shrinkToFit",
+        "readingOrder",
+        "right-to-left",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "report",
+        "mutations": [{
+            "operation": "set-cell-format",
+            "path": "/Sheet1/A1:C2",
+            "format": {
+                "numberFormat": "currency",
+                "fill": {
+                    "kind": "solid",
+                    "color": { "red": 18, "green": 52, "blue": 86 }
+                },
+                "verticalAlignment": "distributed",
+                "wrapText": true,
+                "textRotation": 45,
+                "indent": 2,
+                "shrinkToFit": false,
+                "readingOrder": "right-to-left"
+            }
+        }]
+    }))
+    .unwrap();
+    let mutation = input.mutations.into_iter().next().unwrap();
+    assert!(matches!(
+        mutation.into_native().unwrap(),
+        NativeOfficeMutation::SetCellFormat {
+            format: NativeSpreadsheetCellFormat {
+                number_format: Some(ref number_format),
+                fill: Some(NativeSpreadsheetFill::Solid {
+                    color: NativeOfficeRgbColor {
+                        red: 18,
+                        green: 52,
+                        blue: 86,
+                    },
+                }),
+                vertical_alignment: Some(NativeSpreadsheetVerticalAlignment::Distributed),
+                wrap_text: Some(true),
+                text_rotation: Some(45),
+                indent: Some(2),
+                shrink_to_fit: Some(false),
+                reading_order: Some(NativeSpreadsheetReadingOrder::RightToLeft),
+            },
+            ..
+        } if number_format == "currency"
+    ));
+
+    let unknown = serde_json::from_value::<OfficeBatchInput>(serde_json::json!({
+        "session": "report",
+        "mutations": [{
+            "operation": "set-cell-format",
+            "path": "/Sheet1/A1",
+            "format": { "gradient": "red-blue" }
+        }]
+    }));
+    assert!(unknown.is_err());
 }
 
 #[test]

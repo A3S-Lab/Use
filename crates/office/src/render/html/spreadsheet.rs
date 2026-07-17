@@ -65,16 +65,20 @@ fn render_cells(output: &mut BoundedOutput, sheet: &DocumentNode) -> UseResult<(
 fn render_cell(output: &mut BoundedOutput, cell: &DocumentNode) -> UseResult<()> {
     output.push("<div class=\"cell\"")?;
     write_node_attributes(output, cell)?;
-    write_optional_attribute(
-        output,
-        "data-value-type",
-        cell.format.get("valueType").map(String::as_str),
-    )?;
-    write_optional_attribute(
-        output,
-        "data-number-format",
-        cell.format.get("numberFormat").map(String::as_str),
-    )?;
+    for (attribute, key) in [
+        ("data-value-type", "valueType"),
+        ("data-number-format", "numberFormat"),
+        ("data-fill", "fill"),
+        ("data-horizontal-alignment", "alignment"),
+        ("data-vertical-alignment", "verticalAlignment"),
+        ("data-wrap-text", "wrapText"),
+        ("data-text-rotation", "textRotation"),
+        ("data-indent", "indent"),
+        ("data-shrink-to-fit", "shrinkToFit"),
+        ("data-reading-order", "readingOrder"),
+    ] {
+        write_optional_attribute(output, attribute, cell.format.get(key).map(String::as_str))?;
+    }
     output.push("><strong class=\"cell-reference\">")?;
     output.text(cell.path.rsplit('/').next().unwrap_or(&cell.path))?;
     output.push("</strong>: <span class=\"cell-value\">")?;

@@ -45,9 +45,11 @@ pub use editor::{
     NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeSwapResult, NativeOfficeTextCase,
     NativeOfficeTextFormat, NativeOfficeTextMatchMode, NativeOfficeTextReplacement,
     NativeOfficeTextReplacementResult, NativeOfficeTextScript, NativeOfficeUnderline,
-    NativeRawXmlPart, SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES,
-    MAX_NATIVE_OFFICE_REPLACEMENT_BYTES, MAX_NATIVE_OFFICE_TEXT_MATCHES,
-    MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES, MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
+    NativeRawXmlPart, NativeSpreadsheetCellFormat, NativeSpreadsheetFill,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
+    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
+    MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 pub use issues::{
@@ -260,6 +262,8 @@ mod tests {
 mod annotated_tests;
 #[cfg(test)]
 mod arrange_tests;
+#[cfg(test)]
+mod cell_format_tests;
 #[cfg(test)]
 mod comment_tests;
 #[cfg(test)]

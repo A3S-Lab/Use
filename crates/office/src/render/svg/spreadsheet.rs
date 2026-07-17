@@ -197,6 +197,14 @@ fn render_cell(
         ("data-value-type", "valueType"),
         ("data-number-format", "numberFormat"),
         ("data-formula", "formula"),
+        ("data-fill", "fill"),
+        ("data-horizontal-alignment", "alignment"),
+        ("data-vertical-alignment", "verticalAlignment"),
+        ("data-wrap-text", "wrapText"),
+        ("data-text-rotation", "textRotation"),
+        ("data-indent", "indent"),
+        ("data-shrink-to-fit", "shrinkToFit"),
+        ("data-reading-order", "readingOrder"),
     ] {
         if let Some(value) = cell.format.get(key) {
             write_data_attribute(output, name, value)?;

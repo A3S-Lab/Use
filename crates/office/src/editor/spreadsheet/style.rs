@@ -7,8 +7,8 @@ use super::{
     node_not_found, prefix, qualified, update_dimension, validate_range_size,
 };
 use crate::editor::{
-    NativeOfficeHorizontalAlignment, NativeOfficeTextFormat, NativeOfficeTextScript,
-    NativeOfficeUnderline,
+    NativeOfficeTextFormat, NativeOfficeTextScript, NativeOfficeUnderline,
+    NativeSpreadsheetCellFormat,
 };
 use crate::semantic::{NativeOfficeDocument, OfficeNodeType};
 use crate::spreadsheet_reference::{CellRange, CellReference};
@@ -28,6 +28,8 @@ const STYLES_CONTENT_TYPE: &str =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml";
 const WORKBOOK_RELATIONSHIPS: &str = "xl/_rels/workbook.xml.rels";
 const MAX_STYLE_RECORDS: usize = 65_000;
+
+mod cell_format;
 
 const FONT_PROPERTY_ORDER: &[&str] = &[
     "name",
@@ -99,6 +101,29 @@ pub(super) fn set_text_format(
             "Spreadsheet cells do not support double strikethrough, run text case, run highlight, or run language through the native text-format contract.",
         ));
     }
+    set_format(package, path, Some(format), None)
+}
+
+pub(super) fn set_cell_format(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    format: &NativeSpreadsheetCellFormat,
+) -> UseResult<()> {
+    if package.kind() != DocumentKind::Spreadsheet {
+        return Err(editor_error(
+            "use.office.mutation_type_unsupported",
+            "Native cell formatting is available only for Spreadsheet documents.",
+        ));
+    }
+    set_format(package, path, None, Some(format))
+}
+
+fn set_format(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    text_format: Option<&NativeOfficeTextFormat>,
+    cell_format: Option<&NativeSpreadsheetCellFormat>,
+) -> UseResult<()> {
     let (sheet_path, reference) = path.rsplit_once('/').ok_or_else(|| node_not_found(path))?;
     if sheet_path.is_empty() {
         return Err(editor_error(
@@ -140,11 +165,18 @@ pub(super) fn set_text_format(
     }
 
     ensure_style_collections(package)?;
+    let resolved_cell_format = cell_format::resolve(package, cell_format)?;
     let mut derived_styles = BTreeMap::new();
     for base_style in base_styles {
         derived_styles.insert(
             base_style,
-            style_index_for_format(package, base_style, format)?,
+            style_index_for_format(
+                package,
+                base_style,
+                text_format,
+                cell_format,
+                &resolved_cell_format,
+            )?,
         );
     }
 
@@ -306,10 +338,13 @@ fn normalize_collection_count(
 fn style_index_for_format(
     package: &mut NativeOfficePackage,
     base_style: usize,
-    format: &NativeOfficeTextFormat,
+    text_format: Option<&NativeOfficeTextFormat>,
+    cell_format: Option<&NativeSpreadsheetCellFormat>,
+    resolved_cell_format: &cell_format::ResolvedCellFormat,
 ) -> UseResult<usize> {
     let mut font_id = None;
-    if format.has_character_properties() {
+    if text_format.is_some_and(NativeOfficeTextFormat::has_character_properties) {
+        let format = text_format.ok_or_else(styles_invalid)?;
         let part = package.xml_part(STYLES_PART)?;
         let index = index_xml(&part)?;
         let cell_xfs = index.child("cellXfs", 1).ok_or_else(styles_invalid)?;
@@ -324,7 +359,14 @@ fn style_index_for_format(
     }
 
     let part = package.xml_part(STYLES_PART)?;
-    let candidate = derive_xf_fragment(&part, base_style, font_id, format)?;
+    let candidate = cell_format::derive_xf_fragment(
+        &part,
+        base_style,
+        font_id,
+        text_format,
+        cell_format,
+        resolved_cell_format,
+    )?;
     find_or_append_child(package, "cellXfs", "xf", candidate)
 }
 
@@ -448,47 +490,6 @@ fn remove_font_property(bytes: Vec<u8>, font_index: usize, name: &str) -> UseRes
         &part,
         vec![XmlPatch::new(property.full_range.clone(), Vec::new())],
     )
-}
-
-fn derive_xf_fragment(
-    part: &LosslessXmlPart,
-    style_index: usize,
-    font_id: Option<usize>,
-    format: &NativeOfficeTextFormat,
-) -> UseResult<Vec<u8>> {
-    let style = require_collection_child(part, "cellXfs", "xf", style_index)?;
-    let mut updates = BTreeMap::new();
-    if let Some(font_id) = font_id {
-        updates.insert("fontId".to_string(), Some(font_id.to_string()));
-        updates.insert("applyFont".to_string(), Some("1".to_string()));
-    }
-    if format.alignment.is_some() {
-        updates.insert("applyAlignment".to_string(), Some("1".to_string()));
-    }
-    let mut bytes = patch_start_tag_attributes(part, &style, &updates)?;
-    if let Some(alignment) = format.alignment {
-        let edited = LosslessXmlPart::parse(STYLES_PART.to_string(), bytes)?;
-        let style = require_collection_child(&edited, "cellXfs", "xf", style_index)?;
-        let value = alignment_name(alignment);
-        bytes = if let Some(existing) = style.child("alignment", 1) {
-            patch_start_tag_attributes(
-                &edited,
-                existing,
-                &BTreeMap::from([("horizontal".to_string(), Some(value.into()))]),
-            )?
-        } else {
-            let tag = qualified(prefix(&style.qualified_name), "alignment");
-            insert_ordered_child(
-                &edited,
-                &style,
-                format!("<{tag} horizontal=\"{value}\"/>"),
-                &["protection", "extLst"],
-            )?
-        };
-    }
-    let derived = LosslessXmlPart::parse(STYLES_PART.to_string(), bytes)?;
-    let element = require_collection_child(&derived, "cellXfs", "xf", style_index)?;
-    Ok(element_fragment(&derived, &element)?.to_vec())
 }
 
 fn find_or_append_child(
@@ -691,15 +692,6 @@ fn format_points(centipoints: u32) -> String {
         format!("{points}.{}", fraction / 10)
     } else {
         format!("{points}.{fraction:02}")
-    }
-}
-
-fn alignment_name(alignment: NativeOfficeHorizontalAlignment) -> &'static str {
-    match alignment {
-        NativeOfficeHorizontalAlignment::Left => "left",
-        NativeOfficeHorizontalAlignment::Center => "center",
-        NativeOfficeHorizontalAlignment::Right => "right",
-        NativeOfficeHorizontalAlignment::Justify => "justify",
     }
 }
 

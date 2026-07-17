@@ -4,10 +4,8 @@ use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{NativeOfficeEditor, NativeRawXmlPart};
 use tokio::io::AsyncWriteExt;
 
-use super::{
-    input_error, read_bounded_input, save_editor, usage_error, AllowedOptions, CommandOutput,
-    NativeInputKind, ParsedArguments,
-};
+use super::bounded_input::{input_error, read_bounded_input, NativeInputKind};
+use super::{save_editor, usage_error, AllowedOptions, CommandOutput, ParsedArguments};
 
 pub(super) const MAX_RAW_XML_INPUT_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_RAW_XML_INLINE_BYTES: u64 = 1024 * 1024;

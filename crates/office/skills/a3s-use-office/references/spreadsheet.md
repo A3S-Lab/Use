@@ -77,8 +77,39 @@ OOXML font and cell-style records. The native typed subset covers bold, italic,
 single strikethrough, font family, point size, RGB text color, and horizontal
 alignment. Run-only text case, highlight, language, and double strikethrough
 fail atomically with `use.office.spreadsheet_run_format_unsupported`; they are
-not silently flattened into a cell style. Number formats, fills, borders, cell
-vertical alignment, wrapping, and conditional styles remain separate work.
+not silently flattened into a cell style. Use the separate cell-presentation
+options below for non-text properties. Borders, conditional formatting, named
+styles, and gradient/pattern/theme fills remain outside the native subset.
+
+## Cell Presentation Formatting
+
+```bash
+a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --vertical-align center --wrap-text true --json
+a3s use office native set workbook.xlsx /Sheet1/D1 --number 0.125 --bold true --number-format percent --fill 0066CC --text-rotation 45 --indent 1 --shrink-to-fit false --reading-order rtl --json
+a3s use office native set workbook.xlsx /Sheet1/A1:C3 --fill none --wrap-text false --reading-order context --json
+```
+
+Cell presentation accepts one cell or a bounded rectangular range and may be
+combined atomically with one content write, text formatting, and a hyperlink.
+Use `--number-format` for an explicit Excel format code or one of `general`,
+`number`, `currency`, `accounting`, `percent`, `scientific`, `text`, `date`,
+`time`, or `datetime`. Codes may contain at most four sections and must keep
+quotes and square brackets balanced.
+
+`--fill` accepts `none` or exactly six hexadecimal RGB digits.
+`--vertical-align` accepts `top`, `center`, `bottom`, `justify`, or
+`distributed`. `--wrap-text` and `--shrink-to-fit` require an explicit boolean;
+`--text-rotation` accepts 0–180 or 255 for stacked text; `--indent` accepts
+0–255; and `--reading-order` accepts `context`, `ltr`, or `rtl`. Explicit
+`none`, `false`, zero, and `context` values clear or reset the corresponding
+property instead of being treated as omitted.
+
+The writer preserves unknown style data and deduplicates number-format, fill,
+and cell-style records. Invalid values, an empty cell-format object, a bad
+target kind, or any other mutation failure rolls back the complete in-memory
+batch before save. Verify with a targeted `get`; HTML/SVG expose observed
+values as inert `data-*` attributes but remain semantic previews rather than
+Excel layout evidence.
 
 ## Structure
 
