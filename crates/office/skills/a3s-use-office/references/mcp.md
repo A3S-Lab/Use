@@ -320,7 +320,53 @@ accepts one filter and rejects table or merge overlap. Use `office_get` with
 depth 2 or `office_query` for `autofilter`/`filtercolumn` before saving. Do not
 replace a node whose semantic `nativeMutable` flag is false. Date-group,
 color/icon, extension, unknown-content, and embedded sort-state imports fail
-closed; persisted physical row sorting is a separate contract.
+closed. Physical sorting is the separate mutation below and does not flatten an
+unsupported imported AutoFilter.
+
+Spreadsheet physical sorting uses `sort-spreadsheet-range` inside the same
+atomic `office_apply_batch` boundary:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "sort-spreadsheet-range",
+    "path": "/Sheet1/A1:D100",
+    "sort": {
+      "keys": [
+        {"column": "B", "direction": "descending"},
+        {"column": "C", "direction": "ascending"}
+      ],
+      "header": true,
+      "caseSensitive": false
+    }
+  }]
+}
+```
+
+The path may be a worksheet to auto-detect its used range or an explicit range.
+Keys are ordered unique absolute `A:XFD` columns inside that range; the first
+has highest precedence. Sorting is stable, numbers precede text, blanks remain
+last in both directions, and equal records preserve source order. A
+partial-column range moves only selected cells, leaving outside cells and
+destination row properties fixed. Requests accept 1–64 keys and at most
+100,000 cells.
+
+Use `office_get` on `/Sheet1/sort` with depth 1 or `office_query` for `sortkey`
+before saving. The returned `/Sheet1/sort` and `/Sheet1/sort/key[N]` nodes expose
+the persisted range, header/case flags, directions, and `nativeMutable`.
+Ordinary typed `remove` on `/Sheet1/sort` removes metadata only; it never
+reconstructs the old physical order. The physical change and metadata migration
+remain unsaved until `office_save`.
+
+Exact mutable table and worksheet-AutoFilter ranges, or their exact data ranges,
+are supported. Totals rows, formulas, intersecting merges, pivots, unsupported
+existing sort state, partial table/filter overlap, and non-lossless drawing
+movement fail the whole batch. Hyperlinks, comments/VML notes, validations,
+conditional formats, protected ranges, ignored errors, and supported drawing
+anchors follow the record permutation; the used dimension is recomputed and
+chart caches are cleared. See
+[spreadsheet.md](spreadsheet.md#sorting) for the complete boundary.
 
 Spreadsheet ListObject tables use the separate `add-spreadsheet-table` and
 `set-spreadsheet-table` mutations:
@@ -366,9 +412,10 @@ Use `office_get` with depth 1 or `office_query` with `table[name=Sales]` to
 inspect the unsaved table and its column children. Do not replace a node whose
 semantic `nativeMutable` flag is false. Header stamping, OPC table parts, and
 the typed table-owned AutoFilter stay inside the same editor transaction.
-Calculated columns, totals functions, date-group/color/icon filters, persisted
-sort state, custom styles, and external/query-table data remain outside the
-typed value. See
+Calculated columns, totals functions, date-group/color/icon filters,
+unsupported embedded/imported sort state, custom styles, external data, and
+query-table data remain outside the typed table value. Exact mutable table/data
+ranges without totals rows may use the separate sort mutation. See
 [spreadsheet.md](spreadsheet.md#tables) for the complete boundary.
 
 General find/replace uses the typed `replace-text` mutation. Keep `mode`

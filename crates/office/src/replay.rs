@@ -9,7 +9,8 @@ use crate::editor::{
     NativeSpreadsheetConditionalFormat, NativeSpreadsheetDataValidation,
     NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
     NativeSpreadsheetDataValidationType, NativeSpreadsheetNamedRange,
-    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetTable, SpreadsheetCellValue,
+    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetSort, NativeSpreadsheetTable,
+    SpreadsheetCellValue,
 };
 use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
 use crate::{DocumentKind, NativeOfficePackage};
@@ -349,6 +350,7 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
 
         let mut merged_ranges = Vec::new();
         let mut auto_filter = None;
+        let mut sort_state = None;
         let mut conditional_formats = Vec::new();
         let mut tables = Vec::new();
         let mut validations = Vec::new();
@@ -439,6 +441,25 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                         )?,
                     );
                 }
+                OfficeNodeType::SortState => {
+                    if sort_state.is_some() {
+                        return Err(dump_unsupported(
+                            &child.path,
+                            "Spreadsheet replay found multiple worksheet sort states.",
+                        ));
+                    }
+                    let reference = child.format.get("ref").ok_or_else(|| {
+                        dump_unsupported(&child.path, "Spreadsheet sort state has no source range.")
+                    })?;
+                    let sort =
+                        NativeSpreadsheetSort::from_semantic_node(child).map_err(|error| {
+                            dump_unsupported(
+                                &child.path,
+                                format!("Spreadsheet sort state is not replayable: {error}"),
+                            )
+                        })?;
+                    sort_state = Some((format!("{}/{}", sheet.path, reference), sort));
+                }
                 _ => {
                     return Err(dump_unsupported(
                         &child.path,
@@ -476,6 +497,9 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                 table,
             }
         }));
+        if let Some((path, sort)) = sort_state {
+            mutations.push(NativeOfficeMutation::SortSpreadsheetRange { path, sort });
+        }
     }
     let name_collections = root
         .children

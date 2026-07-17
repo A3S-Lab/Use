@@ -59,7 +59,8 @@ pub use editor::{
     NativeSpreadsheetDataValidationType, NativeSpreadsheetDifferentialFormat,
     NativeSpreadsheetDynamicFilter, NativeSpreadsheetFill, NativeSpreadsheetFilterColumn,
     NativeSpreadsheetFilterCriteria, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
-    NativeSpreadsheetReadingOrder, NativeSpreadsheetTable, NativeSpreadsheetTableColumn,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetSort, NativeSpreadsheetSortDirection,
+    NativeSpreadsheetSortKey, NativeSpreadsheetTable, NativeSpreadsheetTableColumn,
     NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
     MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
@@ -303,6 +304,9 @@ mod spreadsheet_edit_tests;
 
 #[cfg(test)]
 mod spreadsheet_filter_tests;
+
+#[cfg(test)]
+mod spreadsheet_sort_tests;
 
 #[cfg(test)]
 mod spreadsheet_table_tests;

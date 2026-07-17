@@ -49,7 +49,8 @@ pub use types::{
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
     NativeSpreadsheetDifferentialFormat, NativeSpreadsheetDynamicFilter, NativeSpreadsheetFill,
     NativeSpreadsheetFilterColumn, NativeSpreadsheetFilterCriteria, NativeSpreadsheetNamedRange,
-    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder, NativeSpreadsheetTable,
+    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder, NativeSpreadsheetSort,
+    NativeSpreadsheetSortDirection, NativeSpreadsheetSortKey, NativeSpreadsheetTable,
     NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment,
     SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
@@ -246,6 +247,18 @@ impl NativeOfficeEditor {
         self.single_path(NativeOfficeMutation::SetSpreadsheetAutoFilter {
             path: path.into(),
             filter,
+        })
+    }
+
+    /// Stably reorders physical Spreadsheet records and persists typed sort state.
+    pub fn sort_spreadsheet_range(
+        &mut self,
+        path: impl Into<String>,
+        sort: NativeSpreadsheetSort,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SortSpreadsheetRange {
+            path: path.into(),
+            sort,
         })
     }
 
@@ -764,6 +777,9 @@ impl NativeOfficeEditor {
                 }
                 NativeOfficeMutation::SetSpreadsheetAutoFilter { path, filter } => {
                     spreadsheet::set_auto_filter(&mut self.package, path, filter)
+                }
+                NativeOfficeMutation::SortSpreadsheetRange { path, sort } => {
+                    spreadsheet::sort_range(&mut self.package, path, sort)
                 }
                 NativeOfficeMutation::AddNamedRange { named_range } => {
                     spreadsheet::add_named_range(&mut self.package, named_range)

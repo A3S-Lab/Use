@@ -213,6 +213,11 @@ shifts workbook indexes, and changes surviving formulas that target the deleted
 sheet to `#REF!`. Formula and structural mutations discard stale calculation
 chains and request a full application recalculation.
 
+Native Spreadsheet physical sorting is also implemented as one stable ordered
+multi-key mutation with persisted worksheet sort state. It is deliberately
+separate from worksheet/table filter-definition lifecycle and from formula
+calculation.
+
 Native `replace-text` is implemented through one typed Rust, batch, CLI, and
 standard MCP contract. Literal mode performs case-sensitive, non-overlapping
 substring matching. Regex mode uses Rust's linear-time regular-expression
@@ -369,8 +374,8 @@ MCP lifecycle with an unusable OfficeCLI provider.
 
 This milestone is cell data-validation structure, not complete rich
 Spreadsheet or OfficeCLI parity. Table calculated columns and totals functions,
-persisted sort state and unsupported date-group/color/icon filter families,
-charts, pivot tables, slicers,
+unsupported imported sort-state variants and date-group/color/icon filter
+families, charts, pivot tables, slicers,
 sparklines, formula evaluation, CSV/TSV import, and Excel layout fidelity remain
 separate work.
 
@@ -529,10 +534,47 @@ SpreadsheetML and fails closed for unknown attributes or comments, extensions,
 date-group items, color/icon filters, and embedded sort state. Those imported
 forms remain readable but are not flattened into the supported type.
 
-This milestone owns filter definitions, not physical row rearrangement or
-persisted sort-state authoring. A future sort contract must define key order,
-header/totals behavior, formula/reference effects, stable-row semantics, and
-rollback independently.
+Native `sort-spreadsheet-range` is the separate closed typed Rust, versioned
+batch/replay, CLI, and standard MCP contract for physical row rearrangement and
+worksheet SpreadsheetML `sortState` authoring. The CLI is
+`office native sort <file.xlsx> </Sheet|/Sheet/A1:D100>` with one to 64 ordered
+`--key <A:XFD[:asc|desc]>` values, explicit `--header true|false`, explicit
+`--case-sensitive true|false`, and optional `--output`. A worksheet path
+auto-detects the smallest used cell rectangle; an explicit range is normalized
+and limited to 100,000 cells. Key columns are absolute, unique, and inside the
+selected range. The first key has highest precedence.
+
+Sorting is stable: records equal across all keys keep source order. Numeric and
+boolean values sort numerically before text, text is case-insensitive by
+default, and blanks remain last for ascending and descending keys. The header
+row stays fixed only when requested. An explicit partial-column range moves
+only the selected cell fragments; cells outside the range and destination row
+properties remain fixed. Sparse source records can materialize sparse
+destination rows while retaining prefixed strict/transitional SpreadsheetML.
+
+Semantic reads expose `/Sheet/sort` plus ordered `/Sheet/sort/key[N]` children,
+the normalized range, header/case flags, key directions, and `nativeMutable`.
+An ordinary typed `remove` of `/Sheet/sort` deletes only persisted sort
+metadata and never reconstructs the old row order. Supported existing simple
+sort state may be replaced or removed; imported column sorts, extended
+conditions, unknown attributes/children, inconsistent condition ranges, and
+other non-lossless state remain readable with `nativeMutable=false` and block
+mutation.
+
+The sort may cover an exact mutable ListObject or worksheet-AutoFilter range
+with matching header behavior, or its exact data range. Partial intersection
+fails closed, and a table with a totals row is rejected. Cell/table formulas
+anywhere in the workbook, an intersecting merge, an owned pivot table, or a
+drawing anchor that cannot follow one record losslessly also rejects the whole
+atomic mutation. Hyperlinks, classic/threaded comment refs, VML note anchors,
+data validations, conditional formats, protected ranges, ignored errors, and
+supported one-/two-cell drawing anchors follow records. Chart caches are
+cleared, the worksheet used dimension is recomputed, and the workbook is marked
+for recalculation. Tests cover ordering and case behavior, sparse and
+partial-column movement, strict/prefixed XML,
+metadata lifecycle, exact table/AutoFilter ranges, rollback and all fail-closed
+boundaries, drawing/comment/format metadata movement, replay, CLI, and a full
+standard MCP unsaved/save/close/reopen lifecycle.
 
 Native `add-spreadsheet-table` and `set-spreadsheet-table` form a separate
 closed typed Rust, versioned batch, CLI, and standard MCP contract for
@@ -588,9 +630,11 @@ lifecycle and atomic batch, and a complete standard MCP unsaved/save/reopen/
 remove lifecycle with an unusable OfficeCLI provider.
 
 This milestone does not own calculated-column formulas, totals-row labels or
-functions, date-group/color/icon filters, persisted sort state, custom table
-styles, query tables, external data, slicers, or pivot-table integration. Those
-remain separate closed contracts rather than generic table properties.
+functions, date-group/color/icon filters, unsupported embedded/imported sort
+state, custom table styles, query tables, external data, slicers, or pivot-table
+integration. Those remain separate closed contracts rather than generic table
+properties. Exact mutable tables without totals rows can be physically sorted
+through the separate sort contract.
 
 Native `merge-cells` and `unmerge-cells` form a separate typed Rust, batch,
 CLI, and standard MCP contract. The CLI projects them as
@@ -888,9 +932,9 @@ same atomic batch rollback and semantic post-validation as add/set/remove.
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
 tables, Spreadsheet worksheets, typed defined names, typed cells, typed
-worksheet/table AutoFilters, ListObject tables, merged ranges, typed
-data-validation rules, and canonical typed conditional-format rules without
-cached formula results, and
+worksheet/table AutoFilters, ListObject tables, stable physical row order with
+supported typed sort state, merged ranges, typed data-validation rules, and
+canonical typed conditional-format rules without cached formula results, and
 Presentation slides with plain one-run text
 shapes and canonical basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
@@ -1005,7 +1049,8 @@ The `0.1.x` CLI exposes native blank creation, reads, typed
 add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
 cross-format text formatting, typed Spreadsheet number/fill/border/alignment
 and cell-presentation formatting, exact Spreadsheet merged-cell editing, typed
-Spreadsheet worksheet/table AutoFilters, data-validation,
+Spreadsheet physical row sorting with persisted sort state, Spreadsheet
+worksheet/table AutoFilters, data-validation,
 conditional-formatting, and scoped defined-name editing, typed ListObject table
 lifecycle, inert hyperlinks,
 typed cross-format

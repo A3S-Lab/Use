@@ -17,6 +17,7 @@ mod auto_filter;
 mod conditional_formatting;
 mod data_validation;
 mod named_range;
+mod sort_state;
 mod style;
 mod table;
 
@@ -432,6 +433,9 @@ fn read_worksheet(
             .format
             .insert("autoFilterRef".into(), filter.format["ref"].clone());
         sheet_node.children.push(filter);
+    }
+    if let Some(sort) = sort_state::read(&worksheet, part_name, &sheet_path)? {
+        sheet_node.children.push(sort);
     }
     let tables = table::read(package, opc, &worksheet, part_name, &sheet_path)?;
     if !tables.is_empty() {

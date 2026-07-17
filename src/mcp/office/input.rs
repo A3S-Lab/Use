@@ -16,11 +16,13 @@ mod cell_format;
 mod conditional_formatting;
 mod data_validation;
 mod spreadsheet_filter;
+mod spreadsheet_sort;
 
 use cell_format::OfficeCellFormat;
 use conditional_formatting::OfficeConditionalFormat;
 use data_validation::OfficeDataValidation;
 use spreadsheet_filter::{OfficeSpreadsheetAutoFilter, OfficeSpreadsheetFilterColumn};
+use spreadsheet_sort::OfficeSpreadsheetSort;
 
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -803,6 +805,11 @@ pub(super) enum OfficeMutation {
         path: String,
         filter: OfficeSpreadsheetAutoFilter,
     },
+    SortSpreadsheetRange {
+        /// Worksheet path or explicit range such as `/Sheet1` or `/Sheet1/A1:D100`.
+        path: String,
+        sort: OfficeSpreadsheetSort,
+    },
     AddNamedRange {
         #[serde(rename = "namedRange")]
         named_range: OfficeNamedRange,
@@ -1001,6 +1008,12 @@ impl OfficeMutation {
                 NativeOfficeMutation::SetSpreadsheetAutoFilter {
                     path,
                     filter: filter.into(),
+                }
+            }
+            Self::SortSpreadsheetRange { path, sort } => {
+                NativeOfficeMutation::SortSpreadsheetRange {
+                    path,
+                    sort: sort.into(),
                 }
             }
             Self::AddNamedRange { named_range } => NativeOfficeMutation::AddNamedRange {

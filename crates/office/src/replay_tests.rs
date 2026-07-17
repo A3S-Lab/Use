@@ -6,8 +6,8 @@ use crate::{
     NativeSpreadsheetConditionalFormatRule, NativeSpreadsheetConditionalFormatThreshold,
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationType,
     NativeSpreadsheetDifferentialFormat, NativeSpreadsheetNamedRange,
-    NativeSpreadsheetNamedRangeScope, SpreadsheetCellValue, NATIVE_OFFICE_REPLAY_FORMAT,
-    NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
+    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetSort, NativeSpreadsheetSortKey,
+    SpreadsheetCellValue, NATIVE_OFFICE_REPLAY_FORMAT, NATIVE_OFFICE_REPLAY_SCHEMA_VERSION,
 };
 
 async fn assert_exact_replay(
@@ -161,6 +161,56 @@ async fn spreadsheet_dump_replays_sheets_and_typed_cells_exactly() {
             if named_range.name == "Status"
                 && named_range.scope
                     == NativeSpreadsheetNamedRangeScope::worksheet("Summary")
+    )));
+    assert_exact_replay(&source, &artifact, &target_path).await;
+}
+
+#[tokio::test]
+async fn spreadsheet_dump_replays_physical_sort_and_sort_state_exactly() {
+    let temp = tempfile::tempdir().unwrap();
+    let source_path = temp.path().join("sorted-source.xlsx");
+    let target_path = temp.path().join("sorted-target.xlsx");
+    let mut source = NativeOfficeEditor::create(&source_path).await.unwrap();
+    for (path, value) in [
+        ("/Sheet1/A1", "Name"),
+        ("/Sheet1/B1", "Rank"),
+        ("/Sheet1/A2", "Beta"),
+        ("/Sheet1/A3", "Alpha"),
+    ] {
+        source
+            .set_cell_value(
+                path,
+                SpreadsheetCellValue::Text {
+                    value: value.into(),
+                },
+            )
+            .unwrap();
+    }
+    source
+        .set_cell_value(
+            "/Sheet1/B2",
+            SpreadsheetCellValue::Number { value: "2".into() },
+        )
+        .unwrap();
+    source
+        .set_cell_value(
+            "/Sheet1/B3",
+            SpreadsheetCellValue::Number { value: "1".into() },
+        )
+        .unwrap();
+    source
+        .sort_spreadsheet_range(
+            "/Sheet1/A1:B3",
+            NativeSpreadsheetSort::new(vec![NativeSpreadsheetSortKey::ascending("B")])
+                .with_header(true),
+        )
+        .unwrap();
+
+    let artifact = NativeOfficeReplayArtifact::dump(&source.snapshot().unwrap(), "/").unwrap();
+    assert!(artifact.mutations.iter().any(|mutation| matches!(
+        mutation,
+        crate::NativeOfficeMutation::SortSpreadsheetRange { path, sort }
+            if path == "/Sheet1/A1:B3" && sort.header
     )));
     assert_exact_replay(&source, &artifact, &target_path).await;
 }

@@ -109,7 +109,16 @@ available.
   `--filter` is one strict JSON object containing a unique zero-based `column`
   and closed `criteria`. Repeated values replace the complete criterion list;
   use `--clear-filters` explicitly to clear it. Do not use raw XML to flatten
-  imported date groups, color/icon filters, extensions, or sort state.
+  imported date groups, color/icon filters, extensions, or embedded sort state.
+- Sort Spreadsheet records only with `office native sort`. Use `/Sheet` to
+  auto-detect the used range or an explicit `/Sheet/A1:D100`; supply ordered
+  absolute `--key` columns and explicit header/case flags. Equal keys are
+  stable, numbers precede text, and blanks stay last. A partial-column range
+  moves only those cells, not whole rows. Verify `/Sheet/sort` and its key
+  children after sorting. Removing `/Sheet/sort` clears metadata only and does
+  not restore the old physical order. Do not bypass failures for formulas,
+  totals rows, intersecting merges, pivots, unknown sort state, partial
+  table/AutoFilter overlap, or non-lossless drawings with raw XML.
 - Treat Spreadsheet ListObject tables as owned worksheet structures. Query
   `table` first and use the returned `/Sheet/table[N]` path for set/remove. The
   final range includes enabled header and totals rows; provide exactly one
@@ -117,7 +126,9 @@ available.
   not overlap another table, a merge, or a worksheet AutoFilter, and do not use
   raw XML to bypass `nativeMutable=false` or an unknown-content/relationship
   error. Table criteria use the same typed filter-column values as worksheet
-  AutoFilters; persisted sort state is not yet native.
+  AutoFilters. Exact mutable table or data ranges without totals rows can use
+  the separate physical sort contract; unsupported embedded/imported sort
+  state remains non-mutable.
 - Keep the default OfficeCLI compatibility route separate from the native
   engine. Do not depend on OfficeCLI's private resident protocol.
 
@@ -143,7 +154,10 @@ worksheet-local Spreadsheet defined names with stable scoped paths, typed
 add/set/remove, semantic readback, and exact replay. It owns typed Spreadsheet
 worksheet and table AutoFilters with closed value, comparison, top/bottom, and
 dynamic criteria, stable filter paths, add/set/remove, and exact replay. It
-owns typed Spreadsheet ListObject names, ranges, column identities,
+owns stable ordered multi-key Spreadsheet physical sorting over an explicit or
+auto-detected used range, persisted `/Sheet/sort` and `/Sheet/sort/key[N]`
+state, record-bound metadata movement, metadata-only removal, and exact replay.
+It owns typed Spreadsheet ListObject names, ranges, column identities,
 header/totals state, filter criteria, built-in styles, stable table/column
 paths, add/set/remove, and exact replay. It also
 owns template merge, constrained XML access,
@@ -155,9 +169,10 @@ clicks or internal jumps to existing slides. Remaining boundaries include
 modern threaded comments, replies/resolution, writable comment dates,
 rich comment bodies, Word header/footer comment anchors,
 gradient/pattern/theme fills, advanced x14 conditional-format visuals, named styles, complete formula
-calculation, table calculated columns/totals functions, date-group/color/icon
-filters and persisted sort state, custom table styles, query tables/external
-data, advanced charts, pivots,
+calculation, formula-bearing or table-totals sorting, table calculated
+columns/totals functions, date-group/color/icon filters and unsupported
+embedded/imported sort-state variants, custom table styles, query
+tables/external data, advanced charts, pivots,
 and media,
 interactive preview editing/annotations, and full Office layout fidelity. Fail
 closed or use the explicit compatibility route rather than inventing

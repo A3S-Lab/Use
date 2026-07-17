@@ -69,6 +69,7 @@ a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --underline 
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color C9B458 --vertical-align center --wrap-text true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
+a3s use office native sort workbook.xlsx /Sheet1/A1:D100 --key B:desc --key C:asc --header true --case-sensitive false --json
 a3s use office native add workbook.xlsx /Sheet1 --type table --name Sales --range F1:H4 --table-column Name --table-column Qty --table-column Price --style medium:4 --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
@@ -113,9 +114,10 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   selector, semantic read, transactional add/set/remove/move/copy/swap,
   scoped cross-format literal/regex replacement, typed text formatting,
   Spreadsheet number/fill/border/alignment formatting, exact merged-cell
-  editing, typed worksheet and table AutoFilters, typed data validation and
-  conditional formatting, scoped defined names, native Spreadsheet ListObject
-  table lifecycle, inert hyperlinks, and
+  editing, stable multi-key physical row sorting with persisted sort state,
+  typed worksheet and table AutoFilters, typed data validation and conditional
+  formatting, scoped defined names, native Spreadsheet ListObject table
+  lifecycle, inert hyperlinks, and
   legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
@@ -375,9 +377,33 @@ families. Worksheet lifecycle uses stable `/Sheet/autofilter` and
 replay, and the Office Skill use the same value. The strict/transitional writer
 sorts columns deterministically, escapes wildcard literals, rejects duplicate
 or out-of-range columns, protects table/merge geometry, and fails closed for
-imported date-group items, color/icon filters, persisted sort state,
-extensions, comments, or unknown attributes. Persisted row sorting remains a
-separate contract.
+imported date-group items, color/icon filters, embedded sort state,
+extensions, comments, or unknown attributes. Physical row sorting is owned by
+the separate typed sort contract below; an imported AutoFilter with unsupported
+embedded sort state remains readable but non-mutable.
+
+Native Spreadsheet sorting physically reorders a worksheet range through one
+stable, ordered multi-key contract. A worksheet path auto-detects its used
+range; callers may instead supply `/Sheet/A1:D100`. Keys are absolute `A:XFD`
+columns inside that range, the first selected row stays fixed only when
+`header=true`, text comparison is case-insensitive by default, numbers sort
+before text, blanks always remain last, and records equal on every key retain
+their source order. Partial-column sorts move only selected cells; cells outside
+the range and destination row properties stay fixed. The editor persists a
+worksheet SpreadsheetML `sortState`, exposed as `/Sheet/sort` and ordered
+`/Sheet/sort/key[N]` nodes. Removing `/Sheet/sort` deletes metadata only and
+never reverses the physical row order.
+
+Rust, versioned batch/replay, CLI, standard MCP, and the Office Skill share the
+same sort value. Sorts accept 1–64 unique keys and at most 100,000 selected
+cells. Exact mutable ListObject or worksheet-AutoFilter ranges, or their exact
+data ranges, are supported. Table totals rows, formulas anywhere in the
+workbook, intersecting merges, pivots, unknown existing sort state, and drawing
+anchors that cannot follow one record losslessly fail closed. Hyperlinks,
+comments/VML notes, data validation, conditional formatting, protected ranges,
+ignored errors, and supported drawing anchors move with their records; chart
+caches are cleared and the worksheet used dimension is recomputed after the
+physical change.
 
 Native Spreadsheet tables use a separate closed ListObject contract. Add and
 set own the workbook-wide `name`, optional distinct `displayName`, final
@@ -394,9 +420,10 @@ Semantic reads expose stable `/Sheet/table[N]` and child column paths. Rust,
 versioned batch, CLI, standard MCP, exact replay, and the Office Skill share the
 same value while strict/transitional SpreadsheetML and supported unknown root
 or style data are retained. Imported calculated columns, totals functions,
-date-group/color/icon filters, persisted sort state, custom styles, query
-tables, and external data remain explicit gaps and fail closed when a lossless
-typed mutation cannot be proved.
+date-group/color/icon filters, unsupported embedded sort state, custom styles,
+query tables, and external data remain explicit gaps and fail closed when a
+lossless typed mutation cannot be proved. Exact mutable table and data ranges
+can still be physically sorted through the separate sort contract.
 
 The engine also creates, updates, reads,
 queries, and removes typed hyperlinks. Word owns
@@ -467,7 +494,8 @@ Browser contract.
 
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
-rich-text, exact Spreadsheet merged-cell, worksheet/table AutoFilter,
+rich-text, exact Spreadsheet merged-cell, stable Spreadsheet physical sorting
+with persisted sort state, worksheet/table AutoFilter,
 data-validation, conditional-format, defined-name, ListObject table, hyperlink,
 and legacy-comment
 operations, constrained raw XML access,
@@ -572,6 +600,13 @@ a3s use office native get workbook.xlsx /Sheet1/autofilter --depth 2 --json
 a3s use office native set workbook.xlsx /Sheet1/autofilter --range B2:D30 --filter '{"column":1,"criteria":{"type":"dynamic","kind":"this-month"}}' --json
 a3s use office native set workbook.xlsx /Sheet1/autofilter --clear-filters --json
 a3s use office native remove workbook.xlsx /Sheet1/autofilter --json
+
+# Physically sort selected records by ordered absolute columns. A worksheet
+# path auto-detects its used range. Remove the resulting semantic sort node to
+# clear only persisted metadata; the physical row order remains unchanged.
+a3s use office native sort workbook.xlsx /Sheet1/A1:D100 --key B:desc --key C:asc --header true --case-sensitive false --json
+a3s use office native get workbook.xlsx /Sheet1/sort --depth 1 --json
+a3s use office native remove workbook.xlsx /Sheet1/sort --json
 
 # Add, inspect, replace, and remove one native Spreadsheet ListObject table.
 # The range is final and includes enabled header/totals rows. Repeat
@@ -816,7 +851,7 @@ and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `set-data-validation`, `add-conditional-format`, `set-conditional-format`,
 `add-named-range`, `set-named-range`, `add-spreadsheet-table`,
 `set-spreadsheet-table`, `add-spreadsheet-auto-filter`,
-`set-spreadsheet-auto-filter`, `merge-cells`,
+`set-spreadsheet-auto-filter`, `sort-spreadsheet-range`, `merge-cells`,
 `unmerge-cells`,
 `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
@@ -937,8 +972,45 @@ Use `set-spreadsheet-auto-filter` with `/Sheet/autofilter` and a complete
 range, replaces all criteria when one or more `--filter` objects are supplied,
 and uses `--clear-filters` for an explicit empty criterion list. Column offsets
 are zero-based and unique inside the range. Imported date-group/color/icon
-filters, sort state, extensions, and unknown content are readable but
-`nativeMutable=false`; persisted row sorting is not part of this contract.
+filters, embedded sort state, extensions, and unknown content are readable but
+`nativeMutable=false`. Use the separate physical sort mutation for supported
+ranges; it does not flatten an unsupported imported AutoFilter.
+
+A Spreadsheet physical sort mutation owns an ordered, stable multi-key value:
+
+```json
+{
+  "operation": "sort-spreadsheet-range",
+  "path": "/Sheet1/A1:D100",
+  "sort": {
+    "keys": [
+      {"column": "B", "direction": "descending"},
+      {"column": "C", "direction": "ascending"}
+    ],
+    "header": true,
+    "caseSensitive": false
+  }
+}
+```
+
+The path may instead be `/Sheet1` to auto-detect the used range. Keys are
+unique absolute `A:XFD` columns within that range; 1–64 keys and at most
+100,000 selected cells are accepted. Numbers precede text, blanks remain last
+in both directions, and rows equal across every key retain source order. A
+partial-column range moves only its cells, preserving cells outside the range
+and destination row properties. Exact mutable table and worksheet-AutoFilter
+ranges, or their exact data ranges, are supported. Formulas, totals rows,
+intersecting merges, pivots, unknown sort state, and non-lossless drawing
+movement fail the whole batch before save.
+
+Read persisted metadata at `/Sheet1/sort` and ordered
+`/Sheet1/sort/key[N]`. An ordinary `remove` of `/Sheet1/sort` removes only the
+SpreadsheetML sort state; it does not restore the prior physical row order.
+Supported record-bound hyperlinks, comments/VML notes, validations,
+conditional formatting, protected ranges, ignored errors, and drawing anchors
+follow the row permutation. The worksheet used dimension is recomputed and
+chart caches are cleared. Exact replay emits the same
+`sort-spreadsheet-range` mutation.
 
 A Spreadsheet table mutation uses one complete ListObject value. CLI `set`
 preserves omitted fields; batch, Rust, and standard MCP replacements supply the
@@ -1034,8 +1106,9 @@ The first dump scope is the complete document (`/`). It accepts only content
 that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
 typed defined names, typed cells, typed worksheet/table AutoFilters, typed
-ListObject tables, merged ranges, typed data-validation rules, and canonical
-typed conditional-format rules without cached formula results;
+ListObject tables, stable physical row order with supported typed sort state,
+merged ranges, typed data-validation rules, and canonical typed
+conditional-format rules without cached formula results;
 plus Presentation slides with plain one-run text shapes and canonical basic
 tables.
 Headers, notes,
@@ -1339,7 +1412,8 @@ use a3s_use_office::{
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
     NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
-    NativeSpreadsheetReadingOrder, NativeSpreadsheetTable,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetSort,
+    NativeSpreadsheetSortKey, NativeSpreadsheetTable,
     NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment,
 };
 
@@ -1405,6 +1479,15 @@ let table_path = workbook.add_spreadsheet_table(
         .with_style(NativeSpreadsheetTableStyle::Medium { number: 4 }),
 )?;
 println!("created {table_path}");
+let sort_path = workbook.sort_spreadsheet_range(
+    "/Sheet1/G1:I4",
+    NativeSpreadsheetSort::new(vec![
+        NativeSpreadsheetSortKey::descending("H"),
+        NativeSpreadsheetSortKey::ascending("G"),
+    ])
+    .with_header(true),
+)?;
+println!("sorted records at {sort_path}");
 workbook.save().await?;
 
 let document = NativeOfficeDocument::open("report.docx").await?;

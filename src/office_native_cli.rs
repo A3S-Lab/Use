@@ -20,6 +20,7 @@ mod part;
 mod raw;
 mod replay;
 mod spreadsheet_filter;
+mod spreadsheet_sort;
 mod spreadsheet_table;
 mod view;
 mod watch;
@@ -56,6 +57,7 @@ const HELP: &str = concat!(
     "  a3s-use office native set <file.xlsx> <namedrange-selector> [--name <name>] [--ref <expression>] [--scope workbook|worksheet:workbook|<sheet>] [--comment <text|none>] [--volatile <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <sheet/autofilter> [--range <A1-range>] [--filter <strict-json-column> ...|--clear-filters] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <sheet/table[N]> [--name <name>] [--display-name <name|none>] [--range <A1-range>] [--table-column <name> ...] [--filter <strict-json-column> ...|--clear-filters] [--header-row <true|false>] [--totals-row <true|false>] [--style none|light:<1-21>|medium:<1-28>|dark:<1-11>] [--show-first-column <true|false>] [--show-last-column <true|false>] [--show-row-stripes <true|false>] [--show-column-stripes <true|false>] [--output <file>] [--json]\n",
+    "  a3s-use office native sort <file.xlsx> </Sheet|/Sheet/A1:D100> --key <A:XFD[:asc|desc]> [--key <column[:direction]> ...] [--header <true|false>] [--case-sensitive <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -84,6 +86,7 @@ pub async fn run(args: &[String]) -> UseResult<CommandOutput> {
         Some("add") => add::run(args).await,
         Some("add-part") => part::add(args).await,
         Some("set") => set(args).await,
+        Some("sort") => spreadsheet_sort::run(args).await,
         Some("remove") => remove(args).await,
         Some("move") => arrange::move_node(args).await,
         Some("copy") => arrange::copy_node(args).await,
@@ -107,7 +110,7 @@ fn help() -> CommandOutput {
         HELP,
         serde_json::json!({
             "commands": [
-                "get", "query", "view", "watch", "raw", "raw-set", "dump", "merge", "validate", "create", "add", "add-part", "set", "remove", "move", "copy", "swap",
+                "get", "query", "view", "watch", "raw", "raw-set", "dump", "merge", "validate", "create", "add", "add-part", "set", "sort", "remove", "move", "copy", "swap",
                 "insert-rows", "delete-rows", "insert-columns", "delete-columns",
                 "rename-sheet", "move-sheet", "copy-sheet", "batch"
             ],

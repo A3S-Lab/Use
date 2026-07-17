@@ -20,6 +20,7 @@ mod data_validation;
 mod filter_xml;
 mod merge;
 mod named_range;
+mod sort;
 mod structure;
 mod style;
 mod table;
@@ -43,6 +44,14 @@ pub(super) fn set_auto_filter(
     filter: &super::NativeSpreadsheetAutoFilter,
 ) -> UseResult<String> {
     auto_filter::set(package, path, filter)
+}
+
+pub(super) fn sort_range(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    value: &super::NativeSpreadsheetSort,
+) -> UseResult<String> {
+    sort::sort(package, path, value)
 }
 
 pub(super) fn add_conditional_format(
@@ -192,7 +201,9 @@ pub(super) fn set_cell_value(
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
-    if auto_filter::is_path(path) {
+    if sort::is_path(path) {
+        sort::remove(package, path)
+    } else if auto_filter::is_path(path) {
         auto_filter::remove(package, path)
     } else if table::is_path(path) {
         table::remove(package, path)

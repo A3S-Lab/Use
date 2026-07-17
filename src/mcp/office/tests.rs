@@ -7,7 +7,7 @@ use a3s_use_office::{
     NativeSpreadsheetBorderStyle, NativeSpreadsheetCellFormat,
     NativeSpreadsheetConditionalFormatOperator, NativeSpreadsheetConditionalFormatRule,
     NativeSpreadsheetFill, NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder,
-    NativeSpreadsheetVerticalAlignment,
+    NativeSpreadsheetSortDirection, NativeSpreadsheetVerticalAlignment,
 };
 
 #[test]
@@ -284,6 +284,59 @@ fn office_batch_schema_exposes_typed_spreadsheet_merges() {
         input.mutations[1].clone().into_native().unwrap(),
         NativeOfficeMutation::UnmergeCells { ref path } if path == "/Sheet1/C1:D2"
     ));
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_spreadsheet_sorting() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "sort-spreadsheet-range",
+        "caseSensitive",
+        "ascending",
+        "descending",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "sort-spreadsheet-range",
+            "path": "/Sheet1/A1:D100",
+            "sort": {
+                "keys": [
+                    {"column": "B", "direction": "descending"},
+                    {"column": "C"}
+                ],
+                "header": true,
+                "caseSensitive": false
+            }
+        }]
+    }))
+    .unwrap();
+    assert!(matches!(
+        input.mutations[0].clone().into_native().unwrap(),
+        NativeOfficeMutation::SortSpreadsheetRange { ref path, ref sort }
+            if path == "/Sheet1/A1:D100"
+                && sort.header
+                && !sort.case_sensitive
+                && sort.keys[0].direction == NativeSpreadsheetSortDirection::Descending
+                && sort.keys[1].direction == NativeSpreadsheetSortDirection::Ascending
+    ));
+
+    let unknown = serde_json::from_value::<OfficeBatchInput>(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "sort-spreadsheet-range",
+            "path": "/Sheet1/A1:D100",
+            "sort": {
+                "keys": [{"column": "B", "direction": "random"}],
+                "locale": "en-US"
+            }
+        }]
+    }));
+    assert!(unknown.is_err());
 }
 
 #[test]

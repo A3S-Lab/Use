@@ -11,6 +11,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 - [Cell Presentation Formatting](#cell-presentation-formatting)
 - [Merged Cells](#merged-cells)
 - [AutoFilters](#autofilters)
+- [Sorting](#sorting)
 - [Tables](#tables)
 - [Data Validation](#data-validation)
 - [Conditional Formatting](#conditional-formatting)
@@ -256,8 +257,92 @@ children, normalized `ref`, criterion metadata, and `nativeMutable`. Table
 AutoFilters use `/SheetName/table[N]/autofilter` and the identical column
 value. Do not mutate a node with `nativeMutable=false`. Imported date-group,
 color/icon, extension, unknown-content, and sort-state forms fail closed.
-Filter definitions are native; persisted physical row sorting remains a
-separate capability.
+Filter definitions and physical row sorting are separate typed capabilities;
+the sort workflow below does not flatten an unsupported imported AutoFilter.
+
+## Sorting
+
+Use the dedicated command to physically reorder Spreadsheet records by one or
+more ordered keys:
+
+```bash
+a3s use office native sort workbook.xlsx /Sheet1/A1:D100 \
+  --key B:desc \
+  --key C:asc \
+  --header true \
+  --case-sensitive false \
+  --json
+
+# A worksheet path auto-detects the smallest used cell rectangle.
+a3s use office native sort workbook.xlsx /Sheet1 \
+  --key B:ascending \
+  --header true \
+  --case-sensitive false \
+  --output sorted.xlsx \
+  --json
+```
+
+Each repeated key is an absolute column from `A` through `XFD`, optionally
+followed by `asc`/`ascending` or `desc`/`descending`. Direction defaults to
+ascending. Keys must be unique and lie inside the selected range; the first key
+has highest precedence. One request accepts 1–64 keys and at most 100,000
+selected cells. `header` defaults to false and keeps exactly the first selected
+row fixed when true. `caseSensitive` defaults to false.
+
+Sorting is stable. Numeric and boolean cell values compare numerically before
+text, blanks stay last for both ascending and descending keys, and records equal
+on all keys retain their source order. Case-insensitive comparison treats text
+that differs only by case as equal, so stable source order decides the result.
+Sorting an explicit partial-column range moves only the selected cell fragments;
+cells outside those columns and destination row properties remain fixed. Sparse
+records can create sparse destination rows.
+
+Batch, standard MCP, replay, and Rust use the same complete value:
+
+```json
+{
+  "operation": "sort-spreadsheet-range",
+  "path": "/Sheet1/A1:D100",
+  "sort": {
+    "keys": [
+      {"column": "B", "direction": "descending"},
+      {"column": "C", "direction": "ascending"}
+    ],
+    "header": true,
+    "caseSensitive": false
+  }
+}
+```
+
+The physical permutation and metadata changes are one atomic mutation. Exact
+mutable ListObject and worksheet-AutoFilter ranges are supported when `header`
+matches their structure; their exact data ranges are also supported with
+`header=false`. Partial intersections fail closed. A table totals row, formulas
+anywhere in the workbook, an intersecting merge, an owned pivot table, unknown
+existing sort state, or a drawing that cannot follow one record losslessly
+rejects the operation before save.
+
+Hyperlinks, classic/threaded comment refs, VML note anchors, data-validation
+areas, conditional-format areas, protected ranges, ignored errors, and
+supported drawing anchors follow the records. Chart caches are cleared. Strict
+and transitional SpreadsheetML, prefixed XML, sparse gaps, and destination row
+properties are preserved; the worksheet used dimension is recomputed.
+
+Successful sorting persists a worksheet-level sort state. Inspect it and its
+ordered children through stable semantic paths:
+
+```bash
+a3s use office native get workbook.xlsx /Sheet1/sort --depth 1 --json
+a3s use office native query workbook.xlsx 'sortkey[direction=descending]' --json
+
+# This removes metadata only. It never restores the previous physical order.
+a3s use office native remove workbook.xlsx /Sheet1/sort --json
+```
+
+Only simple supported row-sort state is mutable. Imported column sorting,
+extended conditions, unknown attributes or children, inconsistent condition
+ranges, and unsupported embedded table/AutoFilter state remain readable with
+`nativeMutable=false`; do not bypass that boundary with `raw-set`.
 
 ## Tables
 
@@ -367,8 +452,10 @@ transitional OOXML and supported unknown root/style/extension content. It fails
 closed for unknown column metadata, unsafe relationship graphs, or collection
 data that cannot be retained. Exact replay, CLI atomic batches, and standard MCP
 sessions use the same contract. Calculated columns, totals labels/functions,
-date-group/color/icon filters, persisted sort state, custom table styles, query
-tables, external data, slicers, and pivot integration are not yet native.
+date-group/color/icon filters, unsupported embedded/imported sort state, custom
+table styles, query tables, external data, slicers, and pivot integration are
+not yet native. Exact mutable table or data ranges without totals rows can be
+physically sorted through the separate sort contract.
 
 ## Data Validation
 
@@ -468,8 +555,9 @@ Updates preserve unknown rule attributes. Replacement fails if unknown rule
 children would be lost, and final removal fails if unknown collection data
 would be discarded. Strict/transitional OOXML, atomic batch rollback, and
 exact replay are supported. This capability does not add table calculated
-columns/totals functions, date-group/color/icon filters, persisted sort state,
-charts, pivots, formula evaluation, or Excel layout fidelity.
+columns/totals functions, date-group/color/icon filters, unsupported imported
+sort-state variants, charts, pivots, formula evaluation, or Excel layout
+fidelity.
 
 ## Conditional Formatting
 
