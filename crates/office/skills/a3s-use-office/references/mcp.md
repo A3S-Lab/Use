@@ -279,6 +279,51 @@ batch. Call `office_get` or `office_query` before `office_save` to verify the
 unsaved scoped value, then save explicitly. Closing a dirty session still
 requires save or explicit discard.
 
+Spreadsheet ListObject tables use the separate `add-spreadsheet-table` and
+`set-spreadsheet-table` mutations:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "add-spreadsheet-table",
+    "sheet": "/Sheet1",
+    "table": {
+      "name": "Sales",
+      "range": "F1:H4",
+      "columns": [
+        {"name": "Name"},
+        {"name": "Qty"},
+        {"name": "Price"}
+      ],
+      "headerRow": true,
+      "totalsRow": false,
+      "style": {"family": "medium", "number": 4},
+      "showFirstColumn": false,
+      "showLastColumn": false,
+      "showRowStripes": true,
+      "showColumnStripes": false
+    }
+  }]
+}
+```
+
+Use `set-spreadsheet-table` with the stable `/Sheet/table[N]` path and one
+complete `table` value; MCP set is not a partial patch. Delete with ordinary
+typed `remove`. `range` is final and includes enabled header/totals rows, its
+width must match the ordered column list, and at least one data row must remain.
+Names, columns, built-in style families/numbers, flags, table/defined-name
+identity, table/merge/worksheet-AutoFilter overlap, and relationship ownership
+are validated before mutation.
+
+Use `office_get` with depth 1 or `office_query` with `table[name=Sales]` to
+inspect the unsaved table and its column children. Do not replace a node whose
+semantic `nativeMutable` flag is false. Header stamping, OPC table parts, and
+the table-owned AutoFilter stay inside the same editor transaction. Calculated
+columns, totals functions, filter criteria, sort state, custom styles, and
+external/query-table data remain outside the typed value. See
+[spreadsheet.md](spreadsheet.md#tables) for the complete boundary.
+
 General find/replace uses the typed `replace-text` mutation. Keep `mode`
 explicit and prefer `literal` for ordinary text:
 

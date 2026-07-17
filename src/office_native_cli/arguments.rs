@@ -69,6 +69,15 @@ pub(super) struct ParsedArguments {
     pub named_range_scope: Option<String>,
     pub named_range_comment: Option<String>,
     pub named_range_volatile: Option<String>,
+    pub table_display_name: Option<String>,
+    pub table_columns: Vec<String>,
+    pub table_header_row: Option<String>,
+    pub table_totals_row: Option<String>,
+    pub table_style: Option<String>,
+    pub table_show_first_column: Option<String>,
+    pub table_show_last_column: Option<String>,
+    pub table_show_row_stripes: Option<String>,
+    pub table_show_column_stripes: Option<String>,
     pub conditional_format_type: Option<String>,
     pub conditional_stop_if_true: Option<String>,
     pub conditional_rank: Option<u32>,
@@ -404,6 +413,69 @@ impl ParsedArguments {
                     set_string_option(&mut parsed.named_range_volatile, args, index, "--volatile")?;
                     index += 2;
                 }
+                "--display-name" if allowed.spreadsheet_table => {
+                    set_string_option(
+                        &mut parsed.table_display_name,
+                        args,
+                        index,
+                        "--display-name",
+                    )?;
+                    index += 2;
+                }
+                "--table-column" if allowed.spreadsheet_table => {
+                    parsed
+                        .table_columns
+                        .push(option_value(args, index, "--table-column")?.to_string());
+                    index += 2;
+                }
+                "--header-row" if allowed.spreadsheet_table => {
+                    set_string_option(&mut parsed.table_header_row, args, index, "--header-row")?;
+                    index += 2;
+                }
+                "--totals-row" if allowed.spreadsheet_table => {
+                    set_string_option(&mut parsed.table_totals_row, args, index, "--totals-row")?;
+                    index += 2;
+                }
+                "--style" | "--table-style" if allowed.spreadsheet_table => {
+                    set_string_option(&mut parsed.table_style, args, index, "--style")?;
+                    index += 2;
+                }
+                "--show-first-column" if allowed.spreadsheet_table => {
+                    set_string_option(
+                        &mut parsed.table_show_first_column,
+                        args,
+                        index,
+                        "--show-first-column",
+                    )?;
+                    index += 2;
+                }
+                "--show-last-column" if allowed.spreadsheet_table => {
+                    set_string_option(
+                        &mut parsed.table_show_last_column,
+                        args,
+                        index,
+                        "--show-last-column",
+                    )?;
+                    index += 2;
+                }
+                "--show-row-stripes" if allowed.spreadsheet_table => {
+                    set_string_option(
+                        &mut parsed.table_show_row_stripes,
+                        args,
+                        index,
+                        "--show-row-stripes",
+                    )?;
+                    index += 2;
+                }
+                "--show-column-stripes" if allowed.spreadsheet_table => {
+                    set_string_option(
+                        &mut parsed.table_show_column_stripes,
+                        args,
+                        index,
+                        "--show-column-stripes",
+                    )?;
+                    index += 2;
+                }
                 "--rule-type" | "--cf-type" if allowed.conditional_formatting => {
                     set_string_option(
                         &mut parsed.conditional_format_type,
@@ -712,6 +784,32 @@ impl ParsedArguments {
             || self.named_range_volatile.is_some()
     }
 
+    pub(super) fn has_spreadsheet_table_options(&self) -> bool {
+        self.name.is_some()
+            || !self.validation_ranges.is_empty()
+            || self.table_display_name.is_some()
+            || !self.table_columns.is_empty()
+            || self.table_header_row.is_some()
+            || self.table_totals_row.is_some()
+            || self.table_style.is_some()
+            || self.table_show_first_column.is_some()
+            || self.table_show_last_column.is_some()
+            || self.table_show_row_stripes.is_some()
+            || self.table_show_column_stripes.is_some()
+    }
+
+    pub(super) fn has_spreadsheet_table_specific_options(&self) -> bool {
+        self.table_display_name.is_some()
+            || !self.table_columns.is_empty()
+            || self.table_header_row.is_some()
+            || self.table_totals_row.is_some()
+            || self.table_style.is_some()
+            || self.table_show_first_column.is_some()
+            || self.table_show_last_column.is_some()
+            || self.table_show_row_stripes.is_some()
+            || self.table_show_column_stripes.is_some()
+    }
+
     pub(super) fn has_conditional_format_options(&self) -> bool {
         self.conditional_format_type.is_some()
             || self.conditional_stop_if_true.is_some()
@@ -812,6 +910,7 @@ pub(super) struct AllowedOptions {
     data_validation: bool,
     named_range: bool,
     conditional_formatting: bool,
+    spreadsheet_table: bool,
 }
 
 impl AllowedOptions {
@@ -878,6 +977,7 @@ impl AllowedOptions {
         data_validation: false,
         named_range: false,
         conditional_formatting: false,
+        spreadsheet_table: false,
     };
     pub const GET: Self = Self {
         depth: true,
@@ -935,6 +1035,7 @@ impl AllowedOptions {
         named_range: true,
         conditional_formatting: true,
         name: true,
+        spreadsheet_table: true,
         ..Self::NONE
     };
     pub const BATCH: Self = Self {
@@ -978,6 +1079,7 @@ impl AllowedOptions {
         data_validation: true,
         named_range: true,
         conditional_formatting: true,
+        spreadsheet_table: true,
         formula: true,
         bold: true,
         text_color: true,

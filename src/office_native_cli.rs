@@ -1,8 +1,8 @@
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_office::{
-    DocumentNode, NativeOfficeCommentPosition, NativeOfficeCommentUpdate, NativeOfficeDocument,
-    NativeOfficeEditor, NativeOfficeMutation, NativeOfficeTextReplacement, OfficeNodeType,
-    SpreadsheetCellValue,
+    DocumentKind, DocumentNode, NativeOfficeCommentPosition, NativeOfficeCommentUpdate,
+    NativeOfficeDocument, NativeOfficeEditor, NativeOfficeMutation, NativeOfficeTextReplacement,
+    OfficeNodeType, SpreadsheetCellValue,
 };
 
 use crate::cli::CommandOutput;
@@ -19,6 +19,7 @@ mod named_range;
 mod part;
 mod raw;
 mod replay;
+mod spreadsheet_table;
 mod view;
 mod watch;
 
@@ -45,11 +46,13 @@ const HELP: &str = concat!(
     "  a3s-use office native add <file.xlsx> <sheet> --type data-validation --validation-type list|whole|decimal|date|time|text-length|custom --range <A1-range> [--range <A1-range>] --formula1 <value> [--operator <comparison>] [--formula2 <value>] [--allow-blank <true|false>] [--show-input <true|false>] [--show-error <true|false>] [--prompt-title <text>] [--prompt <text>] [--error-title <text>] [--error-message <text>] [--error-style stop|warning|information] [--in-cell-dropdown <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add <file.xlsx> <sheet> --type conditional-format --rule-type cell-is|formula|contains-text|not-contains-text|begins-with|ends-with|top|bottom|above-average|below-average|duplicate-values|unique-values|contains-blanks|not-contains-blanks|contains-errors|not-contains-errors|time-period|data-bar|color-scale|icon-set --range <A1-range> [rule-specific options] [--stop-if-true <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add <file.xlsx> </|sheet> --type named-range --name <name> --ref <expression> [--scope workbook|worksheet:workbook|<sheet>] [--comment <text>] [--volatile <true|false>] [--output <file>] [--json]\n",
+    "  a3s-use office native add <file.xlsx> <sheet> --type table --name <name> --range <A1-range> --table-column <name> [--table-column <name> ...] [--display-name <name>] [--header-row <true|false>] [--totals-row <true|false>] [--style none|light:<1-21>|medium:<1-28>|dark:<1-11>] [--show-first-column <true|false>] [--show-last-column <true|false>] [--show-row-stripes <true|false>] [--show-column-stripes <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native add-part <file> <parent> --type chart|header|footer [--output <file>] [--json]\n",
     "  a3s-use office native set <file> <path> [--find <text> --replace <text> [--regex]|--text <value>|--number <value>|--boolean <true|false>|--formula <expression>|--width-emu <n>] [--author <name>] [--initials <value>] [--x-emu <i32> --y-emu <i32>] [--bold <true|false>] [--italic <true|false>] [--underline <none|single|double>] [--script <baseline|superscript|subscript>] [--strikethrough <true|false>] [--double-strikethrough <true|false>] [--text-case <none|small-caps|all-caps>] [--highlight <color>] [--language <BCP-47>] [--font-family <name>] [--font-size <points>] [--text-color <RRGGBB>] [--align <left|center|right|justify>] [--number-format <code>] [--fill <none|RRGGBB>] [--border-all <style>] [--border-color <RRGGBB>] [--border-left|--border-right|--border-top|--border-bottom <style>] [--border-left-color|--border-right-color|--border-top-color|--border-bottom-color <RRGGBB>] [--border-diagonal <style>] [--border-diagonal-color <RRGGBB>] [--border-diagonal-up <true|false>] [--border-diagonal-down <true|false>] [--vertical-align <top|center|bottom|justify|distributed>] [--wrap-text <true|false>] [--text-rotation <0..180|255>] [--indent <0..255>] [--shrink-to-fit <true|false>] [--reading-order <context|ltr|rtl>] [--merge-cells <true|false>] [--url <http|https|mailto>|--location <internal>] [--display <text>] [--tooltip <text>] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <sheet/dataValidation[N]> [data-validation options from add; unspecified fields are preserved, use none or an empty value to clear optional text/formula2] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <sheet/cf[N]> [conditional-format options from add; unspecified fields are preserved] [--output <file>] [--json]\n",
     "  a3s-use office native set <file.xlsx> <namedrange-selector> [--name <name>] [--ref <expression>] [--scope workbook|worksheet:workbook|<sheet>] [--comment <text|none>] [--volatile <true|false>] [--output <file>] [--json]\n",
+    "  a3s-use office native set <file.xlsx> <sheet/table[N]> [--name <name>] [--display-name <name|none>] [--range <A1-range>] [--table-column <name> ...] [--header-row <true|false>] [--totals-row <true|false>] [--style none|light:<1-21>|medium:<1-28>|dark:<1-11>] [--show-first-column <true|false>] [--show-last-column <true|false>] [--show-row-stripes <true|false>] [--show-column-stripes <true|false>] [--output <file>] [--json]\n",
     "  a3s-use office native remove <file> <path> [--output <file>] [--json]\n",
     "  a3s-use office native move <file> <path> [--to <parent>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
     "  a3s-use office native copy <file> <path> [--to <parent>] [--name <worksheet-name>] [--index <zero-based>|--before <path>|--after <path>] [--output <file>] [--json]\n",
@@ -275,15 +278,58 @@ async fn set(args: &[String]) -> UseResult<CommandOutput> {
     let is_named_range = target_node
         .as_ref()
         .is_some_and(|node| node.node_type == OfficeNodeType::NamedRange);
+    let is_spreadsheet_table = editor.package().kind() == DocumentKind::Spreadsheet
+        && target_node
+            .as_ref()
+            .is_some_and(|node| node.node_type == OfficeNodeType::Table);
     let has_data_validation_options = parsed.has_data_validation_options();
     let has_conditional_format_options = parsed.has_conditional_format_options();
     let has_named_range_options = parsed.has_named_range_options();
+    let has_spreadsheet_table_options = parsed.has_spreadsheet_table_options();
     let has_comment_options = parsed.author.is_some()
         || parsed.initials.is_some()
         || parsed.x_emu.is_some()
         || parsed.y_emu.is_some();
     let mut result_path = path.clone();
-    let operation = if is_named_range || named_range_path || has_named_range_options {
+    let operation = if is_spreadsheet_table || parsed.has_spreadsheet_table_specific_options() {
+        if !is_spreadsheet_table {
+            return Err(usage_error(
+                "Spreadsheet table options require an existing /Sheet/table[N] path",
+            ));
+        }
+        if !has_spreadsheet_table_options {
+            return Err(usage_error(
+                "native Spreadsheet table set requires at least one table option",
+            ));
+        }
+        if value_count > 0
+            || format.is_some()
+            || cell_format.is_some()
+            || hyperlink.is_some()
+            || merge_cells.is_some()
+            || has_comment_options
+            || parsed.has_data_validation_specific_options()
+            || parsed.validation_operator.is_some()
+            || parsed.validation_formula1.is_some()
+            || parsed.validation_formula2.is_some()
+            || has_conditional_format_options
+            || parsed.named_range_ref.is_some()
+            || parsed.named_range_scope.is_some()
+            || parsed.named_range_comment.is_some()
+            || parsed.named_range_volatile.is_some()
+        {
+            return Err(usage_error(
+                "native Spreadsheet table set cannot be combined with content, formatting, hyperlink, merge, comment, validation, conditional-format, or named-range options",
+            ));
+        }
+        let node = target_node.as_ref().ok_or_else(|| {
+            usage_error("native Spreadsheet table set requires an existing table node")
+        })?;
+        let table_node = snapshot.get(&node.path, 1)?;
+        let table = spreadsheet_table::merge_existing(&table_node, &parsed)?;
+        result_path = editor.set_spreadsheet_table(&node.path, table)?;
+        "set-spreadsheet-table"
+    } else if is_named_range || named_range_path || has_named_range_options {
         if !is_named_range {
             return Err(usage_error(
                 "named-range options require an existing /namedrange[NAME] path",
@@ -590,6 +636,7 @@ async fn replace_text(parsed: ParsedArguments) -> UseResult<CommandOutput> {
         parsed.has_data_validation_options(),
         parsed.has_named_range_options(),
         parsed.has_conditional_format_options(),
+        parsed.has_spreadsheet_table_options(),
     ]
     .into_iter()
     .any(|present| present)
@@ -685,6 +732,7 @@ fn has_conditional_format_conflicts(parsed: &ParsedArguments) -> bool {
         parsed.y_emu.is_some(),
         parsed.has_data_validation_specific_options(),
         parsed.has_named_range_options(),
+        parsed.has_spreadsheet_table_specific_options(),
     ]
     .into_iter()
     .any(|present| present)

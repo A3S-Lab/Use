@@ -1,7 +1,7 @@
 use a3s_use_core::UseResult;
 use a3s_use_office::{
-    NativeCreatedImage, NativeOfficeComment, NativeOfficeCommentPosition, NativeOfficeEditor,
-    NativeOfficeImage,
+    DocumentKind, NativeCreatedImage, NativeOfficeComment, NativeOfficeCommentPosition,
+    NativeOfficeEditor, NativeOfficeImage,
 };
 
 use super::arguments::{AllowedOptions, ParsedArguments};
@@ -10,6 +10,7 @@ use super::conditional_formatting;
 use super::data_validation;
 use super::format::parse_hyperlink;
 use super::named_range;
+use super::spreadsheet_table;
 use super::{save_editor, usage_error, MAX_IMAGE_INPUT_BYTES};
 use crate::cli::CommandOutput;
 
@@ -33,15 +34,37 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
     let (operation, path, created_image): (&str, String, Option<NativeCreatedImage>) =
         match node_type {
             "paragraph" | "p" => ("add-paragraph", editor.add_paragraph(parent, text)?, None),
-            "table" | "tbl" => (
-                "add-table",
-                editor.add_table(
-                    parent,
-                    parsed.rows.unwrap_or(1),
-                    parsed.columns.unwrap_or(1),
-                )?,
-                None,
-            ),
+            "table" | "tbl" if editor.package().kind() == DocumentKind::Spreadsheet => {
+                if parsed.rows.is_some() || parsed.columns.is_some() {
+                    return Err(usage_error(
+                        "native Spreadsheet table add uses --range and repeated --table-column, not --rows or --columns",
+                    ));
+                }
+                (
+                    "add-spreadsheet-table",
+                    editor.add_spreadsheet_table(parent, spreadsheet_table::build_new(&parsed)?)?,
+                    None,
+                )
+            }
+            "table" | "tbl" => {
+                if parsed.has_spreadsheet_table_specific_options()
+                    || !parsed.validation_ranges.is_empty()
+                    || parsed.name.is_some()
+                {
+                    return Err(usage_error(
+                        "Word and Presentation table add does not accept Spreadsheet table options",
+                    ));
+                }
+                (
+                    "add-table",
+                    editor.add_table(
+                        parent,
+                        parsed.rows.unwrap_or(1),
+                        parsed.columns.unwrap_or(1),
+                    )?,
+                    None,
+                )
+            }
             "row" | "tr" => (
                 "add-table-row",
                 editor.add_table_row(parent, parsed.columns)?,
@@ -185,10 +208,12 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
         node_type,
         "named-range" | "namedrange" | "defined-name" | "definedname"
     );
+    let is_table = matches!(node_type, "table" | "tbl");
     let accepts_rows = matches!(node_type, "table" | "tbl");
     let accepts_columns = matches!(node_type, "table" | "tbl" | "row" | "tr");
     let accepts_index = matches!(node_type, "column" | "col");
-    let accepts_name = is_picture || is_named_range || matches!(node_type, "sheet" | "worksheet");
+    let accepts_name =
+        is_picture || is_named_range || is_table || matches!(node_type, "sheet" | "worksheet");
     let accepts_text = matches!(
         node_type,
         "paragraph"
@@ -234,14 +259,32 @@ fn validate_options(node_type: &str, parsed: &ParsedArguments) -> UseResult<()> 
             "native Office add type '{node_type}' does not accept data-validation options"
         )));
     }
-    if parsed.has_shared_rule_options() && !is_data_validation && !is_conditional_format {
+    if parsed.has_shared_rule_options()
+        && !is_data_validation
+        && !is_conditional_format
+        && !is_table
+    {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept --range, --operator, --formula1, or --formula2"
         )));
     }
+    if is_table
+        && (parsed.validation_operator.is_some()
+            || parsed.validation_formula1.is_some()
+            || parsed.validation_formula2.is_some())
+    {
+        return Err(usage_error(
+            "native Spreadsheet table add accepts --range but not --operator, --formula1, or --formula2",
+        ));
+    }
     if parsed.has_conditional_format_options() && !is_conditional_format {
         return Err(usage_error(format!(
             "native Office add type '{node_type}' does not accept conditional-format options"
+        )));
+    }
+    if parsed.has_spreadsheet_table_specific_options() && !is_table {
+        return Err(usage_error(format!(
+            "native Office add type '{node_type}' does not accept Spreadsheet table options"
         )));
     }
     for (present, option) in [

@@ -48,7 +48,8 @@ pub use types::{
     NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
     NativeSpreadsheetDataValidationType, NativeSpreadsheetDifferentialFormat,
     NativeSpreadsheetFill, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
-    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetTable, NativeSpreadsheetTableColumn,
+    NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
     MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
@@ -197,6 +198,30 @@ impl NativeOfficeEditor {
             value,
         }])?;
         Ok(())
+    }
+
+    /// Adds one complete typed Spreadsheet ListObject table.
+    pub fn add_spreadsheet_table(
+        &mut self,
+        sheet: impl Into<String>,
+        table: NativeSpreadsheetTable,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::AddSpreadsheetTable {
+            sheet: sheet.into(),
+            table,
+        })
+    }
+
+    /// Replaces the typed structure and style of one Spreadsheet table.
+    pub fn set_spreadsheet_table(
+        &mut self,
+        path: impl Into<String>,
+        table: NativeSpreadsheetTable,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SetSpreadsheetTable {
+            path: path.into(),
+            table,
+        })
     }
 
     /// Adds one complete typed Spreadsheet defined name.
@@ -702,6 +727,12 @@ impl NativeOfficeEditor {
                 NativeOfficeMutation::SetCellValue { path, value } => {
                     spreadsheet::set_cell_value(&mut self.package, path, value)
                         .map(|()| path.clone())
+                }
+                NativeOfficeMutation::AddSpreadsheetTable { sheet, table } => {
+                    spreadsheet::add_table(&mut self.package, sheet, table)
+                }
+                NativeOfficeMutation::SetSpreadsheetTable { path, table } => {
+                    spreadsheet::set_table(&mut self.package, path, table)
                 }
                 NativeOfficeMutation::AddNamedRange { named_range } => {
                     spreadsheet::add_named_range(&mut self.package, named_range)

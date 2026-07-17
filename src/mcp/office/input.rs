@@ -6,6 +6,7 @@ use a3s_use_office::{
     NativeOfficePartType, NativeOfficeRgbColor, NativeOfficeTextCase, NativeOfficeTextFormat,
     NativeOfficeTextMatchMode, NativeOfficeTextReplacement, NativeOfficeTextScript,
     NativeOfficeUnderline, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
+    NativeSpreadsheetTable, NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle,
     SpreadsheetCellValue,
 };
 use base64::Engine as _;
@@ -239,6 +240,91 @@ impl OfficeNamedRange {
 
 fn default_named_range_scope() -> String {
     "workbook".to_string()
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "family", rename_all = "kebab-case", deny_unknown_fields)]
+pub(super) enum OfficeSpreadsheetTableStyle {
+    None,
+    Light { number: u8 },
+    Medium { number: u8 },
+    Dark { number: u8 },
+}
+
+impl Default for OfficeSpreadsheetTableStyle {
+    fn default() -> Self {
+        Self::Medium { number: 2 }
+    }
+}
+
+impl From<OfficeSpreadsheetTableStyle> for NativeSpreadsheetTableStyle {
+    fn from(value: OfficeSpreadsheetTableStyle) -> Self {
+        match value {
+            OfficeSpreadsheetTableStyle::None => Self::None,
+            OfficeSpreadsheetTableStyle::Light { number } => Self::Light { number },
+            OfficeSpreadsheetTableStyle::Medium { number } => Self::Medium { number },
+            OfficeSpreadsheetTableStyle::Dark { number } => Self::Dark { number },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeSpreadsheetTableColumn {
+    pub(super) name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct OfficeSpreadsheetTable {
+    /// Workbook-wide Excel ListObject identifier.
+    pub(super) name: String,
+    /// Optional distinct Excel UI display name.
+    pub(super) display_name: Option<String>,
+    /// Final rectangular A1 table range, including enabled header/totals rows.
+    pub(super) range: String,
+    /// Exactly one unique name per range column.
+    pub(super) columns: Vec<OfficeSpreadsheetTableColumn>,
+    #[serde(default = "default_true")]
+    pub(super) header_row: bool,
+    #[serde(default)]
+    pub(super) totals_row: bool,
+    #[serde(default)]
+    pub(super) style: OfficeSpreadsheetTableStyle,
+    #[serde(default)]
+    pub(super) show_first_column: bool,
+    #[serde(default)]
+    pub(super) show_last_column: bool,
+    #[serde(default = "default_true")]
+    pub(super) show_row_stripes: bool,
+    #[serde(default)]
+    pub(super) show_column_stripes: bool,
+}
+
+impl From<OfficeSpreadsheetTable> for NativeSpreadsheetTable {
+    fn from(value: OfficeSpreadsheetTable) -> Self {
+        Self {
+            name: value.name,
+            display_name: value.display_name,
+            range: value.range,
+            columns: value
+                .columns
+                .into_iter()
+                .map(|column| NativeSpreadsheetTableColumn { name: column.name })
+                .collect(),
+            header_row: value.header_row,
+            totals_row: value.totals_row,
+            style: value.style.into(),
+            show_first_column: value.show_first_column,
+            show_last_column: value.show_last_column,
+            show_row_stripes: value.show_row_stripes,
+            show_column_stripes: value.show_column_stripes,
+        }
+    }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
@@ -691,6 +777,16 @@ pub(super) enum OfficeMutation {
         path: String,
         value: OfficeCellValue,
     },
+    AddSpreadsheetTable {
+        /// Existing Spreadsheet worksheet path such as `/Sheet1`.
+        sheet: String,
+        table: OfficeSpreadsheetTable,
+    },
+    SetSpreadsheetTable {
+        /// Existing Spreadsheet table path such as `/Sheet1/table[1]`.
+        path: String,
+        table: OfficeSpreadsheetTable,
+    },
     AddNamedRange {
         #[serde(rename = "namedRange")]
         named_range: OfficeNamedRange,
@@ -867,6 +963,18 @@ impl OfficeMutation {
                 path,
                 value: value.into(),
             },
+            Self::AddSpreadsheetTable { sheet, table } => {
+                NativeOfficeMutation::AddSpreadsheetTable {
+                    sheet,
+                    table: table.into(),
+                }
+            }
+            Self::SetSpreadsheetTable { path, table } => {
+                NativeOfficeMutation::SetSpreadsheetTable {
+                    path,
+                    table: table.into(),
+                }
+            }
             Self::AddNamedRange { named_range } => NativeOfficeMutation::AddNamedRange {
                 named_range: named_range.into_native()?,
             },

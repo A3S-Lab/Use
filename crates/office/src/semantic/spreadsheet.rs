@@ -17,6 +17,7 @@ mod conditional_formatting;
 mod data_validation;
 mod named_range;
 mod style;
+mod table;
 
 use style::{read_differential_formats, read_styles};
 
@@ -424,6 +425,13 @@ fn read_worksheet(
             .format
             .insert("dataValidationCount".into(), validations.len().to_string());
         sheet_node.children.extend(validations);
+    }
+    let tables = table::read(package, opc, &worksheet, part_name, &sheet_path)?;
+    if !tables.is_empty() {
+        sheet_node
+            .format
+            .insert("tableCount".into(), tables.len().to_string());
+        sheet_node.children.extend(tables);
     }
     append_worksheet_hyperlinks(opc, &worksheet, part_name, &sheet_path, &mut sheet_node)?;
     append_worksheet_comments(package, opc, part_name, &sheet_path, &mut sheet_node)?;

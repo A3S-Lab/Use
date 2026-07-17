@@ -103,6 +103,13 @@ available.
   name, add a formula-bar leading `=`, or use raw XML to bypass a typed
   identity/ref error. Defined-name formulas are stored and marked for
   recalculation, not evaluated by A3S.
+- Treat Spreadsheet ListObject tables as owned worksheet structures. Query
+  `table` first and use the returned `/Sheet/table[N]` path for set/remove. The
+  final range includes enabled header and totals rows; provide exactly one
+  unique `--table-column` per range column and leave at least one data row. Do
+  not overlap another table, a merge, or a worksheet AutoFilter, and do not use
+  raw XML to bypass `nativeMutable=false` or an unknown-content/relationship
+  error. Table filter criteria and sort state are not yet native.
 - Keep the default OfficeCLI compatibility route separate from the native
   engine. Do not depend on OfficeCLI's private resident protocol.
 
@@ -117,16 +124,18 @@ portable highlight, and primary-language formatting. It also owns typed inert
 hyperlinks, typed legacy comments, typed Spreadsheet number formats, solid or
 cleared fills, cardinal and diagonal borders, vertical alignment, wrapping,
 rotation, indentation, shrink-to-fit, reading order, and exact merged-cell
-  editing. It owns typed Spreadsheet list, whole, decimal, date, time,
-  text-length, and custom data-validation rules over disjoint A1 ranges, with
-  stable rule paths and sparse cell readback. It also owns typed Spreadsheet
-  comparison/formula/text/statistical/date conditional-format rules, data bars,
-  two/three-color scales, standard 3/4/5-icon sets, differential fill/font/bold,
-  typed thresholds, stable paths, semantic queries, and exact canonical replay.
-  It owns workbook-global and
+editing. It owns typed Spreadsheet list, whole, decimal, date, time,
+text-length, and custom data-validation rules over disjoint A1 ranges, with
+stable rule paths and sparse cell readback. It also owns typed Spreadsheet
+comparison/formula/text/statistical/date conditional-format rules, data bars,
+two/three-color scales, standard 3/4/5-icon sets, differential fill/font/bold,
+typed thresholds, stable paths, semantic queries, and exact canonical replay.
+It owns workbook-global and
 worksheet-local Spreadsheet defined names with stable scoped paths, typed
-add/set/remove, semantic readback, and exact replay. It also owns template merge,
-constrained XML access,
+add/set/remove, semantic readback, and exact replay. It owns typed Spreadsheet
+ListObject names, ranges, column identities, header/totals state, built-in
+styles, stable table/column paths, add/set/remove, and exact replay. It also
+owns template merge, constrained XML access,
 deterministic all-format HTML/SVG, Browser-injected semantic screenshots, and
 authenticated loopback live watch for saved files.
 Hyperlinks cover Word body/header/footer paragraphs and bookmarks, Spreadsheet
@@ -135,7 +144,9 @@ clicks or internal jumps to existing slides. Remaining boundaries include
 modern threaded comments, replies/resolution, writable comment dates,
 rich comment bodies, Word header/footer comment anchors,
 gradient/pattern/theme fills, advanced x14 conditional-format visuals, named styles, complete formula
-calculation, table/filter/sort authoring, advanced charts, pivots, and media,
+calculation, table calculated columns/totals functions, filter criteria and sort
+state, custom table styles, query tables/external data, advanced charts, pivots,
+and media,
 interactive preview editing/annotations, and full Office layout fidelity. Fail
 closed or use the explicit compatibility route rather than inventing
 unsupported native behavior.

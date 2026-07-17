@@ -9,6 +9,7 @@ mod conditional_formatting;
 mod data_validation;
 mod formatting;
 mod named_range;
+mod spreadsheet_table;
 
 pub use conditional_formatting::{
     NativeSpreadsheetConditionalFormat, NativeSpreadsheetConditionalFormatIconSet,
@@ -28,6 +29,9 @@ pub use formatting::{
     NativeSpreadsheetVerticalAlignment,
 };
 pub use named_range::{NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope};
+pub use spreadsheet_table::{
+    NativeSpreadsheetTable, NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle,
+};
 
 /// A hyperlink destination represented without executing or resolving it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -663,6 +667,14 @@ pub enum NativeOfficeMutation {
     SetCellValue {
         path: String,
         value: SpreadsheetCellValue,
+    },
+    AddSpreadsheetTable {
+        sheet: String,
+        table: NativeSpreadsheetTable,
+    },
+    SetSpreadsheetTable {
+        path: String,
+        table: NativeSpreadsheetTable,
     },
     AddNamedRange {
         #[serde(rename = "namedRange")]

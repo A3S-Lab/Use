@@ -69,6 +69,7 @@ a3s use office native set report.docx '/body/p[1]/r[1]' --bold true --underline 
 a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color C9B458 --vertical-align center --wrap-text true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
+a3s use office native add workbook.xlsx /Sheet1 --type table --name Sales --range F1:H4 --table-column Name --table-column Qty --table-column Price --style medium:4 --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
 a3s use office native set report.docx '/comments/comment[1]' --author Bob --text 'Reviewed' --json
@@ -113,7 +114,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   scoped cross-format literal/regex replacement, typed text formatting,
   Spreadsheet number/fill/border/alignment formatting, exact merged-cell
   editing, typed data validation and conditional formatting, scoped defined
-  names, inert hyperlinks, and
+  names, native Spreadsheet ListObject table lifecycle, inert hyperlinks, and
   legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
@@ -344,7 +345,7 @@ writer deduplicates differential formats, preserves strict or transitional
 SpreadsheetML plus unknown attributes, and fails closed when unsupported child
 or collection content would be lost. This milestone does not evaluate rule
 formulas, reproduce Excel rendering, or cover x14-only data-bar axes/colors,
-tables, filters, charts, pivots, or complete Spreadsheet parity.
+table/chart/pivot conditional formatting, or complete Spreadsheet parity.
 
 Native Spreadsheet defined names use a separate typed contract for
 workbook-global and worksheet-local scopes. Stable selectors include both name
@@ -358,8 +359,28 @@ Semantic get/query, ordinary typed remove, batch, exact replay, CLI, Rust, and
 standard MCP share the same value. Strict/transitional SpreadsheetML and
 unknown defined-name attributes are retained; unknown collection or child
 content fails closed when it cannot be preserved. This is defined-name
-lifecycle support, not formula evaluation, table authoring, or complete
-Spreadsheet parity. The engine also creates, updates, reads,
+lifecycle support, not formula evaluation, external-link authoring, or complete
+Spreadsheet parity.
+
+Native Spreadsheet tables use a separate closed ListObject contract. Add and
+set own the workbook-wide `name`, optional distinct `displayName`, final
+rectangular A1 range, one exact column identity per range column, header/totals
+row state, built-in light/medium/dark style identity, and first/last-column plus
+row/column-stripe flags; ordinary typed `remove` owns deletion. When a header
+is enabled, its names are stamped into the first row and the table-owned
+AutoFilter range excludes an enabled totals row. The editor rejects
+Excel-identifier and A1/R1C1 name errors,
+case-insensitive table/defined-name collisions, duplicate columns, missing data
+rows, table/merge/worksheet-AutoFilter overlap, and unsafe relationship graphs.
+Semantic reads expose stable `/Sheet/table[N]` and child column paths. Rust,
+versioned batch, CLI, standard MCP, exact replay, and the Office Skill share the
+same value while strict/transitional SpreadsheetML and supported unknown root
+or style data are retained. Imported calculated columns, totals functions,
+filter criteria, sort state, custom styles, query tables, and external data
+remain explicit gaps and fail closed when a lossless typed mutation cannot be
+proved.
+
+The engine also creates, updates, reads,
 queries, and removes typed hyperlinks. Word owns
 external HTTP/HTTPS/mailto links and internal bookmark targets in body,
 header, and footer paragraphs, with display text and tooltips; Spreadsheet
@@ -429,7 +450,7 @@ Browser contract.
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
 rich-text, exact Spreadsheet merged-cell, data-validation, conditional-format,
-hyperlink, and legacy-comment
+defined-name, ListObject table, hyperlink, and legacy-comment
 operations, constrained raw XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
@@ -523,6 +544,15 @@ a3s use office native set workbook.xlsx /Sheet1/E1 --border-diagonal slant-dash-
 # atomic set command.
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --merge-cells false --json
+
+# Add, inspect, replace, and remove one native Spreadsheet ListObject table.
+# The range is final and includes enabled header/totals rows. Repeat
+# --table-column exactly once for every range column.
+a3s use office native add workbook.xlsx /Sheet1 --type table --name Sales --range F1:H4 --table-column Name --table-column Qty --table-column Price --style medium:4 --json
+a3s use office native query workbook.xlsx 'table[name=Sales]' --json
+a3s use office native get workbook.xlsx '/Sheet1/table[1]' --depth 1 --json
+a3s use office native set workbook.xlsx '/Sheet1/table[1]' --name Inventory --display-name InventoryView --range B2:D6 --table-column Item --table-column Units --table-column Cost --totals-row true --style dark:2 --show-row-stripes false --show-column-stripes true --json
+a3s use office native remove workbook.xlsx '/Sheet1/table[1]' --json
 
 # Add, inspect, update, and remove typed Spreadsheet data validation. Repeated
 # --range values form one rule over disjoint areas; set preserves omitted fields.
@@ -755,7 +785,8 @@ The whole batch rolls back if any mutation fails. Inputs are limited to 8 MiB
 and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `set-text-format`, `set-cell-format`, `add-data-validation`,
 `set-data-validation`, `add-conditional-format`, `set-conditional-format`,
-`add-named-range`, `set-named-range`, `merge-cells`,
+`add-named-range`, `set-named-range`, `add-spreadsheet-table`,
+`set-spreadsheet-table`, `merge-cells`,
 `unmerge-cells`,
 `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
@@ -844,6 +875,39 @@ duplicate `(name, scope)` identities, and ListObject table-name collisions fail
 atomically. Use the explicit scope `worksheet:workbook` for a local name on a
 worksheet literally named `workbook`.
 
+A Spreadsheet table mutation uses one complete ListObject value. CLI `set`
+preserves omitted fields; batch, Rust, and standard MCP replacements supply the
+complete table:
+
+```json
+{
+  "operation": "add-spreadsheet-table",
+  "sheet": "/Sheet1",
+  "table": {
+    "name": "Sales",
+    "range": "A1:C4",
+    "columns": [
+      {"name": "Name"},
+      {"name": "Qty"},
+      {"name": "Price"}
+    ],
+    "headerRow": true,
+    "totalsRow": false,
+    "style": {"family": "medium", "number": 4},
+    "showFirstColumn": false,
+    "showLastColumn": false,
+    "showRowStripes": true,
+    "showColumnStripes": false
+  }
+}
+```
+
+Use `set-spreadsheet-table` with a stable `path` and complete `table`; use
+ordinary typed `remove` for deletion. Styles are `none`, light 1–21, medium
+1–28, or dark 1–11. `none` requires all style flags to be false. The final range
+must leave at least one data row after enabled header and totals rows and must
+not intersect another table, a merge, or a worksheet-level AutoFilter.
+
 An image mutation uses the same versioned batch boundary:
 
 ```json
@@ -899,12 +963,13 @@ ordinary JSON:
 The first dump scope is the complete document (`/`). It accepts only content
 that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
-typed defined names, typed cells, merged ranges, typed data-validation rules,
-and canonical typed conditional-format rules without cached formula results;
+typed defined names, typed cells, typed ListObject tables, merged ranges, typed
+data-validation rules, and canonical typed conditional-format rules without
+cached formula results;
 plus Presentation slides with plain one-run text shapes and canonical basic
 tables.
 Headers, notes,
-media, non-canonical table styling, rich text, non-canonical package resources,
+media, custom or non-canonical table styling, rich text, non-canonical package resources,
 and every other lossy case fail with
 `use.office.dump_unsupported`; nothing is silently flattened or omitted.
 
@@ -1204,7 +1269,8 @@ use a3s_use_office::{
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
     NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
-    NativeSpreadsheetReadingOrder, NativeSpreadsheetVerticalAlignment,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetTable,
+    NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment,
 };
 
 # async fn inspect() -> Result<(), Box<dyn std::error::Error>> {
@@ -1263,6 +1329,12 @@ let named_range_path = workbook.add_named_range(
         .with_comment("Workbook revenue"),
 )?;
 println!("created {named_range_path}");
+let table_path = workbook.add_spreadsheet_table(
+    "/Sheet1",
+    NativeSpreadsheetTable::new("Sales", "G1:I4", ["Name", "Qty", "Price"])
+        .with_style(NativeSpreadsheetTableStyle::Medium { number: 4 }),
+)?;
+println!("created {table_path}");
 workbook.save().await?;
 
 let document = NativeOfficeDocument::open("report.docx").await?;

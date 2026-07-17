@@ -20,6 +20,7 @@ mod merge;
 mod named_range;
 mod structure;
 mod style;
+mod table;
 mod worksheet;
 
 pub(super) use arrange::{copy_node, move_node, swap_nodes};
@@ -63,6 +64,22 @@ pub(super) fn add_named_range(
     named_range: &super::NativeSpreadsheetNamedRange,
 ) -> UseResult<String> {
     named_range::add(package, named_range)
+}
+
+pub(super) fn add_table(
+    package: &mut NativeOfficePackage,
+    sheet: &str,
+    table: &super::NativeSpreadsheetTable,
+) -> UseResult<String> {
+    table::add(package, sheet, table)
+}
+
+pub(super) fn set_table(
+    package: &mut NativeOfficePackage,
+    path: &str,
+    table: &super::NativeSpreadsheetTable,
+) -> UseResult<String> {
+    table::set(package, path, table)
 }
 
 pub(super) fn set_named_range(
@@ -157,7 +174,9 @@ pub(super) fn set_cell_value(
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
-    if named_range::is_path(path) {
+    if table::is_path(path) {
+        table::remove(package, path)
+    } else if named_range::is_path(path) {
         named_range::remove(package, path)
     } else if conditional_formatting::is_path(path) {
         conditional_formatting::remove(package, path)

@@ -368,9 +368,10 @@ semantic/HTML/SVG readback, replay, CLI atomic batches, and a complete standard
 MCP lifecycle with an unusable OfficeCLI provider.
 
 This milestone is cell data-validation structure, not complete rich
-Spreadsheet or OfficeCLI parity. Table authoring, filter and sort authoring,
-charts, pivot tables, slicers, sparklines, formula evaluation, CSV/TSV import,
-and Excel layout fidelity remain separate work.
+Spreadsheet or OfficeCLI parity. Table calculated columns and totals functions,
+filter criteria and persisted sort state, charts, pivot tables, slicers,
+sparklines, formula evaluation, CSV/TSV import, and Excel layout fidelity remain
+separate work.
 
 Native `add-conditional-format` and `set-conditional-format` form a separate
 closed typed Rust, versioned batch, CLI, and standard MCP contract. Ordinary
@@ -491,8 +492,64 @@ and a complete standard MCP unsaved/save/close lifecycle with an unusable
 OfficeCLI provider.
 
 This milestone is defined-name lifecycle and storage, not a formula parser,
-dependency graph, evaluator, external-link authoring, table authoring, or
-complete rich Spreadsheet parity.
+dependency graph, evaluator, external-link authoring, or complete rich
+Spreadsheet parity.
+
+Native `add-spreadsheet-table` and `set-spreadsheet-table` form a separate
+closed typed Rust, versioned batch, CLI, and standard MCP contract for
+Spreadsheet ListObject tables. Ordinary typed `remove` deletes one table
+through its stable `/SheetName/table[N]` path. The CLI adds a table below an
+existing worksheet with `--type table`, `--name`, one final `--range`, and one
+repeated `--table-column` per range column. CLI `set` carries forward omitted
+fields from a mutable semantic node; Rust, batch, and MCP replacements use one
+complete `table` value.
+
+The value owns a workbook-wide `name`, an optional distinct `displayName`, the
+final rectangular A1 range, exact ordered column names, header and totals-row
+flags, one closed built-in style, and first/last-column plus row/column-stripe
+flags. New tables default to a header, no totals row, `TableStyleMedium2`, and
+row stripes. Styles are `none`, light 1–21, medium 1–28, or dark 1–11; `none`
+omits `tableStyleInfo` and therefore requires every style flag to be false. The
+range includes enabled header and totals rows and must retain at least one data
+row. When a header is enabled, column names are stamped into its cells and the
+table owns an AutoFilter range that excludes an enabled totals row.
+
+Table and display names are limited to 255 characters, follow Excel's Unicode
+identifier grammar, and may not resemble A1 or R1C1 references. Their shared
+workbook namespace is case-insensitively collision-checked against every table
+`name`/`displayName` and every defined name. Column names are 1–255 XML-safe
+characters without surrounding whitespace and are unique case-insensitively.
+The editor accepts at most 65,536 tables per workbook, requires exactly one
+column identity per range column, and atomically rejects table overlap, merged
+cell overlap, or overlap with a worksheet-level AutoFilter. A `set` excludes
+the target table from these identity and geometry checks.
+
+The OPC writer allocates a collision-free table ID and `xl/tables/tableN.xml`
+part, content-type override, worksheet relationship, and ordered `tableParts`
+entry. Removal first proves that the table has no owned or unexpected inbound
+relationship graph, then removes only its worksheet reference, relationship,
+content type, and part. Strict and transitional SpreadsheetML and relationship
+dialects are retained. Replacement preserves supported unknown table-root,
+style, and extension content. Unknown table-column metadata, formulas, totals
+metadata, custom styles, or final collection data that cannot be retained make
+the semantic node non-mutable or fail with
+`use.office.spreadsheet_table_unknown_content` instead of being flattened.
+
+Semantic reads expose table nodes and stable child column nodes, including
+name/display name, normalized range, header/totals state, built-in style,
+display flags, table ID, and `nativeMutable`. Query supports selectors such as
+`table[name=Sales]`. Exact replay emits tables after worksheet creation and
+cell values so header stamping and final supported part maps reproduce
+canonically. Tests cover typed lifecycle, multi-worksheet path identity,
+validation and rollback, namespace and range collisions, strict OOXML, unknown
+content and relationship safety, replay after table replacement, native CLI
+lifecycle and atomic batch, and a complete standard MCP unsaved/save/reopen/
+remove lifecycle with an unusable OfficeCLI provider.
+
+This milestone does not own calculated-column formulas, totals-row labels or
+functions, filter criteria, persisted sort state, custom table styles, query
+tables, external data, slicers, or pivot-table integration. Those remain
+separate closed contracts rather than generic table properties.
 
 Native `merge-cells` and `unmerge-cells` form a separate typed Rust, batch,
 CLI, and standard MCP contract. The CLI projects them as
@@ -789,9 +846,9 @@ same atomic batch rollback and semantic post-validation as add/set/remove.
 
 Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
-tables, Spreadsheet worksheets, typed defined names, typed cells, merged
-ranges, typed data-validation rules, and canonical typed conditional-format
-rules without cached formula results, and
+tables, Spreadsheet worksheets, typed defined names, typed cells, typed
+ListObject tables, merged ranges, typed data-validation rules, and canonical
+typed conditional-format rules without cached formula results, and
 Presentation slides with plain one-run text
 shapes and canonical basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
@@ -907,7 +964,7 @@ add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
 cross-format text formatting, typed Spreadsheet number/fill/border/alignment
 and cell-presentation formatting, exact Spreadsheet merged-cell editing, typed
 Spreadsheet data-validation, conditional-formatting, and scoped defined-name
-editing, inert hyperlinks,
+editing, typed ListObject table lifecycle, inert hyperlinks,
 typed cross-format
 legacy comments, Spreadsheet range and
 row/column structure edits,

@@ -8,7 +8,8 @@ use crate::editor::{
     NativeOfficeEditor, NativeOfficeMutation, NativeSpreadsheetConditionalFormat,
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
-    NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope, SpreadsheetCellValue,
+    NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope, NativeSpreadsheetTable,
+    SpreadsheetCellValue,
 };
 use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
 use crate::{DocumentKind, NativeOfficePackage};
@@ -348,6 +349,7 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
 
         let mut merged_ranges = Vec::new();
         let mut conditional_formats = Vec::new();
+        let mut tables = Vec::new();
         let mut validations = Vec::new();
         for child in &sheet.children {
             match child.node_type {
@@ -408,6 +410,16 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                         )?,
                     );
                 }
+                OfficeNodeType::Table => {
+                    tables.push(NativeSpreadsheetTable::from_semantic_node(child).map_err(
+                        |error| {
+                            dump_unsupported(
+                                &child.path,
+                                format!("Spreadsheet table is not replayable: {error}"),
+                            )
+                        },
+                    )?);
+                }
                 _ => {
                     return Err(dump_unsupported(
                         &child.path,
@@ -431,6 +443,12 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
             NativeOfficeMutation::AddDataValidation {
                 sheet: sheet.path.clone(),
                 validation,
+            }
+        }));
+        mutations.extend(tables.into_iter().map(|table| {
+            NativeOfficeMutation::AddSpreadsheetTable {
+                sheet: sheet.path.clone(),
+                table,
             }
         }));
     }

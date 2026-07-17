@@ -119,12 +119,12 @@ the explicit `mcp serve office-native` standard MCP preview. It does not copy an
 upstream private pipe protocol. The packaged `a3s-use-office` Skill selects
 this native route first, loads format-specific references progressively, and
 documents the explicit compatibility fallback without changing authority or
-starting a provider. During the 0.1.x migration, Office blank
-creation, reads, typed add/set/remove/move/copy/swap operations, constrained raw
-XML access, bounded annotated and issue analysis, typed text formatting,
-typed Spreadsheet cell presentation, data validation, conditional formatting,
-scoped defined names, and exact merged-cell editing, typed scoped text replacement, typed hyperlinks,
-and atomic mutation batches
+starting a provider. During the 0.1.x migration, Office blank creation, reads,
+typed add/set/remove/move/copy/swap operations, constrained raw XML access,
+bounded annotated and issue analysis, typed text formatting, typed Spreadsheet
+cell presentation, data validation, conditional formatting, scoped defined
+names, ListObject tables, exact merged-cell editing, typed scoped text
+replacement, typed hyperlinks, and atomic mutation batches
 are available explicitly under `office native`. Annotated views flatten the
 shared semantic tree with stable paths and bounded observed formatting; the
 same typed contract reads unsaved native MCP session state without a private
@@ -175,7 +175,7 @@ attributes, failing closed when replacement or final collection removal would
 discard unknown children or collection data. Semantic projection adds stable
 `dataValidation` nodes plus sparse observed/virtual-cell annotations; HTML and
 SVG carry only inert metadata. This contract neither evaluates formulas nor
-implies filter, table, chart, or pivot support.
+implies filter criteria, sort state, chart, or pivot support.
 Spreadsheet conditional formatting is a separate closed domain value,
 represented by `add-conditional-format` and `set-conditional-format`; deletion
 reuses typed `remove`. Comparison/formula rules, text and statistical
@@ -207,7 +207,22 @@ exact replay, and the Office Skill share the same typed value. The
 loss-preserving writer retains strict/transitional SpreadsheetML and unknown
 defined-name attributes and fails closed for unknown collection or child
 content. This capability stores defined-name expressions and requests
-recalculation; it neither evaluates formulas nor implies table authoring.
+recalculation; it neither evaluates formulas nor authors external links.
+Spreadsheet ListObject tables are another closed value represented by
+`add-spreadsheet-table` and `set-spreadsheet-table`; deletion reuses ordinary
+typed `remove`. The value owns workbook-wide name/display identity, one final A1
+range, exact ordered column names, header/totals state, a closed built-in style,
+and its style display flags. Identity, range width, data-row, table overlap,
+merge overlap, worksheet-AutoFilter overlap, and shared defined-name namespace
+invariants are checked before mutation. The OPC layer owns table parts, content
+types, worksheet relationships, `tableParts`, header stamping, and the
+table-owned AutoFilter range. Semantic projection exposes stable
+`/Sheet/table[N]` and child column nodes. Rust, versioned batch JSON, CLI,
+standard MCP, exact replay, and the Office Skill share the same value. The
+loss-preserving writer retains strict/transitional dialects and supported
+unknown root/style content, while calculated columns, totals functions, custom
+styles, filter criteria, sort state, query tables, external data, and unsafe
+relationship graphs fail closed rather than becoming generic properties.
 Merged cells are another closed Spreadsheet mutation variant, represented by
 `merge-cells` and `unmerge-cells`, rather than a style flag or universal action.
 The editor normalizes A1 ranges, rejects geometric overlap and ListObject table
@@ -341,10 +356,10 @@ The preview MCP adapter has an explicit typed vocabulary rather than a command
 string passthrough. It supports validate, create/open/list, semantic get/query,
 bounded annotated plus text/outline/statistics views, all-format HTML and SVG,
 all-format bounded issue views, Browser-injected semantic PNG screenshots,
-constrained raw XML inspection, atomic typed mutation batches,
-including typed Spreadsheet data-validation and conditional formatting, scoped
-defined names, and exact merge/unmerge,
-immutable-template merge, save, and close. A screenshot requires an explicit
+constrained raw XML inspection, atomic typed mutation batches, including typed
+Spreadsheet data-validation and conditional formatting, scoped defined names,
+ListObject tables, and exact merge/unmerge, immutable-template merge, save, and
+close. A screenshot requires an explicit
 no-clobber `.png` output and
 releases the Office session lock before Browser rendering. A server process
 owns at most 64 sessions. Batches and structured results are limited to 8 MiB,
@@ -415,7 +430,8 @@ Implemented:
     add/set/remove with sparse semantic readback, typed Spreadsheet
     conditional-format add/set/remove with stable semantic readback, typed
     scoped Spreadsheet defined-name add/set/remove with stable semantic
-    selectors, exact Spreadsheet merged-cell editing,
+    selectors, typed Spreadsheet ListObject add/set/remove with stable table and
+    column paths, exact Spreadsheet merged-cell editing,
     and typed Spreadsheet text/number/boolean/formula cell and range mutation,
     typed Word/Spreadsheet/Presentation hyperlink
     read/add/update/remove with inert external targets, typed legacy comment

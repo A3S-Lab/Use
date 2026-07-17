@@ -27,6 +27,7 @@ mod spreadsheet_conditional_format;
 mod spreadsheet_formula;
 mod spreadsheet_named_range;
 mod spreadsheet_reference;
+mod spreadsheet_table;
 mod template;
 mod template_merge;
 mod xml;
@@ -55,10 +56,11 @@ pub use editor::{
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
     NativeSpreadsheetDifferentialFormat, NativeSpreadsheetFill, NativeSpreadsheetNamedRange,
-    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder,
-    NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES,
-    MAX_NATIVE_OFFICE_REPLACEMENT_BYTES, MAX_NATIVE_OFFICE_TEXT_MATCHES,
-    MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES, MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
+    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder, NativeSpreadsheetTable,
+    NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment,
+    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
+    MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 pub use issues::{
@@ -295,6 +297,9 @@ mod issues_tests;
 mod named_range_tests;
 #[cfg(test)]
 mod spreadsheet_edit_tests;
+
+#[cfg(test)]
+mod spreadsheet_table_tests;
 
 #[cfg(test)]
 mod opc_tests;

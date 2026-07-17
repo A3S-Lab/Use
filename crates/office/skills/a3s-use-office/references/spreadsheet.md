@@ -10,6 +10,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 - [Cell Text Formatting](#cell-text-formatting)
 - [Cell Presentation Formatting](#cell-presentation-formatting)
 - [Merged Cells](#merged-cells)
+- [Tables](#tables)
 - [Data Validation](#data-validation)
 - [Conditional Formatting](#conditional-formatting)
 - [Named Ranges](#named-ranges)
@@ -179,6 +180,106 @@ unknown collection data, the operation fails with
 is merged-cell structure support, not complete rich Spreadsheet or OfficeCLI
 parity.
 
+## Tables
+
+Use the closed ListObject lifecycle for an Excel table rather than editing its
+worksheet relationship or `xl/tables` part directly:
+
+```bash
+# The final range includes the header and any enabled totals row.
+a3s use office native add workbook.xlsx /Sheet1 \
+  --type table \
+  --name Sales \
+  --range F1:H4 \
+  --table-column Name \
+  --table-column Qty \
+  --table-column Price \
+  --style medium:4 \
+  --show-row-stripes true \
+  --json
+
+# Discover the stable table and exact column identities.
+a3s use office native query workbook.xlsx 'table[name=Sales]' --json
+a3s use office native get workbook.xlsx '/Sheet1/table[1]' --depth 1 --json
+
+# CLI set preserves omitted fields. Repeated columns replace the complete list.
+a3s use office native set workbook.xlsx '/Sheet1/table[1]' \
+  --name Inventory \
+  --display-name InventoryView \
+  --range B2:D6 \
+  --table-column Item \
+  --table-column Units \
+  --table-column Cost \
+  --totals-row true \
+  --style dark:2 \
+  --show-row-stripes false \
+  --show-column-stripes true \
+  --json
+
+a3s use office native remove workbook.xlsx '/Sheet1/table[1]' --json
+```
+
+Provide exactly one non-empty, case-insensitively unique column name for every
+range column. Table `name` and optional `displayName` use Excel identifier
+grammar, are limited to 255 characters, may not resemble A1/R1C1 references,
+and share a case-insensitive workbook namespace with other table and defined
+names. Use `--display-name none` to clear a distinct display name during CLI
+set. A workbook accepts at most 65,536 tables.
+
+`--header-row` and `--totals-row` require booleans. The final range must retain
+at least one data row after enabled structural rows. An enabled header stamps
+the ordered column names into its cells and creates a table-owned AutoFilter;
+an enabled totals row is excluded from that filter range. The table range may
+not intersect another table, a merged range, or a worksheet-level AutoFilter.
+Every failure rolls back the full in-memory batch.
+
+`--style` accepts `none`, `light:<1-21>`, `medium:<1-28>`, or `dark:<1-11>`.
+New tables default to `medium:2` with row stripes. `--show-first-column`,
+`--show-last-column`, `--show-row-stripes`, and `--show-column-stripes` require
+booleans. `none` omits the style carrier and therefore requires every display
+flag to be false.
+
+Batch, standard MCP, and Rust use the complete typed value:
+
+```json
+{
+  "operation": "add-spreadsheet-table",
+  "sheet": "/Sheet1",
+  "table": {
+    "name": "Sales",
+    "range": "F1:H4",
+    "columns": [
+      {"name": "Name"},
+      {"name": "Qty"},
+      {"name": "Price"}
+    ],
+    "headerRow": true,
+    "totalsRow": false,
+    "style": {"family": "medium", "number": 4},
+    "showFirstColumn": false,
+    "showLastColumn": false,
+    "showRowStripes": true,
+    "showColumnStripes": false
+  }
+}
+```
+
+Use `set-spreadsheet-table` with a stable `path` and a complete `table` value
+for batch or MCP replacement; use ordinary `remove` for deletion. Semantic
+nodes expose `/SheetName/table[N]`, children such as
+`/SheetName/table[N]/column[M]`, normalized `ref`, style and structural flags,
+and `nativeMutable`. Do not set a table whose readback reports
+`nativeMutable=false`.
+
+The writer owns the table part, content type, worksheet relationship,
+`tableParts`, header cells, and table AutoFilter while preserving strict or
+transitional OOXML and supported unknown root/style/extension content. It fails
+closed for unknown column metadata, unsafe relationship graphs, or collection
+data that cannot be retained. Exact replay, CLI atomic batches, and standard MCP
+sessions use the same contract. Calculated columns, totals labels/functions,
+filter criteria, persisted sort state, custom table styles, query tables,
+external data, slicers, and pivot integration are not yet native.
+
 ## Data Validation
 
 Use one typed rule for one or more disjoint areas on the same worksheet:
@@ -276,8 +377,9 @@ metadata.
 Updates preserve unknown rule attributes. Replacement fails if unknown rule
 children would be lost, and final removal fails if unknown collection data
 would be discarded. Strict/transitional OOXML, atomic batch rollback, and
-exact replay are supported. This capability does not add table or filter
-authoring, charts, pivots, formula evaluation, or Excel layout fidelity.
+exact replay are supported. This capability does not add table calculated
+columns/totals functions, filter criteria, sort state, charts, pivots, formula
+evaluation, or Excel layout fidelity.
 
 ## Conditional Formatting
 
@@ -460,9 +562,8 @@ Batch, standard MCP, and Rust use one complete typed value for add/set and
 ordinary typed `remove` for deletion. The writer preserves strict/transitional
 SpreadsheetML and unknown attributes. Unknown collection or child content
 fails closed when an edit cannot retain it. Exact replay includes supported
-defined names. This remains defined-name lifecycle support, not table
-authoring, external-link authoring, formula evaluation, or complete
-Spreadsheet parity.
+defined names. This remains defined-name lifecycle support, not external-link
+authoring, formula evaluation, or complete Spreadsheet parity.
 
 ## Structure
 
