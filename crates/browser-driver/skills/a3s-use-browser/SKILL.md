@@ -10,7 +10,10 @@ Use the host surface that is already available:
 
 - In an A3S Code `use` worker, call the available
   `mcp__use_browser__*` tools directly. The host owns installation and MCP
-  lifecycle; do not run component installation or shell commands there.
+  lifecycle; do not run component installation or shell commands there. Call
+  `mcp__use_browser__agent_browser_doctor` first. If its managed browser is
+  missing, request `mcp__use_browser__agent_browser_install`; the parent TUI
+  must obtain HITL approval before that mutation can run.
 - In a CLI-only agent host, use the `a3s use browser ...` commands below.
 
 Install the built-in capability and its managed runtime when needed:

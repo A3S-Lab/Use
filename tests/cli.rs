@@ -21,9 +21,13 @@ fn capabilities_are_available_as_versioned_json() {
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["schemaVersion"], 1);
-    assert_eq!(value["data"]["domains"][0]["id"], "browser");
-    assert_eq!(value["data"]["domains"][1]["id"], "office");
-    assert_eq!(value["data"]["domains"][2]["id"], "box");
+    let domains = value["data"]["domains"].as_array().unwrap();
+    for id in ["browser", "office", "ocr", "box"] {
+        assert!(
+            domains.iter().any(|domain| domain["id"] == id),
+            "missing built-in domain {id}: {domains:?}"
+        );
+    }
     assert!(value["data"].get("customJsonRpc").is_none());
     assert!(value.get("jsonrpc").is_none());
 }
@@ -57,6 +61,10 @@ fn unified_capability_snapshot_projects_builtin_skills() {
     let office = capabilities
         .iter()
         .find(|capability| capability["id"] == "use/office")
+        .unwrap();
+    let office_compat = capabilities
+        .iter()
+        .find(|capability| capability["id"] == "use/office-compat")
         .unwrap();
     assert_eq!(browser["origin"], "built-in");
     #[cfg(feature = "browser")]
@@ -100,6 +108,15 @@ fn unified_capability_snapshot_projects_builtin_skills() {
         assert!(office_skill_digest
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
+        #[cfg(feature = "mcp")]
+        {
+            assert_eq!(office["readiness"], "ready");
+            assert_eq!(office["mcp"]["target"], "office-native");
+        }
+        assert_eq!(office_compat["route"], "office-compat");
+        assert_eq!(office_compat["readiness"], "missing");
+        assert!(office_compat.get("mcp").is_none());
+        assert!(office_compat.get("skills").is_none());
     }
     #[cfg(not(feature = "office"))]
     {
@@ -152,6 +169,9 @@ fn office_skill_commands_are_packaged_and_provider_independent() {
         .as_str()
         .unwrap()
         .contains("## Bundled reference: references/mcp.md"));
+    let office_skill = get["data"]["content"].as_str().unwrap();
+    assert!(office_skill.contains("mcp__use_office__*"));
+    assert!(office_skill.contains("mcp__use_office_compat__*"));
 
     let path = Command::new(binary())
         .args(["office", "skills", "path", "a3s-use-office", "--json"])
@@ -1811,6 +1831,27 @@ fn office_mcp_target_delegates_to_officeclis_standard_server() {
     assert!(output.stderr.is_empty());
 }
 
+#[cfg(all(unix, feature = "office"))]
+#[test]
+fn office_compat_mcp_target_delegates_to_officeclis_standard_server() {
+    let temp = tempfile::tempdir().unwrap();
+    let executable = temp.path().join("officecli-fixture");
+    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\"\nexit 5\n").unwrap();
+    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).unwrap();
+
+    let output = Command::new(binary())
+        .args(["mcp", "serve", "office-compat"])
+        .env("A3S_OFFICECLI_EXECUTABLE", &executable)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(5));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "mcp\n");
+    assert!(output.stderr.is_empty());
+}
+
 #[cfg(all(feature = "office", feature = "mcp"))]
 #[tokio::test]
 async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
@@ -2098,6 +2139,36 @@ async fn standard_mcp_request(
         .unwrap();
     assert!(bytes > 0, "native Office MCP closed before responding");
     serde_json::from_str(&line).unwrap()
+}
+
+#[cfg(feature = "ocr")]
+#[test]
+fn built_in_ocr_projects_the_canonical_code_route_and_skill() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+
+    let snapshot = Command::new(binary())
+        .args(["capability", "snapshot", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(snapshot.status.success(), "{snapshot:?}");
+    let snapshot: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
+    let ocr = snapshot["data"]["registry"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["id"] == "use/ocr")
+        .unwrap();
+    assert_eq!(ocr["route"], "ocr");
+    assert_eq!(ocr["origin"], "built-in");
+    assert_eq!(ocr["enabled"], true);
+    assert_eq!(ocr["mcp"]["target"], "ocr-native");
+    assert!(ocr["skills"][0]["path"]
+        .as_str()
+        .is_some_and(|path| Path::new(path).ends_with("skills/a3s-use-ocr/SKILL.md")));
+    let digest = ocr["skills"][0]["sha256"].as_str().unwrap();
+    assert_eq!(digest.len(), 64);
 }
 
 #[cfg(all(unix, feature = "extensions"))]

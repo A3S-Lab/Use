@@ -14,7 +14,7 @@ use a3s_use_office::{
 fn native_office_server_exposes_only_bounded_typed_tools() {
     let server = NativeOfficeMcpServer::new();
     let tools = server.tool_router.list_all();
-    let mut names = tools
+    let mut names: Vec<&str> = tools
         .iter()
         .map(|tool| tool.name.as_ref())
         .collect::<Vec<_>>();
@@ -36,6 +36,30 @@ fn native_office_server_exposes_only_bounded_typed_tools() {
             "office_view",
         ]
     );
+
+    let annotations = |name: &str| {
+        tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .and_then(|tool| tool.annotations.as_ref())
+            .unwrap_or_else(|| panic!("{name} must declare MCP annotations"))
+    };
+    for name in [
+        "office_validate",
+        "office_list",
+        "office_get",
+        "office_query",
+        "office_raw_xml",
+    ] {
+        let annotation = annotations(name);
+        assert_eq!(annotation.read_only_hint, Some(true), "{name}");
+        assert_eq!(annotation.open_world_hint, Some(false), "{name}");
+    }
+    assert_eq!(
+        annotations("office_apply_batch").read_only_hint,
+        Some(false)
+    );
+    assert_eq!(annotations("office_save").destructive_hint, Some(true));
 }
 
 #[test]

@@ -8,7 +8,11 @@
 
 ## Session Workflow
 
-Start the explicit native standard MCP server:
+In an A3S Code `use` worker, the host has already started the native server.
+Call the available `mcp__use_office__office_*` tools; do not start a process or
+run a shell command. Tool names below omit the host prefix for readability.
+
+In a CLI-only MCP host, start the explicit native standard MCP server:
 
 ```bash
 a3s use mcp serve office-native
@@ -504,6 +508,9 @@ Annotated reads include unsaved mutations in the current typed session.
 Screenshot output requires a no-clobber `.png` path and a ready A3S Browser
 provider; other native Office tools do not require Browser or OfficeCLI.
 
-Use `a3s use mcp serve office` only for the pinned OfficeCLI compatibility
-server. It is a separate standard MCP target and is not the native session
-engine.
+In an A3S Code `use` worker, use an available
+`mcp__use_office_compat__*` tool only when the native vocabulary lacks the
+requested operation. In a CLI-only MCP host, `a3s use mcp serve office-compat`
+starts the pinned OfficeCLI compatibility server; the legacy
+`a3s use mcp serve office` alias remains supported. It is a separate standard
+MCP target and is not the native session engine.

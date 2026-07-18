@@ -14,6 +14,7 @@ dependencies = [
  "a3s-use-browser",
  "a3s-use-core",
  "a3s-use-extension",
+ "a3s-use-ocr",
  "a3s-use-office",
  "anyhow",
  "async-trait",
@@ -113,6 +114,25 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "a3s-use-ocr"
+version = "0.1.1"
+dependencies = [
+ "a3s-use-core",
+ "axum",
+ "base64",
+ "clap",
+ "reqwest",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "url",
 ]
 
 [[package]]
