@@ -15,6 +15,9 @@ mod first_use;
 #[cfg(feature = "ocr")]
 mod ocr_builtin;
 
+#[cfg(feature = "document")]
+mod document_builtin;
+
 #[cfg(feature = "office")]
 mod office_artifact;
 #[cfg(feature = "office")]
@@ -43,6 +46,9 @@ pub use a3s_use_office as office;
 
 #[cfg(feature = "ocr")]
 pub use a3s_use_ocr as ocr;
+
+#[cfg(feature = "document")]
+pub use a3s_use_document as document;
 
 #[cfg(feature = "extensions")]
 pub use a3s_use_extension as extension;

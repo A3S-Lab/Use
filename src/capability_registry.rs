@@ -78,6 +78,7 @@ pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
         office_capability().await?,
         office_compatibility_capability(),
         ocr_capability().await?,
+        document_capability().await?,
         box_capability(),
     ];
     capabilities.extend(extensions);
@@ -302,6 +303,57 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
     }
 }
 
+async fn document_capability() -> UseResult<CapabilityBinding> {
+    #[cfg(feature = "document")]
+    {
+        let diagnostic = crate::document_builtin::diagnostic();
+        let skill = crate::document_builtin::primary_skill_surface().await;
+        let (package_root, skills) = match skill {
+            Some((root, path)) => (Some(root), vec![skill_surface(path).await?]),
+            None => (None, Vec::new()),
+        };
+        let mut surfaces = vec!["cli".to_string()];
+        if !skills.is_empty() {
+            surfaces.push("skill".to_string());
+        }
+        #[cfg(feature = "mcp")]
+        surfaces.push("mcp".to_string());
+        Ok(CapabilityBinding {
+            id: "use/document".to_string(),
+            route: "document".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: true,
+            readiness: diagnostic.readiness,
+            package_root,
+            surfaces,
+            #[cfg(feature = "mcp")]
+            mcp: Some(McpSurface {
+                target: "document-native".to_string(),
+                transport: McpTransport::Stdio,
+            }),
+            #[cfg(not(feature = "mcp"))]
+            mcp: None,
+            skills,
+        })
+    }
+    #[cfg(not(feature = "document"))]
+    {
+        Ok(CapabilityBinding {
+            id: "use/document".to_string(),
+            route: "document".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: false,
+            readiness: Readiness::Missing,
+            package_root: None,
+            surfaces: Vec::new(),
+            mcp: None,
+            skills: Vec::new(),
+        })
+    }
+}
+
 fn box_capability() -> CapabilityBinding {
     let diagnostic = crate::component_route::box_diagnostic();
     CapabilityBinding {
@@ -491,11 +543,17 @@ mod tests {
             .iter()
             .find(|capability| capability.id == "use/ocr")
             .unwrap();
+        let document = snapshot
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == "use/document")
+            .unwrap();
 
         assert_eq!(browser.origin, CapabilityOrigin::BuiltIn);
         assert_eq!(office.origin, CapabilityOrigin::BuiltIn);
         assert_eq!(office_compat.origin, CapabilityOrigin::BuiltIn);
         assert_eq!(ocr.origin, CapabilityOrigin::BuiltIn);
+        assert_eq!(document.origin, CapabilityOrigin::BuiltIn);
         #[cfg(feature = "browser")]
         {
             assert!(browser.surfaces.iter().any(|surface| surface == "skill"));
@@ -532,6 +590,25 @@ mod tests {
             assert!(!office.enabled);
             assert!(office.surfaces.is_empty());
             assert!(office.skills.is_empty());
+        }
+        #[cfg(feature = "document")]
+        {
+            assert_eq!(document.readiness, Readiness::Ready);
+            assert!(document
+                .skills
+                .iter()
+                .any(|skill| skill.path.ends_with("a3s-use-document/SKILL.md")));
+            #[cfg(feature = "mcp")]
+            assert_eq!(
+                document.mcp.as_ref().map(|mcp| mcp.target.as_str()),
+                Some("document-native")
+            );
+        }
+        #[cfg(not(feature = "document"))]
+        {
+            assert!(!document.enabled);
+            assert!(document.surfaces.is_empty());
+            assert!(document.skills.is_empty());
         }
         #[cfg(feature = "ocr")]
         {

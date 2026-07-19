@@ -13,6 +13,7 @@ version = "0.1.1"
 dependencies = [
  "a3s-use-browser",
  "a3s-use-core",
+ "a3s-use-document",
  "a3s-use-extension",
  "a3s-use-ocr",
  "a3s-use-office",
@@ -100,6 +101,26 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "a3s-use-document"
+version = "0.1.1"
+dependencies = [
+ "a3s-use-core",
+ "a3s-use-ocr",
+ "a3s-use-office",
+ "async-trait",
+ "clap",
+ "image",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "zip",
 ]
 
 [[package]]

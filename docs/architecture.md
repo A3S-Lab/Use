@@ -2,9 +2,9 @@
 
 ## Domain boundary
 
-Browser and Office are typed libraries and reserved built-in command routes.
-The default binary cannot omit their command and diagnostic surfaces, although
-provider runtimes may be missing.
+Browser, Office, OCR, and Document are typed libraries and reserved built-in
+command routes. The default binary cannot omit their command and diagnostic
+surfaces, although provider runtimes or model assets may be missing.
 
 Office's target runtime is an A3S-owned Rust engine. Its lowest layer is a
 bounded, loss-preserving OPC/OOXML package kernel; format semantics build above
@@ -13,7 +13,11 @@ compatibility backend until the native promotion gates in
 [Native Office Engine](native-office.md) pass.
 
 Search depends directly on the object-safe PageRenderer contract in
-a3s-use-browser. It never executes the CLI or requires a background service.
+`a3s-use-browser`. It never executes the CLI or requires a background service.
+Search and Use resolve `A3S_USE_BROWSER_HOME`,
+`A3S_DATA_HOME/use/browser`, or the default
+`~/.local/share/a3s/use/browser` through that same crate, so they share one
+Chrome installation and receipt layout.
 
 Provider selection is typed. `DiscoveredChrome` remains the non-installing
 default for embedded callers such as Search. A validated direct A3S Browser
@@ -51,6 +55,24 @@ the pinned model bundle when first-use policy permits it. Standard MCP keeps
 idempotent `ocr_install` network mutation requires parent confirmation.
 Explicit `use/ocr` component operations remain available for preparation.
 
+`a3s-use-document` composes the native Office package kernel with
+`a3s-use-ocr`; it does not introduce another Office or OCR backend. Inspection
+extracts bounded DOCX, XLSX, and PPTX structure, native text, semantic units,
+and embedded-image candidates without installing or running OCR. Parsing keeps
+native Office text as the structural source of truth and selectively adds local
+PP-OCRv6 evidence for required, suggested, or explicitly selected raster
+images. Standalone raster images use the same path. Results preserve archive,
+content, OOXML part, embedded-image, model, confidence, polygon, and
+bounding-box provenance.
+
+The direct Document CLI is first-use authority and prepares the shared
+PP-OCRv6 bundle only when parsing actually selects raster evidence. Complete
+release archives already carry that bundle. Standard MCP keeps
+`document_inspect` and `document_parse` read-only and non-installing; the
+separate idempotent `document_install_ocr` network mutation requires parent
+confirmation. The implementation does not invoke Tesseract, Python,
+PaddlePaddle, Microsoft Office, LibreOffice, Browser, or an off-device service.
+
 ## Hot-plug registry
 
 Extension code remains behind native process boundaries. The registry is a
@@ -78,27 +100,29 @@ custom RPC protocol, `dlopen`, or restart is required.
 ### Unified capability projection
 
 Resident Code hosts do not need separate discovery paths for built-in and
-external domains. `capability snapshot` projects Browser, native Office, OCR,
-Box, and enabled extensions through one schema while preserving each binding's
-`built-in` or `extension` origin. `capability watch` accepts both the extension
-generation and a content revision. The generation advances for extension
-lifecycle commits; the SHA-256 revision also detects built-in provider
-readiness and packaged Skill changes when the extension generation remains
-unchanged. Each Skill projection includes an absolute package path and its own
-lowercase SHA-256, allowing a resident host to reject raced or modified bytes
-before replacing its live Skill.
-The default distribution projects the Browser, first-party `a3s-use-office`,
-and first-party `a3s-use-ocr` Skills. `office skills list|get|path` exposes the
-Office Skill as bounded local CLI reads; it never launches the OfficeCLI
-compatibility provider. For resident hosts, `use/office` targets the built-in
-`office-native` MCP server and is ready independently of OfficeCLI. A discovered
-OfficeCLI provider is projected separately as `use/office-compat`, targeting
-the standard compatibility server without carrying the native Skill. The
-`use/ocr` route targets `ocr-native`; model readiness remains visible.
+external domains. `capability snapshot` projects Browser, native Office,
+Document, OCR, Box, and enabled extensions through one schema while preserving
+each binding's `built-in` or `extension` origin. `capability watch` accepts both
+the extension generation and a content revision. The generation advances for
+extension lifecycle commits; the SHA-256 revision also detects built-in
+provider readiness and packaged Skill changes when the extension generation
+remains unchanged. Each Skill projection includes an absolute package path and
+its own lowercase SHA-256, allowing a resident host to reject raced or modified
+bytes before replacing its live Skill.
+The default distribution projects the Browser plus first-party
+`a3s-use-office`, `a3s-use-document`, and `a3s-use-ocr` Skills.
+`office skills list|get|path` exposes the Office Skill as bounded local CLI
+reads; it never launches the OfficeCLI compatibility provider. For resident
+hosts, `use/office` targets the built-in `office-native` MCP server and is ready
+independently of OfficeCLI. A discovered OfficeCLI provider is projected
+separately as `use/office-compat`, targeting the standard compatibility server
+without carrying the native Skill. `use/document` targets `document-native`,
+and `use/ocr` targets `ocr-native`; shared model readiness remains visible.
 Read-only discovery never installs providers. Direct Browser launch, OfficeCLI
-compatibility execution, and OCR extraction use the first-use policy. Their MCP
-workers use separately annotated installers that require parent confirmation;
-native Office needs no provider installation.
+compatibility execution, OCR extraction, and Document parsing with selected
+raster evidence use the first-use policy. Their MCP workers use separately
+annotated installers that require parent confirmation; native Office and
+native-only Document parsing need no provider installation.
 
 The projection contains content-bound Skill references and an MCP launch target,
 never executable extension code or a generic action payload. Consumers still
@@ -421,7 +445,9 @@ The umbrella CLI delegates runtime lifecycle through ordinary commands:
     a3s-use component list --json
     a3s-use component status browser --json
     a3s-use component install browser --json
+    a3s-use component install document --json
     a3s-use component install office --json
+    a3s-use component install ocr --json
     a3s-use component uninstall office --json
 
 Each invocation accepts argv and returns one versioned JSON document plus an
@@ -442,7 +468,7 @@ component for one deprecation cycle before removal.
 
 Implemented:
 
-1. Core, Browser, Office, OCR, extension, and component contracts.
+1. Core, Browser, Office, Document, OCR, extension, and component contracts.
 2. Chrome and Lightpanda extraction from Search.
 3. Search injection through `Arc<dyn PageRenderer>`.
 4. Typed Browser rendering and session tools over standard MCP stdio.
@@ -509,6 +535,10 @@ Implemented:
     recognition, standard closed-world MCP annotations/output schemas, pinned
     release models, and a content-bound Skill that projects to
     `mcp__use_ocr__*` in A3S Code.
+17. An agentic Document route that combines native DOCX/XLSX/PPTX structure
+    with selective local PP-OCRv6 evidence, preserves source-to-block
+    provenance, shares release-packaged models with OCR, and projects a
+    content-bound Skill plus confirmed MCP installer into A3S Code.
 
 Next:
 

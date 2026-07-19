@@ -22,7 +22,7 @@ fn capabilities_are_available_as_versioned_json() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["schemaVersion"], 1);
     let domains = value["data"]["domains"].as_array().unwrap();
-    for id in ["browser", "office", "ocr", "box"] {
+    for id in ["browser", "document", "office", "ocr", "box"] {
         assert!(
             domains.iter().any(|domain| domain["id"] == id),
             "missing built-in domain {id}: {domains:?}"
@@ -65,6 +65,10 @@ fn unified_capability_snapshot_projects_builtin_skills() {
     let office_compat = capabilities
         .iter()
         .find(|capability| capability["id"] == "use/office-compat")
+        .unwrap();
+    let document = capabilities
+        .iter()
+        .find(|capability| capability["id"] == "use/document")
         .unwrap();
     assert_eq!(browser["origin"], "built-in");
     #[cfg(feature = "browser")]
@@ -123,6 +127,23 @@ fn unified_capability_snapshot_projects_builtin_skills() {
         assert_eq!(office["enabled"], false);
         assert_eq!(office["surfaces"], serde_json::json!([]));
         assert!(office.get("skills").is_none());
+    }
+    assert_eq!(document["origin"], "built-in");
+    #[cfg(feature = "document")]
+    {
+        assert_eq!(document["route"], "document");
+        assert_eq!(document["readiness"], "ready");
+        assert!(document["skills"][0]["path"]
+            .as_str()
+            .is_some_and(|path| Path::new(path).ends_with("skills/a3s-use-document/SKILL.md")));
+        #[cfg(feature = "mcp")]
+        assert_eq!(document["mcp"]["target"], "document-native");
+    }
+    #[cfg(not(feature = "document"))]
+    {
+        assert_eq!(document["enabled"], false);
+        assert_eq!(document["surfaces"], serde_json::json!([]));
+        assert!(document.get("skills").is_none());
     }
     assert!(value.get("jsonrpc").is_none());
 }
@@ -2223,6 +2244,83 @@ fn built_in_ocr_projects_the_canonical_code_route_and_skill() {
     assert_eq!(digest.len(), 64);
 }
 
+#[cfg(feature = "document")]
+#[test]
+fn built_in_document_projects_native_parser_and_agentic_skill() {
+    let temp = tempfile::tempdir().unwrap();
+    let snapshot = Command::new(binary())
+        .args(["capability", "snapshot", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(snapshot.status.success(), "{snapshot:?}");
+    let snapshot: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
+    let document = snapshot["data"]["registry"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["id"] == "use/document")
+        .unwrap();
+    assert_eq!(document["route"], "document");
+    assert_eq!(document["origin"], "built-in");
+    assert_eq!(document["enabled"], true);
+    assert_eq!(document["readiness"], "ready");
+    assert_eq!(document["mcp"]["target"], "document-native");
+    let skill_path = document["skills"][0]["path"].as_str().unwrap();
+    assert!(Path::new(skill_path).ends_with("skills/a3s-use-document/SKILL.md"));
+    let skill = std::fs::read_to_string(skill_path).unwrap();
+    assert!(skill.contains("mcp__use_document__document_parse"));
+    assert!(skill.contains("does not require"));
+    assert!(!skill.contains("Tesseract as"));
+}
+
+#[cfg(feature = "document")]
+#[test]
+fn document_inspect_is_non_installing_and_direct_parse_honors_first_use_policy() {
+    let temp = tempfile::tempdir().unwrap();
+    let image_path = temp.path().join("input.bmp");
+    std::fs::write(&image_path, one_pixel_bmp()).unwrap();
+    let model_home = temp.path().join("ocr");
+
+    let inspected = Command::new(binary())
+        .args([
+            "document",
+            "inspect",
+            image_path.to_str().unwrap(),
+            "--json",
+        ])
+        .env("A3S_USE_OCR_HOME", &model_home)
+        .env("A3S_NO_AUTO_INSTALL", "1")
+        .output()
+        .unwrap();
+    assert!(inspected.status.success(), "{inspected:?}");
+    let inspected: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    assert_eq!(inspected["data"]["source"]["kind"], "image");
+    assert_eq!(inspected["data"]["images"][0]["recommendation"], "required");
+    assert!(!model_home.exists());
+
+    let parsed = Command::new(binary())
+        .args(["document", "parse", image_path.to_str().unwrap(), "--json"])
+        .env("A3S_USE_OCR_HOME", &model_home)
+        .env("A3S_NO_AUTO_INSTALL", "1")
+        .output()
+        .unwrap();
+    assert_eq!(parsed.status.code(), Some(1), "{parsed:?}");
+    let parsed: serde_json::Value = serde_json::from_slice(&parsed.stdout).unwrap();
+    assert_eq!(parsed["error"]["code"], "use.ocr.auto_install_disabled");
+    assert_eq!(parsed["error"]["details"]["reason"], "A3S_NO_AUTO_INSTALL");
+}
+
+#[cfg(any(feature = "document", feature = "ocr"))]
+fn one_pixel_bmp() -> [u8; 58] {
+    [
+        0x42, 0x4d, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00,
+    ]
+}
+
 #[cfg(feature = "browser")]
 #[test]
 fn browser_render_never_replaces_an_invalid_explicit_provider() {
@@ -2249,17 +2347,7 @@ fn browser_render_never_replaces_an_invalid_explicit_provider() {
 fn ocr_extract_honors_the_no_auto_install_boundary_for_a_valid_image() {
     let temp = tempfile::tempdir().unwrap();
     let image_path = temp.path().join("input.bmp");
-    std::fs::write(
-        &image_path,
-        [
-            0x42, 0x4d, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00,
-            0x28, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00,
-            0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff,
-            0xff, 0x00,
-        ],
-    )
-    .unwrap();
+    std::fs::write(&image_path, one_pixel_bmp()).unwrap();
     let output = Command::new(binary())
         .args(["ocr", "extract", image_path.to_str().unwrap(), "--json"])
         .env("A3S_USE_OCR_HOME", temp.path().join("ocr"))

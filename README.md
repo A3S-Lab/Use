@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <em>Use browsers, Office documents, OCR, and independently shipped application domains through native CLI, standard MCP, and Skills</em>
+  <em>Use browsers, native Office, agentic document parsing, local OCR, and independently shipped application domains through native CLI, standard MCP, and Skills</em>
 </p>
 
 <p align="center">
@@ -14,6 +14,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#browser">Browser</a> •
   <a href="#office">Office</a> •
+  <a href="#document">Document</a> •
   <a href="#ocr">OCR</a> •
   <a href="#external-extensions">Extensions</a> •
   <a href="#architecture">Architecture</a> •
@@ -25,9 +26,10 @@
 ## Overview
 
 **A3S Use** is the application-capability layer for A3S. Browser, native Office,
-and OCR are first-party domains in the default distribution. Independently
-distributed packages can add more domains without rebuilding Use by declaring
-native CLI, standard MCP, and/or `SKILL.md` surfaces in an A3S ACL manifest.
+Document, and OCR are first-party domains in the default distribution.
+Independently distributed packages can add more domains without rebuilding Use
+by declaring native CLI, standard MCP, and/or `SKILL.md` surfaces in an A3S ACL
+manifest.
 
 The primary user entry point is `a3s use`; `a3s-use` is the standalone binary
 used by the umbrella CLI and remains available for direct use, automation, and
@@ -91,8 +93,14 @@ a3s use office native merge template.docx report.docx --data @report.json --json
 a3s use office get report.docx /body --json
 a3s use office batch report.xlsx --input updates.json --json
 
-# Start a standard MCP server for Browser or the explicit native Office preview.
+# Inspect native Office structure, then selectively OCR embedded raster evidence.
+a3s use document inspect report.docx --json
+# The first parse that selects raster evidence prepares PP-OCRv6 when needed.
+a3s use document parse report.docx --ocr auto --json
+
+# Start standard MCP servers for Browser, Document, or native Office.
 a3s use mcp serve browser
+a3s use mcp serve document
 a3s use mcp serve office-native
 
 # Keep using the pinned OfficeCLI compatibility MCP server where needed.
@@ -112,8 +120,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 
 ## Features
 
-- **Built-In Browser, Office, and OCR**: Keep stable first-party command routes
-  while reporting provider readiness separately
+- **Built-In Browser, Document, Office, and OCR**: Keep stable first-party
+  command routes while reporting provider readiness separately
 - **Typed Rust Contracts**: Embed Browser rendering and Office operations
   without starting a CLI process or an MCP server
 - **Agent Browser Compatibility**: Provide the locked 82-command vocabulary,
@@ -141,6 +149,10 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **First-Party OCR Domain**: Run pinned PP-OCRv6 detection and recognition
   models locally through ONNX Runtime, with source digests and bounded layout
   evidence
+- **Agentic Document Parser**: Combine native DOCX, XLSX, and PPTX structure
+  with selectively chosen PP-OCRv6 evidence from embedded or standalone raster
+  images while preserving source, OOXML part, image digest, confidence,
+  polygon, and bounding-box provenance
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
   resident host can add, replace, or remove live capabilities without restarting
 - **Content-Bound Skills**: Project an absolute package path and lowercase
@@ -161,6 +173,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | --- | --- | --- | --- | --- | --- |
 | Browser | Built in | Full Browser vocabulary with first-launch preparation | A3S Use standard MCP server with confirmed installer | Six packaged Browser Skills | A3S Use |
 | Office | Built in | Native Office plus first-use compatibility fallback | Typed native server with confirmed compatibility installer plus OfficeCLI server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
+| Document | Built in | Native inspect and parse with selective first-use OCR | `document_doctor`, `document_inspect`, `document_parse`, and confirmed `document_install_ocr` | Packaged `a3s-use-document` Skill | A3S Use native Office plus shared local PP-OCRv6 |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
 | OCR | Built in | Doctor and first-use typed image extraction | `ocr_doctor`, confirmed `ocr_install`, and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
@@ -171,13 +184,15 @@ does not copy Box, discover a replacement on `PATH`, or write a second receipt.
 
 ### Cargo feature matrix
 
-Default features are `browser`, `office`, `ocr`, `extensions`, and `mcp`.
+Default features are `browser`, `office`, `ocr`, `document`, `extensions`, and
+`mcp`.
 
 | Feature | Included capability |
 | --- | --- |
 | `browser` | Typed Browser library, stateless rendering, and full Browser driver delegation |
 | `office` | Typed Office contracts, native OOXML read engine, and temporary OfficeCLI compatibility |
 | `ocr` | Built-in typed PP-OCRv6 CLI/MCP with local ONNX inference |
+| `document` | Native Office structure plus selective local PP-OCRv6 document parsing; enables `office` and `ocr` |
 | `extensions` | ACL manifests, package receipts, hot-plug registry, and external CLI/MCP/Skill routes |
 | `mcp` | Standard MCP servers plus the managed Browser Streamable HTTP lifecycle |
 | `lightpanda` | Explicit opt-in Lightpanda provider support in addition to Chrome |
@@ -195,6 +210,7 @@ A compiled command surface is not proof that its provider is installed. Use
 | `a3s-use-office` | Native OOXML foundation, typed Office operations, and compatibility lifecycle |
 | `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |
 | `a3s-use-ocr` | Local PP-OCRv6 engine, CLI, MCP tools, pinned models, and release-packaged Skill assets |
+| `a3s-use-document` | Agentic native Office inspection and parsing with selective PP-OCRv6 evidence |
 | `a3s-use` | Facade library, standalone CLI host, capability projection, and MCP entry points |
 
 ## Quick Start
@@ -209,15 +225,18 @@ a3s install use --source release
 # Optional deterministic pre-warm; normal first use prepares these as needed.
 a3s install use/browser
 a3s install use/office
+a3s install use/ocr
+a3s install use/document
 a3s use doctor --json
 ```
 
 Prebuilt archives are also published on
 [GitHub Releases](https://github.com/A3S-Lab/Use/releases). A complete archive
-contains `a3s-use`, its sibling `a3s-use-browser-driver`, Browser Skills, the
-first-party Office Skill, the Dashboard, and license/provenance notices. Keep
-those packaged assets together; installing only the facade binary does not
-provide the complete Browser and Office Skill surfaces.
+contains `a3s-use`, its sibling `a3s-use-browser-driver`, Browser Skills,
+first-party Office, Document, and OCR Skills, the PP-OCRv6 Small ONNX model
+bundle, the Dashboard, and license/provenance notices. Keep those packaged
+assets together; installing only the facade binary does not provide the
+complete Browser, document, and OCR surfaces.
 
 Build all binaries from source with:
 
@@ -262,6 +281,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 `BrowserPoolConfig::default()` remains non-installing for embedded callers such
 as Search. Product commands validate their arguments and then prepare the same
 shared managed runtime on the first local Browser launch when policy allows.
+Search depends directly on `a3s-use-browser` and resolves
+`A3S_USE_BROWSER_HOME`, `A3S_DATA_HOME/use/browser`, or the default
+`~/.local/share/a3s/use/browser` exactly as Use does. It does not install a
+second Chrome copy.
 
 ## Browser
 
@@ -1615,6 +1638,63 @@ compatibility response can return
 See [Native Office Engine](docs/native-office.md) for the complete requirements,
 compatibility scope, safety invariants, delivery gates, and migration plan.
 
+## Document
+
+`a3s-use-document` implements the built-in `document` route for agentic
+document recovery. It first opens DOCX, XLSX, and PPTX through the bounded
+native Office package kernel, preserving semantic units and OOXML part
+identity. It then selects only raster images that need or benefit from OCR and
+runs those images through the shared local PP-OCRv6 Small ONNX engine.
+Standalone PNG, JPEG, WebP, GIF, BMP, and TIFF files use the same path.
+
+The workflow is deliberately inspect-first:
+
+```bash
+# Read structure, native text, image candidates, and OCR readiness only.
+a3s use document inspect report.docx --json
+
+# Keep native text as the structural source of truth and OCR recommended images.
+a3s use document parse report.docx --ocr auto --json
+
+# OCR only exact semantic image paths returned by inspect.
+a3s use document parse report.docx \
+  --ocr auto \
+  --image-path '/body/p[2]/picture[1]' \
+  --json
+
+a3s use mcp serve document
+```
+
+`--ocr never` returns native text only. `--ocr auto` processes `required` and
+`suggested` raster candidates, and `--ocr always` processes every eligible
+raster up to the configured bound. Results distinguish native Office blocks
+from PP-OCRv6 blocks and retain the source archive SHA-256, normalized Office
+content SHA-256, semantic unit and path, OOXML image part, embedded-image
+SHA-256, model, recognition and detection confidence, polygon, and bounding
+box.
+
+Direct CLI `document parse` prepares or repairs PP-OCRv6 on the first operation
+that actually selects raster evidence. Official release archives already carry
+the pinned model bundle, so a complete `a3s`-managed Use installation normally
+resolves it as `packaged` without another download. A source or stripped
+installation downloads the fixed-size, SHA-256-pinned official archives only
+when first-use policy permits it. `document inspect`, native-only parsing, and
+diagnostics never install anything.
+
+The standard MCP boundary keeps `document_inspect` and `document_parse`
+read-only. It never turns a read into a hidden download. If models are absent,
+the dedicated Code `use` worker requests the separately annotated,
+idempotent `document_install_ocr` mutation; the parent TUI must confirm it
+before parsing is retried.
+
+Document parsing does not require Tesseract, Python, PaddlePaddle, Microsoft
+Office, LibreOffice, Browser, or a remote OCR service, and it never sends source
+bytes off device. PDF parsing and rasterization are intentionally outside this
+route.
+
+See the [Document crate](crates/document/README.md) for selection policy,
+provenance, limits, and first-use boundaries.
+
 ## OCR
 
 `a3s-use-ocr` implements the reserved built-in `ocr` route. The default Use
@@ -1635,7 +1715,8 @@ The pipeline decodes and normalizes the image, runs
 `PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
 perspective-rectifies and rotates text crops, runs batched
 `PP-OCRv6_small_rec`, and applies CTC decoding. It does not require Python or
-PaddlePaddle, call a remote OCR API, or transfer source bytes off the device.
+PaddlePaddle, call Tesseract or a remote OCR API, or transfer source bytes off
+the device.
 
 ```bash
 a3s use ocr doctor --json
@@ -1779,13 +1860,13 @@ crash, and in-flight calls retain the exact package generation they accepted.
                               a3s use
                                   │
                               a3s-use host
-                ┌──────────┬──────────┬──────────┬──────────────┐
-                │          │          │          │              │
-             Browser     Office      OCR     extension registry
-          typed + driver  OOXML   PP-OCRv6 ONNX  CLI / MCP / Skill
-                       + 0.1 compat
-                │          │          │          │
-                └──────── capability snapshot/watch ───────────► A3S Code
+              ┌─────────┬─────────┬──────────┬─────────┬──────────────┐
+              │         │         │          │         │              │
+           Browser    Office   Document     OCR    extension registry
+        typed + driver OOXML   Office+OCR PP-OCRv6   CLI / MCP / Skill
+                    + 0.1 compat            ONNX
+              │         │         │          │         │
+              └──────────── capability snapshot/watch ──────────────► A3S Code
 
   a3s-search ── Arc<dyn PageRenderer> ──► a3s-use-browser
 
@@ -1793,13 +1874,15 @@ crash, and in-flight calls retain the exact package generation they accepted.
 ```
 
 The dependency arrows are intentional. Search links only the Browser contract,
-so rendering does not require `a3s-use`, MCP, or a resident process. Office is
-an in-process typed engine with a temporary 0.1.x compatibility process. OCR
-runs the pinned PP-OCRv6 models locally through ONNX Runtime; model installation
-is an explicit component operation. External domains retain their process
-boundaries. A3S Code consumes the read-only projection and connects standard
-MCP/Skill surfaces; bounded component installation requests still require the
-parent TUI's authority.
+so rendering does not require `a3s-use`, MCP, or a resident process and shares
+the same managed Chrome cache. Office is an in-process typed engine with a
+temporary 0.1.x compatibility process. Document composes that native structure
+with selected local OCR evidence. OCR runs the pinned PP-OCRv6 models locally
+through ONNX Runtime; direct extraction or document parsing prepares missing
+models on first use, while MCP installation remains a separate confirmed
+mutation. External domains retain their process boundaries. A3S Code consumes
+the read-only projection and connects standard MCP/Skill surfaces; bounded
+component installation requests still require the parent TUI's authority.
 
 Source is split between the facade under `src/` and focused workspace crates
 under `crates/`. See [Architecture](docs/architecture.md) for package leases,
@@ -1833,10 +1916,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 
 The suite covers typed contracts, provider discovery and installation,
 extension validation and route draining, capability snapshots, the native
-OOXML package kernel, compatibility delegation, MCP schemas, packaged Skills,
-and the locked agent-browser compatibility surface. Real-Chrome integration
-gates run serially with isolated home and runtime directories on supported
-platforms.
+OOXML package kernel, agentic document parsing, selective local PP-OCRv6
+evidence, compatibility delegation, MCP schemas, packaged Skills, and the
+locked agent-browser compatibility surface. Real-Chrome integration gates run
+serially with isolated home and runtime directories on supported platforms.
 
 ## License
 
