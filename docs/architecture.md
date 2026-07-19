@@ -37,6 +37,15 @@ The package manifest is a3s-use-extension.acl and is parsed by a3s-acl. A3S Use
 owns identity, routes, trust, activation, and lifecycle around the surfaces. It
 does not define JSON-RPC methods or convert surfaces implicitly.
 
+`a3s-use-ocr` implements the reserved first-party `ocr` route in the default
+Use build. The release packages its content-bound Skill and exposes the native
+CLI plus standard stdio MCP without a separate extension install. The process
+accepts bounded local image files and binds every result to the canonical
+source digest. It uses only an explicitly present Tesseract executable or
+configured vision endpoint; it never installs a provider silently. The vision
+diagnostic discloses off-device image transfer, and its MCP extraction tool
+carries conservative open-world annotations.
+
 ## Hot-plug registry
 
 Extension code remains behind native process boundaries. The registry is a
@@ -64,8 +73,8 @@ custom RPC protocol, `dlopen`, or restart is required.
 ### Unified capability projection
 
 Resident Code hosts do not need separate discovery paths for built-in and
-external domains. `capability snapshot` projects Browser, Office, Box, and
-enabled extensions through one schema while preserving each binding's
+external domains. `capability snapshot` projects Browser, native Office, OCR,
+Box, and enabled extensions through one schema while preserving each binding's
 `built-in` or `extension` origin. `capability watch` accepts both the extension
 generation and a content revision. The generation advances for extension
 lifecycle commits; the SHA-256 revision also detects built-in provider
@@ -73,10 +82,15 @@ readiness and packaged Skill changes when the extension generation remains
 unchanged. Each Skill projection includes an absolute package path and its own
 lowercase SHA-256, allowing a resident host to reject raced or modified bytes
 before replacing its live Skill.
-The default distribution projects both the Browser Skill and the first-party
-`a3s-use-office` Skill. `office skills list|get|path` exposes the latter as
-bounded local CLI reads; it never launches the OfficeCLI compatibility
-provider.
+The default distribution projects the Browser, first-party `a3s-use-office`,
+and first-party `a3s-use-ocr` Skills. `office skills list|get|path` exposes the
+Office Skill as bounded local CLI reads; it never launches the OfficeCLI
+compatibility provider. For resident hosts, `use/office` targets the built-in
+`office-native` MCP server and is ready independently of OfficeCLI. A discovered
+OfficeCLI provider is projected separately as `use/office-compat`, targeting
+the standard compatibility server without carrying the native Skill. The
+`use/ocr` route targets `ocr-native`; provider readiness remains explicit and
+never triggers a silent Tesseract or vision-provider install.
 
 The projection contains content-bound Skill references and an MCP launch target,
 never executable extension code or a generic action payload. Consumers still
@@ -361,11 +375,13 @@ merged-span rewriting fail before save; Presentation table merge editing
 remains outside this bounded milestone. These mutations use the existing typed
 batch transaction and do not introduce another protocol or runtime.
 
-Unpromoted commands are delegated to OfficeCLI and `mcp serve office` launches
-its standard MCP server. That compatibility process remains isolated from the
+Unpromoted commands are delegated to OfficeCLI and
+`mcp serve office-compat` launches its standard MCP server; `mcp serve office`
+remains a legacy alias. That compatibility process remains isolated from the
 native engine. `mcp serve office-native` instead runs the A3S-owned server in
-process, never discovers or starts OfficeCLI, and keeps the compatibility target
-unchanged until the native product gates pass.
+process and never discovers or starts OfficeCLI. Resident capability projection
+uses the native target canonically and advertises compatibility as a distinct
+optional route.
 
 The preview MCP adapter has an explicit typed vocabulary rather than a command
 string passthrough. It supports validate, create/open/list, semantic get/query,
@@ -417,7 +433,7 @@ component for one deprecation cycle before removal.
 
 Implemented:
 
-1. Core, Browser, Office, extension, and component contracts.
+1. Core, Browser, Office, OCR, extension, and component contracts.
 2. Chrome and Lightpanda extraction from Search.
 3. Search injection through `Arc<dyn PageRenderer>`.
 4. Typed Browser rendering and session tools over standard MCP stdio.
@@ -479,6 +495,11 @@ Implemented:
 15. A packaged first-party `a3s-use-office` Skill with progressive
     Word/Spreadsheet/Presentation/MCP references, bounded local discovery,
     release-archive smoke checks, and content-bound capability projection.
+16. A first-party built-in OCR route with typed provider diagnostics, bounded
+    image admission, source SHA-256 evidence, local Tesseract and explicit
+    vision adapters, standard MCP annotations/output schemas, and a
+    release-packaged content-bound Skill that projects to `mcp__use_ocr__*` in
+    A3S Code.
 
 Next:
 

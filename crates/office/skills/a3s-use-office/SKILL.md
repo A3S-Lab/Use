@@ -9,9 +9,26 @@ Use A3S Use as the application boundary for Office documents. Prefer the
 in-process native engine and its typed operations. Use the compatibility route
 only when the requested operation is not yet native.
 
+Use the host surface that is already available:
+
+- In an A3S Code `use` worker, call the available
+  `mcp__use_office__*` tools directly. The host has already started the native
+  MCP server and owns its lifecycle; do not run shell commands or install a
+  provider.
+- If a requested operation is absent from the native tools, use an available
+  `mcp__use_office_compat__*` tool only as an explicit compatibility fallback.
+  If that route is absent, report the missing capability instead of installing,
+  repairing, or falling back to a shell.
+- In a CLI-only agent host, use the `a3s use office native ...` commands below.
+
 ## Workflow
 
 1. Identify and inspect the document before changing it.
+
+   In an A3S Code `use` worker, begin with
+   `mcp__use_office__office_validate`, then open a session and use
+   `mcp__use_office__office_view`, `office_get`, or `office_query` as needed.
+   In a CLI-only host, use:
 
    ```bash
    a3s use office native validate "$FILE" --json
@@ -20,7 +37,9 @@ only when the requested operation is not yet native.
    a3s use office native view "$FILE" issues --json
    ```
 
-2. Load the format reference relevant to the task:
+2. In a CLI-only agent host, load the format reference relevant to the task.
+   An A3S Code `use` worker cannot read Skill reference files; rely on this
+   guidance and the available MCP tool schemas instead.
 
    - Read [references/word.md](references/word.md) for `.docx`.
    - Read [references/spreadsheet.md](references/spreadsheet.md) for `.xlsx`.
@@ -52,6 +71,10 @@ when an agent must bound its lifetime.
 
 ## Choose the Surface
 
+- In an A3S Code `use` worker, use `mcp__use_office__*` and keep the returned
+  Office session ID stable until the document is saved and closed.
+- Use `mcp__use_office_compat__*` only when the native route lacks the requested
+  operation and the compatibility tools are actually present.
 - Use `a3s use office native ... --json` for local automation and scripts.
 - Use `a3s use mcp serve office-native` for typed, stateful agent sessions.
   Read [references/mcp.md](references/mcp.md) before using its session tools.

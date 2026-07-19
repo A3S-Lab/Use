@@ -1,0 +1,34 @@
+[package]
+name = "a3s-use-ocr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Typed built-in optical character recognition for A3S Use"
+
+[lib]
+name = "a3s_use_ocr"
+path = "src/lib.rs"
+
+[[bin]]
+name = "a3s-use-ocr"
+path = "src/main.rs"
+
+[dependencies]
+a3s-use-core = { version = "0.1.1", path = "../core" }
+base64.workspace = true
+clap.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+rmcp.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tempfile.workspace = true

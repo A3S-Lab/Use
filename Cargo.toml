@@ -5,6 +5,7 @@ members = [
     "crates/browser-driver",
     "crates/office",
     "crates/extension",
+    "crates/ocr",
 ]
 resolver = "2"
 
@@ -48,7 +49,7 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version = "1.85"
-description = "Typed Browser, Office, and external application capabilities for A3S"
+description = "Typed Browser, Office, OCR, and external application capabilities for A3S"
 
 [lib]
 name = "a3s_use"
@@ -59,7 +60,7 @@ name = "a3s-use"
 path = "src/main.rs"
 
 [features]
-default = ["browser", "office", "extensions", "mcp"]
+default = ["browser", "office", "ocr", "extensions", "mcp"]
 browser = ["dep:a3s-use-browser"]
 office = [
     "dep:a3s-use-office",
@@ -67,6 +68,7 @@ office = [
     "dep:futures-util",
     "dep:getrandom",
 ]
+ocr = ["dep:a3s-use-ocr"]
 extensions = ["dep:a3s-use-extension"]
 mcp = [
     "dep:axum",
@@ -84,6 +86,7 @@ lightpanda = ["browser", "a3s-use-browser/lightpanda"]
 a3s-use-core = { version = "0.1.1", path = "crates/core" }
 a3s-use-browser = { version = "0.1.1", path = "crates/browser", optional = true }
 a3s-use-office = { version = "0.1.1", path = "crates/office", optional = true }
+a3s-use-ocr = { version = "0.1.1", path = "crates/ocr", optional = true }
 a3s-use-extension = { version = "0.1.1", path = "crates/extension", optional = true }
 anyhow.workspace = true
 axum = { workspace = true, optional = true }

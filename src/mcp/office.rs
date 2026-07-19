@@ -86,7 +86,13 @@ impl NativeOfficeMcpServer {
 impl NativeOfficeMcpServer {
     #[tool(
         name = "office_validate",
-        description = "Validate and identify one local OOXML document without opening a session"
+        description = "Validate and identify one local OOXML document without opening a session",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_validate(
         &self,
@@ -108,7 +114,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_create",
-        description = "Create a blank native OOXML document and register a mutable in-memory session"
+        description = "Create a blank native OOXML document and register a mutable in-memory session",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_create(
         &self,
@@ -125,7 +137,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_open",
-        description = "Open a local OOXML document in a bounded native in-memory session"
+        description = "Open a local OOXML document in a bounded native in-memory session",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_open(
         &self,
@@ -145,7 +163,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_list",
-        description = "List native Office sessions owned by this MCP server process"
+        description = "List native Office sessions owned by this MCP server process",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_list(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let mut entries = self.sessions.list().await;
@@ -165,7 +189,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_get",
-        description = "Read one stable semantic path from an open native Office session"
+        description = "Read one stable semantic path from an open native Office session",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_get(
         &self,
@@ -192,7 +222,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_query",
-        description = "Run a native semantic selector with a bounded result count"
+        description = "Run a native semantic selector with a bounded result count",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_query(
         &self,
@@ -228,7 +264,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_view",
-        description = "Produce a native text, bounded annotated, outline, statistics, bounded issues, standalone all-format HTML or SVG, or Browser-injected PNG screenshot view for an open session"
+        description = "Produce a native text, bounded annotated, outline, statistics, bounded issues, standalone all-format HTML or SVG, or Browser-injected PNG screenshot view for an open session",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_view(
         &self,
@@ -303,7 +345,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_raw_xml",
-        description = "Inspect one existing OOXML XML part, limited to 1 MiB of original bytes"
+        description = "Inspect one existing OOXML XML part, limited to 1 MiB of original bytes",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_raw_xml(
         &self,
@@ -332,7 +380,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_apply_batch",
-        description = "Apply a bounded typed mutation batch atomically in memory; call office_save to persist it"
+        description = "Apply a bounded typed mutation batch atomically in memory; call office_save to persist it",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_apply_batch(
         &self,
@@ -363,7 +417,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_merge_template",
-        description = "Merge bounded JSON data into a cloned session document and atomically save a distinct output"
+        description = "Merge bounded JSON data into a cloned session document and atomically save a distinct output",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_merge_template(
         &self,
@@ -403,7 +463,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_save",
-        description = "Atomically persist one mutable native Office session, optionally to a new path"
+        description = "Atomically persist one mutable native Office session, optionally to a new path",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_save(
         &self,
@@ -430,7 +496,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_close",
-        description = "Close a native Office session, refusing unsaved changes unless discard is explicit"
+        description = "Close a native Office session, refusing unsaved changes unless discard is explicit",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_close(
         &self,
