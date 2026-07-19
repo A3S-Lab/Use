@@ -17,7 +17,7 @@ name = "a3s-use-science"
 path = "src/main.rs"
 
 [dependencies]
-a3s-use-core = { version = "0.1.1", path = "../core" }
+a3s-use-core = { version = "0.1.2", path = "../core" }
 clap.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 rmcp.workspace = true
@@ -28,6 +28,6 @@ tokio.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-a3s-use-extension = { version = "0.1.1", path = "../extension" }
+a3s-use-extension = { version = "0.1.2", path = "../extension" }
 axum.workspace = true
 tempfile.workspace = true

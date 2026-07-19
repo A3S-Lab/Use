@@ -8,8 +8,14 @@ version = "0.2.1"
 source = "git+https://github.com/A3S-Lab/ACL?rev=6e2a6469edc0f4c61b1e588d0ace873aaf15ce22#6e2a6469edc0f4c61b1e588d0ace873aaf15ce22"
 
 [[package]]
+name = "a3s-acl"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2dc4eb3b0dd1b11efa0ad9bf397c97fd1d16e3eb4f9ca43872df069560d0b69"
+
+[[package]]
 name = "a3s-use"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "a3s-use-browser",
  "a3s-use-core",
@@ -44,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-browser"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "a3s-use-core",
  "async-trait",
@@ -65,9 +71,9 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-browser-driver"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
- "a3s-acl",
+ "a3s-acl 0.2.1",
  "a3s-use-core",
  "aes-gcm",
  "async-trait",
@@ -99,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -108,9 +114,9 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-extension"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
- "a3s-acl",
+ "a3s-acl 0.2.2",
  "a3s-use-core",
  "flate2",
  "fs2",
@@ -131,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-ocr"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "a3s-use-core",
  "clap",
@@ -155,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-office"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "a3s-use-core",
  "async-trait",
@@ -175,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-science"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "a3s-use-core",
  "a3s-use-extension",
