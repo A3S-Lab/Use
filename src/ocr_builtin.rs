@@ -14,7 +14,7 @@ pub(crate) fn diagnostic() -> DomainDiagnostic {
                 readiness: diagnostic.readiness,
                 provider: diagnostic.provider.map(provider_name).map(str::to_string),
                 version: None,
-                path: diagnostic.executable,
+                path: diagnostic.model_dir,
                 message: diagnostic.message,
                 suggestions: diagnostic.suggestions,
             }
@@ -65,9 +65,7 @@ pub(crate) async fn primary_skill_surface() -> Option<(PathBuf, PathBuf)> {
 
 fn provider_name(provider: OcrProviderKind) -> &'static str {
     match provider {
-        OcrProviderKind::Auto => "auto",
-        OcrProviderKind::Tesseract => "tesseract",
-        OcrProviderKind::Vision => "vision",
+        OcrProviderKind::PpOcrV6 => "pp-ocr-v6",
     }
 }
 

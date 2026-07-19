@@ -157,3 +157,14 @@ fn office_component_presence_preserves_runtime_ownership() {
     assert_eq!(office_presence(OfficeInstallSource::Managed), "managed");
     assert_eq!(office_presence(OfficeInstallSource::Missing), "missing");
 }
+
+#[cfg(feature = "ocr")]
+#[test]
+fn ocr_component_presence_preserves_model_ownership() {
+    use a3s_use_ocr::OcrInstallSource;
+
+    assert_eq!(ocr_presence(OcrInstallSource::Environment), "external");
+    assert_eq!(ocr_presence(OcrInstallSource::Packaged), "packaged");
+    assert_eq!(ocr_presence(OcrInstallSource::Managed), "managed");
+    assert_eq!(ocr_presence(OcrInstallSource::Missing), "missing");
+}

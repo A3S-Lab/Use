@@ -100,9 +100,9 @@ a3s use mcp serve office-compat
 # Legacy alias:
 a3s use mcp serve office
 
-# Built-in OCR; provider readiness remains explicit.
+# Built-in local PP-OCRv6.
 a3s use ocr doctor --json
-a3s use ocr extract ./scan.png --language eng --json
+a3s use ocr extract ./scan.png --json
 a3s use mcp serve ocr
 ```
 
@@ -137,9 +137,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   safe Word, Spreadsheet, Presentation, native MCP, and compatibility workflows
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
-- **First-Party OCR Domain**: Extract text and bounded layout evidence with
-  a local Tesseract provider or an explicitly configured vision endpoint,
-  without silently installing a provider or hiding remote image transfer
+- **First-Party OCR Domain**: Run pinned PP-OCRv6 detection and recognition
+  models locally through ONNX Runtime, with source digests and bounded layout
+  evidence
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
   resident host can add, replace, or remove live capabilities without restarting
 - **Content-Bound Skills**: Project an absolute package path and lowercase
@@ -160,7 +160,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | Browser | Built in | Full Browser vocabulary | A3S Use standard MCP server | Six packaged Browser Skills | A3S Use |
 | Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
-| OCR | Built in | Doctor and typed image extraction | `ocr_doctor` and `ocr_extract` | One provider-safe OCR Skill | A3S Use process and explicitly configured provider |
+| OCR | Built in | Doctor and typed image extraction | `ocr_doctor` and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
 The Box route is component-backed. The umbrella CLI resolves its authoritative
@@ -175,7 +175,7 @@ Default features are `browser`, `office`, `ocr`, `extensions`, and `mcp`.
 | --- | --- |
 | `browser` | Typed Browser library, stateless rendering, and full Browser driver delegation |
 | `office` | Typed Office contracts, native OOXML read engine, and temporary OfficeCLI compatibility |
-| `ocr` | Built-in typed OCR CLI/MCP with local Tesseract and explicit vision providers |
+| `ocr` | Built-in typed PP-OCRv6 CLI/MCP with local ONNX inference |
 | `extensions` | ACL manifests, package receipts, hot-plug registry, and external CLI/MCP/Skill routes |
 | `mcp` | Standard MCP servers plus the managed Browser Streamable HTTP lifecycle |
 | `lightpanda` | Explicit opt-in Lightpanda provider support in addition to Chrome |
@@ -192,7 +192,7 @@ A compiled command surface is not proof that its provider is installed. Use
 | `a3s-use-browser-driver` | Complete interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
 | `a3s-use-office` | Native OOXML foundation, typed Office operations, and compatibility lifecycle |
 | `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |
-| `a3s-use-ocr` | Typed local/vision OCR providers, CLI, MCP tools, and release-packaged Skill assets |
+| `a3s-use-ocr` | Local PP-OCRv6 engine, CLI, MCP tools, pinned models, and release-packaged Skill assets |
 | `a3s-use` | Facade library, standalone CLI host, capability projection, and MCP entry points |
 
 ## Quick Start
@@ -212,9 +212,9 @@ a3s use doctor --json
 Prebuilt archives are also published on
 [GitHub Releases](https://github.com/A3S-Lab/Use/releases). A complete archive
 contains `a3s-use`, its sibling `a3s-use-browser-driver`, Browser Skills, the
-first-party Office and OCR Skills, the Dashboard, and license/provenance
-notices. Keep those packaged assets together; installing only the facade binary
-does not provide the complete Browser, Office, and OCR Skill surfaces.
+first-party Office Skill, the Dashboard, and license/provenance notices. Keep
+those packaged assets together; installing only the facade binary does not
+provide the complete Browser and Office Skill surfaces.
 
 Build all binaries from source with:
 
@@ -1610,27 +1610,33 @@ release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor` plus
 `ocr_extract` over standard MCP, so a resident A3S Code session receives
 `mcp__use_ocr__*` without installing a separate extension.
 
-OCR never installs a provider silently. `auto` prefers an explicitly configured
-or discoverable Tesseract executable. Vision OCR is enabled only when its model
-and endpoint configuration are present; non-loopback endpoints require HTTPS
-and an API key, and the diagnostic discloses that the complete source image
-leaves the device. Supported inputs are bounded local PNG, JPEG, WebP, GIF,
+OCR has one backend: the pinned `PP-OCRv6_small` detection and recognition
+models running locally through ONNX Runtime. Release archives package those
+models; `a3s install use/ocr` explicitly installs or repairs the same pinned
+bundle when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF,
 BMP, and TIFF files. The result binds the canonical source path, media type,
-byte length, and SHA-256 alongside text and any available
-confidence/bounding-box evidence.
+byte length, and SHA-256 alongside text, recognition/detection confidence,
+polygons, and bounding boxes.
+
+The pipeline decodes and normalizes the image, runs
+`PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
+perspective-rectifies and rotates text crops, runs batched
+`PP-OCRv6_small_rec`, and applies CTC decoding. It does not require Python or
+PaddlePaddle, call a remote OCR API, or transfer source bytes off the device.
 
 ```bash
 a3s use ocr doctor --json
-a3s use ocr extract ./scan.png --language eng --json
+a3s use ocr extract ./scan.png --json
 a3s use mcp serve ocr
 ```
 
-A3S Code may first-use install the verified parent Use release. OCR provider
-selection remains explicit, and remote vision extraction still escalates to
-the parent TUI before source bytes leave the device.
+A3S Code may first-use install the verified parent Use release. A missing or
+damaged managed model bundle is repaired explicitly with
+`a3s install use/ocr`; the Code `use` worker never installs it implicitly.
 
-See the [OCR crate](crates/ocr/README.md) for configuration and provider
-boundaries.
+See the [OCR crate](crates/ocr/README.md) for model resolution, the inference
+workflow, and input boundaries.
+
 ## External Extensions
 
 External Use domains stay behind process boundaries. A package contains an
@@ -1760,7 +1766,7 @@ crash, and in-flight calls retain the exact package generation they accepted.
                 ┌──────────┬──────────┬──────────┬──────────────┐
                 │          │          │          │              │
              Browser     Office      OCR     extension registry
-          typed + driver  OOXML   local/vision   CLI / MCP / Skill
+          typed + driver  OOXML   PP-OCRv6 ONNX  CLI / MCP / Skill
                        + 0.1 compat
                 │          │          │          │
                 └──────── capability snapshot/watch ───────────► A3S Code
@@ -1773,11 +1779,11 @@ crash, and in-flight calls retain the exact package generation they accepted.
 The dependency arrows are intentional. Search links only the Browser contract,
 so rendering does not require `a3s-use`, MCP, or a resident process. Office is
 an in-process typed engine with a temporary 0.1.x compatibility process. OCR
-uses an explicitly present local Tesseract executable or an explicitly
-configured vision provider; it never installs either silently. External
-domains retain their process boundaries. A3S Code consumes the read-only
-projection and connects standard MCP/Skill surfaces; bounded provider
-installation requests still require the parent TUI's authority.
+runs the pinned PP-OCRv6 models locally through ONNX Runtime; model installation
+is an explicit component operation. External domains retain their process
+boundaries. A3S Code consumes the read-only projection and connects standard
+MCP/Skill surfaces; bounded component installation requests still require the
+parent TUI's authority.
 
 Source is split between the facade under `src/` and focused workspace crates
 under `crates/`. See [Architecture](docs/architecture.md) for package leases,

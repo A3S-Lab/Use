@@ -41,10 +41,10 @@ does not define JSON-RPC methods or convert surfaces implicitly.
 Use build. The release packages its content-bound Skill and exposes the native
 CLI plus standard stdio MCP without a separate extension install. The process
 accepts bounded local image files and binds every result to the canonical
-source digest. It uses only an explicitly present Tesseract executable or
-configured vision endpoint; it never installs a provider silently. The vision
-diagnostic discloses off-device image transfer, and its MCP extraction tool
-carries conservative open-world annotations.
+source digest. It runs the pinned `PP-OCRv6_small` detection and recognition
+models locally through ONNX Runtime, without Python, PaddlePaddle, a remote OCR
+endpoint, or an alternate backend. Model installation and repair are explicit
+`use/ocr` component operations. Both MCP tools are closed-world and read-only.
 
 ## Hot-plug registry
 
@@ -89,8 +89,8 @@ compatibility provider. For resident hosts, `use/office` targets the built-in
 `office-native` MCP server and is ready independently of OfficeCLI. A discovered
 OfficeCLI provider is projected separately as `use/office-compat`, targeting
 the standard compatibility server without carrying the native Skill. The
-`use/ocr` route targets `ocr-native`; provider readiness remains explicit and
-never triggers a silent Tesseract or vision-provider install.
+`use/ocr` route targets `ocr-native`; model readiness remains explicit and
+never triggers a silent install.
 
 The projection contains content-bound Skill references and an MCP launch target,
 never executable extension code or a generic action payload. Consumers still
@@ -495,11 +495,11 @@ Implemented:
 15. A packaged first-party `a3s-use-office` Skill with progressive
     Word/Spreadsheet/Presentation/MCP references, bounded local discovery,
     release-archive smoke checks, and content-bound capability projection.
-16. A first-party built-in OCR route with typed provider diagnostics, bounded
-    image admission, source SHA-256 evidence, local Tesseract and explicit
-    vision adapters, standard MCP annotations/output schemas, and a
-    release-packaged content-bound Skill that projects to `mcp__use_ocr__*` in
-    A3S Code.
+16. A first-party built-in OCR route with typed PP-OCRv6 diagnostics, bounded
+    image admission, source SHA-256 evidence, native ONNX Runtime detection and
+    recognition, standard closed-world MCP annotations/output schemas, pinned
+    release models, and a content-bound Skill that projects to
+    `mcp__use_ocr__*` in A3S Code.
 
 Next:
 
