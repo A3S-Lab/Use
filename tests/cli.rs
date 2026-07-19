@@ -1835,6 +1835,50 @@ fn office_install_reuses_an_explicit_provider_without_downloading() {
     assert!(!temp.path().join("managed/1.0.136").exists());
 }
 
+#[cfg(feature = "office")]
+#[test]
+fn office_compatibility_first_use_honors_no_auto_install() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["office", "document", "inspect", "fixture.docx", "--json"])
+        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
+        .env("A3S_NO_AUTO_INSTALL", "1")
+        .env("PATH", temp.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "use.office.auto_install_disabled");
+    assert_eq!(value["error"]["details"]["reason"], "A3S_NO_AUTO_INSTALL");
+    assert!(!temp.path().join("managed/1.0.136").exists());
+}
+
+#[cfg(feature = "office")]
+#[test]
+fn office_help_never_triggers_compatibility_installation() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["office", "--help", "--json"])
+        .env(
+            "A3S_OFFICECLI_EXECUTABLE",
+            temp.path().join("must-not-exist"),
+        )
+        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], true);
+    assert!(value["data"]["usage"]
+        .as_str()
+        .unwrap()
+        .contains("Native Office is built in"));
+    assert!(!temp.path().join("managed/1.0.136").exists());
+}
+
 #[cfg(all(unix, feature = "office"))]
 #[test]
 fn office_mcp_target_delegates_to_officeclis_standard_server() {
@@ -1949,7 +1993,15 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
     )
     .await;
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 12);
+    assert_eq!(tools.len(), 13);
+    let install_compat = tools
+        .iter()
+        .find(|tool| tool["name"] == "office_install_compat")
+        .unwrap();
+    assert_eq!(install_compat["annotations"]["readOnlyHint"], false);
+    assert_eq!(install_compat["annotations"]["destructiveHint"], false);
+    assert_eq!(install_compat["annotations"]["idempotentHint"], true);
+    assert_eq!(install_compat["annotations"]["openWorldHint"], true);
     let apply = tools
         .iter()
         .find(|tool| tool["name"] == "office_apply_batch")
@@ -2194,6 +2246,27 @@ fn built_in_ocr_projects_the_canonical_code_route_and_skill() {
         .is_some_and(|path| Path::new(path).ends_with("skills/a3s-use-ocr/SKILL.md")));
     let digest = ocr["skills"][0]["sha256"].as_str().unwrap();
     assert_eq!(digest.len(), 64);
+}
+
+#[cfg(feature = "browser")]
+#[test]
+fn browser_render_never_replaces_an_invalid_explicit_provider() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["browser", "render", "https://example.com", "--json"])
+        .env("A3S_BROWSER_EXECUTABLE", temp.path().join("must-not-exist"))
+        .env("A3S_USE_BROWSER_HOME", temp.path().join("managed"))
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(
+        value["error"]["code"],
+        "use.browser.explicit_provider_invalid"
+    );
+    assert!(!temp.path().join("managed/chrome").exists());
 }
 
 #[cfg(feature = "ocr")]

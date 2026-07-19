@@ -13,12 +13,13 @@ Use the host surface that is already available:
 
 - In an A3S Code `use` worker, call the available
   `mcp__use_office__*` tools directly. The host has already started the native
-  MCP server and owns its lifecycle; do not run shell commands or install a
-  provider.
+  MCP server and owns its lifecycle; do not run shell commands.
 - If a requested operation is absent from the native tools, use an available
   `mcp__use_office_compat__*` tool only as an explicit compatibility fallback.
-  If that route is absent, report the missing capability instead of installing,
-  repairing, or falling back to a shell.
+  If that route is absent, request
+  `mcp__use_office__office_install_compat`. This bounded network mutation must
+  pass parent TUI confirmation. Use the compatibility route only after the host
+  projects it; never replace the installer with a shell command.
 - In a CLI-only agent host, use the `a3s use office native ...` commands below.
 
 ## Workflow
@@ -74,14 +75,16 @@ when an agent must bound its lifetime.
 - In an A3S Code `use` worker, use `mcp__use_office__*` and keep the returned
   Office session ID stable until the document is saved and closed.
 - Use `mcp__use_office_compat__*` only when the native route lacks the requested
-  operation and the compatibility tools are actually present.
+  operation. If the tools are absent, request
+  `mcp__use_office__office_install_compat` through parent confirmation first.
 - Use `a3s use office native ... --json` for local automation and scripts.
 - Use `a3s use mcp serve office-native` for typed, stateful agent sessions.
   Read [references/mcp.md](references/mcp.md) before using its session tools.
 - Use the typed Rust API when embedding Office behavior in Rust.
 - Use `a3s use office ...` only for an operation absent from the native route.
-  Check `a3s use office doctor --json` first. Never install or repair the
-  compatibility provider without explicit user authority.
+  Check `a3s use office doctor --json` first. The first real compatibility
+  command prepares the pinned OfficeCLI provider when policy allows it; help,
+  version, doctor, Skills, and native commands remain non-installing.
 
 `a3s-use` accepts the same arguments when the umbrella `a3s` executable is not
 available.

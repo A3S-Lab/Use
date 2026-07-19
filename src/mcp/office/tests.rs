@@ -11,7 +11,7 @@ use a3s_use_office::{
 };
 
 #[test]
-fn native_office_server_exposes_only_bounded_typed_tools() {
+fn native_office_server_exposes_bounded_tools_and_confirmed_compat_install() {
     let server = NativeOfficeMcpServer::new();
     let tools = server.tool_router.list_all();
     let mut names: Vec<&str> = tools
@@ -26,6 +26,7 @@ fn native_office_server_exposes_only_bounded_typed_tools() {
             "office_close",
             "office_create",
             "office_get",
+            "office_install_compat",
             "office_list",
             "office_merge_template",
             "office_open",
@@ -60,6 +61,18 @@ fn native_office_server_exposes_only_bounded_typed_tools() {
         Some(false)
     );
     assert_eq!(annotations("office_save").destructive_hint, Some(true));
+    assert_eq!(
+        annotations("office_install_compat").read_only_hint,
+        Some(false)
+    );
+    assert_eq!(
+        annotations("office_install_compat").idempotent_hint,
+        Some(true)
+    );
+    assert_eq!(
+        annotations("office_install_compat").open_world_hint,
+        Some(true)
+    );
 }
 
 #[test]

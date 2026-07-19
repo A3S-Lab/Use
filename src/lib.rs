@@ -10,6 +10,7 @@ mod capability_registry;
 pub mod cli;
 mod component_route;
 mod extension_cli;
+mod first_use;
 
 #[cfg(feature = "ocr")]
 mod ocr_builtin;
