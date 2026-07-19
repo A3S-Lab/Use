@@ -136,6 +136,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "a3s-use-science"
+version = "0.1.1"
+dependencies = [
+ "a3s-use-core",
+ "a3s-use-extension",
+ "axum",
+ "clap",
+ "reqwest",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

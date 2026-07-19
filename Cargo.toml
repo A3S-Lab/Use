@@ -5,6 +5,7 @@ members = [
     "crates/browser-driver",
     "crates/office",
     "crates/extension",
+    "crates/science",
 ]
 resolver = "2"
 
