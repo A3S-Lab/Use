@@ -5,7 +5,10 @@ use rmcp::model::{CallToolResult, Implementation, ServerCapabilities, ServerInfo
 use rmcp::{tool, tool_handler, tool_router, ServerHandler, ServiceExt};
 use serde::Serialize;
 
-use crate::{OcrClient, OcrDiagnostic, OcrRequest, OcrResult, UseError, UseResult};
+use crate::{
+    ensure_ppocr_v6_ready, OcrClient, OcrDiagnostic, OcrRequest, OcrResult, OcrRuntimeStatus,
+    UseError, UseResult,
+};
 
 #[derive(Clone)]
 pub struct OcrMcpServer {
@@ -57,6 +60,21 @@ impl OcrMcpServer {
     }
 
     #[tool(
+        name = "ocr_install",
+        description = "Install or repair the pinned local PP-OCRv6 model bundle from its official HTTPS source with fixed size and SHA-256 checks",
+        output_schema = rmcp::handler::server::tool::cached_schema_for_type::<OcrRuntimeStatus>(),
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
+    )]
+    async fn ocr_install(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        Ok(tool_result(ensure_ppocr_v6_ready().await))
+    }
+
+    #[tool(
         name = "ocr_extract",
         description = "Extract text, polygons, bounding boxes, and confidence from one bounded local image with PP-OCRv6; source bytes remain on this device",
         output_schema = rmcp::handler::server::tool::cached_schema_for_type::<OcrResult>(),
@@ -88,7 +106,7 @@ impl ServerHandler for OcrMcpServer {
                 website_url: Some("https://github.com/A3S-Lab/Use".to_string()),
             },
             instructions: Some(
-                "Call ocr_doctor first. Use ocr_extract only for a local image path supplied by the task. PP-OCRv6 detection and recognition run locally through ONNX Runtime and never send source bytes off device. Preserve the source SHA-256 and distinguish OCR text from verified source text."
+                "Call ocr_doctor first. When the pinned models are missing or broken, request ocr_install through the host confirmation path, then call ocr_extract with the local image path supplied by the task. PP-OCRv6 detection and recognition run locally through ONNX Runtime and never send source bytes off device. Preserve the source SHA-256 and distinguish OCR text from verified source text."
                     .to_string(),
             ),
             ..Default::default()
@@ -143,15 +161,20 @@ mod tests {
                 .iter()
                 .map(|tool| tool.name.as_ref())
                 .collect::<Vec<&str>>(),
-            ["ocr_doctor", "ocr_extract"]
+            ["ocr_doctor", "ocr_extract", "ocr_install"]
         );
         let doctor = tools.iter().find(|tool| tool.name == "ocr_doctor").unwrap();
         let extract = tools
             .iter()
             .find(|tool| tool.name == "ocr_extract")
             .unwrap();
+        let install = tools
+            .iter()
+            .find(|tool| tool.name == "ocr_install")
+            .unwrap();
         assert!(doctor.output_schema.is_some());
         assert!(extract.output_schema.is_some());
+        assert!(install.output_schema.is_some());
         assert_eq!(
             doctor
                 .annotations
@@ -165,6 +188,20 @@ mod tests {
                 .as_ref()
                 .and_then(|annotations| annotations.open_world_hint),
             Some(false)
+        );
+        assert_eq!(
+            install
+                .annotations
+                .as_ref()
+                .and_then(|annotations| annotations.read_only_hint),
+            Some(false)
+        );
+        assert_eq!(
+            install
+                .annotations
+                .as_ref()
+                .and_then(|annotations| annotations.open_world_hint),
+            Some(true)
         );
     }
 }

@@ -66,6 +66,44 @@ struct Downloaded {
     sha256: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AutoInstallPolicy {
+    offline: bool,
+    disabled: bool,
+}
+
+impl AutoInstallPolicy {
+    fn from_env() -> UseResult<Self> {
+        Ok(Self {
+            offline: parse_environment_flag("A3S_OFFLINE", std::env::var_os("A3S_OFFLINE"))?,
+            disabled: parse_environment_flag(
+                "A3S_NO_AUTO_INSTALL",
+                std::env::var_os("A3S_NO_AUTO_INSTALL"),
+            )?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutoInstallAction {
+    Ready,
+    Install,
+}
+
+/// Ensure the pinned PP-OCRv6 bundle is ready for an actual OCR operation.
+///
+/// Read-only diagnostics deliberately do not call this function. Direct OCR
+/// extraction and the bounded MCP install tool use it so first use installs or
+/// repairs A3S-managed models while preserving offline, no-auto-install, and
+/// explicit-model-directory boundaries.
+pub async fn ensure_ppocr_v6_ready() -> UseResult<OcrRuntimeStatus> {
+    let status = ocr_status();
+    match automatic_install_action(&status, AutoInstallPolicy::from_env()?)? {
+        AutoInstallAction::Ready => Ok(status),
+        AutoInstallAction::Install => install_ppocr_v6(false).await,
+    }
+}
+
 pub async fn install_ppocr_v6(force: bool) -> UseResult<OcrRuntimeStatus> {
     let current = ocr_status();
     if !force && current.available {
@@ -659,6 +697,66 @@ fn owned_install(path: &Path) -> bool {
     })
 }
 
+fn automatic_install_action(
+    status: &OcrRuntimeStatus,
+    policy: AutoInstallPolicy,
+) -> UseResult<AutoInstallAction> {
+    if status.available {
+        return Ok(AutoInstallAction::Ready);
+    }
+    if status.source == OcrInstallSource::Environment {
+        return Err(ocr_error(
+            "use.ocr.model_unreadable",
+            format!(
+                "The explicit A3S_OCR_MODEL_DIR is not usable: {}",
+                status.detail
+            ),
+        )
+        .with_suggestion("Fix or unset A3S_OCR_MODEL_DIR before retrying OCR."));
+    }
+    if policy.offline || policy.disabled {
+        let reason = if policy.offline {
+            "offline mode"
+        } else {
+            "A3S_NO_AUTO_INSTALL"
+        };
+        return Err(ocr_error(
+            "use.ocr.auto_install_disabled",
+            format!(
+                "The local {MODEL_FAMILY} bundle is not ready and automatic installation is disabled by {reason}."
+            ),
+        )
+        .with_suggestion(
+            "Enable first-use installation or run 'a3s install use/ocr' explicitly while online.",
+        )
+        .with_detail("reason", reason));
+    }
+    Ok(AutoInstallAction::Install)
+}
+
+fn parse_environment_flag(name: &str, value: Option<std::ffi::OsString>) -> UseResult<bool> {
+    let Some(value) = value else {
+        return Ok(false);
+    };
+    if value.is_empty() {
+        return Ok(true);
+    }
+    let value = value.into_string().map_err(|_| {
+        ocr_error(
+            "use.ocr.policy_invalid",
+            format!("{name} must contain a valid UTF-8 boolean value."),
+        )
+    })?;
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => Err(ocr_error(
+            "use.ocr.policy_invalid",
+            format!("{name} must be a boolean value."),
+        )),
+    }
+}
+
 fn archive_error(error: impl std::fmt::Display) -> UseError {
     ocr_error(
         "use.ocr.archive_invalid",
@@ -668,4 +766,96 @@ fn archive_error(error: impl std::fmt::Display) -> UseError {
 
 fn ocr_error(code: &str, message: impl Into<String>) -> UseError {
     UseError::new(code, message)
+}
+
+#[cfg(test)]
+mod automatic_install_tests {
+    use super::*;
+
+    fn status(available: bool, source: OcrInstallSource) -> OcrRuntimeStatus {
+        OcrRuntimeStatus {
+            available,
+            source,
+            model: MODEL_FAMILY.to_string(),
+            model_dir: None,
+            managed_root: None,
+            detail: if available {
+                "ready".to_string()
+            } else {
+                "missing".to_string()
+            },
+        }
+    }
+
+    #[test]
+    fn ready_models_never_require_an_install() {
+        let action = automatic_install_action(
+            &status(true, OcrInstallSource::Managed),
+            AutoInstallPolicy {
+                offline: true,
+                disabled: true,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(action, AutoInstallAction::Ready);
+    }
+
+    #[test]
+    fn missing_models_install_when_first_use_mutation_is_allowed() {
+        let action = automatic_install_action(
+            &status(false, OcrInstallSource::Missing),
+            AutoInstallPolicy {
+                offline: false,
+                disabled: false,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(action, AutoInstallAction::Install);
+    }
+
+    #[test]
+    fn offline_and_no_auto_install_are_strict_boundaries() {
+        for policy in [
+            AutoInstallPolicy {
+                offline: true,
+                disabled: false,
+            },
+            AutoInstallPolicy {
+                offline: false,
+                disabled: true,
+            },
+        ] {
+            let error = automatic_install_action(&status(false, OcrInstallSource::Missing), policy)
+                .unwrap_err();
+            assert_eq!(error.code, "use.ocr.auto_install_disabled");
+        }
+    }
+
+    #[test]
+    fn an_invalid_explicit_model_directory_is_never_replaced_implicitly() {
+        let error = automatic_install_action(
+            &status(false, OcrInstallSource::Environment),
+            AutoInstallPolicy {
+                offline: false,
+                disabled: false,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "use.ocr.model_unreadable");
+    }
+
+    #[test]
+    fn environment_flags_follow_a3s_boolean_conventions() {
+        for value in [None, Some("0"), Some("false"), Some("no"), Some("off")] {
+            assert!(!parse_environment_flag("A3S_OFFLINE", value.map(Into::into)).unwrap());
+        }
+        for value in [Some(""), Some("1"), Some("true"), Some("yes"), Some("on")] {
+            assert!(parse_environment_flag("A3S_OFFLINE", value.map(Into::into)).unwrap());
+        }
+        let error = parse_environment_flag("A3S_OFFLINE", Some("sometimes".into())).unwrap_err();
+        assert_eq!(error.code, "use.ocr.policy_invalid");
+    }
 }

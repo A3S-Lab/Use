@@ -18,7 +18,9 @@ mod preprocess;
 
 pub use assets::{ocr_status, OcrInstallSource, OcrRuntimeStatus};
 pub use client::OcrClient;
-pub use install::{install_ppocr_v6, repair_ppocr_v6, uninstall_managed_ppocr_v6};
+pub use install::{
+    ensure_ppocr_v6_ready, install_ppocr_v6, repair_ppocr_v6, uninstall_managed_ppocr_v6,
+};
 pub use mcp::OcrMcpServer;
 pub use models::{
     OcrBlock, OcrBoundingBox, OcrDiagnostic, OcrPoint, OcrProviderKind, OcrRequest, OcrResult,

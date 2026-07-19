@@ -11,8 +11,9 @@ There is one OCR provider:
 - engine: `onnx-runtime`
 - model bundle: `PP-OCRv6_small`
 
-The release packages the pinned detection and recognition models. If the model
-bundle is absent or damaged, install or repair it explicitly:
+The first extraction installs or repairs the pinned detection and recognition
+models when networking and first-use installation are allowed. Prepare them
+explicitly when deterministic startup or offline work is required:
 
 ```bash
 a3s install use/ocr
@@ -46,6 +47,12 @@ a3s use ocr doctor --json
 a3s use ocr extract ./scan.png --json
 a3s use mcp serve ocr
 ```
+
+`doctor` is read-only and never downloads anything. Direct CLI extraction
+prepares missing or damaged A3S-managed models automatically. Through MCP, the
+`use` worker calls the separate `ocr_install` mutation, which must pass parent
+confirmation before extraction continues. `A3S_OFFLINE=1` and
+`A3S_NO_AUTO_INSTALL=1` prohibit this first-use download.
 
 Supported inputs are bounded local PNG, JPEG, WebP, GIF, BMP, and TIFF files.
 URLs and PDF rasterization are outside this crate.
