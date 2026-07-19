@@ -23,6 +23,9 @@ const RESERVED_ROUTES: &[&str] = &[
     "box",
     "capability",
     "office",
+    "office-compat",
+    "office-native",
+    "ocr",
     "capabilities",
     "component",
     "extension",
@@ -437,7 +440,7 @@ extension "acme/slack" {
 
     #[test]
     fn rejects_reserved_routes() {
-        for route in ["browser", "box"] {
+        for route in ["browser", "box", "ocr"] {
             let manifest = MANIFEST.replace(
                 "route          = \"slack\"",
                 &format!("route = \"{route}\""),

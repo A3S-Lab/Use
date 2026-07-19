@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <em>Use browsers, Office documents, and independently shipped application domains through native CLI, standard MCP, and Skills</em>
+  <em>Use browsers, Office documents, OCR, and independently shipped application domains through native CLI, standard MCP, and Skills</em>
 </p>
 
 <p align="center">
@@ -14,6 +14,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#browser">Browser</a> •
   <a href="#office">Office</a> •
+  <a href="#ocr">OCR</a> •
   <a href="#external-extensions">Extensions</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#development">Development</a>
@@ -23,10 +24,10 @@
 
 ## Overview
 
-**A3S Use** is the application-capability layer for A3S. Browser and Office are
-first-party domains in the default distribution. Independently distributed
-packages can add more domains without rebuilding Use by declaring native CLI,
-standard MCP, and/or `SKILL.md` surfaces in an A3S ACL manifest.
+**A3S Use** is the application-capability layer for A3S. Browser, native Office,
+and OCR are first-party domains in the default distribution. Independently
+distributed packages can add more domains without rebuilding Use by declaring
+native CLI, standard MCP, and/or `SKILL.md` surfaces in an A3S ACL manifest.
 
 The primary user entry point is `a3s use`; `a3s-use` is the standalone binary
 used by the umbrella CLI and remains available for direct use, automation, and
@@ -95,7 +96,14 @@ a3s use mcp serve browser
 a3s use mcp serve office-native
 
 # Keep using the pinned OfficeCLI compatibility MCP server where needed.
+a3s use mcp serve office-compat
+# Legacy alias:
 a3s use mcp serve office
+
+# Built-in local PP-OCRv6.
+a3s use ocr doctor --json
+a3s use ocr extract ./scan.png --json
+a3s use mcp serve ocr
 ```
 
 Every domain argument accepted by `a3s use ...` can also be passed directly to
@@ -103,8 +111,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 
 ## Features
 
-- **Built-In Browser and Office**: Keep stable first-party command routes while
-  reporting provider readiness separately
+- **Built-In Browser, Office, and OCR**: Keep stable first-party command routes
+  while reporting provider readiness separately
 - **Typed Rust Contracts**: Embed Browser rendering and Office operations
   without starting a CLI process or an MCP server
 - **Agent Browser Compatibility**: Provide the locked 82-command vocabulary,
@@ -129,6 +137,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   safe Word, Spreadsheet, Presentation, native MCP, and compatibility workflows
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
+- **First-Party OCR Domain**: Run pinned PP-OCRv6 detection and recognition
+  models locally through ONNX Runtime, with source digests and bounded layout
+  evidence
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
   resident host can add, replace, or remove live capabilities without restarting
 - **Content-Bound Skills**: Project an absolute package path and lowercase
@@ -149,6 +160,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | Browser | Built in | Full Browser vocabulary | A3S Use standard MCP server | Six packaged Browser Skills | A3S Use |
 | Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
+| OCR | Built in | Doctor and typed image extraction | `ocr_doctor` and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
 The Box route is component-backed. The umbrella CLI resolves its authoritative
@@ -157,12 +169,13 @@ does not copy Box, discover a replacement on `PATH`, or write a second receipt.
 
 ### Cargo feature matrix
 
-Default features are `browser`, `office`, `extensions`, and `mcp`.
+Default features are `browser`, `office`, `ocr`, `extensions`, and `mcp`.
 
 | Feature | Included capability |
 | --- | --- |
 | `browser` | Typed Browser library, stateless rendering, and full Browser driver delegation |
 | `office` | Typed Office contracts, native OOXML read engine, and temporary OfficeCLI compatibility |
+| `ocr` | Built-in typed PP-OCRv6 CLI/MCP with local ONNX inference |
 | `extensions` | ACL manifests, package receipts, hot-plug registry, and external CLI/MCP/Skill routes |
 | `mcp` | Standard MCP servers plus the managed Browser Streamable HTTP lifecycle |
 | `lightpanda` | Explicit opt-in Lightpanda provider support in addition to Chrome |
@@ -179,6 +192,7 @@ A compiled command surface is not proof that its provider is installed. Use
 | `a3s-use-browser-driver` | Complete interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
 | `a3s-use-office` | Native OOXML foundation, typed Office operations, and compatibility lifecycle |
 | `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |
+| `a3s-use-ocr` | Local PP-OCRv6 engine, CLI, MCP tools, pinned models, and release-packaged Skill assets |
 | `a3s-use` | Facade library, standalone CLI host, capability projection, and MCP entry points |
 
 ## Quick Start
@@ -515,7 +529,10 @@ agents without starting OfficeCLI. Discover its metadata with
 `office skills get a3s-use-office`, append its four format/MCP references with
 `--full`, or locate the installed directory with `office skills path`. The
 capability snapshot binds the Skill path and lowercase SHA-256 so a resident
-host can verify the bytes before loading them.
+host can verify the bytes before loading them. Resident Code hosts receive the
+native engine as canonical route `use/office` targeting `office-native`; a ready
+OfficeCLI installation is projected separately as `use/office-compat` targeting
+`office-compat`.
 Other `0.1.x` commands and the default `mcp serve office` target still use a
 compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
 boundary, not a native-promotion claim. The default routes will be promoted
@@ -1586,6 +1603,40 @@ compatibility response can return
 See [Native Office Engine](docs/native-office.md) for the complete requirements,
 compatibility scope, safety invariants, delivery gates, and migration plan.
 
+## OCR
+
+`a3s-use-ocr` implements the reserved built-in `ocr` route. The default Use
+release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor` plus
+`ocr_extract` over standard MCP, so a resident A3S Code session receives
+`mcp__use_ocr__*` without installing a separate extension.
+
+OCR has one backend: the pinned `PP-OCRv6_small` detection and recognition
+models running locally through ONNX Runtime. Release archives package those
+models; `a3s install use/ocr` explicitly installs or repairs the same pinned
+bundle when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF,
+BMP, and TIFF files. The result binds the canonical source path, media type,
+byte length, and SHA-256 alongside text, recognition/detection confidence,
+polygons, and bounding boxes.
+
+The pipeline decodes and normalizes the image, runs
+`PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
+perspective-rectifies and rotates text crops, runs batched
+`PP-OCRv6_small_rec`, and applies CTC decoding. It does not require Python or
+PaddlePaddle, call a remote OCR API, or transfer source bytes off the device.
+
+```bash
+a3s use ocr doctor --json
+a3s use ocr extract ./scan.png --json
+a3s use mcp serve ocr
+```
+
+A3S Code may first-use install the verified parent Use release. A missing or
+damaged managed model bundle is repaired explicitly with
+`a3s install use/ocr`; the Code `use` worker never installs it implicitly.
+
+See the [OCR crate](crates/ocr/README.md) for model resolution, the inference
+workflow, and input boundaries.
+
 ## External Extensions
 
 External Use domains stay behind process boundaries. A package contains an
@@ -1636,15 +1687,17 @@ roadmap work; Use does not silently install arbitrary Homebrew, npm, Cargo,
 system, or `PATH` packages.
 
 Built-in and management routes are reserved. Extensions cannot shadow
-`browser`, `office`, `box`, `component`, `capability`, or other host commands.
+`browser`, `office`, `ocr`, `box`, `component`, `capability`, or other host
+commands.
 
 ## Live Host Integration
 
 Resident hosts consume `capability snapshot` and `capability watch`. The
-projection presents Browser, Office, Box, and enabled extensions through one
-read-only schema while preserving each binding's `built-in` or `extension`
-origin. The extension generation advances on receipt mutations; a content
-revision also changes when built-in readiness or packaged Skill content changes.
+projection presents Browser, native Office, OCR, Box, and enabled extensions
+through one read-only schema while preserving each binding's `built-in` or
+`extension` origin. The extension generation advances on receipt mutations; a
+content revision also changes when built-in readiness or packaged Skill content
+changes.
 
 ```bash
 a3s-use capability snapshot --json
@@ -1662,10 +1715,18 @@ tools. Projected Skills provide guidance only and cannot expand permissions or
 authorize installation. Code verifies their projected SHA-256 before loading
 the exact bytes.
 
+The built-in Office projection is intentionally host-oriented: `use/office`
+always exposes the in-process native MCP target when MCP support is compiled,
+without consulting OfficeCLI. A discovered OfficeCLI provider is a separate
+optional `use/office-compat` route, so native readiness and compatibility
+installation cannot mask or replace each other.
+
 A capability becomes callable only after its MCP connection is ready. A
 removed or replaced route leaves the worker catalog before its old connection
-drains. Starting Code never installs Use: component installation remains an
-explicit umbrella CLI action.
+drains. Code TUI resolves the catalogued Use component on first launch and may
+install its verified release before terminal takeover. Offline mode and
+`A3S_NO_AUTO_INSTALL=1` remain strict no-mutation boundaries; setup failure is
+non-fatal and stays visible through `/use`.
 
 ## Protocol and Lifecycle Boundaries
 
@@ -1702,13 +1763,13 @@ crash, and in-flight calls retain the exact package generation they accepted.
                               a3s use
                                   │
                               a3s-use host
-                    ┌─────────────┼──────────────┐
-                    │             │              │
-                Browser         Office       extension registry
-             typed + driver  native OOXML     CLI / MCP / Skill
-                              + 0.1 compat
-                    │             │              │
-                    └──────── capability snapshot/watch ───────► A3S Code
+                ┌──────────┬──────────┬──────────┬──────────────┐
+                │          │          │          │              │
+             Browser     Office      OCR     extension registry
+          typed + driver  OOXML   PP-OCRv6 ONNX  CLI / MCP / Skill
+                       + 0.1 compat
+                │          │          │          │
+                └──────── capability snapshot/watch ───────────► A3S Code
 
   a3s-search ── Arc<dyn PageRenderer> ──► a3s-use-browser
 
@@ -1717,10 +1778,12 @@ crash, and in-flight calls retain the exact package generation they accepted.
 
 The dependency arrows are intentional. Search links only the Browser contract,
 so rendering does not require `a3s-use`, MCP, or a resident process. Office is
-an in-process typed engine with a temporary 0.1.x compatibility process;
-external domains retain their process boundaries. A3S Code consumes the
-read-only projection and connects standard MCP/Skill surfaces; it does not gain
-component installation authority.
+an in-process typed engine with a temporary 0.1.x compatibility process. OCR
+runs the pinned PP-OCRv6 models locally through ONNX Runtime; model installation
+is an explicit component operation. External domains retain their process
+boundaries. A3S Code consumes the read-only projection and connects standard
+MCP/Skill surfaces; bounded component installation requests still require the
+parent TUI's authority.
 
 Source is split between the facade under `src/` and focused workspace crates
 under `crates/`. See [Architecture](docs/architecture.md) for package leases,
