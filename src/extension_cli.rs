@@ -14,6 +14,8 @@ pub(crate) struct ExtensionView {
     pub enabled: bool,
     pub package_root: PathBuf,
     pub surfaces: Vec<&'static str>,
+    pub trust: &'static str,
+    pub registry: Option<serde_json::Value>,
     pub manifest: serde_json::Value,
 }
 
@@ -196,7 +198,8 @@ pub(crate) fn external_component_value(
         "route": extension.route,
         "enabled": extension.enabled,
         "surfaces": extension.surfaces,
-        "trust": "local-explicit"
+        "trust": extension.trust,
+        "registry": extension.registry
     })
 }
 
@@ -209,7 +212,8 @@ fn extension_value(extension: &ExtensionView) -> serde_json::Value {
         "enabled": extension.enabled,
         "packageRoot": extension.package_root,
         "surfaces": extension.surfaces,
-        "trust": "local-explicit"
+        "trust": extension.trust,
+        "registry": extension.registry
     })
 }
 
@@ -254,12 +258,64 @@ pub(crate) async fn install_extension(
     })
 }
 
+#[cfg(feature = "extensions")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn install_remote_extension(
+    package_id: &str,
+    registry_name: &str,
+    registry_url: &str,
+    trust_root: &str,
+    trusted_root_path: Option<&Path>,
+    version: Option<&str>,
+    channel: &str,
+    expected_plan_digest: Option<&str>,
+    force: bool,
+) -> UseResult<ExtensionInstallView> {
+    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let registry = a3s_use_extension::TrustedRegistry::new(
+        registry_name,
+        registry_url,
+        trust_root,
+        trusted_root_path.map(Path::to_path_buf),
+        paths.tuf_datastore(registry_name),
+    )?;
+    let result = crate::extension_host::install_remote(
+        package_id,
+        &registry,
+        version,
+        channel,
+        expected_plan_digest,
+        force,
+    )
+    .await?;
+    Ok(ExtensionInstallView {
+        changed: result.changed,
+        extension: extension_view(result.extension)?,
+    })
+}
+
 #[cfg(not(feature = "extensions"))]
 pub(crate) async fn install_extension(
     _package_id: &str,
     _source: &Path,
     _force: bool,
     _allow_unsigned: bool,
+) -> UseResult<ExtensionInstallView> {
+    Err(extensions_disabled())
+}
+
+#[cfg(not(feature = "extensions"))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn install_remote_extension(
+    _package_id: &str,
+    _registry_name: &str,
+    _registry_url: &str,
+    _trust_root: &str,
+    _trusted_root_path: Option<&Path>,
+    _version: Option<&str>,
+    _channel: &str,
+    _expected_plan_digest: Option<&str>,
+    _force: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())
 }
@@ -368,6 +424,22 @@ async fn watch_registry(
 #[cfg(feature = "extensions")]
 fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult<ExtensionView> {
     let surfaces = extension.surfaces();
+    let trust = match extension.receipt.trust {
+        a3s_use_extension::ExtensionTrust::LocalExplicit => "local-explicit",
+        a3s_use_extension::ExtensionTrust::RegistryTuf => "registry-tuf",
+    };
+    let registry = extension
+        .receipt
+        .registry
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| {
+            UseError::new(
+                "use.extension.receipt_invalid",
+                format!("Failed to encode the extension registry provenance: {error}"),
+            )
+        })?;
     let manifest = serde_json::to_value(&extension.manifest).map_err(|error| {
         UseError::new(
             "use.extension.manifest_invalid",
@@ -382,6 +454,8 @@ fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult
         enabled: extension.receipt.enabled,
         package_root: extension.receipt.package_root,
         surfaces,
+        trust,
+        registry,
         manifest,
     })
 }

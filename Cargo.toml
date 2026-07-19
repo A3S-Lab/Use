@@ -25,6 +25,7 @@ base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
 futures-util = "0.3"
+flate2 = "1"
 getrandom = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 quick-xml = "0.38"
@@ -34,10 +35,12 @@ schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+tar = "0.4"
 thiserror = "2"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "process", "sync", "time"] }
 tokio-util = "0.7"
+tough = { version = "0.22", default-features = false, features = ["http"] }
 url = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
@@ -111,5 +114,9 @@ windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_
 [dev-dependencies]
 async-trait.workspace = true
 reqwest.workspace = true
+flate2.workspace = true
+olpc-cjson = "0.1"
+ring = "0.17"
+tar.workspace = true
 tempfile.workspace = true
 zip.workspace = true

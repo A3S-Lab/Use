@@ -5,17 +5,24 @@ use a3s_acl::{Block, Value};
 use a3s_use_core::{RiskClass, UseError, UseResult};
 use serde::{Deserialize, Serialize};
 
+mod digest;
 mod package;
 mod paths;
 mod registry;
 mod registry_io;
+mod remote;
 mod route_lock;
+mod source;
 
 pub use paths::ExtensionPaths;
 pub use registry::{
     ActivationResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
     ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult,
     InstalledExtension, UninstallResult,
+};
+pub use remote::{
+    prepare_remote_package, refresh_remote_registry, DownloadedRemotePackage,
+    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryMetadata,
 };
 
 const RESERVED_ROUTES: &[&str] = &[
