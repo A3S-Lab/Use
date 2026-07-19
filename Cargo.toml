@@ -26,6 +26,7 @@ clap = { version = "4", features = ["derive"] }
 clipper2 = { version = "=0.5.3", default-features = false }
 fs2 = "0.4"
 futures-util = "0.3"
+flate2 = "1"
 getrandom = "0.3"
 image = { version = "=0.25.5", default-features = false, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
 imageproc = { version = "=0.25.0", default-features = false }
@@ -44,6 +45,7 @@ thiserror = "2"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "process", "sync", "time"] }
 tokio-util = "0.7"
+tough = { version = "0.22", default-features = false, features = ["http"] }
 url = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
@@ -117,5 +119,9 @@ windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_
 [dev-dependencies]
 async-trait.workspace = true
 reqwest.workspace = true
+flate2.workspace = true
+olpc-cjson = "0.1"
+ring = "0.17"
+tar.workspace = true
 tempfile.workspace = true
 zip.workspace = true

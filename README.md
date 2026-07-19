@@ -1680,11 +1680,74 @@ a3s use extension enable acme/slack --json
 a3s uninstall use/acme/slack
 ```
 
-The current extension source is an explicit local directory. It must pass
-manifest, route, path, package-size, and executable validation, and unsigned
-content requires `--allow-unsigned`. A signed remote publisher channel is
-roadmap work; Use does not silently install arbitrary Homebrew, npm, Cargo,
-system, or `PATH` packages.
+The current extension source is an explicit local directory or a `.tar.gz`,
+`.tgz`, or `.zip` archive. Archives must contain exactly one package manifest;
+every entry must belong to that manifest's package root. Installation rejects
+links, traversal, duplicate paths, unsupported entries, excessive expansion,
+and non-portable paths before validating the manifest, route, executable, and
+Skill surfaces. Unsigned content requires `--allow-unsigned`. Use does not
+silently install arbitrary Homebrew, npm, Cargo, system, or `PATH` packages.
+
+### Signed extension registries
+
+Remote extensions use TUF metadata and a separately established bootstrap-root
+digest. Enroll a registry with either a root file or its SHA-256, verify it,
+review the immutable component plan, and apply that exact plan:
+
+```bash
+a3s registry add https://packages.example.org/a3s/ \
+  --trust-root ./root.json \
+  --yes
+a3s registry refresh packages
+
+a3s --output json install use/acme/slack --dry-run
+a3s --output json install use/acme/slack \
+  --plan-digest <reviewed-plan-sha256>
+
+a3s --output json upgrade use/acme/slack --dry-run
+a3s --output json upgrade use/acme/slack \
+  --plan-digest <reviewed-upgrade-sha256>
+```
+
+When a root file is supplied, the umbrella CLI copies it into registry-owned
+configuration and records its digest. With a digest-only enrollment, Use may
+fetch `<registry>/metadata/root.json`, but it caches the file only after the
+bytes match the pinned SHA-256. Subsequent root rotation, timestamp, snapshot,
+and targets metadata are verified by TUF with expiration and rollback
+enforcement. Registry URLs require HTTPS; loopback HTTP is accepted only for
+tests and local development.
+
+A dry-run verifies metadata but does not download the target archive. Its outer
+component digest includes the exact `ResolvedRemotePackage`: registry identity,
+bootstrap root, every TUF metadata version, package version and channel,
+platform target, archive path, length, and SHA-256. Apply resolves again and
+fails before target download if that plan changed. It then passes the resolved
+package's own digest to `a3s-use`, which repeats TUF verification immediately
+before downloading and activating the archive. The installed receipt records
+`registry-tuf` trust and the complete signed provenance. Registry installs
+reject `--allow-unsigned`; local `--from` installs cannot provide registry
+options.
+
+Registry upgrades reuse the registry identity and channel recorded in that
+signed provenance instead of searching every configured source again. A
+missing registry, changed URL or bootstrap root, and semantic-version downgrade
+are rejected before payload download. Plain `a3s upgrade` reports newer signed
+targets, while `a3s upgrade --all` includes them in the selected batch. If the
+verified target is identical to the installed target, `a3s-use` validates and
+reconciles the receipt and registry snapshot without downloading or
+reactivating the package.
+
+Publish metadata below `<registry>/metadata/` and payloads below
+`<registry>/targets/`. An extension target uses this canonical path:
+
+```text
+extensions/<publisher>/<name>/<version>/<channel>/<target>/<archive>
+```
+
+Its TUF target `custom.a3s` object must contain `schemaVersion`, `packageId`,
+`version`, `channel` (`stable`, `beta`, or `nightly`), and `target` (an A3S host
+target or `any`). Duplicate identities, mismatched paths, unsupported archives,
+and oversized targets are rejected before payload download.
 
 Built-in and management routes are reserved. Extensions cannot shadow
 `browser`, `office`, `ocr`, `box`, `component`, `capability`, or other host

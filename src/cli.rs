@@ -6,7 +6,8 @@ use crate::capability_registry::{
 use crate::extension_cli::{
     extension_capabilities, extension_disable, extension_enable, extension_inspect, extension_list,
     extension_snapshot, extension_watch, external_component_value, external_package_id,
-    install_extension, installed_extension, installed_extensions, uninstall_extension,
+    install_extension, install_remote_extension, installed_extension, installed_extensions,
+    uninstall_extension,
 };
 use std::time::Duration;
 
@@ -481,15 +482,78 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
             format!("Unknown delegated component '{id}'."),
         ));
     };
-    let source = option_argument(args, "--from")?
-        .ok_or_else(|| usage_error("external extension install requires --from <directory>"))?;
-    let result = install_extension(
-        package_id,
-        std::path::Path::new(source),
-        args.iter().any(|argument| argument == "--force"),
-        args.iter().any(|argument| argument == "--allow-unsigned"),
-    )
-    .await?;
+    let source = option_argument(args, "--from")?;
+    let registry_name = option_argument(args, "--registry-name")?;
+    let registry_url = option_argument(args, "--registry-url")?;
+    let trust_root = option_argument(args, "--trust-root")?;
+    let trusted_root = option_argument(args, "--trusted-root")?;
+    let version = option_argument(args, "--version")?;
+    let channel = option_argument(args, "--channel")?.unwrap_or("stable");
+    let expected_plan = option_argument(args, "--registry-plan-digest")?;
+    let force = args.iter().any(|argument| argument == "--force");
+    let allow_unsigned = args.iter().any(|argument| argument == "--allow-unsigned");
+    let remote_requested = registry_name.is_some()
+        || registry_url.is_some()
+        || trust_root.is_some()
+        || trusted_root.is_some()
+        || version.is_some()
+        || expected_plan.is_some()
+        || option_argument(args, "--channel")?.is_some();
+    let result = if let Some(source) = source {
+        if remote_requested {
+            return Err(usage_error(
+                "--from cannot be combined with signed registry options",
+            ));
+        }
+        install_extension(
+            package_id,
+            std::path::Path::new(source),
+            force,
+            allow_unsigned,
+        )
+        .await?
+    } else {
+        if allow_unsigned {
+            return Err(usage_error(
+                "--allow-unsigned is valid only with an explicit local --from package",
+            ));
+        }
+        let registry_name = registry_name
+            .ok_or_else(|| usage_error("remote extension install requires --registry-name"))?;
+        let registry_url = registry_url
+            .ok_or_else(|| usage_error("remote extension install requires --registry-url"))?;
+        let trust_root = trust_root
+            .ok_or_else(|| usage_error("remote extension install requires --trust-root"))?;
+        let trusted_root = trusted_root
+            .map(|path| {
+                let path = std::path::PathBuf::from(path);
+                if path.is_absolute() {
+                    Ok(path)
+                } else {
+                    std::env::current_dir()
+                        .map(|directory| directory.join(path))
+                        .map_err(|error| {
+                            UseError::new(
+                                "use.extension.registry_path_invalid",
+                                format!("Failed to resolve the trusted root path: {error}"),
+                            )
+                        })
+                }
+            })
+            .transpose()?;
+        install_remote_extension(
+            package_id,
+            registry_name,
+            registry_url,
+            trust_root,
+            trusted_root.as_deref(),
+            version,
+            channel,
+            expected_plan,
+            force,
+        )
+        .await?
+    };
     Ok(CommandOutput::success(
         if result.changed {
             format!("Installed extension '{}'.", result.extension.package_id)
@@ -1018,9 +1082,16 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--json" | "--force" | "--allow-unsigned" => index += 1,
-            "--from" => {
+            "--from"
+            | "--registry-name"
+            | "--registry-url"
+            | "--trust-root"
+            | "--trusted-root"
+            | "--version"
+            | "--channel"
+            | "--registry-plan-digest" => {
                 if args.get(index + 1).is_none() {
-                    return Err(usage_error("--from requires a value"));
+                    return Err(usage_error(format!("{} requires a value", args[index])));
                 }
                 index += 2;
             }

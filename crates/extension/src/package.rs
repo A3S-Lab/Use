@@ -12,9 +12,9 @@ use tokio::io::AsyncWriteExt;
 use super::registry::ExtensionReceipt;
 use super::{ExtensionManifest, ExtensionPaths};
 
-const MANIFEST_NAME: &str = "a3s-use-extension.acl";
-const MAX_PACKAGE_FILES: usize = 10_000;
-const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
+pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
+pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
+pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
 
 pub(crate) async fn read_manifest(package_root: &Path) -> UseResult<(ExtensionManifest, Vec<u8>)> {
     let path = package_root.join(MANIFEST_NAME);

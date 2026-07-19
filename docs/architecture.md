@@ -70,6 +70,14 @@ Consumers read `extension snapshot` for the current projection or long-poll
 `extension watch --after-generation <n>` for a later generation. No daemon,
 custom RPC protocol, `dlopen`, or restart is required.
 
+Explicit local sources may be directories or bounded `.tar.gz`, `.tgz`, and
+`.zip` archives. Archive extraction runs off the async executor, accepts one
+manifest-rooted package, preserves executable permissions, and rejects links,
+path traversal, duplicate entries, unsupported file types, and expansion beyond
+the package limits before lifecycle activation begins. Standard bounded macOS
+AppleDouble sidecars are ignored rather than installed; they still count toward
+the archive entry and expanded-byte limits.
+
 ### Unified capability projection
 
 Resident Code hosts do not need separate discovery paths for built-in and
@@ -500,6 +508,11 @@ Implemented:
     recognition, standard closed-world MCP annotations/output schemas, pinned
     release models, and a content-bound Skill that projects to
     `mcp__use_ocr__*` in A3S Code.
+17. TUF-verified remote extension registries with pinned bootstrap roots,
+    expiration and rollback enforcement, exact review/apply plans, and signed
+    provenance receipts. Registry upgrades restore the recorded source and
+    channel, reject identity drift and version downgrades, and converge before
+    payload download when the installed signed target is already current.
 
 Next:
 
@@ -513,5 +526,6 @@ Next:
    with the same runtime guarantees as macOS and Linux. Windows compilation,
    CLI/MCP schemas, packaged assets, and non-runtime tests remain continuously
    checked in CI meanwhile.
-4. Signed remote extension publishers. External publisher infrastructure is
-   independent of the built-in Browser compatibility contract.
+4. Production publication for the official A3S extension registry, including
+   an offline-held root-key policy and release automation. The client does not
+   substitute a placeholder or generated key for that operational trust root.
