@@ -210,7 +210,13 @@ mod browser {
     impl BrowserMcpServer {
         #[tool(
             name = "browser_doctor",
-            description = "Inspect the locally available A3S Use Browser provider without installing software"
+            description = "Inspect the locally available A3S Use Browser provider without installing software",
+            annotations(
+                read_only_hint = true,
+                destructive_hint = false,
+                idempotent_hint = true,
+                open_world_hint = false
+            )
         )]
         async fn browser_doctor(&self) -> Result<CallToolResult, rmcp::ErrorData> {
             Ok(match serde_json::to_value(a3s_use_browser::doctor()) {
@@ -224,7 +230,13 @@ mod browser {
 
         #[tool(
             name = "browser_render",
-            description = "Render one web page with the configured local Browser provider"
+            description = "Render one web page with the configured local Browser provider",
+            annotations(
+                read_only_hint = true,
+                destructive_hint = false,
+                idempotent_hint = true,
+                open_world_hint = true
+            )
         )]
         async fn browser_render(
             &self,
@@ -249,7 +261,13 @@ mod browser {
 
         #[tool(
             name = "browser_open",
-            description = "Open an isolated stateful Browser session and return its first semantic snapshot"
+            description = "Open an isolated stateful Browser session and return its first semantic snapshot",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = false,
+                open_world_hint = true
+            )
         )]
         async fn browser_open(
             &self,
@@ -281,7 +299,13 @@ mod browser {
 
         #[tool(
             name = "browser_list",
-            description = "List open Browser sessions and their current URLs"
+            description = "List open Browser sessions and their current URLs",
+            annotations(
+                read_only_hint = true,
+                destructive_hint = false,
+                idempotent_hint = true,
+                open_world_hint = false
+            )
         )]
         async fn browser_list(&self) -> Result<CallToolResult, rmcp::ErrorData> {
             Ok(tool_result(self.sessions.list().await))
@@ -289,7 +313,13 @@ mod browser {
 
         #[tool(
             name = "browser_navigate",
-            description = "Navigate an open Browser session and return a fresh semantic snapshot"
+            description = "Navigate an open Browser session and return a fresh semantic snapshot",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = false,
+                open_world_hint = true
+            )
         )]
         async fn browser_navigate(
             &self,
@@ -320,7 +350,13 @@ mod browser {
 
         #[tool(
             name = "browser_snapshot",
-            description = "Return a compact semantic snapshot and fresh @e element references"
+            description = "Return a compact semantic snapshot and fresh @e element references",
+            annotations(
+                read_only_hint = true,
+                destructive_hint = false,
+                idempotent_hint = true,
+                open_world_hint = false
+            )
         )]
         async fn browser_snapshot(
             &self,
@@ -335,7 +371,13 @@ mod browser {
 
         #[tool(
             name = "browser_click",
-            description = "Click an element reference from the latest semantic snapshot"
+            description = "Click an element reference from the latest semantic snapshot",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = false,
+                open_world_hint = true
+            )
         )]
         async fn browser_click(
             &self,
@@ -352,7 +394,13 @@ mod browser {
 
         #[tool(
             name = "browser_type",
-            description = "Focus an element reference and type text into it"
+            description = "Focus an element reference and type text into it",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = false,
+                open_world_hint = true
+            )
         )]
         async fn browser_type(
             &self,
@@ -371,7 +419,13 @@ mod browser {
 
         #[tool(
             name = "browser_press",
-            description = "Focus an element reference and press one keyboard key"
+            description = "Focus an element reference and press one keyboard key",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = false,
+                open_world_hint = true
+            )
         )]
         async fn browser_press(
             &self,
@@ -390,7 +444,13 @@ mod browser {
 
         #[tool(
             name = "browser_select",
-            description = "Select an option value on a referenced select element"
+            description = "Select an option value on a referenced select element",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = false,
+                open_world_hint = true
+            )
         )]
         async fn browser_select(
             &self,
@@ -409,7 +469,13 @@ mod browser {
 
         #[tool(
             name = "browser_scroll",
-            description = "Scroll the current page by explicit horizontal and vertical deltas"
+            description = "Scroll the current page by explicit horizontal and vertical deltas",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = false,
+                open_world_hint = false
+            )
         )]
         async fn browser_scroll(
             &self,
@@ -426,7 +492,13 @@ mod browser {
 
         #[tool(
             name = "browser_screenshot",
-            description = "Capture a full-page PNG from an open Browser session to an explicit local path"
+            description = "Capture a full-page PNG from an open Browser session to an explicit local path",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = false,
+                open_world_hint = false
+            )
         )]
         async fn browser_screenshot(
             &self,
@@ -449,7 +521,13 @@ mod browser {
 
         #[tool(
             name = "browser_close",
-            description = "Close one Browser session and release its tab resources"
+            description = "Close one Browser session and release its tab resources",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = false,
+                idempotent_hint = true,
+                open_world_hint = false
+            )
         )]
         async fn browser_close(
             &self,
@@ -470,7 +548,13 @@ mod browser {
 
         #[tool(
             name = "browser_service_stop",
-            description = "Stop the authenticated persistent A3S Use Browser MCP deployment"
+            description = "Stop the authenticated persistent A3S Use Browser MCP deployment",
+            annotations(
+                read_only_hint = false,
+                destructive_hint = true,
+                idempotent_hint = true,
+                open_world_hint = false
+            )
         )]
         async fn browser_service_stop(&self) -> Result<CallToolResult, rmcp::ErrorData> {
             let Some(shutdown) = self.shutdown.clone() else {
@@ -564,7 +648,7 @@ mod browser {
                 None,
             );
             let tools = server.tool_router.list_all();
-            let mut names = tools
+            let mut names: Vec<&str> = tools
                 .iter()
                 .map(|tool| tool.name.as_ref())
                 .collect::<Vec<_>>();
@@ -587,6 +671,23 @@ mod browser {
                     "browser_type"
                 ]
             );
+
+            let annotations = |name: &str| {
+                tools
+                    .iter()
+                    .find(|tool| tool.name == name)
+                    .and_then(|tool| tool.annotations.as_ref())
+                    .unwrap_or_else(|| panic!("{name} must declare MCP annotations"))
+            };
+            let list = annotations("browser_list");
+            assert_eq!(list.read_only_hint, Some(true));
+            assert_eq!(list.open_world_hint, Some(false));
+            let render = annotations("browser_render");
+            assert_eq!(render.read_only_hint, Some(true));
+            assert_eq!(render.open_world_hint, Some(true));
+            let click = annotations("browser_click");
+            assert_eq!(click.read_only_hint, Some(false));
+            assert_eq!(click.open_world_hint, Some(true));
         }
 
         #[test]

@@ -5,11 +5,14 @@ use a3s_acl::{Block, Value};
 use a3s_use_core::{RiskClass, UseError, UseResult};
 use serde::{Deserialize, Serialize};
 
+mod digest;
 mod package;
 mod paths;
 mod registry;
 mod registry_io;
+mod remote;
 mod route_lock;
+mod source;
 
 pub use paths::ExtensionPaths;
 pub use registry::{
@@ -17,12 +20,19 @@ pub use registry::{
     ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult,
     InstalledExtension, UninstallResult,
 };
+pub use remote::{
+    prepare_remote_package, refresh_remote_registry, DownloadedRemotePackage,
+    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryMetadata,
+};
 
 const RESERVED_ROUTES: &[&str] = &[
     "browser",
     "box",
     "capability",
     "office",
+    "office-compat",
+    "office-native",
+    "ocr",
     "capabilities",
     "component",
     "extension",
@@ -437,7 +447,7 @@ extension "acme/slack" {
 
     #[test]
     fn rejects_reserved_routes() {
-        for route in ["browser", "box"] {
+        for route in ["browser", "box", "ocr"] {
             let manifest = MANIFEST.replace(
                 "route          = \"slack\"",
                 &format!("route = \"{route}\""),

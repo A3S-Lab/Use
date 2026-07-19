@@ -93,6 +93,12 @@ impl ExtensionPaths {
         path.set_extension("lock");
         path
     }
+
+    pub fn tuf_datastore(&self, registry_name: &str) -> PathBuf {
+        self.state_root
+            .join("remote-registries")
+            .join(registry_name)
+    }
 }
 
 fn configured_root(
@@ -162,6 +168,10 @@ mod tests {
         assert_eq!(
             paths.registry_snapshot_path(),
             PathBuf::from("/state/use/registry.json")
+        );
+        assert_eq!(
+            paths.tuf_datastore("a3s"),
+            PathBuf::from("/state/use/remote-registries/a3s")
         );
     }
 }

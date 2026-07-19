@@ -21,9 +21,13 @@ fn capabilities_are_available_as_versioned_json() {
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["schemaVersion"], 1);
-    assert_eq!(value["data"]["domains"][0]["id"], "browser");
-    assert_eq!(value["data"]["domains"][1]["id"], "office");
-    assert_eq!(value["data"]["domains"][2]["id"], "box");
+    let domains = value["data"]["domains"].as_array().unwrap();
+    for id in ["browser", "office", "ocr", "box"] {
+        assert!(
+            domains.iter().any(|domain| domain["id"] == id),
+            "missing built-in domain {id}: {domains:?}"
+        );
+    }
     assert!(value["data"].get("customJsonRpc").is_none());
     assert!(value.get("jsonrpc").is_none());
 }
@@ -57,6 +61,10 @@ fn unified_capability_snapshot_projects_builtin_skills() {
     let office = capabilities
         .iter()
         .find(|capability| capability["id"] == "use/office")
+        .unwrap();
+    let office_compat = capabilities
+        .iter()
+        .find(|capability| capability["id"] == "use/office-compat")
         .unwrap();
     assert_eq!(browser["origin"], "built-in");
     #[cfg(feature = "browser")]
@@ -100,6 +108,15 @@ fn unified_capability_snapshot_projects_builtin_skills() {
         assert!(office_skill_digest
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
+        #[cfg(feature = "mcp")]
+        {
+            assert_eq!(office["readiness"], "ready");
+            assert_eq!(office["mcp"]["target"], "office-native");
+        }
+        assert_eq!(office_compat["route"], "office-compat");
+        assert_eq!(office_compat["readiness"], "missing");
+        assert!(office_compat.get("mcp").is_none());
+        assert!(office_compat.get("skills").is_none());
     }
     #[cfg(not(feature = "office"))]
     {
@@ -152,6 +169,9 @@ fn office_skill_commands_are_packaged_and_provider_independent() {
         .as_str()
         .unwrap()
         .contains("## Bundled reference: references/mcp.md"));
+    let office_skill = get["data"]["content"].as_str().unwrap();
+    assert!(office_skill.contains("mcp__use_office__*"));
+    assert!(office_skill.contains("mcp__use_office_compat__*"));
 
     let path = Command::new(binary())
         .args(["office", "skills", "path", "a3s-use-office", "--json"])
@@ -1126,6 +1146,31 @@ fn native_office_cli_writes_typed_spreadsheet_values_without_an_officecli_provid
     let formula: serde_json::Value = serde_json::from_slice(&formula.stdout).unwrap();
     assert_eq!(formula["data"]["node"]["format"]["formula"], "A1*2");
 
+    let before_invalid_formula = std::fs::read(&document).unwrap();
+    let invalid_formula = Command::new(binary())
+        .args([
+            "office",
+            "native",
+            "set",
+            document.to_str().unwrap(),
+            "/Sheet1/C2",
+            "--formula",
+            "SUM(A1",
+            "--json",
+        ])
+        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
+        .output()
+        .unwrap();
+    assert!(!invalid_formula.status.success(), "{invalid_formula:?}");
+    let invalid_formula: serde_json::Value =
+        serde_json::from_slice(&invalid_formula.stdout).unwrap();
+    assert_eq!(
+        invalid_formula["error"]["code"],
+        "use.office.spreadsheet_formula_invalid"
+    );
+    assert_eq!(invalid_formula["error"]["details"]["characterOffset"], 6);
+    assert_eq!(std::fs::read(&document).unwrap(), before_invalid_formula);
+
     std::fs::write(
         &mutations,
         serde_json::to_vec(&serde_json::json!({
@@ -1790,6 +1835,50 @@ fn office_install_reuses_an_explicit_provider_without_downloading() {
     assert!(!temp.path().join("managed/1.0.136").exists());
 }
 
+#[cfg(feature = "office")]
+#[test]
+fn office_compatibility_first_use_honors_no_auto_install() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["office", "document", "inspect", "fixture.docx", "--json"])
+        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
+        .env("A3S_NO_AUTO_INSTALL", "1")
+        .env("PATH", temp.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "use.office.auto_install_disabled");
+    assert_eq!(value["error"]["details"]["reason"], "A3S_NO_AUTO_INSTALL");
+    assert!(!temp.path().join("managed/1.0.136").exists());
+}
+
+#[cfg(feature = "office")]
+#[test]
+fn office_help_never_triggers_compatibility_installation() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["office", "--help", "--json"])
+        .env(
+            "A3S_OFFICECLI_EXECUTABLE",
+            temp.path().join("must-not-exist"),
+        )
+        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], true);
+    assert!(value["data"]["usage"]
+        .as_str()
+        .unwrap()
+        .contains("Native Office is built in"));
+    assert!(!temp.path().join("managed/1.0.136").exists());
+}
+
 #[cfg(all(unix, feature = "office"))]
 #[test]
 fn office_mcp_target_delegates_to_officeclis_standard_server() {
@@ -1802,6 +1891,27 @@ fn office_mcp_target_delegates_to_officeclis_standard_server() {
 
     let output = Command::new(binary())
         .args(["mcp", "serve", "office"])
+        .env("A3S_OFFICECLI_EXECUTABLE", &executable)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(5));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "mcp\n");
+    assert!(output.stderr.is_empty());
+}
+
+#[cfg(all(unix, feature = "office"))]
+#[test]
+fn office_compat_mcp_target_delegates_to_officeclis_standard_server() {
+    let temp = tempfile::tempdir().unwrap();
+    let executable = temp.path().join("officecli-fixture");
+    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\"\nexit 5\n").unwrap();
+    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).unwrap();
+
+    let output = Command::new(binary())
+        .args(["mcp", "serve", "office-compat"])
         .env("A3S_OFFICECLI_EXECUTABLE", &executable)
         .output()
         .unwrap();
@@ -1883,7 +1993,15 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
     )
     .await;
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 12);
+    assert_eq!(tools.len(), 13);
+    let install_compat = tools
+        .iter()
+        .find(|tool| tool["name"] == "office_install_compat")
+        .unwrap();
+    assert_eq!(install_compat["annotations"]["readOnlyHint"], false);
+    assert_eq!(install_compat["annotations"]["destructiveHint"], false);
+    assert_eq!(install_compat["annotations"]["idempotentHint"], true);
+    assert_eq!(install_compat["annotations"]["openWorldHint"], true);
     let apply = tools
         .iter()
         .find(|tool| tool["name"] == "office_apply_batch")
@@ -2098,6 +2216,109 @@ async fn standard_mcp_request(
         .unwrap();
     assert!(bytes > 0, "native Office MCP closed before responding");
     serde_json::from_str(&line).unwrap()
+}
+
+#[cfg(feature = "ocr")]
+#[test]
+fn built_in_ocr_projects_the_canonical_code_route_and_skill() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+
+    let snapshot = Command::new(binary())
+        .args(["capability", "snapshot", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(snapshot.status.success(), "{snapshot:?}");
+    let snapshot: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
+    let ocr = snapshot["data"]["registry"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["id"] == "use/ocr")
+        .unwrap();
+    assert_eq!(ocr["route"], "ocr");
+    assert_eq!(ocr["origin"], "built-in");
+    assert_eq!(ocr["enabled"], true);
+    assert_eq!(ocr["mcp"]["target"], "ocr-native");
+    assert!(ocr["skills"][0]["path"]
+        .as_str()
+        .is_some_and(|path| Path::new(path).ends_with("skills/a3s-use-ocr/SKILL.md")));
+    let digest = ocr["skills"][0]["sha256"].as_str().unwrap();
+    assert_eq!(digest.len(), 64);
+}
+
+#[cfg(feature = "browser")]
+#[test]
+fn browser_render_never_replaces_an_invalid_explicit_provider() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["browser", "render", "https://example.com", "--json"])
+        .env("A3S_BROWSER_EXECUTABLE", temp.path().join("must-not-exist"))
+        .env("A3S_USE_BROWSER_HOME", temp.path().join("managed"))
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(
+        value["error"]["code"],
+        "use.browser.explicit_provider_invalid"
+    );
+    assert!(!temp.path().join("managed/chrome").exists());
+}
+
+#[cfg(feature = "ocr")]
+#[test]
+fn ocr_extract_honors_the_no_auto_install_boundary_for_a_valid_image() {
+    let temp = tempfile::tempdir().unwrap();
+    let image_path = temp.path().join("input.bmp");
+    std::fs::write(
+        &image_path,
+        [
+            0x42, 0x4d, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00,
+            0x28, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00,
+            0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff,
+            0xff, 0x00,
+        ],
+    )
+    .unwrap();
+    let output = Command::new(binary())
+        .args(["ocr", "extract", image_path.to_str().unwrap(), "--json"])
+        .env("A3S_USE_OCR_HOME", temp.path().join("ocr"))
+        .env("A3S_NO_AUTO_INSTALL", "1")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "use.ocr.auto_install_disabled");
+    assert_eq!(value["error"]["details"]["reason"], "A3S_NO_AUTO_INSTALL");
+}
+
+#[cfg(feature = "ocr")]
+#[test]
+fn ocr_extract_validates_the_source_before_first_use_installation() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args([
+            "ocr",
+            "extract",
+            temp.path().join("missing.png").to_str().unwrap(),
+            "--json",
+        ])
+        .env("A3S_USE_OCR_HOME", temp.path().join("ocr"))
+        .env("A3S_NO_AUTO_INSTALL", "1")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "use.ocr.source_unreadable");
 }
 
 #[cfg(all(unix, feature = "extensions"))]

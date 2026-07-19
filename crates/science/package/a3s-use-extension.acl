@@ -1,0 +1,21 @@
+extension "a3s/science" {
+  schema_version = 1
+  version        = "0.1.2"
+  route          = "science"
+  actions        = ["read"]
+
+  cli {
+    executable  = "bin/a3s-use-science"
+    json_output = true
+  }
+
+  mcp {
+    executable = "bin/a3s-use-science"
+    args       = ["serve", "--mcp"]
+    transport  = "stdio"
+  }
+
+  skill {
+    path = "skills/a3s-use-science/SKILL.md"
+  }
+}

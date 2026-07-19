@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <em>Use browsers, Office documents, and independently shipped application domains through native CLI, standard MCP, and Skills</em>
+  <em>Use browsers, Office documents, OCR, and independently shipped application domains through native CLI, standard MCP, and Skills</em>
 </p>
 
 <p align="center">
@@ -14,6 +14,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#browser">Browser</a> •
   <a href="#office">Office</a> •
+  <a href="#ocr">OCR</a> •
   <a href="#external-extensions">Extensions</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#development">Development</a>
@@ -23,10 +24,10 @@
 
 ## Overview
 
-**A3S Use** is the application-capability layer for A3S. Browser and Office are
-first-party domains in the default distribution. Independently distributed
-packages can add more domains without rebuilding Use by declaring native CLI,
-standard MCP, and/or `SKILL.md` surfaces in an A3S ACL manifest.
+**A3S Use** is the application-capability layer for A3S. Browser, native Office,
+and OCR are first-party domains in the default distribution. Independently
+distributed packages can add more domains without rebuilding Use by declaring
+native CLI, standard MCP, and/or `SKILL.md` surfaces in an A3S ACL manifest.
 
 The primary user entry point is `a3s use`; `a3s-use` is the standalone binary
 used by the umbrella CLI and remains available for direct use, automation, and
@@ -70,6 +71,8 @@ a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color C9B458 --vertical-align center --wrap-text true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
 a3s use office native sort workbook.xlsx /Sheet1/A1:D100 --key B:desc --key C:asc --header true --case-sensitive false --json
+a3s use office native import workbook.xlsx /Sheet1 source.csv --header --start-cell A1 --json
+a3s use office native recalculate workbook.xlsx --output calculated.xlsx --json
 a3s use office native add workbook.xlsx /Sheet1 --type table --name Sales --range F1:H4 --table-column Name --table-column Qty --table-column Price --style medium:4 --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
@@ -95,7 +98,15 @@ a3s use mcp serve browser
 a3s use mcp serve office-native
 
 # Keep using the pinned OfficeCLI compatibility MCP server where needed.
+a3s use mcp serve office-compat
+# Legacy alias:
 a3s use mcp serve office
+
+# Built-in local PP-OCRv6.
+a3s use ocr doctor --json
+# The first extraction installs the pinned models when needed and allowed.
+a3s use ocr extract ./scan.png --json
+a3s use mcp serve ocr
 ```
 
 Every domain argument accepted by `a3s use ...` can also be passed directly to
@@ -103,8 +114,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 
 ## Features
 
-- **Built-In Browser and Office**: Keep stable first-party command routes while
-  reporting provider readiness separately
+- **Built-In Browser, Office, and OCR**: Keep stable first-party command routes
+  while reporting provider readiness separately
 - **Typed Rust Contracts**: Embed Browser rendering and Office operations
   without starting a CLI process or an MCP server
 - **Agent Browser Compatibility**: Provide the locked 82-command vocabulary,
@@ -115,9 +126,12 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   scoped cross-format literal/regex replacement, typed text formatting,
   Spreadsheet number/fill/border/alignment formatting, exact merged-cell
   editing, stable multi-key physical row sorting with persisted sort state,
-  typed worksheet and table AutoFilters, typed data validation and conditional
-  formatting, scoped defined names, native Spreadsheet ListObject table
-  lifecycle, inert hyperlinks, and
+  bounded CSV/TSV import with typed inference and canonical header
+  filter/freeze behavior, a bounded formula parser and dependency graph,
+  explicit native formula recalculation with typed cached values and dynamic
+  arrays, typed worksheet and table AutoFilters, typed data validation and
+  conditional formatting, scoped defined names, native Spreadsheet ListObject
+  table lifecycle, inert hyperlinks, and
   legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
@@ -129,13 +143,19 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   safe Word, Spreadsheet, Presentation, native MCP, and compatibility workflows
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
+- **First-Party OCR Domain**: Run pinned PP-OCRv6 detection and recognition
+  models locally through ONNX Runtime, with source digests and bounded layout
+  evidence
+- **Reference Science Toolkit**: Query PubMed, ChEMBL, ClinicalTrials.gov,
+  bioRxiv, and Ensembl through one typed read-only extension
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
   resident host can add, replace, or remove live capabilities without restarting
 - **Content-Bound Skills**: Project an absolute package path and lowercase
   SHA-256 for every `SKILL.md`, allowing consumers to verify the exact bytes
   before loading them
 - **Managed Provider Safety**: Require explicit installation authority, bounded
-  downloads, approved HTTPS origins, receipts, staging, and atomic activation
+  first-use policy, bounded downloads, approved HTTPS origins, receipts,
+  staging, and atomic activation
 - **Structured Automation**: Return versioned `--json` documents and typed error
   codes while retaining native process status and streams for delegated commands
 - **Component Ownership**: Remove only A3S-managed provider or package files;
@@ -146,9 +166,11 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 
 | Domain | Origin | CLI | MCP | Skill | Runtime owner |
 | --- | --- | --- | --- | --- | --- |
-| Browser | Built in | Full Browser vocabulary | A3S Use standard MCP server | Six packaged Browser Skills | A3S Use |
-| Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
+| Browser | Built in | Full Browser vocabulary with first-launch preparation | A3S Use standard MCP server with confirmed installer | Six packaged Browser Skills | A3S Use |
+| Office | Built in | Native Office plus first-use compatibility fallback | Typed native server with confirmed compatibility installer plus OfficeCLI server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
+| OCR | Built in | Doctor and first-use typed image extraction | `ocr_doctor`, confirmed `ocr_install`, and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
+| Science | External `a3s/science` package | Source-specific retrieval commands | 13 typed `science_*` tools | One research workflow Skill | Science extension process |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
 The Box route is component-backed. The umbrella CLI resolves its authoritative
@@ -157,12 +179,13 @@ does not copy Box, discover a replacement on `PATH`, or write a second receipt.
 
 ### Cargo feature matrix
 
-Default features are `browser`, `office`, `extensions`, and `mcp`.
+Default features are `browser`, `office`, `ocr`, `extensions`, and `mcp`.
 
 | Feature | Included capability |
 | --- | --- |
 | `browser` | Typed Browser library, stateless rendering, and full Browser driver delegation |
 | `office` | Typed Office contracts, native OOXML read engine, and temporary OfficeCLI compatibility |
+| `ocr` | Built-in typed PP-OCRv6 CLI/MCP with local ONNX inference |
 | `extensions` | ACL manifests, package receipts, hot-plug registry, and external CLI/MCP/Skill routes |
 | `mcp` | Standard MCP servers plus the managed Browser Streamable HTTP lifecycle |
 | `lightpanda` | Explicit opt-in Lightpanda provider support in addition to Chrome |
@@ -179,6 +202,8 @@ A compiled command surface is not proof that its provider is installed. Use
 | `a3s-use-browser-driver` | Complete interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
 | `a3s-use-office` | Native OOXML foundation, typed Office operations, and compatibility lifecycle |
 | `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |
+| `a3s-use-ocr` | Local PP-OCRv6 engine, CLI, MCP tools, pinned models, and release-packaged Skill assets |
+| `a3s-use-science` | Typed public life-science APIs, CLI, MCP tools, and extension package assets |
 | `a3s-use` | Facade library, standalone CLI host, capability projection, and MCP entry points |
 
 ## Quick Start
@@ -190,6 +215,7 @@ release selection and the top-level component receipt:
 
 ```bash
 a3s install use --source release
+# Optional deterministic pre-warm; normal first use prepares these as needed.
 a3s install use/browser
 a3s install use/office
 a3s use doctor --json
@@ -218,7 +244,7 @@ not the facade binary:
 
 ```toml
 [dependencies]
-a3s-use-browser = "0.1.1"
+a3s-use-browser = "0.1.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 url = "2"
 ```
@@ -242,9 +268,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`BrowserPoolConfig::default()` discovers an existing Chrome-compatible browser
-and never authorizes a download. Select a managed provider or run an explicit
-component install when A3S should own the runtime.
+`BrowserPoolConfig::default()` remains non-installing for embedded callers such
+as Search. Product commands validate their arguments and then prepare the same
+shared managed runtime on the first local Browser launch when policy allows.
 
 ## Browser
 
@@ -279,12 +305,16 @@ port, requires a private bearer token, has bounded idle and maximum lifetimes,
 and shares typed Browser session state. It is an MCP deployment, not an A3S
 JSON-RPC service.
 
-Provider selection stays explicit. Discovered providers never download
-software. Managed Chrome and Lightpanda installations use bounded staging and
-atomic activation; Lightpanda assets require the publisher SHA-256. Chrome for
-Testing does not publish an independent checksum in its current version feed,
-so A3S records HTTPS provenance and the locally observed digest without claiming
-publisher verification.
+Provider selection stays typed. Embedded `Discovered*` providers never
+download software. A direct local Browser launch is first-use authority for the
+A3S product CLI; Code workers request the bounded installer through parent
+confirmation. Both paths reuse a system browser or the shared A3S-managed
+cache before downloading. Managed Chrome and Lightpanda installations use
+bounded staging and atomic activation; Lightpanda assets require the publisher
+SHA-256. Chrome for Testing does not publish an independent checksum in its
+current version feed, so A3S records HTTPS provenance and the locally observed
+digest without claiming publisher verification. Help, version, doctor, Skills,
+profiles, and MCP server startup never install a browser.
 
 See [Agent Browser Compatibility Baseline](docs/agent-browser-parity.md) for the
 locked schemas, digests, runtime evidence, and promotion criteria.
@@ -361,9 +391,10 @@ protects `_xlnm.*` and `Slicer_*` names owned by other Office features.
 Semantic get/query, ordinary typed remove, batch, exact replay, CLI, Rust, and
 standard MCP share the same value. Strict/transitional SpreadsheetML and
 unknown defined-name attributes are retained; unknown collection or child
-content fails closed when it cannot be preserved. This is defined-name
-lifecycle support, not formula evaluation, external-link authoring, or complete
-Spreadsheet parity.
+content fails closed when it cannot be preserved. This contract owns
+defined-name lifecycle, not external-link authoring or complete Spreadsheet
+parity; supported names participate when an explicit native cell-formula
+recalculation references them.
 
 Native Spreadsheet AutoFilters use a closed typed contract shared by worksheet
 filters and ListObject tables. One value owns a normalized rectangular A1
@@ -405,6 +436,63 @@ ignored errors, and supported drawing anchors move with their records; chart
 caches are cleared and the worksheet used dimension is recomputed after the
 physical change.
 
+Native Spreadsheet delimited import accepts bounded UTF-8 CSV or TSV from a
+regular file or stdin and writes it into an existing worksheet from an explicit
+A1 start cell. The parser supports a leading BOM, CRLF, quoted delimiters,
+embedded newlines, and doubled quotes; malformed quote state fails atomically.
+One request is limited to 8 MiB and a 100,000-cell rectangular extent. Explicit
+empty fields clear existing target cells, while missing trailing fields in a
+ragged row leave those cells unchanged.
+
+Typed inference stores formulas, finite numbers, booleans, ISO dates/times, and
+text without a Python, Node.js, OfficeCLI, or spreadsheet-application runtime.
+Dates honor the workbook's 1900/1904 system and receive a native date number
+format. Inferred formulas pass the same bounded native syntax parser as direct
+cell writes; malformed expressions fail the complete import. Import does not
+implicitly calculate formulas; run the explicit native recalculation command
+or mutation when fresh cached results are required. Header mode atomically
+installs the worksheet AutoFilter and a canonical frozen pane below the header.
+Frozen pane state is readable at `/Sheet/freeze`, is set through the typed
+batch/Rust/MCP contract, and is removed through the ordinary typed `remove`
+mutation. Strict/transitional SpreadsheetML and unknown view content are
+preserved; unsupported pane content reports `nativeMutable=false` and fails
+closed on mutation.
+
+Native Spreadsheet formula calculation builds a deterministic bounded
+dependency graph across worksheets, ranges, spills, and workbook- or
+worksheet-scoped names. The closed built-in registry implements
+`SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`, `COUNTA`, `ABS`, `SQRT`, `POWER`,
+`MOD`, `ROUND`, `IF`, `IFERROR`, `AND`, `OR`, `NOT`, `CONCAT`,
+`CONCATENATE`, `ROW`, `COLUMN`, `SEQUENCE`, `TRANSPOSE`, `PI`, and `NA`.
+Operators and typed blank, number, text, boolean, and Spreadsheet error values
+participate in scalar or rectangular array calculation.
+
+The read-only Rust calculation API leaves package bytes unchanged. The editor,
+versioned batch, replay, CLI `office native recalculate`, and standard MCP
+`recalculate-spreadsheet-formulas` mutation atomically write typed OOXML
+caches, canonical array anchors, spill children, and calculated-workbook
+metadata. Spill children are read-only; edit or remove their formula anchor.
+Exact replay accepts canonical formula storage and natively cached array
+anchors. It fails closed for physical distinctions typed mutations cannot
+reproduce, including explicit `t="normal"` storage and uncached or malformed
+array anchors.
+ListObject structured references resolve table names or display names.
+`Sales[Qty]` and `Sales[[Qty]:[Price]]` select data rows; `#All`, `#Data`,
+`#Headers`, and `#Totals` select structural rows; and `Sales[@Qty]`,
+`Sales[[#This Row],[Qty]]`, or table-local `[@Qty]` select the current data row.
+Table-local forms require the formula cell to be inside the inferred table.
+Missing tables, columns, or requested structural rows, disjoint columns,
+non-canonical forms, cycles, unsupported or qualified functions, and
+external-workbook reads fail with stable typed errors and roll back the whole
+batch. The engine never fetches an external workbook or falls back to a shell
+or script runtime. One formula is limited to 8,192 characters, depth
+128 (including nested named-reference resolution), and 8,192 AST nodes; one
+reference value to 100,000 areas; one graph to 100,000 formulas, 1,000,000
+edges, and 1,000,000 formula-cell reference visits; one materialized array or
+function call to 100,000 cells; and one text result to 1 MiB.
+One calculation pass is also limited to 100,000 cumulative spill children and
+200,000 OOXML cell writes, plus 8 MiB of cumulative text-result bytes.
+
 Native Spreadsheet tables use a separate closed ListObject contract. Add and
 set own the workbook-wide `name`, optional distinct `displayName`, final
 rectangular A1 range, one exact column identity per range column, header/totals
@@ -412,7 +500,17 @@ row state, typed filter criteria, built-in light/medium/dark style identity,
 and first/last-column plus row/column-stripe flags; ordinary typed `remove`
 owns deletion. When a header is enabled, its names are stamped into the first
 row and the table-owned AutoFilter range excludes an enabled totals row. The
-editor rejects
+`set` lifecycle keeps common structured references consistent: changed table
+names/display names and position-mapped column identities are rewritten across
+cell formulas, defined names, conditional formats, data validations, charts,
+and table formulas without touching string literals or external-workbook
+references. Table-local references are rewritten only when their ListObject
+context is provable. Unsafe local-reference geometry changes fail with
+`use.office.spreadsheet_table_formula_rewrite_unsupported`, and `remove`
+fails with `use.office.spreadsheet_table_referenced` while a live structured
+reference still targets the table. All checks and rewrites share the table
+mutation's atomic rollback boundary.
+The editor rejects
 Excel-identifier and A1/R1C1 name errors,
 case-insensitive table/defined-name collisions, duplicate columns, missing data
 rows, table/merge/worksheet-AutoFilter overlap, and unsafe relationship graphs.
@@ -495,10 +593,11 @@ Browser contract.
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
 rich-text, exact Spreadsheet merged-cell, stable Spreadsheet physical sorting
-with persisted sort state, worksheet/table AutoFilter,
-data-validation, conditional-format, defined-name, ListObject table, hyperlink,
-and legacy-comment
-operations, constrained raw XML access,
+with persisted sort state, bounded CSV/TSV import with typed inference and
+header filter/freeze behavior, explicit Spreadsheet formula recalculation,
+worksheet/table AutoFilter, data-validation, conditional-format, defined-name,
+ListObject table, hyperlink, and legacy-comment operations, constrained raw
+XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML and SVG are
@@ -515,12 +614,18 @@ agents without starting OfficeCLI. Discover its metadata with
 `office skills get a3s-use-office`, append its four format/MCP references with
 `--full`, or locate the installed directory with `office skills path`. The
 capability snapshot binds the Skill path and lowercase SHA-256 so a resident
-host can verify the bytes before loading them.
+host can verify the bytes before loading them. Resident Code hosts receive the
+native engine as canonical route `use/office` targeting `office-native`; a ready
+OfficeCLI installation is projected separately as `use/office-compat` targeting
+`office-compat`.
 Other `0.1.x` commands and the default `mcp serve office` target still use a
 compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
 boundary, not a native-promotion claim. The default routes will be promoted
 only after mutation, fidelity, rendering, compatibility, and cross-application
-interoperability gates pass.
+interoperability gates pass. The first real compatibility CLI command prepares
+that pinned provider when first-use policy allows. In Code, the native Office
+worker requests `office_install_compat` through parent confirmation only when
+the requested operation is outside the native surface.
 
 ```bash
 # Inspect without downloading anything.
@@ -591,6 +696,12 @@ a3s use office native set workbook.xlsx /Sheet1/E1 --border-diagonal slant-dash-
 # atomic set command.
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --merge-cells false --json
+
+# Import a bounded UTF-8 CSV/TSV source. Header mode also installs the
+# worksheet AutoFilter and canonical frozen pane in the same transaction.
+a3s use office native import workbook.xlsx /Sheet1 source.csv --header --start-cell A1 --json
+a3s use office native import workbook.xlsx /Sheet1 --stdin --format tsv --output imported.xlsx --json
+a3s use office native get workbook.xlsx /Sheet1/freeze --json
 
 # Add, inspect, replace, clear, and remove one worksheet AutoFilter. Each
 # --filter is a strict JSON object with a zero-based column and typed criteria.
@@ -669,10 +780,12 @@ a3s use office native add deck.pptx '/slide[1]' --type comment --author Alice --
 a3s use office native query deck.pptx comment --json
 a3s use office native remove workbook.xlsx /Sheet1/B2/comment --json
 
-# Preserve Spreadsheet value types; formula storage requests application recalculation.
+# Preserve Spreadsheet value types. Formula writes validate and store the
+# expression; explicit recalculation computes and writes cached values.
 a3s use office native set workbook.xlsx /Sheet1/A1 --number 42.5 --json
 a3s use office native set workbook.xlsx /Sheet1/B1 --boolean true --json
 a3s use office native set workbook.xlsx /Sheet1/C1 --formula 'SUM(A1:B1)' --json
+a3s use office native recalculate workbook.xlsx --output calculated.xlsx --json
 
 # Set or remove a bounded rectangular range atomically.
 a3s use office native set workbook.xlsx /Sheet1/A2:C4 --number 0 --json
@@ -731,7 +844,8 @@ a3s use office native dump report.docx --output report.replay.json --json
 a3s use office native create restored.docx --json
 a3s use office native batch restored.docx --input report.replay.json --json
 
-# Install the current compatibility provider explicitly.
+# Optional compatibility pre-warm. The following compatibility commands also
+# prepare this pinned provider on first use.
 a3s install use/office
 a3s use office get report.docx /body --json
 a3s use office batch report.xlsx --input updates.json --json
@@ -743,7 +857,8 @@ a3s use mcp serve office-native
 a3s use mcp serve office
 ```
 
-The native MCP process exposes 12 typed tools: `office_validate`,
+The native MCP process exposes 12 document tools plus the confirmed
+`office_install_compat` compatibility installer: `office_validate`,
 `office_create`, `office_open`, `office_list`, `office_get`, `office_query`,
 `office_view`, `office_raw_xml`, `office_apply_batch`,
 `office_merge_template`, `office_save`, and `office_close`. It accepts no shell
@@ -851,8 +966,9 @@ and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `set-data-validation`, `add-conditional-format`, `set-conditional-format`,
 `add-named-range`, `set-named-range`, `add-spreadsheet-table`,
 `set-spreadsheet-table`, `add-spreadsheet-auto-filter`,
-`set-spreadsheet-auto-filter`, `sort-spreadsheet-range`, `merge-cells`,
-`unmerge-cells`,
+`set-spreadsheet-auto-filter`, `sort-spreadsheet-range`,
+`import-spreadsheet-delimited`, `set-spreadsheet-frozen-pane`, `merge-cells`,
+`unmerge-cells`, `recalculate-spreadsheet-formulas`,
 `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
 `add-table`, `add-table-row`, `add-table-column`, `add-table-cell`,
@@ -1012,6 +1128,39 @@ follow the row permutation. The worksheet used dimension is recomputed and
 chart caches are cleared. Exact replay emits the same
 `sort-spreadsheet-range` mutation.
 
+A Spreadsheet delimited import embeds bounded content in the typed batch or MCP
+request; filesystem paths remain a CLI-only concern:
+
+```json
+{
+  "operation": "import-spreadsheet-delimited",
+  "sheet": "/Sheet1",
+  "import": {
+    "content": "Name,Amount,Date\nAlpha,42,2026-07-17",
+    "format": "csv",
+    "header": true,
+    "startCell": "A1"
+  }
+}
+```
+
+`format` is `csv` or `tsv`. Header mode replaces the worksheet AutoFilter range
+and its canonical frozen pane in the same transaction, so inspect those nodes
+before importing into a populated sheet. Set a pane independently with
+`set-spreadsheet-frozen-pane` and remove it through `/Sheet/freeze`:
+
+```json
+{
+  "operation": "set-spreadsheet-frozen-pane",
+  "sheet": "/Sheet1",
+  "pane": {
+    "frozenRows": 1,
+    "frozenColumns": 0,
+    "topLeftCell": "A2"
+  }
+}
+```
+
 A Spreadsheet table mutation uses one complete ListObject value. CLI `set`
 preserves omitted fields; batch, Rust, and standard MCP replacements supply the
 complete table:
@@ -1107,8 +1256,9 @@ that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
 typed defined names, typed cells, typed worksheet/table AutoFilters, typed
 ListObject tables, stable physical row order with supported typed sort state,
-merged ranges, typed data-validation rules, and canonical typed
-conditional-format rules without cached formula results;
+canonical frozen panes and import date styles, merged ranges, typed
+data-validation rules, canonical typed conditional-format rules, and natively
+recalculable formula caches and canonical cached dynamic-array spills;
 plus Presentation slides with plain one-run text shapes and canonical basic
 tables.
 Headers, notes,
@@ -1391,10 +1541,26 @@ Typed Spreadsheet content values use an explicit nested type, for example:
 }
 ```
 
-Formula mutation stores OOXML formula text and marks the workbook for a full
-recalculation when opened. Structural edits rewrite supported A1 references
-without evaluating formulas. A complete formula parser, dependency graph, and
-evaluator remain a separate rich-Spreadsheet delivery gate.
+Formula mutation removes one optional leading `=`, parses the bounded body into
+a source-spanned typed AST, stores the original normalized OOXML formula text,
+and marks the workbook for recalculation. It does not implicitly calculate the
+workbook. The parser covers scalar and error literals, Excel operator
+precedence, function calls and omitted arguments, parentheses and array
+constants, names and structured references, A1 cell/row/column references with
+quoted, 3D, or external qualifiers, and range/intersection/union operators.
+Invalid syntax returns `use.office.spreadsheet_formula_invalid` with zero-based
+UTF-8 byte and character offsets before any package mutation. Structural edits
+continue to rewrite supported A1 references without evaluating formulas.
+
+`NativeOfficeDocument::formula_dependency_graph` and
+`calculate_spreadsheet_formulas` provide read-only graph and calculation
+results. `NativeOfficeEditor::recalculate_spreadsheet_formulas`, the
+`recalculate-spreadsheet-formulas` batch/MCP mutation, exact replay, and the
+CLI command above atomically persist supported cached values and spills. Excel
+formula breadth beyond the closed native registry, disjoint or non-canonical
+structured-reference forms, qualified functions, external-workbook
+calculation, and full cross-application conformance remain rich-Spreadsheet
+delivery gates.
 
 The native package, semantic, and editor APIs are available directly to Rust
 callers:
@@ -1586,6 +1752,74 @@ compatibility response can return
 See [Native Office Engine](docs/native-office.md) for the complete requirements,
 compatibility scope, safety invariants, delivery gates, and migration plan.
 
+## OCR
+
+`a3s-use-ocr` implements the reserved built-in `ocr` route. The default Use
+release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor`,
+`ocr_install`, and `ocr_extract` over standard MCP, so a resident A3S Code
+session receives `mcp__use_ocr__*` without installing a separate extension.
+
+OCR has one backend: the pinned `PP-OCRv6_small` detection and recognition
+models running locally through ONNX Runtime. The first CLI extraction installs
+or repairs the fixed-size, SHA-256-pinned official model archives when
+networking and first-use installation are allowed. `a3s install use/ocr`
+prepares the same bundle explicitly. Supported inputs are bounded local PNG,
+JPEG, WebP, GIF, BMP, and TIFF files. The result binds the canonical source
+path, media type, byte length, and SHA-256 alongside text,
+recognition/detection confidence, polygons, and bounding boxes.
+
+The pipeline decodes and normalizes the image, runs
+`PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
+perspective-rectifies and rotates text crops, runs batched
+`PP-OCRv6_small_rec`, and applies CTC decoding. It does not require Python or
+PaddlePaddle, call a remote OCR API, or transfer source bytes off the device.
+
+```bash
+a3s use ocr doctor --json
+a3s use ocr extract ./scan.png --json
+a3s use mcp serve ocr
+```
+
+A3S Code may first-use install the verified parent Use release. When OCR models
+are missing or damaged, the Code `use` worker requests the bounded
+`ocr_install` MCP tool. The parent TUI must confirm that network mutation before
+the worker continues to extraction. `--offline`, `A3S_OFFLINE=1`, and
+`A3S_NO_AUTO_INSTALL=1` prohibit first-use model installation. Diagnostics stay
+read-only, and `a3s install use/ocr` remains available for explicit preparation.
+
+See the [OCR crate](crates/ocr/README.md) for model resolution, the inference
+workflow, and input boundaries.
+
+## Science Toolkit
+
+The repository includes `a3s-use-science` as a reference external extension,
+not as another built-in route. Its process exposes one typed Rust client as 13
+read-only MCP tools plus source-specific CLI commands for PubMed, ChEMBL,
+ClinicalTrials.gov, bioRxiv, and Ensembl.
+
+Build a local package into a new directory and install it explicitly:
+
+```bash
+./crates/science/scripts/package.sh /tmp/a3s-use-science-package
+a3s install use/a3s/science \
+  --from /tmp/a3s-use-science-package \
+  --allow-unsigned
+
+export A3S_SCIENCE_CONTACT_EMAIL=researcher@example.org
+a3s use science pubmed search "single-cell atlas" --limit 10 --json
+a3s use science ensembl lookup homo_sapiens TP53 --json
+a3s use mcp serve a3s/science
+```
+
+The same package can be archived as `.tar.gz`, `.tgz`, or `.zip` and installed
+through the explicit local-package flow. Local packages require
+`--allow-unsigned`; use them only after review. PubMed requires the contact
+email, while `NCBI_API_KEY` is optional. See the
+[Science crate](crates/science/README.md), its
+[data-source notice](crates/science/DATA_SOURCES.md), and
+[clean-room provenance](crates/science/UPSTREAM.md) for the full command set,
+data egress, limits, and interpretation boundaries.
+
 ## External Extensions
 
 External Use domains stay behind process boundaries. A package contains an
@@ -1629,22 +1863,87 @@ a3s use extension enable acme/slack --json
 a3s uninstall use/acme/slack
 ```
 
-The current extension source is an explicit local directory. It must pass
-manifest, route, path, package-size, and executable validation, and unsigned
-content requires `--allow-unsigned`. A signed remote publisher channel is
-roadmap work; Use does not silently install arbitrary Homebrew, npm, Cargo,
-system, or `PATH` packages.
+The current extension source is an explicit local directory or a `.tar.gz`,
+`.tgz`, or `.zip` archive. Archives must contain exactly one package manifest;
+every entry must belong to that manifest's package root. Installation rejects
+links, traversal, duplicate paths, unsupported entries, excessive expansion,
+and non-portable paths before validating the manifest, route, executable, and
+Skill surfaces. Unsigned content requires `--allow-unsigned`. Use does not
+silently install arbitrary Homebrew, npm, Cargo, system, or `PATH` packages.
+
+### Signed extension registries
+
+Remote extensions use TUF metadata and a separately established bootstrap-root
+digest. Enroll a registry with either a root file or its SHA-256, verify it,
+review the immutable component plan, and apply that exact plan:
+
+```bash
+a3s registry add https://packages.example.org/a3s/ \
+  --trust-root ./root.json \
+  --yes
+a3s registry refresh packages
+
+a3s --output json install use/acme/slack --dry-run
+a3s --output json install use/acme/slack \
+  --plan-digest <reviewed-plan-sha256>
+
+a3s --output json upgrade use/acme/slack --dry-run
+a3s --output json upgrade use/acme/slack \
+  --plan-digest <reviewed-upgrade-sha256>
+```
+
+When a root file is supplied, the umbrella CLI copies it into registry-owned
+configuration and records its digest. With a digest-only enrollment, Use may
+fetch `<registry>/metadata/root.json`, but it caches the file only after the
+bytes match the pinned SHA-256. Subsequent root rotation, timestamp, snapshot,
+and targets metadata are verified by TUF with expiration and rollback
+enforcement. Registry URLs require HTTPS; loopback HTTP is accepted only for
+tests and local development.
+
+A dry-run verifies metadata but does not download the target archive. Its outer
+component digest includes the exact `ResolvedRemotePackage`: registry identity,
+bootstrap root, every TUF metadata version, package version and channel,
+platform target, archive path, length, and SHA-256. Apply resolves again and
+fails before target download if that plan changed. It then passes the resolved
+package's own digest to `a3s-use`, which repeats TUF verification immediately
+before downloading and activating the archive. The installed receipt records
+`registry-tuf` trust and the complete signed provenance. Registry installs
+reject `--allow-unsigned`; local `--from` installs cannot provide registry
+options.
+
+Registry upgrades reuse the registry identity and channel recorded in that
+signed provenance instead of searching every configured source again. A
+missing registry, changed URL or bootstrap root, and semantic-version downgrade
+are rejected before payload download. Plain `a3s upgrade` reports newer signed
+targets, while `a3s upgrade --all` includes them in the selected batch. If the
+verified target is identical to the installed target, `a3s-use` validates and
+reconciles the receipt and registry snapshot without downloading or
+reactivating the package.
+
+Publish metadata below `<registry>/metadata/` and payloads below
+`<registry>/targets/`. An extension target uses this canonical path:
+
+```text
+extensions/<publisher>/<name>/<version>/<channel>/<target>/<archive>
+```
+
+Its TUF target `custom.a3s` object must contain `schemaVersion`, `packageId`,
+`version`, `channel` (`stable`, `beta`, or `nightly`), and `target` (an A3S host
+target or `any`). Duplicate identities, mismatched paths, unsupported archives,
+and oversized targets are rejected before payload download.
 
 Built-in and management routes are reserved. Extensions cannot shadow
-`browser`, `office`, `box`, `component`, `capability`, or other host commands.
+`browser`, `office`, `ocr`, `box`, `component`, `capability`, or other host
+commands.
 
 ## Live Host Integration
 
 Resident hosts consume `capability snapshot` and `capability watch`. The
-projection presents Browser, Office, Box, and enabled extensions through one
-read-only schema while preserving each binding's `built-in` or `extension`
-origin. The extension generation advances on receipt mutations; a content
-revision also changes when built-in readiness or packaged Skill content changes.
+projection presents Browser, native Office, OCR, Box, and enabled extensions
+through one read-only schema while preserving each binding's `built-in` or
+`extension` origin. The extension generation advances on receipt mutations; a
+content revision also changes when built-in readiness or packaged Skill content
+changes.
 
 ```bash
 a3s-use capability snapshot --json
@@ -1662,10 +1961,18 @@ tools. Projected Skills provide guidance only and cannot expand permissions or
 authorize installation. Code verifies their projected SHA-256 before loading
 the exact bytes.
 
+The built-in Office projection is intentionally host-oriented: `use/office`
+always exposes the in-process native MCP target when MCP support is compiled,
+without consulting OfficeCLI. A discovered OfficeCLI provider is a separate
+optional `use/office-compat` route, so native readiness and compatibility
+installation cannot mask or replace each other.
+
 A capability becomes callable only after its MCP connection is ready. A
 removed or replaced route leaves the worker catalog before its old connection
-drains. Starting Code never installs Use: component installation remains an
-explicit umbrella CLI action.
+drains. Code TUI resolves the catalogued Use component on first launch and may
+install its verified release before terminal takeover. Offline mode and
+`A3S_NO_AUTO_INSTALL=1` remain strict no-mutation boundaries; setup failure is
+non-fatal and stays visible through `/use`.
 
 ## Protocol and Lifecycle Boundaries
 
@@ -1702,13 +2009,13 @@ crash, and in-flight calls retain the exact package generation they accepted.
                               a3s use
                                   │
                               a3s-use host
-                    ┌─────────────┼──────────────┐
-                    │             │              │
-                Browser         Office       extension registry
-             typed + driver  native OOXML     CLI / MCP / Skill
-                              + 0.1 compat
-                    │             │              │
-                    └──────── capability snapshot/watch ───────► A3S Code
+                ┌──────────┬──────────┬──────────┬──────────────┐
+                │          │          │          │              │
+             Browser     Office      OCR     extension registry
+          typed + driver  OOXML   PP-OCRv6 ONNX  CLI / MCP / Skill
+                       + 0.1 compat
+                │          │          │          │
+                └──────── capability snapshot/watch ───────────► A3S Code
 
   a3s-search ── Arc<dyn PageRenderer> ──► a3s-use-browser
 
@@ -1717,10 +2024,12 @@ crash, and in-flight calls retain the exact package generation they accepted.
 
 The dependency arrows are intentional. Search links only the Browser contract,
 so rendering does not require `a3s-use`, MCP, or a resident process. Office is
-an in-process typed engine with a temporary 0.1.x compatibility process;
-external domains retain their process boundaries. A3S Code consumes the
-read-only projection and connects standard MCP/Skill surfaces; it does not gain
-component installation authority.
+an in-process typed engine with a temporary 0.1.x compatibility process. OCR
+runs the pinned PP-OCRv6 models locally through ONNX Runtime; model installation
+is an explicit component operation. External domains retain their process
+boundaries. A3S Code consumes the read-only projection and connects standard
+MCP/Skill surfaces; bounded component installation requests still require the
+parent TUI's authority.
 
 Source is split between the facade under `src/` and focused workspace crates
 under `crates/`. See [Architecture](docs/architecture.md) for package leases,

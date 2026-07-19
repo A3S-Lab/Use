@@ -352,6 +352,8 @@ const CORE_PROFILE_TOOLS: &[&str] = &[
     TOOL_TAB_CLOSE,
     TOOL_EVAL,
     TOOL_CLOSE,
+    TOOL_DOCTOR,
+    TOOL_INSTALL,
 ];
 
 const NETWORK_PROFILE_TOOLS: &[&str] = &[
@@ -3744,6 +3746,8 @@ mod tests {
         assert!(names.contains(&TOOL_SNAPSHOT));
         assert!(names.contains(&TOOL_CLICK));
         assert!(names.contains(&TOOL_SCREENSHOT));
+        assert!(names.contains(&TOOL_DOCTOR));
+        assert!(names.contains(&TOOL_INSTALL));
         assert!(names.contains(&TOOL_GET_CDP_URL));
         assert!(names.contains(&TOOL_NETWORK_HAR_START));
         assert!(names.contains(&TOOL_REACT_SUSPENSE));

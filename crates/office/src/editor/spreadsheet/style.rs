@@ -199,6 +199,24 @@ fn set_format(
     package.set_part(&part_name, edited)
 }
 
+pub(super) fn derived_cell_style_indexes(
+    package: &mut NativeOfficePackage,
+    base_styles: &BTreeSet<usize>,
+    format: &NativeSpreadsheetCellFormat,
+) -> UseResult<BTreeMap<usize, usize>> {
+    format.validate()?;
+    ensure_style_collections(package)?;
+    let resolved = cell_format::resolve(package, Some(format))?;
+    base_styles
+        .iter()
+        .copied()
+        .map(|base_style| {
+            style_index_for_format(package, base_style, None, Some(format), &resolved)
+                .map(|derived| (base_style, derived))
+        })
+        .collect()
+}
+
 fn ensure_style_collections(package: &mut NativeOfficePackage) -> UseResult<()> {
     ensure_styles_part(package)?;
     ensure_collection(package, "fonts", "font", STYLE_CHILDREN_AFTER_FONTS)?;
@@ -686,7 +704,7 @@ fn styled_cell(prefix: Option<&str>, reference: &str, style: usize) -> String {
     format!("<{tag} r=\"{reference}\" s=\"{style}\"/>")
 }
 
-fn cell_style_index(cell: &IndexedXmlElement) -> UseResult<usize> {
+pub(super) fn cell_style_index(cell: &IndexedXmlElement) -> UseResult<usize> {
     cell.attributes.get("s").map_or(Ok(0), |value| {
         value.parse::<usize>().map_err(|_| styles_invalid())
     })

@@ -56,15 +56,17 @@ pub use editor::{
     NativeSpreadsheetConditionalFormatThreshold, NativeSpreadsheetConditionalFormatThresholdKind,
     NativeSpreadsheetConditionalFormatTimePeriod, NativeSpreadsheetDataValidation,
     NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
-    NativeSpreadsheetDataValidationType, NativeSpreadsheetDifferentialFormat,
+    NativeSpreadsheetDataValidationType, NativeSpreadsheetDelimitedFormat,
+    NativeSpreadsheetDelimitedImport, NativeSpreadsheetDifferentialFormat,
     NativeSpreadsheetDynamicFilter, NativeSpreadsheetFill, NativeSpreadsheetFilterColumn,
-    NativeSpreadsheetFilterCriteria, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
-    NativeSpreadsheetReadingOrder, NativeSpreadsheetSort, NativeSpreadsheetSortDirection,
-    NativeSpreadsheetSortKey, NativeSpreadsheetTable, NativeSpreadsheetTableColumn,
-    NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
-    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
-    MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
-    MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
+    NativeSpreadsheetFilterCriteria, NativeSpreadsheetFrozenPane, NativeSpreadsheetImportResult,
+    NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder,
+    NativeSpreadsheetSort, NativeSpreadsheetSortDirection, NativeSpreadsheetSortKey,
+    NativeSpreadsheetTable, NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle,
+    NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES,
+    MAX_NATIVE_OFFICE_REPLACEMENT_BYTES, MAX_NATIVE_OFFICE_TEXT_MATCHES,
+    MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES, MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
+    MAX_NATIVE_SPREADSHEET_IMPORT_BYTES, MAX_NATIVE_SPREADSHEET_IMPORT_CELLS,
 };
 pub use install::{install_office_cli, repair_office_cli, uninstall_managed_office_cli};
 pub use issues::{
@@ -88,6 +90,23 @@ pub use semantic::{
     DocumentNode, DocumentStatistics, NativeOfficeAnnotatedEntry, NativeOfficeAnnotatedOptions,
     NativeOfficeAnnotatedView, NativeOfficeDocument, OfficeNodeType, OutlineEntry, TextBlock,
     TextView, DEFAULT_NATIVE_OFFICE_ANNOTATED_LIMIT, MAX_NATIVE_OFFICE_ANNOTATED_LIMIT,
+};
+pub use spreadsheet_formula::{
+    parse_spreadsheet_formula, SpreadsheetFormula, SpreadsheetFormulaBinaryOperator,
+    SpreadsheetFormulaCalculatedCell, SpreadsheetFormulaCalculation, SpreadsheetFormulaCell,
+    SpreadsheetFormulaDependencyGraph, SpreadsheetFormulaDependencyNode,
+    SpreadsheetFormulaErrorLiteral, SpreadsheetFormulaExpression, SpreadsheetFormulaExpressionKind,
+    SpreadsheetFormulaFunctionDefinition, SpreadsheetFormulaFunctionRegistry,
+    SpreadsheetFormulaFunctionReturnKind, SpreadsheetFormulaFunctionVolatility,
+    SpreadsheetFormulaLiteral, SpreadsheetFormulaPostfixOperator, SpreadsheetFormulaQualifier,
+    SpreadsheetFormulaReference, SpreadsheetFormulaReferenceKind, SpreadsheetFormulaSpan,
+    SpreadsheetFormulaUnaryOperator, SpreadsheetFormulaUnresolvedReference,
+    SpreadsheetFormulaUnresolvedReferenceKind, SpreadsheetFormulaValue,
+    MAX_SPREADSHEET_FORMULA_CALCULATION_TEXT_BYTES, MAX_SPREADSHEET_FORMULA_CELLS,
+    MAX_SPREADSHEET_FORMULA_CHARACTERS, MAX_SPREADSHEET_FORMULA_DEPENDENCIES,
+    MAX_SPREADSHEET_FORMULA_DEPTH, MAX_SPREADSHEET_FORMULA_NODES,
+    MAX_SPREADSHEET_FORMULA_REFERENCE_AREAS, MAX_SPREADSHEET_FORMULA_REFERENCE_VISITS,
+    MAX_SPREADSHEET_FORMULA_SPILL_CELLS, MAX_SPREADSHEET_FORMULA_TEXT_BYTES,
 };
 pub use template_merge::{
     NativeOfficeTemplateMergeResult, MAX_TEMPLATE_DATA_DEPTH, MAX_TEMPLATE_DATA_ENTRIES,
@@ -305,6 +324,14 @@ mod spreadsheet_edit_tests;
 #[cfg(test)]
 mod spreadsheet_filter_tests;
 
+#[cfg(test)]
+mod spreadsheet_formula_calculation_tests;
+
+#[cfg(test)]
+mod spreadsheet_formula_graph_tests;
+
+#[cfg(test)]
+mod spreadsheet_import_tests;
 #[cfg(test)]
 mod spreadsheet_sort_tests;
 

@@ -85,8 +85,33 @@ impl NativeOfficeMcpServer {
 #[tool_router]
 impl NativeOfficeMcpServer {
     #[tool(
+        name = "office_install_compat",
+        description = "Install or repair the optional pinned OfficeCLI compatibility provider through the bounded A3S component lifecycle",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
+    )]
+    async fn office_install_compat(&self) -> Result<CallToolResult, rmcp::ErrorData> {
+        let result = async {
+            let status = crate::first_use::ensure_office_compatibility_ready().await?;
+            serde_json::to_value(status).map_err(output_encoding_error)
+        }
+        .await;
+        Ok(tool_result(result))
+    }
+
+    #[tool(
         name = "office_validate",
-        description = "Validate and identify one local OOXML document without opening a session"
+        description = "Validate and identify one local OOXML document without opening a session",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_validate(
         &self,
@@ -108,7 +133,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_create",
-        description = "Create a blank native OOXML document and register a mutable in-memory session"
+        description = "Create a blank native OOXML document and register a mutable in-memory session",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_create(
         &self,
@@ -125,7 +156,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_open",
-        description = "Open a local OOXML document in a bounded native in-memory session"
+        description = "Open a local OOXML document in a bounded native in-memory session",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_open(
         &self,
@@ -145,7 +182,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_list",
-        description = "List native Office sessions owned by this MCP server process"
+        description = "List native Office sessions owned by this MCP server process",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_list(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let mut entries = self.sessions.list().await;
@@ -165,7 +208,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_get",
-        description = "Read one stable semantic path from an open native Office session"
+        description = "Read one stable semantic path from an open native Office session",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_get(
         &self,
@@ -192,7 +241,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_query",
-        description = "Run a native semantic selector with a bounded result count"
+        description = "Run a native semantic selector with a bounded result count",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_query(
         &self,
@@ -228,7 +283,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_view",
-        description = "Produce a native text, bounded annotated, outline, statistics, bounded issues, standalone all-format HTML or SVG, or Browser-injected PNG screenshot view for an open session"
+        description = "Produce a native text, bounded annotated, outline, statistics, bounded issues, standalone all-format HTML or SVG, or Browser-injected PNG screenshot view for an open session",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_view(
         &self,
@@ -303,7 +364,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_raw_xml",
-        description = "Inspect one existing OOXML XML part, limited to 1 MiB of original bytes"
+        description = "Inspect one existing OOXML XML part, limited to 1 MiB of original bytes",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_raw_xml(
         &self,
@@ -332,7 +399,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_apply_batch",
-        description = "Apply a bounded typed mutation batch atomically in memory; call office_save to persist it"
+        description = "Apply a bounded typed mutation batch atomically in memory; call office_save to persist it",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_apply_batch(
         &self,
@@ -363,7 +436,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_merge_template",
-        description = "Merge bounded JSON data into a cloned session document and atomically save a distinct output"
+        description = "Merge bounded JSON data into a cloned session document and atomically save a distinct output",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_merge_template(
         &self,
@@ -403,7 +482,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_save",
-        description = "Atomically persist one mutable native Office session, optionally to a new path"
+        description = "Atomically persist one mutable native Office session, optionally to a new path",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn office_save(
         &self,
@@ -430,7 +515,13 @@ impl NativeOfficeMcpServer {
 
     #[tool(
         name = "office_close",
-        description = "Close a native Office session, refusing unsaved changes unless discard is explicit"
+        description = "Close a native Office session, refusing unsaved changes unless discard is explicit",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn office_close(
         &self,
@@ -464,7 +555,7 @@ impl ServerHandler for NativeOfficeMcpServer {
                 website_url: Some("https://github.com/A3S-Lab/Use".to_string()),
             },
             instructions: Some(
-                "This explicit preview server edits OOXML in process and never installs or starts OfficeCLI, Microsoft Office, or LibreOffice. Create or open a session first. Mutations remain in memory until office_save; office_close refuses unsaved changes unless discard=true. The separate `mcp serve office` target remains the OfficeCLI compatibility server until native promotion gates pass."
+                "Use the built-in native Office tools first; they never require OfficeCLI, Microsoft Office, or LibreOffice. If a requested operation is outside the native surface, request office_install_compat through the host confirmation path and use the separately projected Office compatibility route after it becomes ready. Create or open a native session first. Mutations remain in memory until office_save; office_close refuses unsaved changes unless discard=true."
                     .to_string(),
             ),
             ..Default::default()
