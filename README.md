@@ -70,6 +70,8 @@ a3s use office native set report.docx '/body/p[1]' --align center --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C3 --number-format currency --fill FFF2CC --border-all thin --border-color C9B458 --vertical-align center --wrap-text true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
 a3s use office native sort workbook.xlsx /Sheet1/A1:D100 --key B:desc --key C:asc --header true --case-sensitive false --json
+a3s use office native import workbook.xlsx /Sheet1 source.csv --header --start-cell A1 --json
+a3s use office native recalculate workbook.xlsx --output calculated.xlsx --json
 a3s use office native add workbook.xlsx /Sheet1 --type table --name Sales --range F1:H4 --table-column Name --table-column Qty --table-column Price --style medium:4 --json
 a3s use office native add report.docx '/body/p[1]' --type hyperlink --url https://example.com --display 'Open site' --tooltip 'A3S site' --json
 a3s use office native add report.docx '/body/p[1]' --type comment --author Alice --initials AL --text 'Please review' --json
@@ -115,9 +117,12 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   scoped cross-format literal/regex replacement, typed text formatting,
   Spreadsheet number/fill/border/alignment formatting, exact merged-cell
   editing, stable multi-key physical row sorting with persisted sort state,
-  typed worksheet and table AutoFilters, typed data validation and conditional
-  formatting, scoped defined names, native Spreadsheet ListObject table
-  lifecycle, inert hyperlinks, and
+  bounded CSV/TSV import with typed inference and canonical header
+  filter/freeze behavior, a bounded formula parser and dependency graph,
+  explicit native formula recalculation with typed cached values and dynamic
+  arrays, typed worksheet and table AutoFilters, typed data validation and
+  conditional formatting, scoped defined names, native Spreadsheet ListObject
+  table lifecycle, inert hyperlinks, and
   legacy comments,
   native PNG/JPEG/GIF embedding, cross-format template merge, deterministic
   bounded all-format annotated views, all-format HTML/SVG semantic previews,
@@ -361,9 +366,10 @@ protects `_xlnm.*` and `Slicer_*` names owned by other Office features.
 Semantic get/query, ordinary typed remove, batch, exact replay, CLI, Rust, and
 standard MCP share the same value. Strict/transitional SpreadsheetML and
 unknown defined-name attributes are retained; unknown collection or child
-content fails closed when it cannot be preserved. This is defined-name
-lifecycle support, not formula evaluation, external-link authoring, or complete
-Spreadsheet parity.
+content fails closed when it cannot be preserved. This contract owns
+defined-name lifecycle, not external-link authoring or complete Spreadsheet
+parity; supported names participate when an explicit native cell-formula
+recalculation references them.
 
 Native Spreadsheet AutoFilters use a closed typed contract shared by worksheet
 filters and ListObject tables. One value owns a normalized rectangular A1
@@ -405,6 +411,63 @@ ignored errors, and supported drawing anchors move with their records; chart
 caches are cleared and the worksheet used dimension is recomputed after the
 physical change.
 
+Native Spreadsheet delimited import accepts bounded UTF-8 CSV or TSV from a
+regular file or stdin and writes it into an existing worksheet from an explicit
+A1 start cell. The parser supports a leading BOM, CRLF, quoted delimiters,
+embedded newlines, and doubled quotes; malformed quote state fails atomically.
+One request is limited to 8 MiB and a 100,000-cell rectangular extent. Explicit
+empty fields clear existing target cells, while missing trailing fields in a
+ragged row leave those cells unchanged.
+
+Typed inference stores formulas, finite numbers, booleans, ISO dates/times, and
+text without a Python, Node.js, OfficeCLI, or spreadsheet-application runtime.
+Dates honor the workbook's 1900/1904 system and receive a native date number
+format. Inferred formulas pass the same bounded native syntax parser as direct
+cell writes; malformed expressions fail the complete import. Import does not
+implicitly calculate formulas; run the explicit native recalculation command
+or mutation when fresh cached results are required. Header mode atomically
+installs the worksheet AutoFilter and a canonical frozen pane below the header.
+Frozen pane state is readable at `/Sheet/freeze`, is set through the typed
+batch/Rust/MCP contract, and is removed through the ordinary typed `remove`
+mutation. Strict/transitional SpreadsheetML and unknown view content are
+preserved; unsupported pane content reports `nativeMutable=false` and fails
+closed on mutation.
+
+Native Spreadsheet formula calculation builds a deterministic bounded
+dependency graph across worksheets, ranges, spills, and workbook- or
+worksheet-scoped names. The closed built-in registry implements
+`SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`, `COUNTA`, `ABS`, `SQRT`, `POWER`,
+`MOD`, `ROUND`, `IF`, `IFERROR`, `AND`, `OR`, `NOT`, `CONCAT`,
+`CONCATENATE`, `ROW`, `COLUMN`, `SEQUENCE`, `TRANSPOSE`, `PI`, and `NA`.
+Operators and typed blank, number, text, boolean, and Spreadsheet error values
+participate in scalar or rectangular array calculation.
+
+The read-only Rust calculation API leaves package bytes unchanged. The editor,
+versioned batch, replay, CLI `office native recalculate`, and standard MCP
+`recalculate-spreadsheet-formulas` mutation atomically write typed OOXML
+caches, canonical array anchors, spill children, and calculated-workbook
+metadata. Spill children are read-only; edit or remove their formula anchor.
+Exact replay accepts canonical formula storage and natively cached array
+anchors. It fails closed for physical distinctions typed mutations cannot
+reproduce, including explicit `t="normal"` storage and uncached or malformed
+array anchors.
+ListObject structured references resolve table names or display names.
+`Sales[Qty]` and `Sales[[Qty]:[Price]]` select data rows; `#All`, `#Data`,
+`#Headers`, and `#Totals` select structural rows; and `Sales[@Qty]`,
+`Sales[[#This Row],[Qty]]`, or table-local `[@Qty]` select the current data row.
+Table-local forms require the formula cell to be inside the inferred table.
+Missing tables, columns, or requested structural rows, disjoint columns,
+non-canonical forms, cycles, unsupported or qualified functions, and
+external-workbook reads fail with stable typed errors and roll back the whole
+batch. The engine never fetches an external workbook or falls back to a shell
+or script runtime. One formula is limited to 8,192 characters, depth
+128 (including nested named-reference resolution), and 8,192 AST nodes; one
+reference value to 100,000 areas; one graph to 100,000 formulas, 1,000,000
+edges, and 1,000,000 formula-cell reference visits; one materialized array or
+function call to 100,000 cells; and one text result to 1 MiB.
+One calculation pass is also limited to 100,000 cumulative spill children and
+200,000 OOXML cell writes, plus 8 MiB of cumulative text-result bytes.
+
 Native Spreadsheet tables use a separate closed ListObject contract. Add and
 set own the workbook-wide `name`, optional distinct `displayName`, final
 rectangular A1 range, one exact column identity per range column, header/totals
@@ -412,7 +475,17 @@ row state, typed filter criteria, built-in light/medium/dark style identity,
 and first/last-column plus row/column-stripe flags; ordinary typed `remove`
 owns deletion. When a header is enabled, its names are stamped into the first
 row and the table-owned AutoFilter range excludes an enabled totals row. The
-editor rejects
+`set` lifecycle keeps common structured references consistent: changed table
+names/display names and position-mapped column identities are rewritten across
+cell formulas, defined names, conditional formats, data validations, charts,
+and table formulas without touching string literals or external-workbook
+references. Table-local references are rewritten only when their ListObject
+context is provable. Unsafe local-reference geometry changes fail with
+`use.office.spreadsheet_table_formula_rewrite_unsupported`, and `remove`
+fails with `use.office.spreadsheet_table_referenced` while a live structured
+reference still targets the table. All checks and rewrites share the table
+mutation's atomic rollback boundary.
+The editor rejects
 Excel-identifier and A1/R1C1 name errors,
 case-insensitive table/defined-name collisions, duplicate columns, missing data
 rows, table/merge/worksheet-AutoFilter overlap, and unsafe relationship graphs.
@@ -495,10 +568,11 @@ Browser contract.
 The explicit `office native` CLI exposes in-process blank creation, reads,
 typed add/set/remove/move/copy/swap, scoped literal/regex replacement,
 rich-text, exact Spreadsheet merged-cell, stable Spreadsheet physical sorting
-with persisted sort state, worksheet/table AutoFilter,
-data-validation, conditional-format, defined-name, ListObject table, hyperlink,
-and legacy-comment
-operations, constrained raw XML access,
+with persisted sort state, bounded CSV/TSV import with typed inference and
+header filter/freeze behavior, explicit Spreadsheet formula recalculation,
+worksheet/table AutoFilter, data-validation, conditional-format, defined-name,
+ListObject table, hyperlink, and legacy-comment operations, constrained raw
+XML access,
 known typed part carriers, exact replay artifacts for a constrained canonical
 subset, visible PNG/JPEG/GIF pictures, and atomic mutation batches, plus
 dependency-free template merge and semantic rendering today. HTML and SVG are
@@ -592,6 +666,12 @@ a3s use office native set workbook.xlsx /Sheet1/E1 --border-diagonal slant-dash-
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --text 'Quarter' --bold true --merge-cells true --json
 a3s use office native set workbook.xlsx /Sheet1/A1:C1 --merge-cells false --json
 
+# Import a bounded UTF-8 CSV/TSV source. Header mode also installs the
+# worksheet AutoFilter and canonical frozen pane in the same transaction.
+a3s use office native import workbook.xlsx /Sheet1 source.csv --header --start-cell A1 --json
+a3s use office native import workbook.xlsx /Sheet1 --stdin --format tsv --output imported.xlsx --json
+a3s use office native get workbook.xlsx /Sheet1/freeze --json
+
 # Add, inspect, replace, clear, and remove one worksheet AutoFilter. Each
 # --filter is a strict JSON object with a zero-based column and typed criteria.
 a3s use office native add workbook.xlsx /Sheet1 --type auto-filter --range A1:C20 --filter '{"column":0,"criteria":{"type":"values","values":["Open","Closed"],"includeBlanks":true}}' --filter '{"column":2,"criteria":{"type":"greater-than","value":"100"}}' --json
@@ -669,10 +749,12 @@ a3s use office native add deck.pptx '/slide[1]' --type comment --author Alice --
 a3s use office native query deck.pptx comment --json
 a3s use office native remove workbook.xlsx /Sheet1/B2/comment --json
 
-# Preserve Spreadsheet value types; formula storage requests application recalculation.
+# Preserve Spreadsheet value types. Formula writes validate and store the
+# expression; explicit recalculation computes and writes cached values.
 a3s use office native set workbook.xlsx /Sheet1/A1 --number 42.5 --json
 a3s use office native set workbook.xlsx /Sheet1/B1 --boolean true --json
 a3s use office native set workbook.xlsx /Sheet1/C1 --formula 'SUM(A1:B1)' --json
+a3s use office native recalculate workbook.xlsx --output calculated.xlsx --json
 
 # Set or remove a bounded rectangular range atomically.
 a3s use office native set workbook.xlsx /Sheet1/A2:C4 --number 0 --json
@@ -851,8 +933,9 @@ and 10,000 mutations. The version 1 mutation set is `replace-text`, `set-text`,
 `set-data-validation`, `add-conditional-format`, `set-conditional-format`,
 `add-named-range`, `set-named-range`, `add-spreadsheet-table`,
 `set-spreadsheet-table`, `add-spreadsheet-auto-filter`,
-`set-spreadsheet-auto-filter`, `sort-spreadsheet-range`, `merge-cells`,
-`unmerge-cells`,
+`set-spreadsheet-auto-filter`, `sort-spreadsheet-range`,
+`import-spreadsheet-delimited`, `set-spreadsheet-frozen-pane`, `merge-cells`,
+`unmerge-cells`, `recalculate-spreadsheet-formulas`,
 `set-hyperlink`, `set-comment`, `set-table-column-width`,
 `set-cell-value`, `add-paragraph`,
 `add-table`, `add-table-row`, `add-table-column`, `add-table-cell`,
@@ -1012,6 +1095,39 @@ follow the row permutation. The worksheet used dimension is recomputed and
 chart caches are cleared. Exact replay emits the same
 `sort-spreadsheet-range` mutation.
 
+A Spreadsheet delimited import embeds bounded content in the typed batch or MCP
+request; filesystem paths remain a CLI-only concern:
+
+```json
+{
+  "operation": "import-spreadsheet-delimited",
+  "sheet": "/Sheet1",
+  "import": {
+    "content": "Name,Amount,Date\nAlpha,42,2026-07-17",
+    "format": "csv",
+    "header": true,
+    "startCell": "A1"
+  }
+}
+```
+
+`format` is `csv` or `tsv`. Header mode replaces the worksheet AutoFilter range
+and its canonical frozen pane in the same transaction, so inspect those nodes
+before importing into a populated sheet. Set a pane independently with
+`set-spreadsheet-frozen-pane` and remove it through `/Sheet/freeze`:
+
+```json
+{
+  "operation": "set-spreadsheet-frozen-pane",
+  "sheet": "/Sheet1",
+  "pane": {
+    "frozenRows": 1,
+    "frozenColumns": 0,
+    "topLeftCell": "A2"
+  }
+}
+```
+
 A Spreadsheet table mutation uses one complete ListObject value. CLI `set`
 preserves omitted fields; batch, Rust, and standard MCP replacements supply the
 complete table:
@@ -1107,8 +1223,9 @@ that current typed mutations can reproduce byte-for-byte at the OOXML part-map
 level: plain Word paragraphs and rectangular tables, Spreadsheet worksheets,
 typed defined names, typed cells, typed worksheet/table AutoFilters, typed
 ListObject tables, stable physical row order with supported typed sort state,
-merged ranges, typed data-validation rules, and canonical typed
-conditional-format rules without cached formula results;
+canonical frozen panes and import date styles, merged ranges, typed
+data-validation rules, canonical typed conditional-format rules, and natively
+recalculable formula caches and canonical cached dynamic-array spills;
 plus Presentation slides with plain one-run text shapes and canonical basic
 tables.
 Headers, notes,
@@ -1391,10 +1508,26 @@ Typed Spreadsheet content values use an explicit nested type, for example:
 }
 ```
 
-Formula mutation stores OOXML formula text and marks the workbook for a full
-recalculation when opened. Structural edits rewrite supported A1 references
-without evaluating formulas. A complete formula parser, dependency graph, and
-evaluator remain a separate rich-Spreadsheet delivery gate.
+Formula mutation removes one optional leading `=`, parses the bounded body into
+a source-spanned typed AST, stores the original normalized OOXML formula text,
+and marks the workbook for recalculation. It does not implicitly calculate the
+workbook. The parser covers scalar and error literals, Excel operator
+precedence, function calls and omitted arguments, parentheses and array
+constants, names and structured references, A1 cell/row/column references with
+quoted, 3D, or external qualifiers, and range/intersection/union operators.
+Invalid syntax returns `use.office.spreadsheet_formula_invalid` with zero-based
+UTF-8 byte and character offsets before any package mutation. Structural edits
+continue to rewrite supported A1 references without evaluating formulas.
+
+`NativeOfficeDocument::formula_dependency_graph` and
+`calculate_spreadsheet_formulas` provide read-only graph and calculation
+results. `NativeOfficeEditor::recalculate_spreadsheet_formulas`, the
+`recalculate-spreadsheet-formulas` batch/MCP mutation, exact replay, and the
+CLI command above atomically persist supported cached values and spills. Excel
+formula breadth beyond the closed native registry, disjoint or non-canonical
+structured-reference forms, qualified functions, external-workbook
+calculation, and full cross-application conformance remain rich-Spreadsheet
+delivery gates.
 
 The native package, semantic, and editor APIs are available directly to Rust
 callers:

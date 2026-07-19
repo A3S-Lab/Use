@@ -117,6 +117,50 @@ mutations. Unknown fields, invalid values, empty format objects, and
 non-Spreadsheet targets fail the entire in-memory batch; no change persists
 until `office_save`.
 
+Spreadsheet cell formulas use `set-cell-value` with
+`{"type":"formula","expression":"SUM(A1:B2)"}`. One optional leading `=` is
+removed before storage. The bounded native parser validates literals,
+operators, calls, names, structured references, qualified A1 references, and
+range/intersection/union syntax. Invalid syntax returns
+`use.office.spreadsheet_formula_invalid` with zero-based `byteOffset` and
+`characterOffset` details and rolls back every mutation in that
+`office_apply_batch`. Successful writes invalidate stale calculation caches and
+request recalculation; they do not calculate implicitly.
+
+Add the explicit recalculation mutation after dependent formula writes when
+fresh cached values are required:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [
+    {
+      "operation": "set-cell-value",
+      "path": "/Sheet1/C1",
+      "value": {"type": "formula", "expression": "SEQUENCE(2,2,1,1)"}
+    },
+    {
+      "operation": "recalculate-spreadsheet-formulas"
+    }
+  ]
+}
+```
+
+The result includes one `spreadsheetCalculations` receipt with
+`formulaCount`, `spillCellCount`, deterministic `calculationOrder`, and typed
+calculated cells. Calculation and OOXML cache/spill writeback are part of the
+same atomic in-memory batch; a cycle, unsupported function, qualified function,
+missing structured-reference table, column, or requested header/totals row,
+external-workbook reference, or blocked storage condition rolls back every
+sibling mutation. `Table[Column]`, contiguous table column ranges, common
+`#All`/`#Data`/`#Headers`/`#Totals` row items, current-row `@` forms, and
+table-local current-row references from inside a table are supported.
+Spreadsheet error results remain typed cell values. Dynamic-array spill
+children are read-only; mutate their formula anchor. The closed native registry
+and limits are documented in
+[spreadsheet.md](spreadsheet.md#values-and-formulas); the server never invokes
+a shell, script runtime, or external workbook.
+
 Spreadsheet merged cells use the separate `merge-cells` and `unmerge-cells`
 mutations:
 
@@ -179,7 +223,8 @@ operator, and only `between` or `notBetween` accept and require `formula2`.
 Rules and ranges are bounded, normalized, and globally non-overlapping within
 one worksheet. Invalid formulas, flags, messages, XML text, ranges, or overlap
 fail the complete `office_apply_batch`. Inline lists, ISO dates, and clock
-times are normalized but formulas are never evaluated. Query
+times are normalized, but data-validation formula predicates are not executed
+by the validation feature or the cell-formula recalculation pass. Query
 `dataValidation[type=list]` or call `office_get` on the returned path for
 unsaved semantic readback. Covered observed and virtual blank cells expose
 `dataValidation` and `validationType`. Updates retain unknown attributes and
@@ -273,11 +318,12 @@ identity, ListObject table-name collisions, reserved `_xlnm.*`/`Slicer_*`
 names, and unsupported cross-workbook refs are validated before mutation.
 Workbook-scoped bare A1 refs are rejected; worksheet-local bare A1 refs are
 qualified automatically by the domain layer. The mutation requests workbook
-recalculation but does not evaluate the expression. Unknown OOXML attributes
-are retained, while unknown content that cannot be preserved fails the whole
-batch. Call `office_get` or `office_query` before `office_save` to verify the
-unsaved scoped value, then save explicitly. Closing a dirty session still
-requires save or explicit discard.
+recalculation but does not calculate by itself; a later explicit native
+recalculation resolves supported names referenced by cell formulas. Unknown
+OOXML attributes are retained, while unknown content that cannot be preserved
+fails the whole batch. Call `office_get` or `office_query` before `office_save`
+to verify the unsaved scoped value, then save explicitly. Closing a dirty
+session still requires save or explicit discard.
 
 Spreadsheet worksheet AutoFilters use the separate
 `add-spreadsheet-auto-filter` and `set-spreadsheet-auto-filter` mutations.
@@ -322,6 +368,60 @@ replace a node whose semantic `nativeMutable` flag is false. Date-group,
 color/icon, extension, unknown-content, and embedded sort-state imports fail
 closed. Physical sorting is the separate mutation below and does not flatten an
 unsupported imported AutoFilter.
+
+Spreadsheet delimited import embeds bounded UTF-8 content directly in the
+typed mutation; filesystem paths remain at the CLI boundary:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "import-spreadsheet-delimited",
+    "sheet": "/Sheet1",
+    "import": {
+      "content": "Name,Amount,Date\nAlpha,42,2026-07-17",
+      "format": "csv",
+      "header": true,
+      "startCell": "A1"
+    }
+  }]
+}
+```
+
+`format` is `csv` or `tsv`; omitted `startCell` defaults to `A1`. Input is
+limited to 8 MiB and a 100,000-cell rectangular extent. Malformed quoting,
+invalid geometry or typed values, and unsupported target state fail the whole
+in-memory batch. Explicit empty fields clear existing target values; ragged
+missing trailing fields preserve them. Formula, finite-number, boolean, and ISO
+date/time inference is deterministic, but import does not implicitly calculate
+formulas. Append `recalculate-spreadsheet-formulas` to the same batch when
+fresh caches are required.
+
+When `header=true`, the import atomically adds or replaces the worksheet
+AutoFilter and canonical frozen pane. Inspect `/Sheet1/autofilter` and
+`/Sheet1/freeze` before using header mode on a populated worksheet. A pane can
+also be set independently:
+
+```json
+{
+  "session": "workbook",
+  "mutations": [{
+    "operation": "set-spreadsheet-frozen-pane",
+    "sheet": "/Sheet1",
+    "pane": {
+      "frozenRows": 1,
+      "frozenColumns": 0,
+      "topLeftCell": "A2"
+    }
+  }]
+}
+```
+
+Use `office_get` or `office_query` for unsaved readback and ordinary typed
+`remove` on `/Sheet1/freeze` for deletion. Do not mutate a pane whose semantic
+`nativeMutable` value is false. See
+[spreadsheet.md](spreadsheet.md#delimited-import-and-frozen-panes) for parsing,
+typing, and preservation boundaries.
 
 Spreadsheet physical sorting uses `sort-spreadsheet-range` inside the same
 atomic `office_apply_batch` boundary:
@@ -407,6 +507,15 @@ width must match the ordered column list, and at least one data row must remain.
 Names, columns, built-in style families/numbers, flags, table/defined-name
 identity, table/merge/worksheet-AutoFilter overlap, and relationship ownership
 are validated before mutation.
+
+When table aliases or position-mapped columns change, `set-spreadsheet-table`
+atomically rewrites common structured references in cells, defined names,
+conditional formats, data validations, charts, and table-formula carriers.
+String literals and external-workbook references are preserved. Unsafe
+table-local rewrites or geometry changes fail with
+`use.office.spreadsheet_table_formula_rewrite_unsupported`; removing a table
+with a remaining structured reference fails with
+`use.office.spreadsheet_table_referenced`.
 
 Use `office_get` with depth 1 or `office_query` with `table[name=Sales]` to
 inspect the unsaved table and its column children. Do not replace a node whose

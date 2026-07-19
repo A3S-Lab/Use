@@ -68,10 +68,10 @@ sorting, filters, validation, conditional formatting, hyperlinks, drawings,
 images, charts, pivot tables and caches, slicers, sparklines, comments, OLE
 preservation, and CSV/TSV import.
 
-The formula subsystem requires a real parser, dependency graph, recalculation
-engine, dynamic-array spilling, reference rewriting, and a typed function
-registry. Formula values are never evaluated by a shell or general-purpose
-script runtime.
+The formula subsystem uses a bounded parser, deterministic dependency graph,
+native recalculation engine, dynamic-array spilling, reference rewriting, and
+a typed closed function registry. Formula values are never evaluated by a
+shell or general-purpose script runtime.
 
 ### Presentation
 
@@ -199,9 +199,67 @@ paragraph/run/cell content and Presentation shape text; Spreadsheet cell paths
 upsert missing ordered rows and cells and maintain worksheet dimensions.
 Spreadsheet writes preserve explicit text, finite-number, boolean, and formula
 types. Formula writes strip an optional leading `=`, enforce Excel's 8192
-character bound, and mark the workbook for full recalculation; they do not yet
-parse or evaluate formulas. Cell set/remove accepts normalized A1 rectangular
-ranges of at most 100,000 cells and rolls back the whole operation on error.
+character bound, parse the normalized body into a bounded source-spanned typed
+AST, and mark the workbook for recalculation. Formula writes and import do not
+implicitly calculate the workbook. The parser covers literals, Excel operator
+precedence, calls and omitted arguments, parentheses and array constants, names
+and structured references, qualified A1 cell/row/column references, and
+range/intersection/union operators. Syntax errors report stable zero-based
+UTF-8 byte and character offsets before mutation.
+
+The native calculation subsystem builds a deterministic graph across
+worksheets, ranges, spills, and workbook- or worksheet-scoped names.
+`NativeOfficeDocument::formula_dependency_graph`,
+`calculate_spreadsheet_formulas`, and the registry-aware calculation variant
+are read-only. The closed default registry implements `SUM`, `AVERAGE`, `MIN`,
+`MAX`, `COUNT`, `COUNTA`, `ABS`, `SQRT`, `POWER`, `MOD`, `ROUND`, `IF`,
+`IFERROR`, `AND`, `OR`, `NOT`, `CONCAT`, `CONCATENATE`, `ROW`, `COLUMN`,
+`SEQUENCE`, `TRANSPOSE`, `PI`, and `NA`, together with ordinary operators,
+typed errors, scalar/array broadcasting, spill references, and dynamic-array
+results.
+
+`NativeOfficeEditor::recalculate_spreadsheet_formulas` and
+`NativeOfficeMutation::RecalculateSpreadsheetFormulas` atomically calculate
+and write typed cached values, canonical array anchors, spill children, and
+calculated-workbook metadata. The mutation is exposed by replay, standard MCP
+as `recalculate-spreadsheet-formulas`, and CLI as
+`office native recalculate <workbook> [--output <workbook>]`. Spill children
+are read-only; replacing or removing an anchor clears its old spill. Failures
+including cycles, unsupported or qualified functions, unsupported
+structured-reference forms, external-workbook references, overlapping formula
+storage, and invalid OOXML roll back the complete batch. Spreadsheet errors
+such as `#DIV/0!` and `#SPILL!` remain typed cell values. The engine never
+fetches external workbooks or invokes a scripting fallback.
+
+ListObject structured references resolve table names or display names.
+`Table[Column]` selects one data column and `Table[[First]:[Last]]` selects a
+contiguous data-column range. `#All`, `#Data`, `#Headers`, and `#Totals` select
+structural rows. `Table[@Column]`, `Table[[#This Row],[Column]]`, and
+table-local `[@Column]` select the current data row; table-local forms require
+the formula cell to be inside the inferred table. Missing tables, columns, or
+requested header/totals rows, disjoint columns, and non-canonical forms remain
+fail-closed.
+
+Exact replay accepts canonical formula storage and canonical array anchors
+only when their native cached results are present. It rejects physical storage
+that typed mutations cannot reproduce byte-for-byte, including explicit
+`t="normal"` formulas and uncached or malformed array anchors, with
+`use.office.dump_unsupported`.
+
+Semantic Spreadsheet cell nodes expose `formulaCached` for formula anchors and
+`valuePresent` for physical cached or inline values. This distinguishes an
+explicit empty string from an absent cell value and lets issue analysis report
+only formulas that truly lack an OOXML cache.
+
+Formula calculation is bounded to 8,192 formula characters, depth 128, and
+8,192 AST nodes, with the same depth bound applied across nested named
+references; 100,000 reference areas per value; 100,000 formula cells,
+1,000,000 graph edges, and 1,000,000 formula-cell reference visits; 100,000
+materialized cells in one array or function call and 100,000 cumulative spill
+children in one pass; 200,000 OOXML cell writes; and 1 MiB for one UTF-8 text
+result. Formula text is additionally limited to 8 MiB cumulatively per
+calculation pass. Cell set/remove accepts normalized A1 rectangular ranges of
+at most 100,000 cells and rolls back the whole operation on error.
 Native Spreadsheet structure operations insert or delete at most 10,000 rows or
 columns, rename worksheets, reorder worksheets, and copy a worksheet after its
 source or at an explicit one-based position. Copy assigns new worksheet and
@@ -217,6 +275,31 @@ Native Spreadsheet physical sorting is also implemented as one stable ordered
 multi-key mutation with persisted worksheet sort state. It is deliberately
 separate from worksheet/table filter-definition lifecycle and from formula
 calculation.
+
+Native bounded CSV/TSV import is implemented through typed Rust, versioned
+batch, dedicated CLI, and standard MCP surfaces. One import targets an existing
+worksheet at an explicit A1 start cell, accepts at most 8 MiB of UTF-8 and a
+100,000-cell rectangular extent, and parses BOM, CRLF, quoted delimiters,
+embedded newlines, and doubled quotes without a scripting runtime. Unclosed,
+misplaced, or trailing quote content fails the whole transaction instead of
+being guessed. Ragged missing fields preserve cells beyond that source row;
+explicit empty fields clear an existing target cell without materializing a new
+blank cell.
+
+Import inference writes formulas, finite numbers, booleans, ISO dates/times, or
+text as typed cell values. Dates honor the workbook's 1900/1904 date system and
+receive a canonical date number format. Formulas pass the bounded cell-formula
+parser, are stored, and are marked for recalculation. Import does not calculate
+them implicitly; callers can append the native recalculation mutation to the
+same atomic batch. Header mode atomically adds or replaces the worksheet
+AutoFilter over the imported extent and installs one canonical frozen pane
+below the header. Frozen panes have typed set/remove, semantic `/Sheet/freeze`
+readback, selectors, versioned batch and MCP payloads, and exact replay.
+Unsupported or vendor-extended pane content is readable with
+`nativeMutable=false` and fails closed on mutation. Tests cover
+strict/transitional SpreadsheetML, malformed input rollback, typed values,
+explicit empty cells, filter/freeze lifecycle, exact replay, file/stdin CLI,
+and an unsaved/save/close/reopen standard MCP session without OfficeCLI.
 
 Native `replace-text` is implemented through one typed Rust, batch, CLI, and
 standard MCP contract. Literal mode performs case-sensitive, non-overlapping
@@ -344,7 +427,9 @@ SpreadsheetML, while cell-range and defined-name sources remain formulas. An
 optional leading `=` is removed from comparison and custom formulas. Valid ISO
 dates from 1900 through 9999 become serial dates using the workbook's declared
 1900 or 1904 date system; 1900 mode retains Excel's historical leap-day offset.
-`HH:MM` and `HH:MM:SS` values become day fractions. No formula is evaluated.
+`HH:MM` and `HH:MM:SS` values become day fractions. Data-validation formula
+predicates are stored but are not executed by this feature or by the cell
+formula recalculation pass.
 
 One rule carries typed blank, input-message, error-message, error-style, and
 list-dropdown state. New A3S rules default `allowBlank`, `showInput`,
@@ -376,7 +461,7 @@ This milestone is cell data-validation structure, not complete rich
 Spreadsheet or OfficeCLI parity. Table calculated columns and totals functions,
 unsupported imported sort-state variants and date-group/color/icon filter
 families, charts, pivot tables, slicers,
-sparklines, formula evaluation, CSV/TSV import, and Excel layout fidelity remain
+sparklines, data-validation predicate execution, and Excel layout fidelity remain
 separate work.
 
 Native `add-conditional-format` and `set-conditional-format` form a separate
@@ -444,10 +529,11 @@ atomic rollback, exact canonical replay, CLI lifecycle and atomic batch, MCP
 schema conversion, and a complete standard MCP lifecycle with an unusable
 OfficeCLI provider path.
 
-This milestone stores conditional-format formulas but does not evaluate them or
-render Excel's visual result. It does not provide x14 advanced visual options,
-table/chart/pivot formatting, formula calculation, or full Excel rendering and
-layout fidelity, and therefore is not complete OfficeCLI or Spreadsheet parity.
+This milestone stores conditional-format formulas but does not evaluate those
+rule predicates or render Excel's visual result. It does not provide x14
+advanced visual options, table/chart/pivot formatting, or full Excel rendering
+and layout fidelity, and therefore is not complete OfficeCLI or Spreadsheet
+parity.
 
 Native `add-named-range` and `set-named-range` form a separate closed typed
 Rust, versioned batch, CLI, and standard MCP contract for Spreadsheet defined
@@ -485,21 +571,22 @@ Excel namespace also rejects collisions with ListObject `name` or
 `displayName`. `_xlnm.*` print/filter definitions and `Slicer_*` sentinels are
 protected because their owning typed features must manage them.
 
-Every mutation marks the workbook for full recalculation without evaluating a
-formula. The loss-preserving writer keeps workbook child order, strict or
-transitional SpreadsheetML QNames, untouched defined names, and unknown
-attributes. Unknown collection children or non-text name content fail closed;
-removing the final name also fails if deleting `definedNames` would discard
-unknown collection attributes. Exact replay emits named ranges after worksheet
-creation and reproduces the supported part map byte-for-byte. Tests cover
+Every defined-name mutation marks the workbook for recalculation but does not
+calculate by itself. An explicit native recalculation pass resolves supported
+names referenced by cell formulas. The loss-preserving writer keeps workbook
+child order, strict or transitional SpreadsheetML QNames, untouched defined
+names, and unknown attributes. Unknown collection children or non-text name
+content fail closed; removing the final name also fails if deleting
+`definedNames` would discard unknown collection attributes. Exact replay emits
+named ranges after worksheet creation and reproduces the supported part map
+byte-for-byte. Tests cover
 scoped identity and ambiguity, validation and rollback, reserved names, unknown
 data, strict OOXML, table-name collisions, replay, native CLI batch atomicity,
 and a complete standard MCP unsaved/save/close lifecycle with an unusable
 OfficeCLI provider.
 
-This milestone is defined-name lifecycle and storage, not a formula parser,
-dependency graph, evaluator, external-link authoring, or complete rich
-Spreadsheet parity.
+This milestone is defined-name lifecycle and storage, not external-link
+authoring or complete rich Spreadsheet parity.
 
 Native `add-spreadsheet-auto-filter` and `set-spreadsheet-auto-filter` form a
 closed typed Rust, versioned batch, CLI, and standard MCP contract. Ordinary
@@ -616,6 +703,28 @@ style, and extension content. Unknown table-column metadata, formulas, totals
 metadata, custom styles, or final collection data that cannot be retained make
 the semantic node non-mutable or fail with
 `use.office.spreadsheet_table_unknown_content` instead of being flattened.
+
+Replacement also preserves formula identity for common ListObject structured
+references. It maps the old table `name` to the new `name`, the old effective
+`displayName` to the new effective `displayName`, and old columns to new
+columns by physical position. When the old aliases coincide, the new display
+name is preferred. The editor applies those rewrites to worksheet cell
+formulas, workbook defined names, conditional-format and data-validation
+formulas, chart formulas, and calculated-column/totals-row formulas in table
+parts. Formula string literals and external-workbook structured references are
+not changed.
+
+Table-local forms such as `[@Qty]` are rewritten only for a formula cell inside
+the old table range or another carrier whose ListObject ownership is provable.
+An affected local reference with unknown ownership, or a local reference
+across a table range/header/totals-row geometry change, fails atomically with
+`use.office.spreadsheet_table_formula_rewrite_unsupported`. Geometry changes
+with matching explicit references clear formula and chart caches before the
+workbook is marked for full recalculation. Removal fails atomically with
+`use.office.spreadsheet_table_referenced` while an explicit target or a
+provably applicable/unknown local structured reference remains. A qualified
+reference to another worksheet and a local reference provably owned by another
+table do not block the target lifecycle.
 
 Semantic reads expose table nodes and stable child column nodes, including
 name/display name, normalized range, header/totals state, filter children,
@@ -933,10 +1042,11 @@ Root-scoped replay dump is implemented for the canonical subset that current
 typed mutations can reproduce exactly: plain Word paragraphs and rectangular
 tables, Spreadsheet worksheets, typed defined names, typed cells, typed
 worksheet/table AutoFilters, ListObject tables, stable physical row order with
-supported typed sort state, merged ranges, typed data-validation rules, and
-canonical typed conditional-format rules without cached formula results, and
-Presentation slides with plain one-run text
-shapes and canonical basic tables. The versioned
+supported typed sort state, canonical frozen panes and import date styles,
+merged ranges, typed data-validation rules, and
+canonical typed conditional-format rules, natively recalculable formula caches
+and canonical cached dynamic-array spills, and Presentation slides with plain
+one-run text shapes and canonical basic tables. The versioned
 artifact records document kind, `/` scope, blank-template part-map SHA-256,
 ordered mutations, and expected result part-map SHA-256. Native `batch` checks
 both fingerprints and restores the original package on a failed result check.
@@ -969,10 +1079,12 @@ coverage above, advanced image mutation and OOXML SVG fallback, complex/custom
 part carriers, Presentation table merges/rich styles, subtree and
 rich-structure dump, advanced rich-format operations, modern threaded comments
 and legacy-comment replies/resolution/rich bodies, and
-the formula parser/dependency/recalculation engine remain before their
-respective gates can be promoted. Creation and structural mutation remain
-under the interoperability gate until Microsoft Office and optional CI
-LibreOffice checks confirm that no repair dialog is required.
+complete Excel function breadth, structured-reference forms beyond common row
+items and contiguous columns, qualified functions, and external-workbook
+formula calculation remain before their respective gates can be promoted.
+Creation and structural mutation remain under the interoperability gate until
+Microsoft Office and optional CI LibreOffice checks confirm that no repair
+dialog is required.
 
 ### Gate 3 — Rich Word
 
@@ -1050,6 +1162,7 @@ add/set/remove/move/copy/swap, scoped cross-format literal/regex replacement,
 cross-format text formatting, typed Spreadsheet number/fill/border/alignment
 and cell-presentation formatting, exact Spreadsheet merged-cell editing, typed
 Spreadsheet physical row sorting with persisted sort state, Spreadsheet
+CSV/TSV import with typed inference and header filter/freeze behavior,
 worksheet/table AutoFilters, data-validation,
 conditional-formatting, and scoped defined-name editing, typed ListObject table
 lifecycle, inert hyperlinks,

@@ -264,6 +264,7 @@ fn kind_matches(kind: &str, node: &DocumentNode) -> bool {
             node.node_type == OfficeNodeType::NamedRangeCollection
         }
         "sheet" | "worksheet" => node.node_type == OfficeNodeType::Worksheet,
+        "freeze" | "frozenpane" | "frozen-pane" => node.node_type == OfficeNodeType::FrozenPane,
         "slide" => node.node_type == OfficeNodeType::Slide,
         "shape" | "textbox" => matches!(
             node.node_type,
