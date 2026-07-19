@@ -107,9 +107,13 @@ dependencies = [
 name = "a3s-use-core"
 version = "0.1.2"
 dependencies = [
+ "olpc-cjson",
+ "semver",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.19",
+ "url",
 ]
 
 [[package]]

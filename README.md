@@ -16,6 +16,7 @@
   <a href="#office">Office</a> •
   <a href="#ocr">OCR</a> •
   <a href="#external-extensions">Extensions</a> •
+  <a href="#immutable-mcp-and-skill-releases">Releases</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#development">Development</a>
 </p>
@@ -153,6 +154,9 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **Content-Bound Skills**: Project an absolute package path and lowercase
   SHA-256 for every `SKILL.md`, allowing consumers to verify the exact bytes
   before loading them
+- **Immutable Release Contracts**: Canonicalize and digest versioned MCP
+  Runtime Service and Skill Agent-input descriptors with exact provenance,
+  compatibility, and dependency references
 - **Managed Provider Safety**: Require explicit installation authority, bounded
   first-use policy, bounded downloads, approved HTTPS origins, receipts,
   staging, and atomic activation
@@ -197,7 +201,7 @@ A compiled command surface is not proof that its provider is installed. Use
 
 | Crate | Responsibility |
 | --- | --- |
-| `a3s-use-core` | Shared diagnostics, errors, artifacts, session IDs, and risk classes |
+| `a3s-use-core` | Shared diagnostics, errors, artifacts, session IDs, risk classes, and immutable MCP/Skill release descriptors |
 | `a3s-use-browser` | Object-safe rendering contract, providers, managed runtimes, and sessions |
 | `a3s-use-browser-driver` | Complete interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
 | `a3s-use-office` | Native OOXML foundation, typed Office operations, and compatibility lifecycle |
@@ -1935,6 +1939,24 @@ and oversized targets are rejected before payload download.
 Built-in and management routes are reserved. Extensions cannot shadow
 `browser`, `office`, `ocr`, `box`, `component`, `capability`, or other host
 commands.
+
+## Immutable MCP and Skill Releases
+
+The `a3s-use-core` crate publishes two machine-owned JSON contracts for the A0
+release path:
+
+- `a3s.use.mcp-release.v1` binds provenance and a digest-pinned OCI artifact to
+  a headless standard MCP Streamable HTTP health/lifecycle contract; and
+- `a3s.use.skill-release.v1` binds a Skill bundle and exact `SKILL.md` digest as
+  immutable `agent-input`, with no Runtime workload fields.
+
+Both reject unknown and mutable-reference fields, encode as OLPC canonical
+JSON, and derive identity as `sha256:<canonical-bytes>`. Compatibility
+requirements and exact descriptor-digest dependencies are checked before
+deployment through `ReleaseResolution`. See
+[Immutable MCP and Skill Release Descriptors](docs/release-descriptors.md) for
+the field contract, evolution rules, lifecycle boundary, and cross-SDK digest
+fixtures.
 
 ## Live Host Integration
 
