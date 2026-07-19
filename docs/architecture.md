@@ -43,8 +43,11 @@ CLI plus standard stdio MCP without a separate extension install. The process
 accepts bounded local image files and binds every result to the canonical
 source digest. It runs the pinned `PP-OCRv6_small` detection and recognition
 models locally through ONNX Runtime, without Python, PaddlePaddle, a remote OCR
-endpoint, or an alternate backend. Model installation and repair are explicit
-`use/ocr` component operations. Both MCP tools are closed-world and read-only.
+endpoint, or an alternate backend. The first CLI extraction installs or repairs
+the pinned model bundle when first-use policy permits it. Standard MCP keeps
+`ocr_doctor` and `ocr_extract` closed-world and read-only, while the separate
+idempotent `ocr_install` network mutation requires parent confirmation.
+Explicit `use/ocr` component operations remain available for preparation.
 
 `a3s-use-science` is the reference multi-surface extension. It remains a
 separate process and package even though its source is developed in this
@@ -105,8 +108,9 @@ compatibility provider. For resident hosts, `use/office` targets the built-in
 `office-native` MCP server and is ready independently of OfficeCLI. A discovered
 OfficeCLI provider is projected separately as `use/office-compat`, targeting
 the standard compatibility server without carrying the native Skill. The
-`use/ocr` route targets `ocr-native`; model readiness remains explicit and
-never triggers a silent install.
+`use/ocr` route targets `ocr-native`; model readiness remains visible.
+Read-only discovery never installs models, while direct extraction uses the
+first-use policy and the MCP worker uses a separately confirmed install tool.
 
 The projection contains content-bound Skill references and an MCP launch target,
 never executable extension code or a generic action payload. Consumers still

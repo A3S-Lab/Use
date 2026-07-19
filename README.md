@@ -104,6 +104,7 @@ a3s use mcp serve office
 
 # Built-in local PP-OCRv6.
 a3s use ocr doctor --json
+# The first extraction installs the pinned models when needed and allowed.
 a3s use ocr extract ./scan.png --json
 a3s use mcp serve ocr
 ```
@@ -153,7 +154,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   SHA-256 for every `SKILL.md`, allowing consumers to verify the exact bytes
   before loading them
 - **Managed Provider Safety**: Require explicit installation authority, bounded
-  downloads, approved HTTPS origins, receipts, staging, and atomic activation
+  first-use policy, bounded downloads, approved HTTPS origins, receipts,
+  staging, and atomic activation
 - **Structured Automation**: Return versioned `--json` documents and typed error
   codes while retaining native process status and streams for delegated commands
 - **Component Ownership**: Remove only A3S-managed provider or package files;
@@ -167,7 +169,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | Browser | Built in | Full Browser vocabulary | A3S Use standard MCP server | Six packaged Browser Skills | A3S Use |
 | Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
-| OCR | Built in | Doctor and typed image extraction | `ocr_doctor` and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
+| OCR | Built in | Doctor and first-use typed image extraction | `ocr_doctor`, confirmed `ocr_install`, and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
 | Science | External `a3s/science` package | Source-specific retrieval commands | 13 typed `science_*` tools | One research workflow Skill | Science extension process |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
@@ -1743,17 +1745,18 @@ compatibility scope, safety invariants, delivery gates, and migration plan.
 ## OCR
 
 `a3s-use-ocr` implements the reserved built-in `ocr` route. The default Use
-release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor` plus
-`ocr_extract` over standard MCP, so a resident A3S Code session receives
-`mcp__use_ocr__*` without installing a separate extension.
+release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor`,
+`ocr_install`, and `ocr_extract` over standard MCP, so a resident A3S Code
+session receives `mcp__use_ocr__*` without installing a separate extension.
 
 OCR has one backend: the pinned `PP-OCRv6_small` detection and recognition
-models running locally through ONNX Runtime. Release archives package those
-models; `a3s install use/ocr` explicitly installs or repairs the same pinned
-bundle when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF,
-BMP, and TIFF files. The result binds the canonical source path, media type,
-byte length, and SHA-256 alongside text, recognition/detection confidence,
-polygons, and bounding boxes.
+models running locally through ONNX Runtime. The first CLI extraction installs
+or repairs the fixed-size, SHA-256-pinned official model archives when
+networking and first-use installation are allowed. `a3s install use/ocr`
+prepares the same bundle explicitly. Supported inputs are bounded local PNG,
+JPEG, WebP, GIF, BMP, and TIFF files. The result binds the canonical source
+path, media type, byte length, and SHA-256 alongside text,
+recognition/detection confidence, polygons, and bounding boxes.
 
 The pipeline decodes and normalizes the image, runs
 `PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
@@ -1767,9 +1770,12 @@ a3s use ocr extract ./scan.png --json
 a3s use mcp serve ocr
 ```
 
-A3S Code may first-use install the verified parent Use release. A missing or
-damaged managed model bundle is repaired explicitly with
-`a3s install use/ocr`; the Code `use` worker never installs it implicitly.
+A3S Code may first-use install the verified parent Use release. When OCR models
+are missing or damaged, the Code `use` worker requests the bounded
+`ocr_install` MCP tool. The parent TUI must confirm that network mutation before
+the worker continues to extraction. `--offline`, `A3S_OFFLINE=1`, and
+`A3S_NO_AUTO_INSTALL=1` prohibit first-use model installation. Diagnostics stay
+read-only, and `a3s install use/ocr` remains available for explicit preparation.
 
 See the [OCR crate](crates/ocr/README.md) for model resolution, the inference
 workflow, and input boundaries.

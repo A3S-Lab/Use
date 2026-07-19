@@ -8,6 +8,7 @@ use tokio::io::AsyncReadExt;
 use crate::assets::{ocr_status, resolve_model_assets, OcrInstallSource};
 use crate::config::MODEL_FAMILY;
 use crate::engine::{EngineBlock, PpOcrV6Engine};
+use crate::install::ensure_ppocr_v6_ready;
 use crate::models::{
     OcrBlock, OcrBoundingBox, OcrDiagnostic, OcrPoint, OcrProviderKind, OcrRequest, OcrResult,
 };
@@ -41,7 +42,7 @@ impl OcrClient {
             (
                 Readiness::Missing,
                 vec![
-                    "Run 'a3s install use/ocr' to install the pinned local model bundle."
+                    "Call the bounded ocr_install MCP tool, or run 'a3s install use/ocr' explicitly."
                         .to_string(),
                 ],
             )
@@ -49,7 +50,7 @@ impl OcrClient {
             (
                 Readiness::Broken,
                 vec![
-                    "Run 'a3s install use/ocr --force' to restore the pinned local model bundle."
+                    "Call the bounded ocr_install MCP tool, or run 'a3s install use/ocr --force' explicitly."
                         .to_string(),
                 ],
             )
@@ -72,6 +73,18 @@ impl OcrClient {
 
     pub async fn extract(&self, request: OcrRequest) -> UseResult<OcrResult> {
         let source = read_source(&request.path).await?;
+        self.extract_source(source).await
+    }
+
+    /// Validate the local source, prepare pinned models under first-use policy,
+    /// and then perform the same local extraction as [`Self::extract`].
+    pub async fn extract_with_first_use(&self, request: OcrRequest) -> UseResult<OcrResult> {
+        let source = read_source(&request.path).await?;
+        ensure_ppocr_v6_ready().await?;
+        self.extract_source(source).await
+    }
+
+    async fn extract_source(&self, source: SourceImage) -> UseResult<OcrResult> {
         let loaded = Arc::clone(&self.loaded);
         tokio::task::spawn_blocking(move || {
             let image = decode_image(&source.bytes)?;
