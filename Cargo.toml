@@ -6,6 +6,7 @@ members = [
     "crates/office",
     "crates/extension",
     "crates/ocr",
+    "crates/science",
 ]
 resolver = "2"
 

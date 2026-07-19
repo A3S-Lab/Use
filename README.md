@@ -140,6 +140,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **First-Party OCR Domain**: Run pinned PP-OCRv6 detection and recognition
   models locally through ONNX Runtime, with source digests and bounded layout
   evidence
+- **Reference Science Toolkit**: Query PubMed, ChEMBL, ClinicalTrials.gov,
+  bioRxiv, and Ensembl through one typed read-only extension
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
   resident host can add, replace, or remove live capabilities without restarting
 - **Content-Bound Skills**: Project an absolute package path and lowercase
@@ -161,6 +163,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
 | OCR | Built in | Doctor and typed image extraction | `ocr_doctor` and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
+| Science | External `a3s/science` package | Source-specific retrieval commands | 13 typed `science_*` tools | One research workflow Skill | Science extension process |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
 The Box route is component-backed. The umbrella CLI resolves its authoritative
@@ -193,6 +196,7 @@ A compiled command surface is not proof that its provider is installed. Use
 | `a3s-use-office` | Native OOXML foundation, typed Office operations, and compatibility lifecycle |
 | `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |
 | `a3s-use-ocr` | Local PP-OCRv6 engine, CLI, MCP tools, pinned models, and release-packaged Skill assets |
+| `a3s-use-science` | Typed public life-science APIs, CLI, MCP tools, and extension package assets |
 | `a3s-use` | Facade library, standalone CLI host, capability projection, and MCP entry points |
 
 ## Quick Start
@@ -1636,6 +1640,36 @@ damaged managed model bundle is repaired explicitly with
 
 See the [OCR crate](crates/ocr/README.md) for model resolution, the inference
 workflow, and input boundaries.
+
+## Science Toolkit
+
+The repository includes `a3s-use-science` as a reference external extension,
+not as another built-in route. Its process exposes one typed Rust client as 13
+read-only MCP tools plus source-specific CLI commands for PubMed, ChEMBL,
+ClinicalTrials.gov, bioRxiv, and Ensembl.
+
+Build a local package into a new directory and install it explicitly:
+
+```bash
+./crates/science/scripts/package.sh /tmp/a3s-use-science-package
+a3s install use/a3s/science \
+  --from /tmp/a3s-use-science-package \
+  --allow-unsigned
+
+export A3S_SCIENCE_CONTACT_EMAIL=researcher@example.org
+a3s use science pubmed search "single-cell atlas" --limit 10 --json
+a3s use science ensembl lookup homo_sapiens TP53 --json
+a3s use mcp serve a3s/science
+```
+
+The same package can be archived as `.tar.gz`, `.tgz`, or `.zip` and installed
+through the explicit local-package flow. Local packages require
+`--allow-unsigned`; use them only after review. PubMed requires the contact
+email, while `NCBI_API_KEY` is optional. See the
+[Science crate](crates/science/README.md), its
+[data-source notice](crates/science/DATA_SOURCES.md), and
+[clean-room provenance](crates/science/UPSTREAM.md) for the full command set,
+data egress, limits, and interpretation boundaries.
 
 ## External Extensions
 

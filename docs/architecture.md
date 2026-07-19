@@ -46,6 +46,14 @@ models locally through ONNX Runtime, without Python, PaddlePaddle, a remote OCR
 endpoint, or an alternate backend. Model installation and repair are explicit
 `use/ocr` component operations. Both MCP tools are closed-world and read-only.
 
+`a3s-use-science` is the reference multi-surface extension. It remains a
+separate process and package even though its source is developed in this
+repository. Its Rust API, native CLI, 13 standard MCP tools, and packaged Skill
+share typed source-specific operations; the host sees only the declared
+`a3s/science` CLI, MCP, and Skill surfaces. This demonstrates how a first-party
+toolkit can ship without expanding the reserved built-in route set or adding a
+generic action envelope.
+
 ## Hot-plug registry
 
 Extension code remains behind native process boundaries. The registry is a
