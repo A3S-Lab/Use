@@ -16,13 +16,17 @@ mod cell_format;
 mod conditional_formatting;
 mod data_validation;
 mod spreadsheet_filter;
+mod spreadsheet_import;
 mod spreadsheet_sort;
+mod spreadsheet_view;
 
 use cell_format::OfficeCellFormat;
 use conditional_formatting::OfficeConditionalFormat;
 use data_validation::OfficeDataValidation;
 use spreadsheet_filter::{OfficeSpreadsheetAutoFilter, OfficeSpreadsheetFilterColumn};
+use spreadsheet_import::OfficeSpreadsheetDelimitedImport;
 use spreadsheet_sort::OfficeSpreadsheetSort;
+use spreadsheet_view::OfficeSpreadsheetFrozenPane;
 
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -785,6 +789,8 @@ pub(super) enum OfficeMutation {
         path: String,
         value: OfficeCellValue,
     },
+    /// Calculate supported formulas and write cached values and dynamic spills.
+    RecalculateSpreadsheetFormulas,
     AddSpreadsheetTable {
         /// Existing Spreadsheet worksheet path such as `/Sheet1`.
         sheet: String,
@@ -809,6 +815,16 @@ pub(super) enum OfficeMutation {
         /// Worksheet path or explicit range such as `/Sheet1` or `/Sheet1/A1:D100`.
         path: String,
         sort: OfficeSpreadsheetSort,
+    },
+    ImportSpreadsheetDelimited {
+        /// Existing Spreadsheet worksheet path such as `/Sheet1`.
+        sheet: String,
+        import: OfficeSpreadsheetDelimitedImport,
+    },
+    SetSpreadsheetFrozenPane {
+        /// Existing Spreadsheet worksheet path such as `/Sheet1`.
+        sheet: String,
+        pane: OfficeSpreadsheetFrozenPane,
     },
     AddNamedRange {
         #[serde(rename = "namedRange")]
@@ -986,6 +1002,9 @@ impl OfficeMutation {
                 path,
                 value: value.into(),
             },
+            Self::RecalculateSpreadsheetFormulas => {
+                NativeOfficeMutation::RecalculateSpreadsheetFormulas
+            }
             Self::AddSpreadsheetTable { sheet, table } => {
                 NativeOfficeMutation::AddSpreadsheetTable {
                     sheet,
@@ -1014,6 +1033,18 @@ impl OfficeMutation {
                 NativeOfficeMutation::SortSpreadsheetRange {
                     path,
                     sort: sort.into(),
+                }
+            }
+            Self::ImportSpreadsheetDelimited { sheet, import } => {
+                NativeOfficeMutation::ImportSpreadsheetDelimited {
+                    sheet,
+                    import: import.into_native(),
+                }
+            }
+            Self::SetSpreadsheetFrozenPane { sheet, pane } => {
+                NativeOfficeMutation::SetSpreadsheetFrozenPane {
+                    sheet,
+                    pane: pane.into_native(),
                 }
             }
             Self::AddNamedRange { named_range } => NativeOfficeMutation::AddNamedRange {

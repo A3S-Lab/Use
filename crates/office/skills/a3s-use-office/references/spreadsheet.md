@@ -7,6 +7,7 @@ Use stable worksheet and A1 paths such as `/Sheet1`, `/Sheet1/A1`, and
 
 - [Inspect](#inspect)
 - [Values and Formulas](#values-and-formulas)
+- [Delimited Import and Frozen Panes](#delimited-import-and-frozen-panes)
 - [Cell Text Formatting](#cell-text-formatting)
 - [Cell Presentation Formatting](#cell-presentation-formatting)
 - [Merged Cells](#merged-cells)
@@ -37,6 +38,7 @@ a3s use office native set workbook.xlsx /Sheet1/A1:C20 --find Draft --replace Fi
 a3s use office native set workbook.xlsx /Sheet1/B1 --number 42.5 --json
 a3s use office native set workbook.xlsx /Sheet1/C1 --boolean true --json
 a3s use office native set workbook.xlsx /Sheet1/D1 --formula 'SUM(B1:B12)' --json
+a3s use office native recalculate workbook.xlsx --output calculated.xlsx --json
 a3s use office native set workbook.xlsx /Sheet1/E1 --url https://example.com/data --display Data --tooltip 'Open data' --json
 a3s use office native set workbook.xlsx /Sheet1/F1 --location 'Sheet1!B2' --display B2 --json
 a3s use office native set workbook.xlsx /Sheet1/G2:H4 --url https://example.com/range --display Range --json
@@ -56,10 +58,54 @@ the scope. Rich runs and unknown XML survive, and phonetic text is excluded.
 Numeric, boolean, formula, and error values are not coerced. Zero matches are
 reported as an unchanged success.
 
-Formula writes store validated formula text, invalidate stale calculation
-caches, and request application recalculation. The native engine does not yet
-provide a complete formula evaluator. Check `formula_not_evaluated` and
-`formula_eval_error` issue records before delivery.
+Formula writes remove one optional leading `=`, parse the body with bounded
+Excel operator/reference syntax, store the normalized formula text, invalidate
+stale calculation caches, and request recalculation. They do not calculate
+implicitly. A syntax failure returns
+`use.office.spreadsheet_formula_invalid` with byte and character offsets and
+leaves the document unchanged.
+
+Run `office native recalculate` in place or with `--output` to build the
+dependency graph, calculate supported formulas, and atomically write typed
+cached values and dynamic-array spills. The same operation is available as the
+`recalculate-spreadsheet-formulas` batch/MCP mutation and as read-only or
+writeback Rust APIs. Supported functions are `SUM`, `AVERAGE`, `MIN`, `MAX`,
+`COUNT`, `COUNTA`, `ABS`, `SQRT`, `POWER`, `MOD`, `ROUND`, `IF`, `IFERROR`,
+`AND`, `OR`, `NOT`, `CONCAT`, `CONCATENATE`, `ROW`, `COLUMN`, `SEQUENCE`,
+`TRANSPOSE`, `PI`, and `NA`. Cross-sheet ranges, scoped names, typed errors,
+array broadcasting, spill references, and ordinary Excel operators are
+supported. ListObject structured references resolve a table `name` or
+`displayName`: `Sales[Qty]` selects one data column,
+`Sales[[Qty]:[Price]]` selects a contiguous data-column range, and `#All`,
+`#Data`, `#Headers`, or `#Totals` selects structural rows. `Sales[@Qty]`,
+`Sales[[#This Row],[Qty]]`, and table-local `[@Qty]` select the current data
+row; table-local forms require the formula cell to be inside the inferred
+table.
+
+Spill children are read-only; update or remove the anchor instead. A blocked
+spill produces typed `#SPILL!`, while formula error values such as `#DIV/0!`
+remain typed cell results. Circular dependencies, unsupported or qualified
+functions, missing tables, columns, or requested header/totals rows, disjoint
+or non-canonical structured-reference forms, and external-workbook reads fail
+with stable errors and leave the complete mutation batch unchanged. No shell,
+script runtime, or external workbook is invoked. Limits are 8,192 formula
+characters, depth 128 across both AST and nested named-reference resolution,
+8,192 AST nodes, 100,000 reference areas per value, 100,000 graph formulas,
+1,000,000 dependency edges, 1,000,000 graph reference visits, 100,000
+materialized cells per array or function call, 100,000 cumulative spill
+children per pass, 200,000 OOXML cell writes, and 1 MiB per text result. All
+formula text results together are limited to 8 MiB per pass. Check
+`formula_not_evaluated` and `formula_eval_error` issue records after the pass.
+
+Semantic cell reads expose string-valued `formulaCached` on formula anchors and
+`valuePresent` on every cell. A recalculated anchor reports
+`formulaCached=true`; a formula stored without `<v>` reports `false`. Spill
+children contain cached values but no independent `formula` field.
+
+Exact replay accepts canonical formula storage and canonical array anchors only
+when the array result is natively cached. It fails closed with
+`use.office.dump_unsupported` for non-reproducible physical storage such as
+explicit `t="normal"` formulas and uncached or malformed array anchors.
 
 Hyperlinks target one cell or a bounded rectangular range. A missing single
 cell is auto-created; a range link neither creates cells nor rewrites their
@@ -78,6 +124,77 @@ author or text through the comment path; Spreadsheet rejects separate initials
 and slide coordinates instead of ignoring them. Native removal also cleans up
 the matching VML note shape and removes unused comment/VML parts. Threaded
 comments, replies, writable dates, and rich bodies are not yet native.
+
+## Delimited Import and Frozen Panes
+
+Import one bounded UTF-8 CSV or TSV source into an existing worksheet:
+
+```bash
+# .tsv and .tab infer TSV; every other file extension defaults to CSV.
+a3s use office native import workbook.xlsx /Sheet1 source.csv \
+  --header \
+  --start-cell B2 \
+  --json
+
+# Stdin is bounded too. State the format instead of relying on its CSV default.
+a3s use office native import workbook.xlsx /Sheet1 \
+  --stdin \
+  --format tsv \
+  --output imported.xlsx \
+  --json
+```
+
+Supply exactly one positional source, `--file <source>`, or `--stdin`. Files
+must be regular, non-symlink files. One request accepts at most 8 MiB and a
+100,000-cell rectangular target within Excel's row and column bounds. The
+parser accepts a leading UTF-8 BOM, CRLF, quoted delimiters, embedded quoted
+newlines, and doubled quotes. It rejects unclosed quotes, quotes inside
+unquoted fields, and non-boundary content after a closing quote rather than
+guessing.
+
+An explicit empty field clears an existing target cell value while retaining
+its unrelated style and extension content. A missing trailing field in a
+ragged source row leaves that target cell unchanged, and a blank target is not
+materialized just to represent emptiness. Import infers leading-`=` formulas,
+finite numbers, booleans, ISO dates/times, and otherwise text. Dates honor the
+workbook's 1900/1904 date system and receive the canonical native date number
+format. Inferred formulas pass the same bounded syntax parser as direct cell
+writes, are stored, and are marked for recalculation. Import does not calculate
+them implicitly; run `office native recalculate` when fresh cached values are
+required.
+
+`--header` treats the first imported row as headers. In the same atomic
+transaction it adds or replaces the worksheet AutoFilter over the imported
+extent and adds or replaces one canonical frozen pane below the header. Inspect
+existing `/Sheet1/autofilter` and `/Sheet1/freeze` state first when importing
+into a populated worksheet.
+
+Read or remove the frozen pane through its stable semantic path:
+
+```bash
+a3s use office native get workbook.xlsx /Sheet1/freeze --json
+a3s use office native query workbook.xlsx frozen-pane --json
+a3s use office native remove workbook.xlsx /Sheet1/freeze --json
+```
+
+Rust, versioned batch, and standard MCP can set a canonical pane independently:
+
+```json
+{
+  "operation": "set-spreadsheet-frozen-pane",
+  "sheet": "/Sheet1",
+  "pane": {
+    "frozenRows": 1,
+    "frozenColumns": 0,
+    "topLeftCell": "A2"
+  }
+}
+```
+
+`topLeftCell` must be below and to the right of every frozen split. Imported
+split panes, vendor attributes, unknown children, or unsupported view state
+remain readable with `nativeMutable=false` and fail closed on set/remove.
+Strict and transitional SpreadsheetML are preserved.
 
 ## Cell Text Formatting
 
@@ -391,6 +508,18 @@ a3s use office native set workbook.xlsx '/Sheet1/table[1]' \
 a3s use office native remove workbook.xlsx '/Sheet1/table[1]' --json
 ```
 
+Table `set` rewrites common structured references when `name`, effective
+`displayName`, or position-mapped column names change. The audit covers cell
+formulas, workbook defined names, conditional-format and data-validation
+formulas, charts, and formula carriers in table parts. String literals and
+external-workbook references remain unchanged. Table-local forms such as
+`[@Qty]` are rewritten only with provable ListObject ownership; an unsafe local
+rewrite or local reference across a range/header/totals-row change fails with
+`use.office.spreadsheet_table_formula_rewrite_unsupported`. Removing a table
+still targeted by a structured reference fails with
+`use.office.spreadsheet_table_referenced`. Both failures roll back the complete
+mutation.
+
 Provide exactly one non-empty, case-insensitively unique column name for every
 range column. Table `name` and optional `displayName` use Excel identifier
 grammar, are limited to 255 characters, may not resemble A1/R1C1 references,
@@ -512,7 +641,9 @@ rejected; use cells as the list source instead. Date inputs in valid
 workbook's declared 1900 or 1904 date system. Time inputs in `HH:MM` or
 `HH:MM:SS` form become day fractions. Range, defined-name, dynamic spill, and
 function sources such as `INDIRECT(...)` remain formulas. Other formula text is
-stored after removing one optional leading `=` and is never evaluated by A3S.
+stored after removing one optional leading `=`; data-validation rule predicates
+are not executed by either the validation writer or the cell-formula
+recalculation pass.
 
 Each rule accepts 1–1,024 normalized rectangular A1 areas and a worksheet
 accepts at most 65,534 rules. Formula fields are limited to 255 characters;
@@ -556,8 +687,8 @@ children would be lost, and final removal fails if unknown collection data
 would be discarded. Strict/transitional OOXML, atomic batch rollback, and
 exact replay are supported. This capability does not add table calculated
 columns/totals functions, date-group/color/icon filters, unsupported imported
-sort-state variants, charts, pivots, formula evaluation, or Excel layout
-fidelity.
+sort-state variants, charts, pivots, data-validation predicate execution, or
+Excel layout fidelity.
 
 ## Conditional Formatting
 
@@ -668,9 +799,10 @@ survive a set/remove operation fails closed. Imported multi-rule carriers share
 one range: keep that range unchanged when updating one child rule.
 
 Canonical replay, atomic rollback, CLI, and standard MCP are supported. This
-does not calculate formulas, reproduce Excel's rendered appearance, or support
-x14-only negative data-bar axes/colors, custom icon sets, table/chart/pivot
-formatting, or complete OfficeCLI/Spreadsheet parity.
+conditional-format feature does not evaluate rule formulas or reproduce
+Excel's rendered appearance, and it does not support x14-only negative data-bar
+axes/colors, custom icon sets, table/chart/pivot formatting, or complete
+OfficeCLI/Spreadsheet parity.
 
 ## Named Ranges
 
@@ -733,15 +865,16 @@ The identity is case-insensitively unique by `(name, scope)`. A defined name
 also may not collide with a ListObject table `name` or `displayName`. Do not
 edit or remove `_xlnm.*` print/filter definitions or `Slicer_*` sentinels;
 manage the owning typed feature instead. `--volatile true` maps to the OOXML
-defined-name function flag and requests recalculation. No named-range formula
-is evaluated by A3S.
+defined-name function flag and requests recalculation. The name mutation does
+not itself calculate anything; supported names referenced by cell formulas are
+resolved by an explicit native recalculation pass.
 
 Batch, standard MCP, and Rust use one complete typed value for add/set and
 ordinary typed `remove` for deletion. The writer preserves strict/transitional
 SpreadsheetML and unknown attributes. Unknown collection or child content
 fails closed when an edit cannot retain it. Exact replay includes supported
 defined names. This remains defined-name lifecycle support, not external-link
-authoring, formula evaluation, or complete Spreadsheet parity.
+authoring or complete Spreadsheet parity.
 
 ## Structure
 
@@ -757,8 +890,8 @@ a3s use office native add workbook.xlsx /Sheet1/A1 --type picture --input chart.
 
 Supported structural edits rewrite bounded A1 references and related metadata.
 Pivot-table changes, unsafe 3D references, x14-only conditional-format
-extensions, full chart authoring, and complete recalculation remain outside the
-native subset and fail closed where safety cannot be proven.
+extensions, full chart authoring, and complete Excel formula compatibility
+remain outside the native subset and fail closed where safety cannot be proven.
 
 ## Verify
 
@@ -772,4 +905,4 @@ a3s use office native watch workbook.xlsx --port 0
 
 HTML, SVG, and screenshots are sparse semantic previews, not Excel layout or
 print fidelity. Watch reloads saved revisions; it does not provide inline cell
-editing or calculate formulas.
+editing or trigger formula recalculation.

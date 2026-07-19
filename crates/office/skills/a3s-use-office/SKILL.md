@@ -94,8 +94,16 @@ available.
   is unavoidable, inspect the exact part, preserve its root QName, write to a
   distinct output, and validate the result.
 - Do not evaluate formulas through a shell or general-purpose script runtime.
-  Native formula writes request spreadsheet recalculation; they do not promise
-  a computed cached value.
+  Native cell-formula writes validate and store the expression but do not
+  compute a cached value implicitly. When fresh results are required, use
+  `office native recalculate` or the typed
+  `recalculate-spreadsheet-formulas` mutation. The closed native function
+  registry must reject unsupported functions instead of falling back to code
+  execution.
+- Treat dynamic-array spill children as read-only calculated output. Find and
+  edit or remove the formula anchor whose `formulaRef` contains the child;
+  recalculation, cache writes, spill cleanup, and every sibling mutation in
+  the batch roll back together on failure.
 - Treat external OOXML relationships as inert. Do not fetch linked resources
   while inspecting or rendering a document. Native hyperlink writes accept
   only absolute HTTP, HTTPS, or mailto URIs without embedded credentials.
@@ -124,8 +132,18 @@ available.
   `namedrange` first and use the returned `@name` plus `@scope` path for
   update/remove. Do not edit `_xlnm.*` or `Slicer_*` names, collide with a table
   name, add a formula-bar leading `=`, or use raw XML to bypass a typed
-  identity/ref error. Defined-name formulas are stored and marked for
-  recalculation, not evaluated by A3S.
+  identity/ref error. Defined-name mutations store the definition and request
+  recalculation; supported names referenced by cell formulas are resolved only
+  during an explicit native recalculation pass.
+- Import CSV or TSV only through the bounded typed import. Use exactly one
+  regular source file or `--stdin`, make `--format` explicit for stdin, and
+  inspect the target worksheet, `/Sheet/autofilter`, and `/Sheet/freeze` before
+  enabling `--header`: header mode intentionally replaces the worksheet filter
+  range and canonical frozen pane in one transaction. Explicit empty fields
+  clear existing cells; missing trailing fields in ragged rows do not. Treat
+  inferred formulas as parsed but not implicitly recalculated; run the explicit
+  native pass when cached values are required. Never bypass a malformed-quote,
+  formula-syntax, range, type, or unknown-view error with `raw-set`.
 - Treat Spreadsheet AutoFilters as typed worksheet or table structure. Query
   `autofilter` or `filtercolumn` first and inspect `nativeMutable`; use the
   stable `/Sheet/autofilter` or `/Sheet/table[N]` path for updates. Every
@@ -149,9 +167,14 @@ available.
   not overlap another table, a merge, or a worksheet AutoFilter, and do not use
   raw XML to bypass `nativeMutable=false` or an unknown-content/relationship
   error. Table criteria use the same typed filter-column values as worksheet
-  AutoFilters. Exact mutable table or data ranges without totals rows can use
-  the separate physical sort contract; unsupported embedded/imported sort
-  state remains non-mutable.
+  AutoFilters. Table set automatically rewrites common explicit structured
+  references and provably owned table-local column references when aliases or
+  position-mapped columns change. Do not bypass
+  `use.office.spreadsheet_table_formula_rewrite_unsupported` for unsafe local
+  geometry or ownership, or `use.office.spreadsheet_table_referenced` when
+  removal is blocked. Exact mutable table or data ranges without totals rows
+  can use the separate physical sort contract; unsupported embedded/imported
+  sort state remains non-mutable.
 - Keep the default OfficeCLI compatibility route separate from the native
   engine. Do not depend on OfficeCLI's private resident protocol.
 
@@ -175,6 +198,12 @@ typed thresholds, stable paths, semantic queries, and exact canonical replay.
 It owns workbook-global and
 worksheet-local Spreadsheet defined names with stable scoped paths, typed
 add/set/remove, semantic readback, and exact replay. It owns typed Spreadsheet
+formula parsing, bounded dependency graphs, a closed typed function registry,
+read-only calculation, atomic cached-value and dynamic-array spill writeback,
+CLI/MCP/batch recalculation, and exact replay. It owns typed Spreadsheet
+CSV/TSV import with bounded strict parsing, typed cell inference, explicit
+empty-cell semantics, optional header AutoFilter/frozen-pane setup, semantic
+`/Sheet/freeze` state, and exact canonical replay. It owns typed Spreadsheet
 worksheet and table AutoFilters with closed value, comparison, top/bottom, and
 dynamic criteria, stable filter paths, add/set/remove, and exact replay. It
 owns stable ordered multi-key Spreadsheet physical sorting over an explicit or
@@ -191,12 +220,12 @@ cells or bounded ranges and internal locations, and external Presentation shape
 clicks or internal jumps to existing slides. Remaining boundaries include
 modern threaded comments, replies/resolution, writable comment dates,
 rich comment bodies, Word header/footer comment anchors,
-gradient/pattern/theme fills, advanced x14 conditional-format visuals, named styles, complete formula
-calculation, formula-bearing or table-totals sorting, table calculated
+gradient/pattern/theme fills, advanced x14 conditional-format visuals, named
+styles, complete Excel function/structured-reference/external-workbook formula
+compatibility, formula-bearing or table-totals sorting, table calculated
 columns/totals functions, date-group/color/icon filters and unsupported
 embedded/imported sort-state variants, custom table styles, query
-tables/external data, advanced charts, pivots,
-and media,
+tables/external data, advanced charts, pivots, and media,
 interactive preview editing/annotations, and full Office layout fidelity. Fail
 closed or use the explicit compatibility route rather than inventing
 unsupported native behavior.

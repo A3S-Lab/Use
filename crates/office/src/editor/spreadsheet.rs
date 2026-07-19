@@ -18,17 +18,26 @@ mod auto_filter;
 mod conditional_formatting;
 mod data_validation;
 mod filter_xml;
+mod formula;
+mod import;
 mod merge;
 mod named_range;
 mod sort;
 mod structure;
 mod style;
 mod table;
+mod view;
 mod worksheet;
 
 pub(super) use arrange::{copy_node, move_node, swap_nodes};
 pub(super) use structure::{delete_columns, delete_rows, insert_columns, insert_rows};
 pub(super) use worksheet::{copy_worksheet, move_worksheet, rename_worksheet};
+
+pub(super) fn recalculate_formulas(
+    package: &mut NativeOfficePackage,
+) -> UseResult<crate::SpreadsheetFormulaCalculation> {
+    formula::recalculate(package)
+}
 
 pub(super) fn add_auto_filter(
     package: &mut NativeOfficePackage,
@@ -52,6 +61,22 @@ pub(super) fn sort_range(
     value: &super::NativeSpreadsheetSort,
 ) -> UseResult<String> {
     sort::sort(package, path, value)
+}
+
+pub(super) fn set_frozen_pane(
+    package: &mut NativeOfficePackage,
+    sheet: &str,
+    pane: &super::NativeSpreadsheetFrozenPane,
+) -> UseResult<String> {
+    view::set(package, sheet, pane)
+}
+
+pub(super) fn import_delimited(
+    package: &mut NativeOfficePackage,
+    sheet: &str,
+    import: &super::NativeSpreadsheetDelimitedImport,
+) -> UseResult<super::NativeSpreadsheetImportResult> {
+    import::apply(package, sheet, import)
 }
 
 pub(super) fn add_conditional_format(
@@ -194,6 +219,12 @@ pub(super) fn set_cell_value(
     let sheet_data = index
         .descendant("sheetData")
         .ok_or_else(|| node_not_found(path))?;
+    let prepared = formula::prepare_for_value_write(&part, sheet_data, sheet, range)?;
+    let part = crate::LosslessXmlPart::parse(part_name.to_string(), prepared)?;
+    let index = index_xml(&part)?;
+    let sheet_data = index
+        .descendant("sheetData")
+        .ok_or_else(|| node_not_found(path))?;
     let edited = set_range(&part, sheet_data, range, &value)?;
     let edited = update_dimension(part_name, edited)?;
     package.set_part(part_name, edited)?;
@@ -201,7 +232,9 @@ pub(super) fn set_cell_value(
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
-    if sort::is_path(path) {
+    if view::is_path(path) {
+        view::remove(package, path)
+    } else if sort::is_path(path) {
         sort::remove(package, path)
     } else if auto_filter::is_path(path) {
         auto_filter::remove(package, path)
@@ -221,8 +254,6 @@ pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult
 }
 
 fn remove_cell(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
-    super::comment::remove_spreadsheet_range_comments(package, path)?;
-    super::hyperlink::remove_spreadsheet_range_links(package, path)?;
     let (sheet_path, reference) = path.rsplit_once('/').ok_or_else(|| node_not_found(path))?;
     let range = CellRange::parse(reference)?;
     validate_range_size(range)?;
@@ -248,6 +279,15 @@ fn remove_cell(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
             "Spreadsheet semantic sheet has no source part.",
         )
     })?;
+    let part = package.xml_part(part_name)?;
+    let index = index_xml(&part)?;
+    let sheet_data = index
+        .descendant("sheetData")
+        .ok_or_else(|| node_not_found(path))?;
+    let prepared = formula::prepare_for_remove(&part, sheet_data, sheet, range)?;
+    package.set_part(part_name, prepared)?;
+    super::comment::remove_spreadsheet_range_comments(package, path)?;
+    super::hyperlink::remove_spreadsheet_range_links(package, path)?;
     let part = package.xml_part(part_name)?;
     let index = index_xml(&part)?;
     let sheet_data = index
@@ -638,16 +678,8 @@ fn normalize_cell_value(value: &SpreadsheetCellValue) -> UseResult<SpreadsheetCe
             Ok(SpreadsheetCellValue::Boolean { value: *value })
         }
         SpreadsheetCellValue::Formula { expression } => {
-            let expression = expression.strip_prefix('=').unwrap_or(expression);
-            if expression.is_empty()
-                || expression.chars().count() > 8_192
-                || expression.chars().any(char::is_control)
-            {
-                return Err(editor_error(
-                    "use.office.spreadsheet_formula_invalid",
-                    "Spreadsheet formulas must contain 1-8192 non-control characters.",
-                ));
-            }
+            let expression =
+                crate::spreadsheet_formula::validate_and_normalize_formula(expression)?;
             Ok(SpreadsheetCellValue::Formula {
                 expression: expression.to_string(),
             })

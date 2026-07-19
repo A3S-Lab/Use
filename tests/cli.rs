@@ -1146,6 +1146,31 @@ fn native_office_cli_writes_typed_spreadsheet_values_without_an_officecli_provid
     let formula: serde_json::Value = serde_json::from_slice(&formula.stdout).unwrap();
     assert_eq!(formula["data"]["node"]["format"]["formula"], "A1*2");
 
+    let before_invalid_formula = std::fs::read(&document).unwrap();
+    let invalid_formula = Command::new(binary())
+        .args([
+            "office",
+            "native",
+            "set",
+            document.to_str().unwrap(),
+            "/Sheet1/C2",
+            "--formula",
+            "SUM(A1",
+            "--json",
+        ])
+        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
+        .output()
+        .unwrap();
+    assert!(!invalid_formula.status.success(), "{invalid_formula:?}");
+    let invalid_formula: serde_json::Value =
+        serde_json::from_slice(&invalid_formula.stdout).unwrap();
+    assert_eq!(
+        invalid_formula["error"]["code"],
+        "use.office.spreadsheet_formula_invalid"
+    );
+    assert_eq!(invalid_formula["error"]["details"]["characterOffset"], 6);
+    assert_eq!(std::fs::read(&document).unwrap(), before_invalid_formula);
+
     std::fs::write(
         &mutations,
         serde_json::to_vec(&serde_json::json!({

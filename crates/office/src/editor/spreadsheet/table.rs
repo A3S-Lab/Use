@@ -1,13 +1,17 @@
+use std::collections::BTreeMap;
+
 use a3s_use_core::UseResult;
 
 use super::{editor_error, validate_mutation_path, SpreadsheetCellValue};
 use crate::editor::part::{dialect, relationship_part, relative_target};
 use crate::editor::NativeSpreadsheetTable;
 use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
+use crate::spreadsheet_formula::StructuredReferenceRewritePlan;
 use crate::spreadsheet_reference::{CellRange, CellReference};
 use crate::xml_edit::index_xml;
 use crate::{DocumentKind, NativeOfficePackage, RelationshipSource, RelationshipTarget};
 
+mod formula;
 mod xml;
 
 const MAX_SPREADSHEET_TABLES: usize = 65_536;
@@ -97,7 +101,7 @@ pub(super) fn set(
     let range = table.validate()?;
     table.range = range.a1();
     let snapshot = NativeOfficeDocument::from_package(package.clone())?;
-    let node = snapshot.get(&resolved.path, 0)?;
+    let node = snapshot.get(&resolved.path, 3)?;
     if node.format.get("nativeMutable").map(String::as_str) != Some("true") {
         return Err(editor_error(
             "use.office.spreadsheet_table_unknown_content",
@@ -110,6 +114,8 @@ pub(super) fn set(
             "Keep the imported table unchanged or inspect its OOXML before replacing it through the typed table contract.",
         ));
     }
+    let old_table = NativeSpreadsheetTable::from_semantic_node(&node)?;
+    let old_range = CellRange::parse(&old_table.range)?;
     validate_identity(&snapshot, &table, Some(&resolved.path))?;
     validate_range(
         package,
@@ -118,35 +124,118 @@ pub(super) fn set(
         range,
         Some(&resolved.path),
     )?;
-    let part = package.xml_part(&resolved.part)?;
+    let (plan, formula_rewrite_required) = table_formula_rewrite_plan(
+        &old_table,
+        &table,
+        old_range,
+        range,
+        resolved.sheet.path.trim_start_matches('/'),
+    );
+    let mut candidate = package.clone();
+    if formula_rewrite_required {
+        formula::rewrite_table_references(
+            &mut candidate,
+            &resolved.sheet.part,
+            &resolved.part,
+            old_range,
+            &plan,
+        )?;
+    }
+    let part = candidate.xml_part(&resolved.part)?;
     let edited = xml::replace_table(&part, &table, range)?;
-    package.set_part(&resolved.part, edited)?;
-    stamp_headers(package, &resolved.sheet, &table, range)?;
-    super::mark_workbook_for_recalculation(package)?;
+    candidate.set_part(&resolved.part, edited)?;
+    stamp_headers(&mut candidate, &resolved.sheet, &table, range)?;
+    super::mark_workbook_for_recalculation(&mut candidate)?;
+    *package = candidate;
     Ok(resolved.path)
 }
 
 pub(super) fn remove(package: &mut NativeOfficePackage, path: &str) -> UseResult<()> {
     let resolved = resolve_table(package, path)?;
     validate_relationship_graph(package, &resolved)?;
-    let worksheet = package.xml_part(&resolved.sheet.part)?;
+    let snapshot = NativeOfficeDocument::from_package(package.clone())?;
+    let node = snapshot.get(&resolved.path, 0)?;
+    let name = required_table_format(&node, "name")?.to_string();
+    let display_name = required_table_format(&node, "displayName")?.to_string();
+    let range = CellRange::parse(required_table_format(&node, "ref")?)?;
+    let plan = StructuredReferenceRewritePlan::removal(
+        name.clone(),
+        resolved.sheet.path.trim_start_matches('/'),
+        [name, display_name],
+    );
+    let mut candidate = package.clone();
+    formula::rewrite_table_references(
+        &mut candidate,
+        &resolved.sheet.part,
+        &resolved.part,
+        range,
+        &plan,
+    )?;
+    let worksheet = candidate.xml_part(&resolved.sheet.part)?;
     let worksheet = xml::remove_table_part_reference(&worksheet, &resolved.relationship_id)?;
-    package.set_part(&resolved.sheet.part, worksheet)?;
+    candidate.set_part(&resolved.sheet.part, worksheet)?;
     crate::opc_edit::remove_relationship(
-        package,
+        &mut candidate,
         &relationship_part(&resolved.sheet.part),
         &resolved.relationship_id,
     )?;
-    let content_types = package.opc_model()?.content_types().clone();
+    let content_types = candidate.opc_model()?.content_types().clone();
     if content_types.override_for_part(&resolved.part).is_some() {
-        crate::opc_edit::remove_content_type_override(package, &resolved.part)?;
+        crate::opc_edit::remove_content_type_override(&mut candidate, &resolved.part)?;
     }
-    package.remove_part(&resolved.part)?;
+    candidate.remove_part(&resolved.part)?;
     let table_relationships = relationship_part(&resolved.part);
-    if package.contains_part(&table_relationships) {
-        package.remove_part(&table_relationships)?;
+    if candidate.contains_part(&table_relationships) {
+        candidate.remove_part(&table_relationships)?;
     }
-    super::mark_workbook_for_recalculation(package)
+    super::mark_workbook_for_recalculation(&mut candidate)?;
+    *package = candidate;
+    Ok(())
+}
+
+fn table_formula_rewrite_plan(
+    old: &NativeSpreadsheetTable,
+    new: &NativeSpreadsheetTable,
+    old_range: CellRange,
+    new_range: CellRange,
+    sheet: &str,
+) -> (StructuredReferenceRewritePlan, bool) {
+    let old_display_name = old.display_name.as_deref().unwrap_or(&old.name);
+    let new_display_name = new.display_name.as_deref().unwrap_or(&new.name);
+    let mut aliases = BTreeMap::new();
+    aliases.insert(old.name.to_lowercase(), new.name.clone());
+    aliases.insert(
+        old_display_name.to_lowercase(),
+        new_display_name.to_string(),
+    );
+
+    let mut columns = BTreeMap::new();
+    for (index, old_column) in old.columns.iter().enumerate() {
+        let replacement = new.columns.get(index).map(|column| column.name.clone());
+        if replacement.as_deref() != Some(old_column.name.as_str()) {
+            columns.insert(old_column.name.to_lowercase(), replacement);
+        }
+    }
+
+    let aliases_changed = if old.name.eq_ignore_ascii_case(old_display_name) {
+        old_display_name != new_display_name
+    } else {
+        old.name != new.name || old_display_name != new_display_name
+    };
+    let geometry_changed = old_range != new_range
+        || old.header_row != new.header_row
+        || old.totals_row != new.totals_row;
+    let rewrite_required = aliases_changed || !columns.is_empty() || geometry_changed;
+    (
+        StructuredReferenceRewritePlan::rename(
+            old.name.clone(),
+            sheet,
+            aliases,
+            columns,
+            geometry_changed,
+        ),
+        rewrite_required,
+    )
 }
 
 fn resolve_sheet(package: &NativeOfficePackage, requested: &str) -> UseResult<ResolvedSheet> {
@@ -545,6 +634,16 @@ fn spreadsheet_tables(document: &NativeOfficeDocument) -> impl Iterator<Item = &
         .filter(|node| node.node_type == OfficeNodeType::Worksheet)
         .flat_map(|sheet| sheet.children.iter())
         .filter(|node| node.node_type == OfficeNodeType::Table)
+}
+
+fn required_table_format<'a>(node: &'a DocumentNode, key: &str) -> UseResult<&'a str> {
+    node.format.get(key).map(String::as_str).ok_or_else(|| {
+        editor_error(
+            "use.office.spreadsheet_table_invalid",
+            format!("Spreadsheet table '{}' has no '{key}' property.", node.path),
+        )
+        .with_detail("path", node.path.clone())
+    })
 }
 
 fn identity_collision(name: &str, owner: &str) -> a3s_use_core::UseError {

@@ -6,13 +6,14 @@ use serde::{Deserialize, Serialize};
 use crate::discovery::office_error;
 use crate::editor::{
     NativeOfficeEditor, NativeOfficeMutation, NativeSpreadsheetAutoFilter,
-    NativeSpreadsheetConditionalFormat, NativeSpreadsheetDataValidation,
-    NativeSpreadsheetDataValidationErrorStyle, NativeSpreadsheetDataValidationOperator,
-    NativeSpreadsheetDataValidationType, NativeSpreadsheetNamedRange,
-    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetSort, NativeSpreadsheetTable,
-    SpreadsheetCellValue,
+    NativeSpreadsheetCellFormat, NativeSpreadsheetConditionalFormat,
+    NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
+    NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
+    NativeSpreadsheetFrozenPane, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
+    NativeSpreadsheetSort, NativeSpreadsheetTable, SpreadsheetCellValue,
 };
 use crate::semantic::{DocumentNode, NativeOfficeDocument, OfficeNodeType};
+use crate::spreadsheet_reference::{CellRange, CellReference};
 use crate::{DocumentKind, NativeOfficePackage};
 
 pub const NATIVE_OFFICE_REPLAY_FORMAT: &str = "a3s.office.native-replay";
@@ -327,6 +328,7 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
         ));
     }
     let mut mutations = Vec::new();
+    let mut requires_recalculation = false;
     for (sheet_offset, sheet) in sheets.into_iter().enumerate() {
         let name = sheet
             .path
@@ -351,15 +353,37 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
         let mut merged_ranges = Vec::new();
         let mut auto_filter = None;
         let mut sort_state = None;
+        let mut frozen_pane = None;
+        let mut cell_formats = Vec::new();
         let mut conditional_formats = Vec::new();
         let mut tables = Vec::new();
         let mut validations = Vec::new();
+        let spill_owners = spreadsheet_spill_owners(sheet)?;
         for child in &sheet.children {
             match child.node_type {
                 OfficeNodeType::Row => {
                     require_plain_node(child, OfficeNodeType::Row)?;
                     for cell in &child.children {
-                        require_spreadsheet_cell(cell)?;
+                        let reference = spreadsheet_cell_reference(cell)?;
+                        if spill_owners
+                            .get(&reference)
+                            .is_some_and(|anchor| *anchor != reference)
+                        {
+                            if cell.format.contains_key("formula") {
+                                return Err(dump_unsupported(
+                                    &cell.path,
+                                    "Legacy multi-cell array formula storage is not replayable.",
+                                ));
+                            }
+                            continue;
+                        }
+                        if let Some(format) = spreadsheet_cell_format(cell)? {
+                            cell_formats.push((cell.path.clone(), format));
+                        }
+                        requires_recalculation |= cell
+                            .format
+                            .get("formulaCached")
+                            .is_some_and(|cached| cached == "true");
                         mutations.push(NativeOfficeMutation::SetCellValue {
                             path: cell.path.clone(),
                             value: spreadsheet_value(cell)?,
@@ -460,6 +484,30 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
                         })?;
                     sort_state = Some((format!("{}/{}", sheet.path, reference), sort));
                 }
+                OfficeNodeType::FrozenPane => {
+                    if frozen_pane.is_some() {
+                        return Err(dump_unsupported(
+                            &child.path,
+                            "Spreadsheet replay found multiple frozen panes.",
+                        ));
+                    }
+                    if child.format.get("nativeMutable").map(String::as_str) != Some("true") {
+                        return Err(dump_unsupported(
+                            &child.path,
+                            "Spreadsheet frozen pane contains unsupported view state.",
+                        ));
+                    }
+                    frozen_pane = Some(
+                        NativeSpreadsheetFrozenPane::from_semantic_node(child).map_err(
+                            |error| {
+                                dump_unsupported(
+                                    &child.path,
+                                    format!("Spreadsheet frozen pane is not replayable: {error}"),
+                                )
+                            },
+                        )?,
+                    );
+                }
                 _ => {
                     return Err(dump_unsupported(
                         &child.path,
@@ -472,6 +520,11 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
             merged_ranges
                 .into_iter()
                 .map(|path| NativeOfficeMutation::MergeCells { path }),
+        );
+        mutations.extend(
+            cell_formats
+                .into_iter()
+                .map(|(path, format)| NativeOfficeMutation::SetCellFormat { path, format }),
         );
         mutations.extend(conditional_formats.into_iter().map(|conditional_format| {
             NativeOfficeMutation::AddConditionalFormat {
@@ -489,6 +542,12 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
             mutations.push(NativeOfficeMutation::AddSpreadsheetAutoFilter {
                 sheet: sheet.path.clone(),
                 filter,
+            });
+        }
+        if let Some(pane) = frozen_pane {
+            mutations.push(NativeOfficeMutation::SetSpreadsheetFrozenPane {
+                sheet: sheet.path.clone(),
+                pane,
             });
         }
         mutations.extend(tables.into_iter().map(|table| {
@@ -540,7 +599,108 @@ fn emit_spreadsheet(root: &DocumentNode) -> UseResult<Vec<NativeOfficeMutation>>
             "Spreadsheet root contains an unsupported semantic node.",
         ));
     }
+    if requires_recalculation {
+        mutations.push(NativeOfficeMutation::RecalculateSpreadsheetFormulas);
+    }
     Ok(mutations)
+}
+
+fn spreadsheet_spill_owners(
+    sheet: &DocumentNode,
+) -> UseResult<std::collections::BTreeMap<CellReference, CellReference>> {
+    let mut owners = std::collections::BTreeMap::new();
+    for cell in sheet
+        .children
+        .iter()
+        .filter(|node| node.node_type == OfficeNodeType::Row)
+        .flat_map(|row| &row.children)
+        .filter(|node| node.node_type == OfficeNodeType::Cell)
+    {
+        let formula_type = cell.format.get("formulaType").map(String::as_str);
+        let formula_reference = cell.format.get("formulaRef");
+        match (formula_type, formula_reference) {
+            (None, None) => continue,
+            (Some(kind), None) => {
+                return Err(dump_unsupported(
+                    &cell.path,
+                    format!(
+                        "Spreadsheet formula storage type '{kind}' is not canonical replay input."
+                    ),
+                ));
+            }
+            (Some(kind), Some(_)) if !kind.eq_ignore_ascii_case("array") => {
+                return Err(dump_unsupported(
+                    &cell.path,
+                    format!(
+                        "Spreadsheet formula storage type '{kind}' with a spill range is not replayable."
+                    ),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(dump_unsupported(
+                    &cell.path,
+                    "Spreadsheet formula spill range has no array storage type.",
+                ));
+            }
+            (Some(_), Some(_)) => {}
+        }
+        if cell.format.get("formulaCached").map(String::as_str) != Some("true") {
+            return Err(dump_unsupported(
+                &cell.path,
+                "Spreadsheet array formula has no cached native result.",
+            ));
+        }
+        let reference = formula_reference.ok_or_else(|| {
+            dump_unsupported(&cell.path, "Spreadsheet array formula has no spill range.")
+        })?;
+        let anchor = spreadsheet_cell_reference(cell)?;
+        let range = CellRange::parse(reference).map_err(|error| {
+            dump_unsupported(
+                &cell.path,
+                format!("Spreadsheet formula spill range '{reference}' is invalid: {error}"),
+            )
+        })?;
+        if !range.contains(anchor) {
+            return Err(dump_unsupported(
+                &cell.path,
+                "Spreadsheet formula spill range does not contain its anchor.",
+            ));
+        }
+        let cells = range.cell_count()?;
+        if cells > crate::MAX_SPREADSHEET_FORMULA_SPILL_CELLS
+            || owners.len().saturating_add(cells) > crate::MAX_SPREADSHEET_FORMULA_SPILL_CELLS
+        {
+            return Err(dump_unsupported(
+                &cell.path,
+                "Spreadsheet formula spills exceed the native replay cell limit.",
+            )
+            .with_detail("cells", owners.len().saturating_add(cells)));
+        }
+        for row in range.start.row..=range.end.row {
+            for column in range.start.column..=range.end.column {
+                let reference = CellReference { column, row };
+                if owners.insert(reference, anchor).is_some() {
+                    return Err(dump_unsupported(
+                        &cell.path,
+                        "Spreadsheet formula spill ranges overlap.",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(owners)
+}
+
+fn spreadsheet_cell_reference(cell: &DocumentNode) -> UseResult<CellReference> {
+    cell.path
+        .rsplit_once('/')
+        .and_then(|(_, reference)| CellReference::parse(reference).ok())
+        .ok_or_else(|| {
+            dump_unsupported(
+                &cell.path,
+                "Spreadsheet cell has an invalid semantic coordinate.",
+            )
+        })
 }
 
 fn spreadsheet_named_range(node: &DocumentNode) -> UseResult<NativeSpreadsheetNamedRange> {
@@ -723,45 +883,105 @@ fn parse_bool_format(node: &DocumentNode, key: &str, default: bool) -> UseResult
     }
 }
 
-fn require_spreadsheet_cell(cell: &DocumentNode) -> UseResult<()> {
+fn spreadsheet_cell_format(cell: &DocumentNode) -> UseResult<Option<NativeSpreadsheetCellFormat>> {
     if cell.node_type != OfficeNodeType::Cell || cell.style.is_some() || !cell.children.is_empty() {
         return Err(dump_unsupported(
             &cell.path,
             "Spreadsheet replay requires a leaf cell without semantic child nodes.",
         ));
     }
-    let allowed = [
+    let plain = [
         "column",
         "row",
         "valueType",
+        "valuePresent",
         "empty",
         "formula",
+        "formulaCached",
+        "formulaRef",
+        "formulaType",
         "merge",
         "mergeAnchor",
         "dataValidation",
         "validationType",
     ];
+    let styled = [
+        "styleIndex",
+        "baseStyleId",
+        "fontId",
+        "font",
+        "size",
+        "fillId",
+        "borderId",
+        "numberFormatId",
+        "numberFormat",
+    ];
     if let Some(key) = cell
         .format
         .keys()
-        .find(|key| !allowed.contains(&key.as_str()))
+        .find(|key| !plain.contains(&key.as_str()) && !styled.contains(&key.as_str()))
     {
         return Err(dump_unsupported(
             &cell.path,
             format!("Spreadsheet cell property '{key}' is not replayable yet."),
         ));
     }
-    Ok(())
+    if !cell.format.contains_key("styleIndex") {
+        if let Some(key) = styled.iter().find(|key| cell.format.contains_key(**key)) {
+            return Err(dump_unsupported(
+                &cell.path,
+                format!("Spreadsheet cell has style property '{key}' without a styleIndex."),
+            ));
+        }
+        return Ok(None);
+    }
+    for (key, expected) in [
+        ("baseStyleId", "0"),
+        ("fontId", "0"),
+        ("font", "Aptos"),
+        ("size", "11pt"),
+        ("fillId", "0"),
+        ("borderId", "0"),
+    ] {
+        if cell.format.get(key).map(String::as_str) != Some(expected) {
+            return Err(dump_unsupported(
+                &cell.path,
+                format!(
+                    "Spreadsheet replay supports only the native default date style; '{key}' is not '{expected}'."
+                ),
+            ));
+        }
+    }
+    let number_format = cell.format.get("numberFormat").ok_or_else(|| {
+        dump_unsupported(
+            &cell.path,
+            "Spreadsheet styled cell has no numberFormat value.",
+        )
+    })?;
+    let valid_number_format_id = cell
+        .format
+        .get("numberFormatId")
+        .and_then(|value| value.parse::<u32>().ok())
+        .is_some_and(|value| value >= 164);
+    let valid_style_index = cell
+        .format
+        .get("styleIndex")
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some();
+    if number_format != "yyyy-mm-dd" || !valid_number_format_id || !valid_style_index {
+        return Err(dump_unsupported(
+            &cell.path,
+            "Spreadsheet replay supports only the canonical native yyyy-mm-dd import style.",
+        ));
+    }
+    Ok(Some(NativeSpreadsheetCellFormat {
+        number_format: Some(number_format.clone()),
+        ..NativeSpreadsheetCellFormat::default()
+    }))
 }
 
 fn spreadsheet_value(cell: &DocumentNode) -> UseResult<SpreadsheetCellValue> {
     if let Some(expression) = cell.format.get("formula") {
-        if !cell.text.is_empty() {
-            return Err(dump_unsupported(
-                &cell.path,
-                "Spreadsheet formulas with cached results are not exactly replayable yet.",
-            ));
-        }
         return Ok(SpreadsheetCellValue::Formula {
             expression: expression.clone(),
         });

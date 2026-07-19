@@ -194,12 +194,12 @@ impl<'a> IssueScanner<'a> {
                 "Formula has an error result.",
                 "Inspect the formula inputs and replace the invalid expression or references.",
             )
-        } else if node.text.is_empty() {
+        } else if node.format.get("formulaCached").map(String::as_str) == Some("false") {
             (
                 NativeOfficeIssueSubtype::FormulaNotEvaluated,
                 NativeOfficeIssueSeverity::Warning,
                 "Formula has no cached result and requires recalculation.",
-                "Open the workbook in a conforming spreadsheet engine or run a future native recalculation pass.",
+                "Run `a3s use office native recalculate` or open the workbook in a conforming spreadsheet engine.",
             )
         } else {
             return;

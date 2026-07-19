@@ -4,14 +4,17 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::part::{NativeCreatedPart, NativeOfficePartType};
+use crate::spreadsheet_formula::SpreadsheetFormulaCalculation;
 
 mod conditional_formatting;
 mod data_validation;
 mod formatting;
 mod named_range;
 mod spreadsheet_filter;
+mod spreadsheet_import;
 mod spreadsheet_sort;
 mod spreadsheet_table;
+mod spreadsheet_view;
 
 pub use conditional_formatting::{
     NativeSpreadsheetConditionalFormat, NativeSpreadsheetConditionalFormatIconSet,
@@ -35,12 +38,18 @@ pub use spreadsheet_filter::{
     NativeSpreadsheetAutoFilter, NativeSpreadsheetDynamicFilter, NativeSpreadsheetFilterColumn,
     NativeSpreadsheetFilterCriteria,
 };
+pub use spreadsheet_import::{
+    NativeSpreadsheetDelimitedFormat, NativeSpreadsheetDelimitedImport,
+    NativeSpreadsheetImportResult, MAX_NATIVE_SPREADSHEET_IMPORT_BYTES,
+    MAX_NATIVE_SPREADSHEET_IMPORT_CELLS,
+};
 pub use spreadsheet_sort::{
     NativeSpreadsheetSort, NativeSpreadsheetSortDirection, NativeSpreadsheetSortKey,
 };
 pub use spreadsheet_table::{
     NativeSpreadsheetTable, NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle,
 };
+pub use spreadsheet_view::NativeSpreadsheetFrozenPane;
 
 /// A hyperlink destination represented without executing or resolving it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -677,6 +686,7 @@ pub enum NativeOfficeMutation {
         path: String,
         value: SpreadsheetCellValue,
     },
+    RecalculateSpreadsheetFormulas,
     AddSpreadsheetTable {
         sheet: String,
         table: NativeSpreadsheetTable,
@@ -696,6 +706,14 @@ pub enum NativeOfficeMutation {
     SortSpreadsheetRange {
         path: String,
         sort: NativeSpreadsheetSort,
+    },
+    ImportSpreadsheetDelimited {
+        sheet: String,
+        import: NativeSpreadsheetDelimitedImport,
+    },
+    SetSpreadsheetFrozenPane {
+        sheet: String,
+        pane: NativeSpreadsheetFrozenPane,
     },
     AddNamedRange {
         #[serde(rename = "namedRange")]
@@ -862,4 +880,8 @@ pub struct NativeBatchResult {
     pub created_images: Vec<NativeCreatedImage>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_replacements: Vec<NativeOfficeTextReplacementResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spreadsheet_imports: Vec<NativeSpreadsheetImportResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spreadsheet_calculations: Vec<SpreadsheetFormulaCalculation>,
 }
