@@ -43,7 +43,7 @@ impl OcrMcpServer {
 impl OcrMcpServer {
     #[tool(
         name = "ocr_doctor",
-        description = "Inspect OCR provider readiness without reading an image or making a network request",
+        description = "Inspect local PP-OCRv6 model readiness without reading an image or making a network request",
         output_schema = rmcp::handler::server::tool::cached_schema_for_type::<OcrDiagnostic>(),
         annotations(
             read_only_hint = true,
@@ -58,13 +58,13 @@ impl OcrMcpServer {
 
     #[tool(
         name = "ocr_extract",
-        description = "Extract text and available layout evidence from one bounded local image; the configured vision provider may send source bytes to its disclosed endpoint",
+        description = "Extract text, polygons, bounding boxes, and confidence from one bounded local image with PP-OCRv6; source bytes remain on this device",
         output_schema = rmcp::handler::server::tool::cached_schema_for_type::<OcrResult>(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
             idempotent_hint = true,
-            open_world_hint = true
+            open_world_hint = false
         )
     )]
     async fn ocr_extract(
@@ -88,7 +88,7 @@ impl ServerHandler for OcrMcpServer {
                 website_url: Some("https://github.com/A3S-Lab/Use".to_string()),
             },
             instructions: Some(
-                "Call ocr_doctor first. Use ocr_extract only for a local image path supplied by the task. A vision provider may send the complete image to its configured endpoint; do not use it without the user's authority. Preserve the source SHA-256 and distinguish OCR text from verified source text."
+                "Call ocr_doctor first. Use ocr_extract only for a local image path supplied by the task. PP-OCRv6 detection and recognition run locally through ONNX Runtime and never send source bytes off device. Preserve the source SHA-256 and distinguish OCR text from verified source text."
                     .to_string(),
             ),
             ..Default::default()
@@ -164,7 +164,7 @@ mod tests {
                 .annotations
                 .as_ref()
                 .and_then(|annotations| annotations.open_world_hint),
-            Some(true)
+            Some(false)
         );
     }
 }

@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use a3s_use_core::{UseError, UseResult};
 use clap::error::ErrorKind;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use serde::Serialize;
 
-use crate::{OcrClient, OcrMcpServer, OcrProviderKind, OcrRequest};
+use crate::{OcrClient, OcrMcpServer, OcrRequest};
 
 #[derive(Debug)]
 pub struct CommandOutput {
@@ -75,47 +75,16 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Inspect provider readiness without reading an image.
+    /// Inspect local PP-OCRv6 readiness without reading an image.
     Doctor,
-    /// Extract text and available layout evidence from one local image.
-    Extract {
-        path: PathBuf,
-        /// OCR language identifier; may be repeated.
-        #[arg(long = "language")]
-        languages: Vec<String>,
-        /// Tesseract page segmentation mode from 0 through 13.
-        #[arg(long = "psm")]
-        page_segmentation_mode: Option<u8>,
-        /// Override the configured OCR provider for this call.
-        #[arg(long, value_enum)]
-        provider: Option<ProviderArg>,
-        /// Vision-only extraction instruction.
-        #[arg(long)]
-        prompt: Option<String>,
-    },
+    /// Extract text and layout evidence from one local image.
+    Extract { path: PathBuf },
     /// Run an extension protocol surface.
     Serve {
         /// Serve standard MCP over stdin/stdout.
         #[arg(long)]
         mcp: bool,
     },
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum ProviderArg {
-    Auto,
-    Tesseract,
-    Vision,
-}
-
-impl From<ProviderArg> for OcrProviderKind {
-    fn from(value: ProviderArg) -> Self {
-        match value {
-            ProviderArg::Auto => Self::Auto,
-            ProviderArg::Tesseract => Self::Tesseract,
-            ProviderArg::Vision => Self::Vision,
-        }
-    }
 }
 
 pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
@@ -148,23 +117,9 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
     let client = OcrClient::from_env()?;
     match cli.command {
         Command::Doctor => CommandOutput::data(client.diagnostic()),
-        Command::Extract {
-            path,
-            languages,
-            page_segmentation_mode,
-            provider,
-            prompt,
-        } => CommandOutput::data(
-            client
-                .extract(OcrRequest {
-                    path,
-                    languages,
-                    page_segmentation_mode,
-                    provider: provider.map(Into::into),
-                    prompt,
-                })
-                .await?,
-        ),
+        Command::Extract { path } => {
+            CommandOutput::data(client.extract(OcrRequest { path }).await?)
+        }
         Command::Serve { .. } => Err(UseError::new(
             "use.ocr.command_invalid",
             "OCR MCP command dispatch reached an invalid state.",

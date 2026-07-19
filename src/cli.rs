@@ -119,7 +119,7 @@ fn help() -> CommandOutput {
             "  a3s-use office native get|query|view|watch|raw|raw-set|dump|merge|validate|create|add|add-part|set|sort|remove|move|copy|swap|insert-rows|delete-rows|insert-columns|delete-columns|rename-sheet|move-sheet|copy-sheet|batch [args] [--json]\n",
             "  a3s-use office <officecli-args...>\n",
             "  a3s-use ocr doctor [--json]\n",
-            "  a3s-use ocr extract <image> [--language <id>] [--provider <name>] [--json]\n",
+            "  a3s-use ocr extract <image> [--json]\n",
             "  a3s-use extension list|inspect|doctor [args] [--json]\n",
             "  a3s-use extension enable <publisher/name> [--json]\n",
             "  a3s-use extension disable <publisher/name> [--timeout-ms <ms>] [--json]\n",
@@ -416,6 +416,36 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
             ));
         }
     }
+    if matches!(id, "ocr" | "use/ocr") {
+        #[cfg(feature = "ocr")]
+        {
+            if option_argument(args, "--from")?.is_some() {
+                return Err(usage_error("--from is valid only for external extensions"));
+            }
+            let force = args.iter().any(|argument| argument == "--force");
+            let previous = a3s_use_ocr::ocr_status();
+            let status = a3s_use_ocr::install_ppocr_v6(force).await?;
+            let changed = force
+                || !previous.available
+                || previous.model_dir != status.model_dir
+                || previous.source != status.source;
+            let diagnostic = ocr_diagnostic();
+            return Ok(CommandOutput::success(
+                format!(
+                    "Local PP-OCRv6 model bundle is ready at {}.",
+                    status.model_dir.as_ref().map_or_else(
+                        || "an unknown path".to_string(),
+                        |path| path.display().to_string()
+                    )
+                ),
+                serde_json::json!({
+                    "component": component_value(id, &diagnostic),
+                    "changed": changed,
+                    "runtime": status
+                }),
+            ));
+        }
+    }
     if let Some(diagnostic) = builtin_diagnostic(id) {
         if option_argument(args, "--from")?.is_some() {
             return Err(usage_error("--from is valid only for external extensions"));
@@ -504,6 +534,24 @@ async fn component_uninstall(id: &str) -> UseResult<CommandOutput> {
                     "Removed A3S-managed OfficeCLI provider files."
                 } else {
                     "No A3S-managed OfficeCLI provider files are installed."
+                },
+                serde_json::json!({
+                    "component": id,
+                    "changed": changed,
+                    "builtInCommandPreserved": true
+                }),
+            ));
+        }
+    }
+    if matches!(id, "ocr" | "use/ocr") {
+        #[cfg(feature = "ocr")]
+        {
+            let changed = a3s_use_ocr::uninstall_managed_ppocr_v6().await?;
+            return Ok(CommandOutput::success(
+                if changed {
+                    "Removed A3S-managed PP-OCRv6 model files."
+                } else {
+                    "No A3S-managed PP-OCRv6 model files are installed."
                 },
                 serde_json::json!({
                     "component": id,
@@ -896,6 +944,8 @@ fn builtin_presence(id: &str) -> &'static str {
         ),
         #[cfg(feature = "office")]
         "office" | "use/office" => office_presence(a3s_use_office::office_status().source),
+        #[cfg(feature = "ocr")]
+        "ocr" | "use/ocr" => ocr_presence(a3s_use_ocr::ocr_status().source),
         _ => "external",
     }
 }
@@ -918,6 +968,16 @@ fn office_presence(source: a3s_use_office::OfficeInstallSource) -> &'static str 
         a3s_use_office::OfficeInstallSource::System => "system",
         a3s_use_office::OfficeInstallSource::Managed => "managed",
         a3s_use_office::OfficeInstallSource::Missing => "missing",
+    }
+}
+
+#[cfg(feature = "ocr")]
+fn ocr_presence(source: a3s_use_ocr::OcrInstallSource) -> &'static str {
+    match source {
+        a3s_use_ocr::OcrInstallSource::Environment => "external",
+        a3s_use_ocr::OcrInstallSource::Packaged => "packaged",
+        a3s_use_ocr::OcrInstallSource::Managed => "managed",
+        a3s_use_ocr::OcrInstallSource::Missing => "missing",
     }
 }
 

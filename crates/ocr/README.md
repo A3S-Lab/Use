@@ -2,33 +2,50 @@
 
 `a3s-use-ocr` implements the first-party built-in OCR domain for A3S Use. A3S
 Code receives it as `mcp__use_ocr__*` through the release-matched Use registry,
-without a separate extension install. It exposes the same typed extraction
-through a native CLI and standard stdio MCP, and does not silently install an
-OCR provider.
+without installing a separate extension. The native CLI and standard stdio MCP
+share one local PP-OCRv6 implementation.
 
-Provider selection is explicit:
+There is one OCR provider:
 
-- `A3S_OCR_PROVIDER=auto|tesseract|vision`
-- `A3S_OCR_TESSERACT_EXECUTABLE=/absolute/path/to/tesseract`
-- `A3S_OCR_VISION_MODEL=<model>`
-- `A3S_OCR_VISION_BASE_URL=https://provider.example/v1/`
-- `A3S_OCR_VISION_API_KEY=<secret>`
-- `A3S_OCR_TIMEOUT_MS=60000`
+- provider: `pp-ocr-v6`
+- engine: `onnx-runtime`
+- model bundle: `PP-OCRv6_small`
 
-`auto` prefers a configured or discoverable local Tesseract executable. It uses
-the vision provider only when the vision environment is configured. Remote
-vision endpoints require HTTPS and an API key; loopback HTTP is allowed for a
-local provider.
+The release packages the pinned detection and recognition models. If the model
+bundle is absent or damaged, install or repair it explicitly:
 
-Build and exercise the domain through the Use facade:
+```bash
+a3s install use/ocr
+a3s install use/ocr --force
+```
+
+`A3S_OCR_MODEL_DIR` can point development builds at an explicit model bundle.
+`A3S_USE_OCR_HOME` overrides the managed model root for packaging, tests, or an
+isolated installation. Neither setting selects another OCR backend.
+
+## Workflow
+
+For each bounded local image, the native engine:
+
+1. decodes the image and applies PP-OCRv6 BGR normalization;
+2. runs `PP-OCRv6_small_det` through ONNX Runtime;
+3. applies DB post-processing, polygon unclipping, and reading-order sorting;
+4. perspective-rectifies each text polygon and rotates tall crops;
+5. runs batched `PP-OCRv6_small_rec` inference; and
+6. applies CTC decoding and returns text, recognition/detection confidence,
+   polygons, bounding boxes, and the source SHA-256.
+
+All inference stays in the local `a3s-use` process. It does not require Python
+or PaddlePaddle, does not call an OCR API, and does not transfer image bytes off
+the device.
+
+## Commands
 
 ```bash
 a3s use ocr doctor --json
-a3s use ocr extract ./scan.png --language eng --json
+a3s use ocr extract ./scan.png --json
 a3s use mcp serve ocr
 ```
 
-The A3S Use release packages the OCR Skill beside the facade binary. A3S Code
-can first-use install that verified release and hot-plug the built-in route.
-Provider setup remains explicit: local Tesseract never sends source bytes
-off-device, while a configured remote vision provider requires parent HITL.
+Supported inputs are bounded local PNG, JPEG, WebP, GIF, BMP, and TIFF files.
+URLs and PDF rasterization are outside this crate.

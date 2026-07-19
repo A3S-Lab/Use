@@ -23,9 +23,13 @@ async-trait = "0.1"
 axum = "0.8"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
+clipper2 = { version = "=0.5.3", default-features = false }
 fs2 = "0.4"
 futures-util = "0.3"
 getrandom = "0.3"
+image = { version = "=0.25.5", default-features = false, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
+imageproc = { version = "=0.25.0", default-features = false }
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["copy-dylibs", "download-binaries", "ndarray", "std"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 quick-xml = "0.38"
 regex = "1"
@@ -33,7 +37,9 @@ rmcp = { version = "=0.8.5", default-features = false, features = ["base64", "cl
 schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 sha2 = "0.10"
+tar = "0.4"
 thiserror = "2"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "process", "sync", "time"] }
