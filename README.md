@@ -159,8 +159,8 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 
 | Domain | Origin | CLI | MCP | Skill | Runtime owner |
 | --- | --- | --- | --- | --- | --- |
-| Browser | Built in | Full Browser vocabulary | A3S Use standard MCP server | Six packaged Browser Skills | A3S Use |
-| Office | Built in | Stable Office vocabulary | Typed native preview plus OfficeCLI compatibility server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
+| Browser | Built in | Full Browser vocabulary with first-launch preparation | A3S Use standard MCP server with confirmed installer | Six packaged Browser Skills | A3S Use |
+| Office | Built in | Native Office plus first-use compatibility fallback | Typed native server with confirmed compatibility installer plus OfficeCLI server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
 | OCR | Built in | Doctor and first-use typed image extraction | `ocr_doctor`, confirmed `ocr_install`, and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
@@ -206,6 +206,7 @@ release selection and the top-level component receipt:
 
 ```bash
 a3s install use --source release
+# Optional deterministic pre-warm; normal first use prepares these as needed.
 a3s install use/browser
 a3s install use/office
 a3s use doctor --json
@@ -258,9 +259,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`BrowserPoolConfig::default()` discovers an existing Chrome-compatible browser
-and never authorizes a download. Select a managed provider or run an explicit
-component install when A3S should own the runtime.
+`BrowserPoolConfig::default()` remains non-installing for embedded callers such
+as Search. Product commands validate their arguments and then prepare the same
+shared managed runtime on the first local Browser launch when policy allows.
 
 ## Browser
 
@@ -295,12 +296,16 @@ port, requires a private bearer token, has bounded idle and maximum lifetimes,
 and shares typed Browser session state. It is an MCP deployment, not an A3S
 JSON-RPC service.
 
-Provider selection stays explicit. Discovered providers never download
-software. Managed Chrome and Lightpanda installations use bounded staging and
-atomic activation; Lightpanda assets require the publisher SHA-256. Chrome for
-Testing does not publish an independent checksum in its current version feed,
-so A3S records HTTPS provenance and the locally observed digest without claiming
-publisher verification.
+Provider selection stays typed. Embedded `Discovered*` providers never
+download software. A direct local Browser launch is first-use authority for the
+A3S product CLI; Code workers request the bounded installer through parent
+confirmation. Both paths reuse a system browser or the shared A3S-managed
+cache before downloading. Managed Chrome and Lightpanda installations use
+bounded staging and atomic activation; Lightpanda assets require the publisher
+SHA-256. Chrome for Testing does not publish an independent checksum in its
+current version feed, so A3S records HTTPS provenance and the locally observed
+digest without claiming publisher verification. Help, version, doctor, Skills,
+profiles, and MCP server startup never install a browser.
 
 See [Agent Browser Compatibility Baseline](docs/agent-browser-parity.md) for the
 locked schemas, digests, runtime evidence, and promotion criteria.
@@ -539,7 +544,10 @@ Other `0.1.x` commands and the default `mcp serve office` target still use a
 compatibility backend pinned to OfficeCLI `1.0.136`. This is a migration
 boundary, not a native-promotion claim. The default routes will be promoted
 only after mutation, fidelity, rendering, compatibility, and cross-application
-interoperability gates pass.
+interoperability gates pass. The first real compatibility CLI command prepares
+that pinned provider when first-use policy allows. In Code, the native Office
+worker requests `office_install_compat` through parent confirmation only when
+the requested operation is outside the native surface.
 
 ```bash
 # Inspect without downloading anything.
@@ -750,7 +758,8 @@ a3s use office native dump report.docx --output report.replay.json --json
 a3s use office native create restored.docx --json
 a3s use office native batch restored.docx --input report.replay.json --json
 
-# Install the current compatibility provider explicitly.
+# Optional compatibility pre-warm. The following compatibility commands also
+# prepare this pinned provider on first use.
 a3s install use/office
 a3s use office get report.docx /body --json
 a3s use office batch report.xlsx --input updates.json --json
@@ -762,7 +771,8 @@ a3s use mcp serve office-native
 a3s use mcp serve office
 ```
 
-The native MCP process exposes 12 typed tools: `office_validate`,
+The native MCP process exposes 12 document tools plus the confirmed
+`office_install_compat` compatibility installer: `office_validate`,
 `office_create`, `office_open`, `office_list`, `office_get`, `office_query`,
 `office_view`, `office_raw_xml`, `office_apply_batch`,
 `office_merge_template`, `office_save`, and `office_close`. It accepts no shell

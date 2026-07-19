@@ -15,15 +15,17 @@ compatibility backend until the native promotion gates in
 Search depends directly on the object-safe PageRenderer contract in
 a3s-use-browser. It never executes the CLI or requires a background service.
 
-Provider selection is explicit. `DiscoveredChrome` is the default and never
-downloads software. Only a `Managed*` provider or an explicit component install
-authorizes a download. Managed downloads are restricted to approved HTTPS
-hosts and redirects, bounded by size, hashed into an installation receipt,
-staged outside the active version, and atomically activated. Lightpanda assets
-must match the publisher SHA-256 exposed by GitHub Releases. Chrome for Testing's
-current version feed does not publish an independent SHA-256 value, so its
-receipt records HTTPS provenance and locally observed hashes without claiming
-publisher checksum verification.
+Provider selection is typed. `DiscoveredChrome` remains the non-installing
+default for embedded callers such as Search. A validated direct A3S Browser
+launch selects first-use preparation, while a Code worker requests the same
+bounded installer through parent confirmation. Both reuse system Chrome and
+the shared A3S-managed cache before downloading. Managed downloads are
+restricted to approved HTTPS hosts and redirects, bounded by size, hashed into
+an installation receipt, staged outside the active version, and atomically
+activated. Lightpanda assets must match the publisher SHA-256 exposed by GitHub
+Releases. Chrome for Testing's current version feed does not publish an
+independent SHA-256 value, so its receipt records HTTPS provenance and locally
+observed hashes without claiming publisher checksum verification.
 
 ## Native extension surfaces
 
@@ -93,8 +95,10 @@ compatibility provider. For resident hosts, `use/office` targets the built-in
 OfficeCLI provider is projected separately as `use/office-compat`, targeting
 the standard compatibility server without carrying the native Skill. The
 `use/ocr` route targets `ocr-native`; model readiness remains visible.
-Read-only discovery never installs models, while direct extraction uses the
-first-use policy and the MCP worker uses a separately confirmed install tool.
+Read-only discovery never installs providers. Direct Browser launch, OfficeCLI
+compatibility execution, and OCR extraction use the first-use policy. Their MCP
+workers use separately annotated installers that require parent confirmation;
+native Office needs no provider installation.
 
 The projection contains content-bound Skill references and an MCP launch target,
 never executable extension code or a generic action payload. Consumers still
@@ -424,8 +428,9 @@ Each invocation accepts argv and returns one versioned JSON document plus an
 exit status. This is CLI automation, not JSON-RPC.
 
 In 0.1.x, managed Office installation means the reviewed OfficeCLI compatibility
-release. It is fetched only by an explicit install or repair command, restricted
-to approved HTTPS hosts, bounded by size, and checked against the publisher's
+release. It is fetched by explicit preparation, the first real compatibility
+CLI command, or the confirmed native MCP installer. Downloads are restricted to
+approved HTTPS hosts, bounded by size, and checked against the publisher's
 SHA-256 before atomic activation. Compatibility execution sets
 `OFFICECLI_SKIP_UPDATE=1`; A3S upgrades are explicit component operations.
 

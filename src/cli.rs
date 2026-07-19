@@ -620,6 +620,8 @@ async fn browser(args: &[String]) -> UseResult<CommandOutput> {
 async fn office(args: &[String]) -> UseResult<CommandOutput> {
     match args.first().map(String::as_str) {
         None | Some("doctor") => doctor(Some("office")),
+        Some("-h" | "--help" | "help") => Ok(office_help()),
+        Some("-V" | "--version" | "version") => Ok(version()),
         Some("skills") => {
             #[cfg(feature = "office")]
             return crate::office_skills::run(&args[1..]).await;
@@ -641,6 +643,7 @@ async fn office(args: &[String]) -> UseResult<CommandOutput> {
         Some(_) => {
             #[cfg(feature = "office")]
             {
+                crate::first_use::ensure_office_compatibility_ready().await?;
                 let exit_code = a3s_use_office::delegate_native(args).await?;
                 Ok(CommandOutput::delegated(exit_code))
             }
@@ -651,6 +654,18 @@ async fn office(args: &[String]) -> UseResult<CommandOutput> {
             ))
         }
     }
+}
+
+fn office_help() -> CommandOutput {
+    let usage = concat!(
+        "usage:\n",
+        "  a3s-use office doctor [--json]\n",
+        "  a3s-use office skills list|get|path [args] [--json]\n",
+        "  a3s-use office native <command> [args] [--json]\n",
+        "  a3s-use office <officecli-command> [args]\n\n",
+        "Native Office is built in. The optional OfficeCLI compatibility provider is prepared on its first real command when policy allows."
+    );
+    CommandOutput::success(usage, serde_json::json!({ "usage": usage }))
 }
 
 async fn extension(args: &[String]) -> UseResult<CommandOutput> {
@@ -740,6 +755,7 @@ async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
                     }
                     #[cfg(feature = "office")]
                     {
+                        crate::first_use::ensure_office_compatibility_ready().await?;
                         let exit_code =
                             a3s_use_office::delegate_native(&["mcp".to_string()]).await?;
                         Ok(CommandOutput::delegated(exit_code))

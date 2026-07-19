@@ -64,6 +64,7 @@ name = "a3s-use-browser-driver"
 version = "0.1.1"
 dependencies = [
  "a3s-acl",
+ "a3s-use-core",
  "aes-gcm",
  "async-trait",
  "base64",
