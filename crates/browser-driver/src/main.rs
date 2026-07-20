@@ -952,7 +952,7 @@ fn run_close_all(flags: &Flags) {
 }
 
 fn main() {
-    product::initialize_environment();
+    product::initialize_process_environment();
     // Rust ignores SIGPIPE by default, causing println! to panic on broken pipes.
     // Reset to SIG_DFL so the OS terminates the process cleanly instead.
     #[cfg(unix)]

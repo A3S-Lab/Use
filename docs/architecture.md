@@ -558,11 +558,10 @@ Next:
 2. Native Office mutation, formula, rich-format, interactive-watch parity,
    layout goldens, MCP promotion, and compatibility gates defined in
    `docs/native-office.md`.
-3. Windows real-Chrome persistent sessions. Windows remains a preview build
-   until separate `a3s use browser` invocations can open and reuse a session
-   with the same runtime guarantees as macOS and Linux. Windows compilation,
-   CLI/MCP schemas, packaged assets, and non-runtime tests remain continuously
-   checked in CI meanwhile.
+3. Windows Browser promotion beyond the real Microsoft Edge core-profile E2E.
+   Windows remains a preview build until separate `a3s use browser` invocations
+   can open and reuse a session, advanced profiles pass, and cleanup has the
+   same runtime guarantees as macOS and Linux.
 4. Production publication for the official A3S extension registry, including
    an offline-held root-key policy and release automation. The client does not
    substitute a placeholder or generated key for that operational trust root.

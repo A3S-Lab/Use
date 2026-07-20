@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use super::discovery::discover_cdp_url;
@@ -756,30 +757,60 @@ fn wait_for_devtools_active_port(
 }
 
 fn wait_for_ws_url_until(
-    reader: BufReader<std::process::ChildStderr>,
+    reader: impl BufRead + Send + 'static,
     deadline: std::time::Instant,
 ) -> Result<String, String> {
     let prefix = "DevTools listening on ";
     let mut stderr_lines: Vec<String> = Vec::new();
 
-    for line in reader.lines() {
-        if std::time::Instant::now() > deadline {
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in reader.lines() {
+            if sender.send(line.map(Some)).is_err() {
+                return;
+            }
+        }
+        let _ = sender.send(Ok(None));
+    });
+
+    loop {
+        let now = std::time::Instant::now();
+        if now >= deadline {
             return Err(chrome_launch_error(
                 "Timeout waiting for Chrome DevTools URL",
                 &stderr_lines,
             ));
         }
-        let line = line.map_err(|e| format!("Failed to read Chrome stderr: {}", e))?;
-        if let Some(url) = line.strip_prefix(prefix) {
-            return Ok(url.trim().to_string());
+        match receiver.recv_timeout(deadline.saturating_duration_since(now)) {
+            Ok(Ok(Some(line))) => {
+                if let Some(url) = line.strip_prefix(prefix) {
+                    return Ok(url.trim().to_string());
+                }
+                stderr_lines.push(line);
+            }
+            Ok(Ok(None)) => {
+                return Err(chrome_launch_error(
+                    "Chrome exited before providing DevTools URL",
+                    &stderr_lines,
+                ));
+            }
+            Ok(Err(error)) => {
+                return Err(format!("Failed to read Chrome stderr: {}", error));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(chrome_launch_error(
+                    "Timeout waiting for Chrome DevTools URL",
+                    &stderr_lines,
+                ));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(chrome_launch_error(
+                    "Chrome stderr reader stopped before providing DevTools URL",
+                    &stderr_lines,
+                ));
+            }
         }
-        stderr_lines.push(line);
     }
-
-    Err(chrome_launch_error(
-        "Chrome exited before providing DevTools URL",
-        &stderr_lines,
-    ))
 }
 
 fn chrome_launch_error(message: &str, stderr_lines: &[String]) -> String {
@@ -841,7 +872,23 @@ fn chrome_launch_error(message: &str, stderr_lines: &[String]) -> String {
 }
 
 pub fn find_chrome() -> Option<PathBuf> {
-    // 1. Check Chrome installed by the A3S component lifecycle.
+    // 1. Honor the executable selected by the A3S facade or an explicit
+    // standalone driver override. This must precede managed and system
+    // discovery so doctor and launch report the same provider.
+    for name in [
+        "A3S_USE_BROWSER_EXECUTABLE_PATH",
+        "AGENT_BROWSER_EXECUTABLE_PATH",
+        "A3S_BROWSER_EXECUTABLE",
+        "CHROME",
+    ] {
+        if let Some(path) = std::env::var_os(name).map(PathBuf::from) {
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+
+    // 2. Check Chrome installed by the A3S component lifecycle.
     if let Some(p) = crate::install::find_installed_chrome() {
         return Some(p);
     }
@@ -858,7 +905,7 @@ pub fn find_chrome() -> Option<PathBuf> {
         );
     }
 
-    // 2. Check system-installed Chrome
+    // 3. Check system-installed Chrome
     #[cfg(target_os = "macos")]
     {
         let candidates = [
@@ -902,6 +949,8 @@ pub fn find_chrome() -> Option<PathBuf> {
         let candidates = [
             r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
         ];
         if let Ok(local) = std::env::var("LOCALAPPDATA") {
             let chrome = PathBuf::from(&local).join(r"Google\Chrome\Application\chrome.exe");
@@ -913,6 +962,10 @@ pub fn find_chrome() -> Option<PathBuf> {
             if brave.exists() {
                 return Some(brave);
             }
+            let edge = PathBuf::from(&local).join(r"Microsoft\Edge\Application\msedge.exe");
+            if edge.exists() {
+                return Some(edge);
+            }
         }
         for c in &candidates {
             let p = PathBuf::from(c);
@@ -922,7 +975,7 @@ pub fn find_chrome() -> Option<PathBuf> {
         }
     }
 
-    // 3. Fallback: check Puppeteer / Playwright browser caches
+    // 4. Fallback: check Puppeteer / Playwright browser caches
     if let Some(p) = find_puppeteer_chrome() {
         return Some(p);
     }
@@ -1543,6 +1596,7 @@ fn expand_tilde(path: &str) -> String {
 mod tests {
     use super::*;
     use crate::test_utils::EnvGuard;
+    use std::io;
 
     #[cfg(unix)]
     fn spawn_noop_child() -> Child {
@@ -1576,6 +1630,33 @@ mod tests {
                 assert!(path.exists());
             }
         }
+    }
+
+    #[test]
+    fn test_find_chrome_prefers_explicit_a3s_executable_aliases() {
+        let executable = std::env::current_exe().unwrap();
+        let executable = executable.to_str().unwrap();
+        let guard = EnvGuard::new(&[
+            "A3S_USE_BROWSER_EXECUTABLE_PATH",
+            "AGENT_BROWSER_EXECUTABLE_PATH",
+            "A3S_BROWSER_EXECUTABLE",
+            "CHROME",
+        ]);
+        for name in [
+            "A3S_USE_BROWSER_EXECUTABLE_PATH",
+            "AGENT_BROWSER_EXECUTABLE_PATH",
+            "A3S_BROWSER_EXECUTABLE",
+            "CHROME",
+        ] {
+            guard.remove(name);
+        }
+
+        guard.set("A3S_USE_BROWSER_EXECUTABLE_PATH", executable);
+        assert_eq!(find_chrome(), Some(PathBuf::from(executable)));
+
+        guard.remove("A3S_USE_BROWSER_EXECUTABLE_PATH");
+        guard.set("A3S_BROWSER_EXECUTABLE", executable);
+        assert_eq!(find_chrome(), Some(PathBuf::from(executable)));
     }
 
     #[test]
@@ -1627,6 +1708,44 @@ mod tests {
         let lines = vec!["info line".to_string(), "another info line".to_string()];
         let msg = chrome_launch_error("Chrome exited", &lines);
         assert!(msg.contains("last 2 lines"));
+    }
+
+    struct DelayedEof {
+        delay: Duration,
+    }
+
+    impl io::Read for DelayedEof {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            std::thread::sleep(self.delay);
+            Ok(0)
+        }
+    }
+
+    impl BufRead for DelayedEof {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            std::thread::sleep(self.delay);
+            Ok(&[])
+        }
+
+        fn consume(&mut self, _amount: usize) {}
+    }
+
+    #[test]
+    fn stderr_fallback_respects_deadline_when_reader_blocks() {
+        let started = std::time::Instant::now();
+        let error = wait_for_ws_url_until(
+            DelayedEof {
+                delay: Duration::from_millis(250),
+            },
+            started + Duration::from_millis(20),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("Timeout waiting for Chrome DevTools URL"));
+        assert!(
+            started.elapsed() < Duration::from_millis(150),
+            "stderr fallback exceeded its deadline"
+        );
     }
 
     #[test]

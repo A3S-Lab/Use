@@ -1981,7 +1981,10 @@ Web sessions. The worker is default-deny and receives only `mcp__use_*` tools;
 it cannot use the workspace, shell, unrelated MCP servers, or recursive task
 tools. Projected Skills provide guidance only and cannot expand permissions or
 authorize installation. Code verifies their projected SHA-256 before loading
-the exact bytes.
+the exact bytes. Ordinary built-in Browser, native Office, and OCR operations
+may run inside that worker, while bounded provider installers and newly
+projected extension tools retain the parent host's interactive confirmation
+boundary.
 
 The built-in Office projection is intentionally host-oriented: `use/office`
 always exposes the in-process native MCP target when MCP support is compiled,
@@ -2065,12 +2068,14 @@ details.
 | macOS arm64 / x86_64 | Supported | Managed providers, extension lifecycle, complete Browser compatibility gates, and release archives |
 | Linux arm64 / x86_64 | Supported | Managed providers, extension lifecycle, complete Browser compatibility gates, and release archives |
 | WSL | Supported through Linux | Follows the Linux runtime and filesystem contract |
-| Windows x86_64 | Preview / roadmap | Compile, command, MCP schema, Skill, packaging, and non-Browser-runtime checks only |
+| Windows x86_64 | Preview / roadmap | Release packaging plus real Microsoft Edge core-profile, native Office, OfficeCLI, and local OCR process coverage |
 
-Windows is not currently part of the Browser runtime compatibility claim. It
-will be promoted after real-Chrome sessions persist across separate
-`a3s use browser` invocations with the same bounded startup, cleanup, and
-lifecycle guarantees as macOS and Linux.
+Windows is not yet part of the complete Browser compatibility claim. The
+default 31-tool core profile now has real Microsoft Edge evidence through Code
+TUI and standard MCP, including bounded Doctor, namespaced daemon startup,
+navigation, interaction, screenshots, reads, tabs, and cleanup. Promotion still
+requires persistent sessions across separate invocations plus the advanced
+Browser profiles and the same lifecycle guarantees as macOS and Linux.
 
 ## Development
 

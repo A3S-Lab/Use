@@ -12843,6 +12843,7 @@ printf '%s' '{"protocol":"agent-browser.plugin.v1","success":true,"browser":{"cd
     #[tokio::test]
     async fn test_build_fetch_patterns_empty_state() {
         let state = DaemonState::new();
+        *state.domain_filter.write().await = None;
         let patterns = build_fetch_patterns(&state).await;
         assert!(
             patterns.is_empty(),
@@ -12853,6 +12854,7 @@ printf '%s' '{"protocol":"agent-browser.plugin.v1","success":true,"browser":{"cd
     #[tokio::test]
     async fn test_build_fetch_patterns_with_routes() {
         let state = DaemonState::new();
+        *state.domain_filter.write().await = None;
         {
             let mut routes = state.routes.write().await;
             routes.push(super::RouteEntry {
@@ -12915,6 +12917,7 @@ printf '%s' '{"protocol":"agent-browser.plugin.v1","success":true,"browser":{"cd
     #[tokio::test]
     async fn test_build_fetch_patterns_collapses_repeated_wildcards() {
         let state = DaemonState::new();
+        *state.domain_filter.write().await = None;
         {
             let mut routes = state.routes.write().await;
             routes.push(super::RouteEntry {
