@@ -5,6 +5,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod release;
+
+pub use release::{
+    HttpHealthContract, McpReleaseDescriptor, McpServiceContract, McpServiceTransport,
+    ReleaseArtifact, ReleaseCompatibility, ReleaseDependency, ReleaseKind, ReleaseProvenance,
+    ReleaseResolution, SkillBindingContract, SkillBindingTarget, SkillContentContract,
+    SkillReleaseDescriptor, MAX_RELEASE_DESCRIPTOR_BYTES, MCP_RELEASE_SCHEMA, SKILL_RELEASE_SCHEMA,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct UseSessionId(String);

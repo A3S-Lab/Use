@@ -122,6 +122,22 @@ start `a3s-use mcp serve <target>` as a standard MCP server and load `SKILL.md`
 through their native Skill registry. The capability commands are versioned JSON
 CLI output, not a new RPC transport.
 
+### Immutable release descriptors
+
+The live capability projection describes locally callable surfaces; it is not
+the Cloud release record. `a3s-use-core` separately owns the versioned
+`a3s.use.mcp-release.v1` and `a3s.use.skill-release.v1` machine contracts.
+Their OLPC canonical JSON digest binds source commit, admitted manifest,
+artifact, compatibility, and exact release dependencies.
+
+MCP v1 maps only a digest-pinned OCI artifact and standard Streamable HTTP
+health/lifecycle contract to a Runtime Service. Skill v1 maps only a
+content-bound `SKILL.md` bundle to immutable Agent input. It has no executable,
+port, health, or Runtime fields and cannot be deployed alone. Cloud resolves
+artifact storage separately by digest; mutable tags and source branches never
+enter release identity. The complete contract and cross-SDK fixtures are in
+[release descriptors](release-descriptors.md).
+
 ## Component-backed routes
 
 `box` is a reserved Use route backed by the independently managed A3S Box
@@ -530,6 +546,10 @@ Implemented:
     provenance receipts. Registry upgrades restore the recorded source and
     channel, reject identity drift and version downgrades, and converge before
     payload download when the installed signed target is already current.
+18. Canonical MCP and Skill release descriptors with immutable provenance,
+    artifact and dependency digests, typed compatibility gates, hosted MCP
+    health/lifecycle metadata, Agent-input-only Skill binding, and cross-SDK
+    digest fixtures.
 
 Next:
 
