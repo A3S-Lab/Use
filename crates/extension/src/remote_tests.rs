@@ -92,6 +92,10 @@ async fn tuf_install_records_signed_provenance_and_converges() {
     assert_eq!(provenance.version, PACKAGE_VERSION);
     assert_eq!(provenance.sha256, repository.target_sha256);
     assert!(installed.extension.cli_executable().unwrap().is_file());
+    let package_root = &installed.extension.receipt.package_root;
+    assert!(package_root.join("web/activity.html").is_file());
+    assert!(package_root.join("web/activity.css").is_file());
+    assert!(package_root.join("web/activity.js").is_file());
 
     server.clear_requests();
     let second = registry

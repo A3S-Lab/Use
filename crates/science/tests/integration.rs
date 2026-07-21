@@ -211,7 +211,7 @@ fn packaged_manifest_declares_native_read_only_surfaces() {
     assert_eq!(manifest.contributes.activity_bar.len(), 1);
     let activity = &manifest.contributes.activity_bar[0];
     assert_eq!(activity.id, "research");
-    assert_eq!(activity.title, "Science");
+    assert_eq!(activity.title, "科研");
     assert_eq!(activity.icon, "flask-conical");
     assert_eq!(activity.entry, Path::new("web/activity.html"));
     assert_eq!(activity.skill, "a3s-use-science");
@@ -222,6 +222,55 @@ fn packaged_manifest_declares_native_read_only_surfaces() {
                 .as_path(),
         )
         .unwrap();
+}
+
+#[test]
+fn packaged_research_activity_declares_multiple_disciplines_and_subfields() {
+    let activity = include_str!("../package/web/activity.html");
+    let styles = include_str!("../package/web/activity.css");
+    let script = include_str!("../package/web/activity.js");
+    let catalog = activity
+        .split_once("<script type=\"application/json\" id=\"discipline-catalog\">")
+        .and_then(|(_, remainder)| remainder.split_once("</script>"))
+        .map(|(json, _)| json)
+        .expect("research Activity must embed its discipline catalog");
+    let catalog: serde_json::Value = serde_json::from_str(catalog).unwrap();
+    let disciplines = catalog
+        .as_array()
+        .expect("discipline catalog must be a JSON array");
+    assert!(disciplines.len() >= 10);
+    for discipline in disciplines {
+        assert!(discipline["id"].as_str().is_some());
+        assert!(discipline["label"].as_str().is_some());
+        assert!(discipline["subfields"].as_array().unwrap().len() >= 4);
+        assert!(discipline["sources"].as_array().unwrap().len() >= 3);
+    }
+
+    let life_sciences = disciplines
+        .iter()
+        .find(|discipline| discipline["id"] == "life-sciences")
+        .expect("life sciences must be represented");
+    assert!(life_sciences["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|source| source["packageSkill"] == true));
+    let computer_science = disciplines
+        .iter()
+        .find(|discipline| discipline["id"] == "computer-science")
+        .expect("computer science must be represented");
+    assert!(computer_science["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|source| source["packageSkill"] == false));
+    assert!(activity.contains("href=\"./activity.css\""));
+    assert!(activity.contains("src=\"./activity.js\""));
+    assert!(!activity.contains("<style>"));
+    assert!(!activity.contains("<script>"));
+    assert!(styles.contains(".discipline-options"));
+    assert!(script.contains("usePackageSkill"));
+    assert!(script.contains("a3s.activity.v1"));
 }
 
 #[test]
@@ -270,6 +319,22 @@ async fn real_science_package_installs_hot_upgrades_dispatches_and_uninstalls() 
         .unwrap();
     assert!(installed.changed);
     let first_root = installed.extension.receipt.package_root.clone();
+    for (relative, expected) in [
+        (
+            "web/activity.html",
+            include_bytes!("../package/web/activity.html").as_slice(),
+        ),
+        (
+            "web/activity.css",
+            include_bytes!("../package/web/activity.css").as_slice(),
+        ),
+        (
+            "web/activity.js",
+            include_bytes!("../package/web/activity.js").as_slice(),
+        ),
+    ] {
+        assert_eq!(std::fs::read(first_root.join(relative)).unwrap(), expected);
+    }
     let lease = registry.acquire_route("science").await.unwrap().unwrap();
     let executable = lease.extension().cli_executable().unwrap();
     let diagnostic = Command::new(executable)
@@ -310,6 +375,8 @@ fn create_science_package(root: &Path) {
     let binary = root.join("bin/a3s-use-science");
     let skill = root.join("skills/a3s-use-science/SKILL.md");
     let activity = root.join("web/activity.html");
+    let activity_styles = root.join("web/activity.css");
+    let activity_script = root.join("web/activity.js");
     std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
     std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
     std::fs::create_dir_all(activity.parent().unwrap()).unwrap();
@@ -325,4 +392,10 @@ fn create_science_package(root: &Path) {
     )
     .unwrap();
     std::fs::write(&activity, include_str!("../package/web/activity.html")).unwrap();
+    std::fs::write(
+        &activity_styles,
+        include_str!("../package/web/activity.css"),
+    )
+    .unwrap();
+    std::fs::write(&activity_script, include_str!("../package/web/activity.js")).unwrap();
 }

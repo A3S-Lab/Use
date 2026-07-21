@@ -21,7 +21,7 @@ extension "a3s/science" {
 
   contributes {
     activity_bar "research" {
-      title       = "Science"
+      title       = "科研"
       description = "Prepare evidence-backed life-science research tasks."
       icon        = "flask-conical"
       entry       = "web/activity.html"

@@ -171,7 +171,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 pub(crate) fn extension_archive(version: &str) -> Vec<u8> {
     let manifest = format!(
-        "extension \"a3s/science\" {{\n  schema_version = 1\n  version = \"{version}\"\n  route = \"science\"\n  actions = [\"read\"]\n\n  cli {{\n    executable = \"bin/a3s-use-science\"\n    json_output = true\n  }}\n\n  skill {{\n    path = \"skills/science/SKILL.md\"\n  }}\n\n  contributes {{\n    activity_bar \"research\" {{\n      title = \"Science\"\n      description = \"Explore scientific sources.\"\n      icon = \"flask-conical\"\n      entry = \"web/activity.html\"\n      skill = \"science\"\n      order = 120\n    }}\n  }}\n}}\n"
+        "extension \"a3s/science\" {{\n  schema_version = 1\n  version = \"{version}\"\n  route = \"science\"\n  actions = [\"read\"]\n\n  cli {{\n    executable = \"bin/a3s-use-science\"\n    json_output = true\n  }}\n\n  skill {{\n    path = \"skills/science/SKILL.md\"\n  }}\n\n  contributes {{\n    activity_bar \"research\" {{\n      title = \"科研\"\n      description = \"Explore scientific sources.\"\n      icon = \"flask-conical\"\n      entry = \"web/activity.html\"\n      skill = \"science\"\n      order = 120\n    }}\n  }}\n}}\n"
     );
     let mut bytes = Vec::new();
     {
@@ -199,7 +199,19 @@ pub(crate) fn extension_archive(version: &str) -> Vec<u8> {
             &mut archive,
             "package/web/activity.html",
             0o644,
-            b"<!doctype html><title>Science</title><main>Science fixture</main>",
+            b"<!doctype html><title>Science</title><link rel=\"stylesheet\" href=\"./activity.css\"><main>Science fixture</main><script src=\"./activity.js\"></script>",
+        );
+        append_tar_file(
+            &mut archive,
+            "package/web/activity.css",
+            0o644,
+            b"main { display: block; }\n",
+        );
+        append_tar_file(
+            &mut archive,
+            "package/web/activity.js",
+            0o644,
+            b"window.parent.postMessage({ protocol: 'a3s.activity.v1', type: 'activity.ready' }, '*');\n",
         );
         archive.finish().unwrap();
     }

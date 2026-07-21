@@ -1,396 +1,370 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Science Research</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #f7f8fa;
-        --panel: #ffffff;
-        --soft: #f0f2f5;
-        --line: #dfe3e8;
-        --ink: #191b20;
-        --muted: #6f7580;
-        --blue: #2864e8;
-        --green: #138a65;
-        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-
-      :root[data-theme="dark"] {
-        color-scheme: dark;
-        --bg: #101118;
-        --panel: #171820;
-        --soft: #21232c;
-        --line: #2d3039;
-        --ink: #f2f3f5;
-        --muted: #a1a6b0;
-        --blue: #76a8ff;
-        --green: #45d09a;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      html,
-      body {
-        min-height: 100%;
-        margin: 0;
-      }
-
-      body {
-        padding: 28px;
-        background:
-          radial-gradient(circle at 82% 5%, color-mix(in srgb, var(--blue) 9%, transparent), transparent 28%),
-          var(--bg);
-        color: var(--ink);
-      }
-
-      main {
-        width: min(960px, 100%);
-        margin: 0 auto;
-      }
-
-      header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 24px;
-        margin-bottom: 20px;
-      }
-
-      .eyebrow {
-        margin: 0 0 5px;
-        color: var(--blue);
-        font-size: 11px;
-        font-weight: 750;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-
-      h1 {
-        margin: 0;
-        font-size: clamp(24px, 4vw, 38px);
-        letter-spacing: -0.04em;
-        line-height: 1.1;
-      }
-
-      header p:last-child {
-        max-width: 660px;
-        margin: 10px 0 0;
-        color: var(--muted);
-        font-size: 14px;
-        line-height: 1.65;
-      }
-
-      .host-status {
-        display: inline-flex;
-        flex: 0 0 auto;
-        align-items: center;
-        gap: 7px;
-        padding: 6px 9px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        background: var(--panel);
-        color: var(--muted);
-        font-size: 11px;
-      }
-
-      .host-status::before {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--green);
-        content: "";
-      }
-
-      form {
-        display: grid;
-        gap: 14px;
-        padding: 20px;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        background: var(--panel);
-        box-shadow: 0 16px 42px rgb(20 24 40 / 7%);
-      }
-
-      label,
-      fieldset {
-        display: flex;
-        min-width: 0;
-        flex-direction: column;
-        gap: 7px;
-        margin: 0;
-        padding: 0;
-        border: 0;
-      }
-
-      label > span,
-      legend {
-        color: var(--muted);
-        font-size: 11px;
-        font-weight: 700;
-      }
-
-      input[type="text"],
-      select,
-      textarea {
-        width: 100%;
-        border: 1px solid var(--line);
-        border-radius: 9px;
-        outline: 0;
-        background: var(--bg);
-        color: var(--ink);
-        font: inherit;
-      }
-
-      input[type="text"],
-      select {
-        height: 42px;
-        padding: 0 11px;
-      }
-
-      textarea {
-        min-height: 88px;
-        padding: 10px 11px;
-        resize: vertical;
-      }
-
-      input:focus,
-      select:focus,
-      textarea:focus {
-        border-color: var(--blue);
-        box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 11%, transparent);
-      }
-
-      .grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(180px, 0.42fr);
-        gap: 13px;
-      }
-
-      .sources {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 8px;
-        margin-top: 7px;
-      }
-
-      .source {
-        display: flex;
-        min-width: 0;
-        align-items: center;
-        gap: 7px;
-        padding: 9px;
-        border: 1px solid var(--line);
-        border-radius: 9px;
-        background: var(--bg);
-        color: var(--ink);
-        cursor: pointer;
-        font-size: 11px;
-      }
-
-      .source:has(input:checked) {
-        border-color: color-mix(in srgb, var(--blue) 50%, var(--line));
-        background: color-mix(in srgb, var(--blue) 7%, var(--panel));
-      }
-
-      .source input {
-        accent-color: var(--blue);
-      }
-
-      footer {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 18px;
-        padding-top: 4px;
-      }
-
-      footer p {
-        max-width: 610px;
-        margin: 0;
-        color: var(--muted);
-        font-size: 10px;
-        line-height: 1.55;
-      }
-
-      button {
-        min-height: 40px;
-        flex: 0 0 auto;
-        padding: 0 16px;
-        border: 0;
-        border-radius: 9px;
-        background: var(--ink);
-        color: var(--panel);
-        cursor: pointer;
-        font: inherit;
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      button:hover {
-        transform: translateY(-1px);
-      }
-
-      .error {
-        display: none;
-        margin: 0;
-        color: #d84b4f;
-        font-size: 11px;
-      }
-
-      .error.visible {
-        display: block;
-      }
-
-      @media (max-width: 720px) {
-        body {
-          padding: 18px;
-        }
-
-        header,
-        footer {
-          flex-direction: column;
-        }
-
-        .grid {
-          grid-template-columns: 1fr;
-        }
-
-        .sources {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        button {
-          width: 100%;
-        }
-      }
-    </style>
+    <title>科研</title>
+    <link rel="stylesheet" href="./activity.css">
   </head>
   <body>
     <main>
-      <header>
+      <header class="hero">
         <div>
-          <p class="eyebrow">A3S Use · Science</p>
-          <h1>Prepare a research brief</h1>
-          <p>
-            Shape a bounded evidence request here, review exactly what will be shared, then continue in Code with the
-            package-owned Science Skill.
+          <p class="eyebrow">A3S Research Studio</p>
+          <h1>定义可核验的科研任务</h1>
+          <p class="hero-copy">
+            从学科与细分领域出发，明确科研场景、证据渠道、边界和交付物。任务将在宿主审核后进入 Code，
+            专业数据源只会在适用领域按需启用。
           </p>
         </div>
-        <span class="host-status" id="host-status">Isolated activity</span>
+        <span class="host-status" id="host-status">隔离视图 · 等待宿主校验</span>
       </header>
 
       <form id="research-form">
-        <div class="grid">
-          <label>
-            <span>Research question</span>
-            <input id="question" type="text" maxlength="500" required placeholder="e.g. What recent evidence links…?">
-          </label>
-          <label>
-            <span>Evidence objective</span>
-            <select id="objective">
-              <option value="evidence map">Evidence map</option>
-              <option value="literature comparison">Literature comparison</option>
-              <option value="target landscape">Target landscape</option>
-              <option value="trial landscape">Trial landscape</option>
-            </select>
-          </label>
-        </div>
-
-        <fieldset>
-          <legend>Sources to consider</legend>
-          <div class="sources">
-            <label class="source"><input type="checkbox" name="source" value="PubMed" checked> PubMed</label>
-            <label class="source"><input type="checkbox" name="source" value="ChEMBL"> ChEMBL</label>
-            <label class="source"><input type="checkbox" name="source" value="ClinicalTrials.gov"> ClinicalTrials</label>
-            <label class="source"><input type="checkbox" name="source" value="bioRxiv"> bioRxiv</label>
-            <label class="source"><input type="checkbox" name="source" value="Ensembl"> Ensembl</label>
+        <section class="panel">
+          <div class="section">
+            <div class="section-heading">
+              <span class="step">1</span>
+              <div>
+                <h2>选择学科与细分领域</h2>
+                <p>选择主要研究语境；交叉学科关系可在下一步补充。</p>
+              </div>
+            </div>
+            <div class="discipline-options" id="discipline-options" role="group" aria-label="主要学科"></div>
+            <span class="subfield-label">细分领域</span>
+            <div class="subfield-options" id="subfield-options" role="group" aria-label="细分领域"></div>
           </div>
-        </fieldset>
+        </section>
 
-        <div class="grid">
-          <label>
-            <span>Scope and constraints</span>
-            <textarea id="scope" maxlength="1000" placeholder="Population, date range, species, intervention, or exclusions"></textarea>
-          </label>
-          <label>
-            <span>Preferred output</span>
-            <select id="output">
-              <option value="a concise synthesis with source identifiers">Concise synthesis</option>
-              <option value="a comparison table with source identifiers">Comparison table</option>
-              <option value="an evidence timeline with source identifiers">Evidence timeline</option>
-              <option value="a gap analysis with source identifiers">Gap analysis</option>
-            </select>
-          </label>
+        <div class="workspace-grid">
+          <section class="panel">
+            <div class="section">
+              <div class="section-heading">
+                <span class="step">2</span>
+                <div>
+                  <h2>界定问题与科研场景</h2>
+                  <p>把问题写成可检索、可比较、可证伪或可复核的任务。</p>
+                </div>
+              </div>
+              <div class="field-grid">
+                <label>
+                  <span>科研场景</span>
+                  <select id="scenario">
+                    <option value="literature review">文献综述</option>
+                    <option value="evidence map">证据图谱</option>
+                    <option value="research gap analysis">研究空白识别</option>
+                    <option value="method comparison">方法比较</option>
+                    <option value="research design">研究方案设计</option>
+                    <option value="reproducibility assessment">复现性评估</option>
+                    <option value="frontier scan">趋势与前沿扫描</option>
+                    <option value="interdisciplinary synthesis">跨学科综合</option>
+                  </select>
+                </label>
+                <label>
+                  <span>交叉学科或关联领域（可选）</span>
+                  <input id="related-fields" type="text" maxlength="300" placeholder="例如：人工智能 × 临床医学">
+                </label>
+              </div>
+              <label style="margin-top: 12px">
+                <span>核心科研问题</span>
+                <textarea id="question" maxlength="800" required placeholder="说明研究对象、关键关系、比较条件或待验证假设"></textarea>
+              </label>
+            </div>
+
+            <div class="section">
+              <div class="section-heading">
+                <span class="step">3</span>
+                <div>
+                  <h2>选择证据渠道</h2>
+                  <p>带“专业源”标记的渠道由已验证的 a3s-use-science 能力提供。</p>
+                </div>
+              </div>
+              <fieldset>
+                <legend>希望纳入的证据类型或来源</legend>
+                <div class="evidence-options" id="evidence-options"></div>
+              </fieldset>
+            </div>
+
+            <div class="section">
+              <div class="section-heading">
+                <span class="step">4</span>
+                <div>
+                  <h2>设置研究边界</h2>
+                  <p>明确时间、语言、范围和排除项，减少不可核验的泛化结论。</p>
+                </div>
+              </div>
+              <div class="field-grid three">
+                <label>
+                  <span>起始日期（可选）</span>
+                  <input id="date-from" type="date">
+                </label>
+                <label>
+                  <span>结束日期（可选）</span>
+                  <input id="date-to" type="date">
+                </label>
+                <label>
+                  <span>证据语言</span>
+                  <select id="language">
+                    <option value="Chinese and English">中文与英文</option>
+                    <option value="English">英文</option>
+                    <option value="Chinese">中文</option>
+                    <option value="any language available to the host">不限语言</option>
+                  </select>
+                </label>
+              </div>
+              <label style="margin-top: 12px">
+                <span>研究范围与约束（可选）</span>
+                <textarea id="scope" maxlength="1200" placeholder="人群、地域、物种、样本、理论框架、实验条件、技术栈或其他边界"></textarea>
+              </label>
+              <label style="margin-top: 12px">
+                <span>排除条件（可选）</span>
+                <input id="exclusions" type="text" maxlength="500" placeholder="例如：排除未披露方法、无法确认来源或超出时间范围的材料">
+              </label>
+            </div>
+
+            <div class="section">
+              <div class="section-heading">
+                <span class="step">5</span>
+                <div>
+                  <h2>定义交付物</h2>
+                  <p>输出将保留稳定来源标识，并显式区分证据、解释、不确定性与缺口。</p>
+                </div>
+              </div>
+              <div class="field-grid three">
+                <label>
+                  <span>输出形式</span>
+                  <select id="output">
+                    <option value="a structured literature synthesis">结构化文献综述</option>
+                    <option value="an evidence matrix">证据矩阵</option>
+                    <option value="a comparison table">方法或结论对比表</option>
+                    <option value="a reproducible research plan">可复核研究方案</option>
+                    <option value="an evidence timeline">证据时间线</option>
+                    <option value="a research gap analysis">研究空白分析</option>
+                  </select>
+                </label>
+                <label>
+                  <span>研究严谨度</span>
+                  <select id="rigor">
+                    <option value="structured evidence synthesis">结构化证据综合</option>
+                    <option value="rapid scoped scan">快速范围扫描</option>
+                    <option value="reproducible protocol with explicit criteria">可复核方案与明确标准</option>
+                  </select>
+                </label>
+                <label>
+                  <span>引文格式</span>
+                  <select id="citation-style">
+                    <option value="field-appropriate citations">学科惯例</option>
+                    <option value="GB/T 7714">GB/T 7714</option>
+                    <option value="APA 7">APA 7</option>
+                    <option value="IEEE">IEEE</option>
+                    <option value="Vancouver">Vancouver</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <aside class="preview" aria-live="polite">
+            <div class="preview-title">
+              <h2>任务预览</h2>
+              <span class="preview-index">RESEARCH BRIEF</span>
+            </div>
+            <p>提交后仍会经过 A3S Web 宿主审核。</p>
+            <div class="preview-summary">
+              <div class="preview-row"><span>学科</span><strong id="preview-discipline">—</strong></div>
+              <div class="preview-row"><span>领域</span><strong id="preview-subfield">—</strong></div>
+              <div class="preview-row"><span>场景</span><strong id="preview-scenario">—</strong></div>
+              <div class="preview-row"><span>证据</span><strong id="preview-sources">—</strong></div>
+              <div class="preview-row"><span>问题</span><strong id="preview-question">等待输入科研问题</strong></div>
+            </div>
+            <div class="capability-route" id="capability-route">
+              <small>能力路由</small>
+              <strong id="capability-title">Code 通用科研能力</strong>
+              <p id="capability-detail">仅交付审核后的结构化任务，使用 Code 当前可用的检索与分析能力。</p>
+            </div>
+            <p class="assurance">
+              插件视图本身不能访问网络、执行检索或直接提交任务；不可用的证据渠道必须在结果中明确披露。
+            </p>
+          </aside>
         </div>
 
-        <p class="error" id="error" role="alert">Enter a question and select at least one source.</p>
-        <footer>
-          <p>
-            This view cannot call APIs or install packages. The host will show a final review before adding this context
-            and the verified <strong>a3s-use-science</strong> Skill to Code.
-          </p>
-          <button type="submit">Review in Code</button>
+        <footer class="form-footer">
+          <div class="footer-copy">
+            <p class="error" id="error" role="alert">请填写科研问题，并至少选择一个证据渠道。</p>
+            <p>
+              下一步只会把你确认的任务说明交给 Code。生命科学专业源按需附加同包
+              <strong>a3s-use-science</strong> Skill，其他学科不会误用该 Skill。
+            </p>
+          </div>
+          <button class="submit" type="submit">提交宿主审核</button>
         </footer>
       </form>
     </main>
 
-    <script>
-      (() => {
-        const protocol = 'a3s.activity.v1';
-        const form = document.getElementById('research-form');
-        const error = document.getElementById('error');
-        const hostStatus = document.getElementById('host-status');
-
-        window.addEventListener('message', (event) => {
-          if (event.source !== window.parent) return;
-          const message = event.data;
-          if (!message || message.protocol !== protocol || message.type !== 'host.init') return;
-          const theme = message.payload && message.payload.theme;
-          document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
-          hostStatus.textContent = `Verified ${message.payload.packageId}`;
-        });
-
-        form.addEventListener('submit', (event) => {
-          event.preventDefault();
-          const question = document.getElementById('question').value.trim();
-          const objective = document.getElementById('objective').value;
-          const scope = document.getElementById('scope').value.trim();
-          const output = document.getElementById('output').value;
-          const sources = Array.from(document.querySelectorAll('input[name="source"]:checked')).map(
-            (input) => input.value
-          );
-          if (!question || sources.length === 0) {
-            error.classList.add('visible');
-            return;
-          }
-          error.classList.remove('visible');
-          const scopeText = scope || 'No additional constraints supplied.';
-          window.parent.postMessage(
-            {
-              protocol,
-              type: 'context.propose',
-              payload: {
-                title: 'Review Science research context',
-                summary: `${objective} for: ${question}`,
-                fields: [
-                  { label: 'Sources', value: sources.join(', ') },
-                  { label: 'Scope', value: scopeText },
-                  { label: 'Output', value: output },
-                ],
-                prompt: `Research this question using ${sources.join(', ')}: ${question}\n\nScope: ${scopeText}\n\nReturn ${output}. Distinguish peer-reviewed literature, preprints, database records, and clinical trial records. Preserve stable source identifiers and call out uncertainty or missing evidence.`,
-              },
-            },
-            '*'
-          );
-        });
-
-        window.parent.postMessage({ protocol, type: 'activity.ready' }, '*');
-      })();
+    <script type="application/json" id="discipline-catalog">
+      [
+        {
+          "id": "life-sciences",
+          "code": "BIO",
+          "label": "生命科学",
+          "description": "从分子机制到生态系统",
+          "subfields": ["分子与细胞生物学", "遗传学与基因组学", "神经科学", "生态与进化", "生物信息学"],
+          "sources": [
+            { "id": "pubmed", "label": "PubMed", "packageSkill": true, "selected": true },
+            { "id": "biorxiv", "label": "bioRxiv 预印本", "packageSkill": true, "selected": true },
+            { "id": "ensembl", "label": "Ensembl", "packageSkill": true, "selected": false },
+            { "id": "scholarly-literature", "label": "跨库学术文献", "packageSkill": false, "selected": false },
+            { "id": "research-datasets", "label": "开放研究数据集", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "medicine-health",
+          "code": "MED",
+          "label": "医学与健康",
+          "description": "临床证据、药物与公共健康",
+          "subfields": ["临床医学", "公共卫生与流行病学", "药理学与药物研发", "护理与卫生服务", "医学技术与器械"],
+          "sources": [
+            { "id": "pubmed", "label": "PubMed", "packageSkill": true, "selected": true },
+            { "id": "clinical-trials", "label": "ClinicalTrials.gov", "packageSkill": true, "selected": true },
+            { "id": "chembl", "label": "ChEMBL", "packageSkill": true, "selected": false },
+            { "id": "guidelines", "label": "指南与共识", "packageSkill": false, "selected": false },
+            { "id": "health-datasets", "label": "公共健康数据", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "chemistry-materials",
+          "code": "CHEM",
+          "label": "化学与材料",
+          "description": "分子、表征与功能材料",
+          "subfields": ["有机与合成化学", "分析与物理化学", "药物化学", "材料科学", "纳米科学与界面"],
+          "sources": [
+            { "id": "scholarly-literature", "label": "同行评议文献", "packageSkill": false, "selected": true },
+            { "id": "chembl", "label": "ChEMBL（药物化学）", "packageSkill": true, "selected": false },
+            { "id": "patents", "label": "专利与技术披露", "packageSkill": false, "selected": false },
+            { "id": "materials-data", "label": "材料与光谱数据", "packageSkill": false, "selected": true },
+            { "id": "preprints", "label": "预印本", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "computer-science",
+          "code": "CS",
+          "label": "计算机科学",
+          "description": "算法、系统与人机协作",
+          "subfields": ["人工智能与机器学习", "软件工程", "系统与网络", "安全与隐私", "人机交互"],
+          "sources": [
+            { "id": "scholarly-literature", "label": "论文与预印本", "packageSkill": false, "selected": true },
+            { "id": "code-benchmarks", "label": "代码与评测基准", "packageSkill": false, "selected": true },
+            { "id": "technical-standards", "label": "技术标准", "packageSkill": false, "selected": false },
+            { "id": "research-datasets", "label": "研究数据集", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "engineering-technology",
+          "code": "ENG",
+          "label": "工程与技术",
+          "description": "系统设计、制造与基础设施",
+          "subfields": ["电子与通信工程", "机械与制造工程", "土木与交通工程", "能源与动力工程", "控制与机器人"],
+          "sources": [
+            { "id": "technical-literature", "label": "工程技术文献", "packageSkill": false, "selected": true },
+            { "id": "technical-standards", "label": "标准与规范", "packageSkill": false, "selected": true },
+            { "id": "patents", "label": "专利与技术披露", "packageSkill": false, "selected": false },
+            { "id": "engineering-data", "label": "实验与运行数据", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "physics-astronomy",
+          "code": "PHYS",
+          "label": "物理与天文",
+          "description": "基础规律、实验与宇宙",
+          "subfields": ["凝聚态物理", "粒子与核物理", "光学与量子科学", "天体物理与宇宙学", "计算物理"],
+          "sources": [
+            { "id": "scholarly-literature", "label": "期刊论文", "packageSkill": false, "selected": true },
+            { "id": "preprints", "label": "预印本", "packageSkill": false, "selected": true },
+            { "id": "experimental-data", "label": "实验与观测数据", "packageSkill": false, "selected": false },
+            { "id": "scientific-catalogs", "label": "科学目录与数据库", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "earth-environment",
+          "code": "EARTH",
+          "label": "地球与环境",
+          "description": "气候、地球系统与可持续性",
+          "subfields": ["气候与大气科学", "地质与地球物理", "海洋与水文", "环境科学与生态治理", "遥感与地理信息"],
+          "sources": [
+            { "id": "scholarly-literature", "label": "学术文献", "packageSkill": false, "selected": true },
+            { "id": "geospatial-data", "label": "遥感与空间数据", "packageSkill": false, "selected": true },
+            { "id": "monitoring-data", "label": "监测与时间序列", "packageSkill": false, "selected": false },
+            { "id": "policy-reports", "label": "政策与评估报告", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "mathematics-statistics",
+          "code": "MATH",
+          "label": "数学与统计",
+          "description": "理论、建模与推断",
+          "subfields": ["纯数学", "应用数学", "概率与统计", "运筹与优化", "计算数学"],
+          "sources": [
+            { "id": "scholarly-literature", "label": "期刊与专著", "packageSkill": false, "selected": true },
+            { "id": "preprints", "label": "预印本", "packageSkill": false, "selected": true },
+            { "id": "proof-references", "label": "定理与证明引用", "packageSkill": false, "selected": false },
+            { "id": "code-benchmarks", "label": "算法与数值基准", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "social-sciences",
+          "code": "SOC",
+          "label": "社会科学",
+          "description": "社会、行为、制度与教育",
+          "subfields": ["社会学", "心理与行为科学", "政治学与公共管理", "教育研究", "人类学与人口研究"],
+          "sources": [
+            { "id": "scholarly-literature", "label": "同行评议文献", "packageSkill": false, "selected": true },
+            { "id": "survey-data", "label": "调查与微观数据", "packageSkill": false, "selected": true },
+            { "id": "policy-data", "label": "政策与行政数据", "packageSkill": false, "selected": false },
+            { "id": "qualitative-archives", "label": "质性材料与档案", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "economics-management",
+          "code": "ECON",
+          "label": "经济与管理",
+          "description": "经济机制、组织与创新",
+          "subfields": ["宏观与发展经济", "微观与产业组织", "组织与战略", "运营与供应链", "创新与创业研究"],
+          "sources": [
+            { "id": "scholarly-literature", "label": "学术文献", "packageSkill": false, "selected": true },
+            { "id": "official-statistics", "label": "官方统计", "packageSkill": false, "selected": true },
+            { "id": "industry-data", "label": "行业与企业数据", "packageSkill": false, "selected": false },
+            { "id": "policy-cases", "label": "政策与案例材料", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "humanities-arts",
+          "code": "HUM",
+          "label": "人文与艺术",
+          "description": "历史、思想、语言与文化",
+          "subfields": ["历史学", "哲学与伦理", "语言与文学", "艺术与媒介研究", "数字人文"],
+          "sources": [
+            { "id": "books-journals", "label": "书籍与期刊", "packageSkill": false, "selected": true },
+            { "id": "primary-archives", "label": "一手档案与史料", "packageSkill": false, "selected": true },
+            { "id": "corpora", "label": "语料库", "packageSkill": false, "selected": false },
+            { "id": "cultural-datasets", "label": "文化与馆藏数据", "packageSkill": false, "selected": false }
+          ]
+        },
+        {
+          "id": "agriculture-food",
+          "code": "AGRI",
+          "label": "农业与食品",
+          "description": "作物、食品与农业生态系统",
+          "subfields": ["作物与园艺", "动物科学", "食品科学与营养", "林业与渔业", "农业资源与环境"],
+          "sources": [
+            { "id": "scholarly-literature", "label": "学术文献", "packageSkill": false, "selected": true },
+            { "id": "field-data", "label": "田间与监测数据", "packageSkill": false, "selected": true },
+            { "id": "ensembl", "label": "Ensembl（遗传研究）", "packageSkill": true, "selected": false },
+            { "id": "standards-policy", "label": "标准与政策资料", "packageSkill": false, "selected": false }
+          ]
+        }
+      ]
     </script>
+
+    <script src="./activity.js"></script>
   </body>
 </html>
