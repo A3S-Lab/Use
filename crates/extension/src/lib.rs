@@ -21,8 +21,9 @@ pub use registry::{
     InstalledExtension, UninstallResult,
 };
 pub use remote::{
-    prepare_remote_package, refresh_remote_registry, DownloadedRemotePackage,
-    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryMetadata,
+    list_remote_packages, prepare_remote_package, refresh_remote_registry, DownloadedRemotePackage,
+    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog,
+    VerifiedRegistryMetadata,
 };
 
 const RESERVED_ROUTES: &[&str] = &[

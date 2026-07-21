@@ -296,6 +296,20 @@ pub(crate) fn io_error(action: &str, path: &Path, error: std::io::Error) -> UseE
     )
 }
 
+pub(crate) fn lock_is_contended(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        // LockFileEx reports ERROR_SHARING_VIOLATION or ERROR_LOCK_VIOLATION,
+        // neither of which Rust consistently maps to WouldBlock.
+        matches!(error.raw_os_error(), Some(32 | 33))
+    }
+    #[cfg(not(windows))]
+    false
+}
+
 pub(crate) struct RegistryLock {
     file: std::fs::File,
 }
@@ -318,7 +332,7 @@ impl RegistryLock {
             .open(path)
             .map_err(|error| io_error("open extension registry lock", path, error))?;
         file.try_lock_exclusive().map_err(|error| {
-            if error.kind() == std::io::ErrorKind::WouldBlock {
+            if lock_is_contended(&error) {
                 UseError::new(
                     "use.extension.busy",
                     "Another extension registry operation is in progress.",

@@ -147,6 +147,17 @@ pub struct VerifiedRegistryMetadata {
     pub package_targets: u64,
 }
 
+/// Installable package targets discovered from one fully verified TUF
+/// repository. The catalog contains only targets compatible with the current
+/// host and never downloads package payloads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedRegistryCatalog {
+    pub metadata: VerifiedRegistryMetadata,
+    pub host_target: String,
+    pub packages: Vec<ResolvedRemotePackage>,
+}
+
 impl ResolvedRemotePackage {
     pub fn plan_digest(&self) -> UseResult<String> {
         let bytes = serde_json::to_vec(self).map_err(|error| {
@@ -440,29 +451,7 @@ pub async fn prepare_remote_package(
             "The TUF repository resolves the same package version to multiple targets.",
         ));
     }
-    let archive_name = target_name
-        .raw()
-        .rsplit('/')
-        .next()
-        .unwrap_or_default()
-        .to_string();
-    let resolved = ResolvedRemotePackage {
-        registry_name: registry.name.clone(),
-        registry_url: registry.base_url.to_string(),
-        root_sha256: registry.root_sha256.clone(),
-        root_version: repository.root().signed.version.get(),
-        timestamp_version: repository.timestamp().signed.version.get(),
-        snapshot_version: repository.snapshot().signed.version.get(),
-        targets_version: repository.targets().signed.version.get(),
-        package_id: package_id.to_string(),
-        version: version.to_string(),
-        channel: channel.to_string(),
-        target: metadata.target,
-        target_name: target_name.raw().to_string(),
-        archive_name,
-        length: target.length,
-        sha256: hex_lower(target.hashes.sha256.as_ref()),
-    };
+    let resolved = resolved_remote_package(registry, &repository, metadata, &target_name, &target);
     resolved.verify_expected_plan(expected_plan_digest)?;
     Ok(PreparedRemotePackage {
         repository,
@@ -476,6 +465,84 @@ pub async fn refresh_remote_registry(
     registry: &TrustedRegistry,
 ) -> UseResult<VerifiedRegistryMetadata> {
     let repository = load_repository(registry).await?;
+    verified_registry_metadata(registry, &repository)
+}
+
+/// Refresh and verify a registry, then enumerate host-compatible signed
+/// package targets without downloading any archive.
+pub async fn list_remote_packages(
+    registry: &TrustedRegistry,
+) -> UseResult<VerifiedRegistryCatalog> {
+    let repository = load_repository(registry).await?;
+    let metadata = verified_registry_metadata(registry, &repository)?;
+    let host_target = host_target()?;
+    let mut selected = std::collections::BTreeMap::<
+        (String, Version, String),
+        (RegistryTargetMetadata, TargetName, tough::schema::Target),
+    >::new();
+
+    for (target_name, target) in repository.all_targets() {
+        let Some(custom) = target.custom.get(REGISTRY_METADATA_KEY) else {
+            continue;
+        };
+        let package: RegistryTargetMetadata =
+            serde_json::from_value(custom.clone()).map_err(|error| {
+                UseError::new(
+                    "use.extension.registry_target_invalid",
+                    format!(
+                        "TUF target '{}' has invalid A3S metadata: {error}",
+                        target_name.raw()
+                    ),
+                )
+            })?;
+        validate_target_metadata(target_name, target, &package)?;
+        if package.target != host_target && package.target != "any" {
+            continue;
+        }
+        let version = Version::parse(&package.version).map_err(|error| {
+            UseError::new(
+                "use.extension.registry_target_invalid",
+                format!(
+                    "TUF target '{}' declares an invalid version: {error}",
+                    target_name.raw()
+                ),
+            )
+        })?;
+        let key = (package.package_id.clone(), version, package.channel.clone());
+        match selected.get(&key) {
+            None => {
+                selected.insert(key, (package, target_name.clone(), target.clone()));
+            }
+            Some((current, _, _)) if current.target == "any" && package.target == host_target => {
+                selected.insert(key, (package, target_name.clone(), target.clone()));
+            }
+            Some((current, _, _)) if current.target == host_target && package.target == "any" => {}
+            Some(_) => {
+                return Err(UseError::new(
+                    "use.extension.registry_target_invalid",
+                    "The TUF repository resolves the same package version to multiple targets.",
+                ));
+            }
+        }
+    }
+
+    let packages = selected
+        .into_values()
+        .map(|(package, target_name, target)| {
+            resolved_remote_package(registry, &repository, package, &target_name, &target)
+        })
+        .collect();
+    Ok(VerifiedRegistryCatalog {
+        metadata,
+        host_target,
+        packages,
+    })
+}
+
+fn verified_registry_metadata(
+    registry: &TrustedRegistry,
+    repository: &Repository,
+) -> UseResult<VerifiedRegistryMetadata> {
     let mut identities = BTreeSet::new();
     let mut package_targets = 0_u64;
     for (target_name, target) in repository.all_targets() {
@@ -522,6 +589,38 @@ pub async fn refresh_remote_registry(
         targets_version: repository.targets().signed.version.get(),
         package_targets,
     })
+}
+
+fn resolved_remote_package(
+    registry: &TrustedRegistry,
+    repository: &Repository,
+    metadata: RegistryTargetMetadata,
+    target_name: &TargetName,
+    target: &tough::schema::Target,
+) -> ResolvedRemotePackage {
+    let archive_name = target_name
+        .raw()
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    ResolvedRemotePackage {
+        registry_name: registry.name.clone(),
+        registry_url: registry.base_url.to_string(),
+        root_sha256: registry.root_sha256.clone(),
+        root_version: repository.root().signed.version.get(),
+        timestamp_version: repository.timestamp().signed.version.get(),
+        snapshot_version: repository.snapshot().signed.version.get(),
+        targets_version: repository.targets().signed.version.get(),
+        package_id: metadata.package_id,
+        version: metadata.version,
+        channel: metadata.channel,
+        target: metadata.target,
+        target_name: target_name.raw().to_string(),
+        archive_name,
+        length: target.length,
+        sha256: hex_lower(target.hashes.sha256.as_ref()),
+    }
 }
 
 async fn load_repository(registry: &TrustedRegistry) -> UseResult<Repository> {
