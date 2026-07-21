@@ -6,6 +6,9 @@ allowed-tools: Bash(a3s:*)
 
 # A3S Use Science
 
+The broader first-party scientific Skill catalog and workflow assets are
+maintained in [A3S Science](https://github.com/A3S-Lab/Science).
+
 Use the host surface that is already available:
 
 - In an A3S Code `use` worker, call the available

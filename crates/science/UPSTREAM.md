@@ -1,26 +1,22 @@
-# Upstream Inspiration and Clean-Room Boundary
+# A3S Science Repository Boundary
 
-The public capability inventory in
-[`baifan-wang/skills/claude-science`](https://github.com/baifan-wang/skills/tree/main/claude-science)
-inspired the source selection and agent workflow for this extension. The
-inventory was reviewed at commit
-`2b61d890c5ba50570717599b16d34514458b3955` on 2026-07-17.
+The first-party [A3S Science](https://github.com/A3S-Lab/Science) repository is
+the canonical home for the broader scientific Skill catalog, MCP data services,
+compute workflows, and supporting assets used across A3S.
 
-That repository describes a much larger collection of data tools, model
-workflows, compute integrations, and scientific Skills. Its components carry
-component-specific licensing rather than one clearly stated project-level
-license. Consequently, `a3s-use-science` is an independent clean-room Rust
-implementation:
+`a3s-use-science` is the process-isolated native integration for A3S Use. It
+deliberately exposes a smaller source-specific Rust contract:
 
-- no Python source, JSON schema, prompt, test fixture, model wrapper, or other
-  implementation artifact is copied or distributed;
+- no Python environment, model wrapper, or catalog runtime is bundled or
+  launched by this package;
 - this initial package implements a smaller source-specific retrieval surface
-  and does not claim command, MCP-tool, or output compatibility;
-- Ensembl access uses the documented Ensembl REST API, not the upstream
-  collection's BioMart implementation;
+  and does not claim command, MCP-tool, or output compatibility with every
+  catalog component;
+- Ensembl access uses the documented Ensembl REST API rather than a BioMart
+  adapter;
 - the extension's code and package assets are licensed with A3S Use under MIT.
 
 Public database names and documented HTTP contracts are factual integration
-points, not bundled upstream software. Each remote data service retains its own
-terms, licenses, and attribution requirements; see
-[DATA_SOURCES.md](DATA_SOURCES.md).
+points. Components in A3S Science retain their component-specific licenses, and
+each remote data service retains its own terms, licenses, and attribution
+requirements; see [DATA_SOURCES.md](DATA_SOURCES.md).
