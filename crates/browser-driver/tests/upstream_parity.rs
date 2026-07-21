@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 const UPSTREAM_MCP_TOOL_COUNT: usize = 151;
 const UPSTREAM_MCP_STRUCTURAL_SHA256: &str =
-    "29c1947ac94366538d7e73a12254613a0180dbc28293b8efdc3d3077b907b620";
+    "04d8e0a953b17d00a474d6cb61f609cae8ec37eaba7fc86c9f2e738d5d0c6489";
 const UPSTREAM_SKILLS: &[&str] = &[
     "agentcore",
     "core",

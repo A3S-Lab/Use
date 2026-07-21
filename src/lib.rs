@@ -15,9 +15,6 @@ mod first_use;
 #[cfg(feature = "ocr")]
 mod ocr_builtin;
 
-#[cfg(feature = "ocr")]
-mod ocr_builtin;
-
 #[cfg(feature = "office")]
 mod office_artifact;
 #[cfg(feature = "office")]

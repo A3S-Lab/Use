@@ -48,10 +48,12 @@ not wait for an event that has already fired.
 `crates/browser-driver/tests/upstream_parity.rs` launches the packaged driver
 and checks the complete MCP inventory. It removes human-readable descriptions,
 then pins names, schemas, required fields, defaults, annotations, and pagination
-to this structural digest:
+to this structural digest. The A3S-owned tools-profile discovery tool is
+explicitly marked read-only and closed-world while preserving the upstream
+tool inventory:
 
 ```text
-29c1947ac94366538d7e73a12254613a0180dbc28293b8efdc3d3077b907b620
+04d8e0a953b17d00a474d6cb61f609cae8ec37eaba7fc86c9f2e738d5d0c6489
 ```
 
 The command parser independently pins the sorted command vocabulary to:

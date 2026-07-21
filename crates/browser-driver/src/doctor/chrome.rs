@@ -226,12 +226,17 @@ fn browser_version_output(path: &Path, stdout: &[u8]) -> Option<String> {
 }
 
 fn browser_product_name(path: &Path) -> &'static str {
-    let executable = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
+    // Tests and diagnostics may inspect a path produced on a different host
+    // platform, so recognize both path separators before removing the common
+    // Windows executable suffix.
+    let executable = path.as_os_str().to_string_lossy();
+    let executable = executable
+        .rsplit(['/', '\\'])
+        .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    match executable.as_str() {
+    let executable = executable.strip_suffix(".exe").unwrap_or(&executable);
+    match executable {
         "msedge" => "Microsoft Edge",
         "chrome" | "google-chrome" | "google-chrome-stable" => "Google Chrome",
         "chromium" | "chromium-browser" => "Chromium",
