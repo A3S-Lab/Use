@@ -28,6 +28,27 @@ async fn tuf_refresh_verifies_metadata_without_downloading_targets() {
 }
 
 #[tokio::test]
+async fn tuf_catalog_lists_signed_packages_without_downloading_targets() {
+    let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 7, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+
+    let catalog = list_remote_packages(&trusted).await.unwrap();
+
+    assert_eq!(catalog.metadata.registry_name, "fixture");
+    assert_eq!(catalog.metadata.package_targets, 1);
+    assert_eq!(catalog.packages.len(), 1);
+    assert_eq!(catalog.packages[0].package_id, "acme/slack");
+    assert_eq!(catalog.packages[0].version, PACKAGE_VERSION);
+    assert_eq!(catalog.packages[0].target, catalog.host_target);
+    assert!(server
+        .requests()
+        .iter()
+        .all(|request| !request.starts_with("/targets/")));
+}
+
+#[tokio::test]
 async fn tuf_install_records_signed_provenance_and_converges() {
     let archive = extension_archive(PACKAGE_VERSION);
     let repository = TestRepository::new(archive, 1, FUTURE);

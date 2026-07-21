@@ -1938,6 +1938,11 @@ Its TUF target `custom.a3s` object must contain `schemaVersion`, `packageId`,
 target or `any`). Duplicate identities, mismatched paths, unsupported archives,
 and oversized targets are rejected before payload download.
 
+Hosts can call `a3s_use_extension::list_remote_packages` to obtain a fully
+verified, host-compatible package catalog without downloading archives. The
+returned catalog includes the verified metadata versions and immutable
+`ResolvedRemotePackage` entries required for review and subsequent installation.
+
 Built-in and management routes are reserved. Extensions cannot shadow
 `browser`, `office`, `ocr`, `box`, `component`, `capability`, or other host
 commands.
