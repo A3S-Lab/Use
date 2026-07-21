@@ -82,4 +82,7 @@ a3s use science doctor --json
 The script refuses to overwrite an existing output directory. The package may
 also be archived as `.tar.gz`, `.tgz`, or `.zip` and passed directly to
 `--from`. Local directories and archives require explicit `--allow-unsigned`
-trust; a signed remote distribution channel remains roadmap work.
+trust. The package also contains `web/activity.html`, referenced by its
+`contributes.activity_bar` manifest entry and bound to the packaged
+`a3s-use-science` Skill. Signed remote distribution uses a configured TUF
+registry and digest-reviewed umbrella CLI plan.

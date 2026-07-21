@@ -138,7 +138,11 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
 - **Reference Science Toolkit**: Query PubMed, ChEMBL, ClinicalTrials.gov,
-  bioRxiv, and Ensembl through one typed read-only extension
+  bioRxiv, and Ensembl through one typed read-only extension with a
+  content-bound A3S Web Activity
+- **Workbench Contributions**: Project package-owned, SHA-256-bound HTML
+  Activities and their same-package Skills through the immutable capability
+  registry without making UI messages callable extension actions
 - **First-Party OCR Domain**: Run pinned PP-OCRv6 detection and recognition
   models locally through ONNX Runtime, with source digests and bounded layout
   evidence
@@ -1646,7 +1650,9 @@ workflow, and input boundaries.
 The repository includes `a3s-use-science` as a reference external extension,
 not as another built-in route. Its process exposes one typed Rust client as 13
 read-only MCP tools plus source-specific CLI commands for PubMed, ChEMBL,
-ClinicalTrials.gov, bioRxiv, and Ensembl.
+ClinicalTrials.gov, bioRxiv, and Ensembl. The same package contributes a
+self-contained `web/activity.html` research brief view bound to its
+`a3s-use-science` Skill; A3S Web renders it in its own sandbox and review flow.
 
 Build a local package into a new directory and install it explicitly:
 
@@ -1709,6 +1715,17 @@ extension "acme/slack" {
 
   skill {
     path = "skills/slack/SKILL.md"
+  }
+
+  contributes {
+    activity_bar "channels" {
+      title       = "Slack"
+      description = "Prepare a reviewed Slack context."
+      icon        = "messages-square"
+      entry       = "web/activity.html"
+      skill       = "slack"
+      order       = 140
+    }
   }
 }
 ```

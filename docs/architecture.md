@@ -33,17 +33,24 @@ An external package declares any useful combination of:
 - MCP: standard MCP tools, resources, prompts, and lifecycle;
 - Skill: an existing SKILL.md package.
 
+Packages may also declare non-callable workbench contributions. An
+`activity_bar` contribution references a package-owned UTF-8 HTML asset and a
+same-package Skill. A3S Use validates the regular file, size, media type, package
+boundary, and SHA-256 before publishing either through the immutable capability
+snapshot. The consuming Web host owns sandboxing, CSP, messaging, and human
+review; the contribution never becomes another execution protocol.
+
 The package manifest is a3s-use-extension.acl and is parsed by a3s-acl. A3S Use
 owns identity, routes, trust, activation, and lifecycle around the surfaces. It
 does not define JSON-RPC methods or convert surfaces implicitly.
 
 `a3s-use-science` is the reference multi-surface extension. It remains a
 separate process and package even though its source is developed in this
-repository. Its Rust API, native CLI, 13 standard MCP tools, and packaged Skill
-share typed source-specific operations; the host sees only the declared
-`a3s/science` CLI, MCP, and Skill surfaces. This demonstrates how a first-party
-toolkit can ship without expanding the reserved built-in route set or adding a
-generic action envelope.
+repository. Its Rust API, native CLI, 13 standard MCP tools, packaged Skill, and
+content-bound Science Activity share typed source-specific operations; callable
+work remains limited to the declared `a3s/science` CLI, MCP, and Skill surfaces.
+This demonstrates how a first-party toolkit can ship without expanding the
+reserved built-in route set or adding a generic action envelope.
 
 `a3s-use-ocr` implements the reserved first-party `ocr` route in the default
 Use build. The release packages its content-bound Skill and exposes the native
