@@ -9,6 +9,10 @@ rust-version.workspace = true
 description = "Shared typed contracts for A3S Use domains"
 
 [dependencies]
+olpc-cjson.workspace = true
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
+url.workspace = true

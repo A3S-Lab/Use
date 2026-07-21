@@ -11,7 +11,7 @@ use a3s_use_office::{
 };
 
 #[test]
-fn native_office_server_exposes_only_bounded_typed_tools() {
+fn native_office_server_exposes_bounded_tools_and_confirmed_compat_install() {
     let server = NativeOfficeMcpServer::new();
     let tools = server.tool_router.list_all();
     let mut names: Vec<&str> = tools
@@ -26,6 +26,7 @@ fn native_office_server_exposes_only_bounded_typed_tools() {
             "office_close",
             "office_create",
             "office_get",
+            "office_install_compat",
             "office_list",
             "office_merge_template",
             "office_open",
@@ -358,6 +359,98 @@ fn office_batch_schema_exposes_typed_spreadsheet_sorting() {
                 "keys": [{"column": "B", "direction": "random"}],
                 "locale": "en-US"
             }
+        }]
+    }));
+    assert!(unknown.is_err());
+}
+
+#[test]
+fn office_batch_schema_exposes_native_spreadsheet_recalculation() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    assert!(
+        encoded.contains("recalculate-spreadsheet-formulas"),
+        "{encoded}"
+    );
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "recalculate-spreadsheet-formulas"
+        }]
+    }))
+    .unwrap();
+    assert!(matches!(
+        input.mutations[0].clone().into_native().unwrap(),
+        NativeOfficeMutation::RecalculateSpreadsheetFormulas
+    ));
+}
+
+#[test]
+fn office_batch_schema_exposes_typed_spreadsheet_import_and_frozen_panes() {
+    let schema = schemars::schema_for!(OfficeBatchInput);
+    let encoded = serde_json::to_string(&schema).unwrap();
+    for expected in [
+        "import-spreadsheet-delimited",
+        "set-spreadsheet-frozen-pane",
+        "startCell",
+        "frozenRows",
+        "frozenColumns",
+        "topLeftCell",
+        "csv",
+        "tsv",
+    ] {
+        assert!(encoded.contains(expected), "missing {expected}");
+    }
+
+    let input: OfficeBatchInput = serde_json::from_value(serde_json::json!({
+        "session": "workbook",
+        "mutations": [
+            {
+                "operation": "import-spreadsheet-delimited",
+                "sheet": "/Sheet1",
+                "import": {
+                    "content": "Name,Value\nAlpha,42",
+                    "format": "csv",
+                    "header": true,
+                    "startCell": "B2"
+                }
+            },
+            {
+                "operation": "set-spreadsheet-frozen-pane",
+                "sheet": "/Sheet1",
+                "pane": {
+                    "frozenRows": 2,
+                    "frozenColumns": 0,
+                    "topLeftCell": "B3"
+                }
+            }
+        ]
+    }))
+    .unwrap();
+    assert!(matches!(
+        input.mutations[0].clone().into_native().unwrap(),
+        NativeOfficeMutation::ImportSpreadsheetDelimited { ref sheet, ref import }
+            if sheet == "/Sheet1"
+                && import.header
+                && import.start_cell == "B2"
+                && import.format == a3s_use_office::NativeSpreadsheetDelimitedFormat::Csv
+    ));
+    assert!(matches!(
+        input.mutations[1].clone().into_native().unwrap(),
+        NativeOfficeMutation::SetSpreadsheetFrozenPane { ref sheet, ref pane }
+            if sheet == "/Sheet1"
+                && pane.frozen_rows == 2
+                && pane.frozen_columns == 0
+                && pane.top_left_cell == "B3"
+    ));
+
+    let unknown = serde_json::from_value::<OfficeBatchInput>(serde_json::json!({
+        "session": "workbook",
+        "mutations": [{
+            "operation": "import-spreadsheet-delimited",
+            "sheet": "/Sheet1",
+            "import": {"content": "a", "format": "json"}
         }]
     }));
     assert!(unknown.is_err());

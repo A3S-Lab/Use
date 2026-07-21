@@ -157,6 +157,42 @@ async fn native_standard_mcp_applies_typed_spreadsheet_cell_format_without_offic
     );
     assert_eq!(applied["result"]["structuredContent"]["persisted"], false);
 
+    let invalid_formula = call(
+        &mut stdin,
+        &mut stdout,
+        40,
+        "office_apply_batch",
+        serde_json::json!({
+            "session": "workbook",
+            "mutations": [
+                {
+                    "operation": "set-cell-value",
+                    "path": "/Sheet1/A1",
+                    "value": { "type": "number", "value": "999" }
+                },
+                {
+                    "operation": "set-cell-value",
+                    "path": "/Sheet1/B1",
+                    "value": { "type": "formula", "expression": "SUM(A1" }
+                }
+            ]
+        }),
+        TIMEOUT,
+    )
+    .await;
+    assert_eq!(
+        invalid_formula["result"]["isError"], true,
+        "{invalid_formula}"
+    );
+    assert_eq!(
+        invalid_formula["result"]["structuredContent"]["code"],
+        "use.office.spreadsheet_formula_invalid"
+    );
+    assert_eq!(
+        invalid_formula["result"]["structuredContent"]["details"]["characterOffset"],
+        6
+    );
+
     let read = call(
         &mut stdin,
         &mut stdout,

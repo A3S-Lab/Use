@@ -413,6 +413,35 @@ async fn native_editor_writes_typed_spreadsheet_values_and_marks_formulas_for_re
 }
 
 #[tokio::test]
+async fn native_editor_rejects_syntactically_invalid_formulas_atomically() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("invalid-formulas.xlsx");
+    let mut editor = NativeOfficeEditor::create(&path).await.unwrap();
+    let original = editor.package().content_sha256();
+
+    for expression in ["1+", "SUM(A1", "A1::B2", "\"unterminated"] {
+        let error = editor
+            .set_cell_value(
+                "/Sheet1/A1",
+                SpreadsheetCellValue::Formula {
+                    expression: expression.into(),
+                },
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.code, "use.office.spreadsheet_formula_invalid",
+            "{expression}"
+        );
+        assert!(
+            error.details.contains_key("characterOffset"),
+            "{expression}"
+        );
+        assert!(error.details.contains_key("byteOffset"), "{expression}");
+        assert_eq!(editor.package().content_sha256(), original, "{expression}");
+    }
+}
+
+#[tokio::test]
 async fn native_editor_adds_a_worksheet_and_populates_it() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sheets.xlsx");

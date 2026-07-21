@@ -1146,6 +1146,31 @@ fn native_office_cli_writes_typed_spreadsheet_values_without_an_officecli_provid
     let formula: serde_json::Value = serde_json::from_slice(&formula.stdout).unwrap();
     assert_eq!(formula["data"]["node"]["format"]["formula"], "A1*2");
 
+    let before_invalid_formula = std::fs::read(&document).unwrap();
+    let invalid_formula = Command::new(binary())
+        .args([
+            "office",
+            "native",
+            "set",
+            document.to_str().unwrap(),
+            "/Sheet1/C2",
+            "--formula",
+            "SUM(A1",
+            "--json",
+        ])
+        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
+        .output()
+        .unwrap();
+    assert!(!invalid_formula.status.success(), "{invalid_formula:?}");
+    let invalid_formula: serde_json::Value =
+        serde_json::from_slice(&invalid_formula.stdout).unwrap();
+    assert_eq!(
+        invalid_formula["error"]["code"],
+        "use.office.spreadsheet_formula_invalid"
+    );
+    assert_eq!(invalid_formula["error"]["details"]["characterOffset"], 6);
+    assert_eq!(std::fs::read(&document).unwrap(), before_invalid_formula);
+
     std::fs::write(
         &mutations,
         serde_json::to_vec(&serde_json::json!({
@@ -1810,6 +1835,50 @@ fn office_install_reuses_an_explicit_provider_without_downloading() {
     assert!(!temp.path().join("managed/1.0.136").exists());
 }
 
+#[cfg(feature = "office")]
+#[test]
+fn office_compatibility_first_use_honors_no_auto_install() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["office", "document", "inspect", "fixture.docx", "--json"])
+        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
+        .env("A3S_NO_AUTO_INSTALL", "1")
+        .env("PATH", temp.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "use.office.auto_install_disabled");
+    assert_eq!(value["error"]["details"]["reason"], "A3S_NO_AUTO_INSTALL");
+    assert!(!temp.path().join("managed/1.0.136").exists());
+}
+
+#[cfg(feature = "office")]
+#[test]
+fn office_help_never_triggers_compatibility_installation() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["office", "--help", "--json"])
+        .env(
+            "A3S_OFFICECLI_EXECUTABLE",
+            temp.path().join("must-not-exist"),
+        )
+        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], true);
+    assert!(value["data"]["usage"]
+        .as_str()
+        .unwrap()
+        .contains("Native Office is built in"));
+    assert!(!temp.path().join("managed/1.0.136").exists());
+}
+
 #[cfg(all(unix, feature = "office"))]
 #[test]
 fn office_mcp_target_delegates_to_officeclis_standard_server() {
@@ -1924,7 +1993,15 @@ async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
     )
     .await;
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 12);
+    assert_eq!(tools.len(), 13);
+    let install_compat = tools
+        .iter()
+        .find(|tool| tool["name"] == "office_install_compat")
+        .unwrap();
+    assert_eq!(install_compat["annotations"]["readOnlyHint"], false);
+    assert_eq!(install_compat["annotations"]["destructiveHint"], false);
+    assert_eq!(install_compat["annotations"]["idempotentHint"], true);
+    assert_eq!(install_compat["annotations"]["openWorldHint"], true);
     let apply = tools
         .iter()
         .find(|tool| tool["name"] == "office_apply_batch")

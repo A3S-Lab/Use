@@ -6,6 +6,7 @@ pub(super) enum NativeInputKind {
     Batch,
     Image,
     RawXml,
+    SpreadsheetImport,
     TemplateData,
 }
 
@@ -15,6 +16,7 @@ impl NativeInputKind {
             Self::Batch => "use.office.batch_input",
             Self::Image => "use.office.image_input",
             Self::RawXml => "use.office.raw_input",
+            Self::SpreadsheetImport => "use.office.spreadsheet_import_input",
             Self::TemplateData => "use.office.template_data_input",
         }
     }
@@ -24,9 +26,27 @@ impl NativeInputKind {
             Self::Batch => "Native Office batch input",
             Self::Image => "Native Office image input",
             Self::RawXml => "Native Office raw XML input",
+            Self::SpreadsheetImport => "Native Spreadsheet delimited import input",
             Self::TemplateData => "Native Office template data input",
         }
     }
+}
+
+pub(super) async fn read_bounded_stdin(limit: u64, kind: NativeInputKind) -> UseResult<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut reader = tokio::io::stdin().take(limit + 1);
+    reader.read_to_end(&mut bytes).await.map_err(|error| {
+        input_error(
+            kind,
+            "read_failed",
+            "<stdin>",
+            format!("Failed to read {} from stdin: {error}", kind.label()),
+        )
+    })?;
+    if bytes.len() as u64 > limit {
+        return Err(input_too_large(kind, "<stdin>", limit));
+    }
+    Ok(bytes)
 }
 
 pub(super) async fn read_bounded_input(

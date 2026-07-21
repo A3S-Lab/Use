@@ -777,6 +777,7 @@ impl ExtensionRegistry {
             let _ = FileExt::unlock(&file);
             return Ok(None);
         }
+        verify_package_integrity(&extension).await?;
         Ok(Some(ExtensionRouteLease { extension, file }))
     }
 
@@ -891,6 +892,24 @@ impl ExtensionRegistry {
         validate_surface_files(&manifest, &receipt.package_root).await?;
         Ok(InstalledExtension { receipt, manifest })
     }
+}
+
+async fn verify_package_integrity(extension: &InstalledExtension) -> UseResult<()> {
+    let Some(expected) = extension.receipt.package_sha256.as_deref() else {
+        return Ok(());
+    };
+    let actual = package_sha256(&extension.receipt.package_root).await?;
+    if actual != expected {
+        return Err(UseError::new(
+            "use.extension.package_digest_mismatch",
+            format!(
+                "Installed package '{}' no longer matches its recorded digest.",
+                extension.receipt.package_id
+            ),
+        )
+        .with_suggestion("Reinstall the extension from its trusted source."));
+    }
+    Ok(())
 }
 
 fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding> {

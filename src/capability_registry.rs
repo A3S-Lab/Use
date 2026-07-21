@@ -332,6 +332,95 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
     }
 }
 
+fn office_compatibility_capability() -> CapabilityBinding {
+    #[cfg(feature = "office")]
+    {
+        let diagnostic = a3s_use_office::doctor();
+        let ready = diagnostic.readiness == Readiness::Ready;
+        CapabilityBinding {
+            id: "use/office-compat".to_string(),
+            route: "office-compat".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: true,
+            readiness: diagnostic.readiness,
+            package_root: None,
+            surfaces: vec!["mcp".to_string()],
+            mcp: ready.then(|| McpSurface {
+                target: "office-compat".to_string(),
+                transport: McpTransport::Stdio,
+            }),
+            skills: Vec::new(),
+        }
+    }
+    #[cfg(not(feature = "office"))]
+    {
+        CapabilityBinding {
+            id: "use/office-compat".to_string(),
+            route: "office-compat".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: false,
+            readiness: Readiness::Missing,
+            package_root: None,
+            surfaces: Vec::new(),
+            mcp: None,
+            skills: Vec::new(),
+        }
+    }
+}
+
+async fn ocr_capability() -> UseResult<CapabilityBinding> {
+    #[cfg(feature = "ocr")]
+    {
+        let diagnostic = crate::ocr_builtin::diagnostic();
+        let skill = crate::ocr_builtin::primary_skill_surface().await;
+        let (package_root, skills) = match skill {
+            Some((root, path)) => (Some(root), vec![skill_surface(path).await?]),
+            None => (None, Vec::new()),
+        };
+        let mut surfaces = vec!["cli".to_string()];
+        if !skills.is_empty() {
+            surfaces.push("skill".to_string());
+        }
+        #[cfg(feature = "mcp")]
+        surfaces.push("mcp".to_string());
+        Ok(CapabilityBinding {
+            id: "use/ocr".to_string(),
+            route: "ocr".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: true,
+            readiness: diagnostic.readiness,
+            package_root,
+            surfaces,
+            #[cfg(feature = "mcp")]
+            mcp: Some(McpSurface {
+                target: "ocr-native".to_string(),
+                transport: McpTransport::Stdio,
+            }),
+            #[cfg(not(feature = "mcp"))]
+            mcp: None,
+            skills,
+        })
+    }
+    #[cfg(not(feature = "ocr"))]
+    {
+        Ok(CapabilityBinding {
+            id: "use/ocr".to_string(),
+            route: "ocr".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            origin: CapabilityOrigin::BuiltIn,
+            enabled: false,
+            readiness: Readiness::Missing,
+            package_root: None,
+            surfaces: Vec::new(),
+            mcp: None,
+            skills: Vec::new(),
+        })
+    }
+}
+
 fn box_capability() -> CapabilityBinding {
     let diagnostic = crate::component_route::box_diagnostic();
     CapabilityBinding {

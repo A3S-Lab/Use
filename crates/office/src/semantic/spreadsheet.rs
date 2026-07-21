@@ -20,6 +20,7 @@ mod named_range;
 mod sort_state;
 mod style;
 mod table;
+mod view;
 
 use style::{read_differential_formats, read_styles};
 
@@ -436,6 +437,9 @@ fn read_worksheet(
     }
     if let Some(sort) = sort_state::read(&worksheet, part_name, &sheet_path)? {
         sheet_node.children.push(sort);
+    }
+    if let Some(freeze) = view::read(&worksheet, &sheet_path) {
+        sheet_node.children.push(freeze);
     }
     let tables = table::read(package, opc, &worksheet, part_name, &sheet_path)?;
     if !tables.is_empty() {
@@ -1092,8 +1096,16 @@ fn read_cell(
         .insert("valueType".into(), value_type_name(value_type).into());
     node.format
         .insert("empty".into(), node.text.is_empty().to_string());
+    node.format.insert(
+        "valuePresent".into(),
+        (cell.child("v").is_some() || cell.child("is").is_some()).to_string(),
+    );
     if let Some(formula) = cell.child("f") {
         node.format.insert("formula".into(), direct_text(formula));
+        node.format.insert(
+            "formulaCached".into(),
+            cell.child("v").is_some().to_string(),
+        );
         if let Some(formula_type) = formula.attribute("t") {
             node.format
                 .insert("formulaType".into(), formula_type.into());

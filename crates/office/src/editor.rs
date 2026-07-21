@@ -47,14 +47,17 @@ pub use types::{
     NativeSpreadsheetConditionalFormatThresholdKind, NativeSpreadsheetConditionalFormatTimePeriod,
     NativeSpreadsheetDataValidation, NativeSpreadsheetDataValidationErrorStyle,
     NativeSpreadsheetDataValidationOperator, NativeSpreadsheetDataValidationType,
+    NativeSpreadsheetDelimitedFormat, NativeSpreadsheetDelimitedImport,
     NativeSpreadsheetDifferentialFormat, NativeSpreadsheetDynamicFilter, NativeSpreadsheetFill,
-    NativeSpreadsheetFilterColumn, NativeSpreadsheetFilterCriteria, NativeSpreadsheetNamedRange,
-    NativeSpreadsheetNamedRangeScope, NativeSpreadsheetReadingOrder, NativeSpreadsheetSort,
-    NativeSpreadsheetSortDirection, NativeSpreadsheetSortKey, NativeSpreadsheetTable,
-    NativeSpreadsheetTableColumn, NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment,
-    SpreadsheetCellValue, MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
+    NativeSpreadsheetFilterColumn, NativeSpreadsheetFilterCriteria, NativeSpreadsheetFrozenPane,
+    NativeSpreadsheetImportResult, NativeSpreadsheetNamedRange, NativeSpreadsheetNamedRangeScope,
+    NativeSpreadsheetReadingOrder, NativeSpreadsheetSort, NativeSpreadsheetSortDirection,
+    NativeSpreadsheetSortKey, NativeSpreadsheetTable, NativeSpreadsheetTableColumn,
+    NativeSpreadsheetTableStyle, NativeSpreadsheetVerticalAlignment, SpreadsheetCellValue,
+    MAX_NATIVE_OFFICE_FIND_BYTES, MAX_NATIVE_OFFICE_REPLACEMENT_BYTES,
     MAX_NATIVE_OFFICE_TEXT_MATCHES, MAX_NATIVE_OFFICE_TEXT_REPLACEMENT_OUTPUT_BYTES,
-    MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS,
+    MAX_NATIVE_OFFICE_TEXT_SCOPE_CELLS, MAX_NATIVE_SPREADSHEET_IMPORT_BYTES,
+    MAX_NATIVE_SPREADSHEET_IMPORT_CELLS,
 };
 
 /// Loss-preserving OOXML editor with transactional in-memory batches.
@@ -202,6 +205,24 @@ impl NativeOfficeEditor {
         Ok(())
     }
 
+    /// Calculates every supported Spreadsheet formula and atomically writes
+    /// typed cached values and dynamic-array spill cells into the package.
+    pub fn recalculate_spreadsheet_formulas(
+        &mut self,
+    ) -> UseResult<crate::SpreadsheetFormulaCalculation> {
+        let result = self.apply_batch(&[NativeOfficeMutation::RecalculateSpreadsheetFormulas])?;
+        result
+            .spreadsheet_calculations
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                editor_error(
+                    "use.office.batch_validation_failed",
+                    "Native Spreadsheet recalculation returned no calculation receipt.",
+                )
+            })
+    }
+
     /// Adds one complete typed Spreadsheet ListObject table.
     pub fn add_spreadsheet_table(
         &mut self,
@@ -259,6 +280,40 @@ impl NativeOfficeEditor {
         self.single_path(NativeOfficeMutation::SortSpreadsheetRange {
             path: path.into(),
             sort,
+        })
+    }
+
+    /// Imports bounded CSV or TSV content into one Spreadsheet worksheet.
+    pub fn import_spreadsheet_delimited(
+        &mut self,
+        sheet: impl Into<String>,
+        import: NativeSpreadsheetDelimitedImport,
+    ) -> UseResult<NativeSpreadsheetImportResult> {
+        let result = self.apply_batch(&[NativeOfficeMutation::ImportSpreadsheetDelimited {
+            sheet: sheet.into(),
+            import,
+        }])?;
+        result
+            .spreadsheet_imports
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                editor_error(
+                    "use.office.batch_validation_failed",
+                    "Native Spreadsheet import returned no receipt.",
+                )
+            })
+    }
+
+    /// Creates or replaces one canonical frozen pane on a Spreadsheet sheet.
+    pub fn set_spreadsheet_frozen_pane(
+        &mut self,
+        sheet: impl Into<String>,
+        pane: NativeSpreadsheetFrozenPane,
+    ) -> UseResult<String> {
+        self.single_path(NativeOfficeMutation::SetSpreadsheetFrozenPane {
+            sheet: sheet.into(),
+            pane,
         })
     }
 
@@ -710,6 +765,8 @@ impl NativeOfficeEditor {
                 created_parts: Vec::new(),
                 created_images: Vec::new(),
                 text_replacements: Vec::new(),
+                spreadsheet_imports: Vec::new(),
+                spreadsheet_calculations: Vec::new(),
             });
         }
         let original = self.package.clone();
@@ -718,11 +775,15 @@ impl NativeOfficeEditor {
         let mut created_parts = Vec::new();
         let mut created_images = Vec::new();
         let mut text_replacements = Vec::new();
+        let mut spreadsheet_imports = Vec::new();
+        let mut spreadsheet_calculations = Vec::new();
         for mutation in mutations {
             let mut created_part = None;
             let mut created_image = None;
             let mut swap = None;
             let mut text_replacement = None;
+            let mut spreadsheet_import = None;
+            let mut spreadsheet_calculation = None;
             let result = match mutation {
                 NativeOfficeMutation::ReplaceText { path, replacement } => {
                     text_replace::replace(&mut self.package, path, replacement).map(|receipt| {
@@ -766,6 +827,12 @@ impl NativeOfficeEditor {
                     spreadsheet::set_cell_value(&mut self.package, path, value)
                         .map(|()| path.clone())
                 }
+                NativeOfficeMutation::RecalculateSpreadsheetFormulas => {
+                    spreadsheet::recalculate_formulas(&mut self.package).map(|receipt| {
+                        spreadsheet_calculation = Some(receipt);
+                        "/".to_string()
+                    })
+                }
                 NativeOfficeMutation::AddSpreadsheetTable { sheet, table } => {
                     spreadsheet::add_table(&mut self.package, sheet, table)
                 }
@@ -780,6 +847,16 @@ impl NativeOfficeEditor {
                 }
                 NativeOfficeMutation::SortSpreadsheetRange { path, sort } => {
                     spreadsheet::sort_range(&mut self.package, path, sort)
+                }
+                NativeOfficeMutation::ImportSpreadsheetDelimited { sheet, import } => {
+                    spreadsheet::import_delimited(&mut self.package, sheet, import).map(|receipt| {
+                        let path = receipt.path.clone();
+                        spreadsheet_import = Some(receipt);
+                        path
+                    })
+                }
+                NativeOfficeMutation::SetSpreadsheetFrozenPane { sheet, pane } => {
+                    spreadsheet::set_frozen_pane(&mut self.package, sheet, pane)
                 }
                 NativeOfficeMutation::AddNamedRange { named_range } => {
                     spreadsheet::add_named_range(&mut self.package, named_range)
@@ -953,6 +1030,12 @@ impl NativeOfficeEditor {
                     if let Some(receipt) = text_replacement {
                         text_replacements.push(receipt);
                     }
+                    if let Some(receipt) = spreadsheet_import {
+                        spreadsheet_imports.push(receipt);
+                    }
+                    if let Some(receipt) = spreadsheet_calculation {
+                        spreadsheet_calculations.push(receipt);
+                    }
                 }
                 Err(error) => {
                     self.package = original;
@@ -974,6 +1057,8 @@ impl NativeOfficeEditor {
             created_parts,
             created_images,
             text_replacements,
+            spreadsheet_imports,
+            spreadsheet_calculations,
         })
     }
 

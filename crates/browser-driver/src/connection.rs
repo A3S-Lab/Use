@@ -16,7 +16,14 @@ use std::time::{Duration, Instant};
 use std::os::unix::net::UnixStream;
 
 #[cfg(windows)]
-use windows_sys::Win32::Foundation::CloseHandle;
+use windows_sys::Win32::Foundation::{
+    CloseHandle, GetHandleInformation, SetHandleInformation, HANDLE_FLAG_INHERIT,
+    INVALID_HANDLE_VALUE,
+};
+#[cfg(windows)]
+use windows_sys::Win32::System::Console::{
+    GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+};
 #[cfg(windows)]
 use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
@@ -402,6 +409,59 @@ pub struct DaemonResult {
     pub restarted: bool,
 }
 
+/// Prevent a detached Windows daemon from retaining the CLI's inherited MCP
+/// stdout/stderr pipes. Rust's Windows process creation must enable handle
+/// inheritance for redirected child stdio, which can otherwise also pass
+/// through the parent's inheritable standard handles and keep readers waiting
+/// forever after the CLI process exits.
+#[cfg(windows)]
+struct StandardHandleInheritanceGuard {
+    handles: Vec<windows_sys::Win32::Foundation::HANDLE>,
+}
+
+#[cfg(windows)]
+impl StandardHandleInheritanceGuard {
+    fn disable() -> Result<Self, String> {
+        let mut guard = Self {
+            handles: Vec::new(),
+        };
+        for identifier in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            let handle = unsafe { GetStdHandle(identifier) };
+            if handle == 0 || handle == INVALID_HANDLE_VALUE {
+                continue;
+            }
+            let mut flags = 0;
+            if unsafe { GetHandleInformation(handle, &mut flags) } == 0 {
+                return Err(format!(
+                    "Failed to inspect standard-handle inheritance: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+            if flags & HANDLE_FLAG_INHERIT == 0 {
+                continue;
+            }
+            if unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } == 0 {
+                return Err(format!(
+                    "Failed to disable standard-handle inheritance: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+            guard.handles.push(handle);
+        }
+        Ok(guard)
+    }
+}
+
+#[cfg(windows)]
+impl Drop for StandardHandleInheritanceGuard {
+    fn drop(&mut self) {
+        for handle in self.handles.drain(..) {
+            let _ =
+                unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) };
+        }
+    }
+}
+
 /// Options forwarded to the daemon process as environment variables.
 /// Note: `confirm_interactive` is intentionally absent -- it is a CLI-side
 /// UX concern (prompting the user on stdin) and not a daemon configuration.
@@ -447,6 +507,7 @@ pub struct DaemonOptions<'a> {
 
 fn apply_daemon_env(cmd: &mut Command, session: &str, opts: &DaemonOptions) {
     cmd.env("AGENT_BROWSER_DAEMON", "1")
+        .env(product::RESOLVED_DAEMON_ENV, "1")
         .env("AGENT_BROWSER_SESSION", session);
 
     if opts.headed {
@@ -872,6 +933,7 @@ pub fn ensure_daemon(session: &str, opts: &DaemonOptions) -> Result<DaemonResult
         let mut cmd = Command::new(&exe_path);
         cmd.env("AGENT_BROWSER_DAEMON", "1");
         apply_daemon_env(&mut cmd, session, opts);
+        let stdio_guard = StandardHandleInheritanceGuard::disable()?;
 
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
         const DETACHED_PROCESS: u32 = 0x00000008;
@@ -880,10 +942,11 @@ pub fn ensure_daemon(session: &str, opts: &DaemonOptions) -> Result<DaemonResult
             cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::piped())
+                .stderr(Stdio::null())
                 .spawn()
                 .map_err(|e| format!("Failed to start daemon: {}", e))?,
         );
+        drop(stdio_guard);
     }
 
     let spawned_pid = daemon_child.as_ref().map(|child| child.id());

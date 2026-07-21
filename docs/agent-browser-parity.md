@@ -91,10 +91,11 @@ Until every item has direct evidence, the replacement remains incomplete.
 
 ## Windows roadmap
 
-Windows is currently a preview packaging target, not a supported Browser
-runtime target. CI still compiles the workspace and runs command parsing, MCP
-schema, Skills, packaging, and non-browser-runtime tests on Windows. The
-real-Chrome cross-process persistent-session test is compiled but explicitly
-ignored there until the first `browser open` call has the same bounded,
-cleanup-safe behavior proven on macOS and Linux. Passing that test and adding
-Windows to every completion-evidence item above are the promotion criteria.
+Windows remains a preview target for the complete Browser compatibility claim.
+A real Microsoft Edge E2E now covers the default 31-tool core profile through
+Code TUI and standard MCP. Windows daemon startup preserves explicit namespace
+overrides without retaining parent stdio handles, Chrome stderr fallback is
+deadline-bounded, and Doctor reads the executable version resource instead of
+launching Edge with a non-terminating `--version` probe. Persistent sessions
+across separate invocations, advanced profiles, and every completion-evidence
+item above remain the promotion criteria.

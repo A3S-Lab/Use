@@ -156,6 +156,33 @@ fn incompatible_launch_mode_error(flags: &Flags) -> Option<&'static str> {
     None
 }
 
+fn uses_external_browser(flags: &Flags) -> bool {
+    flags.executable_path.is_some()
+        || flags.provider.is_some()
+        || flags.cdp.is_some()
+        || flags.auto_connect
+}
+
+fn command_starts_local_browser(command: &serde_json::Value, flags: &Flags) -> bool {
+    if uses_external_browser(flags)
+        || command.get("cdpUrl").is_some()
+        || command.get("cdpPort").is_some()
+    {
+        return false;
+    }
+    matches!(
+        command.get("action").and_then(|value| value.as_str()),
+        Some("launch" | "navigate" | "batch" | "diff_url")
+    )
+}
+
+fn prepare_first_use_browser(flags: &Flags) -> Result<(), String> {
+    if uses_external_browser(flags) {
+        return Ok(());
+    }
+    lifecycle::ensure_first_use_browser()
+}
+
 fn should_send_local_launch_config(flags: &Flags) -> bool {
     (flags.headed
         || flags.cli_headed
@@ -925,7 +952,7 @@ fn run_close_all(flags: &Flags) {
 }
 
 fn main() {
-    product::initialize_environment();
+    product::initialize_process_environment();
     // Rust ignores SIGPIPE by default, causing println! to panic on broken pipes.
     // Reset to SIG_DFL so the OS terminates the process cleanly instead.
     #[cfg(unix)]
@@ -1111,6 +1138,14 @@ fn main() {
         } else {
             None
         };
+        if let Err(error) = prepare_first_use_browser(&flags) {
+            if flags.json {
+                print_json_error(error);
+            } else {
+                eprintln!("{} {}", color::error_indicator(), error);
+            }
+            exit(1);
+        }
         chat::run_chat(&flags, message);
         return;
     }
@@ -1235,6 +1270,17 @@ fn main() {
             eprintln!("{} {}", color::error_indicator(), msg);
         }
         exit(1);
+    }
+
+    if command_starts_local_browser(&cmd, &flags) {
+        if let Err(error) = prepare_first_use_browser(&flags) {
+            if flags.json {
+                print_json_error(error);
+            } else {
+                eprintln!("{} {}", color::error_indicator(), error);
+            }
+            exit(1);
+        }
     }
 
     // Parse proxy URL to separate server from credentials for the daemon.
@@ -1957,6 +2003,32 @@ mod tests {
         flags.provider = None;
         flags.auto_connect = false;
         flags
+    }
+
+    #[test]
+    fn first_use_preparation_is_limited_to_local_browser_launches() {
+        let flags = neutral_launch_config_flags();
+        for action in ["launch", "navigate", "batch", "diff_url"] {
+            assert!(command_starts_local_browser(
+                &json!({ "action": action }),
+                &flags
+            ));
+        }
+        assert!(!command_starts_local_browser(
+            &json!({ "action": "snapshot" }),
+            &flags
+        ));
+        assert!(!command_starts_local_browser(
+            &json!({ "action": "launch", "cdpUrl": "http://127.0.0.1:9222" }),
+            &flags
+        ));
+
+        let mut external = neutral_launch_config_flags();
+        external.executable_path = Some("/explicit/chrome".to_string());
+        assert!(!command_starts_local_browser(
+            &json!({ "action": "navigate" }),
+            &external
+        ));
     }
 
     #[test]

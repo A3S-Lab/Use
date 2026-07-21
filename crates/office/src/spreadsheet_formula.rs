@@ -3,6 +3,139 @@ use a3s_use_core::{UseError, UseResult};
 use crate::discovery::office_error;
 use crate::spreadsheet_reference::{column_name, MAX_COLUMNS, MAX_ROWS};
 
+mod ast;
+mod evaluate;
+mod graph;
+mod lexer;
+mod parser;
+mod registry;
+mod structured_reference;
+mod value;
+
+pub use ast::{
+    SpreadsheetFormula, SpreadsheetFormulaBinaryOperator, SpreadsheetFormulaErrorLiteral,
+    SpreadsheetFormulaExpression, SpreadsheetFormulaExpressionKind, SpreadsheetFormulaLiteral,
+    SpreadsheetFormulaPostfixOperator, SpreadsheetFormulaQualifier, SpreadsheetFormulaReference,
+    SpreadsheetFormulaReferenceKind, SpreadsheetFormulaSpan, SpreadsheetFormulaUnaryOperator,
+    MAX_SPREADSHEET_FORMULA_CHARACTERS, MAX_SPREADSHEET_FORMULA_DEPTH,
+    MAX_SPREADSHEET_FORMULA_NODES, MAX_SPREADSHEET_FORMULA_REFERENCE_AREAS,
+};
+pub use evaluate::{
+    MAX_SPREADSHEET_FORMULA_CALCULATION_TEXT_BYTES, MAX_SPREADSHEET_FORMULA_SPILL_CELLS,
+    MAX_SPREADSHEET_FORMULA_TEXT_BYTES,
+};
+pub use graph::{
+    SpreadsheetFormulaCell, SpreadsheetFormulaDependencyGraph, SpreadsheetFormulaDependencyNode,
+    SpreadsheetFormulaUnresolvedReference, SpreadsheetFormulaUnresolvedReferenceKind,
+    MAX_SPREADSHEET_FORMULA_CELLS, MAX_SPREADSHEET_FORMULA_DEPENDENCIES,
+    MAX_SPREADSHEET_FORMULA_REFERENCE_VISITS,
+};
+pub use registry::{
+    SpreadsheetFormulaFunctionDefinition, SpreadsheetFormulaFunctionRegistry,
+    SpreadsheetFormulaFunctionReturnKind, SpreadsheetFormulaFunctionVolatility,
+};
+pub(crate) use structured_reference::{
+    LocalStructuredReferenceContext, StructuredReferenceRewritePlan,
+    StructuredReferenceRewriteResult,
+};
+pub use value::{
+    SpreadsheetFormulaCalculatedCell, SpreadsheetFormulaCalculation, SpreadsheetFormulaValue,
+};
+
+#[derive(Debug)]
+struct FormulaParseFailure {
+    byte_offset: usize,
+    reason: String,
+}
+
+impl FormulaParseFailure {
+    fn new(byte_offset: usize, reason: impl Into<String>) -> Self {
+        Self {
+            byte_offset,
+            reason: reason.into(),
+        }
+    }
+}
+
+/// Parses one Spreadsheet formula into a bounded, source-spanned typed AST.
+///
+/// Callers may provide a formula-bar leading `=`. Spans and parse-error
+/// positions address the normalized formula body after that optional marker.
+pub fn parse_spreadsheet_formula(formula: &str) -> UseResult<SpreadsheetFormula> {
+    let normalized = formula.strip_prefix('=').unwrap_or(formula);
+    parse_normalized_formula(normalized)
+}
+
+pub(crate) fn validate_and_normalize_formula(formula: &str) -> UseResult<&str> {
+    let normalized = formula.strip_prefix('=').unwrap_or(formula);
+    parse_normalized_formula(normalized)?;
+    Ok(normalized)
+}
+
+fn parse_normalized_formula(formula: &str) -> UseResult<SpreadsheetFormula> {
+    validate_formula_bounds(formula)?;
+    let tokens = lexer::lex(formula).map_err(|failure| parse_error(formula, failure))?;
+    parser::parse(formula, tokens).map_err(|failure| parse_error(formula, failure))
+}
+
+fn validate_formula_bounds(formula: &str) -> UseResult<()> {
+    let characters = formula.chars().count();
+    if formula.is_empty() || characters > MAX_SPREADSHEET_FORMULA_CHARACTERS {
+        return Err(office_error(
+            "use.office.spreadsheet_formula_invalid",
+            format!(
+                "Spreadsheet formulas must contain 1-{MAX_SPREADSHEET_FORMULA_CHARACTERS} characters."
+            ),
+        )
+        .with_detail("characterOffset", characters)
+        .with_detail("byteOffset", formula.len())
+        .with_detail("reason", "Formula length is outside supported limits."));
+    }
+    if let Some((byte_offset, _)) = formula
+        .char_indices()
+        .find(|(_, character)| character.is_control())
+    {
+        let character_offset = formula[..byte_offset].chars().count();
+        return Err(office_error(
+            "use.office.spreadsheet_formula_invalid",
+            format!(
+                "Spreadsheet formula is invalid at character {}: control characters are not supported.",
+                character_offset + 1
+            ),
+        )
+        .with_detail("characterOffset", character_offset)
+        .with_detail("byteOffset", byte_offset)
+        .with_detail(
+            "reason",
+            "Formula contains an unsupported control character.",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_error(formula: &str, failure: FormulaParseFailure) -> UseError {
+    let byte_offset = nearest_character_boundary(formula, failure.byte_offset.min(formula.len()));
+    let character_offset = formula[..byte_offset].chars().count();
+    office_error(
+        "use.office.spreadsheet_formula_invalid",
+        format!(
+            "Spreadsheet formula is invalid at character {}: {}",
+            character_offset + 1,
+            failure.reason
+        ),
+    )
+    .with_detail("characterOffset", character_offset)
+    .with_detail("byteOffset", byte_offset)
+    .with_detail("reason", failure.reason)
+}
+
+fn nearest_character_boundary(value: &str, mut offset: usize) -> usize {
+    while offset > 0 && !value.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    offset
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReferenceAxis {
     Row,
@@ -367,7 +500,9 @@ fn rewrite_reference(
             ParsedReference::Rows { start, end } => {
                 rewrite_axis_reference(*start, *end, ReferenceAxis::Row, axis, edit)
             }
-            ParsedReference::Cells { .. } => unreachable!(),
+            ParsedReference::Cells { .. } => Err(formula_error(
+                "Spreadsheet formula reference classification is inconsistent.",
+            )),
         };
     };
     let Some(end) = end else {
@@ -598,6 +733,68 @@ fn formula_error(message: impl Into<String>) -> UseError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_formula_parser_is_bounded_utf8_safe_and_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<SpreadsheetFormula>();
+
+        let formula = parse_spreadsheet_formula("=SUM('销售 数据'!A1:B2,Table1[Amount])").unwrap();
+        assert!(matches!(
+            formula.root.kind,
+            SpreadsheetFormulaExpressionKind::FunctionCall { .. }
+        ));
+        assert!(parse_spreadsheet_formula("==1").is_err());
+
+        let error = parse_spreadsheet_formula("\"销售\"+").unwrap_err();
+        assert_eq!(error.code, "use.office.spreadsheet_formula_invalid");
+        assert_eq!(error.details["characterOffset"], 5);
+        assert_eq!(error.details["byteOffset"], 9);
+
+        let too_long = "1".repeat(MAX_SPREADSHEET_FORMULA_CHARACTERS + 1);
+        assert_eq!(
+            parse_spreadsheet_formula(&too_long).unwrap_err().code,
+            "use.office.spreadsheet_formula_invalid"
+        );
+        let too_deep = format!(
+            "{}1{}",
+            "(".repeat(MAX_SPREADSHEET_FORMULA_DEPTH + 1),
+            ")".repeat(MAX_SPREADSHEET_FORMULA_DEPTH + 1)
+        );
+        assert_eq!(
+            parse_spreadsheet_formula(&too_deep).unwrap_err().code,
+            "use.office.spreadsheet_formula_invalid"
+        );
+    }
+
+    #[test]
+    fn formula_parser_rejects_incomplete_and_non_excel_operator_syntax() {
+        for formula in [
+            "",
+            " ",
+            "1+",
+            "+",
+            "SUM(A1",
+            "SUM(A1;B1)",
+            "A1::B2",
+            "A:1",
+            "1 2",
+            "A1&&B1",
+            "A1!=B1",
+            "\"unterminated",
+            "'unterminated!A1",
+            "Table1[[Column]",
+            "$A+1",
+        ] {
+            let error = parse_spreadsheet_formula(formula).unwrap_err();
+            assert_eq!(
+                error.code, "use.office.spreadsheet_formula_invalid",
+                "{formula}"
+            );
+            assert!(error.details.contains_key("characterOffset"), "{formula}");
+            assert!(error.details.contains_key("byteOffset"), "{formula}");
+        }
+    }
 
     #[test]
     fn structural_rewrite_respects_sheets_strings_ranges_and_absolute_markers() {

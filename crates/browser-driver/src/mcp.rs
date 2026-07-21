@@ -1928,7 +1928,8 @@ fn tool_annotations(name: &str) -> Value {
 fn is_read_only_tool(name: &str) -> bool {
     matches!(
         name,
-        TOOL_SNAPSHOT
+        TOOL_TOOLS_PROFILES
+            | TOOL_SNAPSHOT
             | TOOL_READ
             | TOOL_WAIT_MS
             | TOOL_WAIT_FOR_SELECTOR
@@ -1982,7 +1983,8 @@ fn is_read_only_tool(name: &str) -> bool {
 fn is_open_world_tool(name: &str) -> bool {
     !matches!(
         name,
-        TOOL_SESSION
+        TOOL_TOOLS_PROFILES
+            | TOOL_SESSION
             | TOOL_SESSION_LIST
             | TOOL_SESSION_ID
             | TOOL_SESSION_INFO
@@ -3957,6 +3959,17 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("a3s use browser mcp --tools all"));
+    }
+
+    #[test]
+    fn tools_profiles_annotations_are_read_only_and_closed_world() {
+        let definition = tools()
+            .into_iter()
+            .find(|tool| tool["name"] == TOOL_TOOLS_PROFILES)
+            .expect("tools profile definition");
+
+        assert_eq!(definition["annotations"]["readOnlyHint"], true);
+        assert_eq!(definition["annotations"]["openWorldHint"], false);
     }
 
     #[test]

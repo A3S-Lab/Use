@@ -8,6 +8,19 @@ pub const COMMAND_NAME: &str = "a3s use browser";
 pub const SERVER_NAME: &str = "a3s-use-browser";
 pub const PRIMARY_ENV_PREFIX: &str = "A3S_USE_BROWSER_";
 pub const LEGACY_ENV_PREFIX: &str = "AGENT_BROWSER_";
+pub const RESOLVED_DAEMON_ENV: &str = "A3S_USE_BROWSER_RESOLVED_DAEMON_ENV";
+
+/// Initialize compatibility aliases unless this process is a daemon whose
+/// environment was already resolved by the parent CLI.
+///
+/// The parent may override canonical A3S values with explicit CLI flags before
+/// spawning the daemon. Re-promoting the inherited canonical values in that
+/// child would silently undo those overrides.
+pub fn initialize_process_environment() {
+    if std::env::var_os(RESOLVED_DAEMON_ENV).is_none() {
+        initialize_environment();
+    }
+}
 
 /// Promote every A3S Browser environment variable to the compatibility name
 /// consumed by the vendored engine. The A3S name always wins when both exist.
@@ -189,6 +202,7 @@ fn primary_env_name(legacy: &str) -> OsString {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::EnvGuard;
 
     #[test]
     fn product_paths_are_a3s_owned() {
@@ -204,6 +218,25 @@ mod tests {
         assert_eq!(
             primary_env_name("AGENT_BROWSER_SESSION"),
             "A3S_USE_BROWSER_SESSION"
+        );
+    }
+
+    #[test]
+    fn resolved_daemon_environment_preserves_parent_cli_overrides() {
+        let guard = EnvGuard::new(&[
+            RESOLVED_DAEMON_ENV,
+            "A3S_USE_BROWSER_NAMESPACE",
+            "AGENT_BROWSER_NAMESPACE",
+        ]);
+        guard.set(RESOLVED_DAEMON_ENV, "1");
+        guard.set("A3S_USE_BROWSER_NAMESPACE", "inherited-default");
+        guard.set("AGENT_BROWSER_NAMESPACE", "explicit-cli-value");
+
+        initialize_process_environment();
+
+        assert_eq!(
+            std::env::var("AGENT_BROWSER_NAMESPACE").unwrap(),
+            "explicit-cli-value"
         );
     }
 }

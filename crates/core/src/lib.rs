@@ -1,8 +1,18 @@
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fmt;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+
+pub mod release;
+
+pub use release::{
+    HttpHealthContract, McpReleaseDescriptor, McpServiceContract, McpServiceTransport,
+    ReleaseArtifact, ReleaseCompatibility, ReleaseDependency, ReleaseKind, ReleaseProvenance,
+    ReleaseResolution, SkillBindingContract, SkillBindingTarget, SkillContentContract,
+    SkillReleaseDescriptor, MAX_RELEASE_DESCRIPTOR_BYTES, MCP_RELEASE_SCHEMA, SKILL_RELEASE_SCHEMA,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -120,6 +130,86 @@ impl std::error::Error for UseError {}
 
 pub type UseResult<T> = Result<T, UseError>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstUseInstallBlock {
+    Offline,
+    Disabled,
+}
+
+impl FirstUseInstallBlock {
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::Offline => "offline mode",
+            Self::Disabled => "A3S_NO_AUTO_INSTALL",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirstUseInstallPolicy {
+    offline: bool,
+    disabled: bool,
+}
+
+impl FirstUseInstallPolicy {
+    pub const fn new(offline: bool, disabled: bool) -> Self {
+        Self { offline, disabled }
+    }
+
+    pub fn from_env() -> UseResult<Self> {
+        Self::from_values(
+            std::env::var_os("A3S_OFFLINE"),
+            std::env::var_os("A3S_NO_AUTO_INSTALL"),
+        )
+    }
+
+    pub const fn blocked_by(self) -> Option<FirstUseInstallBlock> {
+        if self.offline {
+            Some(FirstUseInstallBlock::Offline)
+        } else if self.disabled {
+            Some(FirstUseInstallBlock::Disabled)
+        } else {
+            None
+        }
+    }
+
+    pub const fn allows_install(self) -> bool {
+        self.blocked_by().is_none()
+    }
+
+    fn from_values(offline: Option<OsString>, disabled: Option<OsString>) -> UseResult<Self> {
+        Ok(Self {
+            offline: parse_environment_boolean("A3S_OFFLINE", offline)?,
+            disabled: parse_environment_boolean("A3S_NO_AUTO_INSTALL", disabled)?,
+        })
+    }
+}
+
+fn parse_environment_boolean(name: &'static str, value: Option<OsString>) -> UseResult<bool> {
+    let Some(value) = value else {
+        return Ok(false);
+    };
+    if value.is_empty() {
+        return Ok(true);
+    }
+    let value = value.into_string().map_err(|_| {
+        UseError::new(
+            "use.first_use.policy_invalid",
+            format!("{name} must contain a valid UTF-8 boolean value."),
+        )
+        .with_detail("variable", name)
+    })?;
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => Err(UseError::new(
+            "use.first_use.policy_invalid",
+            format!("{name} must be a boolean value."),
+        )
+        .with_detail("variable", name)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +232,31 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("a3s install"));
+    }
+
+    #[test]
+    fn first_use_policy_uses_a3s_boolean_conventions() {
+        for value in [None, Some("0"), Some("false"), Some("no"), Some("off")] {
+            let policy = FirstUseInstallPolicy::from_values(value.map(Into::into), None).unwrap();
+            assert!(policy.allows_install());
+        }
+        for value in [Some(""), Some("1"), Some("true"), Some("yes"), Some("on")] {
+            let policy = FirstUseInstallPolicy::from_values(value.map(Into::into), None).unwrap();
+            assert_eq!(policy.blocked_by(), Some(FirstUseInstallBlock::Offline));
+        }
+    }
+
+    #[test]
+    fn offline_policy_takes_precedence_over_no_auto_install() {
+        let policy =
+            FirstUseInstallPolicy::from_values(Some("1".into()), Some("1".into())).unwrap();
+        assert_eq!(policy.blocked_by(), Some(FirstUseInstallBlock::Offline));
+    }
+
+    #[test]
+    fn invalid_first_use_policy_is_typed() {
+        let error = FirstUseInstallPolicy::from_values(Some("sometimes".into()), None).unwrap_err();
+        assert_eq!(error.code, "use.first_use.policy_invalid");
+        assert_eq!(error.details["variable"], "A3S_OFFLINE");
     }
 }
