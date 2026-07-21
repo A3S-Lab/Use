@@ -2,9 +2,9 @@
 
 ## Domain boundary
 
-Browser, Office, OCR, and Document are typed libraries and reserved built-in
-command routes. The default binary cannot omit their command and diagnostic
-surfaces, although provider runtimes or model assets may be missing.
+Browser and Office are typed libraries and reserved built-in command routes.
+The default binary cannot omit their command and diagnostic surfaces, although
+provider runtimes may be missing.
 
 Office's target runtime is an A3S-owned Rust engine. Its lowest layer is a
 bounded, loss-preserving OPC/OOXML package kernel; format semantics build above
@@ -13,23 +13,17 @@ compatibility backend until the native promotion gates in
 [Native Office Engine](native-office.md) pass.
 
 Search depends directly on the object-safe PageRenderer contract in
-`a3s-use-browser`. It never executes the CLI or requires a background service.
-Search and Use resolve `A3S_USE_BROWSER_HOME`,
-`A3S_DATA_HOME/use/browser`, or the default
-`~/.local/share/a3s/use/browser` through that same crate, so they share one
-Chrome installation and receipt layout.
+a3s-use-browser. It never executes the CLI or requires a background service.
 
-Provider selection is typed. `DiscoveredChrome` remains the non-installing
-default for embedded callers such as Search. A validated direct A3S Browser
-launch selects first-use preparation, while a Code worker requests the same
-bounded installer through parent confirmation. Both reuse system Chrome and
-the shared A3S-managed cache before downloading. Managed downloads are
-restricted to approved HTTPS hosts and redirects, bounded by size, hashed into
-an installation receipt, staged outside the active version, and atomically
-activated. Lightpanda assets must match the publisher SHA-256 exposed by GitHub
-Releases. Chrome for Testing's current version feed does not publish an
-independent SHA-256 value, so its receipt records HTTPS provenance and locally
-observed hashes without claiming publisher checksum verification.
+Provider selection is explicit. `DiscoveredChrome` is the default and never
+downloads software. Only a `Managed*` provider or an explicit component install
+authorizes a download. Managed downloads are restricted to approved HTTPS
+hosts and redirects, bounded by size, hashed into an installation receipt,
+staged outside the active version, and atomically activated. Lightpanda assets
+must match the publisher SHA-256 exposed by GitHub Releases. Chrome for Testing's
+current version feed does not publish an independent SHA-256 value, so its
+receipt records HTTPS provenance and locally observed hashes without claiming
+publisher checksum verification.
 
 ## Native extension surfaces
 
@@ -43,35 +37,22 @@ The package manifest is a3s-use-extension.acl and is parsed by a3s-acl. A3S Use
 owns identity, routes, trust, activation, and lifecycle around the surfaces. It
 does not define JSON-RPC methods or convert surfaces implicitly.
 
+`a3s-use-science` is the reference multi-surface extension. It remains a
+separate process and package even though its source is developed in this
+repository. Its Rust API, native CLI, 13 standard MCP tools, and packaged Skill
+share typed source-specific operations; the host sees only the declared
+`a3s/science` CLI, MCP, and Skill surfaces. This demonstrates how a first-party
+toolkit can ship without expanding the reserved built-in route set or adding a
+generic action envelope.
+
 `a3s-use-ocr` implements the reserved first-party `ocr` route in the default
 Use build. The release packages its content-bound Skill and exposes the native
 CLI plus standard stdio MCP without a separate extension install. The process
 accepts bounded local image files and binds every result to the canonical
 source digest. It runs the pinned `PP-OCRv6_small` detection and recognition
 models locally through ONNX Runtime, without Python, PaddlePaddle, a remote OCR
-endpoint, or an alternate backend. The first CLI extraction installs or repairs
-the pinned model bundle when first-use policy permits it. Standard MCP keeps
-`ocr_doctor` and `ocr_extract` closed-world and read-only, while the separate
-idempotent `ocr_install` network mutation requires parent confirmation.
-Explicit `use/ocr` component operations remain available for preparation.
-
-`a3s-use-document` composes the native Office package kernel with
-`a3s-use-ocr`; it does not introduce another Office or OCR backend. Inspection
-extracts bounded DOCX, XLSX, and PPTX structure, native text, semantic units,
-and embedded-image candidates without installing or running OCR. Parsing keeps
-native Office text as the structural source of truth and selectively adds local
-PP-OCRv6 evidence for required, suggested, or explicitly selected raster
-images. Standalone raster images use the same path. Results preserve archive,
-content, OOXML part, embedded-image, model, confidence, polygon, and
-bounding-box provenance.
-
-The direct Document CLI is first-use authority and prepares the shared
-PP-OCRv6 bundle only when parsing actually selects raster evidence. Complete
-release archives already carry that bundle. Standard MCP keeps
-`document_inspect` and `document_parse` read-only and non-installing; the
-separate idempotent `document_install_ocr` network mutation requires parent
-confirmation. The implementation does not invoke Tesseract, Python,
-PaddlePaddle, Microsoft Office, LibreOffice, Browser, or an off-device service.
+endpoint, or an alternate backend. Model installation and repair are explicit
+`use/ocr` component operations. Both MCP tools are closed-world and read-only.
 
 ## Hot-plug registry
 
@@ -97,32 +78,35 @@ Consumers read `extension snapshot` for the current projection or long-poll
 `extension watch --after-generation <n>` for a later generation. No daemon,
 custom RPC protocol, `dlopen`, or restart is required.
 
+Explicit local sources may be directories or bounded `.tar.gz`, `.tgz`, and
+`.zip` archives. Archive extraction runs off the async executor, accepts one
+manifest-rooted package, preserves executable permissions, and rejects links,
+path traversal, duplicate entries, unsupported file types, and expansion beyond
+the package limits before lifecycle activation begins. Standard bounded macOS
+AppleDouble sidecars are ignored rather than installed; they still count toward
+the archive entry and expanded-byte limits.
+
 ### Unified capability projection
 
 Resident Code hosts do not need separate discovery paths for built-in and
-external domains. `capability snapshot` projects Browser, native Office,
-Document, OCR, Box, and enabled extensions through one schema while preserving
-each binding's `built-in` or `extension` origin. `capability watch` accepts both
-the extension generation and a content revision. The generation advances for
-extension lifecycle commits; the SHA-256 revision also detects built-in
-provider readiness and packaged Skill changes when the extension generation
-remains unchanged. Each Skill projection includes an absolute package path and
-its own lowercase SHA-256, allowing a resident host to reject raced or modified
-bytes before replacing its live Skill.
-The default distribution projects the Browser plus first-party
-`a3s-use-office`, `a3s-use-document`, and `a3s-use-ocr` Skills.
-`office skills list|get|path` exposes the Office Skill as bounded local CLI
-reads; it never launches the OfficeCLI compatibility provider. For resident
-hosts, `use/office` targets the built-in `office-native` MCP server and is ready
-independently of OfficeCLI. A discovered OfficeCLI provider is projected
-separately as `use/office-compat`, targeting the standard compatibility server
-without carrying the native Skill. `use/document` targets `document-native`,
-and `use/ocr` targets `ocr-native`; shared model readiness remains visible.
-Read-only discovery never installs providers. Direct Browser launch, OfficeCLI
-compatibility execution, OCR extraction, and Document parsing with selected
-raster evidence use the first-use policy. Their MCP workers use separately
-annotated installers that require parent confirmation; native Office and
-native-only Document parsing need no provider installation.
+external domains. `capability snapshot` projects Browser, native Office, OCR,
+Box, and enabled extensions through one schema while preserving each binding's
+`built-in` or `extension` origin. `capability watch` accepts both the extension
+generation and a content revision. The generation advances for extension
+lifecycle commits; the SHA-256 revision also detects built-in provider
+readiness and packaged Skill changes when the extension generation remains
+unchanged. Each Skill projection includes an absolute package path and its own
+lowercase SHA-256, allowing a resident host to reject raced or modified bytes
+before replacing its live Skill.
+The default distribution projects the Browser, first-party `a3s-use-office`,
+and first-party `a3s-use-ocr` Skills. `office skills list|get|path` exposes the
+Office Skill as bounded local CLI reads; it never launches the OfficeCLI
+compatibility provider. For resident hosts, `use/office` targets the built-in
+`office-native` MCP server and is ready independently of OfficeCLI. A discovered
+OfficeCLI provider is projected separately as `use/office-compat`, targeting
+the standard compatibility server without carrying the native Skill. The
+`use/ocr` route targets `ocr-native`; model readiness remains explicit and
+never triggers a silent install.
 
 The projection contains content-bound Skill references and an MCP launch target,
 never executable extension code or a generic action payload. Consumers still
@@ -445,18 +429,15 @@ The umbrella CLI delegates runtime lifecycle through ordinary commands:
     a3s-use component list --json
     a3s-use component status browser --json
     a3s-use component install browser --json
-    a3s-use component install document --json
     a3s-use component install office --json
-    a3s-use component install ocr --json
     a3s-use component uninstall office --json
 
 Each invocation accepts argv and returns one versioned JSON document plus an
 exit status. This is CLI automation, not JSON-RPC.
 
 In 0.1.x, managed Office installation means the reviewed OfficeCLI compatibility
-release. It is fetched by explicit preparation, the first real compatibility
-CLI command, or the confirmed native MCP installer. Downloads are restricted to
-approved HTTPS hosts, bounded by size, and checked against the publisher's
+release. It is fetched only by an explicit install or repair command, restricted
+to approved HTTPS hosts, bounded by size, and checked against the publisher's
 SHA-256 before atomic activation. Compatibility execution sets
 `OFFICECLI_SKIP_UPDATE=1`; A3S upgrades are explicit component operations.
 
@@ -468,7 +449,7 @@ component for one deprecation cycle before removal.
 
 Implemented:
 
-1. Core, Browser, Office, Document, OCR, extension, and component contracts.
+1. Core, Browser, Office, OCR, extension, and component contracts.
 2. Chrome and Lightpanda extraction from Search.
 3. Search injection through `Arc<dyn PageRenderer>`.
 4. Typed Browser rendering and session tools over standard MCP stdio.
@@ -530,15 +511,16 @@ Implemented:
 15. A packaged first-party `a3s-use-office` Skill with progressive
     Word/Spreadsheet/Presentation/MCP references, bounded local discovery,
     release-archive smoke checks, and content-bound capability projection.
-16. A first-party built-in OCR route with typed PP-OCRv6 diagnostics, bounded
+16. TUF-verified remote extension registries with pinned bootstrap roots,
+    expiration and rollback enforcement, exact review/apply plans, and signed
+    provenance receipts. Registry upgrades restore the recorded source and
+    channel, reject identity drift and version downgrades, and converge before
+    payload download when the installed signed target is already current.
+17. A first-party built-in OCR route with typed PP-OCRv6 diagnostics, bounded
     image admission, source SHA-256 evidence, native ONNX Runtime detection and
     recognition, standard closed-world MCP annotations/output schemas, pinned
     release models, and a content-bound Skill that projects to
     `mcp__use_ocr__*` in A3S Code.
-17. An agentic Document route that combines native DOCX/XLSX/PPTX structure
-    with selective local PP-OCRv6 evidence, preserves source-to-block
-    provenance, shares release-packaged models with OCR, and projects a
-    content-bound Skill plus confirmed MCP installer into A3S Code.
 
 Next:
 
@@ -552,5 +534,6 @@ Next:
    with the same runtime guarantees as macOS and Linux. Windows compilation,
    CLI/MCP schemas, packaged assets, and non-runtime tests remain continuously
    checked in CI meanwhile.
-4. Signed remote extension publishers. External publisher infrastructure is
-   independent of the built-in Browser compatibility contract.
+4. Production publication for the official A3S extension registry, including
+   an offline-held root-key policy and release automation. The client does not
+   substitute a placeholder or generated key for that operational trust root.

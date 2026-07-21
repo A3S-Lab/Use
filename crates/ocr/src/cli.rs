@@ -118,7 +118,7 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
     match cli.command {
         Command::Doctor => CommandOutput::data(client.diagnostic()),
         Command::Extract { path } => {
-            CommandOutput::data(client.extract_with_first_use(OcrRequest { path }).await?)
+            CommandOutput::data(client.extract(OcrRequest { path }).await?)
         }
         Command::Serve { .. } => Err(UseError::new(
             "use.ocr.command_invalid",

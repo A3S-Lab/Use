@@ -84,7 +84,7 @@ jobs:
           version="${{ needs.validate.outputs.version }}"
           archive="a3s-use-${version}-${{ matrix.name }}.tar.gz"
           stage="${RUNNER_TEMP}/a3s-use-${version}-${{ matrix.name }}"
-          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/document-skills" "${stage}/office-skills" "${stage}/ocr-skills" "${stage}/dashboard"
+          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/office-skills" "${stage}/ocr-skills" "${stage}/dashboard"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use" "${stage}/a3s-use"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use-browser-driver" "${stage}/a3s-use-browser-driver"
           A3S_USE_OCR_HOME="${stage}/ocr-models" \
@@ -94,7 +94,6 @@ jobs:
           cp -R crates/browser-driver/skill-data/. "${stage}/skill-data/"
           cp -R crates/office/skills/. "${stage}/office-skills/"
           cp -R crates/ocr/skills/. "${stage}/ocr-skills/"
-          cp -R crates/document/skills/. "${stage}/document-skills/"
           cp -R crates/browser-driver/dashboard/out/. "${stage}/dashboard/"
           install -m 0644 LICENSE README.md THIRD_PARTY_NOTICES.md "${stage}/"
           install -m 0644 crates/browser-driver/LICENSE-APACHE-2.0 "${stage}/LICENSE-APACHE-2.0"
@@ -121,7 +120,6 @@ jobs:
           Copy-Item -Recurse "crates/browser-driver/skill-data" "$stage/skill-data"
           Copy-Item -Recurse "crates/office/skills" "$stage/office-skills"
           Copy-Item -Recurse "crates/ocr/skills" "$stage/ocr-skills"
-          Copy-Item -Recurse "crates/document/skills" "$stage/document-skills"
           Copy-Item -Recurse "crates/browser-driver/dashboard/out" "$stage/dashboard"
           Copy-Item LICENSE,README.md,THIRD_PARTY_NOTICES.md $stage
           Copy-Item crates/browser-driver/LICENSE-APACHE-2.0 "$stage/LICENSE-APACHE-2.0"
@@ -141,7 +139,6 @@ jobs:
           test -f "${install_root}/skill-data/core/SKILL.md"
           test -f "${install_root}/office-skills/a3s-use-office/SKILL.md"
           test -f "${install_root}/ocr-skills/a3s-use-ocr/SKILL.md"
-          test -f "${install_root}/document-skills/a3s-use-document/SKILL.md"
           test -f "${install_root}/ocr-models/PP-OCRv6_small/det/inference.onnx"
           test -f "${install_root}/ocr-models/PP-OCRv6_small/det/inference.yml"
           test -f "${install_root}/ocr-models/PP-OCRv6_small/rec/inference.onnx"
@@ -188,29 +185,6 @@ jobs:
           assert value["data"]["model"] == "PP-OCRv6_small"
           assert value["data"]["source"]["mediaType"] == "image/bmp"
           PY
-          "${install_root}/a3s-use" document inspect "${RUNNER_TEMP}/ocr-white.bmp" --json > "${RUNNER_TEMP}/document-inspect.json"
-          python3 - "${RUNNER_TEMP}/document-inspect.json" <<'PY'
-          import json, pathlib, sys
-          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          assert value["ok"] is True
-          assert value["data"]["source"]["kind"] == "image"
-          assert value["data"]["images"][0]["recommendation"] == "required"
-          assert value["data"]["images"][0]["ocrState"] == "not-selected"
-          PY
-          "${install_root}/a3s-use" document parse "${RUNNER_TEMP}/ocr-white.bmp" --ocr auto --json > "${RUNNER_TEMP}/document-parse.json"
-          python3 - "${RUNNER_TEMP}/document-parse.json" <<'PY'
-          import json, pathlib, sys
-          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          assert value["ok"] is True
-          assert value["data"]["source"]["kind"] == "image"
-          assert value["data"]["ocr"]["provider"] == "pp-ocr-v6"
-          assert value["data"]["ocr"]["engine"] == "onnx-runtime"
-          assert value["data"]["ocr"]["model"] == "PP-OCRv6_small"
-          assert value["data"]["ocr"]["selectedImages"] == 1
-          assert value["data"]["ocr"]["processedImages"] == 1
-          assert value["data"]["ocr"]["sendsSourceOffDevice"] is False
-          assert value["data"]["images"][0]["ocrState"] in {"empty", "processed"}
-          PY
           "${install_root}/a3s-use" capability snapshot --json > "${RUNNER_TEMP}/capabilities.json"
           python3 - "${RUNNER_TEMP}/capabilities.json" "${install_root}" <<'PY'
           import json, pathlib, sys
@@ -225,17 +199,6 @@ jobs:
           assert len(ocr["skills"]) == 1
           assert pathlib.Path(ocr["skills"][0]["path"]).resolve() == (
               root / "ocr-skills" / "a3s-use-ocr" / "SKILL.md"
-          )
-          document = next(
-              capability
-              for capability in value["data"]["registry"]["capabilities"]
-              if capability["id"] == "use/document"
-          )
-          assert document["readiness"] == "ready"
-          assert document["mcp"]["target"] == "document-native"
-          assert len(document["skills"]) == 1
-          assert pathlib.Path(document["skills"][0]["path"]).resolve() == (
-              root / "document-skills" / "a3s-use-document" / "SKILL.md"
           )
           PY
           A3S_OFFICECLI_EXECUTABLE="${install_root}/must-not-be-invoked" \
@@ -275,7 +238,6 @@ jobs:
             "$root/skill-data/core/SKILL.md",
             "$root/office-skills/a3s-use-office/SKILL.md",
             "$root/ocr-skills/a3s-use-ocr/SKILL.md",
-            "$root/document-skills/a3s-use-document/SKILL.md",
             "$root/ocr-models/PP-OCRv6_small/det/inference.onnx",
             "$root/ocr-models/PP-OCRv6_small/det/inference.yml",
             "$root/ocr-models/PP-OCRv6_small/rec/inference.onnx",
@@ -314,24 +276,6 @@ jobs:
             $ocrExtract.data.model -ne "PP-OCRv6_small" -or
             $ocrExtract.data.source.mediaType -ne "image/bmp"
           ) { throw "Packaged PP-OCRv6 extraction smoke failed" }
-          $documentInspect = (& "$root/a3s-use.exe" document inspect "$env:RUNNER_TEMP/ocr-white.bmp" --json | ConvertFrom-Json)
-          if (
-            -not $documentInspect.ok -or
-            $documentInspect.data.source.kind -ne "image" -or
-            $documentInspect.data.images[0].recommendation -ne "required" -or
-            $documentInspect.data.images[0].ocrState -ne "not-selected"
-          ) { throw "Packaged Document inspection smoke failed" }
-          $documentParse = (& "$root/a3s-use.exe" document parse "$env:RUNNER_TEMP/ocr-white.bmp" --ocr auto --json | ConvertFrom-Json)
-          if (
-            -not $documentParse.ok -or
-            $documentParse.data.source.kind -ne "image" -or
-            $documentParse.data.ocr.provider -ne "pp-ocr-v6" -or
-            $documentParse.data.ocr.engine -ne "onnx-runtime" -or
-            $documentParse.data.ocr.model -ne "PP-OCRv6_small" -or
-            $documentParse.data.ocr.selectedImages -ne 1 -or
-            $documentParse.data.ocr.processedImages -ne 1 -or
-            $documentParse.data.ocr.sendsSourceOffDevice
-          ) { throw "Packaged Document parse smoke failed" }
           $capabilities = (& "$root/a3s-use.exe" capability snapshot --json | ConvertFrom-Json)
           $ocrCapability = $capabilities.data.registry.capabilities |
             Where-Object id -eq "use/ocr"
@@ -342,18 +286,6 @@ jobs:
           $actualOcrSkill = (Resolve-Path $ocrCapability.skills[0].path).Path
           if (-not [StringComparer]::OrdinalIgnoreCase.Equals($actualOcrSkill, $expectedOcrSkill)) {
             throw "Built-in OCR Skill was not projected from the installed release"
-          }
-          $documentCapability = $capabilities.data.registry.capabilities |
-            Where-Object id -eq "use/document"
-          if (
-            $documentCapability.readiness -ne "ready" -or
-            $documentCapability.mcp.target -ne "document-native" -or
-            $documentCapability.skills.Count -ne 1
-          ) { throw "Built-in Document capability projection smoke failed" }
-          $expectedDocumentSkill = (Resolve-Path "$root/document-skills/a3s-use-document/SKILL.md").Path
-          $actualDocumentSkill = (Resolve-Path $documentCapability.skills[0].path).Path
-          if (-not [StringComparer]::OrdinalIgnoreCase.Equals($actualDocumentSkill, $expectedDocumentSkill)) {
-            throw "Built-in Document Skill was not projected from the installed release"
           }
           $requests = @(
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}',

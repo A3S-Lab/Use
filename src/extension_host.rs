@@ -3,7 +3,7 @@ use std::path::Path;
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_extension::{
     ActivationResult, ExtensionRegistry, ExtensionRegistrySnapshot, InstallOptions, InstallResult,
-    InstalledExtension, UninstallResult,
+    InstalledExtension, TrustedRegistry, UninstallResult,
 };
 use std::time::Duration;
 
@@ -29,6 +29,26 @@ pub async fn install(
                 force,
                 allow_unsigned,
             },
+        )
+        .await
+}
+
+pub async fn install_remote(
+    package_id: &str,
+    registry: &TrustedRegistry,
+    version: Option<&str>,
+    channel: &str,
+    expected_plan_digest: Option<&str>,
+    force: bool,
+) -> UseResult<InstallResult> {
+    ExtensionRegistry::from_env()?
+        .install_remote(
+            package_id,
+            registry,
+            version,
+            channel,
+            expected_plan_digest,
+            force,
         )
         .await
 }

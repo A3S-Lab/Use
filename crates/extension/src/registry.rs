@@ -7,12 +7,15 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
+use super::digest::package_sha256;
 use super::package::{
     copy_package, io_error, owned_package_path, read_manifest, sha256, unique_suffix,
     unix_timestamp, validate_surface_files, write_receipt, RegistryLock,
 };
 use super::registry_io::{read_registry_snapshot, write_registry_snapshot};
+use super::remote::{prepare_remote_package, ResolvedRemotePackage, TrustedRegistry};
 use super::route_lock::{acquire_drain_lock, deadline_after, open_route_lock};
+use super::source::prepare_package_source;
 use super::{ExtensionManifest, ExtensionPaths, McpTransport};
 
 const RECEIPT_SCHEMA_VERSION: u32 = 1;
@@ -24,6 +27,7 @@ const WATCH_INTERVAL: Duration = Duration::from_millis(50);
 #[serde(rename_all = "kebab-case")]
 pub enum ExtensionTrust {
     LocalExplicit,
+    RegistryTuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,7 +40,11 @@ pub struct ExtensionReceipt {
     pub version: String,
     pub package_root: PathBuf,
     pub manifest_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_sha256: Option<String>,
     pub trust: ExtensionTrust,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry: Option<ResolvedRemotePackage>,
     pub installed_at_unix: u64,
     #[serde(default = "enabled_by_default")]
     pub enabled: bool,
@@ -115,6 +123,8 @@ pub struct ExtensionRouteBinding {
     #[serde(default)]
     pub package_root: PathBuf,
     pub manifest_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_sha256: Option<String>,
     pub enabled: bool,
     pub surfaces: Vec<String>,
 }
@@ -368,21 +378,104 @@ impl ExtensionRegistry {
             .with_suggestion("Rerun the explicit install with --allow-unsigned."));
         }
 
-        let source = fs::canonicalize(source)
-            .await
-            .map_err(|error| io_error("resolve extension package", source, error))?;
-        let source_metadata = fs::metadata(&source)
-            .await
-            .map_err(|error| io_error("inspect extension package", &source, error))?;
-        if !source_metadata.is_dir() {
-            return Err(UseError::new(
-                "use.extension.package_unsupported",
-                "The initial local installer accepts a package directory.",
-            )
-            .with_suggestion("Extract the package archive and pass its directory with --from."));
+        let source = prepare_package_source(source).await?;
+        self.install_prepared(
+            &expected_package_id,
+            source.root(),
+            options.force,
+            ExtensionTrust::LocalExplicit,
+            None,
+        )
+        .await
+    }
+
+    /// Install an extension selected through a fully verified TUF repository.
+    ///
+    /// Metadata is resolved and the optional reviewed plan is checked before
+    /// the target payload is downloaded. The package manifest must repeat the
+    /// exact ID and version carried by the signed target metadata.
+    pub async fn install_remote(
+        &self,
+        expected_package_id: &str,
+        registry: &TrustedRegistry,
+        requested_version: Option<&str>,
+        channel: &str,
+        expected_plan_digest: Option<&str>,
+        force: bool,
+    ) -> UseResult<InstallResult> {
+        let expected_package_id = normalize_package_id(expected_package_id)?;
+        let prepared = prepare_remote_package(
+            registry,
+            &expected_package_id,
+            requested_version,
+            channel,
+            expected_plan_digest,
+        )
+        .await?;
+        if !force {
+            if let Some(result) = self
+                .converged_remote_install(&expected_package_id, prepared.resolved())
+                .await?
+            {
+                return Ok(result);
+            }
+        }
+        let downloaded = prepared.download().await?;
+        let provenance = downloaded.resolved().clone();
+        let source = prepare_package_source(downloaded.path()).await?;
+        self.install_prepared(
+            &expected_package_id,
+            source.root(),
+            force,
+            ExtensionTrust::RegistryTuf,
+            Some(provenance),
+        )
+        .await
+    }
+
+    async fn converged_remote_install(
+        &self,
+        expected_package_id: &str,
+        resolved: &ResolvedRemotePackage,
+    ) -> UseResult<Option<InstallResult>> {
+        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let Some(current) = self.get(expected_package_id).await? else {
+            return Ok(None);
+        };
+        let same_target = current.receipt.trust == ExtensionTrust::RegistryTuf
+            && current.receipt.version == resolved.version
+            && registry_identity(current.receipt.registry.as_ref())
+                == registry_identity(Some(resolved));
+        if !same_target {
+            return Ok(None);
+        }
+        let installed = self.list().await?;
+        self.publish_snapshot_locked(&installed).await?;
+        Ok(Some(InstallResult {
+            changed: false,
+            extension: current,
+        }))
+    }
+
+    async fn install_prepared(
+        &self,
+        expected_package_id: &str,
+        source: &Path,
+        force: bool,
+        trust: ExtensionTrust,
+        registry: Option<ResolvedRemotePackage>,
+    ) -> UseResult<InstallResult> {
+        match (trust, registry.as_ref()) {
+            (ExtensionTrust::LocalExplicit, None) | (ExtensionTrust::RegistryTuf, Some(_)) => {}
+            _ => {
+                return Err(UseError::new(
+                    "use.extension.trust_invalid",
+                    "Extension installation provenance is internally inconsistent.",
+                ))
+            }
         }
 
-        let (manifest, manifest_bytes) = read_manifest(&source).await?;
+        let (manifest, manifest_bytes) = read_manifest(source).await?;
         if manifest.package_id != expected_package_id {
             return Err(UseError::new(
                 "use.extension.identity_mismatch",
@@ -392,7 +485,22 @@ impl ExtensionRegistry {
                 ),
             ));
         }
-        validate_surface_files(&manifest, &source).await?;
+        if let Some(registry) = &registry {
+            if registry.package_id != manifest.package_id || registry.version != manifest.version {
+                return Err(UseError::new(
+                    "use.extension.registry_identity_mismatch",
+                    format!(
+                        "Signed target '{}@{}' does not match package manifest '{}@{}'.",
+                        registry.package_id,
+                        registry.version,
+                        manifest.package_id,
+                        manifest.version
+                    ),
+                ));
+            }
+        }
+        validate_surface_files(&manifest, source).await?;
+        let package_digest = package_sha256(source).await?;
 
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let installed = self.list().await?;
@@ -414,9 +522,17 @@ impl ExtensionRegistry {
             .iter()
             .find(|extension| extension.receipt.package_id == expected_package_id)
         {
-            if !options.force
+            let current_package_digest = match &current.receipt.package_sha256 {
+                Some(digest) => digest.clone(),
+                None => package_sha256(&current.receipt.package_root).await?,
+            };
+            let same_provenance = current.receipt.trust == trust
+                && registry_identity(current.receipt.registry.as_ref())
+                    == registry_identity(registry.as_ref());
+            if !force
                 && current.receipt.version == manifest.version
-                && current.receipt.manifest_sha256 == digest
+                && current_package_digest == package_digest
+                && same_provenance
             {
                 self.publish_snapshot_locked(&installed).await?;
                 return Ok(InstallResult {
@@ -424,7 +540,10 @@ impl ExtensionRegistry {
                     extension: current.clone(),
                 });
             }
-            if !options.force && current.receipt.version == manifest.version {
+            if !force
+                && current.receipt.version == manifest.version
+                && current_package_digest != package_digest
+            {
                 return Err(UseError::new(
                     "use.extension.version_conflict",
                     format!(
@@ -436,7 +555,7 @@ impl ExtensionRegistry {
             }
         }
 
-        let package_parent = self.paths.package_parent(&expected_package_id);
+        let package_parent = self.paths.package_parent(expected_package_id);
         fs::create_dir_all(&package_parent).await.map_err(|error| {
             io_error("create extension package directory", &package_parent, error)
         })?;
@@ -446,7 +565,7 @@ impl ExtensionRegistry {
             .map_err(|error| {
                 io_error("create extension staging directory", &package_parent, error)
             })?;
-        copy_package(&source, staging.path()).await?;
+        copy_package(source, staging.path()).await?;
         let (staged_manifest, staged_bytes) = read_manifest(staging.path()).await?;
         if staged_manifest != manifest || sha256(&staged_bytes) != digest {
             return Err(UseError::new(
@@ -455,11 +574,17 @@ impl ExtensionRegistry {
             ));
         }
         validate_surface_files(&staged_manifest, staging.path()).await?;
+        if package_sha256(staging.path()).await? != package_digest {
+            return Err(UseError::new(
+                "use.extension.package_changed",
+                "The extension package changed while it was staged.",
+            ));
+        }
 
         let activation = unique_suffix();
         let target = self
             .paths
-            .package_root(&expected_package_id, &manifest.version, &activation);
+            .package_root(expected_package_id, &manifest.version, &activation);
         let staging = staging.keep();
         if let Err(error) = fs::rename(&staging, &target).await {
             let _ = fs::remove_dir_all(&staging).await;
@@ -474,17 +599,19 @@ impl ExtensionRegistry {
 
         let receipt = ExtensionReceipt {
             schema_version: RECEIPT_SCHEMA_VERSION,
-            package_id: expected_package_id.clone(),
+            package_id: expected_package_id.to_string(),
             component_id: format!("use/{expected_package_id}"),
             route: manifest.route.clone(),
             version: manifest.version.clone(),
             package_root: target.clone(),
             manifest_sha256: digest,
-            trust: ExtensionTrust::LocalExplicit,
+            package_sha256: Some(package_digest),
+            trust,
+            registry,
             installed_at_unix: unix_timestamp(),
             enabled,
         };
-        let receipt_path = self.paths.receipt_path(&expected_package_id);
+        let receipt_path = self.paths.receipt_path(expected_package_id);
         if let Err(error) = write_receipt(&receipt_path, &receipt).await {
             let _ = fs::remove_dir_all(&target).await;
             return Err(error);
@@ -699,6 +826,42 @@ impl ExtensionRegistry {
                 ),
             ));
         }
+        if receipt.package_sha256.as_deref().is_some_and(|digest| {
+            digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            return Err(UseError::new(
+                "use.extension.receipt_invalid",
+                format!(
+                    "Extension receipt for '{}' has an invalid package digest.",
+                    receipt.package_id
+                ),
+            ));
+        }
+        match (receipt.trust, receipt.registry.as_ref()) {
+            (ExtensionTrust::LocalExplicit, None) => {}
+            (ExtensionTrust::RegistryTuf, Some(registry)) => {
+                registry.validate_provenance()?;
+                if registry.package_id != receipt.package_id || registry.version != receipt.version
+                {
+                    return Err(UseError::new(
+                        "use.extension.receipt_invalid",
+                        format!(
+                            "Registry provenance for '{}' does not match its receipt.",
+                            receipt.package_id
+                        ),
+                    ));
+                }
+            }
+            _ => {
+                return Err(UseError::new(
+                    "use.extension.receipt_invalid",
+                    format!(
+                        "Extension receipt for '{}' has inconsistent trust provenance.",
+                        receipt.package_id
+                    ),
+                ))
+            }
+        }
         let package_id = normalize_package_id(&receipt.package_id)?;
         if receipt.component_id != format!("use/{package_id}")
             || !owned_package_path(&self.paths, &package_id, &receipt.package_root)
@@ -740,6 +903,7 @@ fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding
             version: extension.receipt.version.clone(),
             package_root: extension.receipt.package_root.clone(),
             manifest_sha256: extension.receipt.manifest_sha256.clone(),
+            package_sha256: extension.receipt.package_sha256.clone(),
             enabled: extension.receipt.enabled,
             surfaces: extension
                 .surfaces()
@@ -781,6 +945,17 @@ fn normalize_package_id(value: &str) -> UseResult<String> {
         ));
     }
     Ok(value.to_string())
+}
+
+fn registry_identity(registry: Option<&ResolvedRemotePackage>) -> Option<(&str, &str, &str, &str)> {
+    registry.map(|registry| {
+        (
+            registry.registry_name.as_str(),
+            registry.registry_url.as_str(),
+            registry.root_sha256.as_str(),
+            registry.sha256.as_str(),
+        )
+    })
 }
 
 fn ensure_unique_routes(installed: &[InstalledExtension]) -> UseResult<()> {

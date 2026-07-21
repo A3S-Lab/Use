@@ -6,7 +6,8 @@ use crate::capability_registry::{
 use crate::extension_cli::{
     extension_capabilities, extension_disable, extension_enable, extension_inspect, extension_list,
     extension_snapshot, extension_watch, external_component_value, external_package_id,
-    install_extension, installed_extension, installed_extensions, uninstall_extension,
+    install_extension, install_remote_extension, installed_extension, installed_extensions,
+    uninstall_extension,
 };
 use std::time::Duration;
 
@@ -64,7 +65,6 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "component" => component(&args[1..]).await,
         "browser" => browser(&args[1..]).await,
         "ocr" => ocr(&args[1..]).await,
-        "document" => document(&args[1..]).await,
         "box" => {
             let exit_code = crate::component_route::run_box(&args[1..]).await?;
             Ok(CommandOutput::delegated(exit_code))
@@ -109,7 +109,7 @@ fn help() -> CommandOutput {
             "  a3s-use capabilities [--json]\n",
             "  a3s-use capability snapshot [--json]\n",
             "  a3s-use capability watch [--after-generation <n>] [--after-revision <sha256>] [--timeout-ms <ms>] [--json]\n",
-            "  a3s-use doctor [browser|box|document|office|ocr] [--json]\n",
+            "  a3s-use doctor [browser|box|office|ocr] [--json]\n",
             "  a3s-use component list|status|install|uninstall [args] [--json]\n",
             "  a3s-use browser doctor [--json]\n",
             "  a3s-use browser render <url> [--output <path>] [--screenshot <path>] [--json]\n",
@@ -121,15 +121,12 @@ fn help() -> CommandOutput {
             "  a3s-use office <officecli-args...>\n",
             "  a3s-use ocr doctor [--json]\n",
             "  a3s-use ocr extract <image> [--json]\n",
-            "  a3s-use document doctor [--json]\n",
-            "  a3s-use document inspect <path> [--json]\n",
-            "  a3s-use document parse <path> [--ocr never|auto|always] [--image-path <semantic-path>] [--max-images <n>] [--json]\n",
             "  a3s-use extension list|inspect|doctor [args] [--json]\n",
             "  a3s-use extension enable <publisher/name> [--json]\n",
             "  a3s-use extension disable <publisher/name> [--timeout-ms <ms>] [--json]\n",
             "  a3s-use extension snapshot|watch [--after-generation <n>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use mcp serve browser [--tools <profiles>]\n",
-            "  a3s-use mcp serve document|office|office-native|office-compat|ocr|<publisher/name>\n",
+            "  a3s-use mcp serve office|office-native|office-compat|ocr|<publisher/name>\n",
             "  a3s-use mcp start|status|stop [browser] [--json]"
         ),
         serde_json::json!({
@@ -140,7 +137,6 @@ fn help() -> CommandOutput {
                 "component",
                 "browser",
                 "box",
-                "document",
                 "office",
                 "ocr",
                 "extension",
@@ -155,10 +151,9 @@ async fn capabilities() -> UseResult<CommandOutput> {
     let box_domain = crate::component_route::box_diagnostic();
     let office = office_diagnostic();
     let ocr = ocr_diagnostic();
-    let document = document_diagnostic();
     let (extension_generation, extensions) = extension_capabilities().await?;
     Ok(CommandOutput::success(
-        "Built-in routes: browser, box, document, office, ocr",
+        "Built-in routes: browser, box, office, ocr",
         serde_json::json!({
             "domains": [
                 {
@@ -177,12 +172,6 @@ async fn capabilities() -> UseResult<CommandOutput> {
                     "id": "ocr",
                     "builtIn": true,
                     "readiness": ocr.readiness,
-                    "surfaces": ["cli", "mcp", "skill"]
-                },
-                {
-                    "id": "document",
-                    "builtIn": true,
-                    "readiness": document.readiness,
                     "surfaces": ["cli", "mcp", "skill"]
                 },
                 {
@@ -246,14 +235,12 @@ fn doctor(domain: Option<&str>) -> UseResult<CommandOutput> {
     let diagnostics = match domain {
         None | Some("--json") => vec![
             browser_diagnostic(),
-            document_diagnostic(),
             office_diagnostic(),
             ocr_diagnostic(),
             crate::component_route::box_diagnostic(),
         ],
         Some("browser") => vec![browser_diagnostic()],
         Some("box") => vec![crate::component_route::box_diagnostic()],
-        Some("document") => vec![document_diagnostic()],
         Some("office") => vec![office_diagnostic()],
         Some("ocr") => vec![ocr_diagnostic()],
         Some(value) => {
@@ -298,9 +285,8 @@ async fn component_list() -> UseResult<CommandOutput> {
     let box_component = component_value("box", &crate::component_route::box_diagnostic());
     let office = component_value("office", &office_diagnostic());
     let ocr = component_value("ocr", &ocr_diagnostic());
-    let document = component_value("document", &document_diagnostic());
     let extensions = installed_extensions().await?;
-    let mut components = vec![browser, box_component, document, office, ocr];
+    let mut components = vec![browser, box_component, office, ocr];
     components.extend(
         extensions
             .iter()
@@ -309,7 +295,6 @@ async fn component_list() -> UseResult<CommandOutput> {
     let mut human = vec![
         "browser".to_string(),
         "box".to_string(),
-        "document".to_string(),
         "office".to_string(),
         "ocr".to_string(),
     ];
@@ -462,36 +447,6 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
             ));
         }
     }
-    if matches!(id, "document" | "use/document") {
-        #[cfg(feature = "document")]
-        {
-            if option_argument(args, "--from")?.is_some() {
-                return Err(usage_error("--from is valid only for external extensions"));
-            }
-            let force = args.iter().any(|argument| argument == "--force");
-            let previous = a3s_use_ocr::ocr_status();
-            let status = a3s_use_ocr::install_ppocr_v6(force).await?;
-            let changed = force
-                || !previous.available
-                || previous.model_dir != status.model_dir
-                || previous.source != status.source;
-            let diagnostic = document_diagnostic();
-            return Ok(CommandOutput::success(
-                format!(
-                    "Native document parsing and its shared local PP-OCRv6 model bundle are ready at {}.",
-                    status.model_dir.as_ref().map_or_else(
-                        || "an unknown path".to_string(),
-                        |path| path.display().to_string()
-                    )
-                ),
-                serde_json::json!({
-                    "component": component_value(id, &diagnostic),
-                    "changed": changed,
-                    "runtime": status
-                }),
-            ));
-        }
-    }
     if let Some(diagnostic) = builtin_diagnostic(id) {
         if option_argument(args, "--from")?.is_some() {
             return Err(usage_error("--from is valid only for external extensions"));
@@ -527,15 +482,78 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
             format!("Unknown delegated component '{id}'."),
         ));
     };
-    let source = option_argument(args, "--from")?
-        .ok_or_else(|| usage_error("external extension install requires --from <directory>"))?;
-    let result = install_extension(
-        package_id,
-        std::path::Path::new(source),
-        args.iter().any(|argument| argument == "--force"),
-        args.iter().any(|argument| argument == "--allow-unsigned"),
-    )
-    .await?;
+    let source = option_argument(args, "--from")?;
+    let registry_name = option_argument(args, "--registry-name")?;
+    let registry_url = option_argument(args, "--registry-url")?;
+    let trust_root = option_argument(args, "--trust-root")?;
+    let trusted_root = option_argument(args, "--trusted-root")?;
+    let version = option_argument(args, "--version")?;
+    let channel = option_argument(args, "--channel")?.unwrap_or("stable");
+    let expected_plan = option_argument(args, "--registry-plan-digest")?;
+    let force = args.iter().any(|argument| argument == "--force");
+    let allow_unsigned = args.iter().any(|argument| argument == "--allow-unsigned");
+    let remote_requested = registry_name.is_some()
+        || registry_url.is_some()
+        || trust_root.is_some()
+        || trusted_root.is_some()
+        || version.is_some()
+        || expected_plan.is_some()
+        || option_argument(args, "--channel")?.is_some();
+    let result = if let Some(source) = source {
+        if remote_requested {
+            return Err(usage_error(
+                "--from cannot be combined with signed registry options",
+            ));
+        }
+        install_extension(
+            package_id,
+            std::path::Path::new(source),
+            force,
+            allow_unsigned,
+        )
+        .await?
+    } else {
+        if allow_unsigned {
+            return Err(usage_error(
+                "--allow-unsigned is valid only with an explicit local --from package",
+            ));
+        }
+        let registry_name = registry_name
+            .ok_or_else(|| usage_error("remote extension install requires --registry-name"))?;
+        let registry_url = registry_url
+            .ok_or_else(|| usage_error("remote extension install requires --registry-url"))?;
+        let trust_root = trust_root
+            .ok_or_else(|| usage_error("remote extension install requires --trust-root"))?;
+        let trusted_root = trusted_root
+            .map(|path| {
+                let path = std::path::PathBuf::from(path);
+                if path.is_absolute() {
+                    Ok(path)
+                } else {
+                    std::env::current_dir()
+                        .map(|directory| directory.join(path))
+                        .map_err(|error| {
+                            UseError::new(
+                                "use.extension.registry_path_invalid",
+                                format!("Failed to resolve the trusted root path: {error}"),
+                            )
+                        })
+                }
+            })
+            .transpose()?;
+        install_remote_extension(
+            package_id,
+            registry_name,
+            registry_url,
+            trust_root,
+            trusted_root.as_deref(),
+            version,
+            channel,
+            expected_plan,
+            force,
+        )
+        .await?
+    };
     Ok(CommandOutput::success(
         if result.changed {
             format!("Installed extension '{}'.", result.extension.package_id)
@@ -607,35 +625,9 @@ async fn component_uninstall(id: &str) -> UseResult<CommandOutput> {
             ));
         }
     }
-    if matches!(id, "document" | "use/document") {
-        #[cfg(feature = "document")]
-        {
-            let changed = a3s_use_ocr::uninstall_managed_ppocr_v6().await?;
-            return Ok(CommandOutput::success(
-                if changed {
-                    "Removed A3S-managed PP-OCRv6 files shared by Document and OCR."
-                } else {
-                    "No A3S-managed PP-OCRv6 files are installed; native document parsing remains built in."
-                },
-                serde_json::json!({
-                    "component": id,
-                    "changed": changed,
-                    "builtInCommandPreserved": true,
-                    "sharedRuntime": "use/ocr"
-                }),
-            ));
-        }
-    }
     if matches!(
         id,
-        "browser"
-            | "use/browser"
-            | "document"
-            | "use/document"
-            | "office"
-            | "use/office"
-            | "ocr"
-            | "use/ocr"
+        "browser" | "use/browser" | "office" | "use/office" | "ocr" | "use/ocr"
     ) {
         return Ok(CommandOutput::success(
             format!("No managed runtime files are owned for '{id}'."),
@@ -692,8 +684,6 @@ async fn browser(args: &[String]) -> UseResult<CommandOutput> {
 async fn office(args: &[String]) -> UseResult<CommandOutput> {
     match args.first().map(String::as_str) {
         None | Some("doctor") => doctor(Some("office")),
-        Some("-h" | "--help" | "help") => Ok(office_help()),
-        Some("-V" | "--version" | "version") => Ok(version()),
         Some("skills") => {
             #[cfg(feature = "office")]
             return crate::office_skills::run(&args[1..]).await;
@@ -715,7 +705,6 @@ async fn office(args: &[String]) -> UseResult<CommandOutput> {
         Some(_) => {
             #[cfg(feature = "office")]
             {
-                crate::first_use::ensure_office_compatibility_ready().await?;
                 let exit_code = a3s_use_office::delegate_native(args).await?;
                 Ok(CommandOutput::delegated(exit_code))
             }
@@ -726,18 +715,6 @@ async fn office(args: &[String]) -> UseResult<CommandOutput> {
             ))
         }
     }
-}
-
-fn office_help() -> CommandOutput {
-    let usage = concat!(
-        "usage:\n",
-        "  a3s-use office doctor [--json]\n",
-        "  a3s-use office skills list|get|path [args] [--json]\n",
-        "  a3s-use office native <command> [args] [--json]\n",
-        "  a3s-use office <officecli-command> [args]\n\n",
-        "Native Office is built in. The optional OfficeCLI compatibility provider is prepared on its first real command when policy allows."
-    );
-    CommandOutput::success(usage, serde_json::json!({ "usage": usage }))
 }
 
 async fn extension(args: &[String]) -> UseResult<CommandOutput> {
@@ -827,7 +804,6 @@ async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
                     }
                     #[cfg(feature = "office")]
                     {
-                        crate::first_use::ensure_office_compatibility_ready().await?;
                         let exit_code =
                             a3s_use_office::delegate_native(&["mcp".to_string()]).await?;
                         Ok(CommandOutput::delegated(exit_code))
@@ -868,23 +844,6 @@ async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
                     Err(UseError::new(
                         "use.mcp.disabled",
                         "OCR MCP support is disabled in this custom build.",
-                    ))
-                }
-                "document" | "use/document" | "document-native" | "use/document-native" => {
-                    if args.len() != 2 {
-                        return Err(usage_error("mcp serve document accepts exactly one target"));
-                    }
-                    #[cfg(all(feature = "document", feature = "mcp"))]
-                    {
-                        a3s_use_document::mcp::DocumentMcpServer::from_env()?
-                            .serve_stdio()
-                            .await?;
-                        Ok(CommandOutput::delegated(0))
-                    }
-                    #[cfg(not(all(feature = "document", feature = "mcp")))]
-                    Err(UseError::new(
-                        "use.mcp.disabled",
-                        "Document MCP support is disabled in this custom build.",
                     ))
                 }
                 package_id if external_package_id(package_id).is_some() => {
@@ -1051,8 +1010,6 @@ fn builtin_presence(id: &str) -> &'static str {
         "office" | "use/office" => office_presence(a3s_use_office::office_status().source),
         #[cfg(feature = "ocr")]
         "ocr" | "use/ocr" => ocr_presence(a3s_use_ocr::ocr_status().source),
-        #[cfg(feature = "document")]
-        "document" | "use/document" => ocr_presence(a3s_use_ocr::ocr_status().source),
         _ => "external",
     }
 }
@@ -1092,7 +1049,6 @@ fn builtin_diagnostic(id: &str) -> Option<DomainDiagnostic> {
     match id {
         "browser" | "use/browser" => Some(browser_diagnostic()),
         "box" | "use/box" => Some(crate::component_route::box_diagnostic()),
-        "document" | "use/document" => Some(document_diagnostic()),
         "office" | "use/office" => Some(office_diagnostic()),
         "ocr" | "use/ocr" => Some(ocr_diagnostic()),
         _ => None,
@@ -1126,9 +1082,16 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--json" | "--force" | "--allow-unsigned" => index += 1,
-            "--from" => {
+            "--from"
+            | "--registry-name"
+            | "--registry-url"
+            | "--trust-root"
+            | "--trusted-root"
+            | "--version"
+            | "--channel"
+            | "--registry-plan-digest" => {
                 if args.get(index + 1).is_none() {
-                    return Err(usage_error("--from requires a value"));
+                    return Err(usage_error(format!("{} requires a value", args[index])));
                 }
                 index += 2;
             }
@@ -1248,19 +1211,8 @@ fn ocr_diagnostic() -> DomainDiagnostic {
     disabled_diagnostic("ocr")
 }
 
-#[cfg(feature = "document")]
-fn document_diagnostic() -> DomainDiagnostic {
-    crate::document_builtin::diagnostic()
-}
-
-#[cfg(not(feature = "document"))]
-fn document_diagnostic() -> DomainDiagnostic {
-    disabled_diagnostic("document")
-}
-
 #[cfg(any(
     not(feature = "browser"),
-    not(feature = "document"),
     not(feature = "office"),
     not(feature = "ocr")
 ))]
@@ -1292,25 +1244,6 @@ async fn ocr(_args: &[String]) -> UseResult<CommandOutput> {
     Err(UseError::new(
         "use.ocr.disabled",
         "OCR support is disabled in this custom build.",
-    ))
-}
-
-#[cfg(feature = "document")]
-async fn document(args: &[String]) -> UseResult<CommandOutput> {
-    let output = a3s_use_document::cli::run(args.to_vec()).await?;
-    Ok(CommandOutput {
-        human: output.human,
-        json: output.json,
-        exit_code: output.exit_code,
-        should_print: output.should_print,
-    })
-}
-
-#[cfg(not(feature = "document"))]
-async fn document(_args: &[String]) -> UseResult<CommandOutput> {
-    Err(UseError::new(
-        "use.document.disabled",
-        "Document support is disabled in this custom build.",
     ))
 }
 

@@ -12,9 +12,10 @@ use tokio::io::AsyncWriteExt;
 use super::registry::ExtensionReceipt;
 use super::{ExtensionManifest, ExtensionPaths};
 
-const MANIFEST_NAME: &str = "a3s-use-extension.acl";
-const MAX_PACKAGE_FILES: usize = 10_000;
-const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
+pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
+pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
+pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
+const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) async fn read_manifest(package_root: &Path) -> UseResult<(ExtensionManifest, Vec<u8>)> {
     let path = package_root.join(MANIFEST_NAME);
@@ -64,6 +65,35 @@ pub(crate) async fn validate_surface_files(
             false,
         )
         .await?;
+    }
+    for activity in &manifest.contributes.activity_bar {
+        let path = package_root.join(&activity.entry);
+        validate_surface_file("Activity Bar entry", &canonical_root, &path, false).await?;
+        let metadata = fs::metadata(&path)
+            .await
+            .map_err(|error| io_error("inspect Activity Bar entry", &path, error))?;
+        if metadata.len() == 0 || metadata.len() > MAX_ACTIVITY_HTML_BYTES {
+            return Err(UseError::new(
+                "use.extension.activity_asset_invalid",
+                format!(
+                    "Activity Bar entry '{}' must contain between 1 byte and {} bytes.",
+                    path.display(),
+                    MAX_ACTIVITY_HTML_BYTES
+                ),
+            ));
+        }
+        let bytes = fs::read(&path)
+            .await
+            .map_err(|error| io_error("read Activity Bar entry", &path, error))?;
+        std::str::from_utf8(&bytes).map_err(|error| {
+            UseError::new(
+                "use.extension.activity_asset_invalid",
+                format!(
+                    "Activity Bar entry '{}' must be UTF-8 HTML: {error}",
+                    path.display()
+                ),
+            )
+        })?;
     }
     Ok(())
 }

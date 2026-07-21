@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::Write;
 use std::time::Duration;
 
 #[cfg(unix)]
@@ -25,6 +27,17 @@ json_output = true
   skill {{
 path = "skills/demo/SKILL.md"
   }}
+
+  contributes {{
+    activity_bar "demo" {{
+      title = "Demo"
+      description = "Managed Activity Bar fixture"
+      icon = "puzzle"
+      entry = "web/activity.html"
+      skill = "demo"
+      order = 100
+    }}
+  }}
 }}
 "#
     );
@@ -42,10 +55,55 @@ path = "skills/demo/SKILL.md"
     fs::write(root.join("skills/demo/SKILL.md"), "# Demo\n")
         .await
         .unwrap();
+    fs::create_dir_all(root.join("web")).await.unwrap();
+    fs::write(
+        root.join("web/activity.html"),
+        "<!doctype html><title>Demo</title><main>Managed activity</main>",
+    )
+    .await
+    .unwrap();
 }
 
 fn registry(root: &Path) -> ExtensionRegistry {
     ExtensionRegistry::new(ExtensionPaths::new(root.join("data"), root.join("state")))
+}
+
+fn tar_package(source: &Path, archive: &Path) {
+    let file = File::create(archive).unwrap();
+    let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    builder.append_dir_all("package", source).unwrap();
+    builder.finish().unwrap();
+}
+
+fn zip_package(source: &Path, archive: &Path) {
+    let file = File::create(archive).unwrap();
+    let mut writer = zip::ZipWriter::new(file);
+    for relative in [
+        "a3s-use-extension.acl",
+        "bin/extension",
+        "skills/demo/SKILL.md",
+        "web/activity.html",
+    ] {
+        let source_file = source.join(relative);
+        let mut options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        #[cfg(unix)]
+        {
+            let mode = std::fs::metadata(&source_file)
+                .unwrap()
+                .permissions()
+                .mode();
+            options = options.unix_permissions(mode);
+        }
+        writer
+            .start_file(format!("package/{relative}"), options)
+            .unwrap();
+        writer
+            .write_all(&std::fs::read(source_file).unwrap())
+            .unwrap();
+    }
+    writer.finish().unwrap();
 }
 
 #[tokio::test]
@@ -86,6 +144,63 @@ async fn installs_lists_and_uninstalls_an_explicit_local_package() {
 
     let removed = registry.uninstall("acme/slack").await.unwrap();
     assert!(removed.changed);
+    assert!(registry.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn installs_and_uninstalls_a_local_tar_package() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    package(&source, "acme/slack", "slack", "1.2.0").await;
+    let archive = temp.path().join("acme-slack.tar.gz");
+    tar_package(&source, &archive);
+    let registry = registry(temp.path());
+
+    let result = registry
+        .install_local(
+            "acme/slack",
+            &archive,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(result.changed);
+    assert_eq!(result.extension.receipt.package_id, "acme/slack");
+    assert!(result.extension.cli_executable().unwrap().is_file());
+
+    let removed = registry.uninstall("acme/slack").await.unwrap();
+    assert!(removed.changed);
+    assert!(registry.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn installs_and_uninstalls_a_local_zip_package() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    package(&source, "acme/slack", "slack", "1.2.0").await;
+    let archive = temp.path().join("acme-slack.zip");
+    zip_package(&source, &archive);
+    let registry = registry(temp.path());
+
+    let result = registry
+        .install_local(
+            "acme/slack",
+            &archive,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(result.changed);
+    assert_eq!(result.extension.receipt.package_id, "acme/slack");
+    assert!(result.extension.cli_executable().unwrap().is_file());
+
+    assert!(registry.uninstall("acme/slack").await.unwrap().changed);
     assert!(registry.list().await.unwrap().is_empty());
 }
 
@@ -198,6 +313,8 @@ async fn hot_upgrade_keeps_the_previous_package_until_inflight_routes_drain() {
     let second = temp.path().join("second");
     package(&first, "acme/slack", "slack", "1.0.0").await;
     package(&second, "acme/slack", "slack", "2.0.0").await;
+    let second_archive = temp.path().join("second.tar.gz");
+    tar_package(&second, &second_archive);
     let registry = registry(temp.path());
 
     let first_install = registry
@@ -217,7 +334,7 @@ async fn hot_upgrade_keeps_the_previous_package_until_inflight_routes_drain() {
     let second_install = registry
         .install_local(
             "acme/slack",
-            &second,
+            &second_archive,
             InstallOptions {
                 allow_unsigned: true,
                 force: false,
@@ -272,12 +389,164 @@ async fn forced_reactivation_of_identical_metadata_publishes_a_new_generation() 
         second.extension.receipt.package_root,
         first.extension.receipt.package_root
     );
+    assert_eq!(
+        second.extension.receipt.package_sha256,
+        first.extension.receipt.package_sha256
+    );
+    assert!(second
+        .extension
+        .receipt
+        .package_sha256
+        .as_deref()
+        .is_some_and(|digest| digest.len() == 64));
     let second_snapshot = registry.snapshot().await.unwrap();
     assert_eq!(second_snapshot.generation, 2);
     assert_eq!(
         second_snapshot.routes[0].package_root,
         second.extension.receipt.package_root
     );
+}
+
+#[tokio::test]
+async fn same_version_changed_executable_requires_force_and_changes_package_digest() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    package(&source, "acme/slack", "slack", "1.0.0").await;
+    let registry = registry(temp.path());
+
+    let first = registry
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap();
+    fs::write(
+        source.join("bin/extension"),
+        "#!/bin/sh\nprintf 'changed\\n'\n",
+    )
+    .await
+    .unwrap();
+
+    let error = registry
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.version_conflict");
+
+    let second = registry
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert_ne!(
+        second.extension.receipt.package_root,
+        first.extension.receipt.package_root
+    );
+    assert_ne!(
+        second.extension.receipt.package_sha256,
+        first.extension.receipt.package_sha256
+    );
+    assert!(second.extension.receipt.package_sha256.is_some());
+    assert_eq!(
+        fs::read_to_string(second.extension.cli_executable().unwrap())
+            .await
+            .unwrap(),
+        "#!/bin/sh\nprintf 'changed\\n'\n"
+    );
+}
+
+#[tokio::test]
+async fn legacy_receipt_without_package_digest_remains_readable_and_idempotent() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    package(&source, "acme/slack", "slack", "1.0.0").await;
+    let registry = registry(temp.path());
+
+    registry
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap();
+
+    let receipt_path = registry.paths().receipt_path("acme/slack");
+    let mut legacy: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).await.unwrap()).unwrap();
+    legacy.as_object_mut().unwrap().remove("packageSha256");
+    fs::write(&receipt_path, serde_json::to_vec_pretty(&legacy).unwrap())
+        .await
+        .unwrap();
+
+    let installed = registry.get("acme/slack").await.unwrap().unwrap();
+    assert_eq!(installed.receipt.package_sha256, None);
+
+    let unchanged = registry
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(!unchanged.changed);
+    assert_eq!(unchanged.extension.receipt.package_sha256, None);
+}
+
+#[tokio::test]
+async fn receipt_rejects_an_invalid_optional_package_digest() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    package(&source, "acme/slack", "slack", "1.0.0").await;
+    let registry = registry(temp.path());
+
+    registry
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap();
+
+    let receipt_path = registry.paths().receipt_path("acme/slack");
+    let mut invalid: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).await.unwrap()).unwrap();
+    invalid["packageSha256"] = serde_json::json!("not-a-sha256");
+    fs::write(&receipt_path, serde_json::to_vec_pretty(&invalid).unwrap())
+        .await
+        .unwrap();
+
+    let error = registry.get("acme/slack").await.unwrap_err();
+    assert_eq!(error.code, "use.extension.receipt_invalid");
 }
 
 #[tokio::test]

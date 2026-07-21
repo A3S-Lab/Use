@@ -85,25 +85,6 @@ impl NativeOfficeMcpServer {
 #[tool_router]
 impl NativeOfficeMcpServer {
     #[tool(
-        name = "office_install_compat",
-        description = "Install or repair the optional pinned OfficeCLI compatibility provider through the bounded A3S component lifecycle",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = true
-        )
-    )]
-    async fn office_install_compat(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        let result = async {
-            let status = crate::first_use::ensure_office_compatibility_ready().await?;
-            serde_json::to_value(status).map_err(output_encoding_error)
-        }
-        .await;
-        Ok(tool_result(result))
-    }
-
-    #[tool(
         name = "office_validate",
         description = "Validate and identify one local OOXML document without opening a session",
         annotations(
@@ -555,7 +536,7 @@ impl ServerHandler for NativeOfficeMcpServer {
                 website_url: Some("https://github.com/A3S-Lab/Use".to_string()),
             },
             instructions: Some(
-                "Use the built-in native Office tools first; they never require OfficeCLI, Microsoft Office, or LibreOffice. If a requested operation is outside the native surface, request office_install_compat through the host confirmation path and use the separately projected Office compatibility route after it becomes ready. Create or open a native session first. Mutations remain in memory until office_save; office_close refuses unsaved changes unless discard=true."
+                "This explicit preview server edits OOXML in process and never installs or starts OfficeCLI, Microsoft Office, or LibreOffice. Create or open a session first. Mutations remain in memory until office_save; office_close refuses unsaved changes unless discard=true. The separate `mcp serve office` target remains the OfficeCLI compatibility server until native promotion gates pass."
                     .to_string(),
             ),
             ..Default::default()

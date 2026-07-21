@@ -29,8 +29,6 @@ Use its typed tools rather than passing shell command strings:
 - `office_save` persists a mutable session.
 - `office_close` refuses unsaved changes unless `discard=true` is explicit.
 - `office_list` reports sessions owned by this server process.
-- `office_install_compat` prepares the optional pinned compatibility provider;
-  in Code it must pass parent confirmation before network access.
 
 Mutations remain unsaved until `office_save`. Do not discard a dirty session
 unless the user explicitly accepts losing its changes. Release the session as
@@ -512,10 +510,7 @@ provider; other native Office tools do not require Browser or OfficeCLI.
 
 In an A3S Code `use` worker, use an available
 `mcp__use_office_compat__*` tool only when the native vocabulary lacks the
-requested operation. If that surface is missing, call
-`mcp__use_office__office_install_compat` through parent confirmation and wait
-for the host to project the ready compatibility route. In a CLI-only MCP host,
-`a3s use mcp serve office-compat` prepares and starts the pinned OfficeCLI
-compatibility server; the legacy `a3s use mcp serve office` alias remains
-supported. It is a separate standard MCP target and is not the native session
-engine.
+requested operation. In a CLI-only MCP host, `a3s use mcp serve office-compat`
+starts the pinned OfficeCLI compatibility server; the legacy
+`a3s use mcp serve office` alias remains supported. It is a separate standard
+MCP target and is not the native session engine.

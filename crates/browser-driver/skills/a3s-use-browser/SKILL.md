@@ -16,17 +16,11 @@ Use the host surface that is already available:
   must obtain HITL approval before that mutation can run.
 - In a CLI-only agent host, use the `a3s use browser ...` commands below.
 
-The first direct local launch installs the shared A3S-managed Chrome runtime
-when no system or managed browser is available and first-use policy permits it.
-Prepare it explicitly for deterministic startup or offline work:
+Install the built-in capability and its managed runtime when needed:
 
 ```bash
 a3s install use use/browser
 ```
-
-Doctor, help, version, Skills, profiles, and MCP server startup remain
-non-installing. `A3S_OFFLINE=1` and `A3S_NO_AUTO_INSTALL=1` prohibit the
-first-use download.
 
 Load the version-matched core workflow before browser automation:
 

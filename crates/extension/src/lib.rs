@@ -5,17 +5,25 @@ use a3s_acl::{Block, Value};
 use a3s_use_core::{RiskClass, UseError, UseResult};
 use serde::{Deserialize, Serialize};
 
+mod digest;
 mod package;
 mod paths;
 mod registry;
 mod registry_io;
+mod remote;
 mod route_lock;
+mod source;
 
 pub use paths::ExtensionPaths;
 pub use registry::{
     ActivationResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
     ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult,
     InstalledExtension, UninstallResult,
+};
+pub use remote::{
+    list_remote_packages, prepare_remote_package, refresh_remote_registry, DownloadedRemotePackage,
+    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog,
+    VerifiedRegistryMetadata,
 };
 
 const RESERVED_ROUTES: &[&str] = &[
@@ -49,6 +57,8 @@ pub struct ExtensionManifest {
     pub mcp: Option<McpSurface>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skill: Option<SkillSurface>,
+    #[serde(default, skip_serializing_if = "ExtensionContributions::is_empty")]
+    pub contributes: ExtensionContributions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +87,39 @@ pub enum McpTransport {
 #[serde(rename_all = "camelCase")]
 pub struct SkillSurface {
     pub path: PathBuf,
+}
+
+/// Declarative, non-callable Workbench contributions owned by this package.
+///
+/// Runtime actions remain limited to native CLI, standard MCP, and Skill
+/// surfaces. Contributions only describe integrity-bound assets that a host
+/// may choose to render in its own security boundary.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionContributions {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub activity_bar: Vec<ActivityBarContribution>,
+}
+
+impl ExtensionContributions {
+    pub fn is_empty(&self) -> bool {
+        self.activity_bar.is_empty()
+    }
+}
+
+/// One VS Code-style Activity Bar contribution backed by a managed HTML
+/// asset and the extension's installed Skill guidance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityBarContribution {
+    pub id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    pub icon: String,
+    pub entry: PathBuf,
+    pub skill: String,
+    pub order: i32,
 }
 
 impl ExtensionManifest {
@@ -114,6 +157,12 @@ impl ExtensionManifest {
             .map(|surface| &surface.executable)
             .chain(self.mcp.iter().map(|surface| &surface.executable))
             .chain(self.skill.iter().map(|surface| &surface.path))
+            .chain(
+                self.contributes
+                    .activity_bar
+                    .iter()
+                    .map(|contribution| &contribution.entry),
+            )
         {
             validate_relative_path(path)?;
             let resolved = package_root.join(path);
@@ -176,6 +225,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     let mut cli = None;
     let mut mcp = None;
     let mut skill = None;
+    let mut contributes = ExtensionContributions::default();
     for surface in &block.blocks {
         if !seen.insert(surface.name.as_str()) {
             return Err(manifest_error(format!(
@@ -187,6 +237,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             "cli" => cli = Some(parse_cli(surface)?),
             "mcp" => mcp = Some(parse_mcp(surface)?),
             "skill" => skill = Some(parse_skill(surface)?),
+            "contributes" => contributes = parse_contributes(surface)?,
             name => {
                 return Err(manifest_error(format!(
                     "Unknown extension surface '{name}'."
@@ -199,6 +250,11 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             "An extension must declare CLI, MCP, and/or Skill.",
         ));
     }
+    if !contributes.activity_bar.is_empty() && skill.is_none() {
+        return Err(manifest_error(
+            "Activity Bar contributions require a Skill surface from the same extension.",
+        ));
+    }
     Ok(ExtensionManifest {
         schema_version,
         package_id,
@@ -208,6 +264,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         cli,
         mcp,
         skill,
+        contributes,
     })
 }
 
@@ -252,6 +309,96 @@ fn parse_skill(block: &Block) -> UseResult<SkillSurface> {
         return Err(manifest_error("Skill surfaces must point to SKILL.md."));
     }
     Ok(SkillSurface { path })
+}
+
+fn parse_contributes(block: &Block) -> UseResult<ExtensionContributions> {
+    if !block.labels.is_empty() {
+        return Err(manifest_error(
+            "The 'contributes' block cannot have labels.",
+        ));
+    }
+    require_known_attributes(block, &[])?;
+    let mut activity_bar = Vec::new();
+    let mut ids = BTreeSet::new();
+    for contribution in &block.blocks {
+        if contribution.name != "activity_bar" {
+            return Err(manifest_error(format!(
+                "Unknown contribution point '{}'.",
+                contribution.name
+            )));
+        }
+        let activity = parse_activity_bar(contribution)?;
+        if !ids.insert(activity.id.clone()) {
+            return Err(manifest_error(format!(
+                "Duplicate Activity Bar contribution '{}'.",
+                activity.id
+            )));
+        }
+        activity_bar.push(activity);
+    }
+    Ok(ExtensionContributions { activity_bar })
+}
+
+fn parse_activity_bar(block: &Block) -> UseResult<ActivityBarContribution> {
+    if !block.blocks.is_empty() || block.labels.len() != 1 {
+        return Err(manifest_error(
+            "An 'activity_bar' contribution requires one ID label and no nested blocks.",
+        ));
+    }
+    require_known_attributes(
+        block,
+        &["title", "description", "icon", "entry", "skill", "order"],
+    )?;
+    let id = block.labels[0].clone();
+    if !valid_segment(&id) {
+        return Err(manifest_error(format!(
+            "Activity Bar contribution ID '{id}' is invalid."
+        )));
+    }
+    let title = bounded_text(string_attribute(block, "title")?, "Activity Bar title", 64)?;
+    let description = optional_string_attribute(block, "description")?
+        .map(|value| bounded_text(value, "Activity Bar description", 240))
+        .transpose()?
+        .unwrap_or_default();
+    let icon = string_attribute(block, "icon")?;
+    if !valid_segment(&icon) {
+        return Err(manifest_error(format!(
+            "Activity Bar icon '{icon}' must be a lowercase icon identifier."
+        )));
+    }
+    let entry = PathBuf::from(string_attribute(block, "entry")?);
+    validate_relative_path(&entry)?;
+    if entry.extension().and_then(|value| value.to_str()) != Some("html") {
+        return Err(manifest_error(
+            "Activity Bar entry assets must be self-contained .html files.",
+        ));
+    }
+    let skill = string_attribute(block, "skill")?;
+    if !valid_segment(&skill) {
+        return Err(manifest_error(format!(
+            "Activity Bar Skill name '{skill}' is invalid."
+        )));
+    }
+    let order = optional_i32_attribute(block, "order")?.unwrap_or(100);
+    Ok(ActivityBarContribution {
+        id,
+        title,
+        description,
+        icon,
+        entry,
+        skill,
+        order,
+    })
+}
+
+fn bounded_text(value: String, label: &str, max_chars: usize) -> UseResult<String> {
+    let value = value.trim().to_string();
+    if value.is_empty() || value.chars().count() > max_chars {
+        return Err(manifest_error(format!(
+            "{label} must contain between 1 and {max_chars} characters."
+        )));
+    }
+    Ok(value)
 }
 
 fn validate_relative_path(path: &Path) -> UseResult<()> {
@@ -335,6 +482,40 @@ fn optional_bool_attribute(block: &Block, name: &str) -> UseResult<Option<bool>>
     }
 }
 
+fn optional_string_attribute(block: &Block, name: &str) -> UseResult<Option<String>> {
+    match block.attributes.get(name) {
+        None => Ok(None),
+        Some(value) => value.as_str().map(str::to_string).map(Some).ok_or_else(|| {
+            manifest_error(format!(
+                "'{}' requires string attribute '{name}'.",
+                block.name
+            ))
+        }),
+    }
+}
+
+fn optional_i32_attribute(block: &Block, name: &str) -> UseResult<Option<i32>> {
+    let Some(value) = block.attributes.get(name) else {
+        return Ok(None);
+    };
+    let Some(value) = value.as_number() else {
+        return Err(manifest_error(format!(
+            "'{}' requires numeric attribute '{name}'.",
+            block.name
+        )));
+    };
+    if !value.is_finite()
+        || value.fract() != 0.0
+        || !(i32::MIN as f64..=i32::MAX as f64).contains(&value)
+    {
+        return Err(manifest_error(format!(
+            "'{}' attribute '{name}' must be a 32-bit integer.",
+            block.name
+        )));
+    }
+    Ok(Some(value as i32))
+}
+
 fn list_attribute(block: &Block, name: &str) -> UseResult<Vec<String>> {
     let Some(Value::List(values)) = block.attributes.get(name) else {
         return Err(manifest_error(format!(
@@ -415,6 +596,17 @@ extension "acme/slack" {
   skill {
     path = "skills/slack/SKILL.md"
   }
+
+  contributes {
+    activity_bar "inbox" {
+      title       = "Slack Inbox"
+      description = "Review Slack activity with the installed Slack capability."
+      icon        = "messages-square"
+      entry       = "web/activity.html"
+      skill       = "slack"
+      order       = 120
+    }
+  }
 }
 "#;
 
@@ -425,6 +617,13 @@ extension "acme/slack" {
         assert!(manifest.cli.is_some());
         assert!(manifest.mcp.is_some());
         assert!(manifest.skill.is_some());
+        assert_eq!(manifest.contributes.activity_bar.len(), 1);
+        let activity = &manifest.contributes.activity_bar[0];
+        assert_eq!(activity.id, "inbox");
+        assert_eq!(activity.title, "Slack Inbox");
+        assert_eq!(activity.entry, PathBuf::from("web/activity.html"));
+        assert_eq!(activity.skill, "slack");
+        assert_eq!(activity.order, 120);
     }
 
     #[test]
@@ -447,5 +646,23 @@ extension "acme/slack" {
             );
             assert!(ExtensionManifest::parse_acl(&manifest).is_err());
         }
+    }
+
+    #[test]
+    fn rejects_activity_contributions_without_a_skill_surface() {
+        let manifest =
+            MANIFEST.replace("  skill {\n    path = \"skills/slack/SKILL.md\"\n  }\n", "");
+        let error = ExtensionManifest::parse_acl(&manifest).unwrap_err();
+        assert!(error
+            .message
+            .contains("Activity Bar contributions require a Skill surface"));
+    }
+
+    #[test]
+    fn rejects_escaping_or_non_html_activity_assets() {
+        let escaping = MANIFEST.replace("web/activity.html", "../activity.html");
+        assert!(ExtensionManifest::parse_acl(&escaping).is_err());
+        let script = MANIFEST.replace("web/activity.html", "web/activity.js");
+        assert!(ExtensionManifest::parse_acl(&script).is_err());
     }
 }

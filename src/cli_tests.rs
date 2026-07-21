@@ -12,7 +12,7 @@ async fn version_json_exposes_a_typed_data_payload_for_consumers() {
 }
 
 #[tokio::test]
-async fn capabilities_always_include_browser_document_office_and_ocr() {
+async fn capabilities_always_include_browser_office_and_ocr() {
     let output = run(vec!["capabilities".to_string(), "--json".to_string()])
         .await
         .unwrap();
@@ -20,7 +20,6 @@ async fn capabilities_always_include_browser_document_office_and_ocr() {
     assert_eq!(domains[0]["id"], "browser");
     assert_eq!(domains[1]["id"], "office");
     assert_eq!(domains[2]["id"], "ocr");
-    assert_eq!(domains[3]["id"], "document");
     assert!(domains[0]["surfaces"]
         .as_array()
         .unwrap()
@@ -52,15 +51,10 @@ async fn capability_snapshot_unifies_built_ins_without_rpc_envelopes() {
         .iter()
         .find(|capability| capability["id"] == "use/ocr")
         .unwrap();
-    let document = capabilities
-        .iter()
-        .find(|capability| capability["id"] == "use/document")
-        .unwrap();
 
     assert_eq!(browser["origin"], "built-in");
     assert_eq!(office["origin"], "built-in");
     assert_eq!(ocr["origin"], "built-in");
-    assert_eq!(document["origin"], "built-in");
     #[cfg(feature = "office")]
     {
         assert!(office["surfaces"]
@@ -97,23 +91,6 @@ async fn capability_snapshot_unifies_built_ins_without_rpc_envelopes() {
         assert_eq!(ocr["enabled"], false);
         assert_eq!(ocr["surfaces"], serde_json::json!([]));
         assert!(ocr.get("skills").is_none());
-    }
-    #[cfg(feature = "document")]
-    {
-        assert_eq!(document["enabled"], true);
-        assert_eq!(document["readiness"], "ready");
-        assert_eq!(document["mcp"]["target"], "document-native");
-        assert!(document["skills"][0]["path"]
-            .as_str()
-            .is_some_and(
-                |path| std::path::Path::new(path).ends_with("skills/a3s-use-document/SKILL.md")
-            ));
-    }
-    #[cfg(not(feature = "document"))]
-    {
-        assert_eq!(document["enabled"], false);
-        assert_eq!(document["surfaces"], serde_json::json!([]));
-        assert!(document.get("skills").is_none());
     }
     assert_eq!(registry["revision"].as_str().unwrap().len(), 64);
     assert!(output.json.get("jsonrpc").is_none());

@@ -13,7 +13,6 @@ name = "a3s-use-browser-driver"
 path = "src/main.rs"
 
 [dependencies]
-a3s-use-core = { version = "0.1.1", path = "../core" }
 a3s-acl = { git = "https://github.com/A3S-Lab/ACL", rev = "6e2a6469edc0f4c61b1e588d0ace873aaf15ce22" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

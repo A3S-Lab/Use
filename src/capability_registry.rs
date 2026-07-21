@@ -55,6 +55,26 @@ struct SkillSurface {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ManagedAsset {
+    path: PathBuf,
+    sha256: String,
+    media_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivityBarContribution {
+    id: String,
+    title: String,
+    description: String,
+    icon: String,
+    entry: ManagedAsset,
+    skill: String,
+    order: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CapabilityBinding {
     id: String,
     route: String,
@@ -69,6 +89,8 @@ pub(crate) struct CapabilityBinding {
     mcp: Option<McpSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     skills: Vec<SkillSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    activity_bar: Vec<ActivityBarContribution>,
 }
 
 pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
@@ -78,7 +100,6 @@ pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
         office_capability().await?,
         office_compatibility_capability(),
         ocr_capability().await?,
-        document_capability().await?,
         box_capability(),
     ];
     capabilities.extend(extensions);
@@ -148,6 +169,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
                 transport: McpTransport::Stdio,
             }),
             skills,
+            activity_bar: Vec::new(),
         })
     }
     #[cfg(not(feature = "browser"))]
@@ -163,6 +185,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         })
     }
 }
@@ -195,6 +218,7 @@ async fn office_capability() -> UseResult<CapabilityBinding> {
             #[cfg(not(feature = "mcp"))]
             mcp: None,
             skills,
+            activity_bar: Vec::new(),
         })
     }
     #[cfg(not(feature = "office"))]
@@ -210,6 +234,7 @@ async fn office_capability() -> UseResult<CapabilityBinding> {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         })
     }
 }
@@ -233,6 +258,7 @@ fn office_compatibility_capability() -> CapabilityBinding {
                 transport: McpTransport::Stdio,
             }),
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         }
     }
     #[cfg(not(feature = "office"))]
@@ -248,6 +274,7 @@ fn office_compatibility_capability() -> CapabilityBinding {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         }
     }
 }
@@ -284,6 +311,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             #[cfg(not(feature = "mcp"))]
             mcp: None,
             skills,
+            activity_bar: Vec::new(),
         })
     }
     #[cfg(not(feature = "ocr"))]
@@ -299,57 +327,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
-        })
-    }
-}
-
-async fn document_capability() -> UseResult<CapabilityBinding> {
-    #[cfg(feature = "document")]
-    {
-        let diagnostic = crate::document_builtin::diagnostic();
-        let skill = crate::document_builtin::primary_skill_surface().await;
-        let (package_root, skills) = match skill {
-            Some((root, path)) => (Some(root), vec![skill_surface(path).await?]),
-            None => (None, Vec::new()),
-        };
-        let mut surfaces = vec!["cli".to_string()];
-        if !skills.is_empty() {
-            surfaces.push("skill".to_string());
-        }
-        #[cfg(feature = "mcp")]
-        surfaces.push("mcp".to_string());
-        Ok(CapabilityBinding {
-            id: "use/document".to_string(),
-            route: "document".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            origin: CapabilityOrigin::BuiltIn,
-            enabled: true,
-            readiness: diagnostic.readiness,
-            package_root,
-            surfaces,
-            #[cfg(feature = "mcp")]
-            mcp: Some(McpSurface {
-                target: "document-native".to_string(),
-                transport: McpTransport::Stdio,
-            }),
-            #[cfg(not(feature = "mcp"))]
-            mcp: None,
-            skills,
-        })
-    }
-    #[cfg(not(feature = "document"))]
-    {
-        Ok(CapabilityBinding {
-            id: "use/document".to_string(),
-            route: "document".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            origin: CapabilityOrigin::BuiltIn,
-            enabled: false,
-            readiness: Readiness::Missing,
-            package_root: None,
-            surfaces: Vec::new(),
-            mcp: None,
-            skills: Vec::new(),
+            activity_bar: Vec::new(),
         })
     }
 }
@@ -367,6 +345,7 @@ fn box_capability() -> CapabilityBinding {
         surfaces: vec!["cli".to_string()],
         mcp: None,
         skills: Vec::new(),
+        activity_bar: Vec::new(),
     }
 }
 
@@ -415,6 +394,57 @@ async fn skill_surface(path: PathBuf) -> UseResult<SkillSurface> {
         path,
         sha256: format!("{:x}", digest.finalize()),
     })
+}
+
+async fn activity_asset(path: PathBuf) -> UseResult<ManagedAsset> {
+    let metadata = tokio::fs::symlink_metadata(&path)
+        .await
+        .map_err(|error| activity_io_error("inspect", &path, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(UseError::new(
+            "use.capability.activity_asset_invalid",
+            format!(
+                "Projected Activity Bar asset '{}' must be a regular package file.",
+                path.display()
+            ),
+        ));
+    }
+    if metadata.len() == 0 || metadata.len() > 2 * 1024 * 1024 {
+        return Err(UseError::new(
+            "use.capability.activity_asset_invalid",
+            format!(
+                "Projected Activity Bar asset '{}' exceeds the supported size.",
+                path.display()
+            ),
+        ));
+    }
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|error| activity_io_error("read", &path, error))?;
+    std::str::from_utf8(&bytes).map_err(|error| {
+        UseError::new(
+            "use.capability.activity_asset_invalid",
+            format!(
+                "Projected Activity Bar asset '{}' must be UTF-8 HTML: {error}",
+                path.display()
+            ),
+        )
+    })?;
+    Ok(ManagedAsset {
+        path,
+        sha256: format!("{:x}", Sha256::digest(&bytes)),
+        media_type: "text/html".to_string(),
+    })
+}
+
+fn activity_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError {
+    UseError::new(
+        "use.capability.activity_asset_unreadable",
+        format!(
+            "Failed to {action} projected Activity Bar asset '{}': {error}",
+            path.display()
+        ),
+    )
 }
 
 fn skill_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError {
@@ -496,6 +526,18 @@ async fn project_extensions(
         if let Some(path) = extension.skill_path() {
             skills.push(skill_surface(path).await?);
         }
+        let mut activity_bar = Vec::new();
+        for contribution in &extension.manifest.contributes.activity_bar {
+            activity_bar.push(ActivityBarContribution {
+                id: contribution.id.clone(),
+                title: contribution.title.clone(),
+                description: contribution.description.clone(),
+                icon: contribution.icon.clone(),
+                entry: activity_asset(receipt.package_root.join(&contribution.entry)).await?,
+                skill: contribution.skill.clone(),
+                order: contribution.order,
+            });
+        }
         capabilities.push(CapabilityBinding {
             id: receipt.component_id.clone(),
             route: receipt.route.clone(),
@@ -511,6 +553,7 @@ async fn project_extensions(
             surfaces,
             mcp,
             skills,
+            activity_bar,
         });
     }
     Ok(Some(capabilities))
@@ -543,17 +586,11 @@ mod tests {
             .iter()
             .find(|capability| capability.id == "use/ocr")
             .unwrap();
-        let document = snapshot
-            .capabilities
-            .iter()
-            .find(|capability| capability.id == "use/document")
-            .unwrap();
 
         assert_eq!(browser.origin, CapabilityOrigin::BuiltIn);
         assert_eq!(office.origin, CapabilityOrigin::BuiltIn);
         assert_eq!(office_compat.origin, CapabilityOrigin::BuiltIn);
         assert_eq!(ocr.origin, CapabilityOrigin::BuiltIn);
-        assert_eq!(document.origin, CapabilityOrigin::BuiltIn);
         #[cfg(feature = "browser")]
         {
             assert!(browser.surfaces.iter().any(|surface| surface == "skill"));
@@ -590,25 +627,6 @@ mod tests {
             assert!(!office.enabled);
             assert!(office.surfaces.is_empty());
             assert!(office.skills.is_empty());
-        }
-        #[cfg(feature = "document")]
-        {
-            assert_eq!(document.readiness, Readiness::Ready);
-            assert!(document
-                .skills
-                .iter()
-                .any(|skill| skill.path.ends_with("a3s-use-document/SKILL.md")));
-            #[cfg(feature = "mcp")]
-            assert_eq!(
-                document.mcp.as_ref().map(|mcp| mcp.target.as_str()),
-                Some("document-native")
-            );
-        }
-        #[cfg(not(feature = "document"))]
-        {
-            assert!(!document.enabled);
-            assert!(document.surfaces.is_empty());
-            assert!(document.skills.is_empty());
         }
         #[cfg(feature = "ocr")]
         {
@@ -648,6 +666,36 @@ mod tests {
         capability.skills = vec![first];
         let first_revision = revision(&[capability.clone()]).unwrap();
         capability.skills = vec![second];
+        let second_revision = revision(&[capability]).unwrap();
+        assert_ne!(first_revision, second_revision);
+    }
+
+    #[tokio::test]
+    async fn activity_asset_content_is_integrity_bound_to_the_registry_revision() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("activity.html");
+        tokio::fs::write(&path, b"<main>first</main>")
+            .await
+            .unwrap();
+        let first = activity_asset(path.clone()).await.unwrap();
+        tokio::fs::write(&path, b"<main>second</main>")
+            .await
+            .unwrap();
+        let second = activity_asset(path).await.unwrap();
+        assert_ne!(first.sha256, second.sha256);
+
+        let mut capability = box_capability();
+        capability.activity_bar = vec![ActivityBarContribution {
+            id: "science".to_string(),
+            title: "Science".to_string(),
+            description: "Scientific workspace".to_string(),
+            icon: "flask-conical".to_string(),
+            entry: first,
+            skill: "science".to_string(),
+            order: 120,
+        }];
+        let first_revision = revision(&[capability.clone()]).unwrap();
+        capability.activity_bar[0].entry = second;
         let second_revision = revision(&[capability]).unwrap();
         assert_ne!(first_revision, second_revision);
     }

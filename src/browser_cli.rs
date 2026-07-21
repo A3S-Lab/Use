@@ -20,7 +20,6 @@ pub(crate) async fn run(args: &[String]) -> UseResult<CommandOutput> {
                 return Ok(render_help());
             }
             let options = RenderOptions::parse(&args[1..])?;
-            crate::first_use::ensure_browser_ready().await?;
             let pool = Arc::new(BrowserPool::new(BrowserPoolConfig::default()));
             let result = render_with(Arc::clone(&pool), options).await;
             pool.shutdown().await;
