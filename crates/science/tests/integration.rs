@@ -208,6 +208,13 @@ fn packaged_manifest_declares_native_read_only_surfaces() {
         manifest.skill.as_ref().unwrap().path,
         Path::new("skills/a3s-use-science/SKILL.md")
     );
+    assert_eq!(manifest.contributes.activity_bar.len(), 1);
+    let activity = &manifest.contributes.activity_bar[0];
+    assert_eq!(activity.id, "research");
+    assert_eq!(activity.title, "Science");
+    assert_eq!(activity.icon, "flask-conical");
+    assert_eq!(activity.entry, Path::new("web/activity.html"));
+    assert_eq!(activity.skill, "a3s-use-science");
     manifest
         .validate_package_root(
             Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -302,8 +309,10 @@ async fn real_science_package_installs_hot_upgrades_dispatches_and_uninstalls() 
 fn create_science_package(root: &Path) {
     let binary = root.join("bin/a3s-use-science");
     let skill = root.join("skills/a3s-use-science/SKILL.md");
+    let activity = root.join("web/activity.html");
     std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
     std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(activity.parent().unwrap()).unwrap();
     std::fs::copy(env!("CARGO_BIN_EXE_a3s-use-science"), &binary).unwrap();
     std::fs::write(
         root.join("a3s-use-extension.acl"),
@@ -315,4 +324,5 @@ fn create_science_package(root: &Path) {
         include_str!("../package/skills/a3s-use-science/SKILL.md"),
     )
     .unwrap();
+    std::fs::write(&activity, include_str!("../package/web/activity.html")).unwrap();
 }

@@ -18,4 +18,15 @@ extension "a3s/science" {
   skill {
     path = "skills/a3s-use-science/SKILL.md"
   }
+
+  contributes {
+    activity_bar "research" {
+      title       = "Science"
+      description = "Prepare evidence-backed life-science research tasks."
+      icon        = "flask-conical"
+      entry       = "web/activity.html"
+      skill       = "a3s-use-science"
+      order       = 120
+    }
+  }
 }

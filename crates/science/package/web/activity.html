@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Science Research</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --soft: #f0f2f5;
+        --line: #dfe3e8;
+        --ink: #191b20;
+        --muted: #6f7580;
+        --blue: #2864e8;
+        --green: #138a65;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #101118;
+        --panel: #171820;
+        --soft: #21232c;
+        --line: #2d3039;
+        --ink: #f2f3f5;
+        --muted: #a1a6b0;
+        --blue: #76a8ff;
+        --green: #45d09a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        padding: 28px;
+        background:
+          radial-gradient(circle at 82% 5%, color-mix(in srgb, var(--blue) 9%, transparent), transparent 28%),
+          var(--bg);
+        color: var(--ink);
+      }
+
+      main {
+        width: min(960px, 100%);
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 20px;
+      }
+
+      .eyebrow {
+        margin: 0 0 5px;
+        color: var(--blue);
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(24px, 4vw, 38px);
+        letter-spacing: -0.04em;
+        line-height: 1.1;
+      }
+
+      header p:last-child {
+        max-width: 660px;
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .host-status {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 9px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .host-status::before {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+        content: "";
+      }
+
+      form {
+        display: grid;
+        gap: 14px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel);
+        box-shadow: 0 16px 42px rgb(20 24 40 / 7%);
+      }
+
+      label,
+      fieldset {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 7px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+
+      label > span,
+      legend {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      input[type="text"],
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        outline: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      input[type="text"],
+      select {
+        height: 42px;
+        padding: 0 11px;
+      }
+
+      textarea {
+        min-height: 88px;
+        padding: 10px 11px;
+        resize: vertical;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 11%, transparent);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(180px, 0.42fr);
+        gap: 13px;
+      }
+
+      .sources {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 7px;
+      }
+
+      .source {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 7px;
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--bg);
+        color: var(--ink);
+        cursor: pointer;
+        font-size: 11px;
+      }
+
+      .source:has(input:checked) {
+        border-color: color-mix(in srgb, var(--blue) 50%, var(--line));
+        background: color-mix(in srgb, var(--blue) 7%, var(--panel));
+      }
+
+      .source input {
+        accent-color: var(--blue);
+      }
+
+      footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding-top: 4px;
+      }
+
+      footer p {
+        max-width: 610px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.55;
+      }
+
+      button {
+        min-height: 40px;
+        flex: 0 0 auto;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 9px;
+        background: var(--ink);
+        color: var(--panel);
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      .error {
+        display: none;
+        margin: 0;
+        color: #d84b4f;
+        font-size: 11px;
+      }
+
+      .error.visible {
+        display: block;
+      }
+
+      @media (max-width: 720px) {
+        body {
+          padding: 18px;
+        }
+
+        header,
+        footer {
+          flex-direction: column;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .sources {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">A3S Use · Science</p>
+          <h1>Prepare a research brief</h1>
+          <p>
+            Shape a bounded evidence request here, review exactly what will be shared, then continue in Code with the
+            package-owned Science Skill.
+          </p>
+        </div>
+        <span class="host-status" id="host-status">Isolated activity</span>
+      </header>
+
+      <form id="research-form">
+        <div class="grid">
+          <label>
+            <span>Research question</span>
+            <input id="question" type="text" maxlength="500" required placeholder="e.g. What recent evidence links…?">
+          </label>
+          <label>
+            <span>Evidence objective</span>
+            <select id="objective">
+              <option value="evidence map">Evidence map</option>
+              <option value="literature comparison">Literature comparison</option>
+              <option value="target landscape">Target landscape</option>
+              <option value="trial landscape">Trial landscape</option>
+            </select>
+          </label>
+        </div>
+
+        <fieldset>
+          <legend>Sources to consider</legend>
+          <div class="sources">
+            <label class="source"><input type="checkbox" name="source" value="PubMed" checked> PubMed</label>
+            <label class="source"><input type="checkbox" name="source" value="ChEMBL"> ChEMBL</label>
+            <label class="source"><input type="checkbox" name="source" value="ClinicalTrials.gov"> ClinicalTrials</label>
+            <label class="source"><input type="checkbox" name="source" value="bioRxiv"> bioRxiv</label>
+            <label class="source"><input type="checkbox" name="source" value="Ensembl"> Ensembl</label>
+          </div>
+        </fieldset>
+
+        <div class="grid">
+          <label>
+            <span>Scope and constraints</span>
+            <textarea id="scope" maxlength="1000" placeholder="Population, date range, species, intervention, or exclusions"></textarea>
+          </label>
+          <label>
+            <span>Preferred output</span>
+            <select id="output">
+              <option value="a concise synthesis with source identifiers">Concise synthesis</option>
+              <option value="a comparison table with source identifiers">Comparison table</option>
+              <option value="an evidence timeline with source identifiers">Evidence timeline</option>
+              <option value="a gap analysis with source identifiers">Gap analysis</option>
+            </select>
+          </label>
+        </div>
+
+        <p class="error" id="error" role="alert">Enter a question and select at least one source.</p>
+        <footer>
+          <p>
+            This view cannot call APIs or install packages. The host will show a final review before adding this context
+            and the verified <strong>a3s-use-science</strong> Skill to Code.
+          </p>
+          <button type="submit">Review in Code</button>
+        </footer>
+      </form>
+    </main>
+
+    <script>
+      (() => {
+        const protocol = 'a3s.activity.v1';
+        const form = document.getElementById('research-form');
+        const error = document.getElementById('error');
+        const hostStatus = document.getElementById('host-status');
+
+        window.addEventListener('message', (event) => {
+          if (event.source !== window.parent) return;
+          const message = event.data;
+          if (!message || message.protocol !== protocol || message.type !== 'host.init') return;
+          const theme = message.payload && message.payload.theme;
+          document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+          hostStatus.textContent = `Verified ${message.payload.packageId}`;
+        });
+
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          const question = document.getElementById('question').value.trim();
+          const objective = document.getElementById('objective').value;
+          const scope = document.getElementById('scope').value.trim();
+          const output = document.getElementById('output').value;
+          const sources = Array.from(document.querySelectorAll('input[name="source"]:checked')).map(
+            (input) => input.value
+          );
+          if (!question || sources.length === 0) {
+            error.classList.add('visible');
+            return;
+          }
+          error.classList.remove('visible');
+          const scopeText = scope || 'No additional constraints supplied.';
+          window.parent.postMessage(
+            {
+              protocol,
+              type: 'context.propose',
+              payload: {
+                title: 'Review Science research context',
+                summary: `${objective} for: ${question}`,
+                fields: [
+                  { label: 'Sources', value: sources.join(', ') },
+                  { label: 'Scope', value: scopeText },
+                  { label: 'Output', value: output },
+                ],
+                prompt: `Research this question using ${sources.join(', ')}: ${question}\n\nScope: ${scopeText}\n\nReturn ${output}. Distinguish peer-reviewed literature, preprints, database records, and clinical trial records. Preserve stable source identifiers and call out uncertainty or missing evidence.`,
+              },
+            },
+            '*'
+          );
+        });
+
+        window.parent.postMessage({ protocol, type: 'activity.ready' }, '*');
+      })();
+    </script>
+  </body>
+</html>
