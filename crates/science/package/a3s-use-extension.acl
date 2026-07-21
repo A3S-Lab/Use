@@ -22,7 +22,7 @@ extension "a3s/science" {
   contributes {
     activity_bar "research" {
       title       = "科研"
-      description = "Prepare evidence-backed life-science research tasks."
+      description = "Prepare reviewable, evidence-backed research tasks across disciplines."
       icon        = "flask-conical"
       entry       = "web/activity.html"
       skill       = "a3s-use-science"

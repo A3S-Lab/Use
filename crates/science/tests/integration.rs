@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -243,32 +243,55 @@ fn packaged_research_activity_declares_multiple_disciplines_and_subfields() {
         assert!(discipline["id"].as_str().is_some());
         assert!(discipline["label"].as_str().is_some());
         assert!(discipline["subfields"].as_array().unwrap().len() >= 4);
-        assert!(discipline["sources"].as_array().unwrap().len() >= 3);
+        let sources = discipline["sources"].as_array().unwrap();
+        assert!(sources.len() >= 3);
+        assert_eq!(
+            sources
+                .iter()
+                .map(|source| source["id"].as_str().unwrap())
+                .collect::<BTreeSet<_>>()
+                .len(),
+            sources.len(),
+            "source IDs must be unique within a discipline"
+        );
     }
 
-    let life_sciences = disciplines
+    let package_skill_sources = disciplines
         .iter()
-        .find(|discipline| discipline["id"] == "life-sciences")
-        .expect("life sciences must be represented");
-    assert!(life_sciences["sources"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|source| source["packageSkill"] == true));
-    let computer_science = disciplines
-        .iter()
-        .find(|discipline| discipline["id"] == "computer-science")
-        .expect("computer science must be represented");
-    assert!(computer_science["sources"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|source| source["packageSkill"] == false));
+        .flat_map(|discipline| {
+            let discipline_id = discipline["id"].as_str().unwrap();
+            discipline["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|source| source["packageSkill"] == true)
+                .map(move |source| (discipline_id, source["id"].as_str().unwrap()))
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        package_skill_sources,
+        BTreeSet::from([
+            ("agriculture-food", "ensembl"),
+            ("chemistry-materials", "chembl"),
+            ("life-sciences", "biorxiv"),
+            ("life-sciences", "ensembl"),
+            ("life-sciences", "pubmed"),
+            ("medicine-health", "chembl"),
+            ("medicine-health", "clinical-trials"),
+            ("medicine-health", "pubmed"),
+        ]),
+        "package-backed sources must match the extension's implemented data sources"
+    );
     assert!(activity.contains("href=\"./activity.css\""));
     assert!(activity.contains("src=\"./activity.js\""));
+    assert!(activity.contains("id=\"project-name\""));
+    assert!(activity.contains("id=\"validation-criteria\""));
+    assert!(activity.contains("可复核科研闭环"));
+    assert!(activity.contains("provenance-card"));
     assert!(!activity.contains("<style>"));
     assert!(!activity.contains("<script>"));
     assert!(styles.contains(".discipline-options"));
+    assert!(script.contains("provenance note"));
     assert!(script.contains("usePackageSkill"));
     assert!(script.contains("a3s.activity.v1"));
 }

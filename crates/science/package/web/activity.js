@@ -7,8 +7,10 @@
   const evidenceOptions = document.getElementById('evidence-options');
   const error = document.getElementById('error');
   const hostStatus = document.getElementById('host-status');
+  const projectNameInput = document.getElementById('project-name');
   const questionInput = document.getElementById('question');
   const scenarioInput = document.getElementById('scenario');
+  const validationCriteriaInput = document.getElementById('validation-criteria');
   let activeDiscipline = catalog[0];
   let activeSubfield = activeDiscipline.subfields[0];
 
@@ -101,19 +103,23 @@
   function updatePreview() {
     const sources = selectedSources();
     const usePackageSkill = sources.some((source) => source.packageSkill);
+    document.getElementById('preview-project').textContent =
+      projectNameInput.value.trim() || '等待命名科研项目';
     document.getElementById('preview-discipline').textContent = activeDiscipline.label;
     document.getElementById('preview-subfield').textContent = activeSubfield;
     document.getElementById('preview-scenario').textContent = selectedOptionText(scenarioInput);
     document.getElementById('preview-sources').textContent =
       sources.length > 0 ? sources.map((source) => source.label).join('、') : '尚未选择';
     document.getElementById('preview-question').textContent = questionInput.value.trim() || '等待输入科研问题';
+    document.getElementById('preview-validation').textContent =
+      validationCriteriaInput.value.trim() || '等待定义核验标准';
     const route = document.getElementById('capability-route');
     route.classList.toggle('package-skill', usePackageSkill);
     document.getElementById('capability-title').textContent = usePackageSkill
       ? 'Code + a3s-use-science 专业源'
       : 'Code 通用科研能力';
     document.getElementById('capability-detail').textContent = usePackageSkill
-      ? '审核通过后附加宿主验证的同包 Skill，用于所选生命科学数据源。'
+      ? '审核通过后附加宿主验证的同包 Skill，用于所选且由扩展明确支持的生物医学数据源。'
       : '仅交付审核后的结构化任务，使用 Code 当前可用的检索与分析能力。';
   }
 
@@ -140,9 +146,11 @@
   form.addEventListener('change', updatePreview);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
+    const projectName = projectNameInput.value.trim();
     const question = questionInput.value.trim();
+    const validationCriteria = validationCriteriaInput.value.trim();
     const sources = selectedSources();
-    if (!question || sources.length === 0) {
+    if (!projectName || !question || !validationCriteria || sources.length === 0) {
       error.classList.add('visible');
       return;
     }
@@ -166,6 +174,7 @@
       : 'Use only search and retrieval capabilities currently available in Code. Do not assume access to a named database or source that the host cannot reach.';
     const prompt = [
       'Conduct the following rigorous research task.',
+      `Project name: ${projectName}.`,
       `Primary discipline: ${activeDiscipline.label}.`,
       `Subfield: ${activeSubfield}.`,
       `Research scenario: ${scenario}.`,
@@ -176,8 +185,11 @@
       `Evidence languages: ${language}.`,
       `Scope and constraints: ${scope}.`,
       `Exclusions: ${exclusions}.`,
+      `Validation criteria: ${validationCriteria}.`,
       routingInstruction,
       `Apply a ${rigor} approach. Return ${output} using ${citationStyle}.`,
+      'Work through explicit plan, execute, produce, preview, and review phases. Keep the resulting artifacts editable in Code or Work and identify the output files or structured artifacts created at each phase.',
+      'Include a provenance note with every final artifact. The provenance note must record sources and stable identifiers, methods or code used, execution records, key parameters and environment assumptions, artifact relationships, and every verification item that remains incomplete.',
       'Separate peer-reviewed evidence, preprints, datasets, standards, primary sources, and secondary interpretation. Define inclusion and exclusion choices, triangulate important claims, preserve stable source identifiers, and state uncertainty, conflicting findings, inaccessible channels, and evidence gaps. Never invent source access, records, citations, or findings.',
     ].join('\n\n');
 
@@ -187,8 +199,9 @@
         type: 'context.propose',
         payload: {
           title: '审核科研任务',
-          summary: `${activeDiscipline.label} · ${activeSubfield} · ${scenarioLabel}：${question}`,
+          summary: `${projectName} · ${activeDiscipline.label} · ${activeSubfield} · ${scenarioLabel}：${question}`,
           fields: [
+            { label: '项目', value: projectName },
             { label: '学科', value: activeDiscipline.label },
             { label: '细分领域', value: activeSubfield },
             { label: '科研场景', value: scenarioLabel },
@@ -196,6 +209,7 @@
             { label: '时间范围', value: dateRange() },
             { label: '交叉领域', value: relatedFields },
             { label: '交付物', value: outputLabel },
+            { label: '核验标准', value: validationCriteria },
           ],
           prompt,
           usePackageSkill,
