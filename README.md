@@ -1799,7 +1799,9 @@ workflow, and input boundaries.
 The repository includes `a3s-use-science` as a reference external extension,
 not as another built-in route. Its process exposes one typed Rust client as 13
 read-only MCP tools plus source-specific CLI commands for PubMed, ChEMBL,
-ClinicalTrials.gov, bioRxiv, and Ensembl.
+ClinicalTrials.gov, bioRxiv, and Ensembl. The broader first-party catalog of
+scientific Skills, MCP services, and compute workflows lives in
+[A3S Science](https://github.com/A3S-Lab/Science).
 
 Build a local package into a new directory and install it explicitly:
 
@@ -1821,8 +1823,8 @@ through the explicit local-package flow. Local packages require
 email, while `NCBI_API_KEY` is optional. See the
 [Science crate](crates/science/README.md), its
 [data-source notice](crates/science/DATA_SOURCES.md), and
-[clean-room provenance](crates/science/UPSTREAM.md) for the full command set,
-data egress, limits, and interpretation boundaries.
+[A3S Science repository boundary](crates/science/UPSTREAM.md) for the full
+command set, data egress, limits, and interpretation boundaries.
 
 ## External Extensions
 

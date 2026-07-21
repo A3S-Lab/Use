@@ -51,13 +51,15 @@ the pinned model bundle when first-use policy permits it. Standard MCP keeps
 idempotent `ocr_install` network mutation requires parent confirmation.
 Explicit `use/ocr` component operations remain available for preparation.
 
-`a3s-use-science` is the reference multi-surface extension. It remains a
-separate process and package even though its source is developed in this
-repository. Its Rust API, native CLI, 13 standard MCP tools, and packaged Skill
-share typed source-specific operations; the host sees only the declared
-`a3s/science` CLI, MCP, and Skill surfaces. This demonstrates how a first-party
-toolkit can ship without expanding the reserved built-in route set or adding a
-generic action envelope.
+`a3s-use-science` is the reference multi-surface extension. It uses the
+first-party [A3S Science](https://github.com/A3S-Lab/Science) repository as the
+canonical home for the broader scientific catalog while its native Rust source
+is developed here. It remains a separate process and package. Its Rust API,
+native CLI, 13 standard MCP tools, and packaged Skill share typed
+source-specific operations; the host sees only the declared `a3s/science` CLI,
+MCP, and Skill surfaces. This demonstrates how a first-party toolkit can ship
+without expanding the reserved built-in route set or adding a generic action
+envelope.
 
 ## Hot-plug registry
 

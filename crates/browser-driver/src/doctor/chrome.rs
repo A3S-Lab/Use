@@ -226,12 +226,14 @@ fn browser_version_output(path: &Path, stdout: &[u8]) -> Option<String> {
 }
 
 fn browser_product_name(path: &Path) -> &'static str {
-    let executable = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
+    let path_text = path.to_string_lossy();
+    let file_name = path_text
+        .rsplit(['/', '\\'])
+        .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    match executable.as_str() {
+    let executable = file_name.strip_suffix(".exe").unwrap_or(&file_name);
+    match executable {
         "msedge" => "Microsoft Edge",
         "chrome" | "google-chrome" | "google-chrome-stable" => "Google Chrome",
         "chromium" | "chromium-browser" => "Chromium",
@@ -292,6 +294,10 @@ mod tests {
                 &[0xce, 0xa2, 0xc8, 0xed]
             ),
             None
+        );
+        assert_eq!(
+            browser_product_name(Path::new("/usr/bin/google-chrome-stable")),
+            "Google Chrome"
         );
     }
 
