@@ -10,6 +10,7 @@ mod package;
 mod paths;
 mod registry;
 mod registry_io;
+mod release_bundle;
 mod remote;
 mod route_lock;
 mod source;
@@ -19,6 +20,9 @@ pub use registry::{
     ActivationResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
     ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult,
     InstalledExtension, UninstallResult,
+};
+pub use release_bundle::{
+    inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
 };
 pub use remote::{
     list_remote_packages, prepare_remote_package, refresh_remote_registry, DownloadedRemotePackage,
@@ -118,6 +122,10 @@ pub struct ActivityBarContribution {
     pub description: String,
     pub icon: String,
     pub entry: PathBuf,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<PathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scripts: Vec<PathBuf>,
     pub skill: String,
     pub order: i32,
 }
@@ -161,7 +169,11 @@ impl ExtensionManifest {
                 self.contributes
                     .activity_bar
                     .iter()
-                    .map(|contribution| &contribution.entry),
+                    .flat_map(|contribution| {
+                        std::iter::once(&contribution.entry)
+                            .chain(contribution.styles.iter())
+                            .chain(contribution.scripts.iter())
+                    }),
             )
         {
             validate_relative_path(path)?;
@@ -347,7 +359,16 @@ fn parse_activity_bar(block: &Block) -> UseResult<ActivityBarContribution> {
     }
     require_known_attributes(
         block,
-        &["title", "description", "icon", "entry", "skill", "order"],
+        &[
+            "title",
+            "description",
+            "icon",
+            "entry",
+            "styles",
+            "scripts",
+            "skill",
+            "order",
+        ],
     )?;
     let id = block.labels[0].clone();
     if !valid_segment(&id) {
@@ -370,8 +391,19 @@ fn parse_activity_bar(block: &Block) -> UseResult<ActivityBarContribution> {
     validate_relative_path(&entry)?;
     if entry.extension().and_then(|value| value.to_str()) != Some("html") {
         return Err(manifest_error(
-            "Activity Bar entry assets must be self-contained .html files.",
+            "Activity Bar entry assets must be .html files.",
         ));
+    }
+    let styles = activity_resource_paths(block, "styles", "css")?;
+    let scripts = activity_resource_paths(block, "scripts", "js")?;
+    let mut resources = BTreeSet::from([entry.clone()]);
+    for resource in styles.iter().chain(&scripts) {
+        if !resources.insert(resource.clone()) {
+            return Err(manifest_error(format!(
+                "Activity Bar asset '{}' is declared more than once.",
+                resource.display()
+            )));
+        }
     }
     let skill = string_attribute(block, "skill")?;
     if !valid_segment(&skill) {
@@ -386,9 +418,40 @@ fn parse_activity_bar(block: &Block) -> UseResult<ActivityBarContribution> {
         description,
         icon,
         entry,
+        styles,
+        scripts,
         skill,
         order,
     })
+}
+
+fn activity_resource_paths(block: &Block, name: &str, extension: &str) -> UseResult<Vec<PathBuf>> {
+    let values = optional_list_attribute(block, name)?;
+    if values.len() > 16 {
+        return Err(manifest_error(format!(
+            "Activity Bar '{name}' accepts at most 16 assets."
+        )));
+    }
+    let mut seen = BTreeSet::new();
+    values
+        .into_iter()
+        .map(|value| {
+            let path = PathBuf::from(value);
+            validate_relative_path(&path)?;
+            if path.extension().and_then(|value| value.to_str()) != Some(extension) {
+                return Err(manifest_error(format!(
+                    "Activity Bar '{name}' assets must use the .{extension} extension."
+                )));
+            }
+            if !seen.insert(path.clone()) {
+                return Err(manifest_error(format!(
+                    "Activity Bar asset '{}' is declared more than once.",
+                    path.display()
+                )));
+            }
+            Ok(path)
+        })
+        .collect()
 }
 
 fn bounded_text(value: String, label: &str, max_chars: usize) -> UseResult<String> {
@@ -603,6 +666,8 @@ extension "acme/slack" {
       description = "Review Slack activity with the installed Slack capability."
       icon        = "messages-square"
       entry       = "web/activity.html"
+      styles      = ["web/activity.css"]
+      scripts     = ["web/activity.js"]
       skill       = "slack"
       order       = 120
     }
@@ -622,6 +687,8 @@ extension "acme/slack" {
         assert_eq!(activity.id, "inbox");
         assert_eq!(activity.title, "Slack Inbox");
         assert_eq!(activity.entry, PathBuf::from("web/activity.html"));
+        assert_eq!(activity.styles, [PathBuf::from("web/activity.css")]);
+        assert_eq!(activity.scripts, [PathBuf::from("web/activity.js")]);
         assert_eq!(activity.skill, "slack");
         assert_eq!(activity.order, 120);
     }
@@ -664,5 +731,12 @@ extension "acme/slack" {
         assert!(ExtensionManifest::parse_acl(&escaping).is_err());
         let script = MANIFEST.replace("web/activity.html", "web/activity.js");
         assert!(ExtensionManifest::parse_acl(&script).is_err());
+        let wrong_style = MANIFEST.replace("web/activity.css", "web/activity.js");
+        assert!(ExtensionManifest::parse_acl(&wrong_style).is_err());
+        let duplicate = MANIFEST.replace(
+            "scripts     = [\"web/activity.js\"]",
+            "scripts     = [\"web/activity.css\"]",
+        );
+        assert!(ExtensionManifest::parse_acl(&duplicate).is_err());
     }
 }

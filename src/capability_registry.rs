@@ -69,6 +69,10 @@ struct ActivityBarContribution {
     description: String,
     icon: String,
     entry: ManagedAsset,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    styles: Vec<ManagedAsset>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    scripts: Vec<ManagedAsset>,
     skill: String,
     order: i32,
 }
@@ -396,7 +400,7 @@ async fn skill_surface(path: PathBuf) -> UseResult<SkillSurface> {
     })
 }
 
-async fn activity_asset(path: PathBuf) -> UseResult<ManagedAsset> {
+async fn activity_asset(path: PathBuf, media_type: &str) -> UseResult<ManagedAsset> {
     let metadata = tokio::fs::symlink_metadata(&path)
         .await
         .map_err(|error| activity_io_error("inspect", &path, error))?;
@@ -425,15 +429,15 @@ async fn activity_asset(path: PathBuf) -> UseResult<ManagedAsset> {
         UseError::new(
             "use.capability.activity_asset_invalid",
             format!(
-                "Projected Activity Bar asset '{}' must be UTF-8 HTML: {error}",
-                path.display()
+                "Projected Activity Bar asset '{}' must be UTF-8 {media_type}: {error}",
+                path.display(),
             ),
         )
     })?;
     Ok(ManagedAsset {
         path,
         sha256: format!("{:x}", Sha256::digest(&bytes)),
-        media_type: "text/html".to_string(),
+        media_type: media_type.to_string(),
     })
 }
 
@@ -528,12 +532,25 @@ async fn project_extensions(
         }
         let mut activity_bar = Vec::new();
         for contribution in &extension.manifest.contributes.activity_bar {
+            let mut styles = Vec::with_capacity(contribution.styles.len());
+            for path in &contribution.styles {
+                styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
+            }
+            let mut scripts = Vec::with_capacity(contribution.scripts.len());
+            for path in &contribution.scripts {
+                scripts.push(
+                    activity_asset(receipt.package_root.join(path), "text/javascript").await?,
+                );
+            }
             activity_bar.push(ActivityBarContribution {
                 id: contribution.id.clone(),
                 title: contribution.title.clone(),
                 description: contribution.description.clone(),
                 icon: contribution.icon.clone(),
-                entry: activity_asset(receipt.package_root.join(&contribution.entry)).await?,
+                entry: activity_asset(receipt.package_root.join(&contribution.entry), "text/html")
+                    .await?,
+                styles,
+                scripts,
                 skill: contribution.skill.clone(),
                 order: contribution.order,
             });
@@ -677,11 +694,11 @@ mod tests {
         tokio::fs::write(&path, b"<main>first</main>")
             .await
             .unwrap();
-        let first = activity_asset(path.clone()).await.unwrap();
+        let first = activity_asset(path.clone(), "text/html").await.unwrap();
         tokio::fs::write(&path, b"<main>second</main>")
             .await
             .unwrap();
-        let second = activity_asset(path).await.unwrap();
+        let second = activity_asset(path, "text/html").await.unwrap();
         assert_ne!(first.sha256, second.sha256);
 
         let mut capability = box_capability();
@@ -691,6 +708,8 @@ mod tests {
             description: "Scientific workspace".to_string(),
             icon: "flask-conical".to_string(),
             entry: first,
+            styles: Vec::new(),
+            scripts: Vec::new(),
             skill: "science".to_string(),
             order: 120,
         }];

@@ -1,5 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
@@ -214,6 +214,8 @@ fn packaged_manifest_declares_native_read_only_surfaces() {
     assert_eq!(activity.title, "科研");
     assert_eq!(activity.icon, "flask-conical");
     assert_eq!(activity.entry, Path::new("web/activity.html"));
+    assert_eq!(activity.styles, [PathBuf::from("web/activity.css")]);
+    assert_eq!(activity.scripts, [PathBuf::from("web/activity.js")]);
     assert_eq!(activity.skill, "a3s-use-science");
     manifest
         .validate_package_root(
@@ -282,10 +284,11 @@ fn packaged_research_activity_declares_multiple_disciplines_and_subfields() {
         ]),
         "package-backed sources must match the extension's implemented data sources"
     );
-    assert!(activity.contains("href=\"./activity.css\""));
-    assert!(activity.contains("src=\"./activity.js\""));
+    assert!(!activity.contains("href=\"./activity.css\""));
+    assert!(!activity.contains("src=\"./activity.js\""));
     assert!(activity.contains("id=\"project-name\""));
     assert!(activity.contains("id=\"validation-criteria\""));
+    assert!(activity.contains("id=\"submit-research\" type=\"button\""));
     assert!(activity.contains("可复核科研闭环"));
     assert!(activity.contains("provenance-card"));
     assert!(!activity.contains("<style>"));
@@ -294,6 +297,8 @@ fn packaged_research_activity_declares_multiple_disciplines_and_subfields() {
     assert!(script.contains("provenance note"));
     assert!(script.contains("usePackageSkill"));
     assert!(script.contains("a3s.activity.v1"));
+    assert!(script.contains("submitButton.addEventListener('click'"));
+    assert!(!script.contains("form.addEventListener('submit'"));
 }
 
 #[test]

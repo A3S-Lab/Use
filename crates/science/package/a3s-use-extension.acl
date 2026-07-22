@@ -25,6 +25,8 @@ extension "a3s/science" {
       description = "Prepare reviewable, evidence-backed research tasks across disciplines."
       icon        = "flask-conical"
       entry       = "web/activity.html"
+      styles      = ["web/activity.css"]
+      scripts     = ["web/activity.js"]
       skill       = "a3s-use-science"
       order       = 120
     }

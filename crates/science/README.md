@@ -82,7 +82,13 @@ a3s use science doctor --json
 The script refuses to overwrite an existing output directory. The package may
 also be archived as `.tar.gz`, `.tgz`, or `.zip` and passed directly to
 `--from`. Local directories and archives require explicit `--allow-unsigned`
-trust. The package also contains `web/activity.html`, referenced by its
-`contributes.activity_bar` manifest entry and bound to the packaged
-`a3s-use-science` Skill. Signed remote distribution uses a configured TUF
-registry and digest-reviewed umbrella CLI plan.
+trust. The package also contains a `contributes.activity_bar` workbench with an
+HTML entry and explicitly declared CSS/JavaScript assets. A3S Use hashes every
+asset into its capability snapshot, and A3S Web verifies and injects them inside
+the isolated plugin document. The contribution remains bound to the packaged
+`a3s-use-science` Skill. Official A3S Use archives ship the same complete
+package as an optional release bundle, allowing A3S Web Market to install it
+through a digest-reviewed umbrella plan even when no remote registry is
+configured. The receipt records `release-bundle`; the plugin remains removable
+and is not a built-in route. Signed remote distribution continues to use a
+configured TUF registry and records `registry-tuf` provenance.

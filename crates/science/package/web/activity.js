@@ -11,6 +11,7 @@
   const questionInput = document.getElementById('question');
   const scenarioInput = document.getElementById('scenario');
   const validationCriteriaInput = document.getElementById('validation-criteria');
+  const submitButton = document.getElementById('submit-research');
   let activeDiscipline = catalog[0];
   let activeSubfield = activeDiscipline.subfields[0];
 
@@ -144,8 +145,7 @@
 
   form.addEventListener('input', updatePreview);
   form.addEventListener('change', updatePreview);
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
+  submitButton.addEventListener('click', () => {
     const projectName = projectNameInput.value.trim();
     const question = questionInput.value.trim();
     const validationCriteria = validationCriteriaInput.value.trim();

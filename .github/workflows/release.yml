@@ -96,7 +96,7 @@ jobs:
         with:
           name: a3s-use-ocr-models
           path: ${{ runner.temp }}/ocr-models
-      - run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use -p a3s-use-browser-driver
+      - run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use -p a3s-use-browser-driver -p a3s-use-science
       - name: Package Unix release
         if: runner.os != 'Windows'
         shell: bash
@@ -105,9 +105,12 @@ jobs:
           version="${{ needs.validate.outputs.version }}"
           archive="a3s-use-${version}-${{ matrix.name }}.tar.gz"
           stage="${RUNNER_TEMP}/a3s-use-${version}-${{ matrix.name }}"
-          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/office-skills" "${stage}/ocr-skills" "${stage}/dashboard"
+          science="${stage}/extensions/a3s/science"
+          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/office-skills" "${stage}/ocr-skills" "${stage}/dashboard" \
+            "${science}/bin" "${science}/skills/a3s-use-science" "${science}/web"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use" "${stage}/a3s-use"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use-browser-driver" "${stage}/a3s-use-browser-driver"
+          install -m 0755 "target/${{ matrix.target }}/release/a3s-use-science" "${science}/bin/a3s-use-science"
           A3S_USE_OCR_HOME="${stage}/ocr-models" \
             "${stage}/a3s-use" component install ocr --json > "${RUNNER_TEMP}/ocr-model-install.json"
           rm -f "${stage}/ocr-models/.install.lock"
@@ -116,6 +119,11 @@ jobs:
           cp -R crates/office/skills/. "${stage}/office-skills/"
           cp -R crates/ocr/skills/. "${stage}/ocr-skills/"
           cp -R crates/browser-driver/dashboard/out/. "${stage}/dashboard/"
+          install -m 0644 crates/science/package/a3s-use-extension.acl "${science}/"
+          install -m 0644 crates/science/package/skills/a3s-use-science/SKILL.md "${science}/skills/a3s-use-science/"
+          install -m 0644 crates/science/package/web/activity.html crates/science/package/web/activity.css crates/science/package/web/activity.js "${science}/web/"
+          install -m 0644 LICENSE "${science}/LICENSE"
+          install -m 0644 crates/science/DATA_SOURCES.md crates/science/UPSTREAM.md "${science}/"
           install -m 0644 LICENSE README.md THIRD_PARTY_NOTICES.md "${stage}/"
           install -m 0644 crates/browser-driver/LICENSE-APACHE-2.0 "${stage}/LICENSE-APACHE-2.0"
           install -m 0644 crates/browser-driver/UPSTREAM.md "${stage}/UPSTREAM.md"
@@ -132,6 +140,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/a3s-use.exe" "$stage/a3s-use.exe"
           Copy-Item "target/${{ matrix.target }}/release/a3s-use-browser-driver.exe" "$stage/a3s-use-browser-driver.exe"
+          $science = Join-Path $stage "extensions/a3s/science"
+          New-Item -ItemType Directory -Force -Path "$science/bin", "$science/skills/a3s-use-science", "$science/web" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/a3s-use-science.exe" "$science/bin/a3s-use-science"
           $env:A3S_USE_OCR_HOME = "$stage/ocr-models"
           & "$stage/a3s-use.exe" component install ocr --json | Out-File "$env:RUNNER_TEMP/ocr-model-install.json"
           if ($LASTEXITCODE -ne 0) { throw "Failed to install the pinned PP-OCRv6 release assets" }
@@ -142,6 +153,11 @@ jobs:
           Copy-Item -Recurse "crates/office/skills" "$stage/office-skills"
           Copy-Item -Recurse "crates/ocr/skills" "$stage/ocr-skills"
           Copy-Item -Recurse "crates/browser-driver/dashboard/out" "$stage/dashboard"
+          Copy-Item "crates/science/package/a3s-use-extension.acl" $science
+          Copy-Item "crates/science/package/skills/a3s-use-science/SKILL.md" "$science/skills/a3s-use-science/SKILL.md"
+          Copy-Item "crates/science/package/web/activity.html", "crates/science/package/web/activity.css", "crates/science/package/web/activity.js" "$science/web"
+          Copy-Item LICENSE "$science/LICENSE"
+          Copy-Item "crates/science/DATA_SOURCES.md", "crates/science/UPSTREAM.md" $science
           Copy-Item LICENSE,README.md,THIRD_PARTY_NOTICES.md $stage
           Copy-Item crates/browser-driver/LICENSE-APACHE-2.0 "$stage/LICENSE-APACHE-2.0"
           Copy-Item crates/browser-driver/UPSTREAM.md "$stage/UPSTREAM.md"
@@ -165,10 +181,36 @@ jobs:
           test -f "${install_root}/ocr-models/PP-OCRv6_small/rec/inference.onnx"
           test -f "${install_root}/ocr-models/PP-OCRv6_small/rec/inference.yml"
           test -f "${install_root}/dashboard/index.html"
+          test -x "${install_root}/extensions/a3s/science/bin/a3s-use-science"
+          test -f "${install_root}/extensions/a3s/science/a3s-use-extension.acl"
+          test -f "${install_root}/extensions/a3s/science/skills/a3s-use-science/SKILL.md"
+          test -f "${install_root}/extensions/a3s/science/web/activity.html"
           test -f "${install_root}/LICENSE-APACHE-2.0"
           test -f "${install_root}/UPSTREAM.md"
           test -f "${install_root}/THIRD_PARTY_NOTICES.md"
           "${install_root}/a3s-use" --version
+          "${install_root}/a3s-use" extension catalog --json > "${RUNNER_TEMP}/extension-catalog.json"
+          bundle_sha=$(python3 - "${RUNNER_TEMP}/extension-catalog.json" <<'PY'
+          import json, pathlib, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          science = next(package for package in value["data"]["packages"] if package["packageId"] == "a3s/science")
+          assert science["activityCount"] == 1
+          assert science["surfaces"] == ["cli", "mcp", "skill"]
+          print(science["packageSha256"])
+          PY
+          )
+          A3S_USE_HOME="${RUNNER_TEMP}/release-bundle-use-home" \
+            "${install_root}/a3s-use" component install a3s/science --release-bundle-sha256 "${bundle_sha}" --json > "${RUNNER_TEMP}/science-install.json"
+          A3S_USE_HOME="${RUNNER_TEMP}/release-bundle-use-home" \
+            "${install_root}/a3s-use" component status a3s/science --json > "${RUNNER_TEMP}/science-status.json"
+          python3 - "${RUNNER_TEMP}/science-status.json" <<'PY'
+          import json, pathlib, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          component = value["component"]
+          assert component["id"] == "a3s/science"
+          assert component["trust"] == "release-bundle"
+          assert component["health"] == "ready"
+          PY
           A3S_USE_BROWSER_SKILLS_DIR="${install_root}/skill-data" \
             "${install_root}/a3s-use" browser skills list --json > "${RUNNER_TEMP}/skills.json"
           python3 - "${RUNNER_TEMP}/skills.json" <<'PY'
@@ -264,12 +306,29 @@ jobs:
             "$root/ocr-models/PP-OCRv6_small/rec/inference.onnx",
             "$root/ocr-models/PP-OCRv6_small/rec/inference.yml",
             "$root/dashboard/index.html",
+            "$root/extensions/a3s/science/bin/a3s-use-science",
+            "$root/extensions/a3s/science/a3s-use-extension.acl",
+            "$root/extensions/a3s/science/skills/a3s-use-science/SKILL.md",
+            "$root/extensions/a3s/science/web/activity.html",
             "$root/LICENSE-APACHE-2.0",
             "$root/UPSTREAM.md",
             "$root/THIRD_PARTY_NOTICES.md"
           ) | ForEach-Object { if (-not (Test-Path $_ -PathType Leaf)) { throw "Missing release file $_" } }
           & "$root/a3s-use.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "a3s-use --version failed" }
+          $catalog = (& "$root/a3s-use.exe" extension catalog --json | ConvertFrom-Json)
+          $science = $catalog.data.packages | Where-Object packageId -eq "a3s/science"
+          if (-not $catalog.ok -or -not $science -or $science.activityCount -ne 1) {
+            throw "Science release-bundle catalog smoke failed"
+          }
+          $env:A3S_USE_HOME = "$env:RUNNER_TEMP/release-bundle-use-home"
+          $scienceInstall = (& "$root/a3s-use.exe" component install a3s/science --release-bundle-sha256 $science.packageSha256 --json | ConvertFrom-Json)
+          if (-not $scienceInstall.ok -or -not $scienceInstall.data.changed) { throw "Science release-bundle install failed" }
+          $scienceStatus = (& "$root/a3s-use.exe" component status a3s/science --json | ConvertFrom-Json)
+          if ($scienceStatus.component.trust -ne "release-bundle" -or $scienceStatus.component.health -ne "ready") {
+            throw "Science release-bundle status smoke failed"
+          }
+          Remove-Item Env:A3S_USE_HOME
           $env:A3S_USE_BROWSER_SKILLS_DIR = "$root/skill-data"
           $skills = (& "$root/a3s-use.exe" browser skills list --json | ConvertFrom-Json)
           if (-not $skills.success -or $skills.data.Count -ne 6) { throw "Packaged Skills smoke failed" }

@@ -13,6 +13,7 @@ pub(crate) struct ExtensionView {
     pub version: String,
     pub enabled: bool,
     pub package_root: PathBuf,
+    pub package_sha256: Option<String>,
     pub surfaces: Vec<&'static str>,
     pub trust: &'static str,
     pub registry: Option<serde_json::Value>,
@@ -90,6 +91,23 @@ pub(crate) async fn extension_list() -> UseResult<CommandOutput> {
     Ok(CommandOutput::success(
         human,
         serde_json::json!({ "generation": generation, "extensions": values }),
+    ))
+}
+
+#[cfg(feature = "extensions")]
+pub(crate) async fn release_bundle_catalog() -> UseResult<CommandOutput> {
+    let packages = crate::release_bundles::list().await?;
+    Ok(CommandOutput::success(
+        format!("{} release-bundled extension(s) available.", packages.len()),
+        serde_json::json!({ "packages": packages }),
+    ))
+}
+
+#[cfg(not(feature = "extensions"))]
+pub(crate) async fn release_bundle_catalog() -> UseResult<CommandOutput> {
+    Ok(CommandOutput::success(
+        "No release-bundled extensions are available.",
+        serde_json::json!({ "packages": [] }),
     ))
 }
 
@@ -195,6 +213,7 @@ pub(crate) fn external_component_value(
         "health": if extension.enabled { "ready" } else { "disabled" },
         "version": extension.version,
         "path": extension.package_root,
+        "packageSha256": extension.package_sha256,
         "route": extension.route,
         "enabled": extension.enabled,
         "surfaces": extension.surfaces,
@@ -211,6 +230,7 @@ fn extension_value(extension: &ExtensionView) -> serde_json::Value {
         "version": extension.version,
         "enabled": extension.enabled,
         "packageRoot": extension.package_root,
+        "packageSha256": extension.package_sha256,
         "surfaces": extension.surfaces,
         "trust": extension.trust,
         "registry": extension.registry
@@ -259,6 +279,35 @@ pub(crate) async fn install_extension(
 }
 
 #[cfg(feature = "extensions")]
+pub(crate) async fn install_release_bundle_extension(
+    package_id: &str,
+    expected_package_sha256: &str,
+    force: bool,
+) -> UseResult<ExtensionInstallView> {
+    let (source, package) = crate::release_bundles::resolve(package_id).await?;
+    if package.package_sha256 != expected_package_sha256 {
+        return Err(UseError::new(
+            "use.extension.release_bundle_changed",
+            format!(
+                "Release bundle '{}' changed after its installation plan was reviewed.",
+                package_id
+            ),
+        ));
+    }
+    let result = crate::extension_host::install_release_bundle(
+        package_id,
+        &source,
+        expected_package_sha256,
+        force,
+    )
+    .await?;
+    Ok(ExtensionInstallView {
+        changed: result.changed,
+        extension: extension_view(result.extension)?,
+    })
+}
+
+#[cfg(feature = "extensions")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn install_remote_extension(
     package_id: &str,
@@ -300,6 +349,15 @@ pub(crate) async fn install_extension(
     _source: &Path,
     _force: bool,
     _allow_unsigned: bool,
+) -> UseResult<ExtensionInstallView> {
+    Err(extensions_disabled())
+}
+
+#[cfg(not(feature = "extensions"))]
+pub(crate) async fn install_release_bundle_extension(
+    _package_id: &str,
+    _expected_package_sha256: &str,
+    _force: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())
 }
@@ -426,6 +484,7 @@ fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult
     let surfaces = extension.surfaces();
     let trust = match extension.receipt.trust {
         a3s_use_extension::ExtensionTrust::LocalExplicit => "local-explicit",
+        a3s_use_extension::ExtensionTrust::ReleaseBundle => "release-bundle",
         a3s_use_extension::ExtensionTrust::RegistryTuf => "registry-tuf",
     };
     let registry = extension
@@ -453,6 +512,7 @@ fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult
         version: extension.receipt.version,
         enabled: extension.receipt.enabled,
         package_root: extension.receipt.package_root,
+        package_sha256: extension.receipt.package_sha256,
         surfaces,
         trust,
         registry,

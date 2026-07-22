@@ -53,6 +53,17 @@ pub async fn install_remote(
         .await
 }
 
+pub async fn install_release_bundle(
+    package_id: &str,
+    source: &Path,
+    expected_package_sha256: &str,
+    force: bool,
+) -> UseResult<InstallResult> {
+    ExtensionRegistry::from_env()?
+        .install_release_bundle(package_id, source, expected_package_sha256, force)
+        .await
+}
+
 pub async fn uninstall(package_id: &str) -> UseResult<UninstallResult> {
     ExtensionRegistry::from_env()?.uninstall(package_id).await
 }

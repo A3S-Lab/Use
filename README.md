@@ -1802,6 +1802,22 @@ ClinicalTrials.gov, bioRxiv, and Ensembl. The same package contributes a
 self-contained `web/activity.html` research brief view bound to its
 `a3s-use-science` Skill; A3S Web renders it in its own sandbox and review flow.
 
+Official A3S Use archives carry the complete platform-specific package under
+`extensions/a3s/science`. It is only a trusted installation source: Science is
+not registered or started until the user selects **Install** in A3S Web Market
+or applies the reviewed umbrella CLI plan. The plan includes the exact expanded
+package digest; A3S Use resolves the release-owned directory again, rechecks
+that digest, and records `release-bundle` provenance. The installed package can
+still be disabled, enabled, upgraded with a newer Use release, or uninstalled.
+Remote TUF distribution remains available for packages not carried by a Use
+release.
+
+The release-owned catalog is inspectable without installing anything:
+
+```bash
+a3s-use extension catalog --json
+```
+
 Build a local package into a new directory and install it explicitly:
 
 ```bash
@@ -1826,7 +1842,7 @@ a3s install use/a3s/science \
   --allow-unsigned
 ```
 
-Local directories, `.tar.gz`, `.tgz`, and `.zip` packages require
+Developer-provided local directories, `.tar.gz`, `.tgz`, and `.zip` packages require
 `--allow-unsigned`; use them only after explicit review. A signed remote
 distribution can publish the same package through a configured TUF registry;
 the umbrella CLI then installs it without `--from` or `--allow-unsigned`.
@@ -1897,6 +1913,12 @@ links, traversal, duplicate paths, unsupported entries, excessive expansion,
 and non-portable paths before validating the manifest, route, executable, and
 Skill surfaces. Unsigned content requires `--allow-unsigned`. Use does not
 silently install arbitrary Homebrew, npm, Cargo, system, or `PATH` packages.
+
+A release-bundled source is a separate first-party provenance. It must live
+under the installed A3S Use release's `extensions/<publisher>/<name>` tree,
+appear in `extension catalog`, and match the digest in the reviewed umbrella
+plan. It never uses `--allow-unsigned` and cannot be combined with registry or
+local-package options.
 
 ### Signed extension registries
 

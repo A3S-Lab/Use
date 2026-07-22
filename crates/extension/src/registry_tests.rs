@@ -148,6 +148,39 @@ async fn installs_lists_and_uninstalls_an_explicit_local_package() {
 }
 
 #[tokio::test]
+async fn installs_a_release_bundle_only_with_the_reviewed_package_digest() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("release/a3s/science");
+    package(&source, "a3s/science", "science", "1.2.0").await;
+    let bundle = crate::inspect_release_bundle(&source).await.unwrap();
+    let registry = registry(temp.path());
+
+    let changed = registry
+        .install_release_bundle("a3s/science", &source, &bundle.package_sha256, false)
+        .await
+        .unwrap();
+    assert!(changed.changed);
+    assert_eq!(
+        changed.extension.receipt.trust,
+        ExtensionTrust::ReleaseBundle
+    );
+    assert_eq!(
+        changed.extension.receipt.package_sha256.as_deref(),
+        Some(bundle.package_sha256.as_str())
+    );
+    assert!(changed.extension.receipt.registry.is_none());
+
+    fs::write(source.join("skills/demo/SKILL.md"), "# Changed\n")
+        .await
+        .unwrap();
+    let error = registry
+        .install_release_bundle("a3s/science", &source, &bundle.package_sha256, true)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.release_bundle_changed");
+}
+
+#[tokio::test]
 async fn installs_and_uninstalls_a_local_tar_package() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("source");

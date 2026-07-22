@@ -6,8 +6,8 @@ use crate::capability_registry::{
 use crate::extension_cli::{
     extension_capabilities, extension_disable, extension_enable, extension_inspect, extension_list,
     extension_snapshot, extension_watch, external_component_value, external_package_id,
-    install_extension, install_remote_extension, installed_extension, installed_extensions,
-    uninstall_extension,
+    install_extension, install_release_bundle_extension, install_remote_extension,
+    installed_extension, installed_extensions, release_bundle_catalog, uninstall_extension,
 };
 use std::time::Duration;
 
@@ -121,7 +121,7 @@ fn help() -> CommandOutput {
             "  a3s-use office <officecli-args...>\n",
             "  a3s-use ocr doctor [--json]\n",
             "  a3s-use ocr extract <image> [--json]\n",
-            "  a3s-use extension list|inspect|doctor [args] [--json]\n",
+            "  a3s-use extension list|catalog|inspect|doctor [args] [--json]\n",
             "  a3s-use extension enable <publisher/name> [--json]\n",
             "  a3s-use extension disable <publisher/name> [--timeout-ms <ms>] [--json]\n",
             "  a3s-use extension snapshot|watch [--after-generation <n>] [--timeout-ms <ms>] [--json]\n",
@@ -490,6 +490,7 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
     let version = option_argument(args, "--version")?;
     let channel = option_argument(args, "--channel")?.unwrap_or("stable");
     let expected_plan = option_argument(args, "--registry-plan-digest")?;
+    let release_bundle_sha256 = option_argument(args, "--release-bundle-sha256")?;
     let force = args.iter().any(|argument| argument == "--force");
     let allow_unsigned = args.iter().any(|argument| argument == "--allow-unsigned");
     let remote_requested = registry_name.is_some()
@@ -500,9 +501,9 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
         || expected_plan.is_some()
         || option_argument(args, "--channel")?.is_some();
     let result = if let Some(source) = source {
-        if remote_requested {
+        if remote_requested || release_bundle_sha256.is_some() {
             return Err(usage_error(
-                "--from cannot be combined with signed registry options",
+                "--from cannot be combined with signed registry or release-bundle options",
             ));
         }
         install_extension(
@@ -512,6 +513,13 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
             allow_unsigned,
         )
         .await?
+    } else if let Some(expected_sha256) = release_bundle_sha256 {
+        if remote_requested || allow_unsigned {
+            return Err(usage_error(
+                "--release-bundle-sha256 cannot be combined with registry or unsigned-package options",
+            ));
+        }
+        install_release_bundle_extension(package_id, expected_sha256, force).await?
     } else {
         if allow_unsigned {
             return Err(usage_error(
@@ -735,6 +743,10 @@ fn office_help() -> CommandOutput {
 async fn extension(args: &[String]) -> UseResult<CommandOutput> {
     match args.first().map(String::as_str) {
         None | Some("list") => extension_list().await,
+        Some("catalog") => {
+            validate_extension_options(args, 1, false)?;
+            release_bundle_catalog().await
+        }
         Some("inspect" | "doctor") => {
             let package_id = value_argument(args, 1, "extension inspect requires an ID")?;
             extension_inspect(package_id).await
@@ -1105,7 +1117,8 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
             | "--trusted-root"
             | "--version"
             | "--channel"
-            | "--registry-plan-digest" => {
+            | "--registry-plan-digest"
+            | "--release-bundle-sha256" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));
                 }

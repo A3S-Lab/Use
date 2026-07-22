@@ -16,6 +16,7 @@ pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
 pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
 const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_ACTIVITY_RESOURCE_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) async fn read_manifest(package_root: &Path) -> UseResult<(ExtensionManifest, Vec<u8>)> {
     let path = package_root.join(MANIFEST_NAME);
@@ -67,34 +68,70 @@ pub(crate) async fn validate_surface_files(
         .await?;
     }
     for activity in &manifest.contributes.activity_bar {
-        let path = package_root.join(&activity.entry);
-        validate_surface_file("Activity Bar entry", &canonical_root, &path, false).await?;
-        let metadata = fs::metadata(&path)
-            .await
-            .map_err(|error| io_error("inspect Activity Bar entry", &path, error))?;
-        if metadata.len() == 0 || metadata.len() > MAX_ACTIVITY_HTML_BYTES {
-            return Err(UseError::new(
-                "use.extension.activity_asset_invalid",
-                format!(
-                    "Activity Bar entry '{}' must contain between 1 byte and {} bytes.",
-                    path.display(),
-                    MAX_ACTIVITY_HTML_BYTES
-                ),
-            ));
-        }
-        let bytes = fs::read(&path)
-            .await
-            .map_err(|error| io_error("read Activity Bar entry", &path, error))?;
-        std::str::from_utf8(&bytes).map_err(|error| {
-            UseError::new(
-                "use.extension.activity_asset_invalid",
-                format!(
-                    "Activity Bar entry '{}' must be UTF-8 HTML: {error}",
-                    path.display()
-                ),
+        validate_activity_text_asset(
+            "Activity Bar entry",
+            "HTML",
+            &canonical_root,
+            &package_root.join(&activity.entry),
+            MAX_ACTIVITY_HTML_BYTES,
+        )
+        .await?;
+        for style in &activity.styles {
+            validate_activity_text_asset(
+                "Activity Bar style",
+                "CSS",
+                &canonical_root,
+                &package_root.join(style),
+                MAX_ACTIVITY_RESOURCE_BYTES,
             )
-        })?;
+            .await?;
+        }
+        for script in &activity.scripts {
+            validate_activity_text_asset(
+                "Activity Bar script",
+                "JavaScript",
+                &canonical_root,
+                &package_root.join(script),
+                MAX_ACTIVITY_RESOURCE_BYTES,
+            )
+            .await?;
+        }
     }
+    Ok(())
+}
+
+async fn validate_activity_text_asset(
+    label: &str,
+    content_type: &str,
+    canonical_root: &Path,
+    path: &Path,
+    max_bytes: u64,
+) -> UseResult<()> {
+    validate_surface_file(label, canonical_root, path, false).await?;
+    let metadata = fs::metadata(path)
+        .await
+        .map_err(|error| io_error(&format!("inspect {label}"), path, error))?;
+    if metadata.len() == 0 || metadata.len() > max_bytes {
+        return Err(UseError::new(
+            "use.extension.activity_asset_invalid",
+            format!(
+                "{label} '{}' must contain between 1 byte and {max_bytes} bytes.",
+                path.display()
+            ),
+        ));
+    }
+    let bytes = fs::read(path)
+        .await
+        .map_err(|error| io_error(&format!("read {label}"), path, error))?;
+    std::str::from_utf8(&bytes).map_err(|error| {
+        UseError::new(
+            "use.extension.activity_asset_invalid",
+            format!(
+                "{label} '{}' must be UTF-8 {content_type}: {error}",
+                path.display()
+            ),
+        )
+    })?;
     Ok(())
 }
 
