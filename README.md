@@ -251,7 +251,7 @@ not the facade binary:
 
 ```toml
 [dependencies]
-a3s-use-browser = "0.1.3"
+a3s-use-browser = "0.2.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 url = "2"
 ```
