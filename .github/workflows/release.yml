@@ -396,7 +396,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Publish Core, OCR, then Browser
+      - name: Publish Core, Extension, OCR, then Browser
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
           VERSION: ${{ needs.validate.outputs.version }}
@@ -435,6 +435,8 @@ jobs:
 
           publish_once a3s-use-core
           wait_until_visible a3s-use-core
+          publish_once a3s-use-extension
+          wait_until_visible a3s-use-extension
           publish_once a3s-use-ocr
           wait_until_visible a3s-use-ocr
           publish_once a3s-use-browser
