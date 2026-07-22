@@ -14,10 +14,12 @@ The initial toolkit covers:
 | bioRxiv | Search a bounded date range; retrieve a DOI |
 | Ensembl | Look up a gene; retrieve orthologs |
 
-All operations are retrieval-only. The crate does not copy implementation code
-from upstream skill collections and does not run their Python environments.
-See [UPSTREAM.md](UPSTREAM.md) for the inspiration, reviewed revision, and
-clean-room boundary.
+All operations are retrieval-only. The broader scientific Skill catalog, MCP
+services, compute workflows, and supporting assets are maintained in the
+first-party [A3S Science](https://github.com/A3S-Lab/Science) repository. This
+crate provides a smaller native Rust surface and does not bundle or run the
+catalog's Python environments. See [UPSTREAM.md](UPSTREAM.md) for the repository
+boundary.
 
 ## Configuration
 

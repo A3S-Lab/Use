@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use a3s_use_core::{UseError, UseResult};
 use fs2::FileExt;
 
-use super::package::io_error;
+use super::package::{io_error, lock_is_contended};
 
 const DRAIN_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -46,7 +46,7 @@ pub(super) async fn acquire_drain_lock(
     loop {
         match FileExt::try_lock_exclusive(&file) {
             Ok(()) => return Ok(RouteDrainGuard { file }),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(error) if lock_is_contended(&error) => {
                 let now = Instant::now();
                 if now >= deadline {
                     let timeout_ms = timeout.as_millis().min(u64::MAX as u128) as u64;

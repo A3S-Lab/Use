@@ -229,13 +229,13 @@ fn browser_product_name(path: &Path) -> &'static str {
     // Tests and diagnostics may inspect a path produced on a different host
     // platform, so recognize both path separators before removing the common
     // Windows executable suffix.
-    let executable = path.as_os_str().to_string_lossy();
-    let executable = executable
+    let path_text = path.to_string_lossy();
+    let file_name = path_text
         .rsplit(['/', '\\'])
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let executable = executable.strip_suffix(".exe").unwrap_or(&executable);
+    let executable = file_name.strip_suffix(".exe").unwrap_or(&file_name);
     match executable {
         "msedge" => "Microsoft Edge",
         "chrome" | "google-chrome" | "google-chrome-stable" => "Google Chrome",
@@ -297,6 +297,10 @@ mod tests {
                 &[0xce, 0xa2, 0xc8, 0xed]
             ),
             None
+        );
+        assert_eq!(
+            browser_product_name(Path::new("/usr/bin/google-chrome-stable")),
+            "Google Chrome"
         );
     }
 

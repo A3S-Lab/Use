@@ -9,8 +9,8 @@ use tokio::fs;
 
 use super::digest::package_sha256;
 use super::package::{
-    copy_package, io_error, owned_package_path, read_manifest, sha256, unique_suffix,
-    unix_timestamp, validate_surface_files, write_receipt, RegistryLock,
+    copy_package, io_error, lock_is_contended, owned_package_path, read_manifest, sha256,
+    unique_suffix, unix_timestamp, validate_surface_files, write_receipt, RegistryLock,
 };
 use super::registry_io::{read_registry_snapshot, write_registry_snapshot};
 use super::remote::{prepare_remote_package, ResolvedRemotePackage, TrustedRegistry};
@@ -805,7 +805,7 @@ impl ExtensionRegistry {
         let file = open_route_lock(&path)?;
         match FileExt::try_lock_shared(&file) {
             Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
+            Err(error) if lock_is_contended(&error) => return Ok(None),
             Err(error) => return Err(io_error("acquire extension route lease", &path, error)),
         }
 

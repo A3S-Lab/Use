@@ -251,7 +251,7 @@ not the facade binary:
 
 ```toml
 [dependencies]
-a3s-use-browser = "0.1.2"
+a3s-use-browser = "0.1.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 url = "2"
 ```
@@ -1798,9 +1798,12 @@ workflow, and input boundaries.
 The repository includes `a3s-use-science` as a reference external extension,
 not as another built-in route. Its process exposes one typed Rust client as 13
 read-only MCP tools plus source-specific CLI commands for PubMed, ChEMBL,
-ClinicalTrials.gov, bioRxiv, and Ensembl. The same package contributes a
-self-contained `web/activity.html` research brief view bound to its
-`a3s-use-science` Skill; A3S Web renders it in its own sandbox and review flow.
+ClinicalTrials.gov, bioRxiv, and Ensembl. The broader first-party catalog of
+scientific Skills, MCP services, and compute workflows lives in
+[A3S Science](https://github.com/A3S-Lab/Science). The package also contributes
+a research brief view with declared HTML, CSS, and JavaScript assets bound to
+its `a3s-use-science` Skill; A3S Web renders it in its own sandbox and review
+flow.
 
 Official A3S Use archives carry the complete platform-specific package under
 `extensions/a3s/science`. It is only a trusted installation source: Science is
@@ -1842,15 +1845,15 @@ a3s install use/a3s/science \
   --allow-unsigned
 ```
 
-Developer-provided local directories, `.tar.gz`, `.tgz`, and `.zip` packages require
-`--allow-unsigned`; use them only after explicit review. A signed remote
+Developer-provided local directories, `.tar.gz`, `.tgz`, and `.zip` packages
+require `--allow-unsigned`; use them only after explicit review. A signed remote
 distribution can publish the same package through a configured TUF registry;
 the umbrella CLI then installs it without `--from` or `--allow-unsigned`.
 PubMed requires the contact email, while `NCBI_API_KEY` is optional. See the
-[Science crate](crates/science/README.md) and its
-[data-source notice](crates/science/DATA_SOURCES.md) for the full command set,
-data egress, limits, interpretation boundaries, and
-[clean-room provenance](crates/science/UPSTREAM.md).
+[Science crate](crates/science/README.md), its
+[data-source notice](crates/science/DATA_SOURCES.md), and
+[A3S Science repository boundary](crates/science/UPSTREAM.md) for the full
+command set, data egress, limits, and interpretation boundaries.
 
 ## External Extensions
 
@@ -1980,6 +1983,11 @@ Its TUF target `custom.a3s` object must contain `schemaVersion`, `packageId`,
 `version`, `channel` (`stable`, `beta`, or `nightly`), and `target` (an A3S host
 target or `any`). Duplicate identities, mismatched paths, unsupported archives,
 and oversized targets are rejected before payload download.
+
+Hosts can call `a3s_use_extension::list_remote_packages` to obtain a fully
+verified, host-compatible package catalog without downloading archives. The
+returned catalog includes the verified metadata versions and immutable
+`ResolvedRemotePackage` entries required for review and subsequent installation.
 
 Built-in and management routes are reserved. Extensions cannot shadow
 `browser`, `office`, `ocr`, `box`, `component`, `capability`, or other host

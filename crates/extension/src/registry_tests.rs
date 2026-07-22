@@ -86,16 +86,16 @@ fn zip_package(source: &Path, archive: &Path) {
         "web/activity.html",
     ] {
         let source_file = source.join(relative);
-        let mut options = zip::write::SimpleFileOptions::default()
+        let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
         #[cfg(unix)]
-        {
+        let options = {
             let mode = std::fs::metadata(&source_file)
                 .unwrap()
                 .permissions()
                 .mode();
-            options = options.unix_permissions(mode);
-        }
+            options.unix_permissions(mode)
+        };
         writer
             .start_file(format!("package/{relative}"), options)
             .unwrap();

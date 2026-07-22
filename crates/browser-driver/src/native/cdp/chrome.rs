@@ -1735,15 +1735,15 @@ mod tests {
         let started = std::time::Instant::now();
         let error = wait_for_ws_url_until(
             DelayedEof {
-                delay: Duration::from_millis(250),
+                delay: Duration::from_secs(1),
             },
-            started + Duration::from_millis(20),
+            started + Duration::from_millis(50),
         )
         .unwrap_err();
 
         assert!(error.contains("Timeout waiting for Chrome DevTools URL"));
         assert!(
-            started.elapsed() < Duration::from_millis(150),
+            started.elapsed() < Duration::from_millis(750),
             "stderr fallback exceeded its deadline"
         );
     }

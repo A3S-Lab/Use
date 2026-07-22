@@ -36,23 +36,28 @@ An external package declares any useful combination of:
 - Skill: an existing SKILL.md package.
 
 Packages may also declare non-callable workbench contributions. An
-`activity_bar` contribution references a package-owned UTF-8 HTML asset and a
-same-package Skill. A3S Use validates the regular file, size, media type, package
-boundary, and SHA-256 before publishing either through the immutable capability
-snapshot. The consuming Web host owns sandboxing, CSP, messaging, and human
-review; the contribution never becomes another execution protocol.
+`activity_bar` contribution references a package-owned UTF-8 HTML entry,
+optional declared CSS and JavaScript assets, and a same-package Skill. A3S Use
+validates every regular file, size, media type, package boundary, and SHA-256
+before publishing them through the immutable capability snapshot. The consuming
+Web host owns sandboxing, CSP, messaging, and human review; the contribution
+never becomes another execution protocol.
 
 The package manifest is a3s-use-extension.acl and is parsed by a3s-acl. A3S Use
 owns identity, routes, trust, activation, and lifecycle around the surfaces. It
 does not define JSON-RPC methods or convert surfaces implicitly.
 
-`a3s-use-science` is the reference multi-surface extension. It remains a
-separate process and package even though its source is developed in this
-repository. Its Rust API, native CLI, 13 standard MCP tools, packaged Skill, and
-content-bound Science Activity share typed source-specific operations; callable
-work remains limited to the declared `a3s/science` CLI, MCP, and Skill surfaces.
-This demonstrates how a first-party toolkit can ship without expanding the
-reserved built-in route set or adding a generic action envelope.
+`a3s-use-science` is the reference multi-surface extension. It uses the
+first-party [A3S Science](https://github.com/A3S-Lab/Science) repository as the
+canonical home for the broader scientific catalog while its native Rust source
+is developed here. It remains a separate process and package. Its Rust API,
+native CLI, 13 standard MCP tools, packaged Skill, and content-bound Science
+Activity share typed source-specific operations; callable work remains limited
+to the declared `a3s/science` CLI, MCP, and Skill surfaces. Official Use
+archives may carry the package as a digest-bound installation source, but it
+stays inactive until the user applies a reviewed installation plan. This
+demonstrates how a first-party toolkit can ship without expanding the reserved
+built-in route set or adding a generic action envelope.
 
 `a3s-use-ocr` implements the reserved first-party `ocr` route in the default
 Use build. The release packages its content-bound Skill and exposes the native
@@ -60,8 +65,11 @@ CLI plus standard stdio MCP without a separate extension install. The process
 accepts bounded local image files and binds every result to the canonical
 source digest. It runs the pinned `PP-OCRv6_small` detection and recognition
 models locally through ONNX Runtime, without Python, PaddlePaddle, a remote OCR
-endpoint, or an alternate backend. Model installation and repair are explicit
-`use/ocr` component operations. Both MCP tools are closed-world and read-only.
+endpoint, or an alternate backend. The first CLI extraction installs or repairs
+the pinned model bundle when first-use policy permits it. Standard MCP keeps
+`ocr_doctor` and `ocr_extract` closed-world and read-only, while the separate
+idempotent `ocr_install` network mutation requires parent confirmation.
+Explicit `use/ocr` component operations remain available for preparation.
 
 ## Hot-plug registry
 
