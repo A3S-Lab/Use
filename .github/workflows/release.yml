@@ -106,7 +106,7 @@ jobs:
           archive="a3s-use-${version}-${{ matrix.name }}.tar.gz"
           stage="${RUNNER_TEMP}/a3s-use-${version}-${{ matrix.name }}"
           science="${stage}/extensions/a3s/science"
-          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/office-skills" "${stage}/ocr-skills" "${stage}/dashboard" \
+          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/ocr-skills" "${stage}/dashboard" \
             "${science}/bin" "${science}/skills/a3s-use-science" "${science}/web"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use" "${stage}/a3s-use"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use-browser-driver" "${stage}/a3s-use-browser-driver"
@@ -115,7 +115,6 @@ jobs:
           cp -R "${RUNNER_TEMP}/ocr-models/." "${stage}/ocr-models/"
           cp -R crates/browser-driver/skills/. "${stage}/skills/"
           cp -R crates/browser-driver/skill-data/. "${stage}/skill-data/"
-          cp -R crates/office/skills/. "${stage}/office-skills/"
           cp -R crates/ocr/skills/. "${stage}/ocr-skills/"
           cp -R crates/browser-driver/dashboard/out/. "${stage}/dashboard/"
           install -m 0644 crates/science/package/a3s-use-extension.acl "${science}/"
@@ -145,7 +144,6 @@ jobs:
           Copy-Item -Recurse -Force "$env:RUNNER_TEMP/ocr-models" "$stage/ocr-models"
           Copy-Item -Recurse "crates/browser-driver/skills" "$stage/skills"
           Copy-Item -Recurse "crates/browser-driver/skill-data" "$stage/skill-data"
-          Copy-Item -Recurse "crates/office/skills" "$stage/office-skills"
           Copy-Item -Recurse "crates/ocr/skills" "$stage/ocr-skills"
           Copy-Item -Recurse "crates/browser-driver/dashboard/out" "$stage/dashboard"
           Copy-Item "crates/science/package/a3s-use-extension.acl" $science
@@ -170,7 +168,6 @@ jobs:
           test -x "${install_root}/a3s-use"
           test -x "${install_root}/a3s-use-browser-driver"
           test -f "${install_root}/skill-data/core/SKILL.md"
-          test -f "${install_root}/office-skills/a3s-use-office/SKILL.md"
           test -f "${install_root}/ocr-skills/a3s-use-ocr/SKILL.md"
           test -f "${install_root}/ocr-models/PP-OCRv6_small/det/inference.onnx"
           test -f "${install_root}/ocr-models/PP-OCRv6_small/det/inference.yml"
@@ -260,14 +257,6 @@ jobs:
               root / "ocr-skills" / "a3s-use-ocr" / "SKILL.md"
           )
           PY
-          A3S_OFFICECLI_EXECUTABLE="${install_root}/must-not-be-invoked" \
-            "${install_root}/a3s-use" office skills list --json > "${RUNNER_TEMP}/office-skills.json"
-          python3 - "${RUNNER_TEMP}/office-skills.json" <<'PY'
-          import json, pathlib, sys
-          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          assert value["ok"] is True
-          assert [item["name"] for item in value["data"]] == ["a3s-use-office"]
-          PY
           printf '%s\n' \
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}' \
             '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
@@ -296,7 +285,6 @@ jobs:
             "$root/a3s-use.exe",
             "$root/a3s-use-browser-driver.exe",
             "$root/skill-data/core/SKILL.md",
-            "$root/office-skills/a3s-use-office/SKILL.md",
             "$root/ocr-skills/a3s-use-ocr/SKILL.md",
             "$root/ocr-models/PP-OCRv6_small/det/inference.onnx",
             "$root/ocr-models/PP-OCRv6_small/det/inference.yml",
@@ -329,11 +317,6 @@ jobs:
           $env:A3S_USE_BROWSER_SKILLS_DIR = "$root/skill-data"
           $skills = (& "$root/a3s-use.exe" browser skills list --json | ConvertFrom-Json)
           if (-not $skills.success -or $skills.data.Count -ne 6) { throw "Packaged Skills smoke failed" }
-          $env:A3S_OFFICECLI_EXECUTABLE = "$root/must-not-be-invoked.exe"
-          $officeSkills = (& "$root/a3s-use.exe" office skills list --json | ConvertFrom-Json)
-          if (-not $officeSkills.ok -or $officeSkills.data.Count -ne 1 -or $officeSkills.data[0].name -ne "a3s-use-office") {
-            throw "Packaged Office Skill smoke failed"
-          }
           $ocr = (& "$root/a3s-use.exe" ocr doctor --json | ConvertFrom-Json)
           if (
             -not $ocr.ok -or
