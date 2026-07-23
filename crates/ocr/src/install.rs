@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use a3s_use_core::{FirstUseInstallPolicy, UseError, UseResult};
+use a3s_use_core::{UseError, UseResult};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -64,26 +64,6 @@ struct InstallLock {
 struct Downloaded {
     bytes: u64,
     sha256: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AutoInstallAction {
-    Ready,
-    Install,
-}
-
-/// Ensure the pinned PP-OCRv6 bundle is ready for an actual OCR operation.
-///
-/// Read-only diagnostics deliberately do not call this function. Direct OCR
-/// extraction and the bounded MCP install tool use it so first use installs or
-/// repairs A3S-managed models while preserving offline, no-auto-install, and
-/// explicit-model-directory boundaries.
-pub async fn ensure_ppocr_v6_ready() -> UseResult<OcrRuntimeStatus> {
-    let status = ocr_status();
-    match automatic_install_action(&status, FirstUseInstallPolicy::from_env()?)? {
-        AutoInstallAction::Ready => Ok(status),
-        AutoInstallAction::Install => install_ppocr_v6(false).await,
-    }
 }
 
 pub async fn install_ppocr_v6(force: bool) -> UseResult<OcrRuntimeStatus> {
@@ -679,39 +659,6 @@ fn owned_install(path: &Path) -> bool {
     })
 }
 
-fn automatic_install_action(
-    status: &OcrRuntimeStatus,
-    policy: FirstUseInstallPolicy,
-) -> UseResult<AutoInstallAction> {
-    if status.available {
-        return Ok(AutoInstallAction::Ready);
-    }
-    if status.source == OcrInstallSource::Environment {
-        return Err(ocr_error(
-            "use.ocr.model_unreadable",
-            format!(
-                "The explicit A3S_OCR_MODEL_DIR is not usable: {}",
-                status.detail
-            ),
-        )
-        .with_suggestion("Fix or unset A3S_OCR_MODEL_DIR before retrying OCR."));
-    }
-    if let Some(block) = policy.blocked_by() {
-        let reason = block.reason();
-        return Err(ocr_error(
-            "use.ocr.auto_install_disabled",
-            format!(
-                "The local {MODEL_FAMILY} bundle is not ready and automatic installation is disabled by {reason}."
-            ),
-        )
-        .with_suggestion(
-            "Enable first-use installation or run 'a3s install use/ocr' explicitly while online.",
-        )
-        .with_detail("reason", reason));
-    }
-    Ok(AutoInstallAction::Install)
-}
-
 fn archive_error(error: impl std::fmt::Display) -> UseError {
     ocr_error(
         "use.ocr.archive_invalid",
@@ -721,69 +668,4 @@ fn archive_error(error: impl std::fmt::Display) -> UseError {
 
 fn ocr_error(code: &str, message: impl Into<String>) -> UseError {
     UseError::new(code, message)
-}
-
-#[cfg(test)]
-mod automatic_install_tests {
-    use super::*;
-
-    fn status(available: bool, source: OcrInstallSource) -> OcrRuntimeStatus {
-        OcrRuntimeStatus {
-            available,
-            source,
-            model: MODEL_FAMILY.to_string(),
-            model_dir: None,
-            managed_root: None,
-            detail: if available {
-                "ready".to_string()
-            } else {
-                "missing".to_string()
-            },
-        }
-    }
-
-    #[test]
-    fn ready_models_never_require_an_install() {
-        let action = automatic_install_action(
-            &status(true, OcrInstallSource::Managed),
-            FirstUseInstallPolicy::new(true, true),
-        )
-        .unwrap();
-
-        assert_eq!(action, AutoInstallAction::Ready);
-    }
-
-    #[test]
-    fn missing_models_install_when_first_use_mutation_is_allowed() {
-        let action = automatic_install_action(
-            &status(false, OcrInstallSource::Missing),
-            FirstUseInstallPolicy::new(false, false),
-        )
-        .unwrap();
-
-        assert_eq!(action, AutoInstallAction::Install);
-    }
-
-    #[test]
-    fn offline_and_no_auto_install_are_strict_boundaries() {
-        for policy in [
-            FirstUseInstallPolicy::new(true, false),
-            FirstUseInstallPolicy::new(false, true),
-        ] {
-            let error = automatic_install_action(&status(false, OcrInstallSource::Missing), policy)
-                .unwrap_err();
-            assert_eq!(error.code, "use.ocr.auto_install_disabled");
-        }
-    }
-
-    #[test]
-    fn an_invalid_explicit_model_directory_is_never_replaced_implicitly() {
-        let error = automatic_install_action(
-            &status(false, OcrInstallSource::Environment),
-            FirstUseInstallPolicy::new(false, false),
-        )
-        .unwrap_err();
-
-        assert_eq!(error.code, "use.ocr.model_unreadable");
-    }
 }

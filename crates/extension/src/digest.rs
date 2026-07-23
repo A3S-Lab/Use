@@ -14,7 +14,18 @@ struct PackageFile {
     size: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackageFingerprint {
+    pub(crate) sha256: String,
+    pub(crate) file_count: u64,
+    pub(crate) byte_count: u64,
+}
+
 pub(crate) async fn package_sha256(root: &Path) -> UseResult<String> {
+    Ok(package_fingerprint(root).await?.sha256)
+}
+
+pub(crate) async fn package_fingerprint(root: &Path) -> UseResult<PackageFingerprint> {
     let root = root.to_path_buf();
     tokio::task::spawn_blocking(move || hash_package(&root))
         .await
@@ -26,7 +37,7 @@ pub(crate) async fn package_sha256(root: &Path) -> UseResult<String> {
         })?
 }
 
-fn hash_package(root: &Path) -> UseResult<String> {
+fn hash_package(root: &Path) -> UseResult<PackageFingerprint> {
     let mut files = Vec::new();
     let mut entries = 0_usize;
     let mut bytes = 0_u64;
@@ -35,6 +46,7 @@ fn hash_package(root: &Path) -> UseResult<String> {
 
     let mut digest = Sha256::new();
     digest.update(b"a3s-use-expanded-package-v1\0");
+    let file_count = u64::try_from(files.len()).map_err(|_| package_limit_error())?;
     for package_file in files {
         let path_bytes = package_file.normalized.as_bytes();
         digest.update((path_bytes.len() as u64).to_be_bytes());
@@ -63,7 +75,11 @@ fn hash_package(root: &Path) -> UseResult<String> {
             return Err(package_changed(&package_file.path));
         }
     }
-    Ok(format!("{:x}", digest.finalize()))
+    Ok(PackageFingerprint {
+        sha256: format!("{:x}", digest.finalize()),
+        file_count,
+        byte_count: bytes,
+    })
 }
 
 fn collect_files(
@@ -183,12 +199,17 @@ mod tests {
         std::fs::write(second.join("bin/tool"), b"tool").unwrap();
         std::fs::write(second.join("z.txt"), b"z").unwrap();
 
-        let first_digest = package_sha256(&first).await.unwrap();
-        let second_digest = package_sha256(&second).await.unwrap();
-        assert_eq!(first_digest, second_digest);
-        assert_eq!(first_digest.len(), 64);
+        let first_fingerprint = package_fingerprint(&first).await.unwrap();
+        let second_fingerprint = package_fingerprint(&second).await.unwrap();
+        assert_eq!(first_fingerprint, second_fingerprint);
+        assert_eq!(first_fingerprint.sha256.len(), 64);
+        assert_eq!(first_fingerprint.file_count, 2);
+        assert_eq!(first_fingerprint.byte_count, 5);
 
         std::fs::write(second.join("bin/tool"), b"changed").unwrap();
-        assert_ne!(first_digest, package_sha256(&second).await.unwrap());
+        assert_ne!(
+            first_fingerprint.sha256,
+            package_sha256(&second).await.unwrap()
+        );
     }
 }

@@ -621,10 +621,7 @@ provider; other native Office tools do not require Browser or OfficeCLI.
 
 In an A3S Code `use` worker, use an available
 `mcp__use_office_compat__*` tool only when the native vocabulary lacks the
-requested operation. If that surface is missing, call
-`mcp__use_office__office_install_compat` through parent confirmation and wait
-for the host to project the ready compatibility route. In a CLI-only MCP host,
-`a3s use mcp serve office-compat` prepares and starts the pinned OfficeCLI
-compatibility server; the legacy `a3s use mcp serve office` alias remains
-supported. It is a separate standard MCP target and is not the native session
-engine.
+requested operation. In a CLI-only MCP host, `a3s use mcp serve office-compat`
+starts the pinned OfficeCLI compatibility server; the legacy
+`a3s use mcp serve office` alias remains supported. It is a separate standard
+MCP target and is not the native session engine.

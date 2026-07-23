@@ -26,7 +26,7 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
         temp.path().join("review-state"),
     )
     .unwrap();
-    let reviewed = prepare_remote_package(&trusted, "acme/slack", None, "stable", None)
+    let reviewed = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
         .await
         .unwrap();
     let plan_digest = reviewed.resolved().plan_digest().unwrap();
@@ -57,7 +57,7 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
     );
 
     let receipt: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(home.join("state/extensions/acme/slack.json")).unwrap(),
+        &std::fs::read(home.join("state/extensions/a3s/science.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(receipt["trust"], "registry-tuf");
@@ -66,7 +66,7 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
     assert_eq!(provenance.plan_digest().unwrap(), plan_digest);
 
     let inspected = Command::new(binary())
-        .args(["extension", "inspect", "acme/slack", "--json"])
+        .args(["extension", "inspect", "a3s/science", "--json"])
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -119,7 +119,7 @@ fn registry_install_rejects_unsigned_and_local_source_combinations() {
         .args([
             "component",
             "install",
-            "acme/slack",
+            "a3s/science",
             "--from",
             temp.path().to_str().unwrap(),
             "--allow-unsigned",
@@ -146,7 +146,7 @@ fn registry_install(
     command.args([
         "component",
         "install",
-        "acme/slack",
+        "a3s/science",
         "--registry-name",
         "fixture",
         "--registry-url",

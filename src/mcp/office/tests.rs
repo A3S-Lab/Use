@@ -61,18 +61,6 @@ fn native_office_server_exposes_bounded_tools_and_confirmed_compat_install() {
         Some(false)
     );
     assert_eq!(annotations("office_save").destructive_hint, Some(true));
-    assert_eq!(
-        annotations("office_install_compat").read_only_hint,
-        Some(false)
-    );
-    assert_eq!(
-        annotations("office_install_compat").idempotent_hint,
-        Some(true)
-    );
-    assert_eq!(
-        annotations("office_install_compat").open_world_hint,
-        Some(true)
-    );
 }
 
 #[test]

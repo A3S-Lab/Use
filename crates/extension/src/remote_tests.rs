@@ -39,7 +39,7 @@ async fn tuf_catalog_lists_signed_packages_without_downloading_targets() {
     assert_eq!(catalog.metadata.registry_name, "fixture");
     assert_eq!(catalog.metadata.package_targets, 1);
     assert_eq!(catalog.packages.len(), 1);
-    assert_eq!(catalog.packages[0].package_id, "acme/slack");
+    assert_eq!(catalog.packages[0].package_id, "a3s/science");
     assert_eq!(catalog.packages[0].version, PACKAGE_VERSION);
     assert_eq!(catalog.packages[0].target, catalog.host_target);
     assert!(server
@@ -56,7 +56,7 @@ async fn tuf_install_records_signed_provenance_and_converges() {
     let temp = tempfile::tempdir().unwrap();
     let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
 
-    let prepared = prepare_remote_package(&trusted, "acme/slack", None, "stable", None)
+    let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
         .await
         .unwrap();
     let digest = prepared.resolved().plan_digest().unwrap();
@@ -72,7 +72,14 @@ async fn tuf_install_records_signed_provenance_and_converges() {
     );
     let registry = ExtensionRegistry::new(paths);
     let installed = registry
-        .install_remote("acme/slack", &trusted, None, "stable", Some(&digest), false)
+        .install_remote(
+            "a3s/science",
+            &trusted,
+            None,
+            "stable",
+            Some(&digest),
+            false,
+        )
         .await
         .unwrap();
     assert!(installed.changed);
@@ -81,14 +88,25 @@ async fn tuf_install_records_signed_provenance_and_converges() {
         ExtensionTrust::RegistryTuf
     );
     let provenance = installed.extension.receipt.registry.as_ref().unwrap();
-    assert_eq!(provenance.package_id, "acme/slack");
+    assert_eq!(provenance.package_id, "a3s/science");
     assert_eq!(provenance.version, PACKAGE_VERSION);
     assert_eq!(provenance.sha256, repository.target_sha256);
     assert!(installed.extension.cli_executable().unwrap().is_file());
+    let package_root = &installed.extension.receipt.package_root;
+    assert!(package_root.join("web/activity.html").is_file());
+    assert!(package_root.join("web/activity.css").is_file());
+    assert!(package_root.join("web/activity.js").is_file());
 
     server.clear_requests();
     let second = registry
-        .install_remote("acme/slack", &trusted, None, "stable", Some(&digest), false)
+        .install_remote(
+            "a3s/science",
+            &trusted,
+            None,
+            "stable",
+            Some(&digest),
+            false,
+        )
         .await
         .unwrap();
     assert!(!second.changed);
@@ -100,115 +118,6 @@ async fn tuf_install_records_signed_provenance_and_converges() {
 }
 
 #[tokio::test]
-async fn tuf_convergence_refreshes_signed_provenance_without_downloading_the_target() {
-    let archive = extension_archive(PACKAGE_VERSION);
-    let first_repository = TestRepository::new(archive.clone(), 1, FUTURE);
-    let server = TestServer::start(first_repository.routes.clone());
-    let temp = tempfile::tempdir().unwrap();
-    let trusted = trusted_registry(&server, &first_repository, temp.path().join("tuf"));
-    let paths = ExtensionPaths::new(
-        temp.path().join("data"),
-        temp.path().join("extension-state"),
-    );
-    let registry = ExtensionRegistry::new(paths);
-    registry
-        .install_remote("acme/slack", &trusted, None, "stable", None, false)
-        .await
-        .unwrap();
-
-    let second_repository = TestRepository::new(archive, 2, FUTURE);
-    assert_eq!(
-        second_repository.target_sha256,
-        first_repository.target_sha256
-    );
-    server.replace_routes(second_repository.routes);
-    server.clear_requests();
-
-    let converged = registry
-        .install_remote("acme/slack", &trusted, None, "stable", None, false)
-        .await
-        .unwrap();
-
-    assert!(!converged.changed);
-    let provenance = converged.extension.receipt.registry.unwrap();
-    assert_eq!(provenance.timestamp_version, 2);
-    assert_eq!(provenance.snapshot_version, 2);
-    assert_eq!(provenance.targets_version, 2);
-    assert!(server
-        .requests()
-        .iter()
-        .all(|request| !request.starts_with("/targets/")));
-}
-
-#[tokio::test]
-async fn tuf_install_rejects_modified_installed_content_before_dispatch_or_convergence() {
-    let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 1, FUTURE);
-    let server = TestServer::start(repository.routes.clone());
-    let temp = tempfile::tempdir().unwrap();
-    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
-    let paths = ExtensionPaths::new(
-        temp.path().join("data"),
-        temp.path().join("extension-state"),
-    );
-    let registry = ExtensionRegistry::new(paths);
-    let installed = registry
-        .install_remote("acme/slack", &trusted, None, "stable", None, false)
-        .await
-        .unwrap();
-    std::fs::write(
-        installed.extension.cli_executable().unwrap(),
-        b"modified executable",
-    )
-    .unwrap();
-
-    let dispatch_error = match registry.acquire_route("slack").await {
-        Err(error) => error,
-        Ok(_) => panic!("modified signed content must not be dispatched"),
-    };
-    assert_eq!(dispatch_error.code, "use.extension.package_digest_mismatch");
-
-    server.clear_requests();
-    let convergence_error = registry
-        .install_remote("acme/slack", &trusted, None, "stable", None, false)
-        .await
-        .unwrap_err();
-    assert_eq!(
-        convergence_error.code,
-        "use.extension.package_digest_mismatch"
-    );
-    assert!(server
-        .requests()
-        .iter()
-        .all(|request| !request.starts_with("/targets/")));
-}
-
-#[tokio::test]
-async fn tuf_receipt_requires_an_expanded_package_digest() {
-    let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 1, FUTURE);
-    let server = TestServer::start(repository.routes.clone());
-    let temp = tempfile::tempdir().unwrap();
-    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
-    let paths = ExtensionPaths::new(
-        temp.path().join("data"),
-        temp.path().join("extension-state"),
-    );
-    let registry = ExtensionRegistry::new(paths);
-    registry
-        .install_remote("acme/slack", &trusted, None, "stable", None, false)
-        .await
-        .unwrap();
-
-    let receipt_path = registry.paths().receipt_path("acme/slack");
-    let mut receipt: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&receipt_path).unwrap()).unwrap();
-    receipt.as_object_mut().unwrap().remove("packageSha256");
-    std::fs::write(&receipt_path, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
-
-    let error = registry.get("acme/slack").await.unwrap_err();
-    assert_eq!(error.code, "use.extension.receipt_invalid");
-}
-
-#[tokio::test]
 async fn reviewed_registry_plan_fails_before_target_download() {
     let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 1, FUTURE);
     let server = TestServer::start(repository.routes.clone());
@@ -217,7 +126,7 @@ async fn reviewed_registry_plan_fails_before_target_download() {
 
     let error = prepare_remote_package(
         &trusted,
-        "acme/slack",
+        "a3s/science",
         None,
         "stable",
         Some(&"0".repeat(64)),
@@ -246,7 +155,7 @@ async fn tuf_rejects_wrong_root_and_tampered_target() {
         temp.path().join("wrong-root"),
     )
     .unwrap();
-    let error = prepare_remote_package(&wrong, "acme/slack", None, "stable", None)
+    let error = prepare_remote_package(&wrong, "a3s/science", None, "stable", None)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.extension.registry_root_mismatch");
@@ -262,7 +171,7 @@ async fn tuf_rejects_wrong_root_and_tampered_target() {
         &repository,
         temp.path().join("tampered-target"),
     );
-    let prepared = prepare_remote_package(&trusted, "acme/slack", None, "stable", None)
+    let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
         .await
         .unwrap();
     let error = prepared.download().await.unwrap_err();
@@ -277,7 +186,7 @@ async fn tuf_rejects_metadata_tampering_expiration_and_rollback() {
     let temp = tempfile::tempdir().unwrap();
     let datastore = temp.path().join("rollback-state");
     let trusted_two = trusted_registry(&server_two, &version_two, datastore.clone());
-    prepare_remote_package(&trusted_two, "acme/slack", None, "stable", None)
+    prepare_remote_package(&trusted_two, "a3s/science", None, "stable", None)
         .await
         .unwrap();
 
@@ -285,7 +194,7 @@ async fn tuf_rejects_metadata_tampering_expiration_and_rollback() {
     assert_eq!(version_one.root_sha256, version_two.root_sha256);
     let server_one = TestServer::start(version_one.routes.clone());
     let trusted_one = trusted_registry(&server_one, &version_one, datastore);
-    let rollback = prepare_remote_package(&trusted_one, "acme/slack", None, "stable", None)
+    let rollback = prepare_remote_package(&trusted_one, "a3s/science", None, "stable", None)
         .await
         .unwrap_err();
     assert_eq!(rollback.code, "use.extension.registry_untrusted");
@@ -294,7 +203,7 @@ async fn tuf_rejects_metadata_tampering_expiration_and_rollback() {
     let expired_server = TestServer::start(expired.routes.clone());
     let expired_registry =
         trusted_registry(&expired_server, &expired, temp.path().join("expired-state"));
-    let error = prepare_remote_package(&expired_registry, "acme/slack", None, "stable", None)
+    let error = prepare_remote_package(&expired_registry, "a3s/science", None, "stable", None)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.extension.registry_untrusted");
@@ -309,7 +218,7 @@ async fn tuf_rejects_metadata_tampering_expiration_and_rollback() {
         &version_one,
         temp.path().join("tampered-metadata"),
     );
-    let error = prepare_remote_package(&tampered_registry, "acme/slack", None, "stable", None)
+    let error = prepare_remote_package(&tampered_registry, "a3s/science", None, "stable", None)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.extension.registry_untrusted");

@@ -27,6 +27,7 @@ const WATCH_INTERVAL: Duration = Duration::from_millis(50);
 #[serde(rename_all = "kebab-case")]
 pub enum ExtensionTrust {
     LocalExplicit,
+    ReleaseBundle,
     RegistryTuf,
 }
 
@@ -389,6 +390,48 @@ impl ExtensionRegistry {
         .await
     }
 
+    /// Install a package carried by the same verified A3S Use release.
+    ///
+    /// The caller supplies the digest shown in the reviewed umbrella plan.
+    /// This method resolves and validates the release-owned directory again,
+    /// refusing activation if any byte changed between review and apply.
+    pub async fn install_release_bundle(
+        &self,
+        expected_package_id: &str,
+        source: &Path,
+        expected_package_sha256: &str,
+        force: bool,
+    ) -> UseResult<InstallResult> {
+        let expected_package_id = normalize_package_id(expected_package_id)?;
+        let bundle = super::inspect_release_bundle(source).await?;
+        if bundle.package_id != expected_package_id {
+            return Err(UseError::new(
+                "use.extension.identity_mismatch",
+                format!(
+                    "Requested extension '{}' but the release bundle declares '{}'.",
+                    expected_package_id, bundle.package_id
+                ),
+            ));
+        }
+        if bundle.package_sha256 != expected_package_sha256 {
+            return Err(UseError::new(
+                "use.extension.release_bundle_changed",
+                format!(
+                    "Release bundle '{}' changed after its installation plan was reviewed.",
+                    expected_package_id
+                ),
+            ));
+        }
+        self.install_prepared(
+            &expected_package_id,
+            source,
+            force,
+            ExtensionTrust::ReleaseBundle,
+            None,
+        )
+        .await
+    }
+
     /// Install an extension selected through a fully verified TUF repository.
     ///
     /// Metadata is resolved and the optional reviewed plan is checked before
@@ -439,7 +482,7 @@ impl ExtensionRegistry {
         resolved: &ResolvedRemotePackage,
     ) -> UseResult<Option<InstallResult>> {
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
-        let Some(mut current) = self.get(expected_package_id).await? else {
+        let Some(current) = self.get(expected_package_id).await? else {
             return Ok(None);
         };
         let same_target = current.receipt.trust == ExtensionTrust::RegistryTuf
@@ -448,15 +491,6 @@ impl ExtensionRegistry {
                 == registry_identity(Some(resolved));
         if !same_target {
             return Ok(None);
-        }
-        verify_package_integrity(&current).await?;
-        if current.receipt.registry.as_ref() != Some(resolved) {
-            current.receipt.registry = Some(resolved.clone());
-            write_receipt(
-                &self.paths.receipt_path(expected_package_id),
-                &current.receipt,
-            )
-            .await?;
         }
         let installed = self.list().await?;
         self.publish_snapshot_locked(&installed).await?;
@@ -475,7 +509,8 @@ impl ExtensionRegistry {
         registry: Option<ResolvedRemotePackage>,
     ) -> UseResult<InstallResult> {
         match (trust, registry.as_ref()) {
-            (ExtensionTrust::LocalExplicit, None) | (ExtensionTrust::RegistryTuf, Some(_)) => {}
+            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None)
+            | (ExtensionTrust::RegistryTuf, Some(_)) => {}
             _ => {
                 return Err(UseError::new(
                     "use.extension.trust_invalid",
@@ -847,13 +882,9 @@ impl ExtensionRegistry {
                 ),
             ));
         }
-        match (
-            receipt.trust,
-            receipt.registry.as_ref(),
-            receipt.package_sha256.as_ref(),
-        ) {
-            (ExtensionTrust::LocalExplicit, None, _) => {}
-            (ExtensionTrust::RegistryTuf, Some(registry), Some(_)) => {
+        match (receipt.trust, receipt.registry.as_ref()) {
+            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None) => {}
+            (ExtensionTrust::RegistryTuf, Some(registry)) => {
                 registry.validate_provenance()?;
                 if registry.package_id != receipt.package_id || registry.version != receipt.version
                 {

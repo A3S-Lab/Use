@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
@@ -208,6 +208,15 @@ fn packaged_manifest_declares_native_read_only_surfaces() {
         manifest.skill.as_ref().unwrap().path,
         Path::new("skills/a3s-use-science/SKILL.md")
     );
+    assert_eq!(manifest.contributes.activity_bar.len(), 1);
+    let activity = &manifest.contributes.activity_bar[0];
+    assert_eq!(activity.id, "research");
+    assert_eq!(activity.title, "科研");
+    assert_eq!(activity.icon, "flask-conical");
+    assert_eq!(activity.entry, Path::new("web/activity.html"));
+    assert_eq!(activity.styles, [PathBuf::from("web/activity.css")]);
+    assert_eq!(activity.scripts, [PathBuf::from("web/activity.js")]);
+    assert_eq!(activity.skill, "a3s-use-science");
     manifest
         .validate_package_root(
             Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -215,6 +224,81 @@ fn packaged_manifest_declares_native_read_only_surfaces() {
                 .as_path(),
         )
         .unwrap();
+}
+
+#[test]
+fn packaged_research_activity_declares_multiple_disciplines_and_subfields() {
+    let activity = include_str!("../package/web/activity.html");
+    let styles = include_str!("../package/web/activity.css");
+    let script = include_str!("../package/web/activity.js");
+    let catalog = activity
+        .split_once("<script type=\"application/json\" id=\"discipline-catalog\">")
+        .and_then(|(_, remainder)| remainder.split_once("</script>"))
+        .map(|(json, _)| json)
+        .expect("research Activity must embed its discipline catalog");
+    let catalog: serde_json::Value = serde_json::from_str(catalog).unwrap();
+    let disciplines = catalog
+        .as_array()
+        .expect("discipline catalog must be a JSON array");
+    assert!(disciplines.len() >= 10);
+    for discipline in disciplines {
+        assert!(discipline["id"].as_str().is_some());
+        assert!(discipline["label"].as_str().is_some());
+        assert!(discipline["subfields"].as_array().unwrap().len() >= 4);
+        let sources = discipline["sources"].as_array().unwrap();
+        assert!(sources.len() >= 3);
+        assert_eq!(
+            sources
+                .iter()
+                .map(|source| source["id"].as_str().unwrap())
+                .collect::<BTreeSet<_>>()
+                .len(),
+            sources.len(),
+            "source IDs must be unique within a discipline"
+        );
+    }
+
+    let package_skill_sources = disciplines
+        .iter()
+        .flat_map(|discipline| {
+            let discipline_id = discipline["id"].as_str().unwrap();
+            discipline["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|source| source["packageSkill"] == true)
+                .map(move |source| (discipline_id, source["id"].as_str().unwrap()))
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        package_skill_sources,
+        BTreeSet::from([
+            ("agriculture-food", "ensembl"),
+            ("chemistry-materials", "chembl"),
+            ("life-sciences", "biorxiv"),
+            ("life-sciences", "ensembl"),
+            ("life-sciences", "pubmed"),
+            ("medicine-health", "chembl"),
+            ("medicine-health", "clinical-trials"),
+            ("medicine-health", "pubmed"),
+        ]),
+        "package-backed sources must match the extension's implemented data sources"
+    );
+    assert!(!activity.contains("href=\"./activity.css\""));
+    assert!(!activity.contains("src=\"./activity.js\""));
+    assert!(activity.contains("id=\"project-name\""));
+    assert!(activity.contains("id=\"validation-criteria\""));
+    assert!(activity.contains("id=\"submit-research\" type=\"button\""));
+    assert!(activity.contains("可复核科研闭环"));
+    assert!(activity.contains("provenance-card"));
+    assert!(!activity.contains("<style>"));
+    assert!(!activity.contains("<script>"));
+    assert!(styles.contains(".discipline-options"));
+    assert!(script.contains("provenance note"));
+    assert!(script.contains("usePackageSkill"));
+    assert!(script.contains("a3s.activity.v1"));
+    assert!(script.contains("submitButton.addEventListener('click'"));
+    assert!(!script.contains("form.addEventListener('submit'"));
 }
 
 #[test]
@@ -263,6 +347,22 @@ async fn real_science_package_installs_hot_upgrades_dispatches_and_uninstalls() 
         .unwrap();
     assert!(installed.changed);
     let first_root = installed.extension.receipt.package_root.clone();
+    for (relative, expected) in [
+        (
+            "web/activity.html",
+            include_bytes!("../package/web/activity.html").as_slice(),
+        ),
+        (
+            "web/activity.css",
+            include_bytes!("../package/web/activity.css").as_slice(),
+        ),
+        (
+            "web/activity.js",
+            include_bytes!("../package/web/activity.js").as_slice(),
+        ),
+    ] {
+        assert_eq!(std::fs::read(first_root.join(relative)).unwrap(), expected);
+    }
     let lease = registry.acquire_route("science").await.unwrap().unwrap();
     let executable = lease.extension().cli_executable().unwrap();
     let diagnostic = Command::new(executable)
@@ -302,8 +402,12 @@ async fn real_science_package_installs_hot_upgrades_dispatches_and_uninstalls() 
 fn create_science_package(root: &Path) {
     let binary = root.join("bin/a3s-use-science");
     let skill = root.join("skills/a3s-use-science/SKILL.md");
+    let activity = root.join("web/activity.html");
+    let activity_styles = root.join("web/activity.css");
+    let activity_script = root.join("web/activity.js");
     std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
     std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(activity.parent().unwrap()).unwrap();
     std::fs::copy(env!("CARGO_BIN_EXE_a3s-use-science"), &binary).unwrap();
     std::fs::write(
         root.join("a3s-use-extension.acl"),
@@ -315,4 +419,11 @@ fn create_science_package(root: &Path) {
         include_str!("../package/skills/a3s-use-science/SKILL.md"),
     )
     .unwrap();
+    std::fs::write(&activity, include_str!("../package/web/activity.html")).unwrap();
+    std::fs::write(
+        &activity_styles,
+        include_str!("../package/web/activity.css"),
+    )
+    .unwrap();
+    std::fs::write(&activity_script, include_str!("../package/web/activity.js")).unwrap();
 }

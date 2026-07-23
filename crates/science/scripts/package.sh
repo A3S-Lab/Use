@@ -14,10 +14,13 @@ fi
 cargo build --manifest-path "${workspace_dir}/Cargo.toml" --release --locked -p a3s-use-science
 
 target_dir="${CARGO_TARGET_DIR:-${workspace_dir}/target}"
-mkdir -p "${output_dir}/bin" "${output_dir}/skills/a3s-use-science"
+mkdir -p "${output_dir}/bin" "${output_dir}/skills/a3s-use-science" "${output_dir}/web"
 install -m 0755 "${target_dir}/release/a3s-use-science" "${output_dir}/bin/a3s-use-science"
 install -m 0644 "${crate_dir}/package/a3s-use-extension.acl" "${output_dir}/a3s-use-extension.acl"
 install -m 0644 "${crate_dir}/package/skills/a3s-use-science/SKILL.md" "${output_dir}/skills/a3s-use-science/SKILL.md"
+install -m 0644 "${crate_dir}/package/web/activity.html" "${output_dir}/web/activity.html"
+install -m 0644 "${crate_dir}/package/web/activity.css" "${output_dir}/web/activity.css"
+install -m 0644 "${crate_dir}/package/web/activity.js" "${output_dir}/web/activity.js"
 install -m 0644 "${workspace_dir}/LICENSE" "${output_dir}/LICENSE"
 install -m 0644 "${crate_dir}/DATA_SOURCES.md" "${output_dir}/DATA_SOURCES.md"
 install -m 0644 "${crate_dir}/UPSTREAM.md" "${output_dir}/UPSTREAM.md"

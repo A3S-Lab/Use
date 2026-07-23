@@ -11,6 +11,8 @@ pub mod cli;
 mod component_route;
 mod extension_cli;
 mod first_use;
+#[cfg(feature = "extensions")]
+mod release_bundles;
 
 #[cfg(feature = "ocr")]
 mod ocr_builtin;

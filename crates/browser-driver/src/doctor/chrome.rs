@@ -226,6 +226,9 @@ fn browser_version_output(path: &Path, stdout: &[u8]) -> Option<String> {
 }
 
 fn browser_product_name(path: &Path) -> &'static str {
+    // Tests and diagnostics may inspect a path produced on a different host
+    // platform, so recognize both path separators before removing the common
+    // Windows executable suffix.
     let path_text = path.to_string_lossy();
     let file_name = path_text
         .rsplit(['/', '\\'])

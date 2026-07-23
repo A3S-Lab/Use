@@ -55,6 +55,30 @@ struct SkillSurface {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ManagedAsset {
+    path: PathBuf,
+    sha256: String,
+    media_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivityBarContribution {
+    id: String,
+    title: String,
+    description: String,
+    icon: String,
+    entry: ManagedAsset,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    styles: Vec<ManagedAsset>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    scripts: Vec<ManagedAsset>,
+    skill: String,
+    order: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CapabilityBinding {
     id: String,
     route: String,
@@ -69,6 +93,8 @@ pub(crate) struct CapabilityBinding {
     mcp: Option<McpSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     skills: Vec<SkillSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    activity_bar: Vec<ActivityBarContribution>,
 }
 
 pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
@@ -147,6 +173,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
                 transport: McpTransport::Stdio,
             }),
             skills,
+            activity_bar: Vec::new(),
         })
     }
     #[cfg(not(feature = "browser"))]
@@ -162,6 +189,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         })
     }
 }
@@ -194,6 +222,7 @@ async fn office_capability() -> UseResult<CapabilityBinding> {
             #[cfg(not(feature = "mcp"))]
             mcp: None,
             skills,
+            activity_bar: Vec::new(),
         })
     }
     #[cfg(not(feature = "office"))]
@@ -209,6 +238,7 @@ async fn office_capability() -> UseResult<CapabilityBinding> {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         })
     }
 }
@@ -232,6 +262,7 @@ fn office_compatibility_capability() -> CapabilityBinding {
                 transport: McpTransport::Stdio,
             }),
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         }
     }
     #[cfg(not(feature = "office"))]
@@ -247,6 +278,7 @@ fn office_compatibility_capability() -> CapabilityBinding {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         }
     }
 }
@@ -283,6 +315,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             #[cfg(not(feature = "mcp"))]
             mcp: None,
             skills,
+            activity_bar: Vec::new(),
         })
     }
     #[cfg(not(feature = "ocr"))]
@@ -298,6 +331,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            activity_bar: Vec::new(),
         })
     }
 }
@@ -315,6 +349,7 @@ fn box_capability() -> CapabilityBinding {
         surfaces: vec!["cli".to_string()],
         mcp: None,
         skills: Vec::new(),
+        activity_bar: Vec::new(),
     }
 }
 
@@ -363,6 +398,57 @@ async fn skill_surface(path: PathBuf) -> UseResult<SkillSurface> {
         path,
         sha256: format!("{:x}", digest.finalize()),
     })
+}
+
+async fn activity_asset(path: PathBuf, media_type: &str) -> UseResult<ManagedAsset> {
+    let metadata = tokio::fs::symlink_metadata(&path)
+        .await
+        .map_err(|error| activity_io_error("inspect", &path, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(UseError::new(
+            "use.capability.activity_asset_invalid",
+            format!(
+                "Projected Activity Bar asset '{}' must be a regular package file.",
+                path.display()
+            ),
+        ));
+    }
+    if metadata.len() == 0 || metadata.len() > 2 * 1024 * 1024 {
+        return Err(UseError::new(
+            "use.capability.activity_asset_invalid",
+            format!(
+                "Projected Activity Bar asset '{}' exceeds the supported size.",
+                path.display()
+            ),
+        ));
+    }
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|error| activity_io_error("read", &path, error))?;
+    std::str::from_utf8(&bytes).map_err(|error| {
+        UseError::new(
+            "use.capability.activity_asset_invalid",
+            format!(
+                "Projected Activity Bar asset '{}' must be UTF-8 {media_type}: {error}",
+                path.display(),
+            ),
+        )
+    })?;
+    Ok(ManagedAsset {
+        path,
+        sha256: format!("{:x}", Sha256::digest(&bytes)),
+        media_type: media_type.to_string(),
+    })
+}
+
+fn activity_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError {
+    UseError::new(
+        "use.capability.activity_asset_unreadable",
+        format!(
+            "Failed to {action} projected Activity Bar asset '{}': {error}",
+            path.display()
+        ),
+    )
 }
 
 fn skill_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError {
@@ -444,6 +530,31 @@ async fn project_extensions(
         if let Some(path) = extension.skill_path() {
             skills.push(skill_surface(path).await?);
         }
+        let mut activity_bar = Vec::new();
+        for contribution in &extension.manifest.contributes.activity_bar {
+            let mut styles = Vec::with_capacity(contribution.styles.len());
+            for path in &contribution.styles {
+                styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
+            }
+            let mut scripts = Vec::with_capacity(contribution.scripts.len());
+            for path in &contribution.scripts {
+                scripts.push(
+                    activity_asset(receipt.package_root.join(path), "text/javascript").await?,
+                );
+            }
+            activity_bar.push(ActivityBarContribution {
+                id: contribution.id.clone(),
+                title: contribution.title.clone(),
+                description: contribution.description.clone(),
+                icon: contribution.icon.clone(),
+                entry: activity_asset(receipt.package_root.join(&contribution.entry), "text/html")
+                    .await?,
+                styles,
+                scripts,
+                skill: contribution.skill.clone(),
+                order: contribution.order,
+            });
+        }
         capabilities.push(CapabilityBinding {
             id: receipt.component_id.clone(),
             route: receipt.route.clone(),
@@ -459,6 +570,7 @@ async fn project_extensions(
             surfaces,
             mcp,
             skills,
+            activity_bar,
         });
     }
     Ok(Some(capabilities))
@@ -571,6 +683,38 @@ mod tests {
         capability.skills = vec![first];
         let first_revision = revision(&[capability.clone()]).unwrap();
         capability.skills = vec![second];
+        let second_revision = revision(&[capability]).unwrap();
+        assert_ne!(first_revision, second_revision);
+    }
+
+    #[tokio::test]
+    async fn activity_asset_content_is_integrity_bound_to_the_registry_revision() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("activity.html");
+        tokio::fs::write(&path, b"<main>first</main>")
+            .await
+            .unwrap();
+        let first = activity_asset(path.clone(), "text/html").await.unwrap();
+        tokio::fs::write(&path, b"<main>second</main>")
+            .await
+            .unwrap();
+        let second = activity_asset(path, "text/html").await.unwrap();
+        assert_ne!(first.sha256, second.sha256);
+
+        let mut capability = box_capability();
+        capability.activity_bar = vec![ActivityBarContribution {
+            id: "science".to_string(),
+            title: "Science".to_string(),
+            description: "Scientific workspace".to_string(),
+            icon: "flask-conical".to_string(),
+            entry: first,
+            styles: Vec::new(),
+            scripts: Vec::new(),
+            skill: "science".to_string(),
+            order: 120,
+        }];
+        let first_revision = revision(&[capability.clone()]).unwrap();
+        capability.activity_bar[0].entry = second;
         let second_revision = revision(&[capability]).unwrap();
         assert_ne!(first_revision, second_revision);
     }

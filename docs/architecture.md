@@ -35,9 +35,29 @@ An external package declares any useful combination of:
 - MCP: standard MCP tools, resources, prompts, and lifecycle;
 - Skill: an existing SKILL.md package.
 
+Packages may also declare non-callable workbench contributions. An
+`activity_bar` contribution references a package-owned UTF-8 HTML entry,
+optional declared CSS and JavaScript assets, and a same-package Skill. A3S Use
+validates every regular file, size, media type, package boundary, and SHA-256
+before publishing them through the immutable capability snapshot. The consuming
+Web host owns sandboxing, CSP, messaging, and human review; the contribution
+never becomes another execution protocol.
+
 The package manifest is a3s-use-extension.acl and is parsed by a3s-acl. A3S Use
 owns identity, routes, trust, activation, and lifecycle around the surfaces. It
 does not define JSON-RPC methods or convert surfaces implicitly.
+
+`a3s-use-science` is the reference multi-surface extension. It uses the
+first-party [A3S Science](https://github.com/A3S-Lab/Science) repository as the
+canonical home for the broader scientific catalog while its native Rust source
+is developed here. It remains a separate process and package. Its Rust API,
+native CLI, 13 standard MCP tools, packaged Skill, and content-bound Science
+Activity share typed source-specific operations; callable work remains limited
+to the declared `a3s/science` CLI, MCP, and Skill surfaces. Official Use
+archives may carry the package as a digest-bound installation source, but it
+stays inactive until the user applies a reviewed installation plan. This
+demonstrates how a first-party toolkit can ship without expanding the reserved
+built-in route set or adding a generic action envelope.
 
 `a3s-use-ocr` implements the reserved first-party `ocr` route in the default
 Use build. The release packages its content-bound Skill and exposes the native
@@ -50,16 +70,6 @@ the pinned model bundle when first-use policy permits it. Standard MCP keeps
 `ocr_doctor` and `ocr_extract` closed-world and read-only, while the separate
 idempotent `ocr_install` network mutation requires parent confirmation.
 Explicit `use/ocr` component operations remain available for preparation.
-
-`a3s-use-science` is the reference multi-surface extension. It uses the
-first-party [A3S Science](https://github.com/A3S-Lab/Science) repository as the
-canonical home for the broader scientific catalog while its native Rust source
-is developed here. It remains a separate process and package. Its Rust API,
-native CLI, 13 standard MCP tools, and packaged Skill share typed
-source-specific operations; the host sees only the declared `a3s/science` CLI,
-MCP, and Skill surfaces. This demonstrates how a first-party toolkit can ship
-without expanding the reserved built-in route set or adding a generic action
-envelope.
 
 ## Hot-plug registry
 
@@ -112,11 +122,8 @@ compatibility provider. For resident hosts, `use/office` targets the built-in
 `office-native` MCP server and is ready independently of OfficeCLI. A discovered
 OfficeCLI provider is projected separately as `use/office-compat`, targeting
 the standard compatibility server without carrying the native Skill. The
-`use/ocr` route targets `ocr-native`; model readiness remains visible.
-Read-only discovery never installs providers. Direct Browser launch, OfficeCLI
-compatibility execution, and OCR extraction use the first-use policy. Their MCP
-workers use separately annotated installers that require parent confirmation;
-native Office needs no provider installation.
+`use/ocr` route targets `ocr-native`; model readiness remains explicit and
+never triggers a silent install.
 
 The projection contains content-bound Skill references and an MCP launch target,
 never executable extension code or a generic action payload. Consumers still
@@ -538,20 +545,16 @@ Implemented:
 15. A packaged first-party `a3s-use-office` Skill with progressive
     Word/Spreadsheet/Presentation/MCP references, bounded local discovery,
     release-archive smoke checks, and content-bound capability projection.
-16. A first-party built-in OCR route with typed PP-OCRv6 diagnostics, bounded
-    image admission, source SHA-256 evidence, native ONNX Runtime detection and
-    recognition, standard closed-world MCP annotations/output schemas, pinned
-    release models, and a content-bound Skill that projects to
-    `mcp__use_ocr__*` in A3S Code.
-17. TUF-verified remote extension registries with pinned bootstrap roots,
+16. TUF-verified remote extension registries with pinned bootstrap roots,
     expiration and rollback enforcement, exact review/apply plans, and signed
     provenance receipts. Registry upgrades restore the recorded source and
     channel, reject identity drift and version downgrades, and converge before
     payload download when the installed signed target is already current.
-18. Canonical MCP and Skill release descriptors with immutable provenance,
-    artifact and dependency digests, typed compatibility gates, hosted MCP
-    health/lifecycle metadata, Agent-input-only Skill binding, and cross-SDK
-    digest fixtures.
+17. A first-party built-in OCR route with typed PP-OCRv6 diagnostics, bounded
+    image admission, source SHA-256 evidence, native ONNX Runtime detection and
+    recognition, standard closed-world MCP annotations/output schemas, pinned
+    release models, and a content-bound Skill that projects to
+    `mcp__use_ocr__*` in A3S Code.
 
 Next:
 
@@ -560,10 +563,11 @@ Next:
 2. Native Office mutation, formula, rich-format, interactive-watch parity,
    layout goldens, MCP promotion, and compatibility gates defined in
    `docs/native-office.md`.
-3. Windows Browser promotion beyond the real Microsoft Edge core-profile E2E.
-   Windows remains a preview build until separate `a3s use browser` invocations
-   can open and reuse a session, advanced profiles pass, and cleanup has the
-   same runtime guarantees as macOS and Linux.
+3. Windows real-Chrome persistent sessions. Windows remains a preview build
+   until separate `a3s use browser` invocations can open and reuse a session
+   with the same runtime guarantees as macOS and Linux. Windows compilation,
+   CLI/MCP schemas, packaged assets, and non-runtime tests remain continuously
+   checked in CI meanwhile.
 4. Production publication for the official A3S extension registry, including
    an offline-held root-key policy and release automation. The client does not
    substitute a placeholder or generated key for that operational trust root.

@@ -105,7 +105,6 @@ a3s use mcp serve office
 
 # Built-in local PP-OCRv6.
 a3s use ocr doctor --json
-# The first extraction installs the pinned models when needed and allowed.
 a3s use ocr extract ./scan.png --json
 a3s use mcp serve ocr
 ```
@@ -144,11 +143,15 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
   safe Word, Spreadsheet, Presentation, native MCP, and compatibility workflows
 - **External Domains**: Install process-isolated packages that expose any useful
   combination of CLI, MCP, and Skill surfaces
+- **Reference Science Toolkit**: Query PubMed, ChEMBL, ClinicalTrials.gov,
+  bioRxiv, and Ensembl through one typed read-only extension with a
+  content-bound A3S Web Activity
+- **Workbench Contributions**: Project package-owned, SHA-256-bound HTML
+  Activities and their same-package Skills through the immutable capability
+  registry without making UI messages callable extension actions
 - **First-Party OCR Domain**: Run pinned PP-OCRv6 detection and recognition
   models locally through ONNX Runtime, with source digests and bounded layout
   evidence
-- **Reference Science Toolkit**: Query PubMed, ChEMBL, ClinicalTrials.gov,
-  bioRxiv, and Ensembl through one typed read-only extension
 - **Hot-Plug Discovery**: Publish immutable generation/revision snapshots so a
   resident host can add, replace, or remove live capabilities without restarting
 - **Content-Bound Skills**: Project an absolute package path and lowercase
@@ -173,7 +176,7 @@ Every domain argument accepted by `a3s use ...` can also be passed directly to
 | Browser | Built in | Full Browser vocabulary with first-launch preparation | A3S Use standard MCP server with confirmed installer | Six packaged Browser Skills | A3S Use |
 | Office | Built in | Native Office plus first-use compatibility fallback | Typed native server with confirmed compatibility installer plus OfficeCLI server | Packaged `a3s-use-office` Skill | A3S Use native engine; OfficeCLI compatibility in 0.1.x |
 | Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
-| OCR | Built in | Doctor and first-use typed image extraction | `ocr_doctor`, confirmed `ocr_install`, and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
+| OCR | Built in | Doctor and typed image extraction | `ocr_doctor` and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
 | Science | External `a3s/science` package | Source-specific retrieval commands | 13 typed `science_*` tools | One research workflow Skill | Science extension process |
 | External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
 
@@ -248,7 +251,7 @@ not the facade binary:
 
 ```toml
 [dependencies]
-a3s-use-browser = "0.1.3"
+a3s-use-browser = "0.2.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 url = "2"
 ```
@@ -1759,18 +1762,17 @@ compatibility scope, safety invariants, delivery gates, and migration plan.
 ## OCR
 
 `a3s-use-ocr` implements the reserved built-in `ocr` route. The default Use
-release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor`,
-`ocr_install`, and `ocr_extract` over standard MCP, so a resident A3S Code
-session receives `mcp__use_ocr__*` without installing a separate extension.
+release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor` plus
+`ocr_extract` over standard MCP, so a resident A3S Code session receives
+`mcp__use_ocr__*` without installing a separate extension.
 
 OCR has one backend: the pinned `PP-OCRv6_small` detection and recognition
-models running locally through ONNX Runtime. The first CLI extraction installs
-or repairs the fixed-size, SHA-256-pinned official model archives when
-networking and first-use installation are allowed. `a3s install use/ocr`
-prepares the same bundle explicitly. Supported inputs are bounded local PNG,
-JPEG, WebP, GIF, BMP, and TIFF files. The result binds the canonical source
-path, media type, byte length, and SHA-256 alongside text,
-recognition/detection confidence, polygons, and bounding boxes.
+models running locally through ONNX Runtime. Release archives package those
+models; `a3s install use/ocr` explicitly installs or repairs the same pinned
+bundle when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF,
+BMP, and TIFF files. The result binds the canonical source path, media type,
+byte length, and SHA-256 alongside text, recognition/detection confidence,
+polygons, and bounding boxes.
 
 The pipeline decodes and normalizes the image, runs
 `PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
@@ -1784,12 +1786,9 @@ a3s use ocr extract ./scan.png --json
 a3s use mcp serve ocr
 ```
 
-A3S Code may first-use install the verified parent Use release. When OCR models
-are missing or damaged, the Code `use` worker requests the bounded
-`ocr_install` MCP tool. The parent TUI must confirm that network mutation before
-the worker continues to extraction. `--offline`, `A3S_OFFLINE=1`, and
-`A3S_NO_AUTO_INSTALL=1` prohibit first-use model installation. Diagnostics stay
-read-only, and `a3s install use/ocr` remains available for explicit preparation.
+A3S Code may first-use install the verified parent Use release. A missing or
+damaged managed model bundle is repaired explicitly with
+`a3s install use/ocr`; the Code `use` worker never installs it implicitly.
 
 See the [OCR crate](crates/ocr/README.md) for model resolution, the inference
 workflow, and input boundaries.
@@ -1801,7 +1800,26 @@ not as another built-in route. Its process exposes one typed Rust client as 13
 read-only MCP tools plus source-specific CLI commands for PubMed, ChEMBL,
 ClinicalTrials.gov, bioRxiv, and Ensembl. The broader first-party catalog of
 scientific Skills, MCP services, and compute workflows lives in
-[A3S Science](https://github.com/A3S-Lab/Science).
+[A3S Science](https://github.com/A3S-Lab/Science). The package also contributes
+a research brief view with declared HTML, CSS, and JavaScript assets bound to
+its `a3s-use-science` Skill; A3S Web renders it in its own sandbox and review
+flow.
+
+Official A3S Use archives carry the complete platform-specific package under
+`extensions/a3s/science`. It is only a trusted installation source: Science is
+not registered or started until the user selects **Install** in A3S Web Market
+or applies the reviewed umbrella CLI plan. The plan includes the exact expanded
+package digest; A3S Use resolves the release-owned directory again, rechecks
+that digest, and records `release-bundle` provenance. The installed package can
+still be disabled, enabled, upgraded with a newer Use release, or uninstalled.
+Remote TUF distribution remains available for packages not carried by a Use
+release.
+
+The release-owned catalog is inspectable without installing anything:
+
+```bash
+a3s-use extension catalog --json
+```
 
 Build a local package into a new directory and install it explicitly:
 
@@ -1817,10 +1835,21 @@ a3s use science ensembl lookup homo_sapiens TP53 --json
 a3s use mcp serve a3s/science
 ```
 
-The same package can be archived as `.tar.gz`, `.tgz`, or `.zip` and installed
-through the explicit local-package flow. Local packages require
-`--allow-unsigned`; use them only after review. PubMed requires the contact
-email, while `NCBI_API_KEY` is optional. See the
+The same package can be installed from a local archive:
+
+```bash
+COPYFILE_DISABLE=1 tar -czf /tmp/a3s-use-science-package.tar.gz \
+  -C /tmp/a3s-use-science-package .
+a3s install use/a3s/science \
+  --from /tmp/a3s-use-science-package.tar.gz \
+  --allow-unsigned
+```
+
+Developer-provided local directories, `.tar.gz`, `.tgz`, and `.zip` packages
+require `--allow-unsigned`; use them only after explicit review. A signed remote
+distribution can publish the same package through a configured TUF registry;
+the umbrella CLI then installs it without `--from` or `--allow-unsigned`.
+PubMed requires the contact email, while `NCBI_API_KEY` is optional. See the
 [Science crate](crates/science/README.md), its
 [data-source notice](crates/science/DATA_SOURCES.md), and
 [A3S Science repository boundary](crates/science/UPSTREAM.md) for the full
@@ -1854,6 +1883,17 @@ extension "acme/slack" {
   skill {
     path = "skills/slack/SKILL.md"
   }
+
+  contributes {
+    activity_bar "channels" {
+      title       = "Slack"
+      description = "Prepare a reviewed Slack context."
+      icon        = "messages-square"
+      entry       = "web/activity.html"
+      skill       = "slack"
+      order       = 140
+    }
+  }
 }
 ```
 
@@ -1877,6 +1917,12 @@ and non-portable paths before validating the manifest, route, executable, and
 Skill surfaces. Unsigned content requires `--allow-unsigned`. Use does not
 silently install arbitrary Homebrew, npm, Cargo, system, or `PATH` packages.
 
+A release-bundled source is a separate first-party provenance. It must live
+under the installed A3S Use release's `extensions/<publisher>/<name>` tree,
+appear in `extension catalog`, and match the digest in the reviewed umbrella
+plan. It never uses `--allow-unsigned` and cannot be combined with registry or
+local-package options.
+
 ### Signed extension registries
 
 Remote extensions use TUF metadata and a separately established bootstrap-root
@@ -1889,12 +1935,12 @@ a3s registry add https://packages.example.org/a3s/ \
   --yes
 a3s registry refresh packages
 
-a3s --output json install use/acme/slack --dry-run
-a3s --output json install use/acme/slack \
+a3s --output json install use/a3s/science --dry-run
+a3s --output json install use/a3s/science \
   --plan-digest <reviewed-plan-sha256>
 
-a3s --output json upgrade use/acme/slack --dry-run
-a3s --output json upgrade use/acme/slack \
+a3s --output json upgrade use/a3s/science --dry-run
+a3s --output json upgrade use/a3s/science \
   --plan-digest <reviewed-upgrade-sha256>
 ```
 
@@ -1947,24 +1993,6 @@ Built-in and management routes are reserved. Extensions cannot shadow
 `browser`, `office`, `ocr`, `box`, `component`, `capability`, or other host
 commands.
 
-## Immutable MCP and Skill Releases
-
-The `a3s-use-core` crate publishes two machine-owned JSON contracts for the A0
-release path:
-
-- `a3s.use.mcp-release.v1` binds provenance and a digest-pinned OCI artifact to
-  a headless standard MCP Streamable HTTP health/lifecycle contract; and
-- `a3s.use.skill-release.v1` binds a Skill bundle and exact `SKILL.md` digest as
-  immutable `agent-input`, with no Runtime workload fields.
-
-Both reject unknown and mutable-reference fields, encode as OLPC canonical
-JSON, and derive identity as `sha256:<canonical-bytes>`. Compatibility
-requirements and exact descriptor-digest dependencies are checked before
-deployment through `ReleaseResolution`. See
-[Immutable MCP and Skill Release Descriptors](docs/release-descriptors.md) for
-the field contract, evolution rules, lifecycle boundary, and cross-SDK digest
-fixtures.
-
 ## Live Host Integration
 
 Resident hosts consume `capability snapshot` and `capability watch`. The
@@ -1992,6 +2020,12 @@ the exact bytes. Ordinary built-in Browser, native Office, and OCR operations
 may run inside that worker, while bounded provider installers and newly
 projected extension tools retain the parent host's interactive confirmation
 boundary.
+
+The built-in Office projection is intentionally host-oriented: `use/office`
+always exposes the in-process native MCP target when MCP support is compiled,
+without consulting OfficeCLI. A discovered OfficeCLI provider is a separate
+optional `use/office-compat` route, so native readiness and compatibility
+installation cannot mask or replace each other.
 
 The built-in Office projection is intentionally host-oriented: `use/office`
 always exposes the in-process native MCP target when MCP support is compiled,

@@ -65,9 +65,9 @@ impl TestRepository {
         let root_sha256 = sha256(&root);
 
         let target = host_target();
-        let archive_name = format!("a3s-use-acme-slack-{package_version}-{target}.tar.gz");
+        let archive_name = format!("a3s-use-science-{package_version}-{target}.tar.gz");
         let target_name =
-            format!("extensions/acme/slack/{package_version}/stable/{target}/{archive_name}");
+            format!("extensions/a3s/science/{package_version}/stable/{target}/{archive_name}");
         let target_sha256 = sha256(&archive);
         let mut targets_map = Map::new();
         targets_map.insert(
@@ -78,7 +78,7 @@ impl TestRepository {
                 "custom": {
                     "a3s": {
                         "schemaVersion": 1,
-                        "packageId": "acme/slack",
+                        "packageId": "a3s/science",
                         "version": package_version,
                         "channel": "stable",
                         "target": target
@@ -171,7 +171,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 pub(crate) fn extension_archive(version: &str) -> Vec<u8> {
     let manifest = format!(
-        "extension \"acme/slack\" {{\n  schema_version = 1\n  version = \"{version}\"\n  route = \"slack\"\n  actions = [\"read\"]\n\n  cli {{\n    executable = \"bin/a3s-use-acme-slack\"\n    json_output = true\n  }}\n}}\n"
+        "extension \"a3s/science\" {{\n  schema_version = 1\n  version = \"{version}\"\n  route = \"science\"\n  actions = [\"read\"]\n\n  cli {{\n    executable = \"bin/a3s-use-science\"\n    json_output = true\n  }}\n\n  skill {{\n    path = \"skills/science/SKILL.md\"\n  }}\n\n  contributes {{\n    activity_bar \"research\" {{\n      title = \"科研\"\n      description = \"Explore scientific sources.\"\n      icon = \"flask-conical\"\n      entry = \"web/activity.html\"\n      styles = [\"web/activity.css\"]\n      scripts = [\"web/activity.js\"]\n      skill = \"science\"\n      order = 120\n    }}\n  }}\n}}\n"
     );
     let mut bytes = Vec::new();
     {
@@ -185,9 +185,33 @@ pub(crate) fn extension_archive(version: &str) -> Vec<u8> {
         );
         append_tar_file(
             &mut archive,
-            "package/bin/a3s-use-acme-slack",
+            "package/bin/a3s-use-science",
             0o755,
-            b"#!/bin/sh\nprintf 'slack fixture\\n'\n",
+            b"#!/bin/sh\nprintf 'science fixture\\n'\n",
+        );
+        append_tar_file(
+            &mut archive,
+            "package/skills/science/SKILL.md",
+            0o644,
+            b"---\nname: science\ndescription: Science fixture\n---\n# Science\n",
+        );
+        append_tar_file(
+            &mut archive,
+            "package/web/activity.html",
+            0o644,
+            b"<!doctype html><title>Science</title><main>Science fixture</main>",
+        );
+        append_tar_file(
+            &mut archive,
+            "package/web/activity.css",
+            0o644,
+            b"main { display: block; }\n",
+        );
+        append_tar_file(
+            &mut archive,
+            "package/web/activity.js",
+            0o644,
+            b"window.parent.postMessage({ protocol: 'a3s.activity.v1', type: 'activity.ready' }, '*');\n",
         );
         archive.finish().unwrap();
     }

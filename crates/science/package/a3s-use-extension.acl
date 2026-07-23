@@ -1,6 +1,6 @@
 extension "a3s/science" {
   schema_version = 1
-  version        = "0.1.3"
+  version        = "0.2.0"
   route          = "science"
   actions        = ["read"]
 
@@ -17,5 +17,18 @@ extension "a3s/science" {
 
   skill {
     path = "skills/a3s-use-science/SKILL.md"
+  }
+
+  contributes {
+    activity_bar "research" {
+      title       = "科研"
+      description = "Prepare reviewable, evidence-backed research tasks across disciplines."
+      icon        = "flask-conical"
+      entry       = "web/activity.html"
+      styles      = ["web/activity.css"]
+      scripts     = ["web/activity.js"]
+      skill       = "a3s-use-science"
+      order       = 120
+    }
   }
 }
