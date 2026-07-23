@@ -111,9 +111,8 @@ jobs:
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use" "${stage}/a3s-use"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use-browser-driver" "${stage}/a3s-use-browser-driver"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use-science" "${science}/bin/a3s-use-science"
-          A3S_USE_OCR_HOME="${stage}/ocr-models" \
-            "${stage}/a3s-use" component install ocr --json > "${RUNNER_TEMP}/ocr-model-install.json"
-          rm -f "${stage}/ocr-models/.install.lock"
+          install -d "${stage}/ocr-models"
+          cp -R "${RUNNER_TEMP}/ocr-models/." "${stage}/ocr-models/"
           cp -R crates/browser-driver/skills/. "${stage}/skills/"
           cp -R crates/browser-driver/skill-data/. "${stage}/skill-data/"
           cp -R crates/office/skills/. "${stage}/office-skills/"
@@ -143,11 +142,7 @@ jobs:
           $science = Join-Path $stage "extensions/a3s/science"
           New-Item -ItemType Directory -Force -Path "$science/bin", "$science/skills/a3s-use-science", "$science/web" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/a3s-use-science.exe" "$science/bin/a3s-use-science"
-          $env:A3S_USE_OCR_HOME = "$stage/ocr-models"
-          & "$stage/a3s-use.exe" component install ocr --json | Out-File "$env:RUNNER_TEMP/ocr-model-install.json"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to install the pinned PP-OCRv6 release assets" }
-          Remove-Item Env:A3S_USE_OCR_HOME
-          Remove-Item "$stage/ocr-models/.install.lock" -ErrorAction SilentlyContinue
+          Copy-Item -Recurse -Force "$env:RUNNER_TEMP/ocr-models" "$stage/ocr-models"
           Copy-Item -Recurse "crates/browser-driver/skills" "$stage/skills"
           Copy-Item -Recurse "crates/browser-driver/skill-data" "$stage/skill-data"
           Copy-Item -Recurse "crates/office/skills" "$stage/office-skills"
@@ -171,6 +166,7 @@ jobs:
           install_root="${RUNNER_TEMP}/installed-${{ matrix.name }}"
           install -d "${install_root}"
           tar xzf "${ARCHIVE}" -C "${install_root}"
+          export A3S_USE_OCR_SKILLS_DIR="${install_root}/ocr-skills"
           test -x "${install_root}/a3s-use"
           test -x "${install_root}/a3s-use-browser-driver"
           test -f "${install_root}/skill-data/core/SKILL.md"
@@ -295,6 +291,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $root = Join-Path $env:RUNNER_TEMP "installed-${{ matrix.name }}"
           Expand-Archive -Path $env:ARCHIVE -DestinationPath $root
+          $env:A3S_USE_OCR_SKILLS_DIR = "$root/ocr-skills"
           @(
             "$root/a3s-use.exe",
             "$root/a3s-use-browser-driver.exe",
@@ -362,8 +359,18 @@ jobs:
           if ($ocrCapability.mcp.target -ne "ocr-native" -or $ocrCapability.skills.Count -ne 1) {
             throw "Built-in OCR capability projection smoke failed"
           }
-          $expectedOcrSkill = (Resolve-Path "$root/ocr-skills/a3s-use-ocr/SKILL.md").Path
-          $actualOcrSkill = (Resolve-Path $ocrCapability.skills[0].path).Path
+          function Normalize-ReleasePath([string]$path) {
+            $normalized = [IO.Path]::GetFullPath($path)
+            if ($normalized.StartsWith('\\?\')) {
+              $normalized = $normalized.Substring(4)
+            }
+            return $normalized.TrimEnd(
+              [IO.Path]::DirectorySeparatorChar,
+              [IO.Path]::AltDirectorySeparatorChar
+            )
+          }
+          $expectedOcrSkill = Normalize-ReleasePath "$root/ocr-skills/a3s-use-ocr/SKILL.md"
+          $actualOcrSkill = Normalize-ReleasePath $ocrCapability.skills[0].path
           if (-not [StringComparer]::OrdinalIgnoreCase.Equals($actualOcrSkill, $expectedOcrSkill)) {
             throw "Built-in OCR Skill was not projected from the installed release"
           }
