@@ -63,28 +63,7 @@ pub(crate) async fn ensure_browser_ready() -> UseResult<a3s_use_browser::Browser
     }
 }
 
-#[cfg(feature = "office")]
-pub(crate) async fn ensure_office_compatibility_ready(
-) -> UseResult<a3s_use_office::OfficeRuntimeStatus> {
-    use a3s_use_office::OfficeInstallSource;
-
-    let status = a3s_use_office::office_status();
-    let explicit_configured = explicit_environment_value(&["A3S_OFFICECLI_EXECUTABLE"]);
-    let explicit_invalid = explicit_configured
-        && !(status.available && status.source == OfficeInstallSource::Environment);
-    match automatic_install_action(
-        "office",
-        "the optional OfficeCLI compatibility provider",
-        status.available,
-        explicit_invalid,
-        FirstUseInstallPolicy::from_env()?,
-    )? {
-        AutoInstallAction::Ready => Ok(status),
-        AutoInstallAction::Install => a3s_use_office::install_office_cli(false).await,
-    }
-}
-
-#[cfg(any(feature = "browser", feature = "office"))]
+#[cfg(feature = "browser")]
 fn explicit_environment_value(names: &[&str]) -> bool {
     names
         .iter()
@@ -111,8 +90,8 @@ mod tests {
     #[test]
     fn missing_provider_installs_when_policy_allows_it() {
         let action = automatic_install_action(
-            "office",
-            "OfficeCLI",
+            "browser",
+            "Browser",
             false,
             false,
             FirstUseInstallPolicy::new(false, false),
@@ -138,8 +117,8 @@ mod tests {
             FirstUseInstallPolicy::new(false, true),
         ] {
             let error =
-                automatic_install_action("office", "OfficeCLI", false, false, policy).unwrap_err();
-            assert_eq!(error.code, "use.office.auto_install_disabled");
+                automatic_install_action("browser", "Browser", false, false, policy).unwrap_err();
+            assert_eq!(error.code, "use.browser.auto_install_disabled");
         }
     }
 }

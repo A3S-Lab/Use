@@ -112,6 +112,10 @@ impl InstalledExtension {
     pub fn enabled(&self) -> bool {
         self.receipt.enabled
     }
+
+    pub fn supports_use_version(&self, version: &str) -> bool {
+        self.manifest.supports_use_version(version).unwrap_or(false)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -333,11 +337,11 @@ impl ExtensionRegistry {
     }
 
     pub async fn find_route(&self, route: &str) -> UseResult<Option<InstalledExtension>> {
-        Ok(self
-            .list()
-            .await?
-            .into_iter()
-            .find(|extension| extension.receipt.enabled && extension.receipt.route == route))
+        Ok(self.list().await?.into_iter().find(|extension| {
+            extension.receipt.enabled
+                && extension.receipt.route == route
+                && extension.supports_use_version(env!("CARGO_PKG_VERSION"))
+        }))
     }
 
     /// Pin an active route generation for the lifetime of one delegated call.
@@ -358,7 +362,8 @@ impl ExtensionRegistry {
         let Some(candidate) = self.get(package_id).await? else {
             return Ok(None);
         };
-        if !candidate.receipt.enabled {
+        if !candidate.receipt.enabled || !candidate.supports_use_version(env!("CARGO_PKG_VERSION"))
+        {
             return Ok(None);
         }
         self.acquire_extension_lease(candidate, None).await
@@ -528,6 +533,19 @@ impl ExtensionRegistry {
                     expected_package_id, manifest.package_id
                 ),
             ));
+        }
+        if !manifest.supports_use_version(env!("CARGO_PKG_VERSION"))? {
+            return Err(UseError::new(
+                "use.extension.host_incompatible",
+                format!(
+                    "Extension '{}' {} does not support A3S Use {}.",
+                    manifest.package_id,
+                    manifest.version,
+                    env!("CARGO_PKG_VERSION")
+                ),
+            )
+            .with_detail("requiresUse", manifest.requires_use.clone())
+            .with_detail("hostVersion", env!("CARGO_PKG_VERSION")));
         }
         if let Some(registry) = &registry {
             if registry.package_id != manifest.package_id || registry.version != manifest.version {
@@ -816,6 +834,7 @@ impl ExtensionRegistry {
             return Ok(None);
         };
         if !extension.receipt.enabled
+            || !extension.supports_use_version(env!("CARGO_PKG_VERSION"))
             || expected_route.is_some_and(|route| extension.receipt.route != route)
         {
             let _ = FileExt::unlock(&file);

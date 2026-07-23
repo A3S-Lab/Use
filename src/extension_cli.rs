@@ -11,7 +11,10 @@ pub(crate) struct ExtensionView {
     pub component_id: String,
     pub route: String,
     pub version: String,
+    pub requires_use: Option<String>,
+    pub repository: Option<serde_json::Value>,
     pub enabled: bool,
+    pub compatible: bool,
     pub package_root: PathBuf,
     pub package_sha256: Option<String>,
     pub surfaces: Vec<&'static str>,
@@ -36,11 +39,29 @@ pub(crate) fn external_package_id(id: &str) -> Option<&str> {
     let id = id.strip_prefix("use/").unwrap_or(id);
     let mut segments = id.split('/');
     match (segments.next(), segments.next(), segments.next()) {
-        (Some(publisher), Some(name), None) if !publisher.is_empty() && !name.is_empty() => {
+        (Some(publisher), Some(name), None) if valid_segment(publisher) && valid_segment(name) => {
             Some(id)
         }
         _ => None,
     }
+}
+
+pub(crate) fn external_route(id: &str) -> Option<&str> {
+    let route = id.strip_prefix("use/").unwrap_or(id);
+    (valid_segment(route) && !route.contains('/')).then_some(route)
+}
+
+pub(crate) async fn installed_extension_for_id(id: &str) -> UseResult<Option<ExtensionView>> {
+    if let Some(package_id) = external_package_id(id) {
+        return installed_extension(package_id).await;
+    }
+    let Some(route) = external_route(id) else {
+        return Ok(None);
+    };
+    Ok(installed_extensions()
+        .await?
+        .into_iter()
+        .find(|extension| extension.route == route))
 }
 
 pub(crate) async fn extension_capabilities() -> UseResult<(u64, Vec<serde_json::Value>)> {
@@ -53,8 +74,16 @@ pub(crate) async fn extension_capabilities() -> UseResult<(u64, Vec<serde_json::
                 "id": extension.package_id,
                 "route": extension.route,
                 "version": extension.version,
-                "enabled": extension.enabled,
-                "readiness": if extension.enabled { "ready" } else { "disabled" },
+                "requiresUse": extension.requires_use,
+                "repository": extension.repository,
+                "enabled": extension.enabled && extension.compatible,
+                "readiness": if !extension.compatible {
+                    "incompatible"
+                } else if extension.enabled {
+                    "ready"
+                } else {
+                    "disabled"
+                },
                 "surfaces": extension.surfaces,
                 "builtIn": false
             })
@@ -77,7 +106,9 @@ pub(crate) async fn extension_list() -> UseResult<CommandOutput> {
                     extension.package_id,
                     extension.route,
                     extension.version,
-                    if extension.enabled {
+                    if !extension.compatible {
+                        "incompatible"
+                    } else if extension.enabled {
                         "enabled"
                     } else {
                         "disabled"
@@ -210,12 +241,21 @@ pub(crate) fn external_component_value(
         "id": if full_id { &extension.component_id } else { &extension.package_id },
         "description": format!("External Use domain on route '{}'.", extension.route),
         "presence": "managed",
-        "health": if extension.enabled { "ready" } else { "disabled" },
+        "health": if !extension.compatible {
+            "incompatible"
+        } else if extension.enabled {
+            "ready"
+        } else {
+            "disabled"
+        },
         "version": extension.version,
+        "requiresUse": extension.requires_use,
+        "repository": extension.repository,
         "path": extension.package_root,
         "packageSha256": extension.package_sha256,
         "route": extension.route,
         "enabled": extension.enabled,
+        "compatible": extension.compatible,
         "surfaces": extension.surfaces,
         "trust": extension.trust,
         "registry": extension.registry
@@ -228,13 +268,24 @@ fn extension_value(extension: &ExtensionView) -> serde_json::Value {
         "componentId": extension.component_id,
         "route": extension.route,
         "version": extension.version,
+        "requiresUse": extension.requires_use,
+        "repository": extension.repository,
         "enabled": extension.enabled,
+        "compatible": extension.compatible,
         "packageRoot": extension.package_root,
         "packageSha256": extension.package_sha256,
         "surfaces": extension.surfaces,
         "trust": extension.trust,
         "registry": extension.registry
     })
+}
+
+fn valid_segment(value: &str) -> bool {
+    let mut characters = value.chars();
+    matches!(characters.next(), Some(first) if first.is_ascii_lowercase())
+        && characters.all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+        })
 }
 
 #[cfg(feature = "extensions")]
@@ -482,6 +533,20 @@ async fn watch_registry(
 #[cfg(feature = "extensions")]
 fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult<ExtensionView> {
     let surfaces = extension.surfaces();
+    let compatible = extension.supports_use_version(env!("CARGO_PKG_VERSION"));
+    let requires_use = extension.manifest.requires_use.clone();
+    let repository = extension
+        .manifest
+        .repository
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| {
+            UseError::new(
+                "use.extension.manifest_invalid",
+                format!("Failed to encode extension repository identity: {error}"),
+            )
+        })?;
     let trust = match extension.receipt.trust {
         a3s_use_extension::ExtensionTrust::LocalExplicit => "local-explicit",
         a3s_use_extension::ExtensionTrust::ReleaseBundle => "release-bundle",
@@ -510,7 +575,10 @@ fn extension_view(extension: a3s_use_extension::InstalledExtension) -> UseResult
         component_id: extension.receipt.component_id,
         route: extension.receipt.route,
         version: extension.receipt.version,
+        requires_use,
+        repository,
         enabled: extension.receipt.enabled,
+        compatible,
         package_root: extension.receipt.package_root,
         package_sha256: extension.receipt.package_sha256,
         surfaces,

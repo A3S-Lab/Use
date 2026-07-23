@@ -6,17 +6,11 @@
 #[cfg(feature = "browser")]
 mod runtime;
 
-#[cfg(feature = "office")]
-mod office;
-
 #[cfg(feature = "browser")]
 pub(crate) use runtime::{
     browser_service_status, call_browser_tool, ensure_browser_service, serve_browser_http,
     stop_browser_service,
 };
-
-#[cfg(feature = "office")]
-pub(crate) use office::serve_stdio as serve_native_office_stdio;
 
 #[cfg(feature = "browser")]
 mod browser {

@@ -1,5 +1,3 @@
-#[cfg(feature = "office")]
-use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 #[cfg(all(feature = "extensions", unix))]
@@ -22,7 +20,7 @@ fn capabilities_are_available_as_versioned_json() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["schemaVersion"], 1);
     let domains = value["data"]["domains"].as_array().unwrap();
-    for id in ["browser", "office", "ocr", "box"] {
+    for id in ["browser", "ocr", "box"] {
         assert!(
             domains.iter().any(|domain| domain["id"] == id),
             "missing built-in domain {id}: {domains:?}"
@@ -35,18 +33,9 @@ fn capabilities_are_available_as_versioned_json() {
 #[test]
 fn unified_capability_snapshot_projects_builtin_skills() {
     let temp = tempfile::tempdir().unwrap();
-    let office_skills = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("crates")
-        .join("office")
-        .join("skills");
     let output = Command::new(binary())
         .args(["capability", "snapshot", "--json"])
         .env("A3S_USE_HOME", temp.path())
-        .env("A3S_USE_OFFICE_SKILLS_DIR", &office_skills)
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
         .output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
@@ -57,14 +46,6 @@ fn unified_capability_snapshot_projects_builtin_skills() {
     let browser = capabilities
         .iter()
         .find(|capability| capability["id"] == "use/browser")
-        .unwrap();
-    let office = capabilities
-        .iter()
-        .find(|capability| capability["id"] == "use/office")
-        .unwrap();
-    let office_compat = capabilities
-        .iter()
-        .find(|capability| capability["id"] == "use/office-compat")
         .unwrap();
     assert_eq!(browser["origin"], "built-in");
     #[cfg(feature = "browser")]
@@ -90,101 +71,10 @@ fn unified_capability_snapshot_projects_builtin_skills() {
         assert_eq!(browser["surfaces"], serde_json::json!([]));
         assert!(browser.get("skills").is_none());
     }
-    assert_eq!(office["origin"], "built-in");
-    #[cfg(feature = "office")]
-    {
-        assert!(office["surfaces"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|surface| surface == "skill"));
-        assert!(office["skills"][0]["path"].as_str().is_some_and(|path| {
-            Path::new(path).ends_with(Path::new("skills").join("a3s-use-office").join("SKILL.md"))
-        }));
-        let office_skill_digest = office["skills"][0]["sha256"]
-            .as_str()
-            .expect("the Office capability must bind packaged Skill content");
-        assert_eq!(office_skill_digest.len(), 64);
-        assert!(office_skill_digest
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
-        #[cfg(feature = "mcp")]
-        {
-            assert_eq!(office["readiness"], "ready");
-            assert_eq!(office["mcp"]["target"], "office-native");
-        }
-        assert_eq!(office_compat["route"], "office-compat");
-        assert_eq!(office_compat["readiness"], "missing");
-        assert!(office_compat.get("mcp").is_none());
-        assert!(office_compat.get("skills").is_none());
-    }
-    #[cfg(not(feature = "office"))]
-    {
-        assert_eq!(office["enabled"], false);
-        assert_eq!(office["surfaces"], serde_json::json!([]));
-        assert!(office.get("skills").is_none());
-    }
+    assert!(capabilities
+        .iter()
+        .all(|capability| capability["route"] != "office"));
     assert!(value.get("jsonrpc").is_none());
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn office_skill_commands_are_packaged_and_provider_independent() {
-    let temp = tempfile::tempdir().unwrap();
-    let skills_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("crates")
-        .join("office")
-        .join("skills");
-    let provider = temp.path().join("must-not-be-invoked");
-
-    let list = Command::new(binary())
-        .args(["office", "skills", "list", "--json"])
-        .env("A3S_USE_OFFICE_SKILLS_DIR", &skills_root)
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(list.status.success(), "{list:?}");
-    let list: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
-    assert_eq!(list["ok"], true);
-    assert_eq!(list["data"][0]["name"], "a3s-use-office");
-
-    let get = Command::new(binary())
-        .args([
-            "office",
-            "skills",
-            "get",
-            "a3s-use-office",
-            "--full",
-            "--json",
-        ])
-        .env("A3S_USE_OFFICE_SKILLS_DIR", &skills_root)
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(get.status.success(), "{get:?}");
-    let get: serde_json::Value = serde_json::from_slice(&get.stdout).unwrap();
-    assert_eq!(get["data"]["name"], "a3s-use-office");
-    assert_eq!(get["data"]["full"], true);
-    assert!(get["data"]["content"]
-        .as_str()
-        .unwrap()
-        .contains("## Bundled reference: references/mcp.md"));
-    let office_skill = get["data"]["content"].as_str().unwrap();
-    assert!(office_skill.contains("mcp__use_office__*"));
-    assert!(office_skill.contains("mcp__use_office_compat__*"));
-
-    let path = Command::new(binary())
-        .args(["office", "skills", "path", "a3s-use-office", "--json"])
-        .env("A3S_USE_OFFICE_SKILLS_DIR", &skills_root)
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(path.status.success(), "{path:?}");
-    let path: serde_json::Value = serde_json::from_slice(&path.stdout).unwrap();
-    assert!(path["data"]["path"].as_str().is_some_and(|path| {
-        Path::new(path).ends_with(Path::new("skills").join("a3s-use-office"))
-    }));
-    assert!(!provider.exists());
 }
 
 #[test]
@@ -806,1418 +696,6 @@ fn browser_upgrade_delegates_only_to_the_a3s_component_lifecycle() {
     assert_eq!(value["data"]["changed"], true);
 }
 
-#[cfg(all(unix, feature = "office"))]
-#[test]
-fn office_route_preserves_native_cli_arguments_output_and_status() {
-    let temp = tempfile::tempdir().unwrap();
-    let executable = temp.path().join("officecli-fixture");
-    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\"\nexit 7\n").unwrap();
-    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&executable, permissions).unwrap();
-
-    let output = Command::new(binary())
-        .args(["office", "get", "report.docx", "/body", "--json"])
-        .env("A3S_OFFICECLI_EXECUTABLE", &executable)
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(7));
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
-        "get report.docx /body --json\n"
-    );
-    assert!(output.stderr.is_empty());
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_reads_ooxml_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("native.docx");
-    write_native_word_fixture(&document);
-
-    let viewed = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "view",
-            document.to_str().unwrap(),
-            "text",
-            "--json",
-        ])
-        .env_remove("A3S_OFFICECLI_EXECUTABLE")
-        .output()
-        .unwrap();
-
-    assert!(viewed.status.success(), "{viewed:?}");
-    let viewed: serde_json::Value = serde_json::from_slice(&viewed.stdout).unwrap();
-    assert_eq!(viewed["data"]["view"], "text");
-    assert_eq!(viewed["data"]["result"]["text"], "Native read");
-
-    let queried = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "query",
-            document.to_str().unwrap(),
-            "p[style=Heading1]",
-            "--json",
-        ])
-        .env_remove("A3S_OFFICECLI_EXECUTABLE")
-        .output()
-        .unwrap();
-    assert!(queried.status.success(), "{queried:?}");
-    let queried: serde_json::Value = serde_json::from_slice(&queried.stdout).unwrap();
-    assert_eq!(queried["data"]["matches"], 1);
-    assert_eq!(queried["data"]["results"][0]["path"], "/body/p[1]");
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_creates_all_ooxml_formats_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    for (extension, kind) in [
-        ("docx", "word"),
-        ("xlsx", "spreadsheet"),
-        ("pptx", "presentation"),
-    ] {
-        let document = temp.path().join(format!("blank.{extension}"));
-        let created = Command::new(binary())
-            .args([
-                "office",
-                "native",
-                "create",
-                document.to_str().unwrap(),
-                "--json",
-            ])
-            .env(
-                "A3S_OFFICECLI_EXECUTABLE",
-                temp.path().join("must-not-be-invoked"),
-            )
-            .output()
-            .unwrap();
-
-        assert!(created.status.success(), "{created:?}");
-        let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
-        assert_eq!(created["data"]["operation"], "create");
-        assert_eq!(created["data"]["kind"], kind);
-        assert_eq!(created["data"]["created"], true);
-        assert!(document.is_file());
-
-        let validated = Command::new(binary())
-            .args([
-                "office",
-                "native",
-                "validate",
-                document.to_str().unwrap(),
-                "--json",
-            ])
-            .env(
-                "A3S_OFFICECLI_EXECUTABLE",
-                temp.path().join("must-not-be-invoked"),
-            )
-            .output()
-            .unwrap();
-        assert!(validated.status.success(), "{validated:?}");
-
-        if extension == "xlsx" {
-            let populated = Command::new(binary())
-                .args([
-                    "office",
-                    "native",
-                    "set",
-                    document.to_str().unwrap(),
-                    "/Sheet1/B2",
-                    "--text",
-                    "Created workbook cell",
-                    "--json",
-                ])
-                .env(
-                    "A3S_OFFICECLI_EXECUTABLE",
-                    temp.path().join("must-not-be-invoked"),
-                )
-                .output()
-                .unwrap();
-            assert!(populated.status.success(), "{populated:?}");
-            let populated: serde_json::Value = serde_json::from_slice(&populated.stdout).unwrap();
-            assert_eq!(populated["data"]["node"]["path"], "/Sheet1/B2");
-            assert_eq!(populated["data"]["node"]["text"], "Created workbook cell");
-        }
-    }
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_adds_and_populates_a_worksheet_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("native.xlsx");
-    let created = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "create",
-            document.to_str().unwrap(),
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(created.status.success(), "{created:?}");
-
-    let added = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "add",
-            document.to_str().unwrap(),
-            "/",
-            "--type",
-            "sheet",
-            "--name",
-            "Data",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(added.status.success(), "{added:?}");
-    let added: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
-    assert_eq!(added["data"]["operation"], "add-worksheet");
-    assert_eq!(added["data"]["node"]["path"], "/Data");
-
-    let populated = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "set",
-            document.to_str().unwrap(),
-            "/Data/C3",
-            "--text",
-            "Native sheet",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(populated.status.success(), "{populated:?}");
-    let populated: serde_json::Value = serde_json::from_slice(&populated.stdout).unwrap();
-    assert_eq!(populated["data"]["node"]["text"], "Native sheet");
-
-    let removed = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "remove",
-            document.to_str().unwrap(),
-            "/Data",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(removed.status.success(), "{removed:?}");
-    let removed: serde_json::Value = serde_json::from_slice(&removed.stdout).unwrap();
-    assert_eq!(removed["data"]["operation"], "remove");
-    assert_eq!(removed["data"]["path"], "/Data");
-
-    let root = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "get",
-            document.to_str().unwrap(),
-            "/",
-            "--depth",
-            "1",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(root.status.success(), "{root:?}");
-    let root: serde_json::Value = serde_json::from_slice(&root.stdout).unwrap();
-    assert_eq!(
-        root["data"]["node"]["children"].as_array().unwrap().len(),
-        1
-    );
-    assert_eq!(root["data"]["node"]["children"][0]["path"], "/Sheet1");
-
-    let last_sheet = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "remove",
-            document.to_str().unwrap(),
-            "/Sheet1",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(!last_sheet.status.success(), "{last_sheet:?}");
-    let last_sheet: serde_json::Value = serde_json::from_slice(&last_sheet.stdout).unwrap();
-    assert_eq!(
-        last_sheet["error"]["code"],
-        "use.office.spreadsheet_last_sheet"
-    );
-    assert_eq!(native_office_text_view(&document, temp.path()), "");
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_writes_typed_spreadsheet_values_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("typed.xlsx");
-    let mutations = temp.path().join("typed-mutations.json");
-    let provider = temp.path().join("must-not-be-invoked");
-
-    let created = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "create",
-            document.to_str().unwrap(),
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(created.status.success(), "{created:?}");
-
-    for (reference, option, value, expected_text, expected_type) in [
-        ("/Sheet1/A1", "--number", "42.5", "42.5", "Number"),
-        ("/Sheet1/B1", "--boolean", "false", "false", "Boolean"),
-    ] {
-        let set = Command::new(binary())
-            .args([
-                "office",
-                "native",
-                "set",
-                document.to_str().unwrap(),
-                reference,
-                option,
-                value,
-                "--json",
-            ])
-            .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-            .output()
-            .unwrap();
-        assert!(set.status.success(), "{set:?}");
-        let set: serde_json::Value = serde_json::from_slice(&set.stdout).unwrap();
-        assert_eq!(set["data"]["operation"], "set-cell-value");
-        assert_eq!(set["data"]["node"]["text"], expected_text);
-        assert_eq!(set["data"]["node"]["format"]["valueType"], expected_type);
-    }
-
-    let formula = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "set",
-            document.to_str().unwrap(),
-            "/Sheet1/C1",
-            "--formula",
-            "=A1*2",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(formula.status.success(), "{formula:?}");
-    let formula: serde_json::Value = serde_json::from_slice(&formula.stdout).unwrap();
-    assert_eq!(formula["data"]["node"]["format"]["formula"], "A1*2");
-
-    let before_invalid_formula = std::fs::read(&document).unwrap();
-    let invalid_formula = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "set",
-            document.to_str().unwrap(),
-            "/Sheet1/C2",
-            "--formula",
-            "SUM(A1",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(!invalid_formula.status.success(), "{invalid_formula:?}");
-    let invalid_formula: serde_json::Value =
-        serde_json::from_slice(&invalid_formula.stdout).unwrap();
-    assert_eq!(
-        invalid_formula["error"]["code"],
-        "use.office.spreadsheet_formula_invalid"
-    );
-    assert_eq!(invalid_formula["error"]["details"]["characterOffset"], 6);
-    assert_eq!(std::fs::read(&document).unwrap(), before_invalid_formula);
-
-    std::fs::write(
-        &mutations,
-        serde_json::to_vec(&serde_json::json!({
-            "schemaVersion": 1,
-            "mutations": [
-                {
-                    "operation": "set-cell-value",
-                    "path": "/Sheet1/D1",
-                    "value": {
-                        "type": "formula",
-                        "expression": "SUM(A1:C1)"
-                    }
-                }
-            ]
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    let batched = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "batch",
-            document.to_str().unwrap(),
-            "--input",
-            mutations.to_str().unwrap(),
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(batched.status.success(), "{batched:?}");
-
-    let invalid = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "set",
-            document.to_str().unwrap(),
-            "/Sheet1/E1",
-            "--text",
-            "ambiguous",
-            "--number",
-            "1",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(!invalid.status.success(), "{invalid:?}");
-    let invalid: serde_json::Value = serde_json::from_slice(&invalid.stdout).unwrap();
-    assert_eq!(invalid["error"]["code"], "use.cli.invalid_usage");
-
-    let formula = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "get",
-            document.to_str().unwrap(),
-            "/Sheet1/D1",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(formula.status.success(), "{formula:?}");
-    let formula: serde_json::Value = serde_json::from_slice(&formula.stdout).unwrap();
-    assert_eq!(formula["data"]["node"]["format"]["formula"], "SUM(A1:C1)");
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_mutates_and_saves_as_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    let source = temp.path().join("native.docx");
-    let output = temp.path().join("updated.docx");
-    write_native_word_fixture(&source);
-
-    let updated = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "set",
-            source.to_str().unwrap(),
-            "/body/p[1]/r[1]",
-            "--text",
-            "Native write & preserve",
-            "--output",
-            output.to_str().unwrap(),
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-
-    assert!(updated.status.success(), "{updated:?}");
-    let updated: serde_json::Value = serde_json::from_slice(&updated.stdout).unwrap();
-    assert_eq!(updated["data"]["operation"], "set-text");
-    assert_eq!(updated["data"]["changed"], true);
-    assert_eq!(updated["data"]["inPlace"], false);
-    assert_eq!(updated["data"]["path"], "/body/p[1]/r[1]");
-
-    let source_view = native_office_text_view(&source, temp.path());
-    let output_view = native_office_text_view(&output, temp.path());
-    assert_eq!(source_view, "Native read");
-    assert_eq!(output_view, "Native write & preserve");
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_adds_a_word_paragraph_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("native.docx");
-    let created = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "create",
-            document.to_str().unwrap(),
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(created.status.success(), "{created:?}");
-
-    let added = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "add",
-            document.to_str().unwrap(),
-            "/body",
-            "--type",
-            "paragraph",
-            "--text",
-            "Added natively",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-
-    assert!(added.status.success(), "{added:?}");
-    let added: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
-    assert_eq!(added["data"]["operation"], "add-paragraph");
-    assert_eq!(added["data"]["node"]["path"], "/body/p[2]");
-    assert_eq!(added["data"]["node"]["text"], "Added natively");
-    assert_eq!(
-        native_office_text_view(&document, temp.path()),
-        "Added natively"
-    );
-
-    let removed = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "remove",
-            document.to_str().unwrap(),
-            "/body/p[2]",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(removed.status.success(), "{removed:?}");
-    let removed: serde_json::Value = serde_json::from_slice(&removed.stdout).unwrap();
-    assert_eq!(removed["data"]["operation"], "remove");
-    assert_eq!(removed["data"]["path"], "/body/p[2]");
-    assert_eq!(native_office_text_view(&document, temp.path()), "");
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_structurally_edits_word_tables_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("tables.docx");
-    let mutations = temp.path().join("table-mutations.json");
-    let provider = temp.path().join("must-not-be-invoked");
-
-    let created = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "create",
-            document.to_str().unwrap(),
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(created.status.success(), "{created:?}");
-
-    std::fs::write(
-        &mutations,
-        serde_json::to_vec(&serde_json::json!({
-            "schemaVersion": 1,
-            "mutations": [
-                {
-                    "operation": "add-table",
-                    "parent": "/body",
-                    "rows": 2,
-                    "columns": 2
-                },
-                {
-                    "operation": "set-text",
-                    "path": "/body/tbl[1]/tr[1]/tc[1]",
-                    "text": "Name"
-                }
-            ]
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    let batched = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "batch",
-            document.to_str().unwrap(),
-            "--input",
-            mutations.to_str().unwrap(),
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(batched.status.success(), "{batched:?}");
-    let batched: serde_json::Value = serde_json::from_slice(&batched.stdout).unwrap();
-    assert_eq!(batched["data"]["result"]["applied"], 2);
-    assert_eq!(batched["data"]["result"]["paths"][0], "/body/tbl[1]");
-
-    let row = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "add",
-            document.to_str().unwrap(),
-            "/body/tbl[1]",
-            "--type",
-            "row",
-            "--columns",
-            "2",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(row.status.success(), "{row:?}");
-    let row: serde_json::Value = serde_json::from_slice(&row.stdout).unwrap();
-    assert_eq!(row["data"]["operation"], "add-table-row");
-    assert_eq!(row["data"]["path"], "/body/tbl[1]/tr[3]");
-
-    let cell = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "add",
-            document.to_str().unwrap(),
-            "/body/tbl[1]/tr[3]",
-            "--type",
-            "cell",
-            "--text",
-            "Extra",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(cell.status.success(), "{cell:?}");
-    let cell: serde_json::Value = serde_json::from_slice(&cell.stdout).unwrap();
-    assert_eq!(cell["data"]["operation"], "add-table-cell");
-    assert_eq!(cell["data"]["path"], "/body/tbl[1]/tr[3]/tc[3]");
-    assert_eq!(cell["data"]["node"]["text"], "Extra");
-
-    let invalid = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "add",
-            document.to_str().unwrap(),
-            "/body",
-            "--type",
-            "table",
-            "--rows",
-            "0",
-            "--columns",
-            "2",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(!invalid.status.success(), "{invalid:?}");
-    let invalid: serde_json::Value = serde_json::from_slice(&invalid.stdout).unwrap();
-    assert_eq!(
-        invalid["error"]["code"],
-        "use.office.word_table_dimensions_invalid"
-    );
-
-    let removed_cell = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "remove",
-            document.to_str().unwrap(),
-            "/body/tbl[1]/tr[3]/tc[3]",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(removed_cell.status.success(), "{removed_cell:?}");
-    let removed_row = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "remove",
-            document.to_str().unwrap(),
-            "/body/tbl[1]/tr[3]",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(removed_row.status.success(), "{removed_row:?}");
-
-    let table = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "get",
-            document.to_str().unwrap(),
-            "/body/tbl[1]",
-            "--depth",
-            "3",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", &provider)
-        .output()
-        .unwrap();
-    assert!(table.status.success(), "{table:?}");
-    let table: serde_json::Value = serde_json::from_slice(&table.stdout).unwrap();
-    assert_eq!(
-        table["data"]["node"]["children"].as_array().unwrap().len(),
-        2
-    );
-    assert_eq!(
-        table["data"]["node"]["children"][0]["children"][0]["text"],
-        "Name"
-    );
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_adds_a_presentation_slide_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("native.pptx");
-    let created = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "create",
-            document.to_str().unwrap(),
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(created.status.success(), "{created:?}");
-
-    let added = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "add",
-            document.to_str().unwrap(),
-            "/",
-            "--type",
-            "slide",
-            "--text",
-            "Native slide",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-
-    assert!(added.status.success(), "{added:?}");
-    let added: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
-    assert_eq!(added["data"]["operation"], "add-slide");
-    assert_eq!(added["data"]["node"]["path"], "/slide[1]");
-    assert_eq!(added["data"]["node"]["text"], "Native slide");
-    assert_eq!(
-        native_office_text_view(&document, temp.path()),
-        "Native slide"
-    );
-
-    let shape = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "add",
-            document.to_str().unwrap(),
-            "/slide[1]",
-            "--type",
-            "shape",
-            "--text",
-            "Native body",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(shape.status.success(), "{shape:?}");
-    let shape: serde_json::Value = serde_json::from_slice(&shape.stdout).unwrap();
-    assert_eq!(shape["data"]["operation"], "add-shape");
-    assert_eq!(shape["data"]["node"]["path"], "/slide[1]/shape[2]");
-    assert_eq!(shape["data"]["node"]["text"], "Native body");
-
-    let retained = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "add",
-            document.to_str().unwrap(),
-            "/",
-            "--type",
-            "slide",
-            "--text",
-            "Retained slide",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(retained.status.success(), "{retained:?}");
-
-    let removed = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "remove",
-            document.to_str().unwrap(),
-            "/slide[1]",
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-    assert!(removed.status.success(), "{removed:?}");
-    let removed: serde_json::Value = serde_json::from_slice(&removed.stdout).unwrap();
-    assert_eq!(removed["data"]["operation"], "remove");
-    assert_eq!(removed["data"]["path"], "/slide[1]");
-    assert_eq!(
-        native_office_text_view(&document, temp.path()),
-        "Retained slide"
-    );
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn native_office_cli_batch_is_atomic_without_an_officecli_provider() {
-    let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("native.docx");
-    let mutations = temp.path().join("mutations.json");
-    write_native_word_fixture(&document);
-    std::fs::write(
-        &mutations,
-        serde_json::to_vec(&serde_json::json!({
-            "schemaVersion": 1,
-            "mutations": [
-                {
-                    "operation": "set-text",
-                    "path": "/body/p[1]/r[1]",
-                    "text": "must roll back"
-                },
-                {
-                    "operation": "set-text",
-                    "path": "/body/p[999]",
-                    "text": "missing"
-                }
-            ]
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-
-    let failed = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "batch",
-            document.to_str().unwrap(),
-            "--input",
-            mutations.to_str().unwrap(),
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-
-    assert!(!failed.status.success(), "{failed:?}");
-    let failed: serde_json::Value = serde_json::from_slice(&failed.stdout).unwrap();
-    assert_eq!(failed["error"]["code"], "use.office.node_not_found");
-    assert_eq!(
-        native_office_text_view(&document, temp.path()),
-        "Native read"
-    );
-
-    std::fs::write(
-        &mutations,
-        serde_json::to_vec(&serde_json::json!({
-            "schemaVersion": 1,
-            "mutations": [
-                {
-                    "operation": "set-text",
-                    "path": "/body/p[1]/r[1]",
-                    "text": "first"
-                },
-                {
-                    "operation": "set-text",
-                    "path": "/body/p[1]/r[1]",
-                    "text": "committed"
-                }
-            ]
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-
-    let committed = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "batch",
-            document.to_str().unwrap(),
-            "--input",
-            mutations.to_str().unwrap(),
-            "--json",
-        ])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .output()
-        .unwrap();
-
-    assert!(committed.status.success(), "{committed:?}");
-    let committed: serde_json::Value = serde_json::from_slice(&committed.stdout).unwrap();
-    assert_eq!(committed["data"]["result"]["applied"], 2);
-    assert_eq!(committed["data"]["inPlace"], true);
-    assert_eq!(native_office_text_view(&document, temp.path()), "committed");
-}
-
-#[cfg(feature = "office")]
-fn native_office_text_view(path: &Path, temp: &Path) -> String {
-    let output = Command::new(binary())
-        .args([
-            "office",
-            "native",
-            "view",
-            path.to_str().unwrap(),
-            "text",
-            "--json",
-        ])
-        .env("A3S_OFFICECLI_EXECUTABLE", temp.join("must-not-be-invoked"))
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "{output:?}");
-    let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    output["data"]["result"]["text"]
-        .as_str()
-        .unwrap()
-        .to_string()
-}
-
-#[cfg(feature = "office")]
-fn write_native_word_fixture(path: &Path) {
-    let file = std::fs::File::create(path).unwrap();
-    let mut writer = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-    for (name, bytes) in [
-        (
-            "[Content_Types].xml",
-            br#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#
-                .as_slice(),
-        ),
-        (
-            "_rels/.rels",
-            br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#
-                .as_slice(),
-        ),
-        (
-            "word/document.xml",
-            br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Native read</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#
-                .as_slice(),
-        ),
-    ] {
-        writer.start_file(name, options).unwrap();
-        writer.write_all(bytes).unwrap();
-    }
-    writer.finish().unwrap();
-}
-
-#[cfg(all(unix, feature = "office"))]
-#[test]
-fn office_install_reuses_an_explicit_provider_without_downloading() {
-    let temp = tempfile::tempdir().unwrap();
-    let executable = temp.path().join("officecli-fixture");
-    std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
-    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&executable, permissions).unwrap();
-
-    let output = Command::new(binary())
-        .args(["component", "install", "office", "--json"])
-        .env("A3S_OFFICECLI_EXECUTABLE", &executable)
-        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
-        .output()
-        .unwrap();
-
-    assert!(output.status.success(), "{output:?}");
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["data"]["changed"], false);
-    assert_eq!(value["data"]["provider"]["source"], "environment");
-    assert_eq!(
-        value["data"]["provider"]["path"],
-        executable.to_string_lossy().as_ref()
-    );
-    assert!(!temp.path().join("managed/1.0.136").exists());
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn office_compatibility_first_use_honors_no_auto_install() {
-    let temp = tempfile::tempdir().unwrap();
-    let output = Command::new(binary())
-        .args(["office", "document", "inspect", "fixture.docx", "--json"])
-        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
-        .env("A3S_NO_AUTO_INSTALL", "1")
-        .env("PATH", temp.path())
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(1), "{output:?}");
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["ok"], false);
-    assert_eq!(value["error"]["code"], "use.office.auto_install_disabled");
-    assert_eq!(value["error"]["details"]["reason"], "A3S_NO_AUTO_INSTALL");
-    assert!(!temp.path().join("managed/1.0.136").exists());
-}
-
-#[cfg(feature = "office")]
-#[test]
-fn office_help_never_triggers_compatibility_installation() {
-    let temp = tempfile::tempdir().unwrap();
-    let output = Command::new(binary())
-        .args(["office", "--help", "--json"])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-exist"),
-        )
-        .env("A3S_USE_OFFICE_HOME", temp.path().join("managed"))
-        .output()
-        .unwrap();
-
-    assert!(output.status.success(), "{output:?}");
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["ok"], true);
-    assert!(value["data"]["usage"]
-        .as_str()
-        .unwrap()
-        .contains("Native Office is built in"));
-    assert!(!temp.path().join("managed/1.0.136").exists());
-}
-
-#[cfg(all(unix, feature = "office"))]
-#[test]
-fn office_mcp_target_delegates_to_officeclis_standard_server() {
-    let temp = tempfile::tempdir().unwrap();
-    let executable = temp.path().join("officecli-fixture");
-    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\"\nexit 5\n").unwrap();
-    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&executable, permissions).unwrap();
-
-    let output = Command::new(binary())
-        .args(["mcp", "serve", "office"])
-        .env("A3S_OFFICECLI_EXECUTABLE", &executable)
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(5));
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "mcp\n");
-    assert!(output.stderr.is_empty());
-}
-
-#[cfg(all(unix, feature = "office"))]
-#[test]
-fn office_compat_mcp_target_delegates_to_officeclis_standard_server() {
-    let temp = tempfile::tempdir().unwrap();
-    let executable = temp.path().join("officecli-fixture");
-    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\"\nexit 5\n").unwrap();
-    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&executable, permissions).unwrap();
-
-    let output = Command::new(binary())
-        .args(["mcp", "serve", "office-compat"])
-        .env("A3S_OFFICECLI_EXECUTABLE", &executable)
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(5));
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "mcp\n");
-    assert!(output.stderr.is_empty());
-}
-
-#[cfg(all(feature = "office", feature = "mcp"))]
-#[tokio::test]
-async fn native_office_mcp_is_standard_typed_and_independent_of_officecli() {
-    use std::process::Stdio;
-    use std::time::Duration;
-
-    use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
-
-    const RESPONSE_TIMEOUT: Duration = Duration::from_secs(15);
-
-    let temp = tempfile::tempdir().unwrap();
-    let document = temp.path().join("native-mcp.docx");
-    let mut child = tokio::process::Command::new(binary())
-        .args(["mcp", "serve", "office-native"])
-        .env(
-            "A3S_OFFICECLI_EXECUTABLE",
-            temp.path().join("must-not-be-invoked"),
-        )
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
-    let mut stderr = child.stderr.take().unwrap();
-
-    let initialized = standard_mcp_request(
-        &mut stdin,
-        &mut stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": { "name": "a3s-use-test", "version": "1" }
-            }
-        }),
-        RESPONSE_TIMEOUT,
-    )
-    .await;
-    assert_eq!(initialized["jsonrpc"], "2.0");
-    assert_eq!(initialized["id"], 1);
-    assert_eq!(
-        initialized["result"]["serverInfo"]["name"],
-        "a3s-use-office-native"
-    );
-
-    stdin
-        .write_all(
-            b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}\n",
-        )
-        .await
-        .unwrap();
-    stdin.flush().await.unwrap();
-
-    let tools = standard_mcp_request(
-        &mut stdin,
-        &mut stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/list",
-            "params": {}
-        }),
-        RESPONSE_TIMEOUT,
-    )
-    .await;
-    let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 13);
-    let install_compat = tools
-        .iter()
-        .find(|tool| tool["name"] == "office_install_compat")
-        .unwrap();
-    assert_eq!(install_compat["annotations"]["readOnlyHint"], false);
-    assert_eq!(install_compat["annotations"]["destructiveHint"], false);
-    assert_eq!(install_compat["annotations"]["idempotentHint"], true);
-    assert_eq!(install_compat["annotations"]["openWorldHint"], true);
-    let apply = tools
-        .iter()
-        .find(|tool| tool["name"] == "office_apply_batch")
-        .unwrap();
-    assert_eq!(
-        apply["inputSchema"]["properties"]["mutations"]["type"],
-        "array"
-    );
-    assert!(apply["inputSchema"]["properties"].get("command").is_none());
-    let apply_schema = apply["inputSchema"].to_string();
-    for expected in [
-        "underline",
-        "script",
-        "strikethrough",
-        "doubleStrikethrough",
-        "textCase",
-        "highlight",
-        "language",
-        "superscript",
-    ] {
-        assert!(apply_schema.contains(expected), "missing {expected}");
-    }
-
-    let created = standard_mcp_request(
-        &mut stdin,
-        &mut stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "office_create",
-                "arguments": {
-                    "session": "native_test",
-                    "file": document
-                }
-            }
-        }),
-        RESPONSE_TIMEOUT,
-    )
-    .await;
-    assert_ne!(created["result"]["isError"], true);
-    assert_eq!(
-        created["result"]["structuredContent"]["session"],
-        "native_test"
-    );
-
-    let applied = standard_mcp_request(
-        &mut stdin,
-        &mut stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 4,
-            "method": "tools/call",
-            "params": {
-                "name": "office_apply_batch",
-                "arguments": {
-                    "session": "native_test",
-                    "mutations": [
-                        {
-                            "operation": "add-paragraph",
-                            "parent": "/body",
-                            "text": "Native MCP"
-                        },
-                        {
-                            "operation": "set-text-format",
-                            "path": "/body/p[2]/r[1]",
-                            "format": {
-                                "underline": "double",
-                                "script": "superscript",
-                                "strikethrough": true,
-                                "doubleStrikethrough": true,
-                                "textCase": "small-caps",
-                                "highlight": "yellow",
-                                "language": "en-US"
-                            }
-                        }
-                    ]
-                }
-            }
-        }),
-        RESPONSE_TIMEOUT,
-    )
-    .await;
-    assert_ne!(applied["result"]["isError"], true);
-    assert_eq!(
-        applied["result"]["structuredContent"]["result"]["applied"],
-        2
-    );
-    assert_eq!(applied["result"]["structuredContent"]["persisted"], false);
-
-    let formatted = standard_mcp_request(
-        &mut stdin,
-        &mut stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 5,
-            "method": "tools/call",
-            "params": {
-                "name": "office_get",
-                "arguments": {
-                    "session": "native_test",
-                    "path": "/body/p[2]/r[1]",
-                    "depth": 0
-                }
-            }
-        }),
-        RESPONSE_TIMEOUT,
-    )
-    .await;
-    assert_ne!(formatted["result"]["isError"], true);
-    let format = &formatted["result"]["structuredContent"]["node"]["format"];
-    assert_eq!(format["underline"], "double");
-    assert_eq!(format["script"], "superscript");
-    assert_eq!(format["strike"], "true");
-    assert_eq!(format["doubleStrike"], "true");
-    assert_eq!(format["textCase"], "small-caps");
-    assert_eq!(format["highlight"], "yellow");
-    assert_eq!(format["language"], "en-US");
-
-    let unsaved_close = standard_mcp_request(
-        &mut stdin,
-        &mut stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 6,
-            "method": "tools/call",
-            "params": {
-                "name": "office_close",
-                "arguments": { "session": "native_test" }
-            }
-        }),
-        RESPONSE_TIMEOUT,
-    )
-    .await;
-    assert_eq!(unsaved_close["result"]["isError"], true);
-    assert_eq!(
-        unsaved_close["result"]["structuredContent"]["code"],
-        "use.office.unsaved_changes"
-    );
-
-    let saved = standard_mcp_request(
-        &mut stdin,
-        &mut stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 7,
-            "method": "tools/call",
-            "params": {
-                "name": "office_save",
-                "arguments": { "session": "native_test" }
-            }
-        }),
-        RESPONSE_TIMEOUT,
-    )
-    .await;
-    assert_eq!(saved["result"]["structuredContent"]["saved"], true);
-
-    let closed = standard_mcp_request(
-        &mut stdin,
-        &mut stdout,
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 8,
-            "method": "tools/call",
-            "params": {
-                "name": "office_close",
-                "arguments": { "session": "native_test" }
-            }
-        }),
-        RESPONSE_TIMEOUT,
-    )
-    .await;
-    assert_eq!(closed["result"]["structuredContent"]["closed"], true);
-
-    drop(stdin);
-    let status = tokio::time::timeout(RESPONSE_TIMEOUT, child.wait())
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(status.success());
-    let mut diagnostics = Vec::new();
-    stderr.read_to_end(&mut diagnostics).await.unwrap();
-    assert!(
-        diagnostics.is_empty(),
-        "{}",
-        String::from_utf8_lossy(&diagnostics)
-    );
-    assert_eq!(
-        native_office_text_view(&document, temp.path()),
-        "Native MCP"
-    );
-}
-
-#[cfg(all(feature = "office", feature = "mcp"))]
-async fn standard_mcp_request(
-    stdin: &mut tokio::process::ChildStdin,
-    stdout: &mut tokio::io::BufReader<tokio::process::ChildStdout>,
-    request: serde_json::Value,
-    timeout: std::time::Duration,
-) -> serde_json::Value {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-
-    let mut encoded = serde_json::to_vec(&request).unwrap();
-    encoded.push(b'\n');
-    stdin.write_all(&encoded).await.unwrap();
-    stdin.flush().await.unwrap();
-    let mut line = String::new();
-    let bytes = tokio::time::timeout(timeout, stdout.read_line(&mut line))
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(bytes > 0, "native Office MCP closed before responding");
-    serde_json::from_str(&line).unwrap()
-}
-
 #[cfg(feature = "ocr")]
 #[test]
 fn built_in_ocr_projects_the_canonical_code_route_and_skill() {
@@ -2257,10 +735,15 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     std::fs::write(
         package.join("a3s-use-extension.acl"),
         r#"extension "acme/slack" {
-  schema_version = 1
+  schema_version = 2
   version = "1.0.0"
   route = "slack"
+  requires_use = ">=0.2.0, <0.3.0"
   actions = ["read"]
+
+  repository {
+    url = "https://github.com/acme/slack"
+  }
 
   cli {
     executable = "bin/a3s-use-acme-slack"
@@ -2298,6 +781,54 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     assert_eq!(value["data"]["component"]["id"], "acme/slack");
     assert_eq!(value["data"]["component"]["surfaces"][0], "cli");
 
+    let status_by_route = Command::new(binary())
+        .args(["component", "status", "use/slack", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(status_by_route.status.success(), "{status_by_route:?}");
+    let status_by_route: serde_json::Value =
+        serde_json::from_slice(&status_by_route.stdout).unwrap();
+    assert_eq!(status_by_route["component"]["route"], "slack");
+    assert_eq!(status_by_route["component"]["compatible"], true);
+    assert_eq!(
+        status_by_route["component"]["requiresUse"],
+        ">=0.2.0, <0.3.0"
+    );
+    assert_eq!(
+        status_by_route["component"]["repository"]["url"],
+        "https://github.com/acme/slack"
+    );
+
+    let doctor_by_route = Command::new(binary())
+        .args(["doctor", "slack", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(doctor_by_route.status.success(), "{doctor_by_route:?}");
+    let doctor_by_route: serde_json::Value =
+        serde_json::from_slice(&doctor_by_route.stdout).unwrap();
+    assert_eq!(
+        doctor_by_route["data"]["diagnostics"][0]["provider"],
+        "acme/slack"
+    );
+
+    let snapshot = Command::new(binary())
+        .args(["capability", "snapshot", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(snapshot.status.success(), "{snapshot:?}");
+    let snapshot: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
+    let slack = snapshot["data"]["registry"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["route"] == "slack")
+        .unwrap();
+    assert_eq!(slack["requiresUse"], ">=0.2.0, <0.3.0");
+    assert_eq!(slack["repository"]["url"], "https://github.com/acme/slack");
+
     let delegated = Command::new(binary())
         .args(["slack", "channels", "list", "--json"])
         .env("A3S_USE_HOME", temp.path().join("home"))
@@ -2310,6 +841,24 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     );
     assert!(delegated.stderr.is_empty());
 
+    for route_or_id in ["use/slack", "acme/slack", "use/acme/slack"] {
+        let delegated = Command::new(binary())
+            .args([route_or_id, "channels", "list", "--json"])
+            .env("A3S_USE_HOME", temp.path().join("home"))
+            .output()
+            .unwrap();
+        assert_eq!(
+            delegated.status.code(),
+            Some(7),
+            "failed to delegate {route_or_id}: {delegated:?}"
+        );
+        assert_eq!(
+            String::from_utf8(delegated.stdout).unwrap(),
+            "acme/slack\nchannels list --json\n"
+        );
+        assert!(delegated.stderr.is_empty());
+    }
+
     let disabled = Command::new(binary())
         .args(["extension", "disable", "acme/slack", "--json"])
         .env("A3S_USE_HOME", temp.path().join("home"))
@@ -2321,7 +870,7 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     assert_eq!(disabled_json["data"]["generation"], 2);
 
     let disabled_status = Command::new(binary())
-        .args(["component", "status", "acme/slack"])
+        .args(["component", "status", "slack"])
         .env("A3S_USE_HOME", temp.path().join("home"))
         .output()
         .unwrap();
@@ -2337,7 +886,23 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
         .unwrap();
     assert!(!unavailable.status.success());
     let unavailable_json: serde_json::Value = serde_json::from_slice(&unavailable.stdout).unwrap();
-    assert_eq!(unavailable_json["error"]["code"], "use.route_unknown");
+    assert_eq!(
+        unavailable_json["error"]["code"],
+        "use.extension.not_active"
+    );
+
+    let unavailable_alias = Command::new(binary())
+        .args(["use/slack", "channels", "list", "--json"])
+        .env("A3S_USE_HOME", temp.path().join("home"))
+        .output()
+        .unwrap();
+    assert!(!unavailable_alias.status.success());
+    let unavailable_alias_json: serde_json::Value =
+        serde_json::from_slice(&unavailable_alias.stdout).unwrap();
+    assert_eq!(
+        unavailable_alias_json["error"]["code"],
+        "use.extension.not_active"
+    );
 
     let enabled = Command::new(binary())
         .args(["extension", "enable", "acme/slack", "--json"])
@@ -2397,7 +962,7 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     assert!(reenabled.status.success());
 
     let removed = Command::new(binary())
-        .args(["component", "uninstall", "acme/slack", "--json"])
+        .args(["component", "uninstall", "use/slack", "--json"])
         .env("A3S_USE_HOME", temp.path().join("home"))
         .output()
         .unwrap();
@@ -2544,7 +1109,7 @@ fn external_mcp_target_launches_the_declared_standard_stdio_server() {
     assert!(installed.status.success(), "{installed:?}");
 
     let delegated = Command::new(binary())
-        .args(["mcp", "serve", "acme/mcp-demo"])
+        .args(["mcp", "serve", "mcp-demo"])
         .env("A3S_USE_HOME", temp.path().join("home"))
         .output()
         .unwrap();

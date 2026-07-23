@@ -34,9 +34,6 @@ const RESERVED_ROUTES: &[&str] = &[
     "browser",
     "box",
     "capability",
-    "office",
-    "office-compat",
-    "office-native",
     "ocr",
     "capabilities",
     "component",
@@ -54,6 +51,10 @@ pub struct ExtensionManifest {
     pub package_id: String,
     pub version: String,
     pub route: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requires_use: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository: Option<ExtensionRepository>,
     pub actions: Vec<RiskClass>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cli: Option<CliSurface>,
@@ -63,6 +64,18 @@ pub struct ExtensionManifest {
     pub skill: Option<SkillSurface>,
     #[serde(default, skip_serializing_if = "ExtensionContributions::is_empty")]
     pub contributes: ExtensionContributions,
+}
+
+/// Source repository identity carried by a versioned external capability
+/// package. Trust still comes from the installation source and package digest;
+/// this metadata lets hosts and users trace the capability back to its
+/// canonical project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionRepository {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,10 +200,34 @@ impl ExtensionManifest {
         }
         Ok(())
     }
+
+    pub fn supports_use_version(&self, version: &str) -> UseResult<bool> {
+        let version = semver::Version::parse(version).map_err(|error| {
+            manifest_error(format!("Invalid A3S Use host version '{version}': {error}"))
+        })?;
+        let Some(requirement) = &self.requires_use else {
+            return Ok(true);
+        };
+        let requirement = semver::VersionReq::parse(requirement).map_err(|error| {
+            manifest_error(format!(
+                "Invalid A3S Use compatibility requirement '{requirement}': {error}"
+            ))
+        })?;
+        Ok(requirement.matches(&version))
+    }
 }
 
 fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
-    require_known_attributes(block, &["schema_version", "version", "route", "actions"])?;
+    require_known_attributes(
+        block,
+        &[
+            "schema_version",
+            "version",
+            "route",
+            "requires_use",
+            "actions",
+        ],
+    )?;
     let package_id = block
         .labels
         .first()
@@ -211,9 +248,9 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         ));
     }
     let schema_version = schema_number as u32;
-    if schema_version != 1 {
+    if !(1..=2).contains(&schema_version) {
         return Err(manifest_error(
-            "Only extension schema version 1 is supported.",
+            "Only extension schema versions 1 and 2 are supported.",
         ));
     }
     let version = string_attribute(block, "version")?;
@@ -237,6 +274,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     let mut cli = None;
     let mut mcp = None;
     let mut skill = None;
+    let mut repository = None;
     let mut contributes = ExtensionContributions::default();
     for surface in &block.blocks {
         if !seen.insert(surface.name.as_str()) {
@@ -249,6 +287,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             "cli" => cli = Some(parse_cli(surface)?),
             "mcp" => mcp = Some(parse_mcp(surface)?),
             "skill" => skill = Some(parse_skill(surface)?),
+            "repository" => repository = Some(parse_repository(surface)?),
             "contributes" => contributes = parse_contributes(surface)?,
             name => {
                 return Err(manifest_error(format!(
@@ -267,17 +306,71 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             "Activity Bar contributions require a Skill surface from the same extension.",
         ));
     }
+    let requires_use = optional_string_attribute(block, "requires_use")?;
+    if schema_version == 1 && (requires_use.is_some() || repository.is_some()) {
+        return Err(manifest_error(
+            "Repository identity and A3S Use compatibility require extension schema version 2.",
+        ));
+    }
+    if schema_version == 2 {
+        let requirement = requires_use
+            .as_deref()
+            .ok_or_else(|| manifest_error("Extension schema version 2 requires 'requires_use'."))?;
+        semver::VersionReq::parse(requirement).map_err(|error| {
+            manifest_error(format!(
+                "Invalid A3S Use compatibility requirement '{requirement}': {error}"
+            ))
+        })?;
+        if repository.is_none() {
+            return Err(manifest_error(
+                "Extension schema version 2 requires a repository block.",
+            ));
+        }
+    }
     Ok(ExtensionManifest {
         schema_version,
         package_id,
         version,
         route,
+        requires_use,
+        repository,
         actions,
         cli,
         mcp,
         skill,
         contributes,
     })
+}
+
+fn parse_repository(block: &Block) -> UseResult<ExtensionRepository> {
+    require_surface_shape(block)?;
+    require_known_attributes(block, &["url", "revision"])?;
+    let url = string_attribute(block, "url")?;
+    let parsed = url::Url::parse(&url)
+        .map_err(|error| manifest_error(format!("Invalid repository URL '{url}': {error}")))?;
+    if parsed.scheme() != "https"
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.host_str().is_none()
+    {
+        return Err(manifest_error(
+            "Repository URLs must be credential-free HTTPS URLs without a query or fragment.",
+        ));
+    }
+    let revision = optional_string_attribute(block, "revision")?;
+    if revision.as_deref().is_some_and(|revision| {
+        !matches!(revision.len(), 40 | 64)
+            || !revision
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    }) {
+        return Err(manifest_error(
+            "Repository revisions must be lowercase 40- or 64-character commit digests.",
+        ));
+    }
+    Ok(ExtensionRepository { url, revision })
 }
 
 fn parse_cli(block: &Block) -> UseResult<CliSurface> {
@@ -691,6 +784,53 @@ extension "acme/slack" {
         assert_eq!(activity.scripts, [PathBuf::from("web/activity.js")]);
         assert_eq!(activity.skill, "slack");
         assert_eq!(activity.order, 120);
+    }
+
+    #[test]
+    fn parses_external_repository_identity_and_host_compatibility() {
+        let manifest = MANIFEST
+            .replace("schema_version = 1", "schema_version = 2")
+            .replace(
+                "route          = \"slack\"",
+                concat!(
+                    "route          = \"slack\"\n",
+                    "  requires_use   = \">=0.2.0, <0.3.0\"\n\n",
+                    "  repository {\n",
+                    "    url      = \"https://github.com/acme/slack\"\n",
+                    "    revision = \"0123456789abcdef0123456789abcdef01234567\"\n",
+                    "  }"
+                ),
+            );
+        let manifest = ExtensionManifest::parse_acl(&manifest).unwrap();
+
+        assert_eq!(manifest.schema_version, 2);
+        assert!(manifest.supports_use_version("0.2.0").unwrap());
+        assert!(!manifest.supports_use_version("0.3.0").unwrap());
+        assert_eq!(
+            manifest.repository.unwrap(),
+            ExtensionRepository {
+                url: "https://github.com/acme/slack".to_string(),
+                revision: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_incomplete_or_unsafe_repository_manifests() {
+        let schema_two = MANIFEST.replace("schema_version = 1", "schema_version = 2");
+        assert!(ExtensionManifest::parse_acl(&schema_two).is_err());
+
+        let unsafe_repository = schema_two.replace(
+            "route          = \"slack\"",
+            concat!(
+                "route          = \"slack\"\n",
+                "  requires_use   = \">=0.2.0\"\n\n",
+                "  repository {\n",
+                "    url = \"https://user@example.com/acme/slack?ref=main\"\n",
+                "  }"
+            ),
+        );
+        assert!(ExtensionManifest::parse_acl(&unsafe_repository).is_err());
     }
 
     #[test]

@@ -79,6 +79,14 @@ struct ActivityBarContribution {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct RepositoryBinding {
+    url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    revision: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CapabilityBinding {
     id: String,
     route: String,
@@ -88,6 +96,10 @@ pub(crate) struct CapabilityBinding {
     readiness: Readiness,
     #[serde(skip_serializing_if = "Option::is_none")]
     package_root: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requires_use: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repository: Option<RepositoryBinding>,
     surfaces: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mcp: Option<McpSurface>,
@@ -101,8 +113,6 @@ pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
     let (generation, extensions) = stable_extensions().await?;
     let mut capabilities = vec![
         browser_capability().await?,
-        office_capability().await?,
-        office_compatibility_capability(),
         ocr_capability().await?,
         box_capability(),
     ];
@@ -167,6 +177,8 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             enabled: true,
             readiness: diagnostic.readiness,
             package_root,
+            requires_use: None,
+            repository: None,
             surfaces: vec!["cli".to_string(), "mcp".to_string(), "skill".to_string()],
             mcp: crate::browser_driver::is_available().then(|| McpSurface {
                 target: "browser".to_string(),
@@ -186,100 +198,13 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             enabled: false,
             readiness: Readiness::Missing,
             package_root: None,
+            requires_use: None,
+            repository: None,
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
             activity_bar: Vec::new(),
         })
-    }
-}
-
-async fn office_capability() -> UseResult<CapabilityBinding> {
-    #[cfg(feature = "office")]
-    {
-        let skill = crate::office_skills::primary_skill_surface().await;
-        let (package_root, skills) = match skill {
-            Some((root, path)) => (Some(root), vec![skill_surface(path).await?]),
-            None => (None, Vec::new()),
-        };
-        let mut surfaces = vec!["cli".to_string(), "skill".to_string()];
-        #[cfg(feature = "mcp")]
-        surfaces.push("mcp".to_string());
-        Ok(CapabilityBinding {
-            id: "use/office".to_string(),
-            route: "office".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            origin: CapabilityOrigin::BuiltIn,
-            enabled: true,
-            readiness: Readiness::Ready,
-            package_root,
-            surfaces,
-            #[cfg(feature = "mcp")]
-            mcp: Some(McpSurface {
-                target: "office-native".to_string(),
-                transport: McpTransport::Stdio,
-            }),
-            #[cfg(not(feature = "mcp"))]
-            mcp: None,
-            skills,
-            activity_bar: Vec::new(),
-        })
-    }
-    #[cfg(not(feature = "office"))]
-    {
-        Ok(CapabilityBinding {
-            id: "use/office".to_string(),
-            route: "office".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            origin: CapabilityOrigin::BuiltIn,
-            enabled: false,
-            readiness: Readiness::Missing,
-            package_root: None,
-            surfaces: Vec::new(),
-            mcp: None,
-            skills: Vec::new(),
-            activity_bar: Vec::new(),
-        })
-    }
-}
-
-fn office_compatibility_capability() -> CapabilityBinding {
-    #[cfg(feature = "office")]
-    {
-        let diagnostic = a3s_use_office::doctor();
-        let ready = diagnostic.readiness == Readiness::Ready;
-        CapabilityBinding {
-            id: "use/office-compat".to_string(),
-            route: "office-compat".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            origin: CapabilityOrigin::BuiltIn,
-            enabled: true,
-            readiness: diagnostic.readiness,
-            package_root: None,
-            surfaces: vec!["mcp".to_string()],
-            mcp: ready.then(|| McpSurface {
-                target: "office-compat".to_string(),
-                transport: McpTransport::Stdio,
-            }),
-            skills: Vec::new(),
-            activity_bar: Vec::new(),
-        }
-    }
-    #[cfg(not(feature = "office"))]
-    {
-        CapabilityBinding {
-            id: "use/office-compat".to_string(),
-            route: "office-compat".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            origin: CapabilityOrigin::BuiltIn,
-            enabled: false,
-            readiness: Readiness::Missing,
-            package_root: None,
-            surfaces: Vec::new(),
-            mcp: None,
-            skills: Vec::new(),
-            activity_bar: Vec::new(),
-        }
     }
 }
 
@@ -306,6 +231,8 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             enabled: true,
             readiness: diagnostic.readiness,
             package_root,
+            requires_use: None,
+            repository: None,
             surfaces,
             #[cfg(feature = "mcp")]
             mcp: Some(McpSurface {
@@ -328,6 +255,8 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             enabled: false,
             readiness: Readiness::Missing,
             package_root: None,
+            requires_use: None,
+            repository: None,
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
@@ -346,6 +275,8 @@ fn box_capability() -> CapabilityBinding {
         enabled: diagnostic.readiness == Readiness::Ready,
         readiness: diagnostic.readiness,
         package_root: None,
+        requires_use: None,
+        repository: None,
         surfaces: vec!["cli".to_string()],
         mcp: None,
         skills: Vec::new(),
@@ -519,19 +450,35 @@ async fn project_extensions(
             return Ok(None);
         }
 
-        let mcp = extension.manifest.mcp.as_ref().map(|surface| McpSurface {
-            target: receipt.package_id.clone(),
-            transport: match surface.transport {
-                a3s_use_extension::McpTransport::Stdio => McpTransport::Stdio,
-                a3s_use_extension::McpTransport::StreamableHttp => McpTransport::StreamableHttp,
-            },
-        });
+        let compatible = extension.supports_use_version(env!("CARGO_PKG_VERSION"));
+        let active = receipt.enabled && compatible;
+        let mcp = active
+            .then(|| {
+                extension.manifest.mcp.as_ref().map(|surface| McpSurface {
+                    target: receipt.package_id.clone(),
+                    transport: match surface.transport {
+                        a3s_use_extension::McpTransport::Stdio => McpTransport::Stdio,
+                        a3s_use_extension::McpTransport::StreamableHttp => {
+                            McpTransport::StreamableHttp
+                        }
+                    },
+                })
+            })
+            .flatten();
         let mut skills = Vec::new();
-        if let Some(path) = extension.skill_path() {
-            skills.push(skill_surface(path).await?);
+        if active {
+            if let Some(path) = extension.skill_path() {
+                skills.push(skill_surface(path).await?);
+            }
         }
         let mut activity_bar = Vec::new();
-        for contribution in &extension.manifest.contributes.activity_bar {
+        for contribution in extension
+            .manifest
+            .contributes
+            .activity_bar
+            .iter()
+            .filter(|_| active)
+        {
             let mut styles = Vec::with_capacity(contribution.styles.len());
             for path in &contribution.styles {
                 styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
@@ -560,13 +507,22 @@ async fn project_extensions(
             route: receipt.route.clone(),
             version: receipt.version.clone(),
             origin: CapabilityOrigin::Extension,
-            enabled: receipt.enabled,
-            readiness: if receipt.enabled {
+            enabled: active,
+            readiness: if active {
                 Readiness::Ready
+            } else if !compatible {
+                Readiness::Broken
             } else {
                 Readiness::Unknown
             },
             package_root: Some(receipt.package_root.clone()),
+            requires_use: extension.manifest.requires_use.clone(),
+            repository: extension.manifest.repository.as_ref().map(|repository| {
+                RepositoryBinding {
+                    url: repository.url.clone(),
+                    revision: repository.revision.clone(),
+                }
+            }),
             surfaces,
             mcp,
             skills,
@@ -588,16 +544,6 @@ mod tests {
             .iter()
             .find(|capability| capability.id == "use/browser")
             .unwrap();
-        let office = snapshot
-            .capabilities
-            .iter()
-            .find(|capability| capability.id == "use/office")
-            .unwrap();
-        let office_compat = snapshot
-            .capabilities
-            .iter()
-            .find(|capability| capability.id == "use/office-compat")
-            .unwrap();
         let ocr = snapshot
             .capabilities
             .iter()
@@ -605,9 +551,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(browser.origin, CapabilityOrigin::BuiltIn);
-        assert_eq!(office.origin, CapabilityOrigin::BuiltIn);
-        assert_eq!(office_compat.origin, CapabilityOrigin::BuiltIn);
         assert_eq!(ocr.origin, CapabilityOrigin::BuiltIn);
+        assert!(snapshot
+            .capabilities
+            .iter()
+            .filter(|capability| capability.route == "office")
+            .all(|capability| capability.origin == CapabilityOrigin::Extension));
         #[cfg(feature = "browser")]
         {
             assert!(browser.surfaces.iter().any(|surface| surface == "skill"));
@@ -622,28 +571,6 @@ mod tests {
             assert!(!browser.enabled);
             assert!(browser.surfaces.is_empty());
             assert!(browser.skills.is_empty());
-        }
-        #[cfg(feature = "office")]
-        {
-            assert!(office.surfaces.iter().any(|surface| surface == "skill"));
-            assert!(office
-                .skills
-                .iter()
-                .any(|skill| skill.path.ends_with("a3s-use-office/SKILL.md")));
-            assert!(office.skills.iter().all(|skill| skill.sha256.len() == 64));
-            #[cfg(feature = "mcp")]
-            assert_eq!(
-                office.mcp.as_ref().map(|surface| surface.target.as_str()),
-                Some("office-native")
-            );
-            assert!(office_compat.skills.is_empty());
-            assert_eq!(office_compat.route, "office-compat");
-        }
-        #[cfg(not(feature = "office"))]
-        {
-            assert!(!office.enabled);
-            assert!(office.surfaces.is_empty());
-            assert!(office.skills.is_empty());
         }
         #[cfg(feature = "ocr")]
         {

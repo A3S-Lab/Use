@@ -17,18 +17,6 @@ mod release_bundles;
 #[cfg(feature = "ocr")]
 mod ocr_builtin;
 
-#[cfg(feature = "office")]
-mod office_artifact;
-#[cfg(feature = "office")]
-mod office_native_cli;
-#[cfg(feature = "office")]
-mod office_skills;
-#[cfg(feature = "office")]
-pub mod office_watch;
-
-#[cfg(all(feature = "browser", feature = "office"))]
-pub mod office_screenshot;
-
 #[cfg(feature = "mcp")]
 mod mcp;
 
@@ -39,9 +27,6 @@ pub use a3s_use_core as core;
 
 #[cfg(feature = "browser")]
 pub use a3s_use_browser as browser;
-
-#[cfg(feature = "office")]
-pub use a3s_use_office as office;
 
 #[cfg(feature = "ocr")]
 pub use a3s_use_ocr as ocr;

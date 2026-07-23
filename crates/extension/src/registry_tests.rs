@@ -148,6 +148,43 @@ async fn installs_lists_and_uninstalls_an_explicit_local_package() {
 }
 
 #[tokio::test]
+async fn rejects_external_repository_packages_for_an_incompatible_host() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    package(&source, "acme/slack", "slack", "1.2.0").await;
+    let manifest_path = source.join(MANIFEST_NAME);
+    let manifest = fs::read_to_string(&manifest_path)
+        .await
+        .unwrap()
+        .replace("schema_version = 1", "schema_version = 2")
+        .replace(
+            "route = \"slack\"",
+            concat!(
+                "route = \"slack\"\n",
+                "  requires_use = \">=99.0.0\"\n\n",
+                "  repository {\n",
+                "    url = \"https://github.com/acme/slack\"\n",
+                "  }"
+            ),
+        );
+    fs::write(&manifest_path, manifest).await.unwrap();
+
+    let error = registry(temp.path())
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.extension.host_incompatible");
+}
+
+#[tokio::test]
 async fn installs_a_release_bundle_only_with_the_reviewed_package_digest() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("release/a3s/science");
