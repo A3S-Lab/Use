@@ -309,13 +309,9 @@ fn browser_capability_projection_coexists_with_authenticated_standard_mcp() {
     guard.disarm();
 }
 
-#[cfg(all(feature = "browser", feature = "mcp"))]
-#[cfg_attr(
-    windows,
-    ignore = "Windows real-Chrome persistent sessions are roadmap; macOS and Linux are the current supported runtime platforms"
-)]
+#[cfg(all(unix, feature = "browser", feature = "mcp"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_available() {
+async fn browser_session_state_survives_separate_cli_invocations_with_an_external_driver() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -323,6 +319,17 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
     const CLI_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
     const FIXTURE_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
+    // The independent Browser repository owns the driver and its regular E2E
+    // coverage. Keep this cross-repository facade check opt-in so Use never
+    // discovers an unrelated executable from a developer or runner PATH.
+    let Some(driver) = std::env::var_os("A3S_USE_BROWSER_DRIVER_E2E").map(std::path::PathBuf::from)
+    else {
+        return;
+    };
+    assert!(
+        driver.is_file(),
+        "A3S_USE_BROWSER_DRIVER_E2E must point to the external Browser driver"
+    );
     let Some(chrome) = a3s_use_browser::detect_chrome() else {
         return;
     };
@@ -398,6 +405,7 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
     let run = |stage: &'static str, args: Vec<String>| {
         let runtime_dir = temp.path().to_path_buf();
         let chrome = chrome.clone();
+        let driver = driver.clone();
         let watchdog_stage = Arc::clone(&watchdog_stage);
         async move {
             *watchdog_stage
@@ -409,6 +417,7 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
                 .args(&args)
                 .env("A3S_USE_RUNTIME_DIR", runtime_dir)
                 .env("A3S_BROWSER_EXECUTABLE", chrome)
+                .env("A3S_USE_BROWSER_DRIVER", driver)
                 .kill_on_drop(true);
             let output = tokio::time::timeout(CLI_TIMEOUT, command.output())
                 .await
@@ -573,60 +582,65 @@ fn browser_install_reuses_an_explicit_provider_without_downloading() {
 
 #[cfg(all(unix, feature = "browser"))]
 #[test]
-fn browser_install_command_delegates_to_the_component_lifecycle() {
+fn browser_install_command_delegates_to_the_external_driver() {
     let temp = tempfile::tempdir().unwrap();
-    let executable = temp.path().join("chrome-fixture");
-    std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
-    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&executable, permissions).unwrap();
-
-    let output = Command::new(binary())
-        .args(["browser", "install", "--json"])
-        .env("A3S_BROWSER_EXECUTABLE", &executable)
-        .env("A3S_USE_BROWSER_HOME", temp.path().join("managed"))
-        .output()
-        .unwrap();
-
-    assert!(output.status.success(), "{output:?}");
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["data"]["changed"], false);
-    assert_eq!(value["data"]["provider"]["source"], "environment");
-    assert_eq!(
-        value["data"]["provider"]["path"],
-        executable.to_string_lossy().as_ref()
-    );
-    assert!(!temp.path().join("managed/chrome").exists());
-}
-
-#[cfg(all(unix, feature = "browser"))]
-#[test]
-fn browser_upgrade_delegates_only_to_the_a3s_component_lifecycle() {
-    let temp = tempfile::tempdir().unwrap();
-    let lifecycle = temp.path().join("a3s-use-fixture");
+    let driver = temp.path().join("browser-driver-fixture");
     let arguments = temp.path().join("arguments.txt");
     std::fs::write(
-        &lifecycle,
+        &driver,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' '{{\"schemaVersion\":1,\"ok\":true,\"data\":{{\"changed\":true}}}}'\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' '{{\"schemaVersion\":1,\"ok\":true,\"data\":{{\"changed\":false}}}}'\n",
             arguments.display()
         ),
     )
     .unwrap();
-    let mut permissions = std::fs::metadata(&lifecycle).unwrap().permissions();
+    let mut permissions = std::fs::metadata(&driver).unwrap().permissions();
     permissions.set_mode(0o755);
-    std::fs::set_permissions(&lifecycle, permissions).unwrap();
+    std::fs::set_permissions(&driver, permissions).unwrap();
 
     let output = Command::new(binary())
-        .args(["browser", "upgrade", "--json"])
-        .env("A3S_USE_EXECUTABLE", &lifecycle)
+        .args(["browser", "install", "--json"])
+        .env("A3S_USE_BROWSER_DRIVER", &driver)
         .output()
         .unwrap();
 
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         std::fs::read_to_string(arguments).unwrap(),
-        "component\ninstall\nbrowser\n--force\n--json\n"
+        "install\n--json\n"
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["changed"], false);
+}
+
+#[cfg(all(unix, feature = "browser"))]
+#[test]
+fn browser_upgrade_command_delegates_to_the_external_driver() {
+    let temp = tempfile::tempdir().unwrap();
+    let driver = temp.path().join("browser-driver-fixture");
+    let arguments = temp.path().join("arguments.txt");
+    std::fs::write(
+        &driver,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' '{{\"schemaVersion\":1,\"ok\":true,\"data\":{{\"changed\":true}}}}'\n",
+            arguments.display()
+        ),
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&driver).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&driver, permissions).unwrap();
+
+    let output = Command::new(binary())
+        .args(["browser", "upgrade", "--json"])
+        .env("A3S_USE_BROWSER_DRIVER", &driver)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        std::fs::read_to_string(arguments).unwrap(),
+        "upgrade\n--json\n"
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["data"]["changed"], true);
