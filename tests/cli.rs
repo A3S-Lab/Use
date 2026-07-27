@@ -250,7 +250,7 @@ impl Drop for PersistentServiceGuard {
 
 #[cfg(all(feature = "browser", feature = "mcp"))]
 #[test]
-fn browser_driver_session_listing_coexists_with_authenticated_standard_mcp() {
+fn browser_capability_projection_coexists_with_authenticated_standard_mcp() {
     let temp = tempfile::tempdir().unwrap();
     let mut guard = PersistentServiceGuard {
         runtime_dir: temp.path().to_path_buf(),
@@ -275,14 +275,18 @@ fn browser_driver_session_listing_coexists_with_authenticated_standard_mcp() {
         0o600
     );
 
-    let listed = Command::new(binary())
-        .args(["browser", "session", "list", "--json"])
+    let snapshot = Command::new(binary())
+        .args(["capability", "snapshot", "--json"])
         .env("A3S_USE_RUNTIME_DIR", temp.path())
         .output()
         .unwrap();
-    assert!(listed.status.success(), "{listed:?}");
-    let listed_json: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
-    assert_eq!(listed_json["data"]["sessions"], serde_json::json!([]));
+    assert!(snapshot.status.success(), "{snapshot:?}");
+    let snapshot_json: serde_json::Value = serde_json::from_slice(&snapshot.stdout).unwrap();
+    assert!(snapshot_json["data"]["registry"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|capability| capability["id"] == "use/browser"));
 
     let status = Command::new(binary())
         .args(["mcp", "status", "browser", "--json"])
@@ -520,91 +524,23 @@ async fn browser_session_state_survives_separate_cli_invocations_when_chrome_is_
 }
 
 #[cfg(all(feature = "browser", feature = "mcp"))]
-#[tokio::test]
-async fn browser_mcp_uses_the_standard_initialize_and_tools_contract() {
-    use std::process::Stdio;
-    use std::time::Duration;
-
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-    const RESPONSE_TIMEOUT: Duration = Duration::from_secs(15);
-
-    let mut child = tokio::process::Command::new(binary())
+#[test]
+fn browser_mcp_delegation_rejects_a_missing_explicit_driver() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
         .args(["mcp", "serve", "browser", "--tools", "all"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
-
-    stdin
-        .write_all(
-            br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a3s-use-test","version":"1"}}}
-"#,
+        .env(
+            "A3S_USE_BROWSER_DRIVER",
+            temp.path().join("missing-browser-driver"),
         )
-        .await
+        .output()
         .unwrap();
-    stdin.flush().await.unwrap();
-    let mut line = String::new();
-    tokio::time::timeout(RESPONSE_TIMEOUT, stdout.read_line(&mut line))
-        .await
-        .unwrap()
-        .unwrap();
-    let initialized: serde_json::Value = serde_json::from_str(&line).unwrap();
-    assert_eq!(initialized["jsonrpc"], "2.0");
-    assert_eq!(initialized["id"], 1);
-    assert_eq!(
-        initialized["result"]["serverInfo"]["name"],
-        "a3s-use-browser"
-    );
 
-    stdin
-        .write_all(
-            b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}\n",
-        )
-        .await
-        .unwrap();
-    stdin
-        .write_all(
-            b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n\
-{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\",\"params\":{\"cursor\":\"64\"}}\n\
-{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/list\",\"params\":{\"cursor\":\"128\"}}\n",
-        )
-        .await
-        .unwrap();
-    stdin.flush().await.unwrap();
-    let mut names = Vec::new();
-    for _ in 0..3 {
-        line.clear();
-        tokio::time::timeout(RESPONSE_TIMEOUT, stdout.read_line(&mut line))
-            .await
-            .unwrap()
-            .unwrap();
-        let tools: serde_json::Value = serde_json::from_str(&line).unwrap();
-        names.extend(
-            tools["result"]["tools"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|tool| tool["name"].as_str().unwrap().to_string()),
-        );
-    }
-    assert_eq!(names.len(), 151);
-    assert!(names.iter().any(|name| name == "agent_browser_open"));
-    assert!(names.iter().any(|name| name == "agent_browser_snapshot"));
-    assert!(names
-        .iter()
-        .any(|name| name == "agent_browser_dashboard_start"));
-
-    drop(stdin);
-    let status = tokio::time::timeout(RESPONSE_TIMEOUT, child.wait())
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(status.success());
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("A3S_USE_BROWSER_DRIVER"));
+    assert!(stderr.contains("does not point to a usable Browser driver"));
 }
 
 #[cfg(all(unix, feature = "browser"))]

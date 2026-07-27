@@ -1,8 +1,6 @@
 [workspace]
 members = [
     "crates/core",
-    "crates/browser",
-    "crates/browser-driver",
     "crates/extension",
     "crates/science",
 ]
@@ -82,7 +80,7 @@ lightpanda = ["browser", "a3s-use-browser/lightpanda"]
 
 [dependencies]
 a3s-use-core = { version = "0.2.0", path = "crates/core" }
-a3s-use-browser = { version = "0.2.0", path = "crates/browser", optional = true }
+a3s-use-browser = { version = "=0.3.0", git = "https://github.com/A3S-Lab/Browser", rev = "b0461b6a6d95484d92f65b2bf86fea14dea39c69", optional = true }
 a3s-use-ocr = { version = "=0.3.0", git = "https://github.com/A3S-Lab/OCR", rev = "9f6a94c27251f183700120fbce628581eb236a5b", optional = true }
 a3s-use-extension = { version = "0.2.0", path = "crates/extension", optional = true }
 axum = { workspace = true, optional = true }

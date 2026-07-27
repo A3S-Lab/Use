@@ -5,7 +5,7 @@
 //! restart itself as an owned per-session daemon without turning the facade
 //! process into a daemon or coupling Search to CLI state.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use a3s_use_core::{UseError, UseResult};
 
@@ -69,11 +69,7 @@ pub(crate) async fn primary_skill_surface() -> Option<(PathBuf, PathBuf)> {
             roots.push(root.to_path_buf());
         }
     }
-    roots.push(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("crates")
-            .join("browser-driver"),
-    );
+    roots.push(a3s_use_browser::source_driver_root());
 
     for root in roots {
         let skill = root.join("skills/a3s-use-browser/SKILL.md");
@@ -205,10 +201,7 @@ fn absolute(path: PathBuf, source: &str) -> UseResult<PathBuf> {
 }
 
 fn source_skills_dir() -> Option<PathBuf> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("crates")
-        .join("browser-driver")
-        .join("skill-data");
+    let path = a3s_use_browser::source_driver_root().join("skill-data");
     path.is_dir().then_some(path)
 }
 
