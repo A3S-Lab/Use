@@ -63,17 +63,22 @@ stays inactive until the user applies a reviewed installation plan. This
 demonstrates how a first-party toolkit can ship without expanding the reserved
 built-in route set or adding a generic action envelope.
 
-`a3s-use-ocr` implements the reserved first-party `ocr` route in the default
-Use build. The release packages its content-bound Skill and exposes the native
-CLI plus standard stdio MCP without a separate extension install. The process
+The independently maintained
+[`a3s-use-ocr`](https://github.com/A3S-Lab/OCR) crate implements the reserved
+first-party `ocr` route in the default Use build. Use pins an immutable source
+revision, packages its matching content-bound Skill, and exposes the native CLI
+plus standard stdio MCP without a separate extension install. The process
 accepts bounded local image files and binds every result to the canonical
-source digest. It runs the pinned `PP-OCRv6_small` detection and recognition
-models locally through ONNX Runtime, without Python, PaddlePaddle, a remote OCR
-endpoint, or an alternate backend. The first CLI extraction installs or repairs
-the pinned model bundle when first-use policy permits it. Standard MCP keeps
-`ocr_doctor` and `ocr_extract` closed-world and read-only, while the separate
-idempotent `ocr_install` network mutation requires parent confirmation.
-Explicit `use/ocr` component operations remain available for preparation.
+source digest. The library accepts typed `OcrProvider` implementations and
+projects each provider's off-device policy. This Use build deliberately injects
+the local `PpOcrV6Provider`; it does not expose a raw backend-name selector. The
+provider runs the pinned `PP-OCRv6_small` models through ONNX Runtime without
+Python, PaddlePaddle, or a remote OCR endpoint. The first CLI extraction
+installs or repairs the pinned model bundle when first-use policy permits it.
+Standard MCP keeps this local provider's `ocr_doctor` and `ocr_extract`
+closed-world and read-only, while the separate idempotent `ocr_install` network
+mutation requires parent confirmation. Explicit `use/ocr` component operations
+remain available for preparation.
 
 ## Hot-plug registry
 

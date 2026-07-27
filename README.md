@@ -275,13 +275,16 @@ release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor` plus
 `ocr_extract` over standard MCP, so a resident A3S Code session receives
 `mcp__use_ocr__*` without installing a separate extension.
 
-OCR has one backend: the pinned `PP-OCRv6_small` detection and recognition
-models running locally through ONNX Runtime. Release archives package those
-models; `a3s install use/ocr` explicitly installs or repairs the same pinned
-bundle when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF,
-BMP, and TIFF files. The result binds the canonical source path, media type,
-byte length, and SHA-256 alongside text, recognition/detection confidence,
-polygons, and bounding boxes.
+This Use assembly injects one default provider: the pinned `PP-OCRv6_small`
+detection and recognition models running locally through ONNX Runtime. The
+independent OCR library exposes an object-safe provider interface for other
+typed SDK integrations; Use does not select providers through a raw backend
+name. Release archives package the default models, and
+`a3s install use/ocr` explicitly installs or repairs the same pinned bundle
+when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF, BMP, and
+TIFF files. The result binds the canonical source path, media type, byte length,
+and SHA-256 alongside available text, confidence, polygon, and bounding-box
+evidence.
 
 The pipeline decodes and normalizes the image, runs
 `PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
@@ -299,8 +302,11 @@ A3S Code may first-use install the verified parent Use release. A missing or
 damaged managed model bundle is repaired explicitly with
 `a3s install use/ocr`; the Code `use` worker never installs it implicitly.
 
-See the [OCR crate](crates/ocr/README.md) for model resolution, the inference
-workflow, and input boundaries.
+See the independent [A3S OCR repository](https://github.com/A3S-Lab/OCR) for
+the provider interface, model resolution, the default inference workflow, and
+input boundaries. Use pins its immutable source revision and packages the
+matching Skill and model assets while retaining the reserved built-in `ocr`
+route.
 
 ## Science Toolkit
 
@@ -638,8 +644,9 @@ The suite covers typed contracts, provider discovery and installation,
 extension validation, repository compatibility, route draining, capability
 snapshots, MCP schemas, packaged Skills, and the locked agent-browser
 compatibility surface. Real-Chrome integration gates run serially with isolated
-home and runtime directories on supported platforms. Office engine and editor
-tests run in the independent A3S Office repository.
+home and runtime directories on supported platforms. OCR engine and model
+tests run in the independent A3S OCR repository; Office engine and editor tests
+run in the independent A3S Office repository.
 
 ## License
 
