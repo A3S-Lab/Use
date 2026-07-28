@@ -258,14 +258,17 @@ impl ExtensionRegistry {
         after_generation: u64,
         timeout: Duration,
     ) -> UseResult<Option<ExtensionRegistrySnapshot>> {
-        let deadline = deadline_after(timeout)?;
         // Reconcile once when the subscription starts. Polling after this
         // point reads only immutable publications so watchers never become a
         // periodic source of write-lock contention for lifecycle operations.
+        // Start the caller's wait budget only after this one-time subscription
+        // setup so filesystem scheduling cannot consume the entire timeout
+        // before the watcher begins polling.
         let initial = self.snapshot().await?;
         if initial.generation > after_generation {
             return Ok(Some(initial));
         }
+        let deadline = deadline_after(timeout)?;
         loop {
             // Lifecycle mutations publish the immutable projection before
             // draining old calls. Reading it directly keeps watchers live even

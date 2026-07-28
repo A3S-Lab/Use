@@ -160,6 +160,9 @@ cargo build --workspace --bins --locked
 The complete product release also checks out the exact Browser and OCR
 revisions pinned in `Cargo.toml`; Browser owns the sibling driver, Skills, and
 Dashboard, while OCR owns provider code, default models, and its Skill.
+Publish the matching `a3s-use-browser` and `a3s-use-ocr` crates before creating
+the Use release tag. The release workflow waits for both exact versions to
+become visible on crates.io before assembling the product archive.
 
 ### Embed Browser rendering
 
@@ -168,7 +171,7 @@ not the facade binary:
 
 ```toml
 [dependencies]
-a3s-use-browser = "0.2.0"
+a3s-use-browser = "0.3.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 url = "2"
 ```
@@ -662,4 +665,4 @@ A3S Use is licensed under the [MIT License](LICENSE). Release archives
 redistribute the Browser compatibility driver, which contains work derived
 from `vercel-labs/agent-browser` under Apache-2.0; see
 [Third-Party Notices](THIRD_PARTY_NOTICES.md) and the
-[Browser upstream provenance](https://github.com/A3S-Lab/Browser/blob/b0461b6a6d95484d92f65b2bf86fea14dea39c69/crates/browser-driver/UPSTREAM.md).
+[Browser upstream provenance](https://github.com/A3S-Lab/Browser/blob/1830c7b6896b0a38637eba2b61a386bf8a36eada/crates/browser-driver/UPSTREAM.md).

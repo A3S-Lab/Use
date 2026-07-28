@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::Write;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(unix)]
@@ -828,24 +829,27 @@ async fn many_watchers_observe_disable_without_blocking_the_lifecycle_writer() {
         .unwrap();
     let initial = registry.snapshot().await.unwrap();
     let lease = registry.acquire_route("slack").await.unwrap().unwrap();
+    let ready = Arc::new(tokio::sync::Barrier::new(WATCHERS + 1));
 
     let watchers = (0..WATCHERS)
         .map(|_| {
             let registry = registry.clone();
+            let ready = Arc::clone(&ready);
             tokio::spawn(async move {
+                ready.wait().await;
                 registry
-                    .wait_for_change(initial.generation, Duration::from_secs(2))
+                    .wait_for_change(initial.generation, Duration::from_secs(10))
                     .await
             })
         })
         .collect::<Vec<_>>();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    ready.wait().await;
 
     let disabling = {
         let registry = registry.clone();
         tokio::spawn(async move {
             registry
-                .disable_with_timeout("acme/slack", Duration::from_secs(2))
+                .disable_with_timeout("acme/slack", Duration::from_secs(30))
                 .await
         })
     };

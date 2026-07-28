@@ -21,6 +21,31 @@ fn release_publishes_only_use_owned_crates_in_dependency_order() {
 }
 
 #[test]
+fn release_waits_for_independent_crates_before_validating_the_facade() {
+    let workflow = include_str!("../.github/workflows/release.yml");
+    let manifest = include_str!("../Cargo.toml");
+    let browser = position(
+        workflow,
+        "wait_until_visible a3s-use-browser \"$(dependency_version a3s-use-browser)\"",
+    );
+    let ocr = position(
+        workflow,
+        "wait_until_visible a3s-use-ocr \"$(dependency_version a3s-use-ocr)\"",
+    );
+    let validation = position(workflow, "cargo fmt --all -- --check");
+
+    assert!(
+        browser < validation && ocr < validation,
+        "Browser and OCR must be visible on crates.io before Use validation and packaging"
+    );
+    assert!(
+        manifest.contains("a3s-use-browser = { version = \"=")
+            && manifest.contains("a3s-use-ocr = { version = \"="),
+        "independent crate dependencies must use exact release versions"
+    );
+}
+
+#[test]
 fn release_assembles_the_same_immutable_browser_revision_as_cargo() {
     let workflow = include_str!("../.github/workflows/release.yml");
     let manifest = include_str!("../Cargo.toml");
