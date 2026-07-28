@@ -1,9 +1,9 @@
 //! Built-in projection glue for the first-party OCR domain.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use a3s_use_core::{DomainDiagnostic, Readiness};
-use a3s_use_ocr::{OcrClient, OcrProviderKind};
+use a3s_use_ocr::OcrClient;
 
 pub(crate) fn diagnostic() -> DomainDiagnostic {
     match OcrClient::from_env() {
@@ -12,7 +12,7 @@ pub(crate) fn diagnostic() -> DomainDiagnostic {
             DomainDiagnostic {
                 domain: "ocr".to_string(),
                 readiness: diagnostic.readiness,
-                provider: diagnostic.provider.map(provider_name).map(str::to_string),
+                provider: diagnostic.provider,
                 version: None,
                 path: diagnostic.model_dir,
                 message: diagnostic.message,
@@ -41,12 +41,7 @@ pub(crate) async fn primary_skill_surface() -> Option<(PathBuf, PathBuf)> {
             roots.push(parent.join("ocr-skills"));
         }
     }
-    roots.push(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("crates")
-            .join("ocr")
-            .join("skills"),
-    );
+    roots.push(a3s_use_ocr::source_skill_root());
 
     for root in roots {
         let skill = root.join("a3s-use-ocr/SKILL.md");
@@ -61,12 +56,6 @@ pub(crate) async fn primary_skill_surface() -> Option<(PathBuf, PathBuf)> {
         }
     }
     None
-}
-
-fn provider_name(provider: OcrProviderKind) -> &'static str {
-    match provider {
-        OcrProviderKind::PpOcrV6 => "pp-ocr-v6",
-    }
 }
 
 #[cfg(test)]

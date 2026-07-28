@@ -14,6 +14,12 @@ on:
 permissions:
   contents: read
 
+env:
+  A3S_BROWSER_REPOSITORY: A3S-Lab/Browser
+  A3S_BROWSER_REVISION: 1830c7b6896b0a38637eba2b61a386bf8a36eada
+  A3S_OCR_REPOSITORY: A3S-Lab/OCR
+  A3S_OCR_REVISION: 9f6a94c27251f183700120fbce628581eb236a5b
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -24,6 +30,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
+      - name: Check out pinned OCR release content
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.A3S_OCR_REPOSITORY }}
+          ref: ${{ env.A3S_OCR_REVISION }}
+          path: external/ocr
+      - name: Check out pinned Browser release content
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.A3S_BROWSER_REPOSITORY }}
+          ref: ${{ env.A3S_BROWSER_REVISION }}
+          path: external/browser
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt
@@ -41,25 +59,84 @@ jobs:
           else
             test "${{ inputs.release_tag }}" = "v${version}"
           fi
+      - name: Wait for independently published Browser and OCR crates
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dependency_version() {
+            python3 - "$1" <<'PY'
+          import pathlib
+          import sys
+          import tomllib
+
+          manifest = tomllib.loads(pathlib.Path("Cargo.toml").read_text())
+          dependency = manifest["dependencies"][sys.argv[1]]
+          requirement = dependency["version"]
+          if not requirement.startswith("=") or len(requirement) == 1:
+              raise SystemExit(
+                  f"{sys.argv[1]} must use an exact '=x.y.z' release version"
+              )
+          print(requirement[1:])
+          PY
+          }
+
+          wait_until_visible() {
+            local package="$1"
+            local version="$2"
+            for attempt in $(seq 1 30); do
+              if curl --retry 3 --retry-all-errors --retry-delay 2 -fsSL \
+                -A "a3s-use-release-check/1.0" \
+                "https://crates.io/api/v1/crates/${package}/${version}" >/dev/null; then
+                echo "${package} ${version} is available"
+                return
+              fi
+              echo "Waiting for ${package} ${version} on crates.io (${attempt}/30)"
+              sleep 10
+            done
+            echo "${package} ${version} must be published before A3S Use" >&2
+            exit 1
+          }
+
+          wait_until_visible a3s-use-browser "$(dependency_version a3s-use-browser)"
+          wait_until_visible a3s-use-ocr "$(dependency_version a3s-use-ocr)"
       - run: cargo fmt --all -- --check
       - run: cargo test --workspace --all-features --locked -- --test-threads=1
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Verify pinned Browser release content
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C external/browser rev-parse HEAD)" = "${A3S_BROWSER_REVISION}"
+          grep -F \
+            "git+https://github.com/A3S-Lab/Browser?rev=${A3S_BROWSER_REVISION}#${A3S_BROWSER_REVISION}" \
+            Cargo.lock
+          test -f external/browser/crates/browser-driver/skills/a3s-use-browser/SKILL.md
+          test -f external/browser/crates/browser-driver/skill-data/core/SKILL.md
+          test -f external/browser/crates/browser-driver/dashboard/out/index.html
       - name: Prepare pinned PP-OCRv6 release assets
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git -C external/ocr rev-parse HEAD)" = "${A3S_OCR_REVISION}"
+          grep -F \
+            "git+https://github.com/A3S-Lab/OCR?rev=${A3S_OCR_REVISION}#${A3S_OCR_REVISION}" \
+            Cargo.lock
+          assets="${RUNNER_TEMP}/ocr-assets"
+          install -d "${assets}/ocr-models" "${assets}/ocr-skills"
           output="${RUNNER_TEMP}/ocr-model-install.json"
-          if ! A3S_USE_OCR_HOME="${RUNNER_TEMP}/ocr-models" \
+          if ! A3S_USE_OCR_HOME="${assets}/ocr-models" \
             cargo run --locked -p a3s-use -- component install ocr --json > "${output}"; then
             cat "${output}"
             exit 1
           fi
           cat "${output}"
-          rm -f "${RUNNER_TEMP}/ocr-models/.install.lock"
+          rm -f "${assets}/ocr-models/.install.lock"
+          cp -R external/ocr/skills/. "${assets}/ocr-skills/"
       - uses: actions/upload-artifact@v4
         with:
-          name: a3s-use-ocr-models
-          path: ${{ runner.temp }}/ocr-models
+          name: a3s-use-ocr-assets
+          path: ${{ runner.temp }}/ocr-assets
           include-hidden-files: true
 
   binaries:
@@ -88,15 +165,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
+      - name: Check out pinned Browser release content
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.A3S_BROWSER_REPOSITORY }}
+          ref: ${{ env.A3S_BROWSER_REVISION }}
+          path: external/browser
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - uses: actions/download-artifact@v4
         with:
-          name: a3s-use-ocr-models
-          path: ${{ runner.temp }}/ocr-models
-      - run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use -p a3s-use-browser-driver -p a3s-use-science
+          name: a3s-use-ocr-assets
+          path: ${{ runner.temp }}/ocr-assets
+      - name: Build Use binaries
+        run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use -p a3s-use-science
+      - name: Build pinned Browser driver
+        run: cargo build --manifest-path external/browser/Cargo.toml --release --locked --target "${{ matrix.target }}" -p a3s-use-browser-driver
       - name: Package Unix release
         if: runner.os != 'Windows'
         shell: bash
@@ -109,22 +195,22 @@ jobs:
           install -d "${stage}/skills" "${stage}/skill-data" "${stage}/ocr-skills" "${stage}/dashboard" \
             "${science}/bin" "${science}/skills/a3s-use-science" "${science}/web"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use" "${stage}/a3s-use"
-          install -m 0755 "target/${{ matrix.target }}/release/a3s-use-browser-driver" "${stage}/a3s-use-browser-driver"
+          install -m 0755 "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver" "${stage}/a3s-use-browser-driver"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use-science" "${science}/bin/a3s-use-science"
           install -d "${stage}/ocr-models"
-          cp -R "${RUNNER_TEMP}/ocr-models/." "${stage}/ocr-models/"
-          cp -R crates/browser-driver/skills/. "${stage}/skills/"
-          cp -R crates/browser-driver/skill-data/. "${stage}/skill-data/"
-          cp -R crates/ocr/skills/. "${stage}/ocr-skills/"
-          cp -R crates/browser-driver/dashboard/out/. "${stage}/dashboard/"
+          cp -R "${RUNNER_TEMP}/ocr-assets/ocr-models/." "${stage}/ocr-models/"
+          cp -R external/browser/crates/browser-driver/skills/. "${stage}/skills/"
+          cp -R external/browser/crates/browser-driver/skill-data/. "${stage}/skill-data/"
+          cp -R "${RUNNER_TEMP}/ocr-assets/ocr-skills/." "${stage}/ocr-skills/"
+          cp -R external/browser/crates/browser-driver/dashboard/out/. "${stage}/dashboard/"
           install -m 0644 crates/science/package/a3s-use-extension.acl "${science}/"
           install -m 0644 crates/science/package/skills/a3s-use-science/SKILL.md "${science}/skills/a3s-use-science/"
           install -m 0644 crates/science/package/web/activity.html crates/science/package/web/activity.css crates/science/package/web/activity.js "${science}/web/"
           install -m 0644 LICENSE "${science}/LICENSE"
           install -m 0644 crates/science/DATA_SOURCES.md crates/science/UPSTREAM.md "${science}/"
           install -m 0644 LICENSE README.md THIRD_PARTY_NOTICES.md "${stage}/"
-          install -m 0644 crates/browser-driver/LICENSE-APACHE-2.0 "${stage}/LICENSE-APACHE-2.0"
-          install -m 0644 crates/browser-driver/UPSTREAM.md "${stage}/UPSTREAM.md"
+          install -m 0644 external/browser/crates/browser-driver/LICENSE-APACHE-2.0 "${stage}/LICENSE-APACHE-2.0"
+          install -m 0644 external/browser/crates/browser-driver/UPSTREAM.md "${stage}/UPSTREAM.md"
           tar czf "${archive}" -C "${stage}" .
           echo "ARCHIVE=${archive}" >> "${GITHUB_ENV}"
       - name: Package Windows release
@@ -137,23 +223,23 @@ jobs:
           $stage = Join-Path $env:RUNNER_TEMP "a3s-use-$version-${{ matrix.name }}"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/a3s-use.exe" "$stage/a3s-use.exe"
-          Copy-Item "target/${{ matrix.target }}/release/a3s-use-browser-driver.exe" "$stage/a3s-use-browser-driver.exe"
+          Copy-Item "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver.exe" "$stage/a3s-use-browser-driver.exe"
           $science = Join-Path $stage "extensions/a3s/science"
           New-Item -ItemType Directory -Force -Path "$science/bin", "$science/skills/a3s-use-science", "$science/web" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/a3s-use-science.exe" "$science/bin/a3s-use-science"
-          Copy-Item -Recurse -Force "$env:RUNNER_TEMP/ocr-models" "$stage/ocr-models"
-          Copy-Item -Recurse "crates/browser-driver/skills" "$stage/skills"
-          Copy-Item -Recurse "crates/browser-driver/skill-data" "$stage/skill-data"
-          Copy-Item -Recurse "crates/ocr/skills" "$stage/ocr-skills"
-          Copy-Item -Recurse "crates/browser-driver/dashboard/out" "$stage/dashboard"
+          Copy-Item -Recurse -Force "$env:RUNNER_TEMP/ocr-assets/ocr-models" "$stage/ocr-models"
+          Copy-Item -Recurse "external/browser/crates/browser-driver/skills" "$stage/skills"
+          Copy-Item -Recurse "external/browser/crates/browser-driver/skill-data" "$stage/skill-data"
+          Copy-Item -Recurse "$env:RUNNER_TEMP/ocr-assets/ocr-skills" "$stage/ocr-skills"
+          Copy-Item -Recurse "external/browser/crates/browser-driver/dashboard/out" "$stage/dashboard"
           Copy-Item "crates/science/package/a3s-use-extension.acl" $science
           Copy-Item "crates/science/package/skills/a3s-use-science/SKILL.md" "$science/skills/a3s-use-science/SKILL.md"
           Copy-Item "crates/science/package/web/activity.html", "crates/science/package/web/activity.css", "crates/science/package/web/activity.js" "$science/web"
           Copy-Item LICENSE "$science/LICENSE"
           Copy-Item "crates/science/DATA_SOURCES.md", "crates/science/UPSTREAM.md" $science
           Copy-Item LICENSE,README.md,THIRD_PARTY_NOTICES.md $stage
-          Copy-Item crates/browser-driver/LICENSE-APACHE-2.0 "$stage/LICENSE-APACHE-2.0"
-          Copy-Item crates/browser-driver/UPSTREAM.md "$stage/UPSTREAM.md"
+          Copy-Item external/browser/crates/browser-driver/LICENSE-APACHE-2.0 "$stage/LICENSE-APACHE-2.0"
+          Copy-Item external/browser/crates/browser-driver/UPSTREAM.md "$stage/UPSTREAM.md"
           Compress-Archive -Path "$stage/*" -DestinationPath $archive
           "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Verify installed Unix release
@@ -386,7 +472,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Publish Core, Extension, OCR, then Browser
+      - name: Publish Use-owned Core and Extension crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
           VERSION: ${{ needs.validate.outputs.version }}
@@ -427,9 +513,6 @@ jobs:
           wait_until_visible a3s-use-core
           publish_once a3s-use-extension
           wait_until_visible a3s-use-extension
-          publish_once a3s-use-ocr
-          wait_until_visible a3s-use-ocr
-          publish_once a3s-use-browser
 
   release:
     needs: [binaries, publish-crates]

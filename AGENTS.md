@@ -2,13 +2,16 @@
 
 ## Repository
 
-This repository provides the `a3s-use` binary and typed Rust libraries for
-Browser, Office, and externally implemented application domains.
+This repository provides the `a3s-use` facade, Use-owned shared crates, and
+routing for independently maintained capability repositories.
 
 ## Boundaries
 
-- Browser and Office are built into the default binary.
+- Browser and OCR routes are built into the default facade from immutable
+  revisions of their independent repositories.
 - Search depends on `a3s-use-browser`, never on the CLI or a background service.
+- OCR integrations depend on the `OcrProvider` contract; PP-OCRv6 is the
+  default provider, not the interface boundary.
 - External domains declare native CLI, standard MCP, and/or Skill surfaces.
 - Do not add an A3S Use JSON-RPC dialect or universal action envelope.
 - Human-authored configuration and extension manifests use A3S ACL (`.acl`)

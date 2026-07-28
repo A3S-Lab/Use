@@ -40,15 +40,9 @@ jobs:
       - name: Run Core tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use-core --locked
-      - name: Run Browser library tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use-browser --locked
       # Windows remains a preview target: the compile gate above covers the
-      # CLI/MCP/Skill and packaging contracts, while file-lock lifecycle and
-      # persistent Browser runtime validation are tracked in the roadmap.
-      - name: Run Browser driver tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use-browser-driver --locked
+      # CLI/MCP/Skill and packaging contracts. Browser provider and driver
+      # validation runs in the independent A3S Browser repository.
       - name: Run facade unit tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --lib --bin a3s-use --locked
@@ -58,29 +52,3 @@ jobs:
       - name: Run facade documentation tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --doc --locked
-
-  browser-032-e2e:
-    name: Browser 0.32 regressions (${{ matrix.os }})
-    if: github.event_name != 'pull_request'
-    timeout-minutes: 45
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Configure isolated Browser paths
-        shell: bash
-        run: |
-          echo "A3S_USE_BROWSER_HOME=${RUNNER_TEMP}/a3s-use-browser" >> "${GITHUB_ENV}"
-          echo "A3S_USE_BROWSER_RUNTIME_DIR=${RUNNER_TEMP}/a3s-use-browser-runtime" >> "${GITHUB_ENV}"
-      - name: Install managed Chrome through A3S Use
-        run: cargo run --locked -p a3s-use --no-default-features --features browser -- component install browser --json
-      - name: Run domain-containment regressions
-        run: cargo test -p a3s-use-browser-driver --locked e2e_domain_filter_blocks_ -- --ignored --test-threads=1
-      - name: Run completed-page lifecycle regression
-        run: cargo test -p a3s-use-browser-driver --locked e2e_wait_load_state_resolves_immediately_when_already_loaded -- --ignored --test-threads=1

@@ -10,7 +10,8 @@ because it vendors the same source files.
 - Version: `0.32.1`
 - Commit: `2b202640ee89dc7aadb5e8c9d600e089e9056985`
 - License: Apache-2.0
-- Imported engine provenance: `crates/browser-driver/UPSTREAM.md`
+- Imported engine provenance:
+  `https://github.com/A3S-Lab/Browser/blob/1830c7b6896b0a38637eba2b61a386bf8a36eada/crates/browser-driver/UPSTREAM.md`
 
 ## Required compatibility surface
 
@@ -45,12 +46,13 @@ not wait for an event that has already fired.
 
 ## Automated gates
 
+The independent Browser repository's
 `crates/browser-driver/tests/upstream_parity.rs` launches the packaged driver
 and checks the complete MCP inventory. It removes human-readable descriptions,
-then pins names, schemas, required fields, defaults, annotations, and pagination
-to this structural digest. The A3S-owned tools-profile discovery tool is
-explicitly marked read-only and closed-world while preserving the upstream
-tool inventory:
+then pins names, schemas, required fields, defaults, annotations, and
+pagination to this structural digest. The A3S-owned tools-profile discovery
+tool is explicitly marked read-only and closed-world while preserving the
+upstream tool inventory:
 
 ```text
 04d8e0a953b17d00a474d6cb61f609cae8ec37eaba7fc86c9f2e738d5d0c6489

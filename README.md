@@ -106,8 +106,8 @@ Default features are `browser`, `ocr`, `extensions`, and `mcp`.
 
 | Feature | Included capability |
 | --- | --- |
-| `browser` | Typed Browser library, stateless rendering, and full Browser driver delegation |
-| `ocr` | Built-in typed PP-OCRv6 CLI/MCP with local ONNX inference |
+| `browser` | Typed Browser library from the independent Browser repository plus full driver delegation |
+| `ocr` | Provider-oriented OCR CLI/MCP with PP-OCRv6 as the default local provider |
 | `extensions` | ACL manifests, package receipts, hot-plug registry, and external CLI/MCP/Skill routes |
 | `mcp` | Standard MCP servers plus the managed Browser Streamable HTTP lifecycle |
 | `lightpanda` | Explicit opt-in Lightpanda provider support in addition to Chrome |
@@ -120,10 +120,10 @@ A compiled command surface is not proof that its provider is installed. Use
 | Crate | Responsibility |
 | --- | --- |
 | `a3s-use-core` | Shared diagnostics, errors, artifacts, session IDs, risk classes, and immutable MCP/Skill release descriptors |
-| `a3s-use-browser` | Object-safe rendering contract, providers, managed runtimes, and sessions |
-| `a3s-use-browser-driver` | Complete interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
+| `a3s-use-browser` | Independent object-safe rendering contract, providers, managed runtimes, and sessions |
+| `a3s-use-browser-driver` | Independently maintained interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
 | `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |
-| `a3s-use-ocr` | Local PP-OCRv6 engine, CLI, MCP tools, pinned models, and release-packaged Skill assets |
+| `a3s-use-ocr` | Independent `OcrProvider` contract, CLI/MCP host, default PP-OCRv6 provider, and release-packaged Skill assets |
 | `a3s-use-science` | Typed public life-science APIs, CLI, MCP tools, and extension package assets |
 | `a3s-use` | Facade library, standalone CLI host, capability projection, and MCP entry points |
 
@@ -148,7 +148,7 @@ Dashboard, and license/provenance notices. Keep those packaged assets together;
 installing only the facade binary does not provide the complete Browser
 surface. Office is released independently from its own repository.
 
-Build all binaries from source with:
+Build the Use-owned binaries from source with:
 
 ```bash
 git clone https://github.com/A3S-Lab/Use.git
@@ -157,6 +157,13 @@ cargo build --workspace --bins --locked
 ./target/debug/a3s-use doctor --json
 ```
 
+The complete product release also checks out the exact Browser and OCR
+revisions pinned in `Cargo.toml`; Browser owns the sibling driver, Skills, and
+Dashboard, while OCR owns provider code, default models, and its Skill.
+Publish the matching `a3s-use-browser` and `a3s-use-ocr` crates before creating
+the Use release tag. The release workflow waits for both exact versions to
+become visible on crates.io before assembling the product archive.
+
 ### Embed Browser rendering
 
 Applications that only need page rendering should depend on the Browser crate,
@@ -164,7 +171,7 @@ not the facade binary:
 
 ```toml
 [dependencies]
-a3s-use-browser = "0.2.0"
+a3s-use-browser = "0.3.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 url = "2"
 ```
@@ -200,6 +207,11 @@ Browser has two deliberately separate integration levels:
   applications. `browser render` also uses this direct in-process path.
 - `a3s-use-browser-driver` provides the complete interactive automation surface
   and is shipped as a sibling executable in release archives.
+
+Both layers are maintained in the independent
+[A3S Browser repository](https://github.com/A3S-Lab/Browser). Use pins one
+immutable Browser revision for the typed dependency and release assembly, then
+projects it through the built-in `browser` route.
 
 The compatibility driver tracks
 [vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser)
@@ -275,13 +287,16 @@ release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor` plus
 `ocr_extract` over standard MCP, so a resident A3S Code session receives
 `mcp__use_ocr__*` without installing a separate extension.
 
-OCR has one backend: the pinned `PP-OCRv6_small` detection and recognition
-models running locally through ONNX Runtime. Release archives package those
-models; `a3s install use/ocr` explicitly installs or repairs the same pinned
-bundle when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF,
-BMP, and TIFF files. The result binds the canonical source path, media type,
-byte length, and SHA-256 alongside text, recognition/detection confidence,
-polygons, and bounding boxes.
+This Use assembly injects one default provider: the pinned `PP-OCRv6_small`
+detection and recognition models running locally through ONNX Runtime. The
+independent OCR library exposes an object-safe provider interface for other
+typed SDK integrations; Use does not select providers through a raw backend
+name. Release archives package the default models, and
+`a3s install use/ocr` explicitly installs or repairs the same pinned bundle
+when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF, BMP, and
+TIFF files. The result binds the canonical source path, media type, byte length,
+and SHA-256 alongside available text, confidence, polygon, and bounding-box
+evidence.
 
 The pipeline decodes and normalizes the image, runs
 `PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
@@ -299,8 +314,11 @@ A3S Code may first-use install the verified parent Use release. A missing or
 damaged managed model bundle is repaired explicitly with
 `a3s install use/ocr`; the Code `use` worker never installs it implicitly.
 
-See the [OCR crate](crates/ocr/README.md) for model resolution, the inference
-workflow, and input boundaries.
+See the independent [A3S OCR repository](https://github.com/A3S-Lab/OCR) for
+the provider interface, model resolution, the default inference workflow, and
+input boundaries. Use pins its immutable source revision and packages the
+matching Skill and model assets while retaining the reserved built-in `ocr`
+route.
 
 ## Science Toolkit
 
@@ -634,16 +652,17 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ```
 
-The suite covers typed contracts, provider discovery and installation,
-extension validation, repository compatibility, route draining, capability
-snapshots, MCP schemas, packaged Skills, and the locked agent-browser
-compatibility surface. Real-Chrome integration gates run serially with isolated
-home and runtime directories on supported platforms. Office engine and editor
-tests run in the independent A3S Office repository.
+The suite covers facade contracts, extension validation, repository
+compatibility, route draining, capability snapshots, MCP projection, and
+release assembly. Browser provider, driver, Dashboard, and real-Chrome gates
+run in the independent A3S Browser repository. OCR provider and default-model
+tests run in the independent A3S OCR repository; Office engine and editor tests
+run in the independent A3S Office repository.
 
 ## License
 
-A3S Use is licensed under the [MIT License](LICENSE). The Browser compatibility
-driver contains work derived from `vercel-labs/agent-browser` under Apache-2.0;
-see [Third-Party Notices](THIRD_PARTY_NOTICES.md) and
-[Upstream Provenance](crates/browser-driver/UPSTREAM.md).
+A3S Use is licensed under the [MIT License](LICENSE). Release archives
+redistribute the Browser compatibility driver, which contains work derived
+from `vercel-labs/agent-browser` under Apache-2.0; see
+[Third-Party Notices](THIRD_PARTY_NOTICES.md) and the
+[Browser upstream provenance](https://github.com/A3S-Lab/Browser/blob/1830c7b6896b0a38637eba2b61a386bf8a36eada/crates/browser-driver/UPSTREAM.md).
