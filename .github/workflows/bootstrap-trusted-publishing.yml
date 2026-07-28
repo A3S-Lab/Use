@@ -1,0 +1,69 @@
+name: Bootstrap split repository trusted publishing
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure Browser and OCR publishers
+        env:
+          CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CARGO_TOKEN:-}"
+
+          configure() {
+            local crate="$1"
+            local repository="$2"
+            local response
+
+            response="$(
+              curl --fail-with-body --silent --show-error \
+                --get \
+                --header "Authorization: ${CARGO_TOKEN}" \
+                --data-urlencode "crate=${crate}" \
+                https://crates.io/api/v1/trusted_publishing/github_configs
+            )"
+
+            if jq --exit-status \
+              --arg repository "${repository}" \
+              '.github_configs[] | select(
+                .repository_owner == "A3S-Lab"
+                and .repository_name == $repository
+                and .workflow_filename == "release.yml"
+                and .environment == null
+              )' <<<"${response}" >/dev/null; then
+              echo "${crate}: trusted publisher already configured"
+              return
+            fi
+
+            jq --null-input \
+              --arg crate "${crate}" \
+              --arg repository "${repository}" \
+              '{
+                github_config: {
+                  crate: $crate,
+                  repository_owner: "A3S-Lab",
+                  repository_name: $repository,
+                  workflow_filename: "release.yml",
+                  environment: null
+                }
+              }' |
+              curl --fail-with-body --silent --show-error \
+                --request POST \
+                --header "Authorization: ${CARGO_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --data-binary @- \
+                https://crates.io/api/v1/trusted_publishing/github_configs \
+                >/dev/null
+
+            echo "${crate}: trusted publisher configured"
+          }
+
+          configure a3s-use-browser Browser
+          configure a3s-use-ocr OCR
