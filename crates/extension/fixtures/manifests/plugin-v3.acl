@@ -1,0 +1,82 @@
+extension "acme/research" {
+  schema_version = 3
+  version        = "2.0.0"
+  route          = "research"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read", "mutate", "execute"]
+
+  repository {
+    url      = "https://github.com/acme/research"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  tool "convert" {
+    workload    = "task"
+    interface   = "cli"
+    executable  = "tools/convert/bin/convert"
+    command     = "acme-research-convert"
+    json_output = true
+    interactive = false
+    timeout_ms  = 120000
+    activation  = "lazy"
+    optional    = false
+  }
+
+  tool "index" {
+    workload   = "service"
+    interface  = "http"
+    release    = "releases/index-tool-v1.json"
+    base_path  = "/api"
+    contract   = "tools/index/openapi.json"
+    activation = "eager"
+    optional   = false
+  }
+
+  mcp "local-library" {
+    transport  = "stdio"
+    executable = "mcp/bin/library"
+    args       = ["serve", "--stdio"]
+    activation = "lazy"
+    optional   = true
+  }
+
+  mcp "library" {
+    transport  = "streamable-http"
+    release    = "releases/library-mcp-v1.json"
+    activation = "eager"
+    optional   = false
+  }
+
+  skill "review" {
+    path          = "skills/review/SKILL.md"
+    requires_tool = ["convert", "index"]
+    requires_mcp  = ["library"]
+    optional      = false
+  }
+
+  skill "quick-look" {
+    path          = "skills/quick-look/SKILL.md"
+    requires_tool = ["convert"]
+    requires_mcp  = []
+    optional      = true
+  }
+
+  ui "review" {
+    entry     = "ui/review/index.html"
+    styles    = ["ui/review/index.css"]
+    scripts   = ["ui/review/index.js"]
+    skill     = "review"
+    bind_tool = ["index"]
+    bind_mcp  = ["library"]
+    optional  = false
+  }
+
+  ui "status" {
+    entry     = "ui/status/index.html"
+    styles    = []
+    scripts   = []
+    bind_tool = ["index"]
+    bind_mcp  = []
+    optional  = true
+  }
+}

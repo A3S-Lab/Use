@@ -78,16 +78,12 @@ pub async fn inspect_release_bundle(package_root: &Path) -> UseResult<ReleaseBun
     let (manifest, _) = read_manifest(&package_root).await?;
     validate_surface_files(&manifest, &package_root).await?;
     let fingerprint = package_fingerprint(&package_root).await?;
-    let mut surfaces = Vec::with_capacity(3);
-    if manifest.cli.is_some() {
-        surfaces.push("cli".to_string());
-    }
-    if manifest.mcp.is_some() {
-        surfaces.push("mcp".to_string());
-    }
-    if manifest.skill.is_some() {
-        surfaces.push("skill".to_string());
-    }
+    let surfaces = manifest
+        .surface_kinds()
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let activity_count = manifest.ui_count() as u64;
     let package = ReleaseBundlePackage {
         schema_version: RELEASE_BUNDLE_SCHEMA_VERSION,
         component_id: format!("use/{}", manifest.package_id),
@@ -98,7 +94,7 @@ pub async fn inspect_release_bundle(package_root: &Path) -> UseResult<ReleaseBun
         file_count: fingerprint.file_count,
         byte_count: fingerprint.byte_count,
         surfaces,
-        activity_count: manifest.contributes.activity_bar.len() as u64,
+        activity_count,
     };
     package.validate()?;
     Ok(package)

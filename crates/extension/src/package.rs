@@ -10,7 +10,7 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 use super::registry::ExtensionReceipt;
-use super::{ExtensionManifest, ExtensionPaths};
+use super::{ExtensionManifest, ExtensionPaths, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 
 pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
@@ -97,10 +97,150 @@ pub(crate) async fn validate_surface_files(
             .await?;
         }
     }
+    for tool in &manifest.tools {
+        match &tool.workload {
+            ToolWorkload::Task(task) => match &task.source {
+                ToolTaskSource::Executable { executable } => {
+                    validate_surface_file(
+                        "Tool Task executable",
+                        &canonical_root,
+                        &package_root.join(executable),
+                        true,
+                    )
+                    .await?;
+                }
+                ToolTaskSource::Release { release } => {
+                    validate_surface_file(
+                        "Tool Task release descriptor",
+                        &canonical_root,
+                        &package_root.join(release),
+                        false,
+                    )
+                    .await?;
+                }
+            },
+            ToolWorkload::Service(service) => {
+                validate_surface_file(
+                    "Tool Service release descriptor",
+                    &canonical_root,
+                    &package_root.join(&service.release),
+                    false,
+                )
+                .await?;
+                if let Some(contract) = &service.contract {
+                    validate_surface_file(
+                        "Tool Service API contract",
+                        &canonical_root,
+                        &package_root.join(contract),
+                        false,
+                    )
+                    .await?;
+                }
+            }
+        }
+    }
+    for mcp in &manifest.mcp_servers {
+        match &mcp.launch {
+            PluginMcpLaunch::Stdio { executable, .. } => {
+                validate_surface_file(
+                    "MCP stdio executable",
+                    &canonical_root,
+                    &package_root.join(executable),
+                    true,
+                )
+                .await?;
+            }
+            PluginMcpLaunch::StreamableHttp { release } => {
+                validate_surface_file(
+                    "MCP release descriptor",
+                    &canonical_root,
+                    &package_root.join(release),
+                    false,
+                )
+                .await?;
+            }
+        }
+    }
+    for skill in &manifest.skills {
+        validate_surface_file(
+            "Skill file",
+            &canonical_root,
+            &package_root.join(&skill.path),
+            false,
+        )
+        .await?;
+    }
+    for ui in &manifest.ui {
+        validate_ui_text_asset(
+            "UI entry",
+            "HTML",
+            &canonical_root,
+            &package_root.join(&ui.entry),
+            MAX_ACTIVITY_HTML_BYTES,
+        )
+        .await?;
+        for style in &ui.styles {
+            validate_ui_text_asset(
+                "UI style",
+                "CSS",
+                &canonical_root,
+                &package_root.join(style),
+                MAX_ACTIVITY_RESOURCE_BYTES,
+            )
+            .await?;
+        }
+        for script in &ui.scripts {
+            validate_ui_text_asset(
+                "UI script",
+                "JavaScript",
+                &canonical_root,
+                &package_root.join(script),
+                MAX_ACTIVITY_RESOURCE_BYTES,
+            )
+            .await?;
+        }
+    }
     Ok(())
 }
 
 async fn validate_activity_text_asset(
+    label: &str,
+    content_type: &str,
+    canonical_root: &Path,
+    path: &Path,
+    max_bytes: u64,
+) -> UseResult<()> {
+    validate_text_asset(
+        "use.extension.activity_asset_invalid",
+        label,
+        content_type,
+        canonical_root,
+        path,
+        max_bytes,
+    )
+    .await
+}
+
+async fn validate_ui_text_asset(
+    label: &str,
+    content_type: &str,
+    canonical_root: &Path,
+    path: &Path,
+    max_bytes: u64,
+) -> UseResult<()> {
+    validate_text_asset(
+        "use.extension.ui_asset_invalid",
+        label,
+        content_type,
+        canonical_root,
+        path,
+        max_bytes,
+    )
+    .await
+}
+
+async fn validate_text_asset(
+    error_code: &'static str,
     label: &str,
     content_type: &str,
     canonical_root: &Path,
@@ -113,7 +253,7 @@ async fn validate_activity_text_asset(
         .map_err(|error| io_error(&format!("inspect {label}"), path, error))?;
     if metadata.len() == 0 || metadata.len() > max_bytes {
         return Err(UseError::new(
-            "use.extension.activity_asset_invalid",
+            error_code,
             format!(
                 "{label} '{}' must contain between 1 byte and {max_bytes} bytes.",
                 path.display()
@@ -125,7 +265,7 @@ async fn validate_activity_text_asset(
         .map_err(|error| io_error(&format!("read {label}"), path, error))?;
     std::str::from_utf8(&bytes).map_err(|error| {
         UseError::new(
-            "use.extension.activity_asset_invalid",
+            error_code,
             format!(
                 "{label} '{}' must be UTF-8 {content_type}: {error}",
                 path.display()

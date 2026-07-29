@@ -213,6 +213,11 @@ extension "acme/research" {
   requires_use   = ">=0.3.0, <0.4.0"
   actions        = ["read", "mutate"]
 
+  repository {
+    url      = "https://github.com/acme/research"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
   tool "convert" {
     workload      = "task"
     interface     = "cli"
@@ -251,6 +256,12 @@ extension "acme/research" {
   }
 }
 ```
+
+The checked-in
+[`plugin-v3.acl`](../crates/extension/fixtures/manifests/plugin-v3.acl)
+fixture is the executable contract and carries an adjacent stable SHA-256
+golden. The fixture bytes use LF endings and include the final repository
+newline in their digest.
 
 This example records deployment and binding facts, not the Tool's business
 operations. The CLI owns its arguments and exit codes. The HTTP service owns

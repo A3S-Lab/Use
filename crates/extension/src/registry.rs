@@ -64,17 +64,7 @@ pub struct InstalledExtension {
 
 impl InstalledExtension {
     pub fn surfaces(&self) -> Vec<&'static str> {
-        let mut surfaces = Vec::with_capacity(3);
-        if self.manifest.cli.is_some() {
-            surfaces.push("cli");
-        }
-        if self.manifest.mcp.is_some() {
-            surfaces.push("mcp");
-        }
-        if self.manifest.skill.is_some() {
-            surfaces.push("skill");
-        }
-        surfaces
+        self.manifest.surface_kinds()
     }
 
     pub fn cli_executable(&self) -> Option<PathBuf> {
