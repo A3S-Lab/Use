@@ -1,6 +1,6 @@
 # A3S Use Plugin Contract Reference
 
-- Status: M0 contract baseline implemented
+- Status: M0 complete
 - Baseline date: 2026-07-30
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -156,12 +156,27 @@ Canonical interoperability fixtures live under
 
 - `permission-ceiling-v1.json`;
 - `catalog-record-v1.json`;
+- `complete-package-catalog-v1.json`;
 - `operation-plan-install-v1.json`; and
 - `manager-toolset-v1.json`.
 
 Each fixture has a sibling `.sha256` file. Tests require byte-for-byte
 canonical form, stable descriptor digests, fail-closed unknown fields, and
 cross-contract binding.
+
+The complete installable package lives under
+`crates/extension/fixtures/packages/plugin-v3/`. It contains all four surface
+kinds and both Tool/MCP workload variants. Its expanded directory and
+deterministic `tar.gz` reconstruction have fixed file-count, byte-count, and
+SHA-256 evidence. Tests extract the archive through the real package source
+validator and revalidate every referenced surface file.
+
+The matching deterministic TUF repository lives under
+`crates/extension/fixtures/registry/plugin-v3/`. Its signed targets metadata
+embeds `complete-package-catalog-v1.json`; root, targets, snapshot, timestamp,
+archive, catalog, and expanded package digests are checked as one chain. The
+fixture key is intentionally public test material and must never be trusted by
+a deployed registry.
 
 ## Evolution Rules
 

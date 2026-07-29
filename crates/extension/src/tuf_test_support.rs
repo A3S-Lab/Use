@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -36,6 +37,27 @@ impl TestRepository {
         metadata_version: u64,
         expires: &str,
     ) -> Self {
+        let target = host_target();
+        let archive_name = format!("a3s-use-science-{package_version}-{target}.tar.gz");
+        let target_name =
+            format!("extensions/a3s/science/{package_version}/stable/{target}/{archive_name}");
+        let custom = json!({
+            "schemaVersion": 1,
+            "packageId": "a3s/science",
+            "version": package_version,
+            "channel": "stable",
+            "target": target
+        });
+        Self::with_target_metadata(archive, target_name, custom, metadata_version, expires)
+    }
+
+    pub(crate) fn with_target_metadata(
+        archive: Vec<u8>,
+        target_name: String,
+        custom: Value,
+        metadata_version: u64,
+        expires: &str,
+    ) -> Self {
         let key = Ed25519KeyPair::from_seed_unchecked(&[7_u8; 32]).unwrap();
         let public = hex_lower(key.public_key().as_ref());
         let key_value = json!({
@@ -64,10 +86,6 @@ impl TestRepository {
         let root = signed_document(&key, &key_id, root_signed);
         let root_sha256 = sha256(&root);
 
-        let target = host_target();
-        let archive_name = format!("a3s-use-science-{package_version}-{target}.tar.gz");
-        let target_name =
-            format!("extensions/a3s/science/{package_version}/stable/{target}/{archive_name}");
         let target_sha256 = sha256(&archive);
         let mut targets_map = Map::new();
         targets_map.insert(
@@ -75,15 +93,7 @@ impl TestRepository {
             json!({
                 "length": archive.len(),
                 "hashes": {"sha256": target_sha256},
-                "custom": {
-                    "a3s": {
-                        "schemaVersion": 1,
-                        "packageId": "a3s/science",
-                        "version": package_version,
-                        "channel": "stable",
-                        "target": target
-                    }
-                }
+                "custom": {"a3s": custom}
             }),
         );
         let targets_signed = json!({
@@ -135,6 +145,64 @@ impl TestRepository {
             root_sha256,
             target_name,
             target_sha256,
+        }
+    }
+}
+
+pub(crate) fn package_directory_archive(root: &Path) -> Vec<u8> {
+    let mut files = Vec::new();
+    collect_fixture_files(root, root, &mut files);
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let encoder = flate2::GzBuilder::new()
+        .mtime(0)
+        .operating_system(255)
+        .write(Vec::new(), flate2::Compression::best());
+    let mut archive = tar::Builder::new(encoder);
+    for (relative, path) in files {
+        let body = std::fs::read(&path).unwrap();
+        let archive_path = format!("package/{relative}");
+        let mode = if matches!(
+            relative.as_str(),
+            "mcp/bin/library" | "tools/convert/bin/convert"
+        ) {
+            0o755
+        } else {
+            0o644
+        };
+        let mut header = tar::Header::new_gnu();
+        header.set_path(archive_path).unwrap();
+        header.set_size(body.len() as u64);
+        header.set_mode(mode);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mtime(0);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+        archive.append(&header, body.as_slice()).unwrap();
+    }
+    archive.into_inner().unwrap().finish().unwrap()
+}
+
+fn collect_fixture_files(root: &Path, directory: &Path, output: &mut Vec<(String, PathBuf)>) {
+    let mut entries = std::fs::read_dir(directory)
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        let path = entry.path();
+        if entry.file_type().unwrap().is_dir() {
+            collect_fixture_files(root, &path, output);
+        } else {
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .iter()
+                .map(|segment| segment.to_str().unwrap())
+                .collect::<Vec<_>>()
+                .join("/");
+            output.push((relative, path));
         }
     }
 }

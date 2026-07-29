@@ -626,7 +626,11 @@ registry publication, persistent sessions, and component ownership. The
 [Plugin Platform Roadmap](ROADMAP.md) is the source of truth for user- and
 agent-managed plugin discovery, installation, use, and removal. The
 [Plugin Platform Architecture](docs/plugin-platform-architecture.md) defines
-Skill, CLI/HTTP Tool, MCP, UI, Runtime, and lifecycle boundaries.
+Skill, CLI/HTTP Tool, MCP, UI, Runtime, and lifecycle boundaries. The
+[complete lifecycle flow](docs/plugin-platform-lifecycle-and-security.md) and
+[frozen M0 contracts](docs/plugin-contracts.md) define the plan/apply,
+permission, signed-catalog, and management MCP invariants used by subsequent
+implementation milestones.
 
 ## Platform Support
 

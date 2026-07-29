@@ -5,6 +5,10 @@ use a3s_use_core::{
 
 const PERMISSION_CEILING: &[u8] = include_bytes!("../fixtures/plugins/permission-ceiling-v1.json");
 const CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-v1.json");
+const COMPLETE_PACKAGE_CATALOG: &[u8] =
+    include_bytes!("../fixtures/plugins/complete-package-catalog-v1.json");
+const COMPLETE_PACKAGE_CATALOG_DIGEST: &str =
+    include_str!("../fixtures/plugins/complete-package-catalog-v1.sha256").trim_ascii_end();
 const PERMISSION_DIGEST: &str =
     include_str!("../fixtures/plugins/permission-ceiling-v1.sha256").trim_ascii_end();
 const CATALOG_DIGEST: &str =
@@ -160,4 +164,17 @@ fn verified_catalog_provenance_binds_outer_tuf_evidence_to_the_record() {
     drift.provenance.catalog_record_digest =
         "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".to_owned();
     assert!(drift.validate().is_err());
+}
+
+#[test]
+fn complete_package_catalog_fixture_is_canonical() {
+    let catalog = PluginCatalogRecord::from_json(COMPLETE_PACKAGE_CATALOG).unwrap();
+    assert_eq!(
+        catalog.canonical_bytes().unwrap(),
+        canonical_fixture(COMPLETE_PACKAGE_CATALOG)
+    );
+    assert_eq!(
+        catalog.descriptor_digest().unwrap(),
+        COMPLETE_PACKAGE_CATALOG_DIGEST
+    );
 }

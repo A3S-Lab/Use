@@ -1062,7 +1062,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 #[path = "tuf_test_support.rs"]
-mod test_support;
+pub(crate) mod test_support;
 
 #[cfg(test)]
 #[path = "remote_tests.rs"]

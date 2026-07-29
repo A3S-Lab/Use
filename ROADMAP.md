@@ -129,7 +129,7 @@ and cross-platform CI work can run in parallel when separately staffed.
 
 ## Milestones
 
-### M0 — Contract freeze and fixtures
+### M0 — Contract freeze and fixtures (complete 2026-07-30)
 
 Estimated effort: 2 weeks
 
@@ -144,8 +144,11 @@ Implementation status (2026-07-30):
   digest-bound plan/apply, and bounded manager MCP toolset contracts;
 - completed: canonical catalog, permission, install-plan, and manager-toolset
   JSON fixtures with stable SHA-256 digests;
-- pending: canonical signed TUF metadata and complete installable package
-  fixtures.
+- completed: a complete v3 package fixture containing CLI/HTTP Tool,
+  stdio/HTTP MCP, Skill, and UI surfaces, with deterministic expanded-package
+  and archive digests;
+- completed: deterministic signed TUF root, targets, snapshot, and timestamp
+  metadata embedding the complete canonical catalog record.
 
 Deliverables:
 
