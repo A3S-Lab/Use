@@ -141,17 +141,21 @@ CLI output, not a new RPC transport.
 
 The live capability projection describes locally callable surfaces; it is not
 the Cloud release record. `a3s-use-core` separately owns the versioned
-`a3s.use.mcp-release.v1` and `a3s.use.skill-release.v1` machine contracts.
-Their OLPC canonical JSON digest binds source commit, admitted manifest,
-artifact, compatibility, and exact release dependencies.
+`a3s.use.mcp-release.v1`, `a3s.use.skill-release.v1`, and
+`a3s.use.tool-release.v1` machine contracts. Their OLPC canonical JSON digest
+binds source commit, admitted manifest, artifact, compatibility, and exact
+release dependencies.
 
 MCP v1 maps only a digest-pinned OCI artifact and standard Streamable HTTP
 health/lifecycle contract to a Runtime Service. Skill v1 maps only a
 content-bound `SKILL.md` bundle to immutable Agent input. It has no executable,
-port, health, or Runtime fields and cannot be deployed alone. Cloud resolves
-artifact storage separately by digest; mutable tags and source branches never
-enter release identity. The complete contract and cross-SDK fixtures are in
-[release descriptors](release-descriptors.md).
+port, health, or Runtime fields and cannot be deployed alone. Tool v1 maps a
+non-interactive CLI workload to a finite Runtime Task or a private HTTP
+workload to a Runtime Service without translating its argv or HTTP API into a
+private RPC protocol. Cloud resolves artifact storage separately by digest;
+mutable tags and source branches never enter release identity. The complete
+contract and cross-SDK fixtures are in [release
+descriptors](release-descriptors.md).
 
 ## Component-backed routes
 

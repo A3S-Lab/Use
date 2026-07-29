@@ -1,6 +1,6 @@
 # A3S Use Plugin Platform Roadmap
 
-- Status: planned
+- Status: in progress
 - Planning baseline: 2026-07-30
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web, and plugin registries
 
@@ -69,6 +69,10 @@ The following foundations are implemented:
 
 - typed Browser, OCR, Box, component, and extension contracts;
 - native CLI, standard MCP, Skill, and content-bound Activity Bar surfaces;
+- schema v3 named Tool Task/Service, MCP, Skill, and UI surface contracts while
+  retaining schema v1/v2 parsing compatibility;
+- canonical Tool Task/Service release descriptors with stable JSON fixtures
+  and package-level manifest binding validation;
 - immutable package generations and receipt-owned installation roots;
 - install, upgrade, enable, disable, uninstall, watch, and route draining;
 - reviewed local packages, release bundles, and TUF-verified remote packages;
@@ -89,8 +93,8 @@ The main gaps are:
   informed autonomous choice;
 - package-level permission declarations are not precise enough to authorize
   native executable plugins without human review;
-- the manifest has singular CLI, MCP, and Skill fields rather than named
-  multi-surface collections, and has no explicit CLI/HTTP Tool workload;
+- schema v3 named surfaces and Tool release contracts are implemented, but the
+  catalog, manager, reconciler, and Runtime adapters do not consume them yet;
 - Tool Task/Service deployment, binding, dependency readiness, and Runtime
   observation are not yet part of the package reconciler;
 - the Web adapter owns marketplace orchestration that must be reusable by CLI,
@@ -128,6 +132,16 @@ and cross-platform CI work can run in parallel when separately staffed.
 ### M0 — Contract freeze and fixtures
 
 Estimated effort: 2 weeks
+
+Implementation status (2026-07-30):
+
+- completed: architecture, lifecycle, security, and delivery-plan baselines;
+- completed: schema v3 named Tool, MCP, Skill, and UI surfaces with v1/v2
+  parsing compatibility and a stable ACL fixture digest;
+- completed: `a3s.use.tool-release.v1`, closed Task/CLI and Service/HTTP
+  workload contracts, and canonical JSON digest fixtures;
+- pending: catalog, permission-ceiling, plan/apply, and manager MCP schemas;
+- pending: canonical signed catalog and complete package fixtures.
 
 Deliverables:
 

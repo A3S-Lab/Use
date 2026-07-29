@@ -11,7 +11,9 @@ pub use release::{
     HttpHealthContract, McpReleaseDescriptor, McpServiceContract, McpServiceTransport,
     ReleaseArtifact, ReleaseCompatibility, ReleaseDependency, ReleaseKind, ReleaseProvenance,
     ReleaseResolution, SkillBindingContract, SkillBindingTarget, SkillContentContract,
-    SkillReleaseDescriptor, MAX_RELEASE_DESCRIPTOR_BYTES, MCP_RELEASE_SCHEMA, SKILL_RELEASE_SCHEMA,
+    SkillReleaseDescriptor, ToolReleaseDescriptor, ToolServiceInterface, ToolServiceNetwork,
+    ToolTaskInterface, ToolWorkloadContract, MAX_RELEASE_DESCRIPTOR_BYTES, MCP_RELEASE_SCHEMA,
+    SKILL_RELEASE_SCHEMA, TOOL_RELEASE_SCHEMA,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

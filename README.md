@@ -119,7 +119,7 @@ A compiled command surface is not proof that its provider is installed. Use
 
 | Crate | Responsibility |
 | --- | --- |
-| `a3s-use-core` | Shared diagnostics, errors, artifacts, session IDs, risk classes, and immutable MCP/Skill release descriptors |
+| `a3s-use-core` | Shared diagnostics, errors, artifacts, session IDs, risk classes, and immutable MCP/Skill/Tool release descriptors |
 | `a3s-use-browser` | Independent object-safe rendering contract, providers, managed runtimes, and sessions |
 | `a3s-use-browser-driver` | Independently maintained interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
 | `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |

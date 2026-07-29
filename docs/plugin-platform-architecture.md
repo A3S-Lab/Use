@@ -272,9 +272,11 @@ documentation and validation evidence, not a new A3S execution protocol.
 
 Existing [`a3s.use.mcp-release.v1` and
 `a3s.use.skill-release.v1`](release-descriptors.md) remain the canonical
-hosted MCP and Skill release boundaries. A new
-`a3s.use.tool-release.v1` should use the same canonical JSON, provenance,
-compatibility, dependency, artifact-digest, and size rules.
+hosted MCP and Skill release boundaries.
+[`a3s.use.tool-release.v1`](release-descriptors.md#tool-v1) uses the same
+canonical JSON, provenance, compatibility, dependency, artifact-digest, and
+size rules. Its checked-in Task and Service fixtures are the cross-SDK
+contract goldens.
 
 The Tool descriptor adds exactly one workload contract:
 

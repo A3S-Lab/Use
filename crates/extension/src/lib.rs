@@ -9,6 +9,8 @@ mod digest;
 #[cfg(test)]
 mod manifest_tests;
 mod package;
+#[cfg(test)]
+mod package_tests;
 mod paths;
 mod plugin_manifest;
 #[cfg(test)]
@@ -19,6 +21,7 @@ mod release_bundle;
 mod remote;
 mod route_lock;
 mod source;
+mod surface_files;
 
 pub use paths::ExtensionPaths;
 pub use plugin_manifest::{

@@ -10,13 +10,13 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 use super::registry::ExtensionReceipt;
-use super::{ExtensionManifest, ExtensionPaths, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
+use super::{ExtensionManifest, ExtensionPaths};
 
 pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
 pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
-const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
-const MAX_ACTIVITY_RESOURCE_BYTES: u64 = 2 * 1024 * 1024;
+pub(super) const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
+pub(super) const MAX_ACTIVITY_RESOURCE_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) async fn read_manifest(package_root: &Path) -> UseResult<(ExtensionManifest, Vec<u8>)> {
     let path = package_root.join(MANIFEST_NAME);
@@ -97,109 +97,8 @@ pub(crate) async fn validate_surface_files(
             .await?;
         }
     }
-    for tool in &manifest.tools {
-        match &tool.workload {
-            ToolWorkload::Task(task) => match &task.source {
-                ToolTaskSource::Executable { executable } => {
-                    validate_surface_file(
-                        "Tool Task executable",
-                        &canonical_root,
-                        &package_root.join(executable),
-                        true,
-                    )
-                    .await?;
-                }
-                ToolTaskSource::Release { release } => {
-                    validate_surface_file(
-                        "Tool Task release descriptor",
-                        &canonical_root,
-                        &package_root.join(release),
-                        false,
-                    )
-                    .await?;
-                }
-            },
-            ToolWorkload::Service(service) => {
-                validate_surface_file(
-                    "Tool Service release descriptor",
-                    &canonical_root,
-                    &package_root.join(&service.release),
-                    false,
-                )
-                .await?;
-                if let Some(contract) = &service.contract {
-                    validate_surface_file(
-                        "Tool Service API contract",
-                        &canonical_root,
-                        &package_root.join(contract),
-                        false,
-                    )
-                    .await?;
-                }
-            }
-        }
-    }
-    for mcp in &manifest.mcp_servers {
-        match &mcp.launch {
-            PluginMcpLaunch::Stdio { executable, .. } => {
-                validate_surface_file(
-                    "MCP stdio executable",
-                    &canonical_root,
-                    &package_root.join(executable),
-                    true,
-                )
-                .await?;
-            }
-            PluginMcpLaunch::StreamableHttp { release } => {
-                validate_surface_file(
-                    "MCP release descriptor",
-                    &canonical_root,
-                    &package_root.join(release),
-                    false,
-                )
-                .await?;
-            }
-        }
-    }
-    for skill in &manifest.skills {
-        validate_surface_file(
-            "Skill file",
-            &canonical_root,
-            &package_root.join(&skill.path),
-            false,
-        )
+    super::surface_files::validate_named_surface_files(manifest, &canonical_root, package_root)
         .await?;
-    }
-    for ui in &manifest.ui {
-        validate_ui_text_asset(
-            "UI entry",
-            "HTML",
-            &canonical_root,
-            &package_root.join(&ui.entry),
-            MAX_ACTIVITY_HTML_BYTES,
-        )
-        .await?;
-        for style in &ui.styles {
-            validate_ui_text_asset(
-                "UI style",
-                "CSS",
-                &canonical_root,
-                &package_root.join(style),
-                MAX_ACTIVITY_RESOURCE_BYTES,
-            )
-            .await?;
-        }
-        for script in &ui.scripts {
-            validate_ui_text_asset(
-                "UI script",
-                "JavaScript",
-                &canonical_root,
-                &package_root.join(script),
-                MAX_ACTIVITY_RESOURCE_BYTES,
-            )
-            .await?;
-        }
-    }
     Ok(())
 }
 
@@ -221,25 +120,7 @@ async fn validate_activity_text_asset(
     .await
 }
 
-async fn validate_ui_text_asset(
-    label: &str,
-    content_type: &str,
-    canonical_root: &Path,
-    path: &Path,
-    max_bytes: u64,
-) -> UseResult<()> {
-    validate_text_asset(
-        "use.extension.ui_asset_invalid",
-        label,
-        content_type,
-        canonical_root,
-        path,
-        max_bytes,
-    )
-    .await
-}
-
-async fn validate_text_asset(
+pub(super) async fn validate_text_asset(
     error_code: &'static str,
     label: &str,
     content_type: &str,
@@ -275,7 +156,7 @@ async fn validate_text_asset(
     Ok(())
 }
 
-async fn validate_surface_file(
+pub(super) async fn validate_surface_file(
     label: &str,
     canonical_root: &Path,
     path: &Path,
