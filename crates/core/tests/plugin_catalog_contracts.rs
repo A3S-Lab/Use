@@ -167,6 +167,36 @@ fn verified_catalog_provenance_binds_outer_tuf_evidence_to_the_record() {
 }
 
 #[test]
+fn verified_catalog_provenance_accepts_only_secure_or_loopback_registries() {
+    let record = PluginCatalogRecord::from_json(CATALOG_RECORD).unwrap();
+    let provenance = VerifiedCatalogProvenance {
+        registry_name: "fixture".to_owned(),
+        registry_url: "http://127.0.0.1:43210/".to_owned(),
+        root_sha256: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            .to_owned(),
+        root_version: 1,
+        timestamp_version: 1,
+        snapshot_version: 1,
+        targets_version: 1,
+        catalog_record_digest: CATALOG_DIGEST.to_owned(),
+    };
+    VerifiedPluginCatalogRecord::new(record.clone(), provenance).unwrap();
+
+    let insecure = VerifiedCatalogProvenance {
+        registry_name: "fixture".to_owned(),
+        registry_url: "http://plugins.example/".to_owned(),
+        root_sha256: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            .to_owned(),
+        root_version: 1,
+        timestamp_version: 1,
+        snapshot_version: 1,
+        targets_version: 1,
+        catalog_record_digest: CATALOG_DIGEST.to_owned(),
+    };
+    assert!(VerifiedPluginCatalogRecord::new(record, insecure).is_err());
+}
+
+#[test]
 fn complete_package_catalog_fixture_is_canonical() {
     let catalog = PluginCatalogRecord::from_json(COMPLETE_PACKAGE_CATALOG).unwrap();
     assert_eq!(

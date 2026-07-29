@@ -51,6 +51,35 @@ displaying a bare record as verified is invalid.
 Search operates on bounded verified metadata. It does not download or activate
 the package payload.
 
+The extension library exposes this contract through:
+
+- `PluginCatalogHost`, a manager-owned target and A3S Use compatibility
+  context;
+- `PluginCatalogSearch`, with a 256-byte query, exact filters, a maximum
+  50-record page, and a snapshot/query-bound cursor;
+- `PluginCatalogPage`, which carries the verified snapshot, total match count,
+  full verified records, and the next cursor; and
+- `PluginCatalogInspection`, which selects the newest compatible release unless
+  an exact version or channel is requested.
+
+`search_remote_plugins` and `inspect_remote_plugin` perform a bounded online
+TUF refresh. `search_cached_plugins` and `inspect_cached_plugin` are separate
+filesystem-only operations, so offline intent cannot silently fall back to the
+network. An online refresh retains the exact verified root, timestamp,
+snapshot, and targets bytes plus their digests and role versions. An offline
+read verifies that checkpoint, re-runs TUF signature and expiration checks,
+and reports the elapsed seconds since the online verification.
+
+Search and inspection enforce compatibility before returning an installable
+record. Target `any` is used only when no exact host target exists for the same
+package, version, and channel. A catalog archive path, length, or SHA-256 that
+differs from its enclosing TUF target is invalid even when both structures are
+individually signed.
+
+Legacy `custom.a3s` schema v1 targets remain readable by installation and
+`list_remote_packages`, but they are not promoted into verified plugin search
+results because they lack the review metadata required by this contract.
+
 ## Permission Ceiling
 
 Permissions are declared per qualified surface. Skill surfaces cannot carry

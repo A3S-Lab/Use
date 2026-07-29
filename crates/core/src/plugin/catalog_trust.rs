@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::UseResult;
 
-use super::validation::{valid_repository_url, valid_segment, valid_sha256};
+use super::validation::{valid_registry_url, valid_segment, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PluginCatalogRecord,
 };
@@ -32,7 +32,7 @@ pub struct VerifiedPluginCatalogRecord {
 impl VerifiedCatalogProvenance {
     pub fn validate(&self) -> UseResult<()> {
         if !valid_segment(&self.registry_name)
-            || !valid_repository_url(&self.registry_url)
+            || !valid_registry_url(&self.registry_url)
             || !valid_sha256(&self.root_sha256)
             || self.root_version == 0
             || self.timestamp_version == 0

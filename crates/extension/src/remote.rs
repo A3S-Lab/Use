@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use a3s_use_core::{UseError, UseResult};
 use fs2::FileExt;
-use semver::Version;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -23,12 +23,28 @@ use url::Url;
 
 use super::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
 
+mod catalog;
+mod target;
+
+pub use catalog::{
+    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, search_cached_plugins,
+    search_remote_plugins, PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection,
+    PluginCatalogPage, PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource,
+    VerifiedRegistryCatalog, VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES,
+    MAX_PLUGIN_CATALOG_PAGE_SIZE,
+};
+use target::{
+    decode_registry_target_metadata, resolved_remote_package, target_metadata_from_receipt,
+    validate_target_metadata, validate_target_name, RegistryTargetMetadata,
+};
+
 const ROOT_NAME: &str = "root.json";
 const ROOT_CACHE_NAME: &str = "bootstrap-root.json";
 const REGISTRY_METADATA_KEY: &str = "a3s";
 const REGISTRY_TARGET_SCHEMA_VERSION: u32 = 1;
 const MAX_BOOTSTRAP_ROOT_BYTES: u64 = 1024 * 1024;
 const MAX_REMOTE_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_REGISTRY_PACKAGE_TARGETS: u64 = 10_000;
 const MAX_ROOT_UPDATES: u64 = 64;
 
 /// One configured registry whose TUF root is pinned out of band.
@@ -133,31 +149,6 @@ pub struct ResolvedRemotePackage {
     pub sha256: String,
 }
 
-/// Signed metadata versions observed after a complete TUF refresh.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerifiedRegistryMetadata {
-    pub registry_name: String,
-    pub registry_url: String,
-    pub root_sha256: String,
-    pub root_version: u64,
-    pub timestamp_version: u64,
-    pub snapshot_version: u64,
-    pub targets_version: u64,
-    pub package_targets: u64,
-}
-
-/// Installable package targets discovered from one fully verified TUF
-/// repository. The catalog contains only targets compatible with the current
-/// host and never downloads package payloads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerifiedRegistryCatalog {
-    pub metadata: VerifiedRegistryMetadata,
-    pub host_target: String,
-    pub packages: Vec<ResolvedRemotePackage>,
-}
-
 impl ResolvedRemotePackage {
     pub fn plan_digest(&self) -> UseResult<String> {
         let bytes = serde_json::to_vec(self).map_err(|error| {
@@ -227,13 +218,12 @@ impl ResolvedRemotePackage {
         })?;
         validate_target_name(
             &target_name,
-            &RegistryTargetMetadata {
-                schema_version: REGISTRY_TARGET_SCHEMA_VERSION,
-                package_id: self.package_id.clone(),
-                version: self.version.clone(),
-                channel: self.channel.clone(),
-                target: self.target.clone(),
-            },
+            &target_metadata_from_receipt(
+                self.package_id.clone(),
+                self.version.clone(),
+                self.channel.clone(),
+                self.target.clone(),
+            ),
         )?;
         if target_name.raw().rsplit('/').next() != Some(self.archive_name.as_str()) {
             return Err(UseError::new(
@@ -329,16 +319,6 @@ impl DownloadedRemotePackage {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RegistryTargetMetadata {
-    schema_version: u32,
-    package_id: String,
-    version: String,
-    channel: String,
-    target: String,
-}
-
 struct MetadataLock(File);
 
 impl Drop for MetadataLock {
@@ -375,28 +355,26 @@ pub async fn prepare_remote_package(
     let repository = load_repository(registry).await?;
 
     let host_target = host_target()?;
+    let host_use_version = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|error| {
+        UseError::new(
+            "use.extension.registry_target_invalid",
+            format!("The A3S Use package version is invalid: {error}"),
+        )
+    })?;
     let mut candidates = Vec::new();
     let mut identities = BTreeSet::new();
+    let mut incompatible = false;
     for (target_name, target) in repository.all_targets() {
         let Some(metadata) = target.custom.get(REGISTRY_METADATA_KEY) else {
             continue;
         };
-        let metadata: RegistryTargetMetadata =
-            serde_json::from_value(metadata.clone()).map_err(|error| {
-                UseError::new(
-                    "use.extension.registry_target_invalid",
-                    format!(
-                        "TUF target '{}' has invalid A3S metadata: {error}",
-                        target_name.raw()
-                    ),
-                )
-            })?;
+        let metadata = decode_registry_target_metadata(target_name, metadata)?;
         validate_target_metadata(target_name, target, &metadata)?;
         let identity = (
-            metadata.package_id.clone(),
-            metadata.version.clone(),
-            metadata.channel.clone(),
-            metadata.target.clone(),
+            metadata.package_id().to_owned(),
+            metadata.version().to_owned(),
+            metadata.channel().to_owned(),
+            metadata.target().to_owned(),
         );
         if !identities.insert(identity) {
             return Err(UseError::new(
@@ -404,13 +382,10 @@ pub async fn prepare_remote_package(
                 "The TUF repository contains duplicate A3S package targets.",
             ));
         }
-        if metadata.package_id != package_id
-            || metadata.channel != channel
-            || (metadata.target != host_target && metadata.target != "any")
-        {
+        if metadata.package_id() != package_id || metadata.channel() != channel {
             continue;
         }
-        let version = Version::parse(&metadata.version).map_err(|error| {
+        let version = Version::parse(metadata.version()).map_err(|error| {
             UseError::new(
                 "use.extension.registry_target_invalid",
                 format!(
@@ -425,15 +400,37 @@ pub async fn prepare_remote_package(
         {
             continue;
         }
+        let target_compatible = metadata.target() == host_target || metadata.target() == "any";
+        let use_compatible = metadata
+            .catalog_record()
+            .map(|record| {
+                VersionReq::parse(&record.requires_use)
+                    .map(|requirement| requirement.matches(&host_use_version))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(true);
+        if !target_compatible || !use_compatible {
+            incompatible = true;
+            continue;
+        }
         candidates.push((version, metadata, target_name.clone(), target.clone()));
     }
     candidates.sort_by(|left, right| {
         left.0
             .cmp(&right.0)
-            .then_with(|| (left.1.target == host_target).cmp(&(right.1.target == host_target)))
+            .then_with(|| (left.1.target() == host_target).cmp(&(right.1.target() == host_target)))
             .then_with(|| left.2.raw().cmp(right.2.raw()))
     });
     let Some((version, metadata, target_name, target)) = candidates.pop() else {
+        if incompatible {
+            return Err(UseError::new(
+                "use.extension.registry_package_incompatible",
+                format!(
+                    "Registry '{}' has no '{}' package compatible with A3S Use {} on '{}'.",
+                    registry.name, package_id, host_use_version, host_target
+                ),
+            ));
+        }
         return Err(UseError::new(
             "use.extension.registry_package_missing",
             format!(
@@ -444,14 +441,14 @@ pub async fn prepare_remote_package(
     };
     if candidates.last().is_some_and(|candidate| {
         candidate.0 == version
-            && (candidate.1.target == host_target) == (metadata.target == host_target)
+            && (candidate.1.target() == host_target) == (metadata.target() == host_target)
     }) {
         return Err(UseError::new(
             "use.extension.registry_target_invalid",
             "The TUF repository resolves the same package version to multiple targets.",
         ));
     }
-    let resolved = resolved_remote_package(registry, &repository, metadata, &target_name, &target);
+    let resolved = resolved_remote_package(registry, &repository, &metadata, &target_name, &target);
     resolved.verify_expected_plan(expected_plan_digest)?;
     Ok(PreparedRemotePackage {
         repository,
@@ -465,78 +462,9 @@ pub async fn refresh_remote_registry(
     registry: &TrustedRegistry,
 ) -> UseResult<VerifiedRegistryMetadata> {
     let repository = load_repository(registry).await?;
-    verified_registry_metadata(registry, &repository)
-}
-
-/// Refresh and verify a registry, then enumerate host-compatible signed
-/// package targets without downloading any archive.
-pub async fn list_remote_packages(
-    registry: &TrustedRegistry,
-) -> UseResult<VerifiedRegistryCatalog> {
-    let repository = load_repository(registry).await?;
     let metadata = verified_registry_metadata(registry, &repository)?;
-    let host_target = host_target()?;
-    let mut selected = std::collections::BTreeMap::<
-        (String, Version, String),
-        (RegistryTargetMetadata, TargetName, tough::schema::Target),
-    >::new();
-
-    for (target_name, target) in repository.all_targets() {
-        let Some(custom) = target.custom.get(REGISTRY_METADATA_KEY) else {
-            continue;
-        };
-        let package: RegistryTargetMetadata =
-            serde_json::from_value(custom.clone()).map_err(|error| {
-                UseError::new(
-                    "use.extension.registry_target_invalid",
-                    format!(
-                        "TUF target '{}' has invalid A3S metadata: {error}",
-                        target_name.raw()
-                    ),
-                )
-            })?;
-        validate_target_metadata(target_name, target, &package)?;
-        if package.target != host_target && package.target != "any" {
-            continue;
-        }
-        let version = Version::parse(&package.version).map_err(|error| {
-            UseError::new(
-                "use.extension.registry_target_invalid",
-                format!(
-                    "TUF target '{}' declares an invalid version: {error}",
-                    target_name.raw()
-                ),
-            )
-        })?;
-        let key = (package.package_id.clone(), version, package.channel.clone());
-        match selected.get(&key) {
-            None => {
-                selected.insert(key, (package, target_name.clone(), target.clone()));
-            }
-            Some((current, _, _)) if current.target == "any" && package.target == host_target => {
-                selected.insert(key, (package, target_name.clone(), target.clone()));
-            }
-            Some((current, _, _)) if current.target == host_target && package.target == "any" => {}
-            Some(_) => {
-                return Err(UseError::new(
-                    "use.extension.registry_target_invalid",
-                    "The TUF repository resolves the same package version to multiple targets.",
-                ));
-            }
-        }
-    }
-
-    let packages = selected
-        .into_values()
-        .map(|(package, target_name, target)| {
-            resolved_remote_package(registry, &repository, package, &target_name, &target)
-        })
-        .collect();
-    Ok(VerifiedRegistryCatalog {
-        metadata,
-        host_target,
-        packages,
-    })
+    catalog::record_catalog_refresh(registry, &repository, &metadata).await?;
+    Ok(metadata)
 }
 
 fn verified_registry_metadata(
@@ -549,22 +477,13 @@ fn verified_registry_metadata(
         let Some(metadata) = target.custom.get(REGISTRY_METADATA_KEY) else {
             continue;
         };
-        let metadata: RegistryTargetMetadata =
-            serde_json::from_value(metadata.clone()).map_err(|error| {
-                UseError::new(
-                    "use.extension.registry_target_invalid",
-                    format!(
-                        "TUF target '{}' has invalid A3S metadata: {error}",
-                        target_name.raw()
-                    ),
-                )
-            })?;
+        let metadata = decode_registry_target_metadata(target_name, metadata)?;
         validate_target_metadata(target_name, target, &metadata)?;
         let identity = (
-            metadata.package_id,
-            metadata.version,
-            metadata.channel,
-            metadata.target,
+            metadata.package_id().to_owned(),
+            metadata.version().to_owned(),
+            metadata.channel().to_owned(),
+            metadata.target().to_owned(),
         );
         if !identities.insert(identity) {
             return Err(UseError::new(
@@ -578,6 +497,14 @@ fn verified_registry_metadata(
                 "The TUF repository contains too many package targets.",
             )
         })?;
+        if package_targets > MAX_REGISTRY_PACKAGE_TARGETS {
+            return Err(UseError::new(
+                "use.extension.registry_target_invalid",
+                format!(
+                    "The TUF repository exceeds the {MAX_REGISTRY_PACKAGE_TARGETS}-package target limit."
+                ),
+            ));
+        }
     }
     Ok(VerifiedRegistryMetadata {
         registry_name: registry.name.clone(),
@@ -589,38 +516,6 @@ fn verified_registry_metadata(
         targets_version: repository.targets().signed.version.get(),
         package_targets,
     })
-}
-
-fn resolved_remote_package(
-    registry: &TrustedRegistry,
-    repository: &Repository,
-    metadata: RegistryTargetMetadata,
-    target_name: &TargetName,
-    target: &tough::schema::Target,
-) -> ResolvedRemotePackage {
-    let archive_name = target_name
-        .raw()
-        .rsplit('/')
-        .next()
-        .unwrap_or_default()
-        .to_string();
-    ResolvedRemotePackage {
-        registry_name: registry.name.clone(),
-        registry_url: registry.base_url.to_string(),
-        root_sha256: registry.root_sha256.clone(),
-        root_version: repository.root().signed.version.get(),
-        timestamp_version: repository.timestamp().signed.version.get(),
-        snapshot_version: repository.snapshot().signed.version.get(),
-        targets_version: repository.targets().signed.version.get(),
-        package_id: metadata.package_id,
-        version: metadata.version,
-        channel: metadata.channel,
-        target: metadata.target,
-        target_name: target_name.raw().to_string(),
-        archive_name,
-        length: target.length,
-        sha256: hex_lower(target.hashes.sha256.as_ref()),
-    }
 }
 
 async fn load_repository(registry: &TrustedRegistry) -> UseResult<Repository> {
@@ -658,98 +553,6 @@ async fn load_repository(registry: &TrustedRegistry) -> UseResult<Repository> {
         })?;
     drop(lock);
     Ok(repository)
-}
-
-fn validate_target_metadata(
-    target_name: &TargetName,
-    target: &tough::schema::Target,
-    metadata: &RegistryTargetMetadata,
-) -> UseResult<()> {
-    if metadata.schema_version != REGISTRY_TARGET_SCHEMA_VERSION {
-        return Err(UseError::new(
-            "use.extension.registry_target_invalid",
-            format!(
-                "TUF target '{}' uses unsupported A3S metadata schema {}.",
-                target_name.raw(),
-                metadata.schema_version
-            ),
-        ));
-    }
-    if !super::valid_package_id(&metadata.package_id) {
-        return Err(UseError::new(
-            "use.extension.registry_target_invalid",
-            format!(
-                "TUF target '{}' has an invalid package ID.",
-                target_name.raw()
-            ),
-        ));
-    }
-    Version::parse(&metadata.version).map_err(|error| {
-        UseError::new(
-            "use.extension.registry_target_invalid",
-            format!(
-                "TUF target '{}' has an invalid package version: {error}",
-                target_name.raw()
-            ),
-        )
-    })?;
-    validate_channel(&metadata.channel)?;
-    validate_target_name(target_name, metadata)?;
-    if target.length == 0 || target.length > MAX_REMOTE_ARCHIVE_BYTES {
-        return Err(UseError::new(
-            "use.extension.registry_target_invalid",
-            format!(
-                "TUF target '{}' exceeds the supported package size.",
-                target_name.raw()
-            ),
-        ));
-    }
-    let digest = target.hashes.sha256.as_ref();
-    if digest.len() != 32 {
-        return Err(UseError::new(
-            "use.extension.registry_target_invalid",
-            format!(
-                "TUF target '{}' does not have a valid SHA-256 digest.",
-                target_name.raw()
-            ),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_target_name(
-    target_name: &TargetName,
-    metadata: &RegistryTargetMetadata,
-) -> UseResult<()> {
-    let raw = target_name.raw();
-    if raw != target_name.resolved()
-        || raw.starts_with('/')
-        || raw.contains('\\')
-        || raw.split('/').any(str::is_empty)
-    {
-        return Err(UseError::new(
-            "use.extension.registry_target_invalid",
-            format!("TUF target '{raw}' is not a portable package path."),
-        ));
-    }
-    let archive = raw.rsplit('/').next().unwrap_or_default();
-    if !(archive.ends_with(".tar.gz") || archive.ends_with(".tgz") || archive.ends_with(".zip")) {
-        return Err(UseError::new(
-            "use.extension.registry_target_invalid",
-            format!("TUF target '{raw}' is not a supported package archive."),
-        ));
-    }
-    let expected_prefix = format!(
-        "extensions/{}/{}/{}/{}/",
-        metadata.package_id, metadata.version, metadata.channel, metadata.target
-    );
-    if !raw.starts_with(&expected_prefix) {
-        return Err(UseError::new(
-            "use.extension.registry_target_invalid",
-            format!("TUF target '{raw}' must be published below '{expected_prefix}'."),
-        ));
-    }
-    Ok(())
 }
 
 fn validate_channel(channel: &str) -> UseResult<()> {
@@ -1067,3 +870,7 @@ pub(crate) mod test_support;
 #[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "remote_catalog_tests.rs"]
+mod catalog_tests;

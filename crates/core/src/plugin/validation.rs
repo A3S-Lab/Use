@@ -125,6 +125,28 @@ pub(super) fn valid_repository_url(value: &str) -> bool {
         && url.as_str() == value
 }
 
+pub(super) fn valid_registry_url(value: &str) -> bool {
+    let Ok(url) = Url::parse(value) else {
+        return false;
+    };
+    let secure = url.scheme() == "https";
+    let loopback_http = url.scheme() == "http"
+        && url.host_str().is_some_and(|host| {
+            host.eq_ignore_ascii_case("localhost")
+                || host
+                    .parse::<IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+        });
+    value.len() <= 2048
+        && (secure || loopback_http)
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.as_str() == value
+}
+
 pub(super) fn valid_spdx_expression(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 256

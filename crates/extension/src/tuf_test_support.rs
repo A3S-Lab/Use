@@ -26,6 +26,12 @@ pub(crate) struct TestRepository {
     pub(crate) target_sha256: String,
 }
 
+pub(crate) struct TestTarget {
+    pub(crate) archive: Vec<u8>,
+    pub(crate) target_name: String,
+    pub(crate) custom: Value,
+}
+
 impl TestRepository {
     pub(crate) fn new(archive: Vec<u8>, metadata_version: u64, expires: &str) -> Self {
         Self::with_package_version(archive, PACKAGE_VERSION, metadata_version, expires)
@@ -58,6 +64,23 @@ impl TestRepository {
         metadata_version: u64,
         expires: &str,
     ) -> Self {
+        Self::with_targets(
+            vec![TestTarget {
+                archive,
+                target_name,
+                custom,
+            }],
+            metadata_version,
+            expires,
+        )
+    }
+
+    pub(crate) fn with_targets(
+        targets: Vec<TestTarget>,
+        metadata_version: u64,
+        expires: &str,
+    ) -> Self {
+        assert!(!targets.is_empty(), "a TUF test repository needs a target");
         let key = Ed25519KeyPair::from_seed_unchecked(&[7_u8; 32]).unwrap();
         let public = hex_lower(key.public_key().as_ref());
         let key_value = json!({
@@ -86,16 +109,25 @@ impl TestRepository {
         let root = signed_document(&key, &key_id, root_signed);
         let root_sha256 = sha256(&root);
 
-        let target_sha256 = sha256(&archive);
         let mut targets_map = Map::new();
-        targets_map.insert(
-            target_name.clone(),
-            json!({
-                "length": archive.len(),
-                "hashes": {"sha256": target_sha256},
-                "custom": {"a3s": custom}
-            }),
-        );
+        let mut target_routes = Vec::new();
+        for target in targets {
+            let target_sha256 = sha256(&target.archive);
+            targets_map.insert(
+                target.target_name.clone(),
+                json!({
+                    "length": target.archive.len(),
+                    "hashes": {"sha256": target_sha256},
+                    "custom": {"a3s": target.custom}
+                }),
+            );
+            target_routes.push((
+                format!("/targets/{}", target.target_name),
+                target.archive,
+                target.target_name,
+                target_sha256,
+            ));
+        }
         let targets_signed = json!({
             "_type": "targets",
             "spec_version": "1.0.0",
@@ -133,13 +165,19 @@ impl TestRepository {
         });
         let timestamp = signed_document(&key, &key_id, timestamp_signed);
 
-        let routes = HashMap::from([
+        let mut routes = HashMap::from([
             ("/metadata/root.json".to_string(), root),
             ("/metadata/timestamp.json".to_string(), timestamp),
             ("/metadata/snapshot.json".to_string(), snapshot),
             ("/metadata/targets.json".to_string(), targets),
-            (format!("/targets/{target_name}"), archive),
         ]);
+        for (route, archive, _, _) in &target_routes {
+            routes.insert(route.clone(), archive.clone());
+        }
+        let (_, _, target_name, target_sha256) = target_routes
+            .into_iter()
+            .next()
+            .expect("a TUF test repository needs a target");
         Self {
             routes,
             root_sha256,

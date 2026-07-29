@@ -512,15 +512,40 @@ Publish metadata below `<registry>/metadata/` and payloads below
 extensions/<publisher>/<name>/<version>/<channel>/<target>/<archive>
 ```
 
-Its TUF target `custom.a3s` object must contain `schemaVersion`, `packageId`,
-`version`, `channel` (`stable`, `beta`, or `nightly`), and `target` (an A3S host
-target or `any`). Duplicate identities, mismatched paths, unsupported archives,
-and oversized targets are rejected before payload download.
+Legacy TUF targets may retain the `custom.a3s` v1 object containing
+`schemaVersion`, `packageId`, `version`, `channel`, and `target`. New plugin
+registries embed the complete `a3s.use.plugin-catalog.v1` record instead. That
+record binds searchable identity, compatibility, named surfaces, permission
+ceiling, availability, compressed and expanded size, archive path, and
+SHA-256. Both encodings share the same canonical target path. Duplicate
+identities, mismatched signed archive evidence, unsupported archives, and
+oversized targets are rejected before payload download.
 
 Hosts can call `a3s_use_extension::list_remote_packages` to obtain a fully
 verified, host-compatible package catalog without downloading archives. The
 returned catalog includes the verified metadata versions and immutable
 `ResolvedRemotePackage` entries required for review and subsequent installation.
+This compatibility API accepts both metadata encodings.
+
+Plugin-manager clients use `search_remote_plugins` and
+`inspect_remote_plugin` with a trusted `PluginCatalogHost` compatibility
+context. Search is case-insensitive over signed package identity, display
+name, description, publisher, keywords, and categories, with exact filters
+for surface kind, channel, publisher, category, and availability. Results are
+stably ordered and use snapshot- and query-bound cursors. Pages contain at
+most 50 records and one MiB.
+
+Every result remains a `VerifiedPluginCatalogRecord`: the full signed catalog
+record plus registry name and URL, pinned root, all TUF role versions, and the
+canonical record digest. Search and inspect never request a path below
+`targets/`.
+
+`search_cached_plugins` and `inspect_cached_plugin` are explicitly
+network-free. Online refresh stores the exact verified TUF role bytes in a
+separate bounded cache and commits a digest-bound refresh stamp last. Cached
+reads check that stamp, re-run TUF signature and expiration verification with
+the filesystem-only transport, and report both the last verification time and
+cache age. A missing, changed, expired, or rolled-back cache fails closed.
 
 Built-in and management routes are reserved. Extensions cannot shadow
 `browser`, `ocr`, `box`, `component`, `capability`, or other host commands.

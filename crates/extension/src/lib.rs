@@ -37,9 +37,12 @@ pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
 };
 pub use remote::{
-    list_remote_packages, prepare_remote_package, refresh_remote_registry, DownloadedRemotePackage,
-    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog,
-    VerifiedRegistryMetadata,
+    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, prepare_remote_package,
+    refresh_remote_registry, search_cached_plugins, search_remote_plugins, DownloadedRemotePackage,
+    PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection, PluginCatalogPage,
+    PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource, PreparedRemotePackage,
+    ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog, VerifiedRegistryMetadata,
+    MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
 
 const RESERVED_ROUTES: &[&str] = &[

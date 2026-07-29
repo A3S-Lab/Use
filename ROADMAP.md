@@ -175,6 +175,19 @@ Exit criteria:
 
 Estimated effort: 1–2 weeks
 
+Implementation status (2026-07-30):
+
+- completed in Use: dual decoding for legacy target metadata and complete
+  `a3s.use.plugin-catalog.v1` records;
+- completed in Use: bounded local text search, exact filters, deterministic
+  ordering, snapshot-bound pagination, and full provenance inspection;
+- completed in Use: filesystem-only offline re-verification of the last exact
+  online-verified TUF role bytes with cache age reporting;
+- completed in Use: fail-closed compatibility, archive-evidence, cache
+  tampering, expiration, cursor, and response-size coverage;
+- in progress: Science registry-builder emission and end-to-end discovery of
+  every Science catalog entry.
+
 Deliverables:
 
 - extend TUF target metadata or a digest-bound signed index with search fields,
