@@ -77,6 +77,11 @@ package, version, and channel. A catalog archive path, length, or SHA-256 that
 differs from its enclosing TUF target is invalid even when both structures are
 individually signed.
 
+An empty text query is the bounded catalog-browse operation used by
+Marketplace adapters. It keeps the same filters, deterministic ordering,
+snapshot-bound cursor, 50-record page limit, and one-MiB serialized response
+limit as a non-empty search.
+
 Legacy `custom.a3s` schema v1 targets remain readable by installation and
 `list_remote_packages`, but they are not promoted into verified plugin search
 results because they lack the review metadata required by this contract.

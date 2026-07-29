@@ -535,6 +535,10 @@ for surface kind, channel, publisher, category, and availability. Results are
 stably ordered and use snapshot- and query-bound cursors. Pages contain at
 most 50 records and one MiB.
 
+An empty query browses the verified catalog with the same filters and bounds,
+allowing Marketplace clients to page through every compatible record without
+falling back to legacy target summaries.
+
 Every result remains a `VerifiedPluginCatalogRecord`: the full signed catalog
 record plus registry name and URL, pinned root, all TUF role versions, and the
 canonical record digest. Search and inspect never request a path below

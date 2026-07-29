@@ -136,8 +136,7 @@ pub struct PluginCatalogSearch {
 
 impl PluginCatalogSearch {
     fn validate(&self) -> UseResult<()> {
-        if self.query.is_empty()
-            || self.query.len() > MAX_CATALOG_QUERY_BYTES
+        if self.query.len() > MAX_CATALOG_QUERY_BYTES
             || self.query.trim() != self.query
             || self.query.chars().any(char::is_control)
             || self.limit == 0

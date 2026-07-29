@@ -156,6 +156,21 @@ async fn catalog_search_filters_sorts_and_paginates_deterministically() {
         .unwrap();
     assert_eq!(filtered.total_matches, 1);
     assert_eq!(filtered.plugins[0].record.package_id, "acme/gamma");
+
+    let browse = search_remote_plugins(&trusted, &host, &catalog_search("", 2))
+        .await
+        .unwrap();
+    assert_eq!(browse.total_matches, 3);
+    assert_eq!(
+        browse
+            .plugins
+            .iter()
+            .map(|plugin| plugin.record.package_id.as_str())
+            .collect::<Vec<_>>(),
+        ["acme/alpha", "acme/beta"]
+    );
+    assert!(browse.next_cursor.is_some());
+
     assert!(server
         .requests()
         .iter()
