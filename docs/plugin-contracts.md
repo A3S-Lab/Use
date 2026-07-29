@@ -82,6 +82,11 @@ Marketplace adapters. It keeps the same filters, deterministic ordering,
 snapshot-bound cursor, 50-record page limit, and one-MiB serialized response
 limit as a non-empty search.
 
+`ResolvedRemotePackage::from_verified_catalog` adapts a returned complete
+record into the exact metadata-only target proof consumed by the existing
+umbrella planner and installer. The adapter revalidates current-host target
+compatibility and does not download the archive.
+
 Legacy `custom.a3s` schema v1 targets remain readable by installation and
 `list_remote_packages`, but they are not promoted into verified plugin search
 results because they lack the review metadata required by this contract.

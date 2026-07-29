@@ -539,6 +539,10 @@ An empty query browses the verified catalog with the same filters and bounds,
 allowing Marketplace clients to page through every compatible record without
 falling back to legacy target summaries.
 
+`ResolvedRemotePackage::from_verified_catalog` preserves compatibility with
+the existing umbrella plan/apply path while retaining the complete record for
+review; the conversion remains metadata-only.
+
 Every result remains a `VerifiedPluginCatalogRecord`: the full signed catalog
 record plus registry name and URL, pinned root, all TUF role versions, and the
 canonical record digest. Search and inspect never request a path below

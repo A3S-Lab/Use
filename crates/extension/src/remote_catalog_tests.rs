@@ -70,7 +70,6 @@ async fn complete_signed_fixture_is_searchable_and_inspectable_without_archive_d
         page.plugins[0].provenance.catalog_record_digest,
         page.plugins[0].record.descriptor_digest().unwrap()
     );
-
     let inspection = inspect_remote_plugin(
         &trusted,
         &host,
@@ -128,6 +127,17 @@ async fn catalog_search_filters_sorts_and_paginates_deterministically() {
     assert_eq!(first.total_matches, 3);
     assert_eq!(first.plugins[0].record.package_id, "acme/alpha");
     assert!(serde_json::to_vec(&first).unwrap().len() <= MAX_PLUGIN_CATALOG_PAGE_BYTES);
+    let resolved = ResolvedRemotePackage::from_verified_catalog(&first.plugins[0]).unwrap();
+    assert_eq!(resolved.package_id, "acme/alpha");
+    assert_eq!(
+        resolved.target_name,
+        first.plugins[0].record.archive.target_name
+    );
+    assert_eq!(
+        format!("sha256:{}", resolved.sha256),
+        first.plugins[0].record.archive.sha256
+    );
+    assert_eq!(resolved.plan_digest().unwrap().len(), 64);
     let cursor = first.next_cursor.clone().unwrap();
 
     let mut second_search = catalog_search("research", 2);

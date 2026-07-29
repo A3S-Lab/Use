@@ -9,7 +9,7 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::{UseError, UseResult, VerifiedPluginCatalogRecord};
 use fs2::FileExt;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -150,6 +150,43 @@ pub struct ResolvedRemotePackage {
 }
 
 impl ResolvedRemotePackage {
+    /// Adapt a complete verified catalog record into the exact legacy target
+    /// resolution consumed by the existing installer and umbrella planner.
+    ///
+    /// This is a metadata-only conversion. It preserves the same registry,
+    /// TUF role, target, and digest evidence without fetching the archive.
+    pub fn from_verified_catalog(plugin: &VerifiedPluginCatalogRecord) -> UseResult<Self> {
+        plugin.validate()?;
+        let record = &plugin.record;
+        let provenance = &plugin.provenance;
+        let archive_name = record
+            .archive
+            .target_name
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        let resolved = Self {
+            registry_name: provenance.registry_name.clone(),
+            registry_url: provenance.registry_url.clone(),
+            root_sha256: normalize_sha256(&provenance.root_sha256, "registry trust root")?,
+            root_version: provenance.root_version,
+            timestamp_version: provenance.timestamp_version,
+            snapshot_version: provenance.snapshot_version,
+            targets_version: provenance.targets_version,
+            package_id: record.package_id.clone(),
+            version: record.version.clone(),
+            channel: record.channel.as_str().to_owned(),
+            target: record.target.clone(),
+            target_name: record.archive.target_name.clone(),
+            archive_name,
+            length: record.archive.length,
+            sha256: normalize_sha256(&record.archive.sha256, "registry target")?,
+        };
+        resolved.validate_provenance()?;
+        Ok(resolved)
+    }
+
     pub fn plan_digest(&self) -> UseResult<String> {
         let bytes = serde_json::to_vec(self).map_err(|error| {
             UseError::new(
