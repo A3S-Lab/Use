@@ -7,9 +7,10 @@
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 
 This document records the machine-readable plugin contracts implemented in
-`a3s-use-core`. It freezes the control-plane vocabulary before lifecycle
-mutation is implemented. It does not claim that the catalog service, package
-installer, reconciler, or Runtime providers are complete.
+`a3s-use-core` and the signed catalog reader implemented in
+`a3s-use-extension`. It freezes the control-plane vocabulary before shared
+lifecycle mutation is implemented. It does not claim that the Plugin Manager,
+surface reconciler, or Runtime providers are complete.
 
 ## Contract Set
 

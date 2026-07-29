@@ -78,6 +78,8 @@ The following foundations are implemented:
 - reviewed local packages, release bundles, and TUF-verified remote packages;
 - exact registry target selection with version, channel, target, length, and
   SHA-256 provenance;
+- bounded search and inspection over complete signed catalog records, with
+  deterministic pagination and filesystem-only offline re-verification;
 - umbrella CLI dry-run/apply plans protected by a plan digest;
 - a Web Marketplace with catalog and installed views;
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
@@ -88,13 +90,10 @@ The main gaps are:
 
 - the agent worker is explicitly forbidden from installing extensions;
 - no standard MCP management surface exposes plugin search or lifecycle plans;
-- searchable registry metadata does not yet describe all surfaces,
-  permissions, compatibility, and installed-size information needed for an
-  informed autonomous choice;
 - package-level permission declarations are not precise enough to authorize
   native executable plugins without human review;
 - schema v3 named surfaces and Tool release contracts are implemented, but the
-  catalog, manager, reconciler, and Runtime adapters do not consume them yet;
+  manager, reconciler, and Runtime adapters do not consume them yet;
 - Tool Task/Service deployment, binding, dependency readiness, and Runtime
   observation are not yet part of the package reconciler;
 - the Web adapter owns marketplace orchestration that must be reusable by CLI,
@@ -171,7 +170,7 @@ Exit criteria:
 - cross-SDK digest fixtures are deterministic;
 - no lifecycle mutation is implemented before its plan schema is fixed.
 
-### M1 — Signed searchable catalog
+### M1 – Signed searchable catalog (complete 2026-07-30)
 
 Estimated effort: 1–2 weeks
 
@@ -185,8 +184,14 @@ Implementation status (2026-07-30):
   online-verified TUF role bytes with cache age reporting;
 - completed in Use: fail-closed compatibility, archive-evidence, cache
   tampering, expiration, cursor, and response-size coverage;
-- in progress: Science registry-builder emission and end-to-end discovery of
-  every Science catalog entry.
+- completed in Science: registry-builder emission of complete catalog records
+  for all 472 independently selectable package targets;
+- completed end to end: discover all 472 records from a remote first page and
+  filesystem-only cached pagination without archive downloads, then download
+  and install only the selected `a3s/native-autodock` target;
+- completed in Science CI validation: schema, surface honesty, permission
+  ceiling, compatibility, archive binding, size bounds, provenance, and
+  availability are checked for every published target.
 
 Deliverables:
 
