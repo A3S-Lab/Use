@@ -217,19 +217,12 @@ activation, route leases, and removal.
 
 ## Roadmap
 
-Implemented:
-
-1. Typed Browser, OCR, Box, extension, and component contracts.
-2. Native CLI, standard MCP, Skill, and content-bound workbench extension surfaces.
-3. Atomic extension install, upgrade, enable, disable, uninstall, watch, and route draining.
-4. Local reviewed packages, release-bundled packages, and TUF-verified registries.
-5. A unified generation and revision capability projection for resident hosts.
-6. Schema v2 repository identity and SemVer host compatibility.
-7. Package-ID and route-based discovery, diagnosis, delegation, MCP launch, and removal.
-8. A3S Office as an independently released reference repository package.
-
-Next:
-
-1. Production publication for the official A3S extension registry, including an offline-held root-key policy and release automation.
-2. Additional external repositories adopting schema v2 and publishing reproducible package provenance.
-3. Windows real-Chrome persistent sessions with the same runtime guarantees as macOS and Linux.
+The completed contract baseline and the dependency-ordered development plan
+for user- and agent-managed plugins now live in the
+[A3S Use Plugin Platform Roadmap](../ROADMAP.md). That document is the single
+source of truth for searchable catalogs, shared lifecycle management, agent
+authorization, on-demand Science delivery, supply-chain hardening, and
+cross-platform completion gates. The corresponding
+[Plugin Platform Architecture](plugin-platform-architecture.md) defines the
+multi-surface package, Tool Task/Service, Runtime binding, reconciliation,
+consistency, and security model.

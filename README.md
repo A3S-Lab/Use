@@ -622,8 +622,11 @@ installation requests still require the parent TUI's authority.
 
 Source is split between the facade under `src/` and focused workspace crates
 under `crates/`. See [Architecture](docs/architecture.md) for package leases,
-registry publication, persistent sessions, component ownership, and roadmap
-details.
+registry publication, persistent sessions, and component ownership. The
+[Plugin Platform Roadmap](ROADMAP.md) is the source of truth for user- and
+agent-managed plugin discovery, installation, use, and removal. The
+[Plugin Platform Architecture](docs/plugin-platform-architecture.md) defines
+Skill, CLI/HTTP Tool, MCP, UI, Runtime, and lifecycle boundaries.
 
 ## Platform Support
 

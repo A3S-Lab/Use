@@ -1,0 +1,485 @@
+# A3S Use Plugin Lifecycle and Security
+
+- Status: proposed
+- Planning baseline: 2026-07-30
+- Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
+- Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
+
+This document is the operational companion to the plugin platform
+architecture. It defines lifecycle consistency, failure recovery, security,
+storage, public application contracts, and observability.
+
+## End-to-End Lifecycle Flow
+
+The same Plugin Manager serves CLI, Web, and management MCP adapters. Solid
+arrows are normal transitions. The dotted arrow represents recovery from a
+crash after durable operation intent has been recorded.
+
+```mermaid
+flowchart TD
+  actor["User or authorized agent"] --> command{"Requested operation"}
+
+  subgraph discovery["1. Discovery and resolution"]
+    catalog["Refresh and search verified metadata<br/>No package payload download"]
+    inspect["Inspect provenance, surfaces, permissions,<br/>sizes, compatibility, and withdrawal state"]
+    installChoice{"Install selected release?"}
+    resolveInstall["Resolve exact package and dependency digests<br/>Action: install"]
+    resolveUpgrade["Resolve N+1, permission diff, dependencies,<br/>and provider requirements<br/>Action: upgrade"]
+    resolveUninstall["Resolve owned resources, workspace impact,<br/>leases, and retained data<br/>Action: uninstall"]
+    buildPlan["Build canonical expiring plan<br/>Bind registry root, metadata versions, digests,<br/>scope, grants, provider evidence, and impact"]
+  end
+
+  command -- "Search / inspect / install" --> catalog
+  catalog --> inspect
+  inspect --> installChoice
+  installChoice -- "No" --> idle["No mutation"]
+  installChoice -- "Yes" --> resolveInstall
+  command -- "Upgrade" --> resolveUpgrade
+  command -- "Uninstall" --> resolveUninstall
+  resolveInstall --> buildPlan
+  resolveUpgrade --> buildPlan
+  resolveUninstall --> buildPlan
+
+  subgraph authorization["2. Authorization and immutable apply"]
+    policy{"ACL policy decision"}
+    confirmation{"User confirms the exact plan?"}
+    denied["Denied or cancelled<br/>No mutation"]
+    apply["Apply with canonical plan digest"]
+    reresolve["Repeat trust, dependency, permission,<br/>provider, ownership, and impact resolution"]
+    exact{"Still exactly matches the plan?"}
+    drift["Reject expired or changed plan<br/>Require a new review"]
+    intent["Persist durable operation intent<br/>and per-surface idempotency keys"]
+    plannedAction{"Planned action"}
+  end
+
+  buildPlan --> policy
+  policy -- "deny" --> denied
+  policy -- "ask" --> confirmation
+  confirmation -- "No" --> denied
+  confirmation -- "Yes" --> apply
+  policy -- "allow within every ceiling" --> apply
+  apply --> reresolve
+  reresolve --> exact
+  exact -- "No" --> drift
+  drift --> command
+  exact -- "Yes" --> intent
+  intent --> plannedAction
+
+  subgraph packageInstall["3. Package installation or upgrade staging"]
+    stage["Download selected package and exact dependency closure<br/>to a bounded staging root"]
+    verify["Verify TUF metadata, archive length/digest,<br/>manifest, paths, descriptors, artifacts,<br/>compatibility, and permission ceiling"]
+    valid{"All verification gates pass?"}
+    rejectPackage["Delete or quarantine staging data<br/>Record typed failure; preserve N on upgrade"]
+    commit["Atomically commit immutable package generation<br/>and candidate installed-disabled receipt"]
+    desiredAfterCommit{"Desired state after commit?"}
+  end
+
+  plannedAction -- "install / upgrade" --> stage
+  stage --> verify
+  verify --> valid
+  valid -- "No" --> rejectPackage
+  rejectPackage --> command
+  valid -- "Yes" --> commit
+  commit --> desiredAfterCommit
+
+  subgraph reconcile["4. Surface reconciliation"]
+    observe["Observe package, desired state, grants,<br/>bindings, projections, Runtime, and Gateway"]
+    graph["Build required surface dependency closure<br/>All surfaces required unless explicitly optional"]
+    provider{"Explicit provider still satisfies<br/>artifact, Task/Service, isolation, network,<br/>health, mount, resource, and secret capabilities?"}
+    staticVerify["Verify Skill and UI content<br/>and declared dependency references"]
+    taskPrepare["For each CLI Tool:<br/>prepare exact-generation Runtime Task binding<br/>or constrained legacy native binding"]
+    serviceApply["For each HTTP Tool:<br/>apply private Runtime Service<br/>and wait for declared health"]
+    mcpTransport{"For each MCP surface"}
+    mcpHttp["Streamable HTTP:<br/>apply Runtime Service, pass health,<br/>then complete standard MCP probe"]
+    mcpStdio["stdio:<br/>prepare supervised bidirectional session<br/>and complete standard MCP probe"]
+    closure{"Required dependency closure usable?"}
+    previous{"Superseded generation N exists?"}
+    previousState{"Was generation N active?"}
+    keepPrevious["Keep generation N active<br/>Record N+1 failure and remediation"]
+    keepPreviousDisabled["Keep generation N installed-disabled<br/>Record N+1 failure and remediation"]
+    broken["Withhold or revoke required capabilities<br/>Keep package installed; observed broken"]
+    readyBindings["Persist non-secret bindings<br/>and receipt-owned projections"]
+    degradedBindings["Persist required bindings only<br/>Record optional-surface failures"]
+    projectionReady{"Skill roots, command shims, UI index,<br/>and backend bindings committed?"}
+    publishReady["Atomically publish one capability generation<br/>Then drain/remove any superseded generation"]
+    publishDegraded["Atomically publish required capabilities<br/>Mark aggregate degraded; retry optional surfaces"]
+  end
+
+  desiredAfterCommit -- "installed-disabled" --> installedDisabled["Installed and disabled"]
+  desiredAfterCommit -- "enabled" --> observe
+  observe --> graph
+  graph --> provider
+  provider -- "No" --> previous
+  provider -- "Yes" --> staticVerify
+  provider -- "Yes" --> taskPrepare
+  provider -- "Yes" --> serviceApply
+  provider -- "Yes" --> mcpTransport
+  mcpTransport -- "Streamable HTTP" --> mcpHttp
+  mcpTransport -- "stdio" --> mcpStdio
+  mcpTransport -- "none declared" --> closure
+  staticVerify --> closure
+  taskPrepare --> closure
+  serviceApply --> closure
+  mcpHttp --> closure
+  mcpStdio --> closure
+  closure -- "Required failure" --> previous
+  previous -- "Yes" --> previousState
+  previousState -- "Yes" --> keepPrevious
+  previousState -- "No" --> keepPreviousDisabled
+  previous -- "No" --> broken
+  closure -- "All declared surfaces ready" --> readyBindings
+  closure -- "Only optional surfaces failed" --> degradedBindings
+  readyBindings --> projectionReady
+  degradedBindings --> projectionReady
+  projectionReady -- "No" --> previous
+  projectionReady -- "Yes, complete" --> publishReady
+  projectionReady -- "Yes, required only" --> publishDegraded
+  publishReady --> ready["Enabled and ready"]
+  publishDegraded --> degraded["Enabled and degraded"]
+
+  subgraph use["5. Active use and observation"]
+    watch["Session watches capability revision"]
+    useRequest["Skill/UI load or Tool/MCP invocation"]
+    visible{"Authorized exact-generation binding visible?"}
+    rejectUse["Reject new use<br/>disabled, stale, incompatible, or unauthorized"]
+    lease["Acquire exact-generation shared lease"]
+    surfaceKind{"Surface kind"}
+    runTask["CLI Tool:<br/>run one Runtime Task with native argv,<br/>bounded input/output, and exit status"]
+    callService["HTTP Tool:<br/>call private Service through scoped Gateway binding"]
+    callMcp["MCP:<br/>use standard MCP client and declared transport"]
+    loadStatic["Skill/UI:<br/>load verified generation-scoped projection"]
+    release["Release lease and record bounded observation"]
+    changed{"Health or provider observation changed?"}
+  end
+
+  ready --> watch
+  degraded --> watch
+  keepPrevious --> watch
+  command -- "Use installed capability" --> useRequest
+  watch --> useRequest
+  useRequest --> visible
+  visible -- "No" --> rejectUse
+  rejectUse --> command
+  visible -- "Yes" --> lease
+  lease --> surfaceKind
+  surfaceKind -- "CLI Tool" --> runTask
+  surfaceKind -- "HTTP Tool" --> callService
+  surfaceKind -- "MCP" --> callMcp
+  surfaceKind -- "Skill / UI" --> loadStatic
+  runTask --> release
+  callService --> release
+  callMcp --> release
+  loadStatic --> release
+  release --> changed
+  changed -- "No" --> command
+  changed -- "Yes" --> observe
+
+  subgraph toggle["6. Enable and disable"]
+    togglePolicy{"Authorize enable or disable<br/>allow / ask / deny"}
+    toggleConfirm{"User confirms?"}
+    toggleIntent["Persist durable toggle intent<br/>and idempotency key"]
+    toggleAction{"Enable or disable?"}
+    setEnabled["Persist desired enabled"]
+    setDisabled["Persist desired installed-disabled"]
+  end
+
+  command -- "Enable / disable" --> togglePolicy
+  togglePolicy -- "deny" --> denied
+  togglePolicy -- "ask" --> toggleConfirm
+  toggleConfirm -- "No" --> denied
+  toggleConfirm -- "Yes" --> toggleIntent
+  togglePolicy -- "allow" --> toggleIntent
+  toggleIntent --> toggleAction
+  toggleAction -- "Enable" --> setEnabled
+  setEnabled --> observe
+  toggleAction -- "Disable" --> setDisabled
+
+  subgraph remove["7. Disable, uninstall, and retained data"]
+    referenceGate{"New protected workspace reference<br/>not covered by reviewed plan?"}
+    setAbsent["Persist desired absent"]
+    hide["Atomically hide routes and projections<br/>Block new calls"]
+    drain["Drain exact-generation leases<br/>or reach reviewed timeout policy"]
+    removalAction{"Desired state"}
+    stop["Stop eager Tool/MCP workloads<br/>Keep immutable package and data"]
+    removeRuntime["Stop and remove Runtime units,<br/>Gateway routes, and endpoint bindings"]
+    removeProjection["Remove receipt-owned Skill roots,<br/>command shims, UI indexes, and bindings"]
+    removePackage["Remove scope receipt and unreferenced<br/>immutable package generations"]
+    retain["Retain plugin data and secret records by default"]
+    removed["Absent / removed"]
+    purge{"Separate explicit user-only purge?"}
+    purgeData["Delete reviewed plugin data and secret records"]
+  end
+
+  plannedAction -- "uninstall" --> referenceGate
+  referenceGate -- "Yes" --> drift
+  referenceGate -- "No" --> setAbsent
+  setAbsent --> hide
+  setDisabled --> hide
+  hide --> drain
+  drain --> removalAction
+  removalAction -- "installed-disabled" --> stop
+  stop --> installedDisabled
+  removalAction -- "absent" --> removeRuntime
+  removeRuntime --> removeProjection
+  removeProjection --> removePackage
+  removePackage --> retain
+  retain --> removed
+  removed --> purge
+  purge -- "No" --> command
+  purge -- "Yes, explicitly reviewed" --> purgeData
+  purgeData --> command
+
+  installedDisabled --> command
+  ready --> command
+  degraded --> command
+  keepPrevious --> command
+  keepPreviousDisabled --> command
+  broken --> command
+  idle --> command
+  denied --> command
+
+  subgraph recovery["8. Crash recovery and reconciliation"]
+    restart["Restart finds incomplete operation"]
+    compare["Compare durable intent with package, receipt,<br/>Runtime, Gateway, binding, projection, and lease observations"]
+    recoveryCase{"Last durable evidence"}
+    cleanStage["Delete bounded staging data<br/>Re-plan if necessary"]
+    repairReceipt["Reconstruct or quarantine receipt<br/>from verified immutable package"]
+    repairBinding["Inspect exact Runtime unit<br/>Reconstruct binding without adopting unknown units"]
+    continueRemoval["Continue route drain, stop, removal,<br/>or generation garbage collection"]
+  end
+
+  intent -. "Crash or process restart after durable intent" .-> restart
+  toggleIntent -. "Crash or process restart" .-> restart
+  setEnabled -. "Restart reconciles desired state" .-> restart
+  setDisabled -. "Restart reconciles desired state" .-> restart
+  setAbsent -. "Restart reconciles desired state" .-> restart
+  restart --> compare
+  compare --> recoveryCase
+  recoveryCase -- "staging only" --> cleanStage
+  cleanStage --> command
+  recoveryCase -- "package committed" --> repairReceipt
+  repairReceipt --> observe
+  recoveryCase -- "Runtime applied / binding missing" --> repairBinding
+  repairBinding --> observe
+  recoveryCase -- "routes hidden / old generation leased" --> continueRemoval
+  continueRemoval --> drain
+
+  classDef stable fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20;
+  classDef failure fill:#ffebee,stroke:#c62828,color:#7f0000;
+  classDef durable fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
+  classDef runtime fill:#fff8e1,stroke:#f9a825,color:#5d4037;
+  class ready,degraded,installedDisabled,removed,keepPrevious,keepPreviousDisabled stable;
+  class denied,drift,rejectPackage,rejectUse,broken failure;
+  class intent,toggleIntent,commit,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent durable;
+  class taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,removeRuntime runtime;
+```
+
+The graph has four important invariants:
+
+- package installation commits a disabled receipt before any capability is
+  published;
+- a required Skill is invisible until its Tool and MCP dependency closure is
+  usable;
+- upgrade switches all required N+1 bindings in one capability generation or
+  keeps N active; and
+- disable or uninstall hides new routes before waiting for existing leases.
+
+## Lifecycle and Consistency
+
+Package storage, Runtime providers, Gateway, and Code/Web cannot participate in
+one ACID transaction. Lifecycle therefore uses a durable, idempotent saga with
+an operation record and compensating actions.
+
+### Install and enable
+
+1. Resolve verified metadata, dependencies, provider requirements, and grants.
+2. Produce a canonical, expiring plan with exact digests and provider choice.
+3. Re-resolve on apply and persist an operation intent before side effects.
+4. Download to a bounded staging root and verify archive and surface digests.
+5. Atomically commit the immutable package and a disabled receipt.
+6. Record desired `enabled` state and reconcile Tool, MCP, Skill, and UI
+   bindings in dependency order.
+7. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
+8. Atomically publish one capability generation.
+9. Mark the operation complete and garbage-collect safe staging data.
+
+If activation fails, the package remains installed but disabled or broken with
+typed diagnostics. No partial Skill, command shim, endpoint, MCP route, or UI
+generation is advertised as ready.
+
+### Upgrade
+
+Generation N remains active while N+1 is staged and reconciled. Services use a
+health-gated blue/green binding. After N+1 is fully ready, one atomic snapshot
+switch routes new work to N+1. Generation N drains, stops, and is collected
+only after all leases release. A failed N+1 leaves N active.
+
+An added permission, secret request, provider requirement, external
+dependency, command alias, or public interface is plan drift and requires a
+new grant or confirmation.
+
+### Disable and uninstall
+
+Disable first publishes a snapshot without the plugin, then drains invocations
+and stops eager workloads. The immutable package and retained data remain.
+
+Uninstall:
+
+1. records desired `absent`;
+2. removes new-call routes and session projections;
+3. drains exact-generation leases;
+4. stops and removes Runtime units and Gateway bindings;
+5. removes receipt-owned shims and projections;
+6. removes receipts and unreferenced package generations; and
+7. retains plugin data and secrets unless a separate purge is authorized.
+
+Global uninstall is rejected while another protected workspace grant depends
+on the release unless the reviewed plan includes that impact.
+
+### Crash recovery
+
+On startup, the reconciler scans incomplete operations and compares durable
+intent with package, receipt, Runtime, Gateway, and projection observations.
+
+| Last durable point | Recovery |
+| --- | --- |
+| Download only | Delete bounded staging data and retry |
+| Package committed, receipt absent | Reconstruct or quarantine from verified manifest |
+| Disabled receipt committed | Resume reconciliation without publishing |
+| Runtime unit applied, binding absent | Inspect exact unit and reconstruct binding |
+| Binding ready, snapshot absent | Revalidate grants and publish atomically |
+| Snapshot removed, workload running | Continue drain and stop |
+| Old generation still referenced | Preserve it and retry garbage collection |
+
+Every external mutation carries an idempotency key derived from operation,
+surface, and generation. Recovery never guesses that an unknown provider unit
+belongs to the plugin.
+
+## Security Architecture
+
+The integrity chain is:
+
+```text
+trusted registry root
+  -> signed target metadata
+  -> package archive digest
+  -> manifest and surface content digests
+  -> release descriptor digest
+  -> executable or image artifact digest
+  -> Runtime semantics digest
+  -> binding receipt
+  -> capability snapshot generation
+```
+
+Breaking any link fails closed.
+
+### Permission model
+
+Permissions are typed ceilings evaluated per package digest, surface,
+workspace, and actor:
+
+- filesystem read/write roots;
+- network egress domains and private inbound Service exposure;
+- child-process and native execution;
+- secret names, never secret values;
+- CPU, memory, process, storage, execution-time, and output limits;
+- UI backend binding and method/path ceilings where configured; and
+- user-only destructive operations.
+
+Skill instructions, Tool output, MCP descriptions, OpenAPI text, UI messages,
+and catalog descriptions are untrusted content. They cannot create a grant,
+change provider selection, add a dependency, or authorize lifecycle mutation.
+
+Secrets are delivered by reference at invocation or Service start. They are
+excluded from manifests, descriptors, plans, receipts, binding snapshots,
+logs, diagnostics, and UI state.
+
+### Agent authority
+
+The management MCP exposes bounded search, inspect, status, plan, and apply
+operations over the same Plugin Manager used by CLI and Web. Default mutation
+policy is `ask`. Trust-root changes, unsigned/local install, secret grants, and
+data purge remain user-only.
+
+Using a Tool is separate from managing a plugin. The agent can invoke only a
+Tool binding already projected into its authorized session. It cannot supply a
+provider, executable path, endpoint, package root, or secret reference.
+
+## Storage and Projection
+
+The target logical layout is:
+
+```text
+data/use/
+  plugins/                 immutable canonical generations
+  state/
+    receipts/              installed ownership and desired state
+    operations/            durable lifecycle saga records
+    bindings/              non-secret Runtime and host bindings
+    grants/                workspace permission decisions
+  projections/
+    <host>/<scope>/         generated Skills, command shims, UI indexes
+  plugin-data/             retained mutable plugin data
+  cache/                   evictable metadata and artifact cache
+  staging/                 bounded incomplete operations
+```
+
+Package payload is user-wide and deduplicated by digest. Grants, enablement,
+bindings, and projections are scope-specific. Mutable plugin data is never
+stored under an immutable package generation.
+
+Runtime units and endpoint bindings are workspace-scoped in the initial
+contract, even when two workspaces use the same package bytes. Cross-workspace
+process or Service sharing would combine permission and data boundaries and is
+therefore a separate future design, not an implicit optimization.
+
+The current `data/use/extensions/` layout migrates in place through versioned
+receipts or remains a compatibility path. A migration must not duplicate large
+payloads merely to rename a directory.
+
+## Public Application Contracts
+
+All adapters call one application service:
+
+```text
+search(query, filters, page)
+inspect(plugin_id, version?)
+list_installed(scope)
+status(plugin_id, scope)
+plan_install | plan_upgrade | plan_uninstall
+apply(plan_digest, authority_context)
+enable | disable
+watch(after_revision)
+```
+
+Tool execution is a separate data-plane contract:
+
+```text
+resolve_binding(plugin_id, tool_id, scope, generation?)
+invoke_task(binding, argv, input_reference?)
+resolve_service(binding)
+```
+
+The implementation accepts only installed binding IDs. This contract is not
+published as a general plugin action RPC and does not replace native CLI or
+HTTP semantics.
+
+## Observability
+
+Every lifecycle operation has an operation ID, actor, scope, plan digest,
+package digest, provider evidence, start/end time, and typed outcome. Events
+follow the repository convention:
+
+```text
+use.plugin.install.planned
+use.plugin.install.completed
+use.plugin.surface.reconciling
+use.plugin.surface.ready
+use.plugin.surface.failed
+use.plugin.capability.published
+use.plugin.uninstall.completed
+```
+
+Status separates desired state, aggregate observed state, each surface state,
+last transition, retryability, and remediation. Logs are fetched through the
+owning Runtime provider and are bounded and redacted.
