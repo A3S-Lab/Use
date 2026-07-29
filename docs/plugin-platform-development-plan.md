@@ -5,6 +5,7 @@
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
+- Contracts: [Plugin Contract Reference](plugin-contracts.md)
 
 This document defines the technical execution plan for the milestones in the
 plugin platform roadmap. The roadmap owns priority and completion status; this

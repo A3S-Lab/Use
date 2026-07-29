@@ -140,8 +140,12 @@ Implementation status (2026-07-30):
   parsing compatibility and a stable ACL fixture digest;
 - completed: `a3s.use.tool-release.v1`, closed Task/CLI and Service/HTTP
   workload contracts, and canonical JSON digest fixtures;
-- pending: catalog, permission-ceiling, plan/apply, and manager MCP schemas;
-- pending: canonical signed catalog and complete package fixtures.
+- completed: catalog, verified TUF provenance, permission-ceiling,
+  digest-bound plan/apply, and bounded manager MCP toolset contracts;
+- completed: canonical catalog, permission, install-plan, and manager-toolset
+  JSON fixtures with stable SHA-256 digests;
+- pending: canonical signed TUF metadata and complete installable package
+  fixtures.
 
 Deliverables:
 

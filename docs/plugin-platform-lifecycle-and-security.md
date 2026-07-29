@@ -1,19 +1,22 @@
 # A3S Use Plugin Lifecycle and Security
 
-- Status: proposed
+- Status: accepted M0 contract baseline; runtime implementation in progress
 - Planning baseline: 2026-07-30
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
+- Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 
 This document is the operational companion to the plugin platform
 architecture. It defines lifecycle consistency, failure recovery, security,
 storage, public application contracts, and observability.
 
-## End-to-End Lifecycle Flow
+## Complete End-to-End Lifecycle Flow
 
-The same Plugin Manager serves CLI, Web, and management MCP adapters. Solid
-arrows are normal transitions. The dotted arrow represents recovery from a
-crash after durable operation intent has been recorded.
+The following is the normative full lifecycle flow, from metadata-only search
+through selective installation, active use, upgrade, disable, uninstall,
+retained data, and crash recovery. The same Plugin Manager serves CLI, Web,
+and management MCP adapters. Solid arrows are normal transitions. Dotted
+arrows represent recovery after durable operation intent has been recorded.
 
 ```mermaid
 flowchart TD

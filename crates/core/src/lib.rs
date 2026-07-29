@@ -5,8 +5,24 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod plugin;
 pub mod release;
 
+pub use plugin::{
+    CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage, CatalogSurface,
+    FilesystemAccess, FilesystemPermission, FilesystemScope, HttpMethod, NetworkEgressPermission,
+    PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
+    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOperationImpact,
+    PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease, PlannedProviderEvidence,
+    PlannedSecretChange, PlannedSecretChangeKind, PlannedStateEvidence, PlannedSurfaceChange,
+    PlannedWorkspaceImpact, PluginCatalogRecord, PluginManagerToolAnnotations,
+    PluginManagerToolDefinition, PluginManagerToolset, PluginOperationAction, PluginOperationPlan,
+    PluginOperationPlanEnvelope, PluginPermissionCeiling, PluginPlanSource, PluginReleaseChannel,
+    PluginSurfaceKind, PluginSurfaceRef, ResourcePermissionCeiling, SurfaceChangeKind,
+    SurfacePermissionCeiling, ToolWorkloadClass, UiHttpPermission, VerifiedCatalogProvenance,
+    VerifiedPluginCatalogRecord, MAX_PLUGIN_CONTRACT_BYTES, PLUGIN_CATALOG_SCHEMA,
+    PLUGIN_MANAGER_TOOLSET_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA, PLUGIN_PERMISSION_SCHEMA,
+};
 pub use release::{
     HttpHealthContract, McpReleaseDescriptor, McpServiceContract, McpServiceTransport,
     ReleaseArtifact, ReleaseCompatibility, ReleaseDependency, ReleaseKind, ReleaseProvenance,
