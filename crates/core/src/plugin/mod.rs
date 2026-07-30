@@ -19,6 +19,7 @@ mod plan_confirmation;
 mod plan_draft;
 mod plan_package_validation;
 mod plan_validation;
+mod planning_bundle;
 mod resolved_grant_changes;
 mod validation;
 
@@ -53,6 +54,9 @@ pub use plan::{
 };
 pub use plan_confirmation::PluginOperationConfirmation;
 pub use plan_draft::{PluginOperationPlanBinding, PluginOperationPlanDraft};
+pub use planning_bundle::{
+    ExecutablePlanningSurface, PlanningArtifactRef, PlanningSurfaceActivation, PluginPlanningBundle,
+};
 pub use resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantChangeSet};
 
 pub const PLUGIN_CATALOG_SCHEMA: &str = "a3s.use.plugin-catalog.v1";
@@ -63,6 +67,7 @@ pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA: &str = "a3s.use.plugin-operation-plan-draft.v1";
 pub const PLUGIN_OPERATION_PLAN_SCHEMA: &str = "a3s.use.plugin-operation-plan.v1";
+pub const PLUGIN_PLANNING_BUNDLE_SCHEMA: &str = "a3s.use.plugin-planning-bundle.v1";
 pub const PLUGIN_PERMISSION_SCHEMA: &str = "a3s.use.plugin-permissions.v1";
 pub const PLUGIN_GRANT_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-grant-confirmation.v1";
 pub const PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA: &str =

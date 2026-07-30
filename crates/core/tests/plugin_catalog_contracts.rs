@@ -1,9 +1,12 @@
 use a3s_use_core::{
-    CatalogPlanningTarget, InstalledPluginPlanEvidence, PlanPackageRole, PluginCatalogRecord,
-    PluginPermissionCeiling, PluginPlanSource, PluginSurfaceKind, PluginSurfaceRef,
-    ToolWorkloadClass, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
-    INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA, PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
+    CatalogPlanningTarget, ExecutablePlanningSurface, InstalledPluginPlanEvidence,
+    McpReleaseDescriptor, PlanPackageRole, PlanningArtifactRef, PlanningSurfaceActivation,
+    PluginCatalogRecord, PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle,
+    PluginSurfaceKind, PluginSurfaceRef, ToolReleaseDescriptor, ToolWorkloadClass,
+    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
+    PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
+use sha2::{Digest, Sha256};
 
 const PERMISSION_CEILING: &[u8] = include_bytes!("../fixtures/plugins/permission-ceiling-v1.json");
 const CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-v1.json");
@@ -280,6 +283,60 @@ fn catalog_v3_binds_one_small_deterministic_planning_target() {
 }
 
 #[test]
+fn planning_bundle_binds_release_backed_executables_to_catalog_v3() {
+    let bundle = planning_bundle();
+    let bytes = bundle.canonical_bytes().unwrap();
+    let catalog = catalog_v3_for_planning_target(&bytes);
+    let parsed = PluginPlanningBundle::from_catalog_target(&bytes, &catalog).unwrap();
+
+    assert_eq!(parsed, bundle);
+    assert_eq!(parsed.surfaces.len(), 3);
+    assert!(parsed.descriptor_digest().unwrap().starts_with("sha256:"));
+
+    let mut changed_bytes = bytes.clone();
+    changed_bytes.push(b'\n');
+    assert!(PluginPlanningBundle::from_catalog_target(&changed_bytes, &catalog).is_err());
+
+    let mut incomplete = bundle.clone();
+    incomplete.surfaces.pop();
+    let incomplete_bytes = incomplete.canonical_bytes().unwrap();
+    let incomplete_catalog = catalog_v3_for_planning_target(&incomplete_bytes);
+    assert!(
+        PluginPlanningBundle::from_catalog_target(&incomplete_bytes, &incomplete_catalog).is_err()
+    );
+}
+
+#[test]
+fn planning_bundle_rejects_mutable_artifacts_and_unsupported_catalog_surfaces() {
+    let mut bundle = planning_bundle();
+    let ExecutablePlanningSurface::McpService { artifact, .. } = &mut bundle.surfaces[0] else {
+        panic!("first planning surface should be MCP");
+    };
+    artifact.uri = "oci://registry.example/acme/library:latest".to_owned();
+    assert!(bundle.validate().is_err());
+
+    let mut bundle = planning_bundle();
+    let initial_bytes = bundle.canonical_bytes().unwrap();
+    let mut catalog = catalog_v3_for_planning_target(&initial_bytes);
+    catalog.record.surfaces[0].mcp_transport = Some(a3s_use_core::CatalogMcpTransport::Stdio);
+    catalog.record.permission_ceiling.surfaces[0].native_execution = true;
+    catalog.record.permission_ceiling.surfaces[0].private_service = false;
+    catalog.record.permission_ceiling_digest = catalog
+        .record
+        .permission_ceiling
+        .descriptor_digest()
+        .unwrap();
+    bundle.permission_ceiling_digest = catalog.record.permission_ceiling_digest.clone();
+    let bytes = bundle.canonical_bytes().unwrap();
+    let planning = catalog.record.planning.as_mut().unwrap();
+    planning.length = bytes.len() as u64;
+    planning.sha256 = format!("sha256:{:x}", Sha256::digest(&bytes));
+    catalog.provenance.catalog_record_digest = catalog.record.descriptor_digest().unwrap();
+    assert!(catalog.validate().is_ok());
+    assert!(PluginPlanningBundle::from_catalog_target(&bytes, &catalog).is_err());
+}
+
+#[test]
 fn verified_catalog_v2_derives_a_plan_ready_selected_install_transition() {
     let verified = plan_ready_catalog();
     let transition = verified
@@ -416,6 +473,90 @@ fn installed_plan_evidence_rejects_catalog_or_capability_drift() {
     evidence.capability_revision = "a".repeat(64);
     evidence.verified_catalog.record.version = "2.1.0".to_owned();
     assert!(evidence.validate().is_err());
+}
+
+fn planning_bundle() -> PluginPlanningBundle {
+    let catalog = plan_ready_catalog();
+    let mcp =
+        McpReleaseDescriptor::from_json(include_bytes!("../fixtures/releases/mcp-release-v1.json"))
+            .unwrap();
+    let task = ToolReleaseDescriptor::from_json(include_bytes!(
+        "../fixtures/releases/tool-task-release-v1.json"
+    ))
+    .unwrap();
+    let service = ToolReleaseDescriptor::from_json(include_bytes!(
+        "../fixtures/releases/tool-service-release-v1.json"
+    ))
+    .unwrap();
+    PluginPlanningBundle {
+        schema: PLUGIN_PLANNING_BUNDLE_SCHEMA.to_owned(),
+        package_id: catalog.record.package_id,
+        version: catalog.record.version,
+        channel: catalog.record.channel,
+        target: catalog.record.target,
+        archive_sha256: catalog.record.archive.sha256,
+        package_sha256: catalog.record.package.sha256.unwrap(),
+        manifest_sha256: catalog.record.package.manifest_sha256.unwrap(),
+        permission_ceiling_digest: catalog.record.permission_ceiling_digest,
+        surfaces: vec![
+            ExecutablePlanningSurface::McpService {
+                id: "library".to_owned(),
+                activation: PlanningSurfaceActivation::Eager,
+                artifact: planning_artifact(
+                    "library",
+                    &mcp.artifact.digest,
+                    &mcp.artifact.media_type,
+                ),
+                descriptor: mcp,
+            },
+            ExecutablePlanningSurface::ToolTask {
+                id: "convert".to_owned(),
+                activation: PlanningSurfaceActivation::Lazy,
+                command: "acme-convert".to_owned(),
+                json_output: true,
+                timeout_ms: 120_000,
+                artifact: planning_artifact(
+                    "convert",
+                    &task.artifact.digest,
+                    &task.artifact.media_type,
+                ),
+                descriptor: task,
+            },
+            ExecutablePlanningSurface::ToolService {
+                id: "index".to_owned(),
+                activation: PlanningSurfaceActivation::Eager,
+                base_path: "/api".to_owned(),
+                artifact: planning_artifact(
+                    "index",
+                    &service.artifact.digest,
+                    &service.artifact.media_type,
+                ),
+                descriptor: service,
+            },
+        ],
+    }
+}
+
+fn planning_artifact(name: &str, digest: &str, media_type: &str) -> PlanningArtifactRef {
+    PlanningArtifactRef {
+        uri: format!("oci://registry.example/acme/{name}@{digest}"),
+        digest: digest.to_owned(),
+        media_type: media_type.to_owned(),
+    }
+}
+
+fn catalog_v3_for_planning_target(bytes: &[u8]) -> VerifiedPluginCatalogRecord {
+    let mut catalog = plan_ready_catalog();
+    catalog.record.schema = PLUGIN_CATALOG_SCHEMA_V3.to_owned();
+    catalog.record.planning = Some(CatalogPlanningTarget {
+        target_name: "extensions/acme/research/2.0.0/stable/linux-x86_64/planning-v1.json"
+            .to_owned(),
+        length: bytes.len() as u64,
+        sha256: format!("sha256:{:x}", Sha256::digest(bytes)),
+    });
+    catalog.provenance.catalog_record_digest = catalog.record.descriptor_digest().unwrap();
+    catalog.validate().unwrap();
+    catalog
 }
 
 fn plan_ready_catalog() -> VerifiedPluginCatalogRecord {
