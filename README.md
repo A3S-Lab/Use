@@ -690,8 +690,18 @@ idempotently prepares candidates, accepts exact non-future capability-cutover
 evidence, and only then retires prior generations. Interrupted prepare and
 retire phases resume from disk; conflicting operation reuse, stale snapshots,
 candidate drift, and unknown privileged fields fail closed. Wiring this grant
-journal into the Plugin Manager's overall package/Runtime/capability saga and
-validated ACL policy remain pending.
+journal into the Plugin Manager's overall package/Runtime/capability saga
+remains pending.
+
+The umbrella CLI now owns the strict `a3s.plugin-policy.v1` ACL parser and
+deterministic evaluator for complete Use operation plans. It normalizes
+registry, publisher, source, byte, surface, workspace, filesystem, network,
+resource, execution, and UI ceilings into a stable policy digest. An
+out-of-ceiling `allow` becomes `ask`; agent secret grants are denied and
+`native-unconfined` cannot run unattended. The evaluator can recheck stored
+plan authority during apply. Persisting the full Use plan in the shared Plugin
+Manager and invoking this policy on its live lifecycle path is the next
+integration step.
 
 ```bash
 a3s-use capability snapshot --json

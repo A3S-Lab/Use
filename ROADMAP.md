@@ -499,8 +499,17 @@ Implementation status (in progress 2026-07-30):
   instances, reject stale snapshots, operation-ID conflict, ceiling
   substitution, candidate drift, and unknown journal fields, and preserve
   same-generation grant replacement instead of tombstoning the new grant;
-- pending: validated ACL policy, Plugin Manager/package/Runtime/capability saga
-  wiring for the durable grant journal, secret-reference adapters,
+- completed M5J-A in the umbrella CLI: define and strictly parse the host-owned
+  `a3s.plugin-policy.v1` ACL contract with normalized registry, publisher,
+  source, package-size, surface, workspace, filesystem, network, resource,
+  execution, and UI ceilings plus a stable policy digest;
+- completed M5J-A in the umbrella CLI: deterministically evaluate complete
+  immutable Use operation plans, downgrade an out-of-ceiling `allow` to
+  `ask`, deny agent secret grants, block `native-unconfined` unattended use,
+  and recheck exact policy authority during apply;
+- pending: Plugin Manager full-Use-plan persistence and policy invocation,
+  package/Runtime/capability saga wiring for the durable grant journal,
+  secret-reference adapters,
   filesystem/network/child-process enforcement, durable binding
   orchestration, streaming/file-backed large Task output, the actual MCP
   initialize client adapter, stdio supervision, Gateway route revocation,

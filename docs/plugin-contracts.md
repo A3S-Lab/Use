@@ -282,6 +282,30 @@ stored immutable plan, re-resolve external state, compare every bound field,
 persist durable intent, and then begin side effects. A changed result requires
 a new plan and review.
 
+## Host Authorization Policy
+
+The umbrella CLI owns the strict `a3s.plugin-policy.v1` ACL contract. The
+normalized policy has a stable digest and bounds agent install, upgrade, and
+uninstall decisions by exact registry and publisher lists, source kind,
+download and installed bytes, package and surface counts, scope/workspace
+identities, filesystem access, network host/port pairs, Runtime resources,
+native and child execution, private Services, secret names, and UI HTTP
+bindings.
+
+Evaluation consumes the complete immutable `PluginOperationPlan`; it never
+uses catalog display text, Skill instructions, Tool output, MCP descriptions,
+UI messages, or API documentation as authority. A configured `allow` is
+downgraded to `ask` when any ceiling fails. Agent secret grants are denied,
+local reviewed packages remain user-only, and a `native-unconfined` provider
+cannot receive unattended authority.
+
+The resulting decision and normalized policy digest become
+`PluginOperationPlan.authority`. Apply re-evaluates the stored plan against the
+current host policy and rejects digest or decision drift. The parser and
+evaluator are implemented and independently tested in the umbrella CLI;
+persisting the full Use plan and invoking policy from the shared Manager
+lifecycle remain the next integration step.
+
 ## Manager MCP Toolset
 
 The frozen management inventory is:

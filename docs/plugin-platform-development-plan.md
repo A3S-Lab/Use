@@ -156,26 +156,55 @@ The default agent policy is `ask`, not `allow`.
 
 ```acl
 plugins {
-  agent_install   = "ask"
+  schema = "a3s.plugin-policy.v1"
+
+  agent_install   = "allow"
+  agent_upgrade   = "ask"
   agent_uninstall = "ask"
 
   trusted_registries = ["a3s"]
   trusted_publishers = ["a3s"]
+  allowed_surfaces   = ["mcp", "skill", "tool", "ui"]
 
-  max_download_bytes = 52428800
+  max_download_bytes  = 52428800
+  max_installed_bytes = 268435456
+  max_packages        = 16
+  max_surfaces        = 64
 
-  allow {
-    read_only       = true
-    network_read    = true
-    workspace_write = false
-    secrets         = false
-    child_process   = false
+  allow_release_bundles = true
+  allow_user_scope      = false
+  workspace_ids         = ["workspace:research"]
+  max_workspaces        = 1
+
+  permissions {
+    plugin_data = "read-write"
+    temporary   = "read-write"
+
+    native_execution = false
+    child_process     = false
+    private_service   = true
+    secrets           = false
+
+    max_cpu_millis               = 2000
+    max_memory_bytes             = 1073741824
+    max_pids                     = 256
+    max_ephemeral_storage_bytes  = 2147483648
+
+    network "api.example.com" {
+      ports = [443]
+    }
+
+    workspace "inputs" {
+      access = "read"
+    }
   }
 }
 ```
 
-The final ACL schema may refine these names, but it must preserve typed values
-and the following decisions:
+Omitted ceilings are zero, empty, or false. Exact lists and rules are
+normalized before digesting; duplicates, unknown fields, broad network
+patterns, and unattended secret grants fail closed. The policy preserves the
+following decisions:
 
 | Operation | Default agent decision | May be pre-authorized |
 | --- | --- | --- |
