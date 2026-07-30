@@ -453,6 +453,16 @@ Service observation checks, and exact-current removal. A Streamable HTTP MCP
 receipt is structurally invalid unless it contains initialize evidence for the
 release-declared protocol version after the Runtime observation.
 
+Task invocation resolves one prepared binding, reconstructs a spec with the
+caller's native argv, rechecks the exact provider evidence, and applies one
+finite Runtime Task. Terminal success is required before stdout and stderr are
+read independently through the Runtime log contract. The initial collector is
+deliberately in-memory and limited to 16 MiB per stream; a larger release
+capture ceiling fails before apply until a streaming or file-backed sink is
+implemented. Runtime 0.2 does not report the process exit code on Task apply,
+so only the already-frozen `[0]` success set is accepted and a successful
+observation is reported as exit code zero.
+
 Current provider evidence matters:
 
 - the Cloud Docker provider supports Task and Service, service networking, and

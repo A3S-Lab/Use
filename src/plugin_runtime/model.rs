@@ -4,8 +4,8 @@ use a3s_runtime::contract::{
     IsolationLevel, RuntimeMount, RuntimeObservation, RuntimeUnitSpec, SecretReference,
 };
 use a3s_use_core::{
-    PlanQualifiedSurfaceRef, PlannedProviderEvidence, PluginSurfaceKind, PluginSurfaceRef,
-    UseError, UseResult,
+    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlannedProviderEvidence, PluginSurfaceKind,
+    PluginSurfaceRef, UseError, UseResult,
 };
 use serde::{Deserialize, Serialize};
 
@@ -238,6 +238,7 @@ pub struct RuntimePreparedTaskBinding {
     pub provider_id: String,
     pub provider_build_id: String,
     pub capability_digest: String,
+    pub enforcement: PlanEnforcementProfile,
     pub artifact_digest: String,
     pub artifact_media_type: String,
     pub generation: u64,
@@ -321,6 +322,7 @@ impl RuntimeServiceActivation {
             provider_id: self.provider.provider_id,
             provider_build_id: self.provider.provider_build_id,
             capability_digest: self.provider.capability_digest,
+            enforcement: self.provider.enforcement,
             unit_id: self.observation.unit_id,
             generation: self.observation.generation,
             spec_digest,
@@ -425,6 +427,7 @@ pub struct RuntimeServiceBindingReceipt {
     pub provider_id: String,
     pub provider_build_id: String,
     pub capability_digest: String,
+    pub enforcement: PlanEnforcementProfile,
     pub unit_id: String,
     pub generation: u64,
     pub spec_digest: String,
@@ -434,6 +437,16 @@ pub struct RuntimeServiceBindingReceipt {
     pub last_healthy_at_ms: u64,
     pub contract: RuntimeSurfaceContract,
     pub readiness: RuntimeServiceReadinessEvidence,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeTaskExecution {
+    pub observation: RuntimeObservation,
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    pub truncated: bool,
 }
 
 pub(super) fn valid_surface_segment(value: &str) -> bool {

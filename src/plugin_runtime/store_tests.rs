@@ -1,6 +1,8 @@
 use std::fs;
 
-use a3s_use_core::{PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef};
+use a3s_use_core::{
+    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef,
+};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
@@ -38,6 +40,7 @@ fn task_receipt(generation: u64) -> RuntimeBindingReceipt {
         provider_id: "test-runtime".to_string(),
         provider_build_id: "build-1".to_string(),
         capability_digest: CAPABILITY_DIGEST.to_string(),
+        enforcement: PlanEnforcementProfile::Container,
         artifact_digest: ARTIFACT_DIGEST.to_string(),
         artifact_media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
         generation,
@@ -55,6 +58,7 @@ fn service_receipt(observation_revision: u64) -> RuntimeBindingReceipt {
         provider_id: "test-runtime".to_string(),
         provider_build_id: "build-1".to_string(),
         capability_digest: CAPABILITY_DIGEST.to_string(),
+        enforcement: PlanEnforcementProfile::Container,
         unit_id: "use:service:0123456789abcdef".to_string(),
         generation: 7,
         spec_digest: SPEC_DIGEST.to_string(),

@@ -210,6 +210,7 @@ fn same_service_generation(
         && current.provider_id == next.provider_id
         && current.provider_build_id == next.provider_build_id
         && current.capability_digest == next.capability_digest
+        && current.enforcement == next.enforcement
         && current.unit_id == next.unit_id
         && current.generation == next.generation
         && current.spec_digest == next.spec_digest

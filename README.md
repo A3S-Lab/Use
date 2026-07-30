@@ -596,6 +596,15 @@ receipt. Task receipts bind a stable launcher template rather than one
 invocation's argv. Streamable HTTP MCP receipts additionally require matching
 standard initialize evidence; process health by itself is insufficient.
 
+A prepared Task binding can be invoked through
+`PluginRuntimeClient::invoke_task`. The caller supplies the native argv; A3S
+Use rechecks the exact installed binding and provider evidence, applies one
+Runtime Task, requires terminal success, and reads stdout and stderr as
+separate Runtime log streams. The current adapter keeps at most 16 MiB per
+stream in memory and rejects a larger declared capture bound before execution.
+Because Runtime 0.2 does not expose the Task process exit code, this path
+continues to accept only release contracts whose sole success code is `0`.
+
 ```bash
 a3s-use capability snapshot --json
 a3s-use capability watch \

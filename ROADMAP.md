@@ -406,10 +406,17 @@ Implementation status (in progress 2026-07-30):
   `state/bindings/runtime` store with hashed scope paths, monotonic generation
   and observation replacement, exact-ownership removal, symlink checks, and
   fail-closed receipt validation;
+- completed M5C: invoke a prepared CLI Tool as a one-shot Runtime Task with
+  exact native argv, revalidated binding/provider evidence, terminal success
+  checks, and separately bounded stdout/stderr collection through Runtime
+  logs;
+- completed M5C: cap the current in-memory output adapter at 16 MiB per stream
+  and reject a larger release capture contract before starting the Task;
 - pending: validated ACL policy, resolved workspace grants, secret-reference
   adapters, filesystem/network/child-process enforcement, durable binding
-  orchestration, Task invocation and bounded output capture, the actual MCP
-  initialize client adapter, stdio supervision, and reconciler wiring.
+  orchestration, streaming/file-backed large Task output, the actual MCP
+  initialize client adapter, stdio supervision, Service drain/removal, live
+  observation, and reconciler wiring.
 
 Deliverables:
 

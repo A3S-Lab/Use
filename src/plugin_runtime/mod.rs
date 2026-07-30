@@ -17,7 +17,7 @@ pub use model::{
     RuntimeEndpointRef, RuntimeMcpInitializeEvidence, RuntimePreparedTaskBinding,
     RuntimeResourcePolicy, RuntimeServiceActivation, RuntimeServiceBindingReceipt,
     RuntimeServiceReadinessEvidence, RuntimeSurfaceContext, RuntimeSurfaceContract,
-    RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
+    RuntimeSurfacePlan, RuntimeTaskExecution, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
     RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_TASK_BINDING_SCHEMA,
 };
 pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release};
@@ -26,5 +26,7 @@ pub use store::RuntimeBindingStore;
 
 #[cfg(test)]
 mod store_tests;
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;
