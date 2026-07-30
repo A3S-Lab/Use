@@ -97,9 +97,10 @@ The main gaps are:
   Runtime adapters do not deploy them yet;
 - Tool Task/Service deployment, binding, dependency readiness, and Runtime
   observation are not yet part of the package reconciler;
-- the shared Plugin Manager now owns Marketplace and lifecycle orchestration,
-  but the user CLI adapter, management MCP adapter, idempotent operation
-  journal, and Surface Reconciler remain to be connected;
+- the shared Plugin Manager now owns Marketplace, reviewed lifecycle
+  orchestration, durable apply replay, and the first-class user CLI adapter;
+  the management MCP adapter and Runtime/MCP/UI apply adapters remain to be
+  connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - official registry key operations and Windows Browser parity are not yet at
@@ -239,6 +240,17 @@ Implementation status (2026-07-30):
 - completed in the umbrella CLI: installed state comes from the bounded A3S Use
   capability snapshot and distinguishes desired enablement, current
   callability, readiness, and an unavailable observation;
+- completed in the umbrella CLI: `install`, `upgrade`, explicit `apply`,
+  `enable`, `disable`, and `uninstall` commands call only the shared manager;
+  install, upgrade, and uninstall persist and review an immutable plan before
+  applying its `operationId + canonicalPlanDigest`;
+- completed in the umbrella CLI: interactive lifecycle commands render the
+  exact terminal-safe plan and use a bounded asynchronous confirmation;
+  non-interactive mutation requires `--yes`, while `--dry-run` persists no
+  apply intent;
+- completed in the shared manager: an immutable host policy selects cached-only
+  catalog reads and propagates `--offline` into every delegated plan, apply, or
+  toggle child process;
 - completed in the umbrella CLI library: immutable one-hour reviewed plans
   receive cryptographically random operation IDs and are stored with
   append-only apply intents and seven-day replayable successful results;
@@ -264,11 +276,13 @@ Implementation status (2026-07-30):
   validation, Use-owned JSON output, operation ID uniqueness, expiry,
   append-only replay, corruption rejection, cross-process locking, Web adapter
   compilation, deterministic surface graph/readiness fixtures, dependency-gated
-  Skill projection, read-only CLI parser/offline/list/error contracts, and a
-  controlled Web Marketplace/invalid-plan smoke test;
-- pending: first-class CLI lifecycle verbs, Runtime/MCP/UI observation and
-  apply adapters, management MCP adapter, and Unix Marketplace lifecycle E2E
-  through the shared service.
+  Skill projection, read-only and mutation CLI parser/authority/output
+  contracts, offline child-policy propagation, a signed-registry CLI
+  plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
+  smoke test;
+- pending: Runtime/MCP/UI observation and apply adapters, management MCP
+  adapter, and the complete Unix Marketplace lifecycle E2E through the shared
+  service.
 
 Deliverables:
 
