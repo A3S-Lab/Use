@@ -11,6 +11,7 @@ mod catalog_trust;
 mod grant;
 mod grant_changes;
 mod grant_resolution;
+mod installed_plan;
 mod manager;
 mod permission;
 mod plan;
@@ -34,6 +35,7 @@ pub use grant_changes::{
 pub use grant_resolution::{
     PluginGrantConfirmation, PluginWorkspaceGrantProposal, WorkspaceGrantProposalAuthority,
 };
+pub use installed_plan::InstalledPluginPlanEvidence;
 pub use manager::{
     PluginManagerToolAnnotations, PluginManagerToolDefinition, PluginManagerToolset,
 };
@@ -55,6 +57,7 @@ pub use resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantC
 
 pub const PLUGIN_CATALOG_SCHEMA: &str = "a3s.use.plugin-catalog.v1";
 pub const PLUGIN_CATALOG_SCHEMA_V2: &str = "a3s.use.plugin-catalog.v2";
+pub const INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA: &str = "a3s.use.installed-plugin-plan-evidence.v1";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA: &str = "a3s.use.plugin-operation-plan-draft.v1";

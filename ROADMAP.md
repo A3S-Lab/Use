@@ -578,8 +578,12 @@ Implementation status (in progress 2026-07-30):
   mutation, preserve catalog-v1 component-plan compatibility, and fail closed
   instead of fabricating provider or grant evidence for executable or
   permission-bearing packages;
-- pending: join package-specific installed receipt and active-surface evidence
-  for upgrade and uninstall drafts, wire explicit Runtime provider assignments
+- completed M5J-C-C-E-B in `a3s-use-core` and `a3s-use`: define and emit strict
+  package-specific installed planning evidence that joins a freshly validated
+  receipt and complete catalog-v2 record to the same capability generation,
+  revision, desired state, and dependency-closed active-surface inventory;
+- pending: consume package-specific installed evidence in live upgrade and
+  uninstall drafts, wire explicit Runtime provider assignments
   for Tool and MCP install drafts,
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,

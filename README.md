@@ -648,6 +648,15 @@ the verified catalog and be closed under its dependencies. Legacy, local,
 release-bundle, or unnamed-surface packages remain visible but do not claim
 this planning evidence.
 
+The package-specific `extension planning-evidence <publisher/name> --json`
+command now expands that summary into the strict
+`a3s.use.installed-plugin-plan-evidence.v1` contract. It binds the exact
+catalog-v2 record and receipt digest to the same capability generation,
+revision, desired state, and dependency-closed surface set. Consumers can
+therefore derive upgrade or uninstall `before` state without trusting a
+mutable package path or treating the compact global snapshot as complete
+release evidence.
+
 The shared core now defines the canonical
 `a3s.use.plugin-workspace-grant.v1` contract. A grant binds one workspace,
 package digest, signed permission-ceiling digest, resolved permission digest,

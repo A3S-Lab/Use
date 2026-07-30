@@ -5,9 +5,10 @@ use crate::capability_registry::{
 };
 use crate::extension_cli::{
     extension_capabilities, extension_disable, extension_enable, extension_inspect, extension_list,
-    extension_snapshot, extension_watch, external_component_value, external_package_id,
-    external_route, install_extension, install_release_bundle_extension, install_remote_extension,
-    installed_extension_for_id, installed_extensions, release_bundle_catalog, uninstall_extension,
+    extension_planning_evidence, extension_snapshot, extension_watch, external_component_value,
+    external_package_id, external_route, install_extension, install_release_bundle_extension,
+    install_remote_extension, installed_extension_for_id, installed_extensions,
+    release_bundle_catalog, uninstall_extension,
 };
 use std::time::Duration;
 
@@ -122,6 +123,7 @@ fn help() -> CommandOutput {
             "  a3s-use ocr doctor [--json]\n",
             "  a3s-use ocr extract <image> [--json]\n",
             "  a3s-use extension list|catalog|inspect|doctor [args] [--json]\n",
+            "  a3s-use extension planning-evidence <publisher/name> [--json]\n",
             "  a3s-use extension enable <publisher/name> [--json]\n",
             "  a3s-use extension disable <publisher/name> [--timeout-ms <ms>] [--json]\n",
             "  a3s-use extension snapshot|watch [--after-generation <n>] [--timeout-ms <ms>] [--json]\n",
@@ -670,6 +672,11 @@ async fn extension(args: &[String]) -> UseResult<CommandOutput> {
         Some("inspect" | "doctor") => {
             let package_id = value_argument(args, 1, "extension inspect requires an ID")?;
             extension_inspect(package_id).await
+        }
+        Some("planning-evidence") => {
+            validate_extension_options(args, 2, false)?;
+            let package_id = value_argument(args, 1, "extension planning-evidence requires an ID")?;
+            extension_planning_evidence(package_id).await
         }
         Some("enable") => {
             validate_extension_options(args, 2, false)?;

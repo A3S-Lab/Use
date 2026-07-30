@@ -141,6 +141,21 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
     );
     assert!(evidence.desired_enabled);
 
+    let snapshot = CapabilityRegistrySnapshot {
+        schema_version: SCHEMA_VERSION,
+        generation: 23,
+        revision: "e".repeat(64),
+        capabilities: vec![binding.clone()],
+    };
+    let installed = installed_plugin_plan_evidence_from_snapshot(&snapshot, &extension).unwrap();
+    assert_eq!(installed.capability_generation, 23);
+    assert_eq!(installed.capability_revision, "e".repeat(64));
+    assert_eq!(
+        installed.verified_catalog.provenance.catalog_record_digest,
+        evidence.catalog_record_digest
+    );
+    assert_eq!(installed.receipt_digest, evidence.receipt_digest);
+
     let mut mismatched = extension;
     let catalog = mismatched.receipt.verified_catalog.as_mut().unwrap();
     catalog.record.surfaces[0].id = "other".to_owned();

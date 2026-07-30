@@ -7,9 +7,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use a3s_use_core::{InstalledPluginPlanEvidence, PluginSurfaceRef, Readiness, UseError, UseResult};
 #[cfg(feature = "extensions")]
-use a3s_use_core::PluginSurfaceKind;
-use a3s_use_core::{PluginSurfaceRef, Readiness, UseError, UseResult};
+use a3s_use_core::{PluginSurfaceKind, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
@@ -154,6 +154,32 @@ pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
         revision,
         capabilities,
     })
+}
+
+#[cfg(feature = "extensions")]
+pub(crate) async fn installed_plugin_plan_evidence(
+    package_id: &str,
+) -> UseResult<InstalledPluginPlanEvidence> {
+    let snapshot = snapshot().await?;
+    let extension = crate::extension_host::get(package_id)
+        .await?
+        .ok_or_else(|| {
+            UseError::new(
+                "use.extension.not_installed",
+                format!("Extension '{package_id}' is not installed."),
+            )
+        })?;
+    installed_plugin_plan_evidence_from_snapshot(&snapshot, &extension)
+}
+
+#[cfg(not(feature = "extensions"))]
+pub(crate) async fn installed_plugin_plan_evidence(
+    _package_id: &str,
+) -> UseResult<InstalledPluginPlanEvidence> {
+    Err(UseError::new(
+        "use.extension.disabled",
+        "External extension support is disabled in this custom build.",
+    ))
 }
 
 pub(crate) async fn wait_for_change(
@@ -698,6 +724,62 @@ fn plugin_planner_evidence(
         desired_enabled: extension.receipt.enabled,
         selected_surfaces,
     }))
+}
+
+#[cfg(feature = "extensions")]
+fn installed_plugin_plan_evidence_from_snapshot(
+    snapshot: &CapabilityRegistrySnapshot,
+    extension: &a3s_use_extension::InstalledExtension,
+) -> UseResult<InstalledPluginPlanEvidence> {
+    let receipt = &extension.receipt;
+    let binding = snapshot
+        .capabilities
+        .iter()
+        .find(|binding| binding.id == receipt.component_id)
+        .ok_or_else(|| {
+            UseError::new(
+                "use.capability.planner_evidence_missing",
+                "The installed package is absent from the stable capability snapshot.",
+            )
+        })?;
+    let summary = binding.planner_evidence.as_ref().ok_or_else(|| {
+        UseError::new(
+            "use.capability.planner_evidence_missing",
+            "The installed package does not expose plan-ready capability evidence.",
+        )
+    })?;
+    let catalog = extension.plan_ready_catalog()?.clone();
+    let receipt_digest = receipt.descriptor_digest()?;
+    let package_sha256 = catalog.record.package.sha256.as_deref();
+    let manifest_sha256 = catalog.record.package.manifest_sha256.as_deref();
+    if binding.origin != CapabilityOrigin::Extension
+        || binding.version != receipt.version
+        || summary.package_id != receipt.package_id
+        || summary.package_sha256.as_str() != package_sha256.unwrap_or_default()
+        || summary.manifest_sha256.as_str() != manifest_sha256.unwrap_or_default()
+        || summary.receipt_digest != receipt_digest
+        || summary.catalog_record_digest != catalog.provenance.catalog_record_digest
+        || summary.desired_enabled != receipt.enabled
+    {
+        return Err(UseError::new(
+            "use.capability.planner_evidence_invalid",
+            "The package-specific receipt evidence does not match the stable capability snapshot.",
+        ));
+    }
+    let evidence = InstalledPluginPlanEvidence {
+        schema: INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA.to_owned(),
+        component_id: receipt.component_id.clone(),
+        package_id: receipt.package_id.clone(),
+        version: receipt.version.clone(),
+        capability_generation: snapshot.generation,
+        capability_revision: snapshot.revision.clone(),
+        receipt_digest,
+        desired_enabled: summary.desired_enabled,
+        selected_surfaces: summary.selected_surfaces.clone(),
+        verified_catalog: catalog,
+    };
+    evidence.validate()?;
+    Ok(evidence)
 }
 
 #[cfg(all(test, feature = "extensions"))]

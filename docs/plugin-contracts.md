@@ -29,6 +29,7 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Compatible search and review metadata without package download |
 | Catalog record | `a3s.use.plugin-catalog.v2` | Plan-ready manifest evidence and surface dependency closure |
+| Installed plan evidence | `a3s.use.installed-plugin-plan-evidence.v1` | Package-specific receipt, catalog, surface, and capability join |
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
@@ -306,6 +307,15 @@ sorted selected surface references. Emission requires the manifest inventory
 to equal the verified catalog inventory and the selection to be dependency
 closed. Packages without complete signed evidence remain observable but omit
 this block.
+
+`a3s use extension planning-evidence <publisher/name> --json` resolves the
+package-specific `a3s.use.installed-plugin-plan-evidence.v1` record. The strict
+contract joins the complete verified catalog-v2 record and canonical receipt
+digest to the same capability generation, revision, desired enabled state, and
+sorted selected-surface closure. It is rederived from a stable capability
+snapshot and a freshly validated installed receipt; any package, digest,
+catalog, version, desired-state, or surface mismatch fails closed. This is the
+authoritative `before` evidence for upgrade and uninstall draft assembly.
 
 ## Immutable Operation Plan
 

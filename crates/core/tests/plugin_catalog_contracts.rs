@@ -1,7 +1,8 @@
 use a3s_use_core::{
-    PlanPackageRole, PluginCatalogRecord, PluginPermissionCeiling, PluginPlanSource,
-    PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2,
+    InstalledPluginPlanEvidence, PlanPackageRole, PluginCatalogRecord, PluginPermissionCeiling,
+    PluginPlanSource, PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass,
+    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
+    PLUGIN_CATALOG_SCHEMA_V2,
 };
 
 const PERMISSION_CEILING: &[u8] = include_bytes!("../fixtures/plugins/permission-ceiling-v1.json");
@@ -325,6 +326,56 @@ fn verified_catalog_v2_derives_remove_and_replace_from_observed_surfaces() {
         replacement.source,
         Some(PluginPlanSource::Registry { .. })
     ));
+}
+
+#[test]
+fn installed_plan_evidence_binds_catalog_receipt_and_capability_state() {
+    let evidence = InstalledPluginPlanEvidence {
+        schema: INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA.to_owned(),
+        component_id: "use/acme/research".to_owned(),
+        package_id: "acme/research".to_owned(),
+        version: "2.0.0".to_owned(),
+        capability_generation: 19,
+        capability_revision: "a".repeat(64),
+        receipt_digest: format!("sha256:{}", "b".repeat(64)),
+        desired_enabled: true,
+        selected_surfaces: vec![PluginSurfaceRef {
+            kind: PluginSurfaceKind::Tool,
+            id: "convert".to_owned(),
+        }],
+        verified_catalog: plan_ready_catalog(),
+    };
+
+    evidence.validate().unwrap();
+    let decoded =
+        InstalledPluginPlanEvidence::from_json(&evidence.canonical_bytes().unwrap()).unwrap();
+    assert_eq!(decoded, evidence);
+    assert!(evidence.descriptor_digest().unwrap().starts_with("sha256:"));
+}
+
+#[test]
+fn installed_plan_evidence_rejects_catalog_or_capability_drift() {
+    let mut evidence = InstalledPluginPlanEvidence {
+        schema: INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA.to_owned(),
+        component_id: "use/acme/research".to_owned(),
+        package_id: "acme/research".to_owned(),
+        version: "2.0.0".to_owned(),
+        capability_generation: 19,
+        capability_revision: "a".repeat(64),
+        receipt_digest: format!("sha256:{}", "b".repeat(64)),
+        desired_enabled: true,
+        selected_surfaces: vec![PluginSurfaceRef {
+            kind: PluginSurfaceKind::Tool,
+            id: "convert".to_owned(),
+        }],
+        verified_catalog: plan_ready_catalog(),
+    };
+
+    evidence.capability_revision = "A".repeat(64);
+    assert!(evidence.validate().is_err());
+    evidence.capability_revision = "a".repeat(64);
+    evidence.verified_catalog.record.version = "2.1.0".to_owned();
+    assert!(evidence.validate().is_err());
 }
 
 fn plan_ready_catalog() -> VerifiedPluginCatalogRecord {
