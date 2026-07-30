@@ -421,6 +421,22 @@ The runtime-binding receipt records provider ID, unit ID, generation, spec
 digest, endpoint reference, observation revision, and last healthy time. It
 never records bearer tokens or secret values.
 
+The initial M5 adapter implements that boundary against the
+compatibility-locked Runtime 0.2 contract. A resolved artifact is accepted only
+when its digest and media type exactly match the signed release descriptor.
+Provider ID, provider build, a normalized capability digest, enforcement
+profile, and semantics-profile digest are rechecked immediately before prepare
+or apply. Runtime 0.2 at the locked revision does not publish a portable
+Service socket, so a converged Service and its Gateway route remain two
+separate facts. The binding receipt accepts only an opaque `gateway:` reference
+and never a raw URL or credential.
+
+The adapter intentionally fails closed on Task success-exit-code sets other
+than `[0]`; the locked Runtime observation does not expose an exit code from a
+Task apply. It also does not make an MCP Service ready merely because its
+process is healthy. Standard MCP initialization and durable binding
+reconciliation remain additional gates.
+
 Current provider evidence matters:
 
 - the Cloud Docker provider supports Task and Service, service networking, and

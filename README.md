@@ -577,6 +577,17 @@ projected only after its required Tool and MCP closure is prepared or healthy.
 Until the corresponding Runtime, MCP, or UI host adapter submits real evidence,
 that surface remains `pending` and cannot make the plugin ready.
 
+The first M5 Runtime adapter is available as the typed
+`a3s_use::plugin_runtime` API. It maps release-backed Tool Tasks, Tool
+Services, and Streamable HTTP MCP Services to the pinned public
+`a3s-runtime` contract. Planning binds package, scope, grant, descriptor,
+artifact, provider, and non-secret spec evidence; apply rechecks the explicit
+provider and requires a running, healthy Service observation. Runtime
+convergence alone does not publish a surface: the lifecycle reconciler still
+needs a persisted binding, and HTTP services require a separate opaque
+`gateway:` binding reference. The adapter is not yet called automatically by
+extension installation or enablement.
+
 ```bash
 a3s-use capability snapshot --json
 a3s-use capability watch \

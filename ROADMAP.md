@@ -93,10 +93,12 @@ The main gaps are:
 - package-level permission declarations are not precise enough to authorize
   native executable plugins without human review;
 - schema v3 named surfaces and Tool release contracts are implemented and the
-  manager exposes their signed catalog projection, but the reconciler and
-  Runtime adapters do not deploy them yet;
-- Tool Task/Service deployment, binding, dependency readiness, and Runtime
-  observation are not yet part of the package reconciler;
+  manager exposes their signed catalog projection; the first typed Runtime
+  adapter can now plan release-backed Tasks and Services and health-gate a
+  directly invoked Service apply, but lifecycle apply is not connected yet;
+- persisted Tool Task/Service bindings, MCP protocol probes, dependency
+  readiness, and Runtime observations are not yet part of the package
+  reconciler;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
   its bounded read-only management MCP is connected, while Runtime/MCP/UI apply
@@ -375,6 +377,29 @@ Exit criteria:
 ### M5 — Permission policy and runtime enforcement
 
 Estimated effort: 3–4 weeks
+
+Implementation status (in progress 2026-07-30):
+
+- completed M5A: pin the typed `a3s-runtime` 0.2.0 contract at the monorepo
+  compatibility revision and expose it through the plugin Runtime adapter;
+- completed M5A: deterministically map release-backed CLI Tools to Runtime Task
+  specs and HTTP Tools plus Streamable HTTP MCP to Runtime Service specs while
+  preserving native argv, HTTP paths, ports, health, and protocol metadata;
+- completed M5A: bind package, surface, scope, grant, descriptor, artifact, and
+  non-secret Runtime spec evidence into a semantics-profile digest;
+- completed M5A: re-read exact provider ID, build, normalized capability
+  digest, enforcement profile, and required lifecycle features before prepare
+  or apply, with no provider fallback;
+- completed M5A: require immutable artifact digest/media matches, reject Task
+  exit semantics that Runtime 0.2 cannot represent, and publish a Service
+  activation only after its observation is running and healthy;
+- completed M5A: separate Runtime convergence from the scoped Gateway binding
+  and allow only an opaque non-secret `gateway:` endpoint reference in a
+  Service binding receipt;
+- pending: validated ACL policy, resolved workspace grants, secret-reference
+  adapters, filesystem/network/child-process enforcement, durable binding
+  storage, Task invocation and bounded output capture, MCP initialize probes,
+  stdio supervision, and reconciler wiring.
 
 Deliverables:
 

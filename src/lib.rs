@@ -12,6 +12,8 @@ mod component_route;
 mod extension_cli;
 mod first_use;
 #[cfg(feature = "extensions")]
+pub mod plugin_runtime;
+#[cfg(feature = "extensions")]
 mod release_bundles;
 #[cfg(feature = "extensions")]
 mod surface_reconciler;
