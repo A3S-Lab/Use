@@ -434,6 +434,13 @@ operations over the same Plugin Manager used by CLI and Web. Default mutation
 policy is `ask`. Trust-root changes, unsigned/local install, secret grants, and
 data purge remain user-only.
 
+The M4 implementation stops at bounded search, inspect, installed-state reads,
+and immutable install/upgrade/uninstall plan creation. Apply and toggle tools
+are not published until M6; the Use worker additionally denies those names if
+they are ever attached accidentally. The only currently supported management
+scope is `user/current`, and callers cannot provide a registry URL, local path,
+executable, endpoint, secret reference, or selective surface set.
+
 Using a Tool is separate from managing a plugin. The agent can invoke only a
 Tool binding already projected into its authorized session. It cannot supply a
 provider, executable path, endpoint, package root, or secret reference.

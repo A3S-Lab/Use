@@ -673,6 +673,14 @@ Skill, CLI/HTTP Tool, MCP, UI, Runtime, and lifecycle boundaries. The
 permission, signed-catalog, and management MCP invariants used by subsequent
 implementation milestones.
 
+The M4 read-only management surface is now live through the umbrella A3S host.
+Code attaches its seven frozen search, inspection, installed-state, and
+reviewed-plan MCP tools to the dedicated Use worker without rebuilding the
+session. Apply and package toggles remain deliberately absent until the
+permission and Runtime enforcement milestones; arbitrary registries, URLs,
+paths, executables, endpoints, secrets, and plugin execution are never accepted
+by this surface.
+
 ## Platform Support
 
 | Platform | Status | Current guarantee |

@@ -88,8 +88,8 @@ The following foundations are implemented:
 
 The main gaps are:
 
-- the agent worker is explicitly forbidden from installing extensions;
-- no standard MCP management surface exposes plugin search or lifecycle plans;
+- the agent worker can discover plugins and create reviewed lifecycle plans,
+  but is explicitly forbidden from applying them or toggling packages;
 - package-level permission declarations are not precise enough to authorize
   native executable plugins without human review;
 - schema v3 named surfaces and Tool release contracts are implemented and the
@@ -99,8 +99,8 @@ The main gaps are:
   observation are not yet part of the package reconciler;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
-  the management MCP adapter and Runtime/MCP/UI apply adapters remain to be
-  connected;
+  its bounded read-only management MCP is connected, while Runtime/MCP/UI apply
+  adapters remain to be connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - official registry key operations and Windows Browser parity are not yet at
@@ -280,9 +280,8 @@ Implementation status (2026-07-30):
   contracts, offline child-policy propagation, a signed-registry CLI
   plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
   smoke test;
-- pending: Runtime/MCP/UI observation and apply adapters, management MCP
-  adapter, and the complete Unix Marketplace lifecycle E2E through the shared
-  service.
+- pending: Runtime/MCP/UI observation and apply adapters, and the complete Unix
+  Marketplace lifecycle E2E through the shared service.
 
 Deliverables:
 
@@ -327,9 +326,34 @@ Exit criteria:
   target and exact content-addressed dependency closure;
 - uninstall removes the package generation while retaining user data.
 
-### M4 — Agent read-only plugin management
+### M4 — Agent read-only plugin management (complete 2026-07-30)
 
 Estimated effort: 1 week
+
+Implementation status (2026-07-30):
+
+- completed in the umbrella CLI: a host-owned standard MCP stdio adapter
+  reuses the frozen M0 schemas and delegates every operation to the shared
+  Plugin Manager;
+- completed: the published inventory is exactly search, inspect, installed
+  list, status, and install/upgrade/uninstall plan creation; apply, enable, and
+  disable are absent at the protocol boundary and explicitly denied by the Use
+  worker policy;
+- completed: inputs reject unknown source fields, arbitrary URLs and paths,
+  unsupported workspace scope, noncanonical package/version identities, and
+  selective surfaces until their backend contract is implemented;
+- completed: search and inspection include signed source provenance,
+  compatibility, surface, archive digest, and permission-ceiling evidence;
+  errors are typed and terminal-safe, pages use snapshot-bound cursors, and
+  encoded results are capped at 4 MiB;
+- completed in Code TUI and Web: the management server is hot-attached as
+  `use_plugin_manager` to restored and new dedicated Use workers, preserves
+  offline/no-auto-install policy in its child process, and requires no session
+  rebuild;
+- covered: frozen schema/annotation equality, bounded parsing and cursors,
+  read-only worker permissions, hidden transport CLI, a cross-platform
+  standard MCP process contract, and a Unix signed-registry search,
+  inspection, exact-plan, no-download, and forbidden-apply E2E.
 
 Deliverables:
 
@@ -342,8 +366,8 @@ Deliverables:
 Exit criteria:
 
 - an agent can find a verified package and produce an exact install plan;
-- an agent cannot install, enable, disable, uninstall, add registries, or
-  install from an arbitrary URL;
+- an agent cannot apply installation or uninstall plans, enable, disable, add
+  registries, or install from an arbitrary URL;
 - catalog content cannot alter the worker policy or management MCP tool
   inventory;
 - read-only operations work without a Code session rebuild.

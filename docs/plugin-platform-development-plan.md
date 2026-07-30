@@ -224,7 +224,7 @@ There is one implementation and one receipt format.
 
 ### Agent management MCP
 
-The host exposes one standard MCP management server with:
+The target host exposes one standard MCP management server with:
 
 ```text
 plugin_search
@@ -242,6 +242,14 @@ plugin_disable
 Read-only tools carry correct MCP annotations. Apply, enable, and disable are
 mutating. Uninstall is destructive. Tools return typed failures and never fall
 back to shell, workspace edits, arbitrary URLs, or unsigned packages.
+
+The completed M4 adapter publishes only the first seven tools, ending at
+`plugin_plan_uninstall`. Plan creation may persist an immutable reviewed plan
+but cannot apply it or change active capabilities. `plugin_apply_plan`,
+`plugin_enable`, and `plugin_disable` remain absent from `tools/list` and are
+also explicitly denied by the dedicated Use worker. M6 adds them only after
+typed ACL policy, provider enforcement, and inherited parent confirmation are
+available.
 
 There is deliberately no `plugin_execute` management tool. After activation,
 the capability watcher projects Skills, managed CLI Tool shims, scoped HTTP
