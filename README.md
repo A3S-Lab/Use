@@ -632,6 +632,16 @@ so it deliberately does not guess a scope or inject a Runtime snapshot. A
 scope-aware lifecycle/session caller must assemble Runtime, stdio MCP, Skill,
 and UI host observations before capability publication.
 
+The shared core now defines the canonical
+`a3s.use.plugin-workspace-grant.v1` contract. A grant binds one workspace,
+package digest, signed permission-ceiling digest, resolved permission digest,
+policy decision, actor, confirmation evidence, and optional expiry. Resolved
+permissions use the same typed shape as the signed ceiling but may only narrow
+filesystem paths/access, network ports, resources, secrets, private Service
+exposure, and UI method/path bindings. Secret grants require an explicit user
+confirmation; an agent grant cannot carry secret authority. The durable grant
+store and plan-to-grant resolver remain pending.
+
 ```bash
 a3s-use capability snapshot --json
 a3s-use capability watch \

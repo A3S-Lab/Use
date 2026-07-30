@@ -437,12 +437,20 @@ Implementation status (in progress 2026-07-30):
 - completed M5E: keep package-executable Tool Tasks and stdio MCP outside the
   Runtime observer so their supervised compatibility hosts remain the single
   observation owners;
-- pending: validated ACL policy, resolved workspace grants, secret-reference
-  adapters, filesystem/network/child-process enforcement, durable binding
-  orchestration, streaming/file-backed large Task output, the actual MCP
-  initialize client adapter, stdio supervision, Gateway route revocation,
-  binding-store cleanup orchestration, and scope-aware capability/session
-  snapshot wiring.
+- completed M5F: define the canonical package/scope-bound workspace grant
+  contract with policy, actor, explicit confirmation, permission-ceiling,
+  resolved-permission, lifetime, and digest evidence;
+- completed M5F: implement independently testable permission-subset checks for
+  filesystem scope/path/access, exact network hosts and ports, resources,
+  native/child execution, secrets, private Services, and UI methods/paths;
+- completed M5F: require explicit user confirmation for every secret-bearing
+  grant and reject secret authority in agent grants;
+- pending: validated ACL policy, grant persistence and plan-to-grant
+  resolution, secret-reference adapters, filesystem/network/child-process
+  enforcement, durable binding orchestration, streaming/file-backed large
+  Task output, the actual MCP initialize client adapter, stdio supervision,
+  Gateway route revocation, binding-store cleanup orchestration, and
+  scope-aware capability/session snapshot wiring.
 
 Deliverables:
 

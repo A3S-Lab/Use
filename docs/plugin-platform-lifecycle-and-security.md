@@ -427,6 +427,16 @@ Secrets are delivered by reference at invocation or Service start. They are
 excluded from manifests, descriptors, plans, receipts, binding snapshots,
 logs, diagnostics, and UI state.
 
+The initial grant contract is
+`a3s.use.plugin-workspace-grant.v1`. It binds the workspace and immutable
+package generation to both the signed ceiling and the canonical resolved
+permission digest, plus policy/actor/confirmation evidence and optional
+expiry. Subset evaluation is structural: filesystem and UI paths may only
+narrow, network hosts stay exact, ports/methods/secrets may only be removed,
+resource values may only decrease, and boolean authorities cannot change from
+false to true. Secret-bearing grants require an explicit user confirmation;
+agent grants containing secrets are invalid.
+
 ### Agent authority
 
 The management MCP exposes bounded search, inspect, status, plan, and apply

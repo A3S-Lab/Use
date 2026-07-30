@@ -139,6 +139,18 @@ impl PluginPermissionCeiling {
     pub fn descriptor_digest(&self) -> UseResult<String> {
         Ok(canonical_digest(&self.canonical_bytes()?))
     }
+
+    pub fn is_within(&self, ceiling: &Self) -> UseResult<bool> {
+        self.validate()?;
+        ceiling.validate()?;
+        Ok(self.surfaces.iter().all(|granted| {
+            ceiling
+                .surfaces
+                .iter()
+                .find(|allowed| allowed.surface == granted.surface)
+                .is_some_and(|allowed| surface_is_within(granted, allowed))
+        }))
+    }
 }
 
 impl SurfacePermissionCeiling {
@@ -292,4 +304,110 @@ impl UiHttpPermission {
 
 fn permission_error(message: impl Into<String>) -> crate::UseError {
     contract_error(PERMISSION_ERROR, message)
+}
+
+fn surface_is_within(
+    granted: &SurfacePermissionCeiling,
+    ceiling: &SurfacePermissionCeiling,
+) -> bool {
+    (!granted.native_execution || ceiling.native_execution)
+        && (!granted.child_process || ceiling.child_process)
+        && (!granted.private_service || ceiling.private_service)
+        && granted
+            .filesystem
+            .iter()
+            .all(|permission| filesystem_is_within(permission, &ceiling.filesystem))
+        && granted
+            .network_egress
+            .iter()
+            .all(|permission| network_is_within(permission, &ceiling.network_egress))
+        && granted
+            .secrets
+            .iter()
+            .all(|secret| ceiling.secrets.binary_search(secret).is_ok())
+        && resources_are_within(granted.resources.as_ref(), ceiling.resources.as_ref())
+        && granted
+            .ui_http
+            .iter()
+            .all(|permission| ui_http_is_within(permission, &ceiling.ui_http))
+}
+
+fn filesystem_is_within(granted: &FilesystemPermission, ceiling: &[FilesystemPermission]) -> bool {
+    ceiling.iter().any(|allowed| {
+        granted.scope == allowed.scope
+            && path_is_within(&granted.path, &allowed.path)
+            && matches!(
+                (granted.access, allowed.access),
+                (FilesystemAccess::Read, _)
+                    | (FilesystemAccess::ReadWrite, FilesystemAccess::ReadWrite)
+            )
+    })
+}
+
+fn network_is_within(
+    granted: &NetworkEgressPermission,
+    ceiling: &[NetworkEgressPermission],
+) -> bool {
+    granted.ports.iter().all(|port| {
+        ceiling.iter().any(|allowed| {
+            allowed.host == granted.host && allowed.ports.binary_search(port).is_ok()
+        })
+    })
+}
+
+fn resources_are_within(
+    granted: Option<&ResourcePermissionCeiling>,
+    ceiling: Option<&ResourcePermissionCeiling>,
+) -> bool {
+    match (granted, ceiling) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(granted), Some(ceiling)) => {
+            granted.cpu_millis <= ceiling.cpu_millis
+                && granted.memory_bytes <= ceiling.memory_bytes
+                && granted.pids <= ceiling.pids
+                && granted.ephemeral_storage_bytes <= ceiling.ephemeral_storage_bytes
+                && optional_limit_is_within(granted.task_timeout_ms, ceiling.task_timeout_ms)
+                && optional_limit_is_within(granted.max_stdout_bytes, ceiling.max_stdout_bytes)
+                && optional_limit_is_within(granted.max_stderr_bytes, ceiling.max_stderr_bytes)
+        }
+    }
+}
+
+fn ui_http_is_within(granted: &UiHttpPermission, ceiling: &[UiHttpPermission]) -> bool {
+    ceiling
+        .iter()
+        .find(|allowed| allowed.tool_id == granted.tool_id)
+        .is_some_and(|allowed| {
+            granted
+                .methods
+                .iter()
+                .all(|method| allowed.methods.binary_search(method).is_ok())
+                && granted.path_prefixes.iter().all(|path| {
+                    allowed
+                        .path_prefixes
+                        .iter()
+                        .any(|prefix| http_path_is_within(path, prefix))
+                })
+        })
+}
+
+fn optional_limit_is_within(granted: Option<u64>, ceiling: Option<u64>) -> bool {
+    granted.is_none_or(|granted| ceiling.is_some_and(|ceiling| granted <= ceiling))
+}
+
+fn path_is_within(path: &str, parent: &str) -> bool {
+    parent == "."
+        || path == parent
+        || path
+            .strip_prefix(parent)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn http_path_is_within(path: &str, prefix: &str) -> bool {
+    prefix == "/"
+        || path == prefix
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }

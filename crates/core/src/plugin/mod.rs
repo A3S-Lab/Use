@@ -6,6 +6,7 @@ use crate::{UseError, UseResult};
 
 mod catalog;
 mod catalog_trust;
+mod grant;
 mod manager;
 mod permission;
 mod plan;
@@ -18,6 +19,7 @@ pub use catalog::{
     PluginCatalogRecord, PluginReleaseChannel,
 };
 pub use catalog_trust::{VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
+pub use grant::{PluginWorkspaceGrant, WorkspaceGrantAuthority};
 pub use manager::{
     PluginManagerToolAnnotations, PluginManagerToolDefinition, PluginManagerToolset,
 };
@@ -38,6 +40,7 @@ pub const PLUGIN_CATALOG_SCHEMA: &str = "a3s.use.plugin-catalog.v1";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";
 pub const PLUGIN_OPERATION_PLAN_SCHEMA: &str = "a3s.use.plugin-operation-plan.v1";
 pub const PLUGIN_PERMISSION_SCHEMA: &str = "a3s.use.plugin-permissions.v1";
+pub const PLUGIN_WORKSPACE_GRANT_SCHEMA: &str = "a3s.use.plugin-workspace-grant.v1";
 pub const MAX_PLUGIN_CONTRACT_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

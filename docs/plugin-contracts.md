@@ -19,6 +19,7 @@ surface reconciler, or Runtime providers are complete.
 | Plugin manifest | `a3s.extension/v3` | Named Skill, MCP, Tool, and UI surfaces |
 | Tool release | `a3s.use.tool-release.v1` | Immutable CLI Task or HTTP Service workload |
 | Permission ceiling | `a3s.use.plugin-permissions.v1` | Maximum authority per executable/UI surface |
+| Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Search and review metadata without package download |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
@@ -113,6 +114,20 @@ long-running resources. Stdio MCP requires explicit native execution.
 UI surfaces have no ambient execution, filesystem, network, secret, or
 resource authority. A UI can declare only method/path bindings to a Tool
 Service in the same package.
+
+## Workspace Grant
+
+`PluginWorkspaceGrant` binds a canonical resolved permission set to one
+workspace, package ID and digest, signed permission-ceiling digest, policy
+digest, actor, confirmation decision, grant time, and optional expiry.
+`PluginPermissionCeiling::is_within` independently verifies that the resolved
+set only narrows the signed ceiling.
+
+Filesystem scope/path/access, exact network hosts and ports, resources,
+boolean execution/Service authorities, secret names, and UI methods/path
+prefixes are compared structurally. Secret-bearing grants are valid only for a
+user-confirmed `ask` decision; an agent grant cannot contain secret authority.
+The contract stores secret names but never values.
 
 ## Selective Installation
 

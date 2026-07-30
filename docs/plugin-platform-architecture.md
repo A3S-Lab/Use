@@ -389,6 +389,27 @@ binding is exposed as a same-origin, path-scoped reverse proxy; MCP interaction
 uses the host's existing reviewed bridge. Removing or upgrading the plugin
 revokes the binding before its old assets are collected.
 
+## Workspace Permission Grants
+
+The signed package permission record is a ceiling, not an activation grant.
+The canonical `a3s.use.plugin-workspace-grant.v1` contract binds one workspace,
+package ID and digest, signed ceiling digest, resolved permission digest,
+policy digest, actor, decision, confirmation evidence, grant time, and optional
+expiry. It contains no secret values.
+
+Resolved permissions reuse the typed permission shape and can only narrow the
+signed ceiling. Filesystem grants must stay under an allowed scope/path and
+cannot upgrade read to read-write. Network hosts remain exact and ports can
+only be removed. Resource values can only decrease. Native execution,
+child-process authority, private Service exposure, and secret names cannot be
+added. UI methods and path prefixes can only narrow a declared Tool binding.
+
+Secret-bearing grants require an explicit `ask` decision confirmed by a user.
+An agent grant cannot carry secret authority. Canonical grant and permission
+digests can be included directly in operation-plan workspace impacts and
+Runtime semantics evidence. Durable storage, ACL policy evaluation, and
+plan-to-grant resolution remain separate lifecycle steps.
+
 ## Runtime Integration
 
 Runtime is injected through a typed `RuntimeClient`; A3S Use must not construct

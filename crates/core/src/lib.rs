@@ -18,10 +18,11 @@ pub use plugin::{
     PlannedWorkspaceImpact, PluginCatalogRecord, PluginManagerToolAnnotations,
     PluginManagerToolDefinition, PluginManagerToolset, PluginOperationAction, PluginOperationPlan,
     PluginOperationPlanEnvelope, PluginPermissionCeiling, PluginPlanSource, PluginReleaseChannel,
-    PluginSurfaceKind, PluginSurfaceRef, ResourcePermissionCeiling, SurfaceChangeKind,
-    SurfacePermissionCeiling, ToolWorkloadClass, UiHttpPermission, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord, MAX_PLUGIN_CONTRACT_BYTES, PLUGIN_CATALOG_SCHEMA,
-    PLUGIN_MANAGER_TOOLSET_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA, PLUGIN_PERMISSION_SCHEMA,
+    PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrant, ResourcePermissionCeiling,
+    SurfaceChangeKind, SurfacePermissionCeiling, ToolWorkloadClass, UiHttpPermission,
+    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, WorkspaceGrantAuthority,
+    MAX_PLUGIN_CONTRACT_BYTES, PLUGIN_CATALOG_SCHEMA, PLUGIN_MANAGER_TOOLSET_SCHEMA,
+    PLUGIN_OPERATION_PLAN_SCHEMA, PLUGIN_PERMISSION_SCHEMA, PLUGIN_WORKSPACE_GRANT_SCHEMA,
 };
 pub use release::{
     HttpHealthContract, McpReleaseDescriptor, McpServiceContract, McpServiceTransport,
