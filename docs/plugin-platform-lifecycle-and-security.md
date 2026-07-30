@@ -29,7 +29,7 @@ flowchart TD
     resolveInstall["Resolve exact package and dependency digests<br/>Action: install"]
     resolveUpgrade["Resolve N+1, permission diff, dependencies,<br/>and provider requirements<br/>Action: upgrade"]
     resolveUninstall["Resolve owned resources, workspace impact,<br/>leases, and retained data<br/>Action: uninstall"]
-    buildPlan["Build canonical expiring plan<br/>Bind registry root, metadata versions, digests,<br/>scope, grants, provider evidence, and impact"]
+    buildPlan["Persist canonical expiring plan and allocate operationId<br/>Bind registry root, metadata versions, digests,<br/>scope, grants, provider evidence, and impact"]
   end
 
   command -- "Search / inspect / install" --> catalog
@@ -47,7 +47,10 @@ flowchart TD
     policy{"ACL policy decision"}
     confirmation{"User confirms the exact plan?"}
     denied["Denied or cancelled<br/>No mutation"]
-    apply["Apply with canonical plan digest"]
+    apply["Apply with operationId + canonical planDigest"]
+    loadPlan["Load the immutable reviewed plan<br/>from the durable manager store"]
+    resultExists{"Durable terminal result already exists?"}
+    replayResult["Return the same result with replayed=true<br/>No child process or side effect"]
     reresolve["Repeat trust, dependency, permission,<br/>provider, ownership, and impact resolution"]
     exact{"Still exactly matches the plan?"}
     drift["Reject expired or changed plan<br/>Require a new review"]
@@ -61,7 +64,11 @@ flowchart TD
   confirmation -- "No" --> denied
   confirmation -- "Yes" --> apply
   policy -- "allow within every ceiling" --> apply
-  apply --> reresolve
+  apply --> loadPlan
+  loadPlan --> resultExists
+  resultExists -- "Yes" --> replayResult
+  replayResult --> command
+  resultExists -- "No" --> reresolve
   reresolve --> exact
   exact -- "No" --> drift
   drift --> command
@@ -81,7 +88,7 @@ flowchart TD
   stage --> verify
   verify --> valid
   valid -- "No" --> rejectPackage
-  rejectPackage --> command
+  rejectPackage --> completeResult
   valid -- "Yes" --> commit
   commit --> desiredAfterCommit
 
@@ -228,20 +235,27 @@ flowchart TD
   removePackage --> retain
   retain --> removed
   removed --> purge
-  purge -- "No" --> command
+  purge -- "No" --> completeResult
   purge -- "Yes, explicitly reviewed" --> purgeData
-  purgeData --> command
+  purgeData --> completeResult
 
-  installedDisabled --> command
-  ready --> command
-  degraded --> command
-  keepPrevious --> command
-  keepPreviousDisabled --> command
-  broken --> command
+  subgraph completion["8. Durable completion and replay"]
+    completeResult["Persist append-only terminal result<br/>Bind operationId, planDigest, timestamps,<br/>typed outcome, and capability before/after"]
+    returnResult["Return operation result<br/>A repeated apply reuses this record"]
+  end
+
+  installedDisabled --> completeResult
+  ready --> completeResult
+  degraded --> completeResult
+  keepPrevious --> completeResult
+  keepPreviousDisabled --> completeResult
+  broken --> completeResult
+  completeResult --> returnResult
+  returnResult --> command
   idle --> command
   denied --> command
 
-  subgraph recovery["8. Crash recovery and reconciliation"]
+  subgraph recovery["9. Crash recovery and reconciliation"]
     restart["Restart finds incomplete operation"]
     compare["Compare durable intent with package, receipt,<br/>Runtime, Gateway, binding, projection, and lease observations"]
     recoveryCase{"Last durable evidence"}
@@ -273,12 +287,14 @@ flowchart TD
   classDef runtime fill:#fff8e1,stroke:#f9a825,color:#5d4037;
   class ready,degraded,installedDisabled,removed,keepPrevious,keepPreviousDisabled stable;
   class denied,drift,rejectPackage,rejectUse,broken failure;
-  class intent,toggleIntent,commit,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent durable;
+  class buildPlan,intent,toggleIntent,commit,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
   class taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,removeRuntime runtime;
 ```
 
-The graph has four important invariants:
+The graph has five important invariants:
 
+- a repeated `operationId + planDigest` returns the durable result without
+  starting another child process or side effect;
 - package installation commits a disabled receipt before any capability is
   published;
 - a required Skill is invisible until its Tool and MCP dependency closure is
@@ -292,6 +308,20 @@ The graph has four important invariants:
 Package storage, Runtime providers, Gateway, and Code/Web cannot participate in
 one ACID transaction. Lifecycle therefore uses a durable, idempotent saga with
 an operation record and compensating actions.
+
+The durability boundary has two non-overlapping layers:
+
+- the shared Plugin Manager stores immutable reviewed plans, apply intent, and
+  terminal results keyed by `operationId`; it owns expiry, replay, adapter
+  equivalence, and capability generation/revision evidence;
+- the umbrella component lifecycle and A3S Use retain the only side-effect
+  checkpoint journals; they own downloads, package commits, receipts, Runtime,
+  Gateway, projections, and crash recovery.
+
+The manager record never duplicates per-surface checkpoints. After a crash, it
+re-enters the exact umbrella apply command, whose existing component journal
+verifies observed state and resumes the saga. This separation keeps one source
+of truth for mutations while still making adapter retries idempotent.
 
 ### Install and enable
 
@@ -450,7 +480,7 @@ inspect(plugin_id, version?)
 list_installed(scope)
 status(plugin_id, scope)
 plan_install | plan_upgrade | plan_uninstall
-apply(plan_digest, authority_context)
+apply(operation_id, plan_digest, authority_context)
 enable | disable
 watch(after_revision)
 ```

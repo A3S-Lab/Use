@@ -232,13 +232,25 @@ Implementation status (2026-07-30):
 - completed in Code Web: the Plugins feature is a thin HTTP adapter over the
   shared manager and preserves the existing timeout, JSON-size, HTTP error, and
   reviewed-plan behavior;
+- completed in the umbrella CLI library: immutable one-hour reviewed plans
+  receive cryptographically random operation IDs and are stored with
+  append-only apply intents and seven-day replayable successful results;
+- completed: apply accepts the frozen `operationId + planDigest` identity,
+  retains a compatibility lookup for the current Web request shape, rejects
+  expired or capability-drifted plans before first mutation, and resumes an
+  existing intent through the umbrella component journal;
+- completed: a cross-process manager mutation lock prevents two adapters from
+  racing result publication, while the existing component journal remains the
+  sole per-side-effect checkpoint journal;
+- completed: plans and results carry explicit A3S Use capability
+  generation/revision evidence, including a bounded unavailable state that
+  cannot turn a successful mutation into a false failure;
 - covered: typed complete-catalog mapping, lifecycle argument and digest
-  validation, Use-owned JSON output, Web adapter compilation, and a controlled
-  Web Marketplace/invalid-plan smoke test;
-- pending: the first-class CLI adapter, equivalent operation records,
-  generation/revision evidence, idempotent operation journal, Surface
-  Reconciler, management MCP adapter, and Unix Marketplace lifecycle E2E
-  through the shared service.
+  validation, Use-owned JSON output, operation ID uniqueness, expiry,
+  append-only replay, corruption rejection, cross-process locking, Web adapter
+  compilation, and a controlled Web Marketplace/invalid-plan smoke test;
+- pending: the first-class CLI adapter, Surface Reconciler, management MCP
+  adapter, and Unix Marketplace lifecycle E2E through the shared service.
 
 Deliverables:
 
