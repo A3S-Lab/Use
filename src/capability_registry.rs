@@ -16,7 +16,7 @@ use tokio::io::AsyncReadExt;
 
 #[cfg(feature = "extensions")]
 use crate::surface_reconciler::{
-    reconcile, PluginDesiredState, PluginObservedState, SurfaceObservations,
+    reconcile_with_runtime, PluginDesiredState, PluginObservedState, SurfaceObservations,
     SurfaceReconcileSnapshot,
 };
 
@@ -492,7 +492,7 @@ async fn project_extension_for_host(
     let receipt = &extension.receipt;
     let compatible = extension.supports_use_version(host_version);
     let reconciliation = if extension.manifest.schema_version == 3 {
-        Some(reconcile(
+        Some(reconcile_with_runtime(
             &extension.manifest,
             if receipt.enabled {
                 PluginDesiredState::Enabled
@@ -501,6 +501,7 @@ async fn project_extension_for_host(
             },
             compatible,
             &SurfaceObservations::new(),
+            None,
         )?)
     } else {
         None

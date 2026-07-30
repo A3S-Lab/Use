@@ -1,3 +1,4 @@
+use a3s_runtime::ProviderId;
 use a3s_use_core::{PlanQualifiedSurfaceRef, PluginSurfaceKind, UseResult};
 use serde::{Deserialize, Serialize};
 
@@ -108,7 +109,7 @@ fn validate_task(receipt: &RuntimePreparedTaskBinding) -> UseResult<()> {
         || !valid_sha256(&receipt.capability_digest)
         || !valid_sha256(&receipt.artifact_digest)
         || !valid_sha256(&receipt.semantics_profile_digest)
-        || !valid_machine_id(&receipt.provider_id)
+        || ProviderId::parse(receipt.provider_id.as_str()).is_err()
         || !valid_machine_id(&receipt.provider_build_id)
         || !valid_media_type(&receipt.artifact_media_type)
     {
@@ -133,7 +134,7 @@ fn validate_service(receipt: &RuntimeServiceBindingReceipt) -> UseResult<()> {
         || !valid_sha256(&receipt.capability_digest)
         || !valid_sha256(&receipt.spec_digest)
         || !valid_sha256(&receipt.semantics_profile_digest)
-        || !valid_machine_id(&receipt.provider_id)
+        || ProviderId::parse(receipt.provider_id.as_str()).is_err()
         || !valid_machine_id(&receipt.provider_build_id)
         || !valid_runtime_unit_id(&receipt.unit_id)
     {

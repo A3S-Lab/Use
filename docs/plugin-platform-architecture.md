@@ -485,6 +485,28 @@ evidence and, for Services, Runtime start identity. Earlier development
 receipts are not reinterpreted with inferred defaults; they fail closed and
 must be prepared and rebound again.
 
+`RuntimeSurfaceObserver` converts persisted binding evidence into one
+explicitly scoped Runtime surface snapshot. The caller supplies a canonical
+package digest and the Runtime provider registry. For every release-backed
+Tool Task, Tool Service, and Streamable HTTP MCP surface, the observer reads
+the exact scope/package/surface receipt, rejects package-generation, workload
+class, or Tool Service path drift, connects only the receipt's provider, and
+performs the live checks above. It never scans or adopts an unknown Runtime
+unit.
+
+The surface reconciler merges that snapshot with disjoint host observations.
+No receipt produces no explicit observation and therefore remains `pending`;
+a live missing, failed, or stale binding fails readiness and cannot publish
+dependent Skills. Two adapters reporting the same surface is a contract error,
+not a last-writer-wins decision. Package-executable Tool Tasks and stdio MCP
+are intentionally absent from the Runtime snapshot and remain owned by their
+supervised compatibility hosts.
+
+The existing process-wide capability snapshot has no workspace identity and
+therefore does not select one implicitly. Automatic capability/session
+publication remains pending until the lifecycle caller supplies the explicit
+scope plus Runtime, compatibility-host, Skill, and UI observations.
+
 Current provider evidence matters:
 
 - the Cloud Docker provider supports Task and Service, service networking, and

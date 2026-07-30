@@ -173,6 +173,18 @@ fn binding_receipts_reject_cross_kind_readiness_claims() {
 }
 
 #[test]
+fn binding_receipts_require_runtime_provider_id_syntax() {
+    let mut receipt = task_receipt(7);
+    let RuntimeBindingReceipt::Task(receipt) = &mut receipt else {
+        panic!("fixture should be a Task binding");
+    };
+    receipt.provider_id = "runtime/provider".to_string();
+    assert!(RuntimeBindingReceipt::Task(receipt.clone())
+        .validate()
+        .is_err());
+}
+
+#[test]
 fn binding_store_contract_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<RuntimeBindingStore>();

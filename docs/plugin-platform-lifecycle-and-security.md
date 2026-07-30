@@ -489,6 +489,14 @@ provider to stop and remove the exact Runtime unit/generation, then removes the
 exact-current binding receipt. Provider build drift blocks new apply but does
 not redirect or silently prevent cleanup of an already-owned unit.
 
+Runtime-to-reconciler observation is also scope-explicit. The observer accepts
+the workspace identity and canonical package digest, reads only receipt-owned
+surfaces, and resolves only their recorded providers. Release-backed Tool
+Tasks, Tool Services, and Streamable HTTP MCP are merged with disjoint
+compatibility-host and UI observations. An absent receipt stays pending; a
+stale binding cannot publish its dependency closure. A process-wide caller
+without a workspace identity must not choose a `current` or default scope.
+
 The current `data/use/extensions/` layout migrates in place through versioned
 receipts or remains a compatibility path. A migration must not duplicate large
 payloads merely to rename a directory.

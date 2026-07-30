@@ -10,6 +10,7 @@ mod model;
 mod planner;
 mod receipt;
 mod store;
+mod surface_observer;
 mod task;
 
 pub use a3s_runtime as runtime;
@@ -26,10 +27,16 @@ pub use model::{
 pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release};
 pub use receipt::{RuntimeBindingReadiness, RuntimeBindingReceipt};
 pub use store::RuntimeBindingStore;
+pub use surface_observer::{
+    RuntimeSurfaceObservation, RuntimeSurfaceObservationSnapshot, RuntimeSurfaceObservedState,
+    RuntimeSurfaceObserver, RUNTIME_SURFACE_OBSERVATION_SCHEMA_VERSION,
+};
 pub use task::RuntimeTaskExecution;
 
 #[cfg(test)]
 mod store_tests;
+#[cfg(test)]
+mod surface_observer_tests;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]

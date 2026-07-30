@@ -12,6 +12,9 @@ use serde::Serialize;
 const RECONCILE_SCHEMA_VERSION: u32 = 1;
 const MAX_RECONCILE_SURFACES: usize = 256;
 
+mod runtime_observations;
+pub(crate) use runtime_observations::reconcile_with_runtime;
+
 pub(crate) type SurfaceObservations = BTreeMap<PluginSurfaceRef, SurfaceObservedState>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

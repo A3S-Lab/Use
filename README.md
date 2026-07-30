@@ -617,6 +617,21 @@ again. `drain_remove_service` stops a non-terminal exact unit and removes it;
 the binding-store receipt is intentionally removed by the outer lifecycle
 saga only after Gateway revocation and Runtime removal both succeed.
 
+`RuntimeSurfaceObserver` is the explicit workspace-scoped bridge from those
+receipts to the named-surface reconciler. Its caller supplies the canonical
+package digest and a `RuntimeClientRegistry`; the observer reads only the
+matching scope, connects only the provider named by each receipt, and never
+falls back to a default provider. It observes release-backed Tool Tasks, Tool
+Services, and Streamable HTTP MCP Services. Package-executable Tasks and stdio
+MCP remain owned by their supervised compatibility hosts. Unbound Runtime
+surfaces stay pending, while missing, failed, or stale bound surfaces cannot
+publish dependent Skills.
+
+The process-wide `capability snapshot` command still has no workspace argument,
+so it deliberately does not guess a scope or inject a Runtime snapshot. A
+scope-aware lifecycle/session caller must assemble Runtime, stdio MCP, Skill,
+and UI host observations before capability publication.
+
 ```bash
 a3s-use capability snapshot --json
 a3s-use capability watch \

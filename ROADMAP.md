@@ -426,11 +426,23 @@ Implementation status (in progress 2026-07-30):
   enforcement and Runtime start identity; pre-v2 development receipts fail
   closed and must be prepared again instead of being interpreted under changed
   semantics;
+- completed M5E: add an explicit-scope `RuntimeSurfaceObserver` that reads the
+  exact package generation's receipts, resolves only receipt-selected
+  providers through `RuntimeClientRegistry`, and observes release-backed Tool
+  Tasks, Tool Services, and Streamable HTTP MCP Services without fallback;
+- completed M5E: merge validated Runtime surface snapshots with disjoint stdio
+  MCP, Skill, and UI host observations before named-surface reconciliation;
+  unbound surfaces remain pending, stale bindings fail readiness, and adapter
+  collisions are rejected;
+- completed M5E: keep package-executable Tool Tasks and stdio MCP outside the
+  Runtime observer so their supervised compatibility hosts remain the single
+  observation owners;
 - pending: validated ACL policy, resolved workspace grants, secret-reference
   adapters, filesystem/network/child-process enforcement, durable binding
   orchestration, streaming/file-backed large Task output, the actual MCP
   initialize client adapter, stdio supervision, Gateway route revocation,
-  binding-store cleanup orchestration, and reconciler wiring.
+  binding-store cleanup orchestration, and scope-aware capability/session
+  snapshot wiring.
 
 Deliverables:
 
