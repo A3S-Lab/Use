@@ -507,6 +507,15 @@ Implementation status (in progress 2026-07-30):
   immutable Use operation plans, downgrade an out-of-ceiling `allow` to
   `ask`, deny agent secret grants, block `native-unconfined` unattended use,
   and recheck exact policy authority during apply;
+- completed M5J-B in the umbrella CLI: load authorization through a bounded
+  read from an explicit operator-selected ACL or the existing user-level ACL,
+  while excluding automatically discovered workspace configuration from
+  pre-authorization;
+- completed M5J-B in the umbrella CLI: inject one immutable authorization
+  policy into the shared Plugin Manager and expose common complete-plan
+  evaluation and apply-time verification APIs to CLI, Web, and management MCP
+  adapters; Web remains on the conservative default-`ask` policy until it has
+  a trusted host policy source;
 - pending: Plugin Manager full-Use-plan persistence and policy invocation,
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,

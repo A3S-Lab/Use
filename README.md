@@ -699,9 +699,14 @@ registry, publisher, source, byte, surface, workspace, filesystem, network,
 resource, execution, and UI ceilings into a stable policy digest. An
 out-of-ceiling `allow` becomes `ask`; agent secret grants are denied and
 `native-unconfined` cannot run unattended. The evaluator can recheck stored
-plan authority during apply. Persisting the full Use plan in the shared Plugin
-Manager and invoking this policy on its live lifecycle path is the next
-integration step.
+plan authority during apply. The CLI and management MCP load policy only from
+an explicit operator-selected ACL or the existing user-level ACL;
+automatically discovered workspace configuration cannot pre-authorize
+mutation. One immutable policy is injected into the shared Plugin Manager,
+whose common evaluation and verification APIs are available to every adapter.
+Web retains the default `ask` policy until it receives a trusted host policy
+source. Persisting the full Use plan in the Manager and invoking these APIs on
+its live lifecycle path is the next integration step.
 
 ```bash
 a3s-use capability snapshot --json

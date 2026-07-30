@@ -302,9 +302,17 @@ cannot receive unattended authority.
 The resulting decision and normalized policy digest become
 `PluginOperationPlan.authority`. Apply re-evaluates the stored plan against the
 current host policy and rejects digest or decision drift. The parser and
-evaluator are implemented and independently tested in the umbrella CLI;
-persisting the full Use plan and invoking policy from the shared Manager
-lifecycle remain the next integration step.
+evaluator are implemented and independently tested in the umbrella CLI.
+Authorization is loaded through a bounded read from an explicit
+operator-selected ACL or the existing user-level ACL. Automatically discovered
+workspace configuration cannot pre-authorize plugin mutation.
+
+The shared Plugin Manager stores one immutable authorization policy and
+provides common complete-plan evaluation and apply-time verification APIs to
+CLI, Web, and management MCP adapters. Web retains the default `ask` policy
+until it receives a trusted host policy source. Persisting the full Use plan
+and invoking policy from the Manager lifecycle remain the next integration
+step.
 
 ## Manager MCP Toolset
 
