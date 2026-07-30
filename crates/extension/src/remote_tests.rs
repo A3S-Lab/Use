@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use a3s_use_core::{
-    PluginCatalogRecord, PluginSurfaceKind, PluginSurfaceRef, PLUGIN_CATALOG_SCHEMA_V2,
+    PlanPackageRole, PluginCatalogRecord, PluginSurfaceKind, PluginSurfaceRef,
+    PLUGIN_CATALOG_SCHEMA_V2,
 };
 use sha2::{Digest, Sha256};
 
@@ -99,6 +100,10 @@ async fn tuf_install_records_signed_provenance_and_converges() {
     assert_eq!(provenance.package_id, "a3s/science");
     assert_eq!(provenance.version, PACKAGE_VERSION);
     assert_eq!(provenance.sha256, repository.target_sha256);
+    assert_eq!(
+        installed.extension.plan_ready_catalog().unwrap_err().code,
+        "use.extension.plan_evidence_missing"
+    );
     assert!(installed.extension.cli_executable().unwrap().is_file());
     let package_root = &installed.extension.receipt.package_root;
     assert!(package_root.join("web/activity.html").is_file());
@@ -204,6 +209,19 @@ async fn tuf_catalog_v2_install_persists_and_revalidates_plan_ready_evidence() {
         Some(&ResolvedRemotePackage::from_verified_catalog(verified).unwrap())
     );
     assert!(registry.get("a3s/science").await.unwrap().is_some());
+    let removal = installed
+        .extension
+        .remove_transition(
+            PlanPackageRole::Root,
+            &[PluginSurfaceRef {
+                kind: PluginSurfaceKind::Ui,
+                id: "review".to_owned(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(removal.before.as_ref().unwrap().release.surfaces.len(), 5);
+    assert_eq!(removal.surfaces.len(), 5);
+    assert!(removal.after.is_none());
 
     tokio::fs::write(
         installed.extension.cli_executable().unwrap(),

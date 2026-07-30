@@ -2,7 +2,10 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use a3s_use_core::{UseError, UseResult, VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2};
+use a3s_use_core::{
+    PlanPackageRole, PlannedPackageState, PlannedPackageTransition, PluginSurfaceRef, UseError,
+    UseResult, VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2,
+};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -108,6 +111,67 @@ impl InstalledExtension {
 
     pub fn supports_use_version(&self, version: &str) -> bool {
         self.manifest.supports_use_version(version).unwrap_or(false)
+    }
+
+    /// Return the verified catalog-v2 evidence retained by this installed
+    /// package after checking its internal receipt bindings.
+    pub fn plan_ready_catalog(&self) -> UseResult<&VerifiedPluginCatalogRecord> {
+        let catalog = self.receipt.verified_catalog.as_ref().ok_or_else(|| {
+            plan_evidence_error(
+                "The installed extension does not retain catalog-v2 planning evidence.",
+            )
+        })?;
+        if self.receipt.schema_version != RECEIPT_SCHEMA_VERSION_V2
+            || self.receipt.trust != ExtensionTrust::RegistryTuf
+        {
+            return Err(plan_evidence_error(
+                "The installed extension receipt is not plan-ready registry state.",
+            ));
+        }
+        let package_digest = self.receipt.package_sha256.as_deref().ok_or_else(|| {
+            plan_evidence_error("The installed extension receipt omitted its package digest.")
+        })?;
+        validate_catalog_binding(
+            catalog,
+            self.receipt.registry.as_ref(),
+            &self.manifest,
+            &self.receipt.manifest_sha256,
+            package_digest,
+        )?;
+        Ok(catalog)
+    }
+
+    /// Resolve the exact installed package state using active surfaces
+    /// observed by the capability snapshot.
+    pub fn planned_state(
+        &self,
+        active_surfaces: &[PluginSurfaceRef],
+    ) -> UseResult<PlannedPackageState> {
+        self.plan_ready_catalog()?.selected_state(active_surfaces)
+    }
+
+    pub fn remove_transition(
+        &self,
+        role: PlanPackageRole,
+        active_surfaces: &[PluginSurfaceRef],
+    ) -> UseResult<PlannedPackageTransition> {
+        self.plan_ready_catalog()?
+            .remove_transition(role, active_surfaces)
+    }
+
+    pub fn replace_transition(
+        &self,
+        candidate: &VerifiedPluginCatalogRecord,
+        role: PlanPackageRole,
+        active_surfaces: &[PluginSurfaceRef],
+        requested_surfaces: &[PluginSurfaceRef],
+    ) -> UseResult<PlannedPackageTransition> {
+        candidate.replace_transition(
+            self.plan_ready_catalog()?,
+            role,
+            active_surfaces,
+            requested_surfaces,
+        )
     }
 }
 
@@ -1130,6 +1194,23 @@ fn validate_catalog_package(
     let Some(catalog) = catalog else {
         return Ok(());
     };
+    let manifest_digest = sha256(manifest_bytes);
+    validate_catalog_binding(
+        catalog,
+        registry,
+        manifest,
+        &manifest_digest,
+        package_digest,
+    )
+}
+
+fn validate_catalog_binding(
+    catalog: &VerifiedPluginCatalogRecord,
+    registry: Option<&ResolvedRemotePackage>,
+    manifest: &ExtensionManifest,
+    manifest_digest: &str,
+    package_digest: &str,
+) -> UseResult<()> {
     catalog.validate().map_err(|error| {
         catalog_package_error(format!(
             "The verified catalog evidence is invalid: {}",
@@ -1166,7 +1247,7 @@ fn validate_catalog_package(
     if record.package_id != manifest.package_id
         || record.version != manifest.version
         || expected_package_digest != Some(package_digest)
-        || expected_manifest_digest != Some(sha256(manifest_bytes).as_str())
+        || expected_manifest_digest != Some(manifest_digest)
     {
         return Err(catalog_package_error(
             "The verified catalog does not match the installed package and manifest.",
@@ -1177,6 +1258,10 @@ fn validate_catalog_package(
 
 fn catalog_package_error(message: impl Into<String>) -> UseError {
     UseError::new("use.extension.catalog_package_mismatch", message)
+}
+
+fn plan_evidence_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.extension.plan_evidence_missing", message)
 }
 
 fn ensure_unique_routes(installed: &[InstalledExtension]) -> UseResult<()> {

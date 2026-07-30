@@ -240,32 +240,7 @@ fn catalog_versions_fail_closed_across_new_evidence_fields() {
 
 #[test]
 fn verified_catalog_v2_derives_a_plan_ready_selected_install_transition() {
-    let mut value: serde_json::Value = serde_json::from_slice(CATALOG_RECORD).unwrap();
-    value["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
-    value["package"]["manifestSha256"] = serde_json::json!(format!("sha256:{}", "c".repeat(64)));
-    for surface in value["surfaces"].as_array_mut().unwrap() {
-        surface["optional"] = serde_json::json!(true);
-    }
-    value["surfaces"][1]["requires"] = serde_json::json!([
-        {"kind": "tool", "id": "convert"}
-    ]);
-    value["surfaces"][4]["requires"] = serde_json::json!([
-        {"kind": "skill", "id": "review"},
-        {"kind": "tool", "id": "index"}
-    ]);
-    let record = PluginCatalogRecord::from_json(&serde_json::to_vec(&value).unwrap()).unwrap();
-    let provenance = VerifiedCatalogProvenance {
-        registry_name: "official".to_owned(),
-        registry_url: "https://plugins.a3s.dev/catalog".to_owned(),
-        root_sha256: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-            .to_owned(),
-        root_version: 7,
-        timestamp_version: 42,
-        snapshot_version: 41,
-        targets_version: 39,
-        catalog_record_digest: record.descriptor_digest().unwrap(),
-    };
-    let verified = VerifiedPluginCatalogRecord::new(record, provenance).unwrap();
+    let verified = plan_ready_catalog();
     let transition = verified
         .install_transition(
             PlanPackageRole::Root,
@@ -292,6 +267,93 @@ fn verified_catalog_v2_derives_a_plan_ready_selected_install_transition() {
         transition.source,
         Some(PluginPlanSource::Registry { .. })
     ));
+}
+
+#[test]
+fn verified_catalog_v2_derives_remove_and_replace_from_observed_surfaces() {
+    let installed = plan_ready_catalog();
+    let active_surfaces = [PluginSurfaceRef {
+        kind: PluginSurfaceKind::Ui,
+        id: "review".to_owned(),
+    }];
+    let removal = installed
+        .remove_transition(PlanPackageRole::Root, &active_surfaces)
+        .unwrap();
+    assert!(removal.after.is_none());
+    assert_eq!(removal.before.as_ref().unwrap().release.surfaces.len(), 4);
+    assert_eq!(removal.surfaces.len(), 4);
+    assert!(removal.source.is_none());
+
+    let mut candidate_record = installed.record.clone();
+    candidate_record.version = "2.1.0".to_owned();
+    candidate_record.archive.target_name = candidate_record
+        .archive
+        .target_name
+        .replace("/2.0.0/", "/2.1.0/")
+        .replace("-2.0.0-", "-2.1.0-");
+    candidate_record.validate().unwrap();
+    let candidate = VerifiedPluginCatalogRecord::new(
+        candidate_record.clone(),
+        VerifiedCatalogProvenance {
+            catalog_record_digest: candidate_record.descriptor_digest().unwrap(),
+            ..installed.provenance.clone()
+        },
+    )
+    .unwrap();
+    let replacement = candidate
+        .replace_transition(
+            &installed,
+            PlanPackageRole::Root,
+            &active_surfaces,
+            &[PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: "convert".to_owned(),
+            }],
+        )
+        .unwrap();
+
+    assert_eq!(
+        replacement.before.as_ref().unwrap().release.version,
+        "2.0.0"
+    );
+    assert_eq!(replacement.after.as_ref().unwrap().release.version, "2.1.0");
+    assert_eq!(
+        replacement.after.as_ref().unwrap().release.surfaces.len(),
+        1
+    );
+    assert!(matches!(
+        replacement.source,
+        Some(PluginPlanSource::Registry { .. })
+    ));
+}
+
+fn plan_ready_catalog() -> VerifiedPluginCatalogRecord {
+    let mut value: serde_json::Value = serde_json::from_slice(CATALOG_RECORD).unwrap();
+    value["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
+    value["package"]["manifestSha256"] = serde_json::json!(format!("sha256:{}", "c".repeat(64)));
+    for surface in value["surfaces"].as_array_mut().unwrap() {
+        surface["optional"] = serde_json::json!(true);
+    }
+    value["surfaces"][1]["requires"] = serde_json::json!([
+        {"kind": "tool", "id": "convert"}
+    ]);
+    value["surfaces"][4]["requires"] = serde_json::json!([
+        {"kind": "skill", "id": "review"},
+        {"kind": "tool", "id": "index"}
+    ]);
+    let record = PluginCatalogRecord::from_json(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let provenance = VerifiedCatalogProvenance {
+        registry_name: "official".to_owned(),
+        registry_url: "https://plugins.a3s.dev/catalog".to_owned(),
+        root_sha256: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            .to_owned(),
+        root_version: 7,
+        timestamp_version: 42,
+        snapshot_version: 41,
+        targets_version: 39,
+        catalog_record_digest: record.descriptor_digest().unwrap(),
+    };
+    VerifiedPluginCatalogRecord::new(record, provenance).unwrap()
 }
 
 #[test]

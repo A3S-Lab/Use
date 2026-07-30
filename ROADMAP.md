@@ -553,6 +553,11 @@ Implementation status (in progress 2026-07-30):
   revalidate catalog provenance, exact target resolution, raw manifest digest,
   and expanded-package digest whenever that receipt is loaded; retain receipt
   v1 compatibility for catalog-v1, local, and release-bundle installations;
+- completed M5J-C-C-C-C in `a3s-use-core` and `a3s-use-extension`: resolve an
+  exact selected package state and derive remove or registry-replace
+  transitions from plan-ready installed evidence plus caller-supplied active
+  surfaces; receipts remain immutable release evidence and never infer the
+  live activation set;
 - pending: feed verified registry/package records, installed receipts,
   explicit Runtime provider selection, and current capability state into the
   draft and emit it from the live umbrella plan,

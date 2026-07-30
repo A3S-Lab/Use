@@ -751,6 +751,12 @@ binding. Catalog-v1, local, and release-bundle installs continue to use the
 compatible receipt-v1 shape; they remain installable but do not provide the
 complete before-state required for automatic upgrade or uninstall planning.
 
+Catalog-v2 evidence can now resolve a selected package state and derive exact
+remove or registry-replace transitions. `InstalledExtension` exposes the same
+operations only after rechecking its receipt bindings. The caller must supply
+the selected surface set from the current capability snapshot; package
+receipts deliberately do not guess live activation state.
+
 Reviewed Manager records now also bind the actor selected by the trusted host
 adapter. CLI and Web create user plans; management MCP creates agent plans.
 Package content and MCP input cannot select that principal. The current

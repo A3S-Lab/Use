@@ -289,6 +289,15 @@ uninstall resolution. Receipt schema 1 remains readable for catalog-v1,
 explicit-local, and release-bundle installs, but its absence of signed
 catalog-v2 evidence must not be silently upgraded into a complete plan.
 
+`VerifiedPluginCatalogRecord::selected_state` resolves a package state from
+signed release evidence and a selected surface set.
+`remove_transition` uses that state as the exact `before` side of an uninstall;
+`replace_transition` combines installed receipt evidence with a newly verified
+candidate record. `InstalledExtension` exposes equivalent helpers after
+rechecking its receipt identity and digests. The selected surface input must
+come from the same capability snapshot bound into plan state evidence. The
+receipt does not claim which optional surfaces are currently enabled.
+
 ## Immutable Operation Plan
 
 `PluginOperationPlan` binds one complete resolution result:
@@ -373,10 +382,10 @@ decision requires a matching `a3s.use.plugin-operation-confirmation.v1` from a
 trusted user-facing adapter. The confirmation is stored in the append-only
 intent. Recovery validates that recorded evidence rather than abandoning
 already-started side effects after a later policy change. Legacy
-component-only records remain compatible. Registry install transitions and
-plan-ready installed receipt evidence are now available. A3S Use planner
-emission of the complete draft remains pending on deriving upgrade/uninstall
-transitions from receipts plus Runtime-provider and capability-state wiring.
+component-only records remain compatible. Registry install, replace, and
+remove transitions plus plan-ready installed receipt evidence are now
+available. A3S Use planner emission of the complete draft remains pending on
+joining those records with Runtime-provider and capability-state snapshots.
 
 Each reviewed Manager record binds the actor supplied by its trusted adapter:
 CLI and Web select `user`, while management MCP selects `agent`. Untrusted
