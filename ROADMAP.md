@@ -563,6 +563,11 @@ Implementation status (in progress 2026-07-30):
   bind provider/build/capability/enforcement/semantics evidence, return the
   exact connected clients, sort evidence for plan construction, and reject
   duplicate, unavailable, or incapable assignments without fallback;
+- completed M5J-C-C-D-B in `a3s-use`: add a canonical digest for complete
+  extension receipts and publish strict capability `plannerEvidence` only for
+  plan-ready schema-v3 registry packages, binding the receipt, catalog,
+  manifest, expanded package, desired enabled state, and exact dependency-
+  closed named-surface inventory;
 - pending: join verified registry/package records, installed receipts,
   selected Runtime provider evidence, and current capability state into the
   draft and emit it from the live umbrella plan,

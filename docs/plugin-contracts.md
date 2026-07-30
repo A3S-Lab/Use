@@ -298,6 +298,15 @@ rechecking its receipt identity and digests. The selected surface input must
 come from the same capability snapshot bound into plan state evidence. The
 receipt does not claim which optional surfaces are currently enabled.
 
+The capability registry is the join boundary for that activation fact. A
+plan-ready schema-v3 extension binding carries `plannerEvidence` schema 1
+containing the canonical full-receipt digest, verified catalog-record digest,
+signed manifest and expanded-package digests, desired enabled state, and
+sorted selected surface references. Emission requires the manifest inventory
+to equal the verified catalog inventory and the selection to be dependency
+closed. Packages without complete signed evidence remain observable but omit
+this block.
+
 ## Immutable Operation Plan
 
 `PluginOperationPlan` binds one complete resolution result:

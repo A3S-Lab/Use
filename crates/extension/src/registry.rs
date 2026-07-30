@@ -7,7 +7,9 @@ use a3s_use_core::{
     UseResult, VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2,
 };
 use fs2::FileExt;
+use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::fs;
 
 use super::digest::package_sha256;
@@ -55,6 +57,23 @@ pub struct ExtensionReceipt {
     pub installed_at_unix: u64,
     #[serde(default = "enabled_by_default")]
     pub enabled: bool,
+}
+
+impl ExtensionReceipt {
+    /// Canonical identity of the complete installed ownership and provenance
+    /// record. Secret values are not part of extension receipts.
+    pub fn descriptor_digest(&self) -> UseResult<String> {
+        let mut bytes = Vec::new();
+        let mut serializer =
+            serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
+        self.serialize(&mut serializer).map_err(|error| {
+            UseError::new(
+                "use.extension.receipt_invalid",
+                format!("Failed to encode the canonical extension receipt: {error}"),
+            )
+        })?;
+        Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
+    }
 }
 
 fn enabled_by_default() -> bool {

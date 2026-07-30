@@ -620,6 +620,13 @@ not a last-writer-wins decision. Package-executable Tool Tasks and stdio MCP
 are intentionally absent from the Runtime snapshot and remain owned by their
 supervised compatibility hosts.
 
+For planner consumption, a plan-ready schema-v3 capability binding also
+projects `plannerEvidence` schema 1. It binds the canonical extension receipt,
+verified catalog record, signed manifest, expanded package, desired enabled
+state, and exact sorted named-surface inventory. Catalog/manifest inventory
+drift or a dependency-open selection fails the capability snapshot instead of
+letting the planner infer state.
+
 The existing process-wide capability snapshot has no workspace identity and
 therefore does not select one implicitly. Automatic capability/session
 publication remains pending until the lifecycle caller supplies the explicit

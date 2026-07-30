@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "extensions")]
 use a3s_use_core::PluginSurfaceKind;
-use a3s_use_core::{Readiness, UseError, UseResult};
+use a3s_use_core::{PluginSurfaceRef, Readiness, UseError, UseResult};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
@@ -21,6 +21,8 @@ use crate::surface_reconciler::{
 };
 
 const SCHEMA_VERSION: u32 = 1;
+#[cfg(feature = "extensions")]
+const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
 const WATCH_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_STABLE_SNAPSHOT_ATTEMPTS: usize = 5;
 
@@ -95,6 +97,19 @@ struct RepositoryBinding {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct PluginPlannerEvidence {
+    pub schema_version: u32,
+    pub package_id: String,
+    pub package_sha256: String,
+    pub manifest_sha256: String,
+    pub receipt_digest: String,
+    pub catalog_record_digest: String,
+    pub desired_enabled: bool,
+    pub selected_surfaces: Vec<PluginSurfaceRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CapabilityBinding {
     id: String,
     route: String,
@@ -105,6 +120,8 @@ pub(crate) struct CapabilityBinding {
     #[cfg(feature = "extensions")]
     #[serde(skip_serializing_if = "Option::is_none")]
     reconciliation: Option<SurfaceReconcileSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    planner_evidence: Option<PluginPlannerEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     package_root: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -189,6 +206,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             readiness: diagnostic.readiness,
             #[cfg(feature = "extensions")]
             reconciliation: None,
+            planner_evidence: None,
             package_root,
             requires_use: None,
             repository: None,
@@ -212,6 +230,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             readiness: Readiness::Missing,
             #[cfg(feature = "extensions")]
             reconciliation: None,
+            planner_evidence: None,
             package_root: None,
             requires_use: None,
             repository: None,
@@ -247,6 +266,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             readiness: diagnostic.readiness,
             #[cfg(feature = "extensions")]
             reconciliation: None,
+            planner_evidence: None,
             package_root,
             requires_use: None,
             repository: None,
@@ -273,6 +293,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             readiness: Readiness::Missing,
             #[cfg(feature = "extensions")]
             reconciliation: None,
+            planner_evidence: None,
             package_root: None,
             requires_use: None,
             repository: None,
@@ -295,6 +316,7 @@ fn box_capability() -> CapabilityBinding {
         readiness: diagnostic.readiness,
         #[cfg(feature = "extensions")]
         reconciliation: None,
+        planner_evidence: None,
         package_root: None,
         requires_use: None,
         repository: None,
@@ -582,6 +604,7 @@ async fn project_extension_for_host(
             order: contribution.order,
         });
     }
+    let planner_evidence = plugin_planner_evidence(extension, reconciliation.as_ref())?;
     Ok(CapabilityBinding {
         id: receipt.component_id.clone(),
         route: receipt.route.clone(),
@@ -590,6 +613,7 @@ async fn project_extension_for_host(
         enabled: active,
         readiness,
         reconciliation,
+        planner_evidence,
         package_root: Some(receipt.package_root.clone()),
         requires_use: extension.manifest.requires_use.clone(),
         repository: extension
@@ -606,6 +630,79 @@ async fn project_extension_for_host(
         activity_bar,
     })
 }
+
+#[cfg(feature = "extensions")]
+fn plugin_planner_evidence(
+    extension: &a3s_use_extension::InstalledExtension,
+    reconciliation: Option<&SurfaceReconcileSnapshot>,
+) -> UseResult<Option<PluginPlannerEvidence>> {
+    if extension.manifest.schema_version != 3 {
+        return Ok(None);
+    }
+    let catalog = match extension.plan_ready_catalog() {
+        Ok(catalog) => catalog,
+        Err(error) if error.code == "use.extension.plan_evidence_missing" => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let reconciliation = reconciliation.ok_or_else(|| {
+        UseError::new(
+            "use.capability.planner_evidence_invalid",
+            "A plan-ready schema-v3 plugin omitted reconciliation evidence.",
+        )
+    })?;
+    let mut selected_surfaces = reconciliation
+        .surfaces
+        .iter()
+        .map(|surface| surface.surface.clone())
+        .collect::<Vec<_>>();
+    selected_surfaces.sort();
+    selected_surfaces.dedup();
+    let catalog_surfaces = catalog
+        .record
+        .surfaces
+        .iter()
+        .map(|surface| surface.reference())
+        .collect::<Vec<_>>();
+    if selected_surfaces.is_empty() || selected_surfaces != catalog_surfaces {
+        return Err(UseError::new(
+            "use.capability.planner_evidence_invalid",
+            "The installed manifest surface inventory does not match its verified catalog.",
+        ));
+    }
+    let planned = catalog.selected_state(&selected_surfaces)?;
+    let planned_surfaces = planned
+        .release
+        .surfaces
+        .iter()
+        .map(|surface| surface.reference())
+        .collect::<Vec<_>>();
+    if planned_surfaces != selected_surfaces {
+        return Err(UseError::new(
+            "use.capability.planner_evidence_invalid",
+            "The capability surface selection is not closed under catalog dependencies.",
+        ));
+    }
+    let package_sha256 = extension.receipt.package_sha256.as_deref().ok_or_else(|| {
+        UseError::new(
+            "use.capability.planner_evidence_invalid",
+            "A plan-ready receipt omitted its expanded-package digest.",
+        )
+    })?;
+    Ok(Some(PluginPlannerEvidence {
+        schema_version: PLANNER_EVIDENCE_SCHEMA_VERSION,
+        package_id: extension.receipt.package_id.clone(),
+        package_sha256: format!("sha256:{package_sha256}"),
+        manifest_sha256: format!("sha256:{}", extension.receipt.manifest_sha256),
+        receipt_digest: extension.receipt.descriptor_digest()?,
+        catalog_record_digest: catalog.provenance.catalog_record_digest.clone(),
+        desired_enabled: extension.receipt.enabled,
+        selected_surfaces,
+    }))
+}
+
+#[cfg(all(test, feature = "extensions"))]
+#[path = "capability_registry_planner_tests.rs"]
+mod planner_tests;
 
 #[cfg(test)]
 mod tests {

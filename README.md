@@ -640,6 +640,14 @@ so it deliberately does not guess a scope or inject a Runtime snapshot. A
 scope-aware lifecycle/session caller must assemble Runtime, stdio MCP, Skill,
 and UI host observations before capability publication.
 
+For a plan-ready schema-v3 registry package, the snapshot includes a strict
+`plannerEvidence` block. It binds the canonical receipt digest,
+catalog-record digest, manifest and expanded-package digests, desired enabled
+state, and sorted named-surface inventory. The inventory must exactly match
+the verified catalog and be closed under its dependencies. Legacy, local,
+release-bundle, or unnamed-surface packages remain visible but do not claim
+this planning evidence.
+
 The shared core now defines the canonical
 `a3s.use.plugin-workspace-grant.v1` contract. A grant binds one workspace,
 package digest, signed permission-ceiling digest, resolved permission digest,
