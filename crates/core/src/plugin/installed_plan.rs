@@ -6,7 +6,6 @@ use super::validation::{strictly_sorted_unique, valid_machine_id, valid_package_
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PluginSurfaceRef,
     VerifiedPluginCatalogRecord, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA, MAX_PLUGIN_PLAN_ITEMS,
-    PLUGIN_CATALOG_SCHEMA_V2,
 };
 
 const INSTALLED_PLAN_EVIDENCE_ERROR: &str = "use.plugin.installed_plan_evidence_invalid";
@@ -49,7 +48,7 @@ impl InstalledPluginPlanEvidence {
             || self.component_id != expected_component
             || self.version != self.verified_catalog.record.version
             || self.package_id != self.verified_catalog.record.package_id
-            || self.verified_catalog.record.schema != PLUGIN_CATALOG_SCHEMA_V2
+            || !self.verified_catalog.record.is_package_plan_ready()
             || self.capability_generation == 0
             || !valid_raw_sha256(&self.capability_revision)
             || !valid_sha256(&self.receipt_digest)
@@ -67,7 +66,7 @@ impl InstalledPluginPlanEvidence {
             .selected_state(&self.selected_surfaces)
             .map_err(|_| {
                 installed_evidence_error(
-                    "The installed surface selection is not valid catalog-v2 closure evidence.",
+                    "The installed surface selection is not valid complete catalog closure evidence.",
                 )
             })?;
         let resolved_surfaces = selected

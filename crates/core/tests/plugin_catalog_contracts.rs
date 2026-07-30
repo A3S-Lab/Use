@@ -1,8 +1,8 @@
 use a3s_use_core::{
-    InstalledPluginPlanEvidence, PlanPackageRole, PluginCatalogRecord, PluginPermissionCeiling,
-    PluginPlanSource, PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass,
-    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
-    PLUGIN_CATALOG_SCHEMA_V2,
+    CatalogPlanningTarget, InstalledPluginPlanEvidence, PlanPackageRole, PluginCatalogRecord,
+    PluginPermissionCeiling, PluginPlanSource, PluginSurfaceKind, PluginSurfaceRef,
+    ToolWorkloadClass, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA, PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
 };
 
 const PERMISSION_CEILING: &[u8] = include_bytes!("../fixtures/plugins/permission-ceiling-v1.json");
@@ -237,6 +237,46 @@ fn catalog_versions_fail_closed_across_new_evidence_fields() {
         PluginCatalogRecord::from_json(&serde_json::to_vec(&missing_package_digest).unwrap())
             .is_err()
     );
+}
+
+#[test]
+fn catalog_v3_binds_one_small_deterministic_planning_target() {
+    let mut value = serde_json::to_value(plan_ready_catalog().record).unwrap();
+    value["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V3);
+    value["planning"] = serde_json::json!({
+        "targetName":
+            "extensions/acme/research/2.0.0/stable/linux-x86_64/planning-v1.json",
+        "length": 4096,
+        "sha256": format!("sha256:{}", "d".repeat(64))
+    });
+    let catalog = PluginCatalogRecord::from_json(&serde_json::to_vec(&value).unwrap()).unwrap();
+
+    assert!(catalog.is_package_plan_ready());
+    assert_eq!(
+        catalog.planning,
+        Some(CatalogPlanningTarget {
+            target_name: "extensions/acme/research/2.0.0/stable/linux-x86_64/planning-v1.json"
+                .to_owned(),
+            length: 4096,
+            sha256: format!("sha256:{}", "d".repeat(64)),
+        })
+    );
+
+    let mut missing = value.clone();
+    missing.as_object_mut().unwrap().remove("planning");
+    assert!(PluginCatalogRecord::from_json(&serde_json::to_vec(&missing).unwrap()).is_err());
+
+    let mut wrong_path = value.clone();
+    wrong_path["planning"]["targetName"] =
+        serde_json::json!("extensions/acme/research/2.0.0/stable/linux-x86_64/other.json");
+    assert!(PluginCatalogRecord::from_json(&serde_json::to_vec(&wrong_path).unwrap()).is_err());
+
+    let mut oversized = value.clone();
+    oversized["planning"]["length"] = serde_json::json!(512 * 1024 + 1);
+    assert!(PluginCatalogRecord::from_json(&serde_json::to_vec(&oversized).unwrap()).is_err());
+
+    value["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
+    assert!(PluginCatalogRecord::from_json(&serde_json::to_vec(&value).unwrap()).is_err());
 }
 
 #[test]

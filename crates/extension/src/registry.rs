@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use a3s_use_core::{
     PlanPackageRole, PlannedPackageState, PlannedPackageTransition, PluginSurfaceRef, UseError,
-    UseResult, VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2,
+    UseResult, VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -548,7 +548,7 @@ impl ExtensionRegistry {
                     prepared.resolved(),
                     prepared
                         .verified_catalog()
-                        .filter(|catalog| catalog.record.schema == PLUGIN_CATALOG_SCHEMA_V2),
+                        .filter(|catalog| catalog.record.is_package_plan_ready()),
                 )
                 .await?
             {
@@ -559,7 +559,7 @@ impl ExtensionRegistry {
         let provenance = downloaded.resolved().clone();
         let verified_catalog = downloaded
             .verified_catalog()
-            .filter(|catalog| catalog.record.schema == PLUGIN_CATALOG_SCHEMA_V2)
+            .filter(|catalog| catalog.record.is_package_plan_ready())
             .cloned();
         let source = prepare_package_source(downloaded.path()).await?;
         self.install_prepared(
@@ -1048,8 +1048,7 @@ impl ExtensionRegistry {
                         ),
                     ));
                 }
-                if catalog.is_some_and(|catalog| catalog.record.schema != PLUGIN_CATALOG_SCHEMA_V2)
-                {
+                if catalog.is_some_and(|catalog| !catalog.record.is_package_plan_ready()) {
                     return Err(UseError::new(
                         "use.extension.receipt_invalid",
                         format!(
@@ -1236,9 +1235,9 @@ fn validate_catalog_binding(
             error.message
         ))
     })?;
-    if catalog.record.schema != PLUGIN_CATALOG_SCHEMA_V2 {
+    if !catalog.record.is_package_plan_ready() {
         return Err(catalog_package_error(
-            "Only catalog-v2 evidence can be persisted as plan-ready installation state.",
+            "Only complete catalog evidence can be persisted as plan-ready installation state.",
         ));
     }
     let resolved = ResolvedRemotePackage::from_verified_catalog(catalog).map_err(|error| {

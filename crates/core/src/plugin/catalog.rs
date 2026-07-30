@@ -12,12 +12,13 @@ use super::validation::{
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PluginPermissionCeiling,
     PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass, PLUGIN_CATALOG_SCHEMA,
-    PLUGIN_CATALOG_SCHEMA_V2,
+    PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
 };
 
 pub(super) const CATALOG_ERROR: &str = "use.plugin.catalog_invalid";
 pub(super) const MAX_CATALOG_SURFACES: usize = 256;
 const MAX_REMOTE_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_PLANNING_TARGET_BYTES: u64 = 512 * 1024;
 const MAX_EXPANDED_PACKAGE_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_PACKAGE_FILES: u64 = 10_000;
 
@@ -38,6 +39,8 @@ pub struct PluginCatalogRecord {
     pub surfaces: Vec<CatalogSurface>,
     pub permission_ceiling: PluginPermissionCeiling,
     pub permission_ceiling_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planning: Option<CatalogPlanningTarget>,
     pub archive: CatalogArchive,
     pub package: CatalogPackage,
     pub license: String,
@@ -79,6 +82,18 @@ pub enum CatalogMcpTransport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CatalogArchive {
+    pub target_name: String,
+    pub length: u64,
+    pub sha256: String,
+}
+
+/// Exact small TUF target containing executable-surface planning evidence.
+///
+/// Keeping this separate from the package archive lets clients review Tool and
+/// MCP Runtime plans without downloading or expanding the full plugin.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CatalogPlanningTarget {
     pub target_name: String,
     pub length: u64,
     pub sha256: String,
@@ -129,7 +144,9 @@ impl PluginCatalogRecord {
     pub fn validate(&self) -> UseResult<()> {
         let schema_v1 = self.schema == PLUGIN_CATALOG_SCHEMA;
         let schema_v2 = self.schema == PLUGIN_CATALOG_SCHEMA_V2;
-        if (!schema_v1 && !schema_v2)
+        let schema_v3 = self.schema == PLUGIN_CATALOG_SCHEMA_V3;
+        let complete_package_schema = schema_v2 || schema_v3;
+        if (!schema_v1 && !complete_package_schema)
             || !valid_package_id(&self.package_id)
             || !valid_catalog_text(&self.display_name, 128)
             || !valid_catalog_text(&self.description, 2048)
@@ -179,7 +196,7 @@ impl PluginCatalogRecord {
                 mcp_transports.insert(surface.id.as_str(), transport);
             }
         }
-        self.validate_surface_dependencies(&surface_refs, schema_v2)?;
+        self.validate_surface_dependencies(&surface_refs, complete_package_schema)?;
 
         self.permission_ceiling
             .validate()
@@ -205,7 +222,7 @@ impl PluginCatalogRecord {
                     kind: PluginSurfaceKind::Tool,
                     id: binding.tool_id.clone(),
                 };
-                if schema_v2
+                if complete_package_schema
                     && !self
                         .surfaces
                         .iter()
@@ -213,7 +230,7 @@ impl PluginCatalogRecord {
                         .is_some_and(|surface| surface.requires.contains(&tool))
                 {
                     return Err(catalog_error(
-                        "A catalog-v2 UI HTTP binding must declare its Tool dependency.",
+                        "A complete plugin catalog UI HTTP binding must declare its Tool dependency.",
                     ));
                 }
             }
@@ -282,7 +299,18 @@ impl PluginCatalogRecord {
 
         self.archive
             .validate(&self.package_id, &self.version, self.channel, &self.target)?;
-        self.package.validate(schema_v2)?;
+        match (&self.planning, schema_v3) {
+            (Some(planning), true) => {
+                planning.validate(&self.package_id, &self.version, self.channel, &self.target)?
+            }
+            (None, false) => {}
+            _ => {
+                return Err(catalog_error(
+                    "Only catalog-v3 records must carry one executable planning target.",
+                ))
+            }
+        }
+        self.package.validate(complete_package_schema)?;
         if !valid_spdx_expression(&self.license) || !valid_repository_url(&self.repository) {
             return Err(catalog_error(
                 "The plugin catalog license or repository identity is invalid.",
@@ -298,6 +326,13 @@ impl PluginCatalogRecord {
 
     pub fn descriptor_digest(&self) -> UseResult<String> {
         Ok(canonical_digest(&self.canonical_bytes()?))
+    }
+
+    pub fn is_package_plan_ready(&self) -> bool {
+        matches!(
+            self.schema.as_str(),
+            PLUGIN_CATALOG_SCHEMA_V2 | PLUGIN_CATALOG_SCHEMA_V3
+        )
     }
 
     fn validate_surface_dependencies(
@@ -381,6 +416,31 @@ impl CatalogArchive {
         {
             return Err(catalog_error(
                 "The plugin catalog archive identity or size is invalid.",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl CatalogPlanningTarget {
+    pub(super) fn validate(
+        &self,
+        package_id: &str,
+        version: &str,
+        channel: PluginReleaseChannel,
+        target: &str,
+    ) -> UseResult<()> {
+        let expected_target_name = format!(
+            "extensions/{package_id}/{version}/{}/{target}/planning-v1.json",
+            channel.as_str()
+        );
+        if self.length == 0
+            || self.length > MAX_PLANNING_TARGET_BYTES
+            || !valid_sha256(&self.sha256)
+            || self.target_name != expected_target_name
+        {
+            return Err(catalog_error(
+                "The plugin catalog planning target identity or size is invalid.",
             ));
         }
         Ok(())

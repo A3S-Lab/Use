@@ -5,20 +5,21 @@ use crate::{UseError, UseResult};
 use super::{
     PlanPackageChangeKind, PlanPackageRole, PlannedPackageState, PlannedPackageTransition,
     PlannedPluginRelease, PluginPermissionCeiling, PluginPlanSource, PluginSurfaceRef,
-    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2,
+    VerifiedPluginCatalogRecord,
 };
 
 impl VerifiedPluginCatalogRecord {
-    /// Resolve one exact package state from catalog-v2 evidence and an
+    /// Resolve one exact package state from complete signed catalog evidence
+    /// and an
     /// observed or requested surface selection.
     pub fn selected_state(
         &self,
         requested_surfaces: &[PluginSurfaceRef],
     ) -> UseResult<PlannedPackageState> {
         self.validate()?;
-        if self.record.schema != PLUGIN_CATALOG_SCHEMA_V2 {
+        if !self.record.is_package_plan_ready() {
             return Err(catalog_plan_error(
-                "A complete package state requires a catalog-v2 record.",
+                "A complete package state requires catalog-v2 or newer package evidence.",
             ));
         }
         let surfaces = self.record.resolve_surfaces(requested_surfaces)?;
@@ -39,10 +40,10 @@ impl VerifiedPluginCatalogRecord {
         };
         let permission_ceiling_digest = permissions.descriptor_digest()?;
         let package_sha256 = self.record.package.sha256.clone().ok_or_else(|| {
-            catalog_plan_error("A catalog-v2 record omitted its expanded package digest.")
+            catalog_plan_error("The complete catalog record omitted its expanded package digest.")
         })?;
         let manifest_sha256 = self.record.package.manifest_sha256.clone().ok_or_else(|| {
-            catalog_plan_error("A catalog-v2 record omitted its manifest digest.")
+            catalog_plan_error("The complete catalog record omitted its manifest digest.")
         })?;
         Ok(PlannedPackageState {
             release: PlannedPluginRelease {
@@ -59,7 +60,7 @@ impl VerifiedPluginCatalogRecord {
         })
     }
 
-    /// Derive one exact install transition from signed catalog-v2 evidence.
+    /// Derive one exact install transition from complete signed catalog evidence.
     ///
     /// Surface selection narrows activation and permission evidence. It does
     /// not narrow the archive download or expanded package footprint.
@@ -82,7 +83,7 @@ impl VerifiedPluginCatalogRecord {
         )
     }
 
-    /// Derive one exact uninstall transition from installed catalog-v2
+    /// Derive one exact uninstall transition from installed complete catalog
     /// evidence and the surface set observed in the current capability state.
     pub fn remove_transition(
         &self,

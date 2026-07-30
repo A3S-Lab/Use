@@ -68,6 +68,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
         }],
         permission_ceiling_digest: permissions.descriptor_digest().unwrap(),
         permission_ceiling: permissions,
+        planning: None,
         archive: CatalogArchive {
             target_name: "extensions/acme/guide/1.0.0/stable/any/guide-1.0.0-any.tar.gz".to_owned(),
             length: 1,

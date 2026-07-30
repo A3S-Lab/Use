@@ -23,8 +23,8 @@ mod resolved_grant_changes;
 mod validation;
 
 pub use catalog::{
-    CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage, CatalogSurface,
-    PluginCatalogRecord, PluginReleaseChannel,
+    CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,
+    CatalogPlanningTarget, CatalogSurface, PluginCatalogRecord, PluginReleaseChannel,
 };
 pub use catalog_trust::{VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
 pub use grant::{PluginWorkspaceGrant, WorkspaceGrantAuthority};
@@ -57,6 +57,7 @@ pub use resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantC
 
 pub const PLUGIN_CATALOG_SCHEMA: &str = "a3s.use.plugin-catalog.v1";
 pub const PLUGIN_CATALOG_SCHEMA_V2: &str = "a3s.use.plugin-catalog.v2";
+pub const PLUGIN_CATALOG_SCHEMA_V3: &str = "a3s.use.plugin-catalog.v3";
 pub const INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA: &str = "a3s.use.installed-plugin-plan-evidence.v1";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
