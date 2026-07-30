@@ -314,6 +314,12 @@ until it receives a trusted host policy source. Persisting the full Use plan
 and invoking policy from the Manager lifecycle remain the next integration
 step.
 
+Each reviewed Manager record binds the actor supplied by its trusted adapter:
+CLI and Web select `user`, while management MCP selects `agent`. Untrusted
+package or request content cannot select the principal. The current lifecycle
+scope remains the frozen `user/current` scope and is returned alongside that
+actor.
+
 ## Manager MCP Toolset
 
 The frozen management inventory is:

@@ -708,6 +708,12 @@ Web retains the default `ask` policy until it receives a trusted host policy
 source. Persisting the full Use plan in the Manager and invoking these APIs on
 its live lifecycle path is the next integration step.
 
+Reviewed Manager records now also bind the actor selected by the trusted host
+adapter. CLI and Web create user plans; management MCP creates agent plans.
+Package content and MCP input cannot select that principal. The current
+lifecycle scope remains the frozen user scope `current`, and both values are
+returned with the reviewed plan.
+
 ```bash
 a3s-use capability snapshot --json
 a3s-use capability watch \

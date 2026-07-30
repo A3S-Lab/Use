@@ -516,6 +516,11 @@ Implementation status (in progress 2026-07-30):
   evaluation and apply-time verification APIs to CLI, Web, and management MCP
   adapters; Web remains on the conservative default-`ask` policy until it has
   a trusted host policy source;
+- completed M5J-C-A in the umbrella CLI: bind every reviewed plan to a
+  host-selected actor, with CLI/Web producing user plans and management MCP
+  producing agent plans, while package and request content cannot choose the
+  principal; persist and return the actor with the frozen `user/current`
+  lifecycle scope;
 - pending: Plugin Manager full-Use-plan persistence and policy invocation,
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,
