@@ -727,6 +727,15 @@ transition construction also derives the exact surface delta. Wiring the
 registry, installed receipts, Runtime selection, and capability snapshot into
 this draft remains pending.
 
+The compatible `a3s.use.plugin-catalog.v2` contract adds a mandatory signed
+manifest digest and explicit per-surface dependency edges. Catalog v1 remains
+readable with its canonical digest unchanged and cannot carry v2-only fields.
+Resolution now selects every mandatory surface plus only the requested
+optional surfaces and their transitive Tool/MCP/Skill dependencies. This is
+the activation boundary needed for small plugin installs; packages such as
+Science must still publish independently useful archives when users should
+avoid downloading unrelated assets.
+
 Reviewed Manager records now also bind the actor selected by the trusted host
 adapter. CLI and Web create user plans; management MCP creates agent plans.
 Package content and MCP input cannot select that principal. The current

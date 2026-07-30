@@ -1,6 +1,7 @@
 use a3s_use_core::{
-    PluginCatalogRecord, PluginPermissionCeiling, PluginSurfaceKind, ToolWorkloadClass,
-    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    PluginCatalogRecord, PluginPermissionCeiling, PluginSurfaceKind, PluginSurfaceRef,
+    ToolWorkloadClass, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    PLUGIN_CATALOG_SCHEMA_V2,
 };
 
 const PERMISSION_CEILING: &[u8] = include_bytes!("../fixtures/plugins/permission-ceiling-v1.json");
@@ -124,6 +125,102 @@ fn catalog_record_binds_permissions_surfaces_and_archive() {
             .unwrap_err()
             .code,
         "use.plugin.catalog_invalid"
+    );
+}
+
+#[test]
+fn catalog_v2_binds_manifest_and_resolves_only_the_surface_dependency_closure() {
+    let mut value: serde_json::Value = serde_json::from_slice(CATALOG_RECORD).unwrap();
+    value["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
+    value["package"]["manifestSha256"] = serde_json::json!(format!("sha256:{}", "c".repeat(64)));
+    for surface in value["surfaces"].as_array_mut().unwrap() {
+        surface["optional"] = serde_json::json!(true);
+    }
+    value["surfaces"][1]["requires"] = serde_json::json!([
+        {"kind": "tool", "id": "convert"}
+    ]);
+    value["surfaces"][4]["requires"] = serde_json::json!([
+        {"kind": "skill", "id": "review"},
+        {"kind": "tool", "id": "index"}
+    ]);
+    let catalog = PluginCatalogRecord::from_json(&serde_json::to_vec(&value).unwrap()).unwrap();
+    assert_eq!(
+        catalog.descriptor_digest().unwrap(),
+        "sha256:3b2bbd9a4dbd0c1e16468cf4a5c971ee83fabc721d116439e76e5ab759df90ef"
+    );
+    let resolved = catalog
+        .resolve_surfaces(&[PluginSurfaceRef {
+            kind: PluginSurfaceKind::Ui,
+            id: "review".to_string(),
+        }])
+        .unwrap();
+
+    assert_eq!(
+        resolved
+            .iter()
+            .map(|surface| surface.reference())
+            .collect::<Vec<_>>(),
+        vec![
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Skill,
+                id: "review".to_string(),
+            },
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: "convert".to_string(),
+            },
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: "index".to_string(),
+            },
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Ui,
+                id: "review".to_string(),
+            },
+        ]
+    );
+    let requested = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Ui,
+        id: "review".to_string(),
+    };
+    assert!(catalog
+        .resolve_surfaces(&[requested.clone(), requested])
+        .is_err());
+    assert!(catalog
+        .resolve_surfaces(&[PluginSurfaceRef {
+            kind: PluginSurfaceKind::Skill,
+            id: "missing".to_string(),
+        }])
+        .is_err());
+}
+
+#[test]
+fn catalog_versions_fail_closed_across_new_evidence_fields() {
+    let mut missing_manifest: serde_json::Value = serde_json::from_slice(CATALOG_RECORD).unwrap();
+    missing_manifest["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
+    assert!(
+        PluginCatalogRecord::from_json(&serde_json::to_vec(&missing_manifest).unwrap()).is_err()
+    );
+
+    let mut v1_dependency: serde_json::Value = serde_json::from_slice(CATALOG_RECORD).unwrap();
+    v1_dependency["surfaces"][1]["requires"] = serde_json::json!([
+        {"kind": "tool", "id": "convert"}
+    ]);
+    assert!(PluginCatalogRecord::from_json(&serde_json::to_vec(&v1_dependency).unwrap()).is_err());
+
+    let mut forbidden_back_edge: serde_json::Value =
+        serde_json::from_slice(CATALOG_RECORD).unwrap();
+    forbidden_back_edge["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
+    forbidden_back_edge["package"]["manifestSha256"] =
+        serde_json::json!(format!("sha256:{}", "c".repeat(64)));
+    forbidden_back_edge["surfaces"][1]["requires"] = serde_json::json!([
+        {"kind": "tool", "id": "convert"}
+    ]);
+    forbidden_back_edge["surfaces"][2]["requires"] = serde_json::json!([
+        {"kind": "skill", "id": "review"}
+    ]);
+    assert!(
+        PluginCatalogRecord::from_json(&serde_json::to_vec(&forbidden_back_edge).unwrap()).is_err()
     );
 }
 

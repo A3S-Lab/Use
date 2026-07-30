@@ -537,6 +537,13 @@ Implementation status (in progress 2026-07-30):
 - completed M5J-C-C-A in `a3s-use-core`: derive package surface changes and
   plan secret changes from exact before/after states, and reject incomplete
   Runtime provider evidence before a draft can be emitted;
+- completed M5J-C-C-B in `a3s-use-core`: add the backward-compatible
+  `a3s.use.plugin-catalog.v2` contract with a mandatory signed manifest digest
+  and strict Skill/UI dependency edges while preserving catalog-v1 canonical
+  bytes and digests;
+- completed M5J-C-C-B in `a3s-use-core`: deterministically resolve all
+  mandatory surfaces plus only the explicitly selected optional surface
+  closure, rejecting missing, duplicate, cyclic, or kind-invalid dependencies;
 - pending: feed verified registry/package records, installed receipts,
   explicit Runtime provider selection, and current capability state into the
   draft and emit it from the live umbrella plan,

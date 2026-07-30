@@ -27,18 +27,23 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Workspace grant operation | `a3s.use.plugin-workspace-grant-operation.v1` | Durable immutable intent and resumable grant lifecycle phase |
 | Workspace grant cutover | `a3s.use.plugin-workspace-grant-cutover.v1` | Evidence that capability publication selected the prepared generation |
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
-| Catalog record | `a3s.use.plugin-catalog.v1` | Search and review metadata without package download |
+| Catalog record | `a3s.use.plugin-catalog.v1` | Compatible search and review metadata without package download |
+| Catalog record | `a3s.use.plugin-catalog.v2` | Plan-ready manifest evidence and surface dependency closure |
+| Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
 
 All JSON contracts:
 
 - reject unknown fields;
-- enforce bounded input and collection sizes;
-- use OLPC canonical JSON;
-- expose a `sha256:` descriptor digest; and
+- enforce bounded input and collection sizes; and
 - avoid secret values, executable paths, public service endpoints, or generic
   action payloads.
+
+Immutable review and receipt contracts use OLPC canonical JSON and expose a
+`sha256:` descriptor digest. The planner draft is deliberately neither
+authorized nor independently digest-authoritative; the host binds it into the
+canonical operation plan before review.
 
 ## Catalog and Trust Provenance
 
@@ -250,6 +255,14 @@ Science should publish independently useful packages and mark genuinely
 optional surfaces explicitly. Surface selection is not permission selection:
 the resolved permission ceiling for every selected executable surface remains
 mandatory and cannot be narrowed by untrusted package content.
+
+Catalog v2 adds the signed manifest digest required by a complete immutable
+plan and a sorted `requires` list on each surface. Tool and MCP surfaces cannot
+delegate further authority. Skills may require Tool or MCP surfaces; UIs may
+require Skill, Tool, or MCP surfaces. Missing, duplicate, kind-invalid, and
+cyclic edges fail closed. Catalog v1 remains readable and retains its exact
+canonical digest, but cannot carry these v2-only fields and is not sufficient
+by itself for complete-plan emission.
 
 ## Immutable Operation Plan
 

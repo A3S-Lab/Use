@@ -176,6 +176,7 @@ fn helper_transition(plan: &PluginOperationPlan) -> PlannedPackageTransition {
         workload: Some(ToolWorkloadClass::Task),
         mcp_transport: None,
         mcp_tool_count: None,
+        requires: Vec::new(),
     };
     let state = PlannedPackageState {
         release: a3s_use_core::PlannedPluginRelease {

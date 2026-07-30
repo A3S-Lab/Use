@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use crate::{UseError, UseResult};
 
 mod catalog;
+mod catalog_selection;
 mod catalog_trust;
 mod grant;
 mod grant_changes;
@@ -52,6 +53,7 @@ pub use plan_draft::{PluginOperationPlanBinding, PluginOperationPlanDraft};
 pub use resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantChangeSet};
 
 pub const PLUGIN_CATALOG_SCHEMA: &str = "a3s.use.plugin-catalog.v1";
+pub const PLUGIN_CATALOG_SCHEMA_V2: &str = "a3s.use.plugin-catalog.v2";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA: &str = "a3s.use.plugin-operation-plan-draft.v1";

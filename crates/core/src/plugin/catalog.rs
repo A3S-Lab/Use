@@ -12,10 +12,11 @@ use super::validation::{
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PluginPermissionCeiling,
     PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass, PLUGIN_CATALOG_SCHEMA,
+    PLUGIN_CATALOG_SCHEMA_V2,
 };
 
-const CATALOG_ERROR: &str = "use.plugin.catalog_invalid";
-const MAX_CATALOG_SURFACES: usize = 256;
+pub(super) const CATALOG_ERROR: &str = "use.plugin.catalog_invalid";
+pub(super) const MAX_CATALOG_SURFACES: usize = 256;
 const MAX_REMOTE_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_EXPANDED_PACKAGE_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_PACKAGE_FILES: u64 = 10_000;
@@ -64,6 +65,8 @@ pub struct CatalogSurface {
     pub mcp_transport: Option<CatalogMcpTransport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_tool_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<PluginSurfaceRef>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,6 +91,8 @@ pub struct CatalogPackage {
     pub file_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,7 +127,9 @@ impl PluginCatalogRecord {
     }
 
     pub fn validate(&self) -> UseResult<()> {
-        if self.schema != PLUGIN_CATALOG_SCHEMA
+        let schema_v1 = self.schema == PLUGIN_CATALOG_SCHEMA;
+        let schema_v2 = self.schema == PLUGIN_CATALOG_SCHEMA_V2;
+        if (!schema_v1 && !schema_v2)
             || !valid_package_id(&self.package_id)
             || !valid_catalog_text(&self.display_name, 128)
             || !valid_catalog_text(&self.description, 2048)
@@ -172,6 +179,7 @@ impl PluginCatalogRecord {
                 mcp_transports.insert(surface.id.as_str(), transport);
             }
         }
+        self.validate_surface_dependencies(&surface_refs, schema_v2)?;
 
         self.permission_ceiling
             .validate()
@@ -259,7 +267,7 @@ impl PluginCatalogRecord {
 
         self.archive
             .validate(&self.package_id, &self.version, self.channel, &self.target)?;
-        self.package.validate()?;
+        self.package.validate(schema_v2)?;
         if !valid_spdx_expression(&self.license) || !valid_repository_url(&self.repository) {
             return Err(catalog_error(
                 "The plugin catalog license or repository identity is invalid.",
@@ -275,6 +283,18 @@ impl PluginCatalogRecord {
 
     pub fn descriptor_digest(&self) -> UseResult<String> {
         Ok(canonical_digest(&self.canonical_bytes()?))
+    }
+
+    fn validate_surface_dependencies(
+        &self,
+        surface_refs: &BTreeSet<PluginSurfaceRef>,
+        schema_v2: bool,
+    ) -> UseResult<()> {
+        super::catalog_selection::validate_surface_dependencies(
+            &self.surfaces,
+            surface_refs,
+            schema_v2,
+        )
     }
 }
 
@@ -311,7 +331,7 @@ impl CatalogSurface {
         }
     }
 
-    pub(super) fn reference(&self) -> PluginSurfaceRef {
+    pub fn reference(&self) -> PluginSurfaceRef {
         PluginSurfaceRef {
             kind: self.kind,
             id: self.id.clone(),
@@ -353,7 +373,7 @@ impl CatalogArchive {
 }
 
 impl CatalogPackage {
-    fn validate(&self) -> UseResult<()> {
+    fn validate(&self, schema_v2: bool) -> UseResult<()> {
         if self.expanded_bytes == 0
             || self.expanded_bytes > MAX_EXPANDED_PACKAGE_BYTES
             || self.file_count == 0
@@ -362,6 +382,11 @@ impl CatalogPackage {
                 .sha256
                 .as_deref()
                 .is_some_and(|value| !valid_sha256(value))
+            || self
+                .manifest_sha256
+                .as_deref()
+                .is_some_and(|value| !valid_sha256(value))
+            || schema_v2 != self.manifest_sha256.is_some()
         {
             return Err(catalog_error(
                 "The plugin catalog package estimate or digest is invalid.",
@@ -415,6 +440,6 @@ impl PluginReleaseChannel {
     }
 }
 
-fn catalog_error(message: impl Into<String>) -> crate::UseError {
+pub(super) fn catalog_error(message: impl Into<String>) -> crate::UseError {
     contract_error(CATALOG_ERROR, message)
 }
