@@ -46,8 +46,7 @@ impl PluginWorkspaceGrant {
             .validate()
             .map_err(|_| grant_error("The resolved workspace permissions are invalid."))?;
         if self.schema != PLUGIN_WORKSPACE_GRANT_SCHEMA
-            || !valid_machine_id(&self.scope_id)
-            || !valid_package_id(&self.package_id)
+            || Self::validate_identity(&self.scope_id, &self.package_id).is_err()
             || !valid_sha256(&self.package_digest)
             || !valid_sha256(&self.permission_ceiling_digest)
             || !valid_sha256(&self.permissions_digest)
@@ -62,7 +61,25 @@ impl PluginWorkspaceGrant {
                 "The plugin workspace grant identity, digest, or lifetime is invalid.",
             ));
         }
-        self.authority.validate(self.requests_secrets())
+        self.authority.validate()?;
+        if self.requests_secrets()
+            && (self.authority.actor != PlanActor::User
+                || self.authority.decision != PlanPolicyDecision::Ask)
+        {
+            return Err(grant_error(
+                "Secret-bearing workspace grants require explicit user confirmation.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn validate_identity(scope_id: &str, package_id: &str) -> UseResult<()> {
+        if !valid_machine_id(scope_id) || !valid_package_id(package_id) {
+            return Err(grant_error(
+                "The plugin workspace grant scope or package identity is invalid.",
+            ));
+        }
+        Ok(())
     }
 
     pub fn validate_against(&self, ceiling: &PluginPermissionCeiling) -> UseResult<()> {
@@ -129,7 +146,7 @@ impl PluginWorkspaceGrant {
 }
 
 impl WorkspaceGrantAuthority {
-    fn validate(&self, requests_secrets: bool) -> UseResult<()> {
+    pub fn validate(&self) -> UseResult<()> {
         if !valid_sha256(&self.policy_digest)
             || self
                 .confirmation_digest
@@ -137,8 +154,6 @@ impl WorkspaceGrantAuthority {
                 .is_some_and(|digest| !valid_sha256(digest))
             || matches!(self.decision, PlanPolicyDecision::Deny)
             || (self.decision == PlanPolicyDecision::Ask) != self.confirmation_digest.is_some()
-            || (requests_secrets
-                && (self.actor != PlanActor::User || self.decision != PlanPolicyDecision::Ask))
         {
             return Err(grant_error(
                 "The workspace grant authority lacks valid policy or confirmation evidence.",

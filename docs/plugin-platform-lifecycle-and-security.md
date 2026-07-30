@@ -81,6 +81,8 @@ flowchart TD
     valid{"All verification gates pass?"}
     rejectPackage["Delete or quarantine staging data<br/>Record typed failure; preserve N on upgrade"]
     commit["Atomically commit immutable package generation<br/>and candidate installed-disabled receipt"]
+    grantNeeded{"Planned exact-generation<br/>grant transition?"}
+    persistCandidateGrant["Persist validated candidate grant receipt<br/>without replacing N authorization"]
     desiredAfterCommit{"Desired state after commit?"}
   end
 
@@ -90,7 +92,10 @@ flowchart TD
   valid -- "No" --> rejectPackage
   rejectPackage --> completeResult
   valid -- "Yes" --> commit
-  commit --> desiredAfterCommit
+  commit --> grantNeeded
+  grantNeeded -- "Yes" --> persistCandidateGrant
+  grantNeeded -- "No" --> desiredAfterCommit
+  persistCandidateGrant --> desiredAfterCommit
 
   subgraph reconcile["4. Surface reconciliation"]
     observe["Observe package, desired state, grants,<br/>bindings, projections, Runtime, and Gateway"]
@@ -207,6 +212,7 @@ flowchart TD
   subgraph remove["7. Disable, uninstall, and retained data"]
     referenceGate{"New protected workspace reference<br/>not covered by reviewed plan?"}
     setAbsent["Persist desired absent"]
+    revokeGrant["Persist exact-generation grant tombstone<br/>when a current grant exists"]
     hide["Atomically hide routes and projections<br/>Block new calls"]
     drain["Drain exact-generation leases<br/>or reach reviewed timeout policy"]
     removalAction{"Desired state"}
@@ -223,7 +229,8 @@ flowchart TD
   plannedAction -- "uninstall" --> referenceGate
   referenceGate -- "Yes" --> drift
   referenceGate -- "No" --> setAbsent
-  setAbsent --> hide
+  setAbsent --> revokeGrant
+  revokeGrant --> hide
   setDisabled --> hide
   hide --> drain
   drain --> removalAction
@@ -257,7 +264,7 @@ flowchart TD
 
   subgraph recovery["9. Crash recovery and reconciliation"]
     restart["Restart finds incomplete operation"]
-    compare["Compare durable intent with package, receipt,<br/>Runtime, Gateway, binding, projection, and lease observations"]
+    compare["Compare durable intent with package, receipt, grant,<br/>Runtime, Gateway, binding, projection, and lease observations"]
     recoveryCase{"Last durable evidence"}
     cleanStage["Delete bounded staging data<br/>Re-plan if necessary"]
     repairReceipt["Reconstruct or quarantine receipt<br/>from verified immutable package"]
@@ -287,7 +294,7 @@ flowchart TD
   classDef runtime fill:#fff8e1,stroke:#f9a825,color:#5d4037;
   class ready,degraded,installedDisabled,removed,keepPrevious,keepPreviousDisabled stable;
   class denied,drift,rejectPackage,rejectUse,broken failure;
-  class buildPlan,intent,toggleIntent,commit,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
+  class buildPlan,intent,toggleIntent,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
   class taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,removeRuntime runtime;
 ```
 
@@ -299,6 +306,7 @@ The graph has five important invariants:
   published;
 - a required Skill is invisible until its Tool and MCP dependency closure is
   usable;
+- a stored grant alone never publishes a capability;
 - upgrade switches all required N+1 bindings in one capability generation or
   keeps N active; and
 - disable or uninstall hides new routes before waiting for existing leases.
@@ -330,11 +338,13 @@ of truth for mutations while still making adapter retries idempotent.
 3. Re-resolve on apply and persist an operation intent before side effects.
 4. Download to a bounded staging root and verify archive and surface digests.
 5. Atomically commit the immutable package and a disabled receipt.
-6. Record desired `enabled` state and reconcile Tool, MCP, Skill, and UI
+6. Persist any planned exact-generation grant without replacing another
+   package generation's authorization.
+7. Record desired `enabled` state and reconcile Tool, MCP, Skill, and UI
    bindings in dependency order.
-7. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
-8. Atomically publish one capability generation.
-9. Mark the operation complete and garbage-collect safe staging data.
+8. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
+9. Atomically publish one capability generation.
+10. Mark the operation complete and garbage-collect safe staging data.
 
 If activation fails, the package remains installed but disabled or broken with
 typed diagnostics. No partial Skill, command shim, endpoint, MCP route, or UI
@@ -345,7 +355,9 @@ generation is advertised as ready.
 Generation N remains active while N+1 is staged and reconciled. Services use a
 health-gated blue/green binding. After N+1 is fully ready, one atomic snapshot
 switch routes new work to N+1. Generation N drains, stops, and is collected
-only after all leases release. A failed N+1 leaves N active.
+only after all leases release. N and N+1 grants use separate digest-keyed
+records during this interval. A failed N+1 leaves N active and revokes the
+candidate grant unless the durable operation remains resumable.
 
 An added permission, secret request, provider requirement, external
 dependency, command alias, or public interface is plan drift and requires a
@@ -359,12 +371,13 @@ and stops eager workloads. The immutable package and retained data remain.
 Uninstall:
 
 1. records desired `absent`;
-2. removes new-call routes and session projections;
-3. drains exact-generation leases;
-4. stops and removes Runtime units and Gateway bindings;
-5. removes receipt-owned shims and projections;
-6. removes receipts and unreferenced package generations; and
-7. retains plugin data and secrets unless a separate purge is authorized.
+2. persists an exact-generation grant tombstone when a current grant exists;
+3. removes new-call routes and session projections;
+4. drains exact-generation leases;
+5. stops and removes Runtime units and Gateway bindings;
+6. removes receipt-owned shims and projections;
+7. removes receipts and unreferenced package generations; and
+8. retains plugin data and secrets unless a separate purge is authorized.
 
 Global uninstall is rejected while another protected workspace grant depends
 on the release unless the reviewed plan includes that impact.
@@ -372,15 +385,18 @@ on the release unless the reviewed plan includes that impact.
 ### Crash recovery
 
 On startup, the reconciler scans incomplete operations and compares durable
-intent with package, receipt, Runtime, Gateway, and projection observations.
+intent with package, receipt, grant, Runtime, Gateway, and projection
+observations.
 
 | Last durable point | Recovery |
 | --- | --- |
 | Download only | Delete bounded staging data and retry |
 | Package committed, receipt absent | Reconstruct or quarantine from verified manifest |
 | Disabled receipt committed | Resume reconciliation without publishing |
+| Candidate grant committed, bindings absent | Revalidate the exact plan and resume or tombstone the candidate |
 | Runtime unit applied, binding absent | Inspect exact unit and reconstruct binding |
 | Binding ready, snapshot absent | Revalidate grants and publish atomically |
+| Desired absent, grant still active | Persist the planned exact-generation tombstone before cleanup |
 | Snapshot removed, workload running | Continue drain and stop |
 | Old generation still referenced | Preserve it and retry garbage collection |
 
@@ -398,6 +414,8 @@ trusted registry root
   -> package archive digest
   -> manifest and surface content digests
   -> release descriptor digest
+  -> signed permission ceiling
+  -> exact-generation workspace grant receipt
   -> executable or image artifact digest
   -> Runtime semantics digest
   -> binding receipt
@@ -436,6 +454,39 @@ narrow, network hosts stay exact, ports/methods/secrets may only be removed,
 resource values may only decrease, and boolean authorities cannot change from
 false to true. Secret-bearing grants require an explicit user confirmation;
 agent grants containing secrets are invalid.
+
+Durable authorization uses two storage schemas:
+`a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision
+and `a3s.use.plugin-workspace-grant-revocation.v1` for a tombstone that binds
+the exact prior revision and grant digest. Records live at
+`<state-root>/grants/<scope-sha256>/<publisher>/<package>/<package-sha256>.json`.
+They are bounded, atomically replaced under a cross-process lock, protected by
+real-directory and regular-file checks, and never deleted during ordinary
+revocation.
+
+Each immutable package digest has an independent record. N therefore remains
+authorized while an N+1 candidate is prepared, but only the generation in the
+atomic capability snapshot is visible to new calls. After snapshot cutover and
+lease drain, the N record transitions to a tombstone. A failed or abandoned
+candidate is likewise revoked unless its durable operation remains resumable.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Missing
+  Missing --> Granted: validated receipt, revision > 0
+  Granted --> Granted: higher revision and non-regressing grant time
+  Granted --> Revoked: exact prior receipt and higher revision
+  Revoked --> Granted: higher revision and grant time >= revocation time
+  Granted --> Granted: identical write is idempotent
+  Revoked --> Revoked: identical write is idempotent
+  Granted --> Rejected: stale, conflicting, expired, or ceiling mismatch
+  Revoked --> Rejected: stale or pre-revocation regrant
+```
+
+`observe` returns durable evidence only. Invocation and reconciliation must use
+the active resolver so the exact scope, package ID and digest, current signed
+ceiling, permission subset, and clock are checked again. Missing and revoked
+records return no authority; malformed or moved records fail closed.
 
 ### Agent authority
 
@@ -482,6 +533,15 @@ Runtime units and endpoint bindings are workspace-scoped in the initial
 contract, even when two workspaces use the same package bytes. Cross-workspace
 process or Service sharing would combine permission and data boundaries and is
 therefore a separate future design, not an implicit optimization.
+
+The workspace grant store is rooted at
+`<state-root>/grants/<scope-sha256>/<publisher>/<package>/`. The final filename
+is the lowercase package SHA-256, so simultaneous N and N+1 records cannot
+overwrite one another. Within an exact generation, only a higher revision with
+a non-regressing authorization time may replace current state. Revocation
+requires the exact current receipt and persists a tombstone; a moved,
+conflicting, stale, malformed, oversized, symlinked, or non-regular record
+fails closed.
 
 The initial Runtime binding store is rooted at
 `<state-root>/bindings/runtime/<scope-sha256>/`. It never uses a caller-provided

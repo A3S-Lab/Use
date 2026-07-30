@@ -639,8 +639,18 @@ policy decision, actor, confirmation evidence, and optional expiry. Resolved
 permissions use the same typed shape as the signed ceiling but may only narrow
 filesystem paths/access, network ports, resources, secrets, private Service
 exposure, and UI method/path bindings. Secret grants require an explicit user
-confirmation; an agent grant cannot carry secret authority. The durable grant
-store and plan-to-grant resolver remain pending.
+confirmation; an agent grant cannot carry secret authority.
+
+`a3s-use-extension` now persists exact-generation authorization separately
+from package receipts under
+`<state-root>/grants/<scope-sha256>/<publisher>/<package>/<package-sha256>.json`.
+The versioned record is either a grant receipt or a revocation tombstone.
+Writes are bounded, atomic, cross-process locked, symlink-checked, monotonic,
+and exact-ownership guarded. Active resolution revalidates the current package
+digest, signed permission ceiling, and lifetime. Separate digest keys let N and
+candidate N+1 grants coexist during a blue/green upgrade; capability
+publication, not mere grant presence, controls visibility. Validated ACL policy
+and plan-to-grant resolution remain pending.
 
 ```bash
 a3s-use capability snapshot --json

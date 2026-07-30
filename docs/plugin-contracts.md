@@ -7,10 +7,10 @@
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 
 This document records the machine-readable plugin contracts implemented in
-`a3s-use-core` and the signed catalog reader implemented in
-`a3s-use-extension`. It freezes the control-plane vocabulary before shared
-lifecycle mutation is implemented. It does not claim that the Plugin Manager,
-surface reconciler, or Runtime providers are complete.
+`a3s-use-core`, plus the signed catalog reader and durable workspace-grant
+store implemented in `a3s-use-extension`. It freezes the control-plane
+vocabulary before shared lifecycle mutation is implemented. It does not claim
+that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 
 ## Contract Set
 
@@ -128,6 +128,28 @@ boolean execution/Service authorities, secret names, and UI methods/path
 prefixes are compared structurally. Secret-bearing grants are valid only for a
 user-confirmed `ask` decision; an agent grant cannot contain secret authority.
 The contract stores secret names but never values.
+
+### Durable grant state
+
+`WorkspaceGrantReceipt` stores a monotonic revision, the canonical grant, and
+its verified digest under schema
+`a3s.use.plugin-workspace-grant-receipt.v1`.
+`WorkspaceGrantRevocation` is a durable tombstone under schema
+`a3s.use.plugin-workspace-grant-revocation.v1`; it binds the exact prior
+revision and grant digest, package generation, policy authority, and revocation
+time.
+
+The storage key is workspace scope, package ID, and immutable package digest.
+This is deliberate: N and candidate N+1 authorization can coexist while an
+upgrade prepares and health-checks N+1. The capability snapshot remains the
+visibility boundary. Once the snapshot switches and old leases drain, N is
+revoked without affecting N+1.
+
+An observed record is evidence, not executable authority. Callers must use the
+active resolver, which rechecks the path identity, exact package digest,
+current signed permission ceiling, grant subset, and lifetime. A missing or
+revoked record resolves to no authority; malformed, moved, expired, stale, or
+ceiling-mismatched evidence fails closed.
 
 ## Selective Installation
 

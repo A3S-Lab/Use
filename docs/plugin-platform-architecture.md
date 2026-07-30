@@ -94,8 +94,8 @@ instructions. A data-plane surface cannot mutate plugin lifecycle state.
 
 | Component | Owns | Does not own |
 | --- | --- | --- |
-| Umbrella A3S host | Registries, trust roots, confirmation, ACL policy, workspace grants | Package extraction or surface execution |
-| A3S Use | Package validation, receipts, desired state, reconciliation, bindings, leases, capability publication | Runtime provider internals or plugin API vocabulary |
+| Umbrella A3S host | Registries, trust roots, confirmation, ACL policy, workspace grant decisions | Package extraction, grant-record I/O, or surface execution |
+| A3S Use | Package validation, receipts, grant-record persistence, desired state, reconciliation, bindings, leases, capability publication | Policy authority, Runtime provider internals, or plugin API vocabulary |
 | A3S Runtime | Digest-bound Task/Service execution, observation, stop, remove, logs | Plugin resolution, provider selection, Skill/UI projection |
 | A3S Gateway | Private endpoint routing and scoped access to Service bindings | Package lifecycle or permission grants |
 | A3S Code/Web | Session projection, managed Skill roots, sandboxed UI | A second package manager |
@@ -407,8 +407,24 @@ added. UI methods and path prefixes can only narrow a declared Tool binding.
 Secret-bearing grants require an explicit `ask` decision confirmed by a user.
 An agent grant cannot carry secret authority. Canonical grant and permission
 digests can be included directly in operation-plan workspace impacts and
-Runtime semantics evidence. Durable storage, ACL policy evaluation, and
-plan-to-grant resolution remain separate lifecycle steps.
+Runtime semantics evidence.
+
+Durable grant state is stored separately from package receipts at
+`<state-root>/grants/<scope-sha256>/<publisher>/<package>/<package-sha256>.json`.
+Each bounded record is either a revisioned
+`a3s.use.plugin-workspace-grant-receipt.v1` receipt or an
+`a3s.use.plugin-workspace-grant-revocation.v1` tombstone that binds the exact
+prior receipt. Writes use a cross-process lock, durable atomic replacement,
+strict path and symlink checks, monotonic revision/time transitions, and
+exact-ownership revocation.
+
+The package digest is part of the storage key rather than only a field in one
+mutable package record. This permits N and candidate N+1 grants to coexist
+during blue/green preparation. A grant does not publish a capability: the
+scope-aware capability snapshot still selects the one visible generation.
+After the snapshot switches and leases drain, the old generation receives a
+revocation tombstone. ACL policy evaluation and plan-to-grant resolution remain
+separate lifecycle steps.
 
 ## Runtime Integration
 

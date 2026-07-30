@@ -22,6 +22,10 @@ mod remote;
 mod route_lock;
 mod source;
 mod surface_files;
+mod workspace_grant;
+mod workspace_grant_io;
+#[cfg(test)]
+mod workspace_grant_tests;
 
 pub use paths::ExtensionPaths;
 pub use plugin_manifest::{
@@ -43,6 +47,10 @@ pub use remote::{
     PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource, PreparedRemotePackage,
     ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog, VerifiedRegistryMetadata,
     MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
+};
+pub use workspace_grant::{
+    StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,
+    WORKSPACE_GRANT_RECEIPT_SCHEMA, WORKSPACE_GRANT_REVOCATION_SCHEMA,
 };
 
 const RESERVED_ROUTES: &[&str] = &[

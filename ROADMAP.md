@@ -445,12 +445,22 @@ Implementation status (in progress 2026-07-30):
   native/child execution, secrets, private Services, and UI methods/paths;
 - completed M5F: require explicit user confirmation for every secret-bearing
   grant and reject secret authority in agent grants;
-- pending: validated ACL policy, grant persistence and plan-to-grant
-  resolution, secret-reference adapters, filesystem/network/child-process
-  enforcement, durable binding orchestration, streaming/file-backed large
-  Task output, the actual MCP initialize client adapter, stdio supervision,
-  Gateway route revocation, binding-store cleanup orchestration, and
-  scope-aware capability/session snapshot wiring.
+- completed M5G: persist workspace grants as bounded, atomic,
+  cross-process-locked, symlink-checked records outside package receipts,
+  revalidating package generation, signed ceiling, and lifetime at active
+  resolution;
+- completed M5G: retain revisioned revocation tombstones that bind exact prior
+  grant ownership, reject stale/conflicting transitions, and converge
+  concurrent writes on the highest accepted revision;
+- completed M5G: key authorization by scope, package, and immutable package
+  digest so N and candidate N+1 grants can coexist during blue/green upgrade
+  without prematurely deauthorizing N;
+- pending: validated ACL policy and plan-to-grant resolution,
+  secret-reference adapters, filesystem/network/child-process enforcement,
+  durable binding orchestration, streaming/file-backed large Task output, the
+  actual MCP initialize client adapter, stdio supervision, Gateway route
+  revocation, binding-store cleanup orchestration, and scope-aware
+  capability/session snapshot wiring.
 
 Deliverables:
 

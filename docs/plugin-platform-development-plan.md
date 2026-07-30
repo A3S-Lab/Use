@@ -263,6 +263,8 @@ The target storage model is:
 
 - immutable package generations and archives are user-wide and reusable;
 - activation and grants may be workspace-scoped;
+- exact package generations have separate grant records so N and candidate
+  N+1 can coexist until the capability snapshot switches;
 - secrets remain in the host secret store and are injected only for an
   approved package, operation, and workspace;
 - plugin data is separate from executable package files;
@@ -272,6 +274,12 @@ The target storage model is:
   receipts;
 - concurrent installs for the same package serialize through one lifecycle
   lock and converge idempotently.
+
+Workspace grant writes additionally serialize under a dedicated store lock,
+atomically replace only the same scope/package/digest record, and preserve
+revocation tombstones. Reading a record is observational; use-time authority
+requires revalidation against the current package digest, signed ceiling, and
+clock.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still
@@ -336,7 +344,7 @@ Every milestone adds focused tests at the owning layer.
 
 | Workstream | Primary locations |
 | --- | --- |
-| Package, catalog, TUF, receipts, leases | `crates/extension/`, `src/release_bundles.rs` |
+| Package, catalog, TUF, receipts, grants, leases | `crates/extension/`, `src/release_bundles.rs` |
 | Surface reconciliation and bindings | `src/capability_registry.rs`, `src/extension_host.rs` |
 | Tool/MCP Runtime deployment | A3S Runtime adapters, `src/mcp/`, release descriptors |
 | Umbrella plan, policy, and lifecycle | A3S CLI `components/`, registry store, configuration |
