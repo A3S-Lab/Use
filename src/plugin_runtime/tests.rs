@@ -5,7 +5,15 @@ use a3s_runtime::contract::{NetworkMode, RuntimeLogStream, RuntimeUnitClass};
 use a3s_runtime::{
     ProviderId, RuntimeClient, RuntimeClientRegistry, RuntimeProviderFactory, RuntimeResult,
 };
-use a3s_use_core::{PluginSurfaceKind, ToolWorkloadContract};
+use a3s_use_core::{
+    CatalogSurface, ExecutablePlanningSurface, NetworkEgressPermission, PlanActor,
+    PlanPolicyDecision, PlannedPackageState, PlannedPluginRelease, PlanningArtifactRef,
+    PlanningSurfaceActivation, PluginPermissionCeiling, PluginPlanningBundle, PluginReleaseChannel,
+    PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrantProposal, ResourcePermissionCeiling,
+    SurfacePermissionCeiling, ToolWorkloadClass, ToolWorkloadContract,
+    WorkspaceGrantProposalAuthority, PLUGIN_PERMISSION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA,
+};
 use async_trait::async_trait;
 
 use super::test_support::*;
@@ -613,4 +621,163 @@ async fn service_health_revision_cannot_regress_or_exceed_its_observation() {
         .into_tool_service_receipt(RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap())
         .unwrap_err();
     assert_eq!(invalid_receipt.code, "use.plugin.runtime.input_invalid");
+}
+
+#[tokio::test]
+async fn planning_bundle_selects_only_the_explicit_capable_provider() {
+    let (bundle, package, proposal) = runtime_bundle_inputs(false);
+    let plans = plan_runtime_bundle(&bundle, &package, &proposal, 8).unwrap();
+    assert_eq!(plans.len(), 1);
+    assert_eq!(
+        plans[0].context().grant_digest(),
+        proposal.descriptor_digest().unwrap()
+    );
+    assert_eq!(
+        plans[0].spec().resources.ephemeral_storage_bytes,
+        Some(512 * 1024 * 1024)
+    );
+
+    let runtime_capabilities = capabilities(&plans[0]);
+    let runtime = Arc::new(FakeRuntime::new(runtime_capabilities, true));
+    let mut registry = RuntimeClientRegistry::new();
+    registry
+        .register(Arc::new(StaticRuntimeFactory {
+            provider_id: ProviderId::parse("test-runtime").unwrap(),
+            client: runtime,
+        }))
+        .unwrap();
+    let selection = RuntimeProviderSelector::new(&registry)
+        .select(
+            plans.clone(),
+            vec![RuntimeProviderAssignment::new(plans[0].surface(), "test-runtime").unwrap()],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(selection.surfaces().len(), 1);
+    assert_eq!(selection.provider_evidence()[0].provider_id, "test-runtime");
+    assert_eq!(
+        selection.provider_evidence()[0].semantics_profile_digest,
+        plans[0].spec().semantics_profile_digest.clone().unwrap()
+    );
+}
+
+#[test]
+fn planning_bundle_fails_closed_on_unrepresentable_egress_authority() {
+    let (bundle, package, proposal) = runtime_bundle_inputs(true);
+    let error = plan_runtime_bundle(&bundle, &package, &proposal, 8).unwrap_err();
+
+    assert_eq!(error.code, "use.plugin.runtime.authorization_unsupported");
+}
+
+fn runtime_bundle_inputs(
+    with_egress: bool,
+) -> (
+    PluginPlanningBundle,
+    PlannedPackageState,
+    PluginWorkspaceGrantProposal,
+) {
+    let descriptor = service_descriptor();
+    let mut permission = SurfacePermissionCeiling {
+        surface: PluginSurfaceRef {
+            kind: PluginSurfaceKind::Tool,
+            id: "index".to_owned(),
+        },
+        native_execution: false,
+        child_process: false,
+        filesystem: Vec::new(),
+        network_egress: Vec::new(),
+        private_service: true,
+        secrets: Vec::new(),
+        resources: Some(ResourcePermissionCeiling {
+            cpu_millis: 500,
+            memory_bytes: 256 * 1024 * 1024,
+            pids: 64,
+            ephemeral_storage_bytes: 512 * 1024 * 1024,
+            task_timeout_ms: None,
+            max_stdout_bytes: None,
+            max_stderr_bytes: None,
+        }),
+        ui_http: Vec::new(),
+    };
+    if with_egress {
+        permission.network_egress.push(NetworkEgressPermission {
+            host: "api.example.com".to_owned(),
+            ports: vec![443],
+        });
+    }
+    let permissions = PluginPermissionCeiling {
+        schema: PLUGIN_PERMISSION_SCHEMA.to_owned(),
+        surfaces: vec![permission],
+    };
+    let permission_digest = permissions.descriptor_digest().unwrap();
+    let catalog_surface = CatalogSurface {
+        kind: PluginSurfaceKind::Tool,
+        id: "index".to_owned(),
+        optional: false,
+        workload: Some(ToolWorkloadClass::Service),
+        mcp_transport: None,
+        mcp_tool_count: None,
+        requires: Vec::new(),
+    };
+    let package = PlannedPackageState {
+        release: PlannedPluginRelease {
+            package_id: "acme/research".to_owned(),
+            version: "2.0.0".to_owned(),
+            channel: PluginReleaseChannel::Stable,
+            target: "linux-x86_64".to_owned(),
+            package_sha256: DIGEST_A.to_owned(),
+            manifest_sha256:
+                "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+            permission_ceiling_digest: permission_digest.clone(),
+            surfaces: vec![catalog_surface],
+        },
+        permissions: permissions.clone(),
+    };
+    let bundle = PluginPlanningBundle {
+        schema: PLUGIN_PLANNING_BUNDLE_SCHEMA.to_owned(),
+        package_id: package.release.package_id.clone(),
+        version: package.release.version.clone(),
+        channel: package.release.channel,
+        target: package.release.target.clone(),
+        archive_sha256: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            .to_owned(),
+        package_sha256: package.release.package_sha256.clone(),
+        manifest_sha256: package.release.manifest_sha256.clone(),
+        permission_ceiling_digest: permission_digest.clone(),
+        surfaces: vec![ExecutablePlanningSurface::ToolService {
+            id: "index".to_owned(),
+            activation: PlanningSurfaceActivation::Eager,
+            base_path: "/api".to_owned(),
+            artifact: PlanningArtifactRef {
+                uri: format!(
+                    "oci://registry.example/acme/research-index@{}",
+                    descriptor.artifact.digest
+                ),
+                digest: descriptor.artifact.digest.clone(),
+                media_type: descriptor.artifact.media_type.clone(),
+            },
+            descriptor,
+        }],
+    };
+    let proposal = PluginWorkspaceGrantProposal {
+        schema: PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA.to_owned(),
+        operation_id: "operation-01".to_owned(),
+        scope_id: "workspace-01".to_owned(),
+        package_id: package.release.package_id.clone(),
+        package_digest: package.release.package_sha256.clone(),
+        permission_ceiling_digest: permission_digest,
+        permissions_digest: permissions.descriptor_digest().unwrap(),
+        permissions,
+        authority: WorkspaceGrantProposalAuthority {
+            actor: PlanActor::User,
+            decision: PlanPolicyDecision::Allow,
+            policy_digest:
+                "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_owned(),
+        },
+        created_at_ms: 1_000,
+        apply_expires_at_ms: 2_000,
+        grant_expires_at_ms: None,
+    };
+    (bundle, package, proposal)
 }

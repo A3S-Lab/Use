@@ -4,6 +4,7 @@
 //! `a3s-runtime` contract. It never selects a provider implicitly and it keeps
 //! provider endpoint discovery outside the Runtime unit contract.
 
+mod bundle_planner;
 mod client;
 mod lifecycle;
 mod model;
@@ -16,6 +17,7 @@ mod task;
 
 pub use a3s_runtime as runtime;
 
+pub use bundle_planner::plan_runtime_bundle;
 pub use client::{runtime_capabilities_digest, PluginRuntimeClient};
 pub use lifecycle::{RuntimeBindingObservation, RuntimeBindingObservedState};
 pub use model::{
