@@ -739,9 +739,21 @@ planner-owned package transitions, provider proofs, impact, and state
 evidence. It cannot serialize operation identity, lifetime, actor, policy,
 confirmation requirements, or scope. Binding those host-owned fields derives
 the exact secret delta and produces the validated final plan. Package
-transition construction also derives the exact surface delta. Wiring the
-registry, installed receipts, Runtime selection, and capability snapshot into
-this draft remains pending.
+transition construction also derives the exact surface delta.
+
+The umbrella CLI now emits this draft on the first live install path for a
+catalog-v2 package containing only permission-free Skill and UI surfaces. The
+component plan retains the verified catalog record in its digest; the Manager
+requires an exact catalog-to-registry-target match, an absent installed
+package, verified capability generation, and the current durable planner-state
+revision before host binding. Apply rechecks that revision and advances a
+private atomic state record idempotently after the child mutation succeeds.
+Catalog-v1 plans remain compatible without claiming complete plugin evidence.
+
+Tool or MCP surfaces and any nonempty permission ceiling fail closed until the
+umbrella host supplies explicit Runtime provider assignments and the durable
+grant saga is connected. Upgrade and uninstall draft emission likewise still
+requires the package-specific installed receipt and active-surface join.
 
 The compatible `a3s.use.plugin-catalog.v2` contract adds a mandatory signed
 manifest digest and explicit per-surface dependency edges. Catalog v1 remains

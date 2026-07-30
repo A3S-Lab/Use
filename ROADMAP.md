@@ -568,9 +568,19 @@ Implementation status (in progress 2026-07-30):
   plan-ready schema-v3 registry packages, binding the receipt, catalog,
   manifest, expanded package, desired enabled state, and exact dependency-
   closed named-surface inventory;
-- pending: join verified registry/package records, installed receipts,
-  selected Runtime provider evidence, and current capability state into the
-  draft and emit it from the live umbrella plan,
+- completed M5J-C-C-E-A in the umbrella CLI: retain the verified catalog-v2
+  record in the component plan and its digest, join it to the exact registry
+  target, verified installation/capability evidence, and a durable monotonic
+  planner-state revision, then emit and host-bind a complete live install draft
+  for packages containing only permission-free Skill and UI surfaces;
+- completed M5J-C-C-E-A in the umbrella CLI: recheck planner-state evidence
+  before apply, advance it atomically and idempotently after successful child
+  mutation, preserve catalog-v1 component-plan compatibility, and fail closed
+  instead of fabricating provider or grant evidence for executable or
+  permission-bearing packages;
+- pending: join package-specific installed receipt and active-surface evidence
+  for upgrade and uninstall drafts, wire explicit Runtime provider assignments
+  for Tool and MCP install drafts,
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,
   filesystem/network/child-process enforcement, durable binding

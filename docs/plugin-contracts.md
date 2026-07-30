@@ -402,8 +402,23 @@ intent. Recovery validates that recorded evidence rather than abandoning
 already-started side effects after a later policy change. Legacy
 component-only records remain compatible. Registry install, replace, and
 remove transitions plus plan-ready installed receipt evidence are now
-available. A3S Use planner emission of the complete draft remains pending on
-joining those records with Runtime-provider and capability-state snapshots.
+available.
+
+The umbrella CLI emits and host-binds a complete live install draft for the
+safe first slice: a catalog-v2 package whose package surfaces are all
+permission-free Skill or UI surfaces. Its component plan carries the verified
+catalog record in the upstream digest and requires exact equality with the
+resolved registry target. Planning also binds verified capability generation
+and a durable monotonic planner-state revision. Apply rechecks that revision
+before intent and advances it atomically and idempotently after successful
+child mutation.
+
+Catalog-v1 component plans remain compatible without claiming a complete
+plugin plan. A catalog-v2 plan containing a Tool, MCP server, or any permission
+ceiling fails closed until the umbrella host provides explicit Runtime
+provider assignments and durable grant-saga evidence. Upgrade and uninstall
+drafts remain pending on the package-specific installed-receipt and
+active-surface join.
 
 Each reviewed Manager record binds the actor supplied by its trusted adapter:
 CLI and Web select `user`, while management MCP selects `agent`. Untrusted
