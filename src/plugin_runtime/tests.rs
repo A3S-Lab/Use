@@ -164,6 +164,10 @@ fn tool_task_plan_binds_invocation_and_release_semantics() {
         } if command_name == "acme-convert"
     ));
     assert_ne!(first.spec().unit_id, second.spec().unit_id);
+    assert_eq!(
+        first.spec().semantics_profile_digest,
+        second.spec().semantics_profile_digest
+    );
     assert!(first
         .spec()
         .semantics_profile_digest
@@ -269,7 +273,7 @@ async fn explicit_provider_evidence_is_rechecked_without_fallback() {
     let client = PluginRuntimeClient::new(runtime);
     let binding = client.prepare_task(&plan, &provider).await.unwrap();
     assert_eq!(binding.provider_id, "test-runtime");
-    assert_eq!(binding.unit_id, plan.spec().unit_id);
+    assert_eq!(binding.artifact_digest, plan.spec().artifact.digest);
 
     let mut changed = capabilities;
     changed.provider_build = "build-2".to_string();
@@ -298,7 +302,7 @@ async fn healthy_service_activation_requires_an_opaque_endpoint_binding() {
         .await
         .unwrap();
     let receipt = activation
-        .into_receipt(RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap())
+        .into_tool_service_receipt(RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap())
         .unwrap();
 
     assert_eq!(runtime.apply_count.load(Ordering::SeqCst), 1);
@@ -329,6 +333,45 @@ async fn service_binding_is_not_published_before_runtime_convergence() {
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.not_converged");
+}
+
+#[tokio::test]
+async fn mcp_service_binding_requires_matching_initialize_evidence() {
+    let descriptor = mcp_descriptor();
+    let plan = plan_mcp_service_release(
+        context(PluginSurfaceKind::Mcp, "library"),
+        &mcp_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let capabilities = capabilities(&plan);
+    let provider = evidence(&plan, &capabilities);
+    let client = PluginRuntimeClient::new(Arc::new(FakeRuntime::new(capabilities, true)));
+    let activation = client
+        .apply_service(&plan, &provider, "operation-01", Some(9_999_999))
+        .await
+        .unwrap();
+    let endpoint = RuntimeEndpointRef::parse("gateway:workspace-01/library").unwrap();
+
+    assert!(activation
+        .clone()
+        .into_tool_service_receipt(endpoint.clone())
+        .is_err());
+    let wrong_protocol = RuntimeMcpInitializeEvidence::new("2024-11-05", 1_001).unwrap();
+    assert!(activation
+        .clone()
+        .into_mcp_service_receipt(endpoint.clone(), wrong_protocol)
+        .is_err());
+    let initialize = RuntimeMcpInitializeEvidence::new("2025-06-18", 1_001).unwrap();
+    let receipt = activation
+        .into_mcp_service_receipt(endpoint, initialize)
+        .unwrap();
+    assert!(matches!(
+        receipt.readiness,
+        RuntimeServiceReadinessEvidence::McpInitialized { .. }
+    ));
 }
 
 fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {

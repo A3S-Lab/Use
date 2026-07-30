@@ -473,6 +473,14 @@ contract, even when two workspaces use the same package bytes. Cross-workspace
 process or Service sharing would combine permission and data boundaries and is
 therefore a separate future design, not an implicit optimization.
 
+The initial Runtime binding store is rooted at
+`<state-root>/bindings/runtime/<scope-sha256>/`. It never uses a caller-provided
+scope, package, or surface string as an unchecked path. Receipts are bounded,
+validated, atomically replaced under a cross-process lock, and removed only
+when the caller presents the exact current receipt. A higher Runtime generation
+may replace an older generation; within one Service generation, only a newer
+observation with unchanged immutable binding evidence may refresh the receipt.
+
 The current `data/use/extensions/` layout migrates in place through versioned
 receipts or remains a compatibility path. A migration must not duplicate large
 payloads merely to rename a directory.

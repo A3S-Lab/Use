@@ -93,7 +93,6 @@ impl PluginRuntimeClient {
             ));
         }
         self.verify_plan(plan, provider).await?;
-        let spec_digest = plan.spec().digest().map_err(runtime_contract_error)?;
         let semantics_profile_digest =
             plan.spec()
                 .semantics_profile_digest
@@ -112,9 +111,9 @@ impl PluginRuntimeClient {
             provider_id: provider.provider_id.clone(),
             provider_build_id: provider.provider_build_id.clone(),
             capability_digest: provider.capability_digest.clone(),
-            unit_id: plan.spec().unit_id.clone(),
+            artifact_digest: plan.spec().artifact.digest.clone(),
+            artifact_media_type: plan.spec().artifact.media_type.clone(),
             generation: plan.spec().generation,
-            spec_digest,
             semantics_profile_digest,
         })
     }

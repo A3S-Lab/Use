@@ -437,6 +437,22 @@ Task apply. It also does not make an MCP Service ready merely because its
 process is healthy. Standard MCP initialization and durable binding
 reconciliation remain additional gates.
 
+Task provider evidence is computed from a launcher template: artifact,
+entrypoint, resource and isolation policy, mounts, secret references,
+non-secret environment, and native output contract. Invocation ID and argv are
+excluded from that install-time semantics digest and remain bound by each
+individual Runtime unit spec digest. This allows one reviewed Task binding to
+serve multiple native CLI invocations without authorizing a different
+launcher.
+
+Non-secret Task and Service receipts are persisted under
+`state/bindings/runtime`. Scope IDs are hashed for path ownership; package and
+surface segments remain validated identities. Writes use a cross-process lock,
+bounded temporary file, durable atomic replacement, monotonic generation and
+Service observation checks, and exact-current removal. A Streamable HTTP MCP
+receipt is structurally invalid unless it contains initialize evidence for the
+release-declared protocol version after the Runtime observation.
+
 Current provider evidence matters:
 
 - the Cloud Docker provider supports Task and Service, service networking, and

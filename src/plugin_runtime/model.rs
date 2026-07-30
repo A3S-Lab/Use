@@ -227,8 +227,8 @@ impl RuntimeSurfacePlan {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RuntimePreparedTaskBinding {
     pub schema: String,
     pub surface: PlanQualifiedSurfaceRef,
@@ -238,9 +238,9 @@ pub struct RuntimePreparedTaskBinding {
     pub provider_id: String,
     pub provider_build_id: String,
     pub capability_digest: String,
-    pub unit_id: String,
+    pub artifact_digest: String,
+    pub artifact_media_type: String,
     pub generation: u64,
-    pub spec_digest: String,
     pub semantics_profile_digest: String,
 }
 
@@ -256,9 +256,45 @@ impl RuntimeServiceActivation {
         &self.observation
     }
 
-    pub fn into_receipt(
+    pub fn into_tool_service_receipt(
         self,
         endpoint_ref: RuntimeEndpointRef,
+    ) -> UseResult<RuntimeServiceBindingReceipt> {
+        if !matches!(
+            self.plan.contract,
+            RuntimeSurfaceContract::ToolService { .. }
+        ) {
+            return Err(runtime_input_error(
+                "An MCP Service requires a successful standard initialize probe before binding.",
+            ));
+        }
+        self.into_receipt(endpoint_ref, RuntimeServiceReadinessEvidence::HttpHealthy)
+    }
+
+    pub fn into_mcp_service_receipt(
+        self,
+        endpoint_ref: RuntimeEndpointRef,
+        initialize: RuntimeMcpInitializeEvidence,
+    ) -> UseResult<RuntimeServiceBindingReceipt> {
+        let RuntimeSurfaceContract::McpService {
+            protocol_version, ..
+        } = &self.plan.contract
+        else {
+            return Err(runtime_input_error(
+                "MCP initialize evidence can bind only a Streamable HTTP MCP Service.",
+            ));
+        };
+        initialize.validate(protocol_version, self.observation.observed_at_ms)?;
+        self.into_receipt(
+            endpoint_ref,
+            RuntimeServiceReadinessEvidence::McpInitialized { initialize },
+        )
+    }
+
+    fn into_receipt(
+        self,
+        endpoint_ref: RuntimeEndpointRef,
+        readiness: RuntimeServiceReadinessEvidence,
     ) -> UseResult<RuntimeServiceBindingReceipt> {
         let spec_digest = self.plan.spec.digest().map_err(runtime_contract_error)?;
         let semantics_profile_digest =
@@ -293,8 +329,58 @@ impl RuntimeServiceActivation {
             observation_revision: self.observation.observed_at_ms,
             last_healthy_at_ms,
             contract: self.plan.contract,
+            readiness,
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RuntimeMcpInitializeEvidence {
+    pub protocol_version: String,
+    pub initialized_at_ms: u64,
+}
+
+impl RuntimeMcpInitializeEvidence {
+    pub fn new(protocol_version: impl Into<String>, initialized_at_ms: u64) -> UseResult<Self> {
+        let evidence = Self {
+            protocol_version: protocol_version.into(),
+            initialized_at_ms,
+        };
+        if evidence.protocol_version.is_empty()
+            || evidence.protocol_version.len() > 64
+            || evidence.protocol_version.chars().any(char::is_control)
+            || evidence.initialized_at_ms == 0
+        {
+            return Err(runtime_input_error(
+                "MCP initialize evidence is outside the bounded protocol contract.",
+            ));
+        }
+        Ok(evidence)
+    }
+
+    pub(super) fn validate(&self, expected_protocol: &str, observed_at_ms: u64) -> UseResult<()> {
+        if self.protocol_version != expected_protocol || self.initialized_at_ms < observed_at_ms {
+            return Err(runtime_input_error(
+                "MCP initialize evidence does not match the release protocol or Runtime observation.",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum RuntimeServiceReadinessEvidence {
+    HttpHealthy,
+    McpInitialized {
+        initialize: RuntimeMcpInitializeEvidence,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -347,9 +433,10 @@ pub struct RuntimeServiceBindingReceipt {
     pub observation_revision: u64,
     pub last_healthy_at_ms: u64,
     pub contract: RuntimeSurfaceContract,
+    pub readiness: RuntimeServiceReadinessEvidence,
 }
 
-fn valid_surface_segment(value: &str) -> bool {
+pub(super) fn valid_surface_segment(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 63
         && matches!(value.as_bytes().first(), Some(b'a'..=b'z'))
@@ -367,7 +454,7 @@ pub(super) fn valid_sha256(value: &str) -> bool {
     })
 }
 
-fn valid_machine_id(value: &str) -> bool {
+pub(super) fn valid_machine_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 256
         && value

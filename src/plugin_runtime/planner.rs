@@ -317,6 +317,11 @@ fn finish_plan(
     contract: RuntimeSurfaceContract,
 ) -> UseResult<RuntimeSurfacePlan> {
     spec.validate().map_err(runtime_contract_error)?;
+    let mut semantics_spec = spec.clone();
+    if matches!(contract, RuntimeSurfaceContract::ToolTask { .. }) {
+        semantics_spec.unit_id = "use:task-template".to_string();
+        semantics_spec.process.args.clear();
+    }
     let profile = RuntimeSemanticsProfile {
         schema: SEMANTICS_PROFILE_SCHEMA,
         package_id: &context.package_id,
@@ -326,7 +331,7 @@ fn finish_plan(
         surface_kind: context.surface.kind,
         surface_id: &context.surface.id,
         descriptor_digest: &descriptor_digest,
-        runtime_spec: &spec,
+        runtime_spec: &semantics_spec,
         contract: &contract,
     };
     let bytes = serde_json::to_vec(&profile).map_err(|error| {

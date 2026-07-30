@@ -65,7 +65,12 @@ path = "src/main.rs"
 default = ["browser", "ocr", "extensions", "mcp"]
 browser = ["dep:a3s-use-browser"]
 ocr = ["dep:a3s-use-ocr"]
-extensions = ["dep:a3s-use-extension", "dep:a3s-runtime"]
+extensions = [
+    "dep:a3s-use-extension",
+    "dep:a3s-runtime",
+    "dep:fs2",
+    "dep:tempfile",
+]
 mcp = [
     "dep:axum",
     "dep:base64",
@@ -91,6 +96,7 @@ getrandom = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+tempfile = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["signal"] }
 url.workspace = true
 rmcp = { workspace = true, optional = true }

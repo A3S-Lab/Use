@@ -588,6 +588,14 @@ needs a persisted binding, and HTTP services require a separate opaque
 `gateway:` binding reference. The adapter is not yet called automatically by
 extension installation or enablement.
 
+Prepared Task and converged Service receipts can be stored under
+`<state-root>/bindings/runtime`. The store hashes the scope in its path, writes
+bounded receipts atomically under a cross-process lock, permits only monotonic
+generation or Service-observation refreshes, and removes only an exact current
+receipt. Task receipts bind a stable launcher template rather than one
+invocation's argv. Streamable HTTP MCP receipts additionally require matching
+standard initialize evidence; process health by itself is insufficient.
+
 ```bash
 a3s-use capability snapshot --json
 a3s-use capability watch \

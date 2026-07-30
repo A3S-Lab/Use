@@ -396,10 +396,20 @@ Implementation status (in progress 2026-07-30):
 - completed M5A: separate Runtime convergence from the scoped Gateway binding
   and allow only an opaque non-secret `gateway:` endpoint reference in a
   Service binding receipt;
+- completed M5B: make Task semantics an install-time launcher-template digest
+  so invocation IDs and native argv change only the per-call Runtime spec,
+  while the reviewed provider evidence remains stable;
+- completed M5B: require matching standard MCP initialize evidence after
+  Runtime health convergence before a Streamable HTTP MCP binding receipt can
+  be created;
+- completed M5B: add a bounded, atomic, cross-process-locked
+  `state/bindings/runtime` store with hashed scope paths, monotonic generation
+  and observation replacement, exact-ownership removal, symlink checks, and
+  fail-closed receipt validation;
 - pending: validated ACL policy, resolved workspace grants, secret-reference
   adapters, filesystem/network/child-process enforcement, durable binding
-  storage, Task invocation and bounded output capture, MCP initialize probes,
-  stdio supervision, and reconciler wiring.
+  orchestration, Task invocation and bounded output capture, the actual MCP
+  initialize client adapter, stdio supervision, and reconciler wiring.
 
 Deliverables:
 
