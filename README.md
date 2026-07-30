@@ -679,8 +679,19 @@ transitions, rejects extras or omissions, finalizes candidate grants in
 package order, and emits exact prior evidence for post-cutover revocation.
 `ask` apply additionally requires a canonical
 `a3s.use.plugin-operation-confirmation.v1` record even when an uninstall has no
-new proposal. Applying an entire resolved change set through the lifecycle
-saga and validated ACL policy remain pending.
+new proposal.
+
+Resolved changes now flow through a durable grant-operation journal at
+`<state-root>/grants/.operations/<operation-sha256>.json`. The immutable intent
+binds the operation, plan and change-set digests, observed before snapshot,
+state revision, capability generations, exact candidate receipts and ceilings,
+and exact prior receipts. Its state machine records intent before effects,
+idempotently prepares candidates, accepts exact non-future capability-cutover
+evidence, and only then retires prior generations. Interrupted prepare and
+retire phases resume from disk; conflicting operation reuse, stale snapshots,
+candidate drift, and unknown privileged fields fail closed. Wiring this grant
+journal into the Plugin Manager's overall package/Runtime/capability saga and
+validated ACL policy remain pending.
 
 ```bash
 a3s-use capability snapshot --json

@@ -467,6 +467,38 @@ After the capability snapshot switches and leases drain, the old generation
 receives a revocation tombstone. ACL policy evaluation and plan-to-grant
 resolution remain separate lifecycle steps.
 
+Grant transitions have their own durable sub-saga. Before writing a candidate,
+the adapter locks the store, regenerates the current scope snapshot, compares
+the planned digest when present, and writes an immutable operation journal. The
+journal includes exact old receipts as well as new receipts and ceilings, so
+recovery does not depend on an in-memory plan. Preparation may leave N and N+1
+granted, which intentionally blocks unrelated planning as unstable. The
+capability publisher then supplies
+`a3s.use.plugin-workspace-grant-cutover.v1` evidence binding the expected
+generation pair and published snapshot digest. Only a journal with that
+durable evidence may enter retirement.
+
+```mermaid
+stateDiagram-v2
+  [*] --> IntentRecorded: persist immutable intent
+  IntentRecorded --> Preparing: checkpoint before grant writes
+  Preparing --> Preparing: retry partial candidate writes
+  Preparing --> Prepared: all candidates exact
+  Prepared --> CutoverCommitted: capability snapshot evidence
+  CutoverCommitted --> Retiring: checkpoint before old revocations
+  Retiring --> Retiring: retry partial tombstones
+  Retiring --> Completed: all prior generations retired
+  Prepared --> Rejected: candidate drift or expired grant
+  CutoverCommitted --> Rejected: substituted cutover evidence
+```
+
+For a same-package, same-generation permission replacement, preparation
+atomically supersedes the prior receipt and retirement verifies the new receipt
+instead of writing a tombstone over it. For a new package digest, N remains
+granted until cutover evidence exists and is then tombstoned exactly. The
+Plugin Manager still needs to coordinate this grant sub-saga with package,
+Runtime, route, lease-drain, and global capability checkpoints.
+
 ## Runtime Integration
 
 Runtime is injected through a typed `RuntimeClient`; A3S Use must not construct

@@ -41,7 +41,19 @@ fn multi_package_install_finalizes_every_planned_grant_in_order() {
         .unwrap();
 
     assert_eq!(resolved.scope_id, plan.scope.id);
+    assert_eq!(resolved.operation_id, plan.operation_id);
+    assert_eq!(resolved.plan_digest, plan.descriptor_digest().unwrap());
+    assert_eq!(
+        resolved.change_set_digest,
+        changes.descriptor_digest().unwrap()
+    );
+    assert_eq!(resolved.state_revision_before, plan.state.state_revision);
     assert_eq!(resolved.revision, plan.state.state_revision + 1);
+    assert_eq!(
+        resolved.capability_generation_after,
+        resolved.capability_generation_before + 1
+    );
+    assert_eq!(resolved.before_snapshot_digest, None);
     assert_eq!(resolved.transitioned_at_ms, plan.created_at_ms + 200);
     assert!(resolved.revocation_authority.confirmation_digest.is_some());
     assert!(resolved.revocations.is_empty());
@@ -139,6 +151,23 @@ fn change_set_rejects_plan_drift_extra_packages_and_missing_confirmation() {
             .unwrap_err()
             .code,
         "use.plugin.grant_changes_confirmation_mismatch"
+    );
+
+    let mut exhausted = plan;
+    exhausted.state.capability_generation = u64::MAX;
+    let exhausted_plan_digest = exhausted.descriptor_digest().unwrap();
+    assert_eq!(
+        changes
+            .finalize_against_plan(
+                &exhausted,
+                None,
+                Some(&fixtures::operation_confirmation(&exhausted)),
+                &confirmations(&changes, &exhausted_plan_digest),
+                exhausted.created_at_ms + 200,
+            )
+            .unwrap_err()
+            .code,
+        "use.plugin.grant_changes_generation_exhausted"
     );
 }
 

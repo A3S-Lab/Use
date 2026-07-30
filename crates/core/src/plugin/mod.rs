@@ -15,6 +15,7 @@ mod plan;
 mod plan_confirmation;
 mod plan_package_validation;
 mod plan_validation;
+mod resolved_grant_changes;
 mod validation;
 
 pub use catalog::{
@@ -25,7 +26,7 @@ pub use catalog_trust::{VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
 pub use grant::{PluginWorkspaceGrant, WorkspaceGrantAuthority};
 pub use grant_changes::{
     PlannedWorkspaceGrantChange, PluginWorkspaceGrantChangeSet, PluginWorkspaceGrantSnapshot,
-    ResolvedWorkspaceGrant, ResolvedWorkspaceGrantChangeSet, WorkspaceGrantEvidence,
+    WorkspaceGrantEvidence,
 };
 pub use grant_resolution::{
     PluginGrantConfirmation, PluginWorkspaceGrantProposal, WorkspaceGrantProposalAuthority,
@@ -46,6 +47,7 @@ pub use plan::{
     PluginOperationPlanEnvelope, PluginPlanSource, SurfaceChangeKind,
 };
 pub use plan_confirmation::PluginOperationConfirmation;
+pub use resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantChangeSet};
 
 pub const PLUGIN_CATALOG_SCHEMA: &str = "a3s.use.plugin-catalog.v1";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";

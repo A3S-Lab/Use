@@ -250,6 +250,13 @@ pub struct PlannedStateEvidence {
 }
 
 impl PluginOperationPlan {
+    pub fn validate_operation_id(operation_id: &str) -> UseResult<()> {
+        if !super::validation::valid_machine_id(operation_id) {
+            return Err(plan_error("The plugin operation identity is invalid."));
+        }
+        Ok(())
+    }
+
     pub fn from_json(input: &[u8]) -> UseResult<Self> {
         parse_contract(input, "plugin operation plan", PLAN_ERROR, Self::validate)
     }

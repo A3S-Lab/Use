@@ -16,7 +16,7 @@ use super::{PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHE
 impl PluginOperationPlan {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != PLUGIN_OPERATION_PLAN_SCHEMA
-            || !valid_machine_id(&self.operation_id)
+            || Self::validate_operation_id(&self.operation_id).is_err()
             || !valid_package_id(&self.package_id)
             || !valid_machine_id(&self.component_id)
             || self.created_at_ms == 0

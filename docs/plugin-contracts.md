@@ -24,6 +24,8 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Operation confirmation | `a3s.use.plugin-operation-confirmation.v1` | User evidence binding every `ask` apply to one plan |
 | Workspace grant snapshot | `a3s.use.plugin-workspace-grant-snapshot.v1` | Revisioned active-grant evidence before mutation |
 | Workspace grant changes | `a3s.use.plugin-workspace-grant-changes.v1` | Sorted root/dependency grant and revoke transition set |
+| Workspace grant operation | `a3s.use.plugin-workspace-grant-operation.v1` | Durable immutable intent and resumable grant lifecycle phase |
+| Workspace grant cutover | `a3s.use.plugin-workspace-grant-cutover.v1` | Evidence that capability publication selected the prepared generation |
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Search and review metadata without package download |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
@@ -206,6 +208,26 @@ evidence; tombstones remain revision evidence but do not become active grants.
 Two granted generations for one package make the scope unstable and block new
 planning until lifecycle recovery completes the interrupted cutover.
 Abandoned `.grant-*.tmp` files are non-authoritative and ignored.
+
+Before grant side effects, `WorkspaceGrantOperationJournal` stores an immutable
+intent under
+`<state-root>/grants/.operations/<operation-sha256>.json`. It binds:
+
+- operation, plan, and grant-change-set digests;
+- planned and locked-observed before-snapshot digests;
+- prior/next global state revision and capability generation;
+- exact candidate receipts, proposal digests, and signed ceilings; and
+- exact prior receipts plus revocation authority.
+
+The phase sequence is `intent-recorded`, `preparing`, `prepared`,
+`cutover-committed`, `retiring`, and `completed`. Every journal replacement is
+bounded, atomic, symlink-checked, and serialized with grant records under the
+same cross-process lock. `prepared` is reached only after all candidate writes
+converge. `WorkspaceGrantCutoverEvidence` must bind the expected generation
+transition, an immutable capability-snapshot digest, and a non-future commit
+time. Retirement cannot begin without it. A retry reuses the same immutable
+receipts and cutover time, so a crash between record and checkpoint writes
+converges instead of inventing new evidence.
 
 An observed record is evidence, not executable authority. Callers must use the
 active resolver, which rechecks the path identity, exact package digest,

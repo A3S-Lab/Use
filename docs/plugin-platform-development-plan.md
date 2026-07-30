@@ -292,9 +292,12 @@ packages. Resolution derives required Add/Replace/Remove entries from the
 package plan and returns prepare-grant plus delayed-revoke phases. The
 before snapshot is now built by a bounded, locked traversal of exact durable
 grant generations; stale tombstone/grant revisions and ambiguous parallel
-grants fail closed. The lifecycle adapter must still apply the resolved phases
-idempotently around capability cutover and record partial progress in the
-operation saga.
+grants fail closed. The grant lifecycle adapter now records immutable intent,
+applies candidate receipts idempotently, checkpoints exact capability cutover,
+and retires prior receipts with crash-safe replay. The remaining integration is
+for the Plugin Manager's parent saga to coordinate these checkpoints with
+package commit, Runtime health, capability publication, route switching, and
+lease drain.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still

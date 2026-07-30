@@ -198,9 +198,18 @@ impl WorkspaceGrantStore {
         ceiling: &PluginPermissionCeiling,
         now_ms: u64,
     ) -> UseResult<bool> {
+        let _lock = acquire_lock(&self.state_root, &self.root).await?;
+        self.put_locked(receipt, ceiling, now_ms).await
+    }
+
+    pub(super) async fn put_locked(
+        &self,
+        receipt: &WorkspaceGrantReceipt,
+        ceiling: &PluginPermissionCeiling,
+        now_ms: u64,
+    ) -> UseResult<bool> {
         receipt.validate()?;
         receipt.grant.validate_active_against(ceiling, now_ms)?;
-        let _lock = acquire_lock(&self.state_root, &self.root).await?;
         let path = self.record_path(
             &receipt.grant.scope_id,
             &receipt.grant.package_id,
@@ -227,6 +236,16 @@ impl WorkspaceGrantStore {
     }
 
     pub async fn observe(
+        &self,
+        scope_id: &str,
+        package_id: &str,
+        package_digest: &str,
+    ) -> UseResult<Option<StoredWorkspaceGrant>> {
+        self.observe_record(scope_id, package_id, package_digest)
+            .await
+    }
+
+    pub(super) async fn observe_record(
         &self,
         scope_id: &str,
         package_id: &str,
@@ -274,10 +293,18 @@ impl WorkspaceGrantStore {
         expected: &WorkspaceGrantReceipt,
         revocation: &WorkspaceGrantRevocation,
     ) -> UseResult<bool> {
+        let _lock = acquire_lock(&self.state_root, &self.root).await?;
+        self.revoke_locked(expected, revocation).await
+    }
+
+    pub(super) async fn revoke_locked(
+        &self,
+        expected: &WorkspaceGrantReceipt,
+        revocation: &WorkspaceGrantRevocation,
+    ) -> UseResult<bool> {
         expected.validate()?;
         revocation.validate()?;
         validate_revocation_transition(expected, revocation)?;
-        let _lock = acquire_lock(&self.state_root, &self.root).await?;
         let path = self.record_path(
             &expected.grant.scope_id,
             &expected.grant.package_id,
@@ -297,7 +324,7 @@ impl WorkspaceGrantStore {
         Ok(true)
     }
 
-    fn record_path(
+    pub(super) fn record_path(
         &self,
         scope_id: &str,
         package_id: &str,
@@ -377,7 +404,7 @@ fn validate_revocation_transition(
     Ok(())
 }
 
-fn valid_sha256(value: &str) -> bool {
+pub(super) fn valid_sha256(value: &str) -> bool {
     value.strip_prefix("sha256:").is_some_and(|digest| {
         digest.len() == 64
             && digest

@@ -504,6 +504,29 @@ recovers; it never guesses which generation capability publication selected.
 Abandoned atomic-write temporary files are ignored because they were never
 activated.
 
+The grant sub-saga persists
+`a3s.use.plugin-workspace-grant-operation.v1` before its first side effect. Its
+immutable intent contains the exact resolved operation identity, planned and
+observed before state, candidate receipts and signed ceilings, prior receipts,
+and next state/capability generations. Phase replacements and grant records use
+the same store lock and atomic-file discipline:
+
+1. `intent-recorded` exists before candidate writes;
+2. `preparing` is durable while candidate writes replay;
+3. `prepared` guarantees every candidate record is exact and active;
+4. `cutover-committed` contains
+   `a3s.use.plugin-workspace-grant-cutover.v1` generation and snapshot evidence;
+5. `retiring` replays exact old-generation tombstones; and
+6. `completed` means all grant-side effects converged.
+
+Cutover evidence cannot be from the future or bind another capability
+generation. Candidate drift blocks cutover. Retirement without cutover is
+rejected. A same-generation permission replacement is verified as the new
+receipt and is not subsequently tombstoned. The parent Plugin Manager saga
+must still place Runtime readiness and capability publication before the
+cutover checkpoint, then lease drain and provider retirement around the grant
+retirement phase.
+
 Durable authorization uses two storage schemas:
 `a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision
 and `a3s.use.plugin-workspace-grant-revocation.v1` for a tombstone that binds

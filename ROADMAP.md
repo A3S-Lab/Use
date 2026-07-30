@@ -485,8 +485,22 @@ Implementation status (in progress 2026-07-30):
   revocation tombstones, moved or malformed records, unknown layout, and
   parallel granted generations for one package while safely ignoring
   non-authoritative abandoned atomic-write temporary files;
-- pending: validated ACL policy, durable lifecycle application of a complete
-  resolved grant change set, secret-reference adapters,
+- completed M5I-B: extend resolved grant changes with immutable
+  operation/plan/change-set identity, prior/next state revision, and prior/next
+  capability generation, rejecting revision or generation exhaustion;
+- completed M5I-B: persist an atomic bounded grant-operation intent before
+  side effects, including the locked observed before snapshot, exact candidate
+  receipts plus signed ceilings, and exact prior receipts for retirement;
+- completed M5I-B: implement idempotent intent-recorded -> preparing ->
+  prepared -> cutover-committed -> retiring -> completed phases, with
+  non-future exact capability-cutover evidence and retirement of N only after
+  N+1 cutover;
+- completed M5I-B: recover partial prepare and partial retirement across store
+  instances, reject stale snapshots, operation-ID conflict, ceiling
+  substitution, candidate drift, and unknown journal fields, and preserve
+  same-generation grant replacement instead of tombstoning the new grant;
+- pending: validated ACL policy, Plugin Manager/package/Runtime/capability saga
+  wiring for the durable grant journal, secret-reference adapters,
   filesystem/network/child-process enforcement, durable binding
   orchestration, streaming/file-backed large Task output, the actual MCP
   initialize client adapter, stdio supervision, Gateway route revocation,

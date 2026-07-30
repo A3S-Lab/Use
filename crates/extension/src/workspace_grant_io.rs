@@ -205,11 +205,13 @@ pub(super) async fn write_record(path: &Path, record: &StoredWorkspaceGrant) -> 
         ));
     }
     drop(file);
-    if let Err(error) = activate_temporary(temporary.clone(), path.to_path_buf()).await {
+    if let Err(error) =
+        activate_temporary_file(temporary.clone(), path.to_path_buf(), "grant record").await
+    {
         let _ = fs::remove_file(&temporary).await;
         return Err(error);
     }
-    sync_parent(Some(parent)).await
+    sync_parent_directory(Some(parent), "grant record").await
 }
 
 async fn validate_directory(path: &Path) -> UseResult<()> {
@@ -228,8 +230,13 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
     Ok(())
 }
 
-async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
+pub(super) async fn activate_temporary_file(
+    temporary: PathBuf,
+    target: PathBuf,
+    label: &str,
+) -> UseResult<()> {
     let error_target = target.clone();
+    let error_label = label.to_string();
     tokio::task::spawn_blocking(move || {
         let temporary = tempfile::TempPath::try_from_path(temporary)?;
         temporary.persist(target).map_err(|error| error.error)
@@ -239,31 +246,43 @@ async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()
         store_error(
             "use.plugin.grant_store.io",
             format!(
-                "Failed to activate workspace grant '{}': blocking task failed: {error}",
+                "Failed to activate workspace grant {error_label} '{}': blocking task failed: {error}",
                 error_target.display()
             ),
         )
     })?
-    .map_err(|error| path_io_error("activate workspace grant record", &error_target, error))
+    .map_err(|error| {
+        path_io_error(
+            &format!("activate workspace grant {label}"),
+            &error_target,
+            error,
+        )
+    })
 }
 
 #[cfg(unix)]
-async fn sync_parent(parent: Option<&Path>) -> UseResult<()> {
+pub(super) async fn sync_parent_directory(parent: Option<&Path>, label: &str) -> UseResult<()> {
     let parent = parent.ok_or_else(invalid_path)?;
     fs::File::open(parent)
         .await
         .map_err(|error| path_io_error("open workspace grant directory", parent, error))?
         .sync_all()
         .await
-        .map_err(|error| path_io_error("sync workspace grant directory", parent, error))
+        .map_err(|error| {
+            path_io_error(
+                &format!("sync workspace grant {label} directory"),
+                parent,
+                error,
+            )
+        })
 }
 
 #[cfg(not(unix))]
-async fn sync_parent(_parent: Option<&Path>) -> UseResult<()> {
+pub(super) async fn sync_parent_directory(_parent: Option<&Path>, _label: &str) -> UseResult<()> {
     Ok(())
 }
 
-fn unique_suffix() -> String {
+pub(super) fn unique_suffix() -> String {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());

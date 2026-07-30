@@ -28,6 +28,22 @@ impl WorkspaceGrantStore {
         scope_id: &str,
         state_revision: u64,
     ) -> UseResult<PluginWorkspaceGrantSnapshot> {
+        PluginWorkspaceGrantSnapshot {
+            schema: PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA.to_string(),
+            scope_id: scope_id.to_string(),
+            state_revision,
+            grants: Vec::new(),
+        }
+        .validate()?;
+        let _lock = acquire_lock(self.state_root(), self.root()).await?;
+        self.snapshot_scope_locked(scope_id, state_revision).await
+    }
+
+    pub(super) async fn snapshot_scope_locked(
+        &self,
+        scope_id: &str,
+        state_revision: u64,
+    ) -> UseResult<PluginWorkspaceGrantSnapshot> {
         let empty = PluginWorkspaceGrantSnapshot {
             schema: PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA.to_string(),
             scope_id: scope_id.to_string(),
@@ -36,7 +52,6 @@ impl WorkspaceGrantStore {
         };
         empty.validate()?;
 
-        let _lock = acquire_lock(self.state_root(), self.root()).await?;
         let scope_path = self.scope_path(scope_id)?;
         if !validate_existing_directory_chain(self.state_root(), Some(&scope_path)).await? {
             return Ok(empty);

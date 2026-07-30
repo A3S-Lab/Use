@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{UseError, UseResult};
 
+use super::resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantChangeSet};
 use super::validation::{valid_machine_id, valid_package_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPackageChangeKind,
     PlanPolicyDecision, PlannedPackageState, PlannedPackageTransition, PluginGrantConfirmation,
     PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanEnvelope,
-    PluginWorkspaceGrant, PluginWorkspaceGrantProposal, WorkspaceGrantAuthority,
-    MAX_PLUGIN_PLAN_ITEMS, PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA,
-    PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+    PluginWorkspaceGrantProposal, WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS,
+    PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
 const SNAPSHOT_ERROR: &str = "use.plugin.grant_snapshot_invalid";
@@ -55,22 +55,6 @@ pub struct PlannedWorkspaceGrantChange {
     pub before: Option<WorkspaceGrantEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<PluginWorkspaceGrantProposal>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedWorkspaceGrantChangeSet {
-    pub scope_id: String,
-    pub revision: u64,
-    pub transitioned_at_ms: u64,
-    pub revocation_authority: WorkspaceGrantAuthority,
-    pub grants: Vec<ResolvedWorkspaceGrant>,
-    pub revocations: Vec<WorkspaceGrantEvidence>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedWorkspaceGrant {
-    pub proposal_digest: String,
-    pub grant: PluginWorkspaceGrant,
 }
 
 impl PluginWorkspaceGrantSnapshot {
@@ -271,6 +255,16 @@ impl PluginWorkspaceGrantChangeSet {
                 "The workspace grant state revision cannot advance.",
             )
         })?;
+        let capability_generation_after = plan
+            .state
+            .capability_generation
+            .checked_add(1)
+            .ok_or_else(|| {
+                UseError::new(
+                    "use.plugin.grant_changes_generation_exhausted",
+                    "The plugin capability generation cannot advance.",
+                )
+            })?;
         let mut grants = Vec::new();
         let mut revocations = Vec::new();
         for change in &self.changes {
@@ -306,14 +300,23 @@ impl PluginWorkspaceGrantChangeSet {
         if !confirmation_map.is_empty() {
             return Err(confirmation_mismatch());
         }
-        Ok(ResolvedWorkspaceGrantChangeSet {
+        let resolved = ResolvedWorkspaceGrantChangeSet {
+            operation_id: plan.operation_id.clone(),
+            plan_digest,
+            change_set_digest: self.descriptor_digest()?,
             scope_id: self.scope_id.clone(),
+            state_revision_before: plan.state.state_revision,
             revision,
+            capability_generation_before: plan.state.capability_generation,
+            capability_generation_after,
+            before_snapshot_digest: self.before_snapshot_digest.clone(),
             transitioned_at_ms: applied_at_ms,
             revocation_authority,
             grants,
             revocations,
-        })
+        };
+        resolved.validate()?;
+        Ok(resolved)
     }
 
     pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
@@ -458,7 +461,7 @@ fn snapshot_error(message: impl Into<String>) -> UseError {
     contract_error(SNAPSHOT_ERROR, message)
 }
 
-fn change_set_error(message: impl Into<String>) -> UseError {
+pub(super) fn change_set_error(message: impl Into<String>) -> UseError {
     contract_error(CHANGE_SET_ERROR, message)
 }
 

@@ -24,6 +24,9 @@ mod source;
 mod surface_files;
 mod workspace_grant;
 mod workspace_grant_io;
+mod workspace_grant_lifecycle;
+mod workspace_grant_operation;
+mod workspace_grant_operation_io;
 mod workspace_grant_snapshot;
 #[cfg(test)]
 mod workspace_grant_tests;
@@ -52,6 +55,11 @@ pub use remote::{
 pub use workspace_grant::{
     StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,
     WORKSPACE_GRANT_RECEIPT_SCHEMA, WORKSPACE_GRANT_REVOCATION_SCHEMA,
+};
+pub use workspace_grant_operation::{
+    WorkspaceGrantCandidateCeiling, WorkspaceGrantCutoverEvidence, WorkspaceGrantLifecyclePhase,
+    WorkspaceGrantOperationIntent, WorkspaceGrantOperationJournal, WorkspaceGrantPreparedCandidate,
+    WorkspaceGrantRetirement, WORKSPACE_GRANT_CUTOVER_SCHEMA, WORKSPACE_GRANT_OPERATION_SCHEMA,
 };
 
 const RESERVED_ROUTES: &[&str] = &[
