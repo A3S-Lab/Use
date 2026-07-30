@@ -705,8 +705,18 @@ automatically discovered workspace configuration cannot pre-authorize
 mutation. One immutable policy is injected into the shared Plugin Manager,
 whose common evaluation and verification APIs are available to every adapter.
 Web retains the default `ask` policy until it receives a trusted host policy
-source. Persisting the full Use plan in the Manager and invoking these APIs on
-its live lifecycle path is the next integration step.
+source.
+
+The Manager now accepts an optional `pluginOperationPlan` draft from its
+delegated planner. It replaces host-owned identity, lifetime, actor and
+authority, binds the requested release and verified capability generation,
+then persists a strict `PluginOperationPlanEnvelope`. Its digest is the
+user-reviewed apply identity; the older component digest is stored separately
+and used only for the existing mutation child. A new apply intent rechecks
+policy and persists exact confirmation for `ask`. Recovery of an existing
+intent reuses that durable evidence. Legacy component-only records remain
+compatible. Emitting the complete draft from the A3S Use planner is still
+pending.
 
 Reviewed Manager records now also bind the actor selected by the trusted host
 adapter. CLI and Web create user plans; management MCP creates agent plans.

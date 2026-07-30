@@ -521,7 +521,16 @@ Implementation status (in progress 2026-07-30):
   producing agent plans, while package and request content cannot choose the
   principal; persist and return the actor with the frozen `user/current`
   lifecycle scope;
-- pending: Plugin Manager full-Use-plan persistence and policy invocation,
+- completed M5J-C-B in the umbrella CLI: accept an optional complete Use plan
+  draft from the delegated planner, bind host identity/lifetime/actor/scope,
+  requested release and verified capability generation, evaluate policy, and
+  persist the strict `PluginOperationPlanEnvelope`;
+- completed M5J-C-B in the umbrella CLI: separate the user-reviewed full-plan
+  digest from the upstream component mutation digest, recheck current policy
+  before first intent, require and persist exact confirmation for `ask`, and
+  resume existing intent from recorded authority without stranding partial
+  side effects;
+- pending: A3S Use planner emission of the complete operation-plan draft,
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,
   filesystem/network/child-process enforcement, durable binding
