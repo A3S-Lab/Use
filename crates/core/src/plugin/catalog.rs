@@ -201,6 +201,21 @@ impl PluginCatalogRecord {
                         "A UI HTTP permission must bind a cataloged Tool Service.",
                     ));
                 }
+                let tool = PluginSurfaceRef {
+                    kind: PluginSurfaceKind::Tool,
+                    id: binding.tool_id.clone(),
+                };
+                if schema_v2
+                    && !self
+                        .surfaces
+                        .iter()
+                        .find(|surface| surface.reference() == permission.surface)
+                        .is_some_and(|surface| surface.requires.contains(&tool))
+                {
+                    return Err(catalog_error(
+                        "A catalog-v2 UI HTTP binding must declare its Tool dependency.",
+                    ));
+                }
             }
             let resources = permission.resources.as_ref();
             let long_running_resources = resources.is_some_and(|value| {
@@ -386,6 +401,7 @@ impl CatalogPackage {
                 .manifest_sha256
                 .as_deref()
                 .is_some_and(|value| !valid_sha256(value))
+            || (schema_v2 && self.sha256.is_none())
             || schema_v2 != self.manifest_sha256.is_some()
         {
             return Err(catalog_error(

@@ -544,6 +544,10 @@ Implementation status (in progress 2026-07-30):
 - completed M5J-C-C-B in `a3s-use-core`: deterministically resolve all
   mandatory surfaces plus only the explicitly selected optional surface
   closure, rejecting missing, duplicate, cyclic, or kind-invalid dependencies;
+- completed M5J-C-C-C-A in `a3s-use-core`: derive a validated registry install
+  transition from verified catalog-v2 evidence, preserving TUF/archive
+  provenance, binding manifest and expanded-package digests, narrowing only
+  selected surface/permission evidence, and deriving the exact surface delta;
 - pending: feed verified registry/package records, installed receipts,
   explicit Runtime provider selection, and current capability state into the
   draft and emit it from the live umbrella plan,

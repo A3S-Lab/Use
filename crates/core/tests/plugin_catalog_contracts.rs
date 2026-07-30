@@ -1,7 +1,7 @@
 use a3s_use_core::{
-    PluginCatalogRecord, PluginPermissionCeiling, PluginSurfaceKind, PluginSurfaceRef,
-    ToolWorkloadClass, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
-    PLUGIN_CATALOG_SCHEMA_V2,
+    PlanPackageRole, PluginCatalogRecord, PluginPermissionCeiling, PluginPlanSource,
+    PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass, VerifiedCatalogProvenance,
+    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2,
 };
 
 const PERMISSION_CEILING: &[u8] = include_bytes!("../fixtures/plugins/permission-ceiling-v1.json");
@@ -222,6 +222,98 @@ fn catalog_versions_fail_closed_across_new_evidence_fields() {
     assert!(
         PluginCatalogRecord::from_json(&serde_json::to_vec(&forbidden_back_edge).unwrap()).is_err()
     );
+
+    let mut missing_package_digest: serde_json::Value =
+        serde_json::from_slice(CATALOG_RECORD).unwrap();
+    missing_package_digest["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
+    missing_package_digest["package"]["manifestSha256"] =
+        serde_json::json!(format!("sha256:{}", "c".repeat(64)));
+    missing_package_digest["package"]
+        .as_object_mut()
+        .unwrap()
+        .remove("sha256");
+    assert!(
+        PluginCatalogRecord::from_json(&serde_json::to_vec(&missing_package_digest).unwrap())
+            .is_err()
+    );
+}
+
+#[test]
+fn verified_catalog_v2_derives_a_plan_ready_selected_install_transition() {
+    let mut value: serde_json::Value = serde_json::from_slice(CATALOG_RECORD).unwrap();
+    value["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
+    value["package"]["manifestSha256"] = serde_json::json!(format!("sha256:{}", "c".repeat(64)));
+    for surface in value["surfaces"].as_array_mut().unwrap() {
+        surface["optional"] = serde_json::json!(true);
+    }
+    value["surfaces"][1]["requires"] = serde_json::json!([
+        {"kind": "tool", "id": "convert"}
+    ]);
+    value["surfaces"][4]["requires"] = serde_json::json!([
+        {"kind": "skill", "id": "review"},
+        {"kind": "tool", "id": "index"}
+    ]);
+    let record = PluginCatalogRecord::from_json(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let provenance = VerifiedCatalogProvenance {
+        registry_name: "official".to_owned(),
+        registry_url: "https://plugins.a3s.dev/catalog".to_owned(),
+        root_sha256: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            .to_owned(),
+        root_version: 7,
+        timestamp_version: 42,
+        snapshot_version: 41,
+        targets_version: 39,
+        catalog_record_digest: record.descriptor_digest().unwrap(),
+    };
+    let verified = VerifiedPluginCatalogRecord::new(record, provenance).unwrap();
+    let transition = verified
+        .install_transition(
+            PlanPackageRole::Root,
+            &[PluginSurfaceRef {
+                kind: PluginSurfaceKind::Ui,
+                id: "review".to_string(),
+            }],
+        )
+        .unwrap();
+    let after = transition.after.as_ref().unwrap();
+
+    assert_eq!(after.release.surfaces.len(), 4);
+    assert_eq!(after.permissions.surfaces.len(), 3);
+    assert!(after
+        .release
+        .surfaces
+        .iter()
+        .all(|surface| surface.id != "library"));
+    assert_eq!(
+        after.release.permission_ceiling_digest,
+        after.permissions.descriptor_digest().unwrap()
+    );
+    assert!(matches!(
+        transition.source,
+        Some(PluginPlanSource::Registry { .. })
+    ));
+}
+
+#[test]
+fn catalog_v1_remains_searchable_but_cannot_claim_plan_ready_evidence() {
+    let record = PluginCatalogRecord::from_json(CATALOG_RECORD).unwrap();
+    let provenance = VerifiedCatalogProvenance {
+        registry_name: "official".to_owned(),
+        registry_url: "https://plugins.a3s.dev/catalog".to_owned(),
+        root_sha256: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            .to_owned(),
+        root_version: 7,
+        timestamp_version: 42,
+        snapshot_version: 41,
+        targets_version: 39,
+        catalog_record_digest: record.descriptor_digest().unwrap(),
+    };
+    let verified = VerifiedPluginCatalogRecord::new(record, provenance).unwrap();
+    let error = verified
+        .install_transition(PlanPackageRole::Root, &[])
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.plugin.catalog_plan_evidence_missing");
 }
 
 #[test]

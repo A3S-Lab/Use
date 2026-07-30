@@ -1,0 +1,79 @@
+use std::collections::BTreeSet;
+
+use crate::{UseError, UseResult};
+
+use super::{
+    PlanPackageChangeKind, PlanPackageRole, PlannedPackageState, PlannedPackageTransition,
+    PlannedPluginRelease, PluginPermissionCeiling, PluginPlanSource, PluginSurfaceRef,
+    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2,
+};
+
+impl VerifiedPluginCatalogRecord {
+    /// Derive one exact install transition from signed catalog-v2 evidence.
+    ///
+    /// Surface selection narrows activation and permission evidence. It does
+    /// not narrow the archive download or expanded package footprint.
+    pub fn install_transition(
+        &self,
+        role: PlanPackageRole,
+        requested_surfaces: &[PluginSurfaceRef],
+    ) -> UseResult<PlannedPackageTransition> {
+        self.validate()?;
+        if self.record.schema != PLUGIN_CATALOG_SCHEMA_V2 {
+            return Err(catalog_plan_error(
+                "A complete install plan requires a catalog-v2 record.",
+            ));
+        }
+        let surfaces = self.record.resolve_surfaces(requested_surfaces)?;
+        let selected = surfaces
+            .iter()
+            .map(|surface| surface.reference())
+            .collect::<BTreeSet<_>>();
+        let permissions = PluginPermissionCeiling {
+            schema: self.record.permission_ceiling.schema.clone(),
+            surfaces: self
+                .record
+                .permission_ceiling
+                .surfaces
+                .iter()
+                .filter(|permission| selected.contains(&permission.surface))
+                .cloned()
+                .collect(),
+        };
+        let permission_ceiling_digest = permissions.descriptor_digest()?;
+        let package_sha256 = self.record.package.sha256.clone().ok_or_else(|| {
+            catalog_plan_error("A catalog-v2 install record omitted its expanded package digest.")
+        })?;
+        let manifest_sha256 = self.record.package.manifest_sha256.clone().ok_or_else(|| {
+            catalog_plan_error("A catalog-v2 install record omitted its manifest digest.")
+        })?;
+        let state = PlannedPackageState {
+            release: PlannedPluginRelease {
+                package_id: self.record.package_id.clone(),
+                version: self.record.version.clone(),
+                channel: self.record.channel,
+                target: self.record.target.clone(),
+                package_sha256,
+                manifest_sha256,
+                permission_ceiling_digest,
+                surfaces,
+            },
+            permissions,
+        };
+        PlannedPackageTransition::resolved(
+            self.record.package_id.clone(),
+            role,
+            PlanPackageChangeKind::Add,
+            None,
+            Some(state),
+            Some(PluginPlanSource::Registry {
+                provenance: self.provenance.clone(),
+                archive: self.record.archive.clone(),
+            }),
+        )
+    }
+}
+
+fn catalog_plan_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.plugin.catalog_plan_evidence_missing", message)
+}

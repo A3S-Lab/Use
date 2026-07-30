@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use crate::{UseError, UseResult};
 
 mod catalog;
+mod catalog_plan;
 mod catalog_selection;
 mod catalog_trust;
 mod grant;

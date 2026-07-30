@@ -264,6 +264,15 @@ cyclic edges fail closed. Catalog v1 remains readable and retains its exact
 canonical digest, but cannot carry these v2-only fields and is not sufficient
 by itself for complete-plan emission.
 
+`VerifiedPluginCatalogRecord::install_transition` converts one catalog-v2
+record into the exact registry `add` transition consumed by the operation-plan
+draft. It preserves verified catalog provenance and archive evidence, requires
+both expanded-package and raw manifest digests, derives the selected permission
+ceiling and its digest, and derives all surface additions. Surface selection
+does not change archive download length or expanded package size. Avoiding
+unrelated downloads requires separate package archives, not merely optional
+surface flags.
+
 ## Immutable Operation Plan
 
 `PluginOperationPlan` binds one complete resolution result:

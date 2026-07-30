@@ -736,6 +736,13 @@ the activation boundary needed for small plugin installs; packages such as
 Science must still publish independently useful archives when users should
 avoid downloading unrelated assets.
 
+A verified catalog-v2 record can now derive a plan-ready registry install
+transition. The transition keeps signed TUF provenance and archive evidence,
+uses the mandatory manifest and expanded-package digests, narrows release and
+permission evidence to the resolved surface closure, and derives the exact
+surface delta. Archive download bytes and expanded package footprint remain
+the full package values; only activation is narrowed.
+
 Reviewed Manager records now also bind the actor selected by the trusted host
 adapter. CLI and Web create user plans; management MCP creates agent plans.
 Package content and MCP input cannot select that principal. The current
