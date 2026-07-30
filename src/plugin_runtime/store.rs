@@ -215,6 +215,7 @@ fn same_service_generation(
         && current.generation == next.generation
         && current.spec_digest == next.spec_digest
         && current.semantics_profile_digest == next.semantics_profile_digest
+        && current.runtime_started_at_ms == next.runtime_started_at_ms
         && current.contract == next.contract
 }
 

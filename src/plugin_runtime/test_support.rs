@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use a3s_runtime::contract::{
     ArtifactRef, HealthCheckKind, IsolationLevel, MountKind, NetworkMode, ResourceControl,
@@ -164,8 +165,13 @@ pub(super) fn evidence(
 pub(super) struct FakeRuntime {
     capabilities: RuntimeCapabilities,
     converge: bool,
+    fail_apply: bool,
     pub(super) apply_count: AtomicUsize,
+    pub(super) stop_count: AtomicUsize,
+    pub(super) remove_count: AtomicUsize,
     logs: Vec<RuntimeLogChunk>,
+    observation: Mutex<Option<RuntimeObservation>>,
+    removed_generation: AtomicU64,
 }
 
 impl FakeRuntime {
@@ -173,14 +179,49 @@ impl FakeRuntime {
         Self {
             capabilities,
             converge,
+            fail_apply: false,
             apply_count: AtomicUsize::new(0),
+            stop_count: AtomicUsize::new(0),
+            remove_count: AtomicUsize::new(0),
             logs: Vec::new(),
+            observation: Mutex::new(None),
+            removed_generation: AtomicU64::new(0),
         }
     }
 
     pub(super) fn with_logs(mut self, logs: Vec<RuntimeLogChunk>) -> Self {
         self.logs = logs;
         self
+    }
+
+    pub(super) fn with_apply_failure(mut self) -> Self {
+        self.fail_apply = true;
+        self
+    }
+
+    pub(super) fn restart_service(&self, started_at_ms: u64, observed_at_ms: u64) {
+        let mut observation = self.observation.lock().unwrap();
+        let current = observation
+            .as_mut()
+            .expect("a test Service must be applied before restart");
+        current.started_at_ms = Some(started_at_ms);
+        current.observed_at_ms = observed_at_ms;
+        if let Some(health) = &mut current.health {
+            health.checked_at_ms = observed_at_ms;
+        }
+    }
+
+    pub(super) fn set_service_health_revision(&self, checked_at_ms: u64, observed_at_ms: u64) {
+        let mut observation = self.observation.lock().unwrap();
+        let current = observation
+            .as_mut()
+            .expect("a test Service must be applied before changing health");
+        current.observed_at_ms = observed_at_ms;
+        current
+            .health
+            .as_mut()
+            .expect("a test Service must have health")
+            .checked_at_ms = checked_at_ms;
     }
 }
 
@@ -192,9 +233,14 @@ impl RuntimeClient for FakeRuntime {
 
     async fn apply(&self, request: &RuntimeApplyRequest) -> RuntimeResult<RuntimeObservation> {
         self.apply_count.fetch_add(1, Ordering::SeqCst);
+        if self.fail_apply {
+            return Err(RuntimeError::Protocol(
+                "injected test apply failure".to_string(),
+            ));
+        }
         let running = self.converge;
         let task = request.spec.class == RuntimeUnitClass::Task;
-        Ok(RuntimeObservation {
+        let observation = RuntimeObservation {
             schema: RuntimeObservation::SCHEMA.to_string(),
             unit_id: request.spec.unit_id.clone(),
             generation: request.spec.generation,
@@ -229,19 +275,61 @@ impl RuntimeClient for FakeRuntime {
             evidence: None,
             provider_attestation: None,
             failure: None,
+        };
+        *self.observation.lock().unwrap() = Some(observation.clone());
+        Ok(observation)
+    }
+
+    async fn inspect(&self, unit_id: &str) -> RuntimeResult<RuntimeInspection> {
+        let observation = self.observation.lock().unwrap().clone();
+        Ok(match observation {
+            Some(observation) if observation.unit_id == unit_id => RuntimeInspection::Found {
+                schema: RuntimeInspection::SCHEMA.to_string(),
+                observation: Box::new(observation),
+            },
+            _ => RuntimeInspection::NotFound {
+                schema: RuntimeInspection::SCHEMA.to_string(),
+                unit_id: unit_id.to_string(),
+                last_generation: match self.removed_generation.load(Ordering::SeqCst) {
+                    0 => None,
+                    generation => Some(generation),
+                },
+            },
         })
     }
 
-    async fn inspect(&self, _unit_id: &str) -> RuntimeResult<RuntimeInspection> {
-        Err(RuntimeError::Protocol("unexpected inspect".to_string()))
+    async fn stop(&self, request: &RuntimeActionRequest) -> RuntimeResult<RuntimeInspection> {
+        self.stop_count.fetch_add(1, Ordering::SeqCst);
+        let mut observation = self.observation.lock().unwrap();
+        let Some(current) = observation.as_mut() else {
+            return Ok(RuntimeInspection::NotFound {
+                schema: RuntimeInspection::SCHEMA.to_string(),
+                unit_id: request.unit_id.clone(),
+                last_generation: None,
+            });
+        };
+        current.state = RuntimeUnitState::Stopped;
+        current.observed_at_ms = 1_100;
+        current.finished_at_ms = Some(1_100);
+        Ok(RuntimeInspection::Found {
+            schema: RuntimeInspection::SCHEMA.to_string(),
+            observation: Box::new(current.clone()),
+        })
     }
 
-    async fn stop(&self, _request: &RuntimeActionRequest) -> RuntimeResult<RuntimeInspection> {
-        Err(RuntimeError::Protocol("unexpected stop".to_string()))
-    }
-
-    async fn remove(&self, _request: &RuntimeActionRequest) -> RuntimeResult<RuntimeRemoval> {
-        Err(RuntimeError::Protocol("unexpected remove".to_string()))
+    async fn remove(&self, request: &RuntimeActionRequest) -> RuntimeResult<RuntimeRemoval> {
+        self.remove_count.fetch_add(1, Ordering::SeqCst);
+        let already_absent = self.observation.lock().unwrap().take().is_none();
+        self.removed_generation
+            .store(request.generation, Ordering::SeqCst);
+        Ok(RuntimeRemoval {
+            schema: RuntimeRemoval::SCHEMA.to_string(),
+            request_id: request.request_id.clone(),
+            unit_id: request.unit_id.clone(),
+            generation: request.generation,
+            removed_at_ms: 1_200,
+            already_absent,
+        })
     }
 
     async fn logs(&self, query: &RuntimeLogQuery) -> RuntimeResult<Vec<RuntimeLogChunk>> {

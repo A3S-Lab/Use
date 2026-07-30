@@ -417,9 +417,10 @@ package digest
 + compatibility contract version
 ```
 
-The runtime-binding receipt records provider ID, unit ID, generation, spec
-digest, endpoint reference, observation revision, and last healthy time. It
-never records bearer tokens or secret values.
+The runtime-binding receipt records provider ID/build, capability and
+enforcement evidence, unit ID, generation, spec digest, endpoint reference,
+Runtime start identity, observation revision, and last healthy time. It never
+records bearer tokens or secret values.
 
 The initial M5 adapter implements that boundary against the
 compatibility-locked Runtime 0.2 contract. A resolved artifact is accepted only
@@ -462,6 +463,27 @@ capture ceiling fails before apply until a streaming or file-backed sink is
 implemented. Runtime 0.2 does not report the process exit code on Task apply,
 so only the already-frozen `[0]` success set is accepted and a successful
 observation is reported as exit code zero.
+
+Every terminal Task invocation is removed after its captured output has been
+read. If apply fails ambiguously, a provider violates the finite-Task contract,
+or it returns mismatched evidence, the adapter attempts a bounded stop and
+exact-generation removal. Cleanup failure is recorded alongside, but does not
+replace, the primary typed invocation error.
+
+Live Service observation rechecks provider/build and capability evidence plus
+unit ID, generation, spec digest, Runtime start identity, and health. A
+same-generation process restart invalidates the previous Gateway endpoint and
+MCP initialize evidence instead of silently reusing them. Drain/removal uses
+the receipt's explicit provider and exact unit generation. Cleanup may proceed
+after that provider's build changes, because refusing to remove an owned
+workload would leak authority; new apply and active projection still require
+exact reviewed provider evidence.
+
+The Task and Service binding schemas are `a3s.use.runtime-task-binding.v2` and
+`a3s.use.runtime-service-binding.v2`. The v2 boundary adds explicit enforcement
+evidence and, for Services, Runtime start identity. Earlier development
+receipts are not reinterpreted with inferred defaults; they fail closed and
+must be prepared and rebound again.
 
 Current provider evidence matters:
 

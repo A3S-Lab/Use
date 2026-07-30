@@ -69,6 +69,27 @@ impl RuntimeBindingReceipt {
         }
     }
 
+    pub fn provider_id(&self) -> &str {
+        match self {
+            Self::Task(receipt) => &receipt.provider_id,
+            Self::Service(receipt) => &receipt.provider_id,
+        }
+    }
+
+    pub fn provider_build_id(&self) -> &str {
+        match self {
+            Self::Task(receipt) => &receipt.provider_build_id,
+            Self::Service(receipt) => &receipt.provider_build_id,
+        }
+    }
+
+    pub fn capability_digest(&self) -> &str {
+        match self {
+            Self::Task(receipt) => &receipt.capability_digest,
+            Self::Service(receipt) => &receipt.capability_digest,
+        }
+    }
+
     pub fn readiness(&self) -> RuntimeBindingReadiness {
         match self {
             Self::Task(_) => RuntimeBindingReadiness::Prepared,
@@ -102,7 +123,9 @@ fn validate_service(receipt: &RuntimeServiceBindingReceipt) -> UseResult<()> {
     if receipt.schema != RUNTIME_SERVICE_BINDING_SCHEMA
         || !valid_binding_identity(&receipt.surface, &receipt.scope_id)
         || receipt.generation == 0
+        || receipt.runtime_started_at_ms == 0
         || receipt.observation_revision == 0
+        || receipt.runtime_started_at_ms > receipt.observation_revision
         || receipt.last_healthy_at_ms == 0
         || receipt.last_healthy_at_ms > receipt.observation_revision
         || !valid_sha256(&receipt.package_digest)

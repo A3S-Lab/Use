@@ -197,6 +197,7 @@ async fn task_binding_invokes_native_argv_and_captures_separate_output_streams()
         .unwrap();
 
     assert_eq!(runtime.apply_count.load(Ordering::SeqCst), 1);
+    assert_eq!(runtime.remove_count.load(Ordering::SeqCst), 1);
     assert_eq!(result.exit_code, 0);
     assert_eq!(result.stdout, "{\"ok\":true}\n");
     assert_eq!(result.stderr, "diagnostic\n");
@@ -235,6 +236,34 @@ async fn unsupported_in_memory_capture_is_rejected_before_task_apply() {
     let error = client.prepare_task(&plan, &provider).await.unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.capture_unsupported");
     assert_eq!(runtime.apply_count.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn ambiguous_task_apply_failure_attempts_exact_cleanup() {
+    let descriptor = task_descriptor();
+    let plan = plan_tool_task_release(
+        context(PluginSurfaceKind::Tool, "convert"),
+        &task_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        RuntimeTaskInvocation::new("invoke-01", Vec::new()).unwrap(),
+        policy(),
+        NetworkMode::None,
+    )
+    .unwrap();
+    let capabilities = capabilities(&plan);
+    let provider = evidence(&plan, &capabilities);
+    let runtime = Arc::new(FakeRuntime::new(capabilities, true).with_apply_failure());
+    let client = PluginRuntimeClient::new(runtime.clone());
+    let binding = client.prepare_task(&plan, &provider).await.unwrap();
+
+    let error = client
+        .invoke_task(&plan, &binding, "invoke-01", Some(9_999_999))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.runtime.operation_failed");
+    assert_eq!(runtime.stop_count.load(Ordering::SeqCst), 1);
+    assert_eq!(runtime.remove_count.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -327,4 +356,132 @@ async fn mcp_service_binding_requires_matching_initialize_evidence() {
         receipt.readiness,
         RuntimeServiceReadinessEvidence::McpInitialized { .. }
     ));
+}
+
+#[tokio::test]
+async fn service_binding_is_live_observed_then_drained_and_removed_exactly() {
+    let descriptor = service_descriptor();
+    let plan = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &service_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let capabilities = capabilities(&plan);
+    let provider = evidence(&plan, &capabilities);
+    let runtime = Arc::new(FakeRuntime::new(capabilities, true));
+    let client = PluginRuntimeClient::new(runtime.clone());
+    let receipt = client
+        .apply_service(&plan, &provider, "operation-01", Some(9_999_999))
+        .await
+        .unwrap()
+        .into_tool_service_receipt(RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap())
+        .unwrap();
+    let binding = RuntimeBindingReceipt::Service(receipt.clone());
+
+    let observed = client.observe_binding(&binding).await.unwrap();
+    assert_eq!(observed.state, RuntimeBindingObservedState::Healthy);
+    assert!(observed.observation.is_some());
+
+    runtime.set_service_health_revision(1_200, 1_100);
+    let removal = client
+        .drain_remove_service(
+            &receipt,
+            "operation-01-stop",
+            "operation-01-remove",
+            Some(9_999_999),
+        )
+        .await
+        .unwrap();
+    assert!(!removal.already_absent);
+    assert_eq!(runtime.stop_count.load(Ordering::SeqCst), 1);
+    assert_eq!(runtime.remove_count.load(Ordering::SeqCst), 1);
+
+    let missing = client.observe_binding(&binding).await.unwrap();
+    assert_eq!(missing.state, RuntimeBindingObservedState::Missing);
+    assert_eq!(missing.last_generation, Some(7));
+}
+
+#[tokio::test]
+async fn service_restart_makes_the_old_endpoint_binding_stale() {
+    let descriptor = service_descriptor();
+    let plan = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &service_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let capabilities = capabilities(&plan);
+    let provider = evidence(&plan, &capabilities);
+    let runtime = Arc::new(FakeRuntime::new(capabilities, true));
+    let client = PluginRuntimeClient::new(runtime.clone());
+    let receipt = client
+        .apply_service(&plan, &provider, "operation-01", Some(9_999_999))
+        .await
+        .unwrap()
+        .into_tool_service_receipt(RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap())
+        .unwrap();
+    runtime.restart_service(1_050, 1_100);
+
+    let observed = client
+        .observe_binding(&RuntimeBindingReceipt::Service(receipt))
+        .await
+        .unwrap();
+    assert_eq!(observed.state, RuntimeBindingObservedState::Stale);
+}
+
+#[tokio::test]
+async fn service_health_revision_cannot_regress_or_exceed_its_observation() {
+    let descriptor = service_descriptor();
+    let plan = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &service_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let capabilities = capabilities(&plan);
+    let provider = evidence(&plan, &capabilities);
+    let runtime = Arc::new(FakeRuntime::new(capabilities, true));
+    let client = PluginRuntimeClient::new(runtime.clone());
+    let receipt = client
+        .apply_service(&plan, &provider, "operation-01", Some(9_999_999))
+        .await
+        .unwrap()
+        .into_tool_service_receipt(RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap())
+        .unwrap();
+
+    runtime.set_service_health_revision(999, 1_100);
+    let regressed = client
+        .observe_binding(&RuntimeBindingReceipt::Service(receipt.clone()))
+        .await
+        .unwrap();
+    assert_eq!(regressed.state, RuntimeBindingObservedState::Stale);
+
+    runtime.set_service_health_revision(1_200, 1_100);
+    let invalid = client
+        .observe_binding(&RuntimeBindingReceipt::Service(receipt))
+        .await
+        .unwrap_err();
+    assert_eq!(invalid.code, "use.plugin.runtime.contract_invalid");
+
+    let mut invalid_activation = client
+        .apply_service(&plan, &provider, "operation-02", Some(9_999_999))
+        .await
+        .unwrap();
+    invalid_activation
+        .observation
+        .health
+        .as_mut()
+        .unwrap()
+        .checked_at_ms = 1_200;
+    let invalid_receipt = invalid_activation
+        .into_tool_service_receipt(RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap())
+        .unwrap_err();
+    assert_eq!(invalid_receipt.code, "use.plugin.runtime.input_invalid");
 }

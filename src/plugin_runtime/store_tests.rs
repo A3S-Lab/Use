@@ -64,6 +64,7 @@ fn service_receipt(observation_revision: u64) -> RuntimeBindingReceipt {
         spec_digest: SPEC_DIGEST.to_string(),
         semantics_profile_digest: SEMANTICS_DIGEST.to_string(),
         endpoint_ref: RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap(),
+        runtime_started_at_ms: 900,
         observation_revision,
         last_healthy_at_ms: observation_revision,
         contract: RuntimeSurfaceContract::ToolService {

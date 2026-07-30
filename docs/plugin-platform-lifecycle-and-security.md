@@ -481,6 +481,14 @@ when the caller presents the exact current receipt. A higher Runtime generation
 may replace an older generation; within one Service generation, only a newer
 observation with unchanged immutable binding evidence may refresh the receipt.
 
+Live observation also binds the Service receipt to the Runtime process start
+time. A restart within the same unit generation marks the old endpoint receipt
+stale, forcing Gateway rebinding and a new MCP initialize probe. During
+uninstall, the saga revokes the Gateway route first, calls the explicit
+provider to stop and remove the exact Runtime unit/generation, then removes the
+exact-current binding receipt. Provider build drift blocks new apply but does
+not redirect or silently prevent cleanup of an already-owned unit.
+
 The current `data/use/extensions/` layout migrates in place through versioned
 receipts or remains a compatibility path. A migration must not duplicate large
 payloads merely to rename a directory.

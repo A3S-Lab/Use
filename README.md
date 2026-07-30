@@ -604,6 +604,18 @@ separate Runtime log streams. The current adapter keeps at most 16 MiB per
 stream in memory and rejects a larger declared capture bound before execution.
 Because Runtime 0.2 does not expose the Task process exit code, this path
 continues to accept only release contracts whose sole success code is `0`.
+After capture, the per-invocation Task unit is removed; ambiguous apply
+failures and invalid, failed, or non-terminal observations trigger bounded
+cleanup, with any cleanup failure attached to the primary typed error.
+
+`PluginRuntimeClient::observe_binding` rechecks persisted evidence and live
+Runtime identity. A Service is healthy only while its provider/build,
+capability digest, unit, generation, spec digest, start time, and health still
+match the receipt. A same-generation process restart therefore makes the old
+Gateway or MCP binding stale until it is rebound and, for MCP, initialized
+again. `drain_remove_service` stops a non-terminal exact unit and removes it;
+the binding-store receipt is intentionally removed by the outer lifecycle
+saga only after Gateway revocation and Runtime removal both succeed.
 
 ```bash
 a3s-use capability snapshot --json

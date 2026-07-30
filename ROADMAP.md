@@ -412,11 +412,25 @@ Implementation status (in progress 2026-07-30):
   logs;
 - completed M5C: cap the current in-memory output adapter at 16 MiB per stream
   and reject a larger release capture contract before starting the Task;
+- completed M5D: remove each terminal Task unit after output capture, attempt
+  bounded stop/remove cleanup for ambiguous apply failures and invalid or
+  non-terminal observations, and retain cleanup error evidence without
+  replacing the primary invocation failure;
+- completed M5D: live-inspect persisted bindings against the exact provider,
+  build, capability digest, unit/generation/spec identity, health, and Runtime
+  start identity; a restarted Service makes its old Gateway/MCP binding stale;
+- completed M5D: drain and remove an exact Service unit with typed Runtime
+  action requests while allowing cleanup on the same explicit provider after a
+  provider build upgrade;
+- completed M5D: version Task and Service binding receipts as v2 after adding
+  enforcement and Runtime start identity; pre-v2 development receipts fail
+  closed and must be prepared again instead of being interpreted under changed
+  semantics;
 - pending: validated ACL policy, resolved workspace grants, secret-reference
   adapters, filesystem/network/child-process enforcement, durable binding
   orchestration, streaming/file-backed large Task output, the actual MCP
-  initialize client adapter, stdio supervision, Service drain/removal, live
-  observation, and reconciler wiring.
+  initialize client adapter, stdio supervision, Gateway route revocation,
+  binding-store cleanup orchestration, and reconciler wiring.
 
 Deliverables:
 

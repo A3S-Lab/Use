@@ -9,8 +9,8 @@ use a3s_use_core::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const RUNTIME_SERVICE_BINDING_SCHEMA: &str = "a3s.use.runtime-service-binding.v1";
-pub const RUNTIME_TASK_BINDING_SCHEMA: &str = "a3s.use.runtime-task-binding.v1";
+pub const RUNTIME_SERVICE_BINDING_SCHEMA: &str = "a3s.use.runtime-service-binding.v2";
+pub const RUNTIME_TASK_BINDING_SCHEMA: &str = "a3s.use.runtime-task-binding.v2";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeSurfaceContext {
@@ -313,7 +313,12 @@ impl RuntimeServiceActivation {
             .map_or(self.observation.observed_at_ms, |health| {
                 health.checked_at_ms
             });
-        Ok(RuntimeServiceBindingReceipt {
+        let runtime_started_at_ms = self.observation.started_at_ms.ok_or_else(|| {
+            runtime_contract_error(
+                "A running Runtime Service observation omitted its start identity.",
+            )
+        })?;
+        let receipt = RuntimeServiceBindingReceipt {
             schema: RUNTIME_SERVICE_BINDING_SCHEMA.to_string(),
             surface: self.plan.surface(),
             package_digest: self.plan.context.package_digest,
@@ -328,11 +333,14 @@ impl RuntimeServiceActivation {
             spec_digest,
             semantics_profile_digest,
             endpoint_ref,
+            runtime_started_at_ms,
             observation_revision: self.observation.observed_at_ms,
             last_healthy_at_ms,
             contract: self.plan.contract,
             readiness,
-        })
+        };
+        super::receipt::RuntimeBindingReceipt::Service(receipt.clone()).validate()?;
+        Ok(receipt)
     }
 }
 
@@ -433,20 +441,11 @@ pub struct RuntimeServiceBindingReceipt {
     pub spec_digest: String,
     pub semantics_profile_digest: String,
     pub endpoint_ref: RuntimeEndpointRef,
+    pub runtime_started_at_ms: u64,
     pub observation_revision: u64,
     pub last_healthy_at_ms: u64,
     pub contract: RuntimeSurfaceContract,
     pub readiness: RuntimeServiceReadinessEvidence,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeTaskExecution {
-    pub observation: RuntimeObservation,
-    pub exit_code: i32,
-    pub stdout: String,
-    pub stderr: String,
-    pub truncated: bool,
 }
 
 pub(super) fn valid_surface_segment(value: &str) -> bool {
