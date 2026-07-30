@@ -400,7 +400,7 @@ async fn catalog_page_stays_below_the_serialized_output_bound() {
         record.validate().unwrap();
         targets.push(TestTarget {
             target_name: record.archive.target_name.clone(),
-            custom: serde_json::to_value(record).unwrap(),
+            custom: Some(serde_json::to_value(record).unwrap()),
             archive,
         });
     }
@@ -462,7 +462,7 @@ fn catalog_repository(
             let record = catalog_record(target, spec, &archive);
             TestTarget {
                 target_name: record.archive.target_name.clone(),
-                custom: serde_json::to_value(record).unwrap(),
+                custom: Some(serde_json::to_value(record).unwrap()),
                 archive,
             }
         })

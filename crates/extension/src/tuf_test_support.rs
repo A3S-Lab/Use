@@ -29,7 +29,7 @@ pub(crate) struct TestRepository {
 pub(crate) struct TestTarget {
     pub(crate) archive: Vec<u8>,
     pub(crate) target_name: String,
-    pub(crate) custom: Value,
+    pub(crate) custom: Option<Value>,
 }
 
 impl TestRepository {
@@ -68,7 +68,7 @@ impl TestRepository {
             vec![TestTarget {
                 archive,
                 target_name,
-                custom,
+                custom: Some(custom),
             }],
             metadata_version,
             expires,
@@ -113,12 +113,18 @@ impl TestRepository {
         let mut target_routes = Vec::new();
         for target in targets {
             let target_sha256 = sha256(&target.archive);
+            let custom = target
+                .custom
+                .map(|metadata| json!({"a3s": metadata}))
+                .unwrap_or_else(
+                    || json!({"a3sPlanning": {"schema": "a3s.use.plugin-planning-target.v1"}}),
+                );
             targets_map.insert(
                 target.target_name.clone(),
                 json!({
                     "length": target.archive.len(),
                     "hashes": {"sha256": target_sha256},
-                    "custom": {"a3s": target.custom}
+                    "custom": custom
                 }),
             );
             target_routes.push((

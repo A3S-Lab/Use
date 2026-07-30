@@ -9,7 +9,10 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use a3s_use_core::{UseError, UseResult, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
+use a3s_use_core::{
+    PluginPlanningBundle, UseError, UseResult, VerifiedCatalogProvenance,
+    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3,
+};
 use fs2::FileExt;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -17,7 +20,7 @@ use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use tough::{ExpirationEnforcement, HttpTransportBuilder, Limits, Prefix, Repository};
+use tough::{ExpirationEnforcement, HttpTransportBuilder, IntoVec, Limits, Prefix, Repository};
 use tough::{RepositoryLoader, TargetName};
 use url::Url;
 
@@ -298,6 +301,75 @@ impl PreparedRemotePackage {
         self.verified_catalog.as_ref()
     }
 
+    /// Download and verify only the small executable planning target.
+    ///
+    /// Legacy catalog records have no planning target and return `None`. A
+    /// catalog-v3 record must resolve to one exact separately signed TUF target.
+    pub async fn load_planning_bundle(&self) -> UseResult<Option<PluginPlanningBundle>> {
+        let Some(catalog) = self.verified_catalog.as_ref() else {
+            return Ok(None);
+        };
+        if catalog.record.schema != PLUGIN_CATALOG_SCHEMA_V3 {
+            return Ok(None);
+        }
+        let expected = catalog.record.planning.as_ref().ok_or_else(|| {
+            planning_target_error("The catalog-v3 record omitted its planning target.")
+        })?;
+        let target_name = TargetName::new(expected.target_name.clone()).map_err(|_| {
+            planning_target_error("The catalog-v3 planning target name is invalid.")
+        })?;
+        if target_name.raw() != target_name.resolved() {
+            return Err(planning_target_error(
+                "The catalog-v3 planning target path is not portable.",
+            ));
+        }
+        let target = self
+            .repository
+            .all_targets()
+            .find(|(name, _)| *name == &target_name)
+            .map(|(_, target)| target)
+            .ok_or_else(|| {
+                planning_target_error(
+                    "The catalog-v3 planning target is absent from signed TUF metadata.",
+                )
+            })?;
+        let signed_digest = format!("sha256:{}", hex_lower(target.hashes.sha256.as_ref()));
+        if target.length != expected.length
+            || signed_digest != expected.sha256
+            || target.custom.contains_key(REGISTRY_METADATA_KEY)
+        {
+            return Err(planning_target_error(
+                "The signed TUF planning target does not match the catalog evidence.",
+            ));
+        }
+
+        let stream = self
+            .repository
+            .read_target(&target_name)
+            .await
+            .map_err(|error| {
+                planning_target_error(format!(
+                    "Failed to read the signed TUF planning target: {error}"
+                ))
+            })?
+            .ok_or_else(|| {
+                planning_target_error("The signed TUF planning target disappeared during download.")
+            })?;
+        let bytes = stream.into_vec().await.map_err(|error| {
+            planning_target_error(format!(
+                "Failed to download and verify the TUF planning target: {error}"
+            ))
+        })?;
+        PluginPlanningBundle::from_catalog_target(&bytes, catalog)
+            .map(Some)
+            .map_err(|error| {
+                planning_target_error(format!(
+                    "The signed plugin planning bundle is invalid: {}",
+                    error.message
+                ))
+            })
+    }
+
     pub async fn download(self) -> UseResult<DownloadedRemotePackage> {
         let temporary = tokio::task::spawn_blocking(tempfile::tempdir)
             .await
@@ -342,6 +414,10 @@ impl PreparedRemotePackage {
             _temporary: temporary,
         })
     }
+}
+
+fn planning_target_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.extension.registry_planning_target_invalid", message)
 }
 
 /// One downloaded archive kept alive through extension activation.
