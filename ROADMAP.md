@@ -455,12 +455,23 @@ Implementation status (in progress 2026-07-30):
 - completed M5G: key authorization by scope, package, and immutable package
   digest so N and candidate N+1 grants can coexist during blue/green upgrade
   without prematurely deauthorizing N;
-- pending: validated ACL policy and plan-to-grant resolution,
-  secret-reference adapters, filesystem/network/child-process enforcement,
-  durable binding orchestration, streaming/file-backed large Task output, the
-  actual MCP initialize client adapter, stdio supervision, Gateway route
-  revocation, binding-store cleanup orchestration, and scope-aware
-  capability/session snapshot wiring.
+- completed M5H-A: define canonical grant-proposal and user-confirmation
+  contracts that avoid circular plan/confirmation digests while binding the
+  operation, exact plan, package generation, resolved permissions, policy,
+  actor, and review lifetime;
+- completed M5H-A: deterministically finalize `allow` proposals without
+  confirmation and `ask` proposals only with exact user evidence, rejecting
+  substitution, future/expired confirmation, secret-bearing agent proposals,
+  and ceiling escalation;
+- completed M5H-A: verify the proposal-to-final-grant-to-durable-store path in
+  a cross-crate integration test;
+- pending: validated ACL policy, operation-plan schema support for
+  multi-package grant proposals, full grant/revoke/no-op transition
+  resolution, secret-reference adapters, filesystem/network/child-process
+  enforcement, durable binding orchestration, streaming/file-backed large
+  Task output, the actual MCP initialize client adapter, stdio supervision,
+  Gateway route revocation, binding-store cleanup orchestration, and
+  scope-aware capability/session snapshot wiring.
 
 Deliverables:
 

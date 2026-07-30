@@ -649,8 +649,19 @@ Writes are bounded, atomic, cross-process locked, symlink-checked, monotonic,
 and exact-ownership guarded. Active resolution revalidates the current package
 digest, signed permission ceiling, and lifetime. Separate digest keys let N and
 candidate N+1 grants coexist during a blue/green upgrade; capability
-publication, not mere grant presence, controls visibility. Validated ACL policy
-and plan-to-grant resolution remain pending.
+publication, not mere grant presence, controls visibility.
+
+Grant creation uses a two-phase canonical contract. A
+`a3s.use.plugin-workspace-grant-proposal.v1` proposal binds the operation,
+scope, exact package generation, resolved permissions, policy decision, and
+review lifetime without pretending that confirmation already exists. For an
+`ask` decision, a user confirmation then binds both the reviewed plan digest
+and proposal digest under `a3s.use.plugin-grant-confirmation.v1`; apply
+deterministically finalizes the grant and stores only the confirmation digest.
+This removes the plan/confirmation digest cycle and rejects substitution,
+future, or expired evidence. Validated ACL policy, multi-package proposal
+embedding in operation plans, and complete grant-transition resolution remain
+pending.
 
 ```bash
 a3s-use capability snapshot --json

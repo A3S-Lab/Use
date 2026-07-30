@@ -29,7 +29,7 @@ flowchart TD
     resolveInstall["Resolve exact package and dependency digests<br/>Action: install"]
     resolveUpgrade["Resolve N+1, permission diff, dependencies,<br/>and provider requirements<br/>Action: upgrade"]
     resolveUninstall["Resolve owned resources, workspace impact,<br/>leases, and retained data<br/>Action: uninstall"]
-    buildPlan["Persist canonical expiring plan and allocate operationId<br/>Bind registry root, metadata versions, digests,<br/>scope, grants, provider evidence, and impact"]
+    buildPlan["Persist canonical expiring plan and allocate operationId<br/>Bind registry root, metadata versions, digests,<br/>scope, grant proposals, provider evidence, and impact"]
   end
 
   command -- "Search / inspect / install" --> catalog
@@ -46,6 +46,7 @@ flowchart TD
   subgraph authorization["2. Authorization and immutable apply"]
     policy{"ACL policy decision"}
     confirmation{"User confirms the exact plan?"}
+    confirmationEvidence["Persist confirmation evidence binding<br/>planDigest + each grant proposal digest"]
     denied["Denied or cancelled<br/>No mutation"]
     apply["Apply with operationId + canonical planDigest"]
     loadPlan["Load the immutable reviewed plan<br/>from the durable manager store"]
@@ -54,6 +55,7 @@ flowchart TD
     reresolve["Repeat trust, dependency, permission,<br/>provider, ownership, and impact resolution"]
     exact{"Still exactly matches the plan?"}
     drift["Reject expired or changed plan<br/>Require a new review"]
+    finalizeProposals["Deterministically finalize validated grant proposals<br/>No side effect or package-controlled input"]
     intent["Persist durable operation intent<br/>and per-surface idempotency keys"]
     plannedAction{"Planned action"}
   end
@@ -62,7 +64,8 @@ flowchart TD
   policy -- "deny" --> denied
   policy -- "ask" --> confirmation
   confirmation -- "No" --> denied
-  confirmation -- "Yes" --> apply
+  confirmation -- "Yes" --> confirmationEvidence
+  confirmationEvidence --> apply
   policy -- "allow within every ceiling" --> apply
   apply --> loadPlan
   loadPlan --> resultExists
@@ -72,7 +75,8 @@ flowchart TD
   reresolve --> exact
   exact -- "No" --> drift
   drift --> command
-  exact -- "Yes" --> intent
+  exact -- "Yes" --> finalizeProposals
+  finalizeProposals --> intent
   intent --> plannedAction
 
   subgraph packageInstall["3. Package installation or upgrade staging"]
@@ -294,7 +298,7 @@ flowchart TD
   classDef runtime fill:#fff8e1,stroke:#f9a825,color:#5d4037;
   class ready,degraded,installedDisabled,removed,keepPrevious,keepPreviousDisabled stable;
   class denied,drift,rejectPackage,rejectUse,broken failure;
-  class buildPlan,intent,toggleIntent,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
+  class buildPlan,confirmationEvidence,intent,toggleIntent,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
   class taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,removeRuntime runtime;
 ```
 
@@ -415,6 +419,10 @@ trusted registry root
   -> manifest and surface content digests
   -> release descriptor digest
   -> signed permission ceiling
+  -> canonical workspace grant proposal
+  -> immutable operation plan digest
+  -> user confirmation digest for ask decisions
+  -> finalized workspace grant digest
   -> exact-generation workspace grant receipt
   -> executable or image artifact digest
   -> Runtime semantics digest
@@ -454,6 +462,17 @@ narrow, network hosts stay exact, ports/methods/secrets may only be removed,
 resource values may only decrease, and boolean authorities cannot change from
 false to true. Secret-bearing grants require an explicit user confirmation;
 agent grants containing secrets are invalid.
+
+Before persistence, `a3s.use.plugin-workspace-grant-proposal.v1` binds the
+operation, exact package generation, resolved permission subset, policy
+decision, and review window without claiming confirmation. An `allow` proposal
+finalizes at trusted apply time. An `ask` proposal requires a
+`a3s.use.plugin-grant-confirmation.v1` record created at the user boundary that
+binds the operation ID, immutable plan digest, proposal digest, user actor, and
+confirmation time. Finalization rejects plan/proposal substitution, future
+evidence, and expired review windows. This two-phase ordering avoids a circular
+digest between a pre-confirmation plan and a final grant containing
+confirmation evidence.
 
 Durable authorization uses two storage schemas:
 `a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision

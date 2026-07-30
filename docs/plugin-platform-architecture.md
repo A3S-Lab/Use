@@ -409,6 +409,24 @@ An agent grant cannot carry secret authority. Canonical grant and permission
 digests can be included directly in operation-plan workspace impacts and
 Runtime semantics evidence.
 
+Grant authorization has a two-phase digest graph:
+
+```text
+resolved permissions + policy
+  -> canonical grant proposal
+  -> immutable operation plan binds proposal digest
+  -> user confirmation binds plan digest + proposal digest
+  -> deterministic final grant binds confirmation digest
+```
+
+The proposal contains no premature confirmation claim. `allow` finalizes at
+trusted apply time without confirmation; `ask` requires an exact, in-window
+user confirmation record. This prevents the circular construction that would
+result if a pre-confirmation plan tried to contain the digest of a final grant
+whose own digest includes later confirmation evidence. Multi-package proposal
+embedding and transition ordering are still pending operation-plan schema
+work.
+
 Durable grant state is stored separately from package receipts at
 `<state-root>/grants/<scope-sha256>/<publisher>/<package>/<package-sha256>.json`.
 Each bounded record is either a revisioned

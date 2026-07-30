@@ -7,6 +7,7 @@ use crate::{UseError, UseResult};
 mod catalog;
 mod catalog_trust;
 mod grant;
+mod grant_resolution;
 mod manager;
 mod permission;
 mod plan;
@@ -20,6 +21,9 @@ pub use catalog::{
 };
 pub use catalog_trust::{VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
 pub use grant::{PluginWorkspaceGrant, WorkspaceGrantAuthority};
+pub use grant_resolution::{
+    PluginGrantConfirmation, PluginWorkspaceGrantProposal, WorkspaceGrantProposalAuthority,
+};
 pub use manager::{
     PluginManagerToolAnnotations, PluginManagerToolDefinition, PluginManagerToolset,
 };
@@ -40,6 +44,9 @@ pub const PLUGIN_CATALOG_SCHEMA: &str = "a3s.use.plugin-catalog.v1";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";
 pub const PLUGIN_OPERATION_PLAN_SCHEMA: &str = "a3s.use.plugin-operation-plan.v1";
 pub const PLUGIN_PERMISSION_SCHEMA: &str = "a3s.use.plugin-permissions.v1";
+pub const PLUGIN_GRANT_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-grant-confirmation.v1";
+pub const PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA: &str =
+    "a3s.use.plugin-workspace-grant-proposal.v1";
 pub const PLUGIN_WORKSPACE_GRANT_SCHEMA: &str = "a3s.use.plugin-workspace-grant.v1";
 pub const MAX_PLUGIN_CONTRACT_BYTES: usize = 512 * 1024;
 

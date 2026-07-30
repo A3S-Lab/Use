@@ -19,6 +19,8 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Plugin manifest | `a3s.extension/v3` | Named Skill, MCP, Tool, and UI surfaces |
 | Tool release | `a3s.use.tool-release.v1` | Immutable CLI Task or HTTP Service workload |
 | Permission ceiling | `a3s.use.plugin-permissions.v1` | Maximum authority per executable/UI surface |
+| Workspace grant proposal | `a3s.use.plugin-workspace-grant-proposal.v1` | Reviewable pre-confirmation resolved authority |
+| Grant confirmation | `a3s.use.plugin-grant-confirmation.v1` | User evidence binding an exact plan and proposal |
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Search and review metadata without package download |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
@@ -128,6 +130,28 @@ boolean execution/Service authorities, secret names, and UI methods/path
 prefixes are compared structurally. Secret-bearing grants are valid only for a
 user-confirmed `ask` decision; an agent grant cannot contain secret authority.
 The contract stores secret names but never values.
+
+### Proposal and confirmation
+
+Grant planning is intentionally two phase. A
+`PluginWorkspaceGrantProposal` contains the operation ID, scope, package ID and
+digest, signed ceiling digest, canonical resolved permissions, policy
+authority, proposal lifetime, and optional eventual grant expiry. It contains
+no confirmation claim. It is independently checked against the signed ceiling
+and has canonical JSON plus a cross-SDK SHA-256 golden.
+
+For `allow`, apply finalizes the proposal without confirmation at the trusted
+apply time. For `ask`, `PluginGrantConfirmation` must be created by the user
+confirmation boundary after review. It binds the operation ID, canonical plan
+digest, proposal digest, user actor, and confirmation time. Finalization
+rejects a different plan, proposal, operation, actor, future time, or expired
+review window, then places only the confirmation-record digest in the final
+grant.
+
+This ordering avoids a digest cycle: the plan can bind a proposal before a
+user decision exists, while the later confirmation binds both immutable
+objects. Untrusted package, Skill, Tool, MCP, or UI content cannot act as
+confirmation evidence.
 
 ### Durable grant state
 
