@@ -569,6 +569,14 @@ origin. External bindings include their repository identity and required A3S
 Use range. The extension generation advances on receipt mutations; a content
 revision also changes when built-in readiness or projected content changes.
 
+Schema v3 extension bindings additionally expose a deterministic
+`reconciliation` snapshot with package desired/observed state, dependency
+levels, ownership, and every named surface's desired/observed state. The
+top-level `enabled` flag means callable, not merely requested: a named Skill is
+projected only after its required Tool and MCP closure is prepared or healthy.
+Until the corresponding Runtime, MCP, or UI host adapter submits real evidence,
+that surface remains `pending` and cannot make the plugin ready.
+
 ```bash
 a3s-use capability snapshot --json
 a3s-use capability watch \

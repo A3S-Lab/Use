@@ -7,10 +7,18 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "extensions")]
+use a3s_use_core::PluginSurfaceKind;
 use a3s_use_core::{Readiness, UseError, UseResult};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
+
+#[cfg(feature = "extensions")]
+use crate::surface_reconciler::{
+    reconcile, PluginDesiredState, PluginObservedState, SurfaceObservations,
+    SurfaceReconcileSnapshot,
+};
 
 const SCHEMA_VERSION: u32 = 1;
 const WATCH_INTERVAL: Duration = Duration::from_millis(100);
@@ -94,6 +102,9 @@ pub(crate) struct CapabilityBinding {
     origin: CapabilityOrigin,
     enabled: bool,
     readiness: Readiness,
+    #[cfg(feature = "extensions")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reconciliation: Option<SurfaceReconcileSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     package_root: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -176,6 +187,8 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             origin: CapabilityOrigin::BuiltIn,
             enabled: true,
             readiness: diagnostic.readiness,
+            #[cfg(feature = "extensions")]
+            reconciliation: None,
             package_root,
             requires_use: None,
             repository: None,
@@ -197,6 +210,8 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             origin: CapabilityOrigin::BuiltIn,
             enabled: false,
             readiness: Readiness::Missing,
+            #[cfg(feature = "extensions")]
+            reconciliation: None,
             package_root: None,
             requires_use: None,
             repository: None,
@@ -230,6 +245,8 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             origin: CapabilityOrigin::BuiltIn,
             enabled: true,
             readiness: diagnostic.readiness,
+            #[cfg(feature = "extensions")]
+            reconciliation: None,
             package_root,
             requires_use: None,
             repository: None,
@@ -254,6 +271,8 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             origin: CapabilityOrigin::BuiltIn,
             enabled: false,
             readiness: Readiness::Missing,
+            #[cfg(feature = "extensions")]
+            reconciliation: None,
             package_root: None,
             requires_use: None,
             repository: None,
@@ -274,6 +293,8 @@ fn box_capability() -> CapabilityBinding {
         origin: CapabilityOrigin::BuiltIn,
         enabled: diagnostic.readiness == Readiness::Ready,
         readiness: diagnostic.readiness,
+        #[cfg(feature = "extensions")]
+        reconciliation: None,
         package_root: None,
         requires_use: None,
         repository: None,
@@ -449,92 +470,211 @@ async fn project_extensions(
         {
             return Ok(None);
         }
+        capabilities.push(project_extension(&extension, surfaces).await?);
+    }
+    Ok(Some(capabilities))
+}
 
-        let compatible = extension.supports_use_version(env!("CARGO_PKG_VERSION"));
-        let active = receipt.enabled && compatible;
-        let mcp = active
-            .then(|| {
-                extension.manifest.mcp.as_ref().map(|surface| McpSurface {
-                    target: receipt.package_id.clone(),
-                    transport: match surface.transport {
-                        a3s_use_extension::McpTransport::Stdio => McpTransport::Stdio,
-                        a3s_use_extension::McpTransport::StreamableHttp => {
-                            McpTransport::StreamableHttp
-                        }
-                    },
-                })
-            })
-            .flatten();
-        let mut skills = Vec::new();
-        if active {
-            if let Some(path) = extension.skill_path() {
-                skills.push(skill_surface(path).await?);
-            }
-        }
-        let mut activity_bar = Vec::new();
-        for contribution in extension
-            .manifest
-            .contributes
-            .activity_bar
-            .iter()
-            .filter(|_| active)
-        {
-            let mut styles = Vec::with_capacity(contribution.styles.len());
-            for path in &contribution.styles {
-                styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
-            }
-            let mut scripts = Vec::with_capacity(contribution.scripts.len());
-            for path in &contribution.scripts {
-                scripts.push(
-                    activity_asset(receipt.package_root.join(path), "text/javascript").await?,
-                );
-            }
-            activity_bar.push(ActivityBarContribution {
-                id: contribution.id.clone(),
-                title: contribution.title.clone(),
-                description: contribution.description.clone(),
-                icon: contribution.icon.clone(),
-                entry: activity_asset(receipt.package_root.join(&contribution.entry), "text/html")
-                    .await?,
-                styles,
-                scripts,
-                skill: contribution.skill.clone(),
-                order: contribution.order,
-            });
-        }
-        capabilities.push(CapabilityBinding {
-            id: receipt.component_id.clone(),
-            route: receipt.route.clone(),
-            version: receipt.version.clone(),
-            origin: CapabilityOrigin::Extension,
-            enabled: active,
-            readiness: if active {
+#[cfg(feature = "extensions")]
+async fn project_extension(
+    extension: &a3s_use_extension::InstalledExtension,
+    surfaces: Vec<String>,
+) -> UseResult<CapabilityBinding> {
+    project_extension_for_host(extension, surfaces, env!("CARGO_PKG_VERSION")).await
+}
+
+#[cfg(feature = "extensions")]
+async fn project_extension_for_host(
+    extension: &a3s_use_extension::InstalledExtension,
+    surfaces: Vec<String>,
+    host_version: &str,
+) -> UseResult<CapabilityBinding> {
+    let receipt = &extension.receipt;
+    let compatible = extension.supports_use_version(host_version);
+    let reconciliation = if extension.manifest.schema_version == 3 {
+        Some(reconcile(
+            &extension.manifest,
+            if receipt.enabled {
+                PluginDesiredState::Enabled
+            } else {
+                PluginDesiredState::InstalledDisabled
+            },
+            compatible,
+            &SurfaceObservations::new(),
+        )?)
+    } else {
+        None
+    };
+    let active = receipt.enabled
+        && compatible
+        && reconciliation
+            .as_ref()
+            .is_none_or(|snapshot| snapshot.capability_ready);
+    let readiness = reconciliation.as_ref().map_or_else(
+        || {
+            if active {
                 Readiness::Ready
             } else if !compatible {
                 Readiness::Broken
             } else {
                 Readiness::Unknown
-            },
-            package_root: Some(receipt.package_root.clone()),
-            requires_use: extension.manifest.requires_use.clone(),
-            repository: extension.manifest.repository.as_ref().map(|repository| {
-                RepositoryBinding {
-                    url: repository.url.clone(),
-                    revision: repository.revision.clone(),
+            }
+        },
+        |snapshot| match snapshot.observed {
+            PluginObservedState::Ready | PluginObservedState::Degraded => Readiness::Ready,
+            PluginObservedState::Broken | PluginObservedState::Incompatible => Readiness::Broken,
+            PluginObservedState::Installed
+            | PluginObservedState::Reconciling
+            | PluginObservedState::Draining
+            | PluginObservedState::Removed => Readiness::Unknown,
+        },
+    );
+    let mcp = active
+        .then(|| {
+            extension.manifest.mcp.as_ref().map(|surface| McpSurface {
+                target: receipt.package_id.clone(),
+                transport: match surface.transport {
+                    a3s_use_extension::McpTransport::Stdio => McpTransport::Stdio,
+                    a3s_use_extension::McpTransport::StreamableHttp => McpTransport::StreamableHttp,
+                },
+            })
+        })
+        .flatten();
+    let mut skills = Vec::new();
+    if active {
+        if let Some(snapshot) = &reconciliation {
+            for skill in &extension.manifest.skills {
+                if snapshot.publishes(PluginSurfaceKind::Skill, &skill.id) {
+                    skills.push(skill_surface(receipt.package_root.join(&skill.path)).await?);
                 }
-            }),
-            surfaces,
-            mcp,
-            skills,
-            activity_bar,
+            }
+        } else if let Some(path) = extension.skill_path() {
+            skills.push(skill_surface(path).await?);
+        }
+    }
+    let mut activity_bar = Vec::new();
+    for contribution in extension
+        .manifest
+        .contributes
+        .activity_bar
+        .iter()
+        .filter(|_| active)
+    {
+        let mut styles = Vec::with_capacity(contribution.styles.len());
+        for path in &contribution.styles {
+            styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
+        }
+        let mut scripts = Vec::with_capacity(contribution.scripts.len());
+        for path in &contribution.scripts {
+            scripts.push(activity_asset(receipt.package_root.join(path), "text/javascript").await?);
+        }
+        activity_bar.push(ActivityBarContribution {
+            id: contribution.id.clone(),
+            title: contribution.title.clone(),
+            description: contribution.description.clone(),
+            icon: contribution.icon.clone(),
+            entry: activity_asset(receipt.package_root.join(&contribution.entry), "text/html")
+                .await?,
+            styles,
+            scripts,
+            skill: contribution.skill.clone(),
+            order: contribution.order,
         });
     }
-    Ok(Some(capabilities))
+    Ok(CapabilityBinding {
+        id: receipt.component_id.clone(),
+        route: receipt.route.clone(),
+        version: receipt.version.clone(),
+        origin: CapabilityOrigin::Extension,
+        enabled: active,
+        readiness,
+        reconciliation,
+        package_root: Some(receipt.package_root.clone()),
+        requires_use: extension.manifest.requires_use.clone(),
+        repository: extension
+            .manifest
+            .repository
+            .as_ref()
+            .map(|repository| RepositoryBinding {
+                url: repository.url.clone(),
+                revision: repository.revision.clone(),
+            }),
+        surfaces,
+        mcp,
+        skills,
+        activity_bar,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "extensions")]
+    const SKILL_ONLY_PLUGIN: &str = r#"
+extension "acme/guide" {
+  schema_version = 3
+  version        = "1.0.0"
+  route          = "guide"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read"]
+
+  repository {
+    url      = "https://github.com/acme/guide"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  skill "guide" {
+    path          = "skills/guide/SKILL.md"
+    requires_tool = []
+    requires_mcp  = []
+    optional      = false
+  }
+}
+"#;
+
+    #[cfg(feature = "extensions")]
+    const LEGACY_CLI_PLUGIN: &str = r#"
+extension "acme/slack" {
+  schema_version = 2
+  version        = "1.0.0"
+  route          = "slack"
+  requires_use   = ">=0.2.0, <0.3.0"
+  actions        = ["read"]
+
+  repository {
+    url = "https://github.com/acme/slack"
+  }
+
+  cli {
+    executable  = "bin/a3s-use-acme-slack"
+    json_output = true
+  }
+}
+"#;
+
+    #[cfg(feature = "extensions")]
+    fn installed_extension(
+        manifest: a3s_use_extension::ExtensionManifest,
+        package_root: PathBuf,
+        enabled: bool,
+    ) -> a3s_use_extension::InstalledExtension {
+        let receipt = a3s_use_extension::ExtensionReceipt {
+            schema_version: 1,
+            package_id: manifest.package_id.clone(),
+            component_id: format!("use/{}", manifest.route),
+            route: manifest.route.clone(),
+            version: manifest.version.clone(),
+            package_root,
+            manifest_sha256: "0".repeat(64),
+            package_sha256: None,
+            trust: a3s_use_extension::ExtensionTrust::LocalExplicit,
+            registry: None,
+            installed_at_unix: 0,
+            enabled,
+        };
+        a3s_use_extension::InstalledExtension { receipt, manifest }
+    }
 
     #[tokio::test]
     async fn built_ins_are_projected_without_extension_identity() {
@@ -644,6 +784,101 @@ mod tests {
         capability.activity_bar[0].entry = second;
         let second_revision = revision(&[capability]).unwrap();
         assert_ne!(first_revision, second_revision);
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn schema_three_projects_only_dependency_ready_named_skills() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("skills").join("guide").join("SKILL.md");
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&path, b"# Guide\n").await.unwrap();
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_ONLY_PLUGIN).unwrap();
+        let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        let surfaces = extension
+            .surfaces()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        let binding = project_extension_for_host(&extension, surfaces, "0.3.0")
+            .await
+            .unwrap();
+        let reconciliation = binding.reconciliation.as_ref().unwrap();
+
+        assert!(binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Ready);
+        assert_eq!(binding.skills.len(), 1);
+        assert_eq!(binding.skills[0].path, path);
+        assert_eq!(binding.skills[0].sha256.len(), 64);
+        assert_eq!(reconciliation.observed, PluginObservedState::Ready);
+        assert!(reconciliation.publishes(PluginSurfaceKind::Skill, "guide"));
+
+        let json = serde_json::to_value(&binding).unwrap();
+        assert_eq!(json["reconciliation"]["desired"], "enabled");
+        assert_eq!(json["reconciliation"]["observed"], "ready");
+        assert_eq!(
+            json["reconciliation"]["surfaces"][0]["surface"]["id"],
+            "guide"
+        );
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn legacy_extension_projection_remains_active_without_reconciliation() {
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(LEGACY_CLI_PLUGIN).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        let surfaces = extension
+            .surfaces()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        let binding = project_extension_for_host(&extension, surfaces, "0.2.1")
+            .await
+            .unwrap();
+
+        assert!(binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Ready);
+        assert!(binding.reconciliation.is_none());
+        assert!(serde_json::to_value(&binding)
+            .unwrap()
+            .get("reconciliation")
+            .is_none());
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn schema_three_with_unobserved_runtime_surfaces_stays_unpublished() {
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(include_str!(
+            "../crates/extension/fixtures/manifests/plugin-v3.acl"
+        ))
+        .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        let surfaces = extension
+            .surfaces()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        let binding = project_extension_for_host(&extension, surfaces, "0.3.0")
+            .await
+            .unwrap();
+        let reconciliation = binding.reconciliation.as_ref().unwrap();
+
+        assert!(!binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Unknown);
+        assert!(binding.skills.is_empty());
+        assert_eq!(reconciliation.observed, PluginObservedState::Reconciling);
+        assert!(!reconciliation.capability_ready);
+        assert!(reconciliation
+            .surfaces
+            .iter()
+            .all(|surface| !surface.published));
     }
 
     #[tokio::test]

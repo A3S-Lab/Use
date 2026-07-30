@@ -245,12 +245,22 @@ Implementation status (2026-07-30):
 - completed: plans and results carry explicit A3S Use capability
   generation/revision evidence, including a bounded unavailable state that
   cannot turn a successful mutation into a false failure;
+- completed in A3S Use: a deterministic, level-based schema v3 Surface
+  Reconciler calculates required dependency closure, per-surface
+  desired/observed state, aggregate ready/degraded/broken state, and atomic
+  publication eligibility without starting new Runtime workloads;
+- completed in A3S Use: capability snapshots expose the reconciliation
+  evidence and project named Skills only after every required Tool and MCP
+  dependency is prepared or healthy; missing Runtime, MCP, and UI adapters
+  remain explicit `pending` observations;
 - covered: typed complete-catalog mapping, lifecycle argument and digest
   validation, Use-owned JSON output, operation ID uniqueness, expiry,
   append-only replay, corruption rejection, cross-process locking, Web adapter
-  compilation, and a controlled Web Marketplace/invalid-plan smoke test;
-- pending: the first-class CLI adapter, Surface Reconciler, management MCP
-  adapter, and Unix Marketplace lifecycle E2E through the shared service.
+  compilation, deterministic surface graph/readiness fixtures, dependency-gated
+  Skill projection, and a controlled Web Marketplace/invalid-plan smoke test;
+- pending: the first-class CLI adapter, Runtime/MCP/UI observation and apply
+  adapters, management MCP adapter, and Unix Marketplace lifecycle E2E through
+  the shared service.
 
 Deliverables:
 

@@ -1,6 +1,6 @@
 # A3S Use Plugin Platform Development Plan
 
-- Status: planned
+- Status: implementation in progress
 - Planning baseline: 2026-07-30
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
@@ -104,6 +104,13 @@ observed state. It is not persisted as one mutable linear enum.
 Install and upgrade commit a new immutable generation. Disable and uninstall
 first remove the route from new callers, then acquire the exclusive drain
 lease. Existing calls retain the exact generation they accepted.
+
+The M2 implementation projects this model into schema v3 capability bindings.
+Its deterministic Surface Reconciler calculates dependency levels, required
+closure, host ownership, desired/observed surface state, aggregate readiness,
+and publication eligibility. It does not claim deployment: missing Runtime,
+MCP, and UI adapters remain explicit `pending` evidence, while a Skill can be
+projected only when its required dependency closure is already usable.
 
 ### Searchable catalog metadata
 
