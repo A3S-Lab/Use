@@ -92,12 +92,14 @@ The main gaps are:
 - no standard MCP management surface exposes plugin search or lifecycle plans;
 - package-level permission declarations are not precise enough to authorize
   native executable plugins without human review;
-- schema v3 named surfaces and Tool release contracts are implemented, but the
-  manager, reconciler, and Runtime adapters do not consume them yet;
+- schema v3 named surfaces and Tool release contracts are implemented and the
+  manager exposes their signed catalog projection, but the reconciler and
+  Runtime adapters do not deploy them yet;
 - Tool Task/Service deployment, binding, dependency readiness, and Runtime
   observation are not yet part of the package reconciler;
-- the Web adapter owns marketplace orchestration that must be reusable by CLI,
-  Web, and agent management surfaces;
+- the shared Plugin Manager now owns Marketplace and lifecycle orchestration,
+  but the user CLI adapter, management MCP adapter, idempotent operation
+  journal, and Surface Reconciler remain to be connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - official registry key operations and Windows Browser parity are not yet at
@@ -211,9 +213,32 @@ Exit criteria:
 - offline search uses only the last verified snapshot and reports its age;
 - catalog search has deterministic fixtures and output-size bounds.
 
-### M2 — Shared Plugin Manager application service
+### M2 — Shared Plugin Manager application service (in progress 2026-07-30)
 
 Estimated effort: 2–3 weeks
+
+Implementation status (2026-07-30):
+
+- completed in the umbrella CLI: a reusable typed `plugin_manager` application
+  service with one operation lock and centralized plan, apply, enable, and
+  disable process boundaries;
+- completed in the umbrella CLI: a bounded Marketplace read model joining
+  release bundles, complete signed catalog records, legacy TUF records, and an
+  immutable installed/enabled snapshot without package downloads;
+- completed: exact catalog snapshot checks across cached pagination and legacy
+  fallback, per-source verification errors, registry and item limits, stable
+  latest-release selection, and full catalog provenance/permission/surface
+  projection;
+- completed in Code Web: the Plugins feature is a thin HTTP adapter over the
+  shared manager and preserves the existing timeout, JSON-size, HTTP error, and
+  reviewed-plan behavior;
+- covered: typed complete-catalog mapping, lifecycle argument and digest
+  validation, Use-owned JSON output, Web adapter compilation, and a controlled
+  Web Marketplace/invalid-plan smoke test;
+- pending: the first-class CLI adapter, equivalent operation records,
+  generation/revision evidence, idempotent operation journal, Surface
+  Reconciler, management MCP adapter, and Unix Marketplace lifecycle E2E
+  through the shared service.
 
 Deliverables:
 
