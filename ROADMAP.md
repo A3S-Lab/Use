@@ -530,7 +530,16 @@ Implementation status (in progress 2026-07-30):
   before first intent, require and persist exact confirmation for `ask`, and
   resume existing intent from recorded authority without stranding partial
   side effects;
-- pending: A3S Use planner emission of the complete operation-plan draft,
+- completed M5J-C-C-A in `a3s-use-core`: define the strict planner-owned
+  `a3s.use.plugin-operation-plan-draft.v1` contract without operation identity,
+  lifetime, scope, actor, policy, or confirmation authority; bind those fields
+  only in the host to produce a validated final operation plan;
+- completed M5J-C-C-A in `a3s-use-core`: derive package surface changes and
+  plan secret changes from exact before/after states, and reject incomplete
+  Runtime provider evidence before a draft can be emitted;
+- pending: feed verified registry/package records, installed receipts,
+  explicit Runtime provider selection, and current capability state into the
+  draft and emit it from the live umbrella plan,
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,
   filesystem/network/child-process enforcement, durable binding

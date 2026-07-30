@@ -15,6 +15,33 @@ use super::{
 };
 
 impl PlannedPackageTransition {
+    /// Build one exact package transition and derive its complete surface delta.
+    pub fn resolved(
+        package_id: impl Into<String>,
+        role: super::PlanPackageRole,
+        change: PlanPackageChangeKind,
+        before: Option<PlannedPackageState>,
+        after: Option<PlannedPackageState>,
+        source: Option<PluginPlanSource>,
+    ) -> UseResult<Self> {
+        let surfaces = if change == PlanPackageChangeKind::Retain {
+            Vec::new()
+        } else {
+            surface_changes(before.as_ref(), after.as_ref())?
+        };
+        let transition = Self {
+            package_id: package_id.into(),
+            role,
+            change,
+            before,
+            after,
+            source,
+            surfaces,
+        };
+        transition.validate()?;
+        Ok(transition)
+    }
+
     pub(super) fn validate(&self) -> UseResult<()> {
         if !valid_package_id(&self.package_id) || self.surfaces.len() > MAX_PLUGIN_PLAN_ITEMS {
             return Err(plan_error("A planned package transition is invalid."));
@@ -61,34 +88,7 @@ impl PlannedPackageTransition {
         if self.change == PlanPackageChangeKind::Retain {
             return Ok(());
         }
-        let before = surface_digests(self.before.as_ref())?;
-        let after = surface_digests(self.after.as_ref())?;
-        let references = before
-            .keys()
-            .chain(after.keys())
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        let mut expected = Vec::with_capacity(references.len());
-        for surface in references {
-            let before_digest = before.get(&surface).cloned();
-            let after_digest = after.get(&surface).cloned();
-            let change = match (before_digest.is_some(), after_digest.is_some()) {
-                (false, true) => SurfaceChangeKind::Add,
-                (true, false) => SurfaceChangeKind::Remove,
-                (true, true) => SurfaceChangeKind::Replace,
-                (false, false) => {
-                    return Err(plan_error(
-                        "A planned surface change has no before or after descriptor.",
-                    ));
-                }
-            };
-            expected.push(PlannedSurfaceChange {
-                surface,
-                change,
-                before_digest,
-                after_digest,
-            });
-        }
+        let expected = surface_changes(self.before.as_ref(), self.after.as_ref())?;
         if self.surfaces != expected {
             return Err(plan_error(
                 "Planned surface changes do not equal the resolved package surface delta.",
@@ -96,6 +96,41 @@ impl PlannedPackageTransition {
         }
         Ok(())
     }
+}
+
+fn surface_changes(
+    before: Option<&PlannedPackageState>,
+    after: Option<&PlannedPackageState>,
+) -> UseResult<Vec<PlannedSurfaceChange>> {
+    let before = surface_digests(before)?;
+    let after = surface_digests(after)?;
+    let references = before
+        .keys()
+        .chain(after.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut expected = Vec::with_capacity(references.len());
+    for surface in references {
+        let before_digest = before.get(&surface).cloned();
+        let after_digest = after.get(&surface).cloned();
+        let change = match (before_digest.is_some(), after_digest.is_some()) {
+            (false, true) => SurfaceChangeKind::Add,
+            (true, false) => SurfaceChangeKind::Remove,
+            (true, true) => SurfaceChangeKind::Replace,
+            (false, false) => {
+                return Err(plan_error(
+                    "A planned surface change has no before or after descriptor.",
+                ));
+            }
+        };
+        expected.push(PlannedSurfaceChange {
+            surface,
+            change,
+            before_digest,
+            after_digest,
+        });
+    }
+    Ok(expected)
 }
 
 impl PlannedPackageState {

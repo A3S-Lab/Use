@@ -319,13 +319,25 @@ then persists a validated `PluginOperationPlanEnvelope`. The envelope digest
 is the reviewed Manager identity. The upstream component digest is stored
 separately and passed only to the existing mutation child.
 
+The planner boundary is
+`a3s.use.plugin-operation-plan-draft.v1`. Its strict JSON shape contains only
+action, package and component identity, exact package transitions, Runtime
+provider evidence, workspace impacts, aggregate impact, and durable state
+evidence. Operation identity, timestamps, scope, actor, policy decision,
+policy digest, confirmation requirements, and derived secret changes are not
+accepted from the planner. The host supplies its fields through
+`PluginOperationPlanBinding`; binding derives the secret delta and validates
+the final `a3s.use.plugin-operation-plan.v1`. The typed transition constructor
+likewise derives surface changes from exact before/after package states.
+
 Before first intent, apply reproduces current policy authority and an `ask`
 decision requires a matching `a3s.use.plugin-operation-confirmation.v1` from a
 trusted user-facing adapter. The confirmation is stored in the append-only
 intent. Recovery validates that recorded evidence rather than abandoning
 already-started side effects after a later policy change. Legacy
 component-only records remain compatible. A3S Use planner emission of the
-complete draft remains pending.
+complete draft remains pending on registry, receipt, Runtime provider, and
+capability-state wiring.
 
 Each reviewed Manager record binds the actor supplied by its trusted adapter:
 CLI and Web select `user`, while management MCP selects `agent`. Untrusted

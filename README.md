@@ -715,8 +715,17 @@ user-reviewed apply identity; the older component digest is stored separately
 and used only for the existing mutation child. A new apply intent rechecks
 policy and persists exact confirmation for `ask`. Recovery of an existing
 intent reuses that durable evidence. Legacy component-only records remain
-compatible. Emitting the complete draft from the A3S Use planner is still
-pending.
+compatible.
+
+`a3s-use-core` now defines the strict
+`a3s.use.plugin-operation-plan-draft.v1` boundary. A draft can carry only
+planner-owned package transitions, provider proofs, impact, and state
+evidence. It cannot serialize operation identity, lifetime, actor, policy,
+confirmation requirements, or scope. Binding those host-owned fields derives
+the exact secret delta and produces the validated final plan. Package
+transition construction also derives the exact surface delta. Wiring the
+registry, installed receipts, Runtime selection, and capability snapshot into
+this draft remains pending.
 
 Reviewed Manager records now also bind the actor selected by the trusted host
 adapter. CLI and Web create user plans; management MCP creates agent plans.

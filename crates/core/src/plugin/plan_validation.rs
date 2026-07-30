@@ -140,28 +140,7 @@ impl PluginOperationPlan {
                 "Planned secret changes must be sorted and unique.",
             ));
         }
-        let mut before = BTreeSet::new();
-        let mut after = BTreeSet::new();
-        for package in &self.packages {
-            collect_secrets(&package.package_id, package.before.as_ref(), &mut before);
-            collect_secrets(&package.package_id, package.after.as_ref(), &mut after);
-        }
-        let mut expected = Vec::new();
-        for (surface, secret_name) in before.difference(&after) {
-            expected.push(PlannedSecretChange {
-                surface: surface.clone(),
-                secret_name: secret_name.clone(),
-                change: PlannedSecretChangeKind::Revoke,
-            });
-        }
-        for (surface, secret_name) in after.difference(&before) {
-            expected.push(PlannedSecretChange {
-                surface: surface.clone(),
-                secret_name: secret_name.clone(),
-                change: PlannedSecretChangeKind::Grant,
-            });
-        }
-        expected.sort();
+        let expected = planned_secret_changes(&self.packages);
         if self.secret_changes != expected {
             return Err(plan_error(
                 "Planned secret changes do not equal the resolved permission delta.",
@@ -277,6 +256,34 @@ impl PluginOperationPlan {
         }
         Ok(())
     }
+}
+
+pub(super) fn planned_secret_changes(
+    packages: &[super::PlannedPackageTransition],
+) -> Vec<PlannedSecretChange> {
+    let mut before = BTreeSet::new();
+    let mut after = BTreeSet::new();
+    for package in packages {
+        collect_secrets(&package.package_id, package.before.as_ref(), &mut before);
+        collect_secrets(&package.package_id, package.after.as_ref(), &mut after);
+    }
+    let mut changes = Vec::new();
+    for (surface, secret_name) in before.difference(&after) {
+        changes.push(PlannedSecretChange {
+            surface: surface.clone(),
+            secret_name: secret_name.clone(),
+            change: PlannedSecretChangeKind::Revoke,
+        });
+    }
+    for (surface, secret_name) in after.difference(&before) {
+        changes.push(PlannedSecretChange {
+            surface: surface.clone(),
+            secret_name: secret_name.clone(),
+            change: PlannedSecretChangeKind::Grant,
+        });
+    }
+    changes.sort();
+    changes
 }
 
 impl PlannedProviderEvidence {
