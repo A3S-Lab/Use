@@ -167,7 +167,13 @@ impl PluginPlanningBundle {
         Ok(canonical_digest(&self.canonical_bytes()?))
     }
 
-    fn validate_catalog_binding(&self, catalog: &VerifiedPluginCatalogRecord) -> UseResult<()> {
+    /// Recheck typed planning evidence against the exact verified catalog.
+    ///
+    /// Repository clients use this after transporting a previously verified
+    /// bundle through another digest-bound plan or broker boundary.
+    pub fn validate_catalog_binding(&self, catalog: &VerifiedPluginCatalogRecord) -> UseResult<()> {
+        self.validate()?;
+        catalog.validate()?;
         let record = &catalog.record;
         if self.package_id != record.package_id
             || self.version != record.version
