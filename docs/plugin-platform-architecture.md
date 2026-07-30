@@ -690,9 +690,12 @@ retains the verified catalog record, the shared Manager joins it to the exact
 registry target and verified capability snapshot, and host binding adds policy
 authority. A durable monotonic planner revision detects state drift between
 review and apply and advances idempotently after successful child mutation.
-Executable or permission-bearing packages fail closed until explicit Runtime
-provider selection and the grant saga are connected; upgrade and uninstall
-also wait for the installed-receipt and active-surface join.
+The same safe slice now covers registry upgrade and uninstall by joining the
+package-specific installed catalog and receipt to the compact capability
+snapshot and umbrella current version, then deriving exact replace or remove
+transitions. Executable or permission-bearing packages fail closed until a
+signed executable planning bundle, explicit Runtime provider selection, and
+the grant saga are connected.
 
 ## Compatibility and Migration
 

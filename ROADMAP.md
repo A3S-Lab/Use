@@ -582,8 +582,14 @@ Implementation status (in progress 2026-07-30):
   package-specific installed planning evidence that joins a freshly validated
   receipt and complete catalog-v2 record to the same capability generation,
   revision, desired state, and dependency-closed active-surface inventory;
-- pending: consume package-specific installed evidence in live upgrade and
-  uninstall drafts, wire explicit Runtime provider assignments
+- completed M5J-C-C-E-C in the umbrella CLI: consume that evidence for
+  permission-free Skill/UI registry upgrades and uninstalls, match it to the
+  compact capability snapshot and umbrella current version, derive exact
+  replace/remove transitions and impact, and prevent catalog-v2 upgrades from
+  falling back when installed evidence is missing or drifted;
+- pending: define the signed planning bundle needed to carry complete
+  executable workload/release/artifact evidence without downloading the
+  package archive, then wire explicit Runtime provider assignments
   for Tool and MCP install drafts,
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,

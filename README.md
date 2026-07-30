@@ -761,8 +761,16 @@ Catalog-v1 plans remain compatible without claiming complete plugin evidence.
 
 Tool or MCP surfaces and any nonempty permission ceiling fail closed until the
 umbrella host supplies explicit Runtime provider assignments and the durable
-grant saga is connected. Upgrade and uninstall draft emission likewise still
-requires the package-specific installed receipt and active-surface join.
+grant saga is connected.
+
+The umbrella CLI now consumes package-specific installed planning evidence for
+permission-free Skill/UI registry upgrades and uninstalls. It matches the full
+catalog and receipt digest to the compact capability snapshot, exact
+generation/revision, desired state, selected surfaces, component identity, and
+umbrella current version. Upgrade derives a replace transition against the
+exact verified candidate; uninstall derives a remove transition and retained
+data impact. A catalog-v2 upgrade cannot fall back to a component-only mutation
+when installed evidence is missing or drifted.
 
 The compatible `a3s.use.plugin-catalog.v2` contract adds a mandatory signed
 manifest digest and explicit per-surface dependency edges. Catalog v1 remains

@@ -414,21 +414,26 @@ component-only records remain compatible. Registry install, replace, and
 remove transitions plus plan-ready installed receipt evidence are now
 available.
 
-The umbrella CLI emits and host-binds a complete live install draft for the
-safe first slice: a catalog-v2 package whose package surfaces are all
-permission-free Skill or UI surfaces. Its component plan carries the verified
-catalog record in the upstream digest and requires exact equality with the
-resolved registry target. Planning also binds verified capability generation
-and a durable monotonic planner-state revision. Apply rechecks that revision
-before intent and advances it atomically and idempotently after successful
-child mutation.
+The umbrella CLI emits and host-binds complete live install, registry-upgrade,
+and uninstall drafts for the safe first slice: a catalog-v2 package whose
+package surfaces are all permission-free Skill or UI surfaces. Install and
+upgrade component plans carry the verified candidate catalog in the upstream
+digest and require exact equality with the resolved registry target. Upgrade
+and uninstall also match `a3s.use.installed-plugin-plan-evidence.v1` to the
+compact capability snapshot and umbrella current version before deriving exact
+replace or remove transitions. Catalog-v2 upgrade fails closed instead of
+falling back when installed evidence is absent or drifted.
+
+Planning binds verified capability generation and a durable monotonic
+planner-state revision. Apply rechecks capability generation/revision and the
+planner revision before intent, then advances the planner revision atomically
+and idempotently after successful child mutation.
 
 Catalog-v1 component plans remain compatible without claiming a complete
 plugin plan. A catalog-v2 plan containing a Tool, MCP server, or any permission
 ceiling fails closed until the umbrella host provides explicit Runtime
-provider assignments and durable grant-saga evidence. Upgrade and uninstall
-drafts remain pending on the package-specific installed-receipt and
-active-surface join.
+provider assignments and durable grant-saga evidence. Registry no-op upgrades
+remain compatible component-only plans.
 
 Each reviewed Manager record binds the actor supplied by its trusted adapter:
 CLI and Web select `user`, while management MCP selects `agent`. Untrusted
