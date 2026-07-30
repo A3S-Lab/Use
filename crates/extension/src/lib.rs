@@ -24,6 +24,7 @@ mod source;
 mod surface_files;
 mod workspace_grant;
 mod workspace_grant_io;
+mod workspace_grant_snapshot;
 #[cfg(test)]
 mod workspace_grant_tests;
 

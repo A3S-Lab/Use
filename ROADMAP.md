@@ -477,6 +477,14 @@ Implementation status (in progress 2026-07-30):
 - completed M5H-B: resolve ordered candidate grants and exact delayed
   revocations with one monotonic next state revision, preserving N until N+1
   capability cutover;
+- completed M5I-A: build canonical scope grant snapshots directly from durable
+  receipts under the cross-process store lock, with exact path ownership,
+  deterministic package ordering, and bounds on publishers, packages, stored
+  generations, and active plan entries;
+- completed M5I-A: reject stale global revisions across both grants and
+  revocation tombstones, moved or malformed records, unknown layout, and
+  parallel granted generations for one package while safely ignoring
+  non-authoritative abandoned atomic-write temporary files;
 - pending: validated ACL policy, durable lifecycle application of a complete
   resolved grant change set, secret-reference adapters,
   filesystem/network/child-process enforcement, durable binding

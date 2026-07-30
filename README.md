@@ -651,6 +651,15 @@ digest, signed permission ceiling, and lifetime. Separate digest keys let N and
 candidate N+1 grants coexist during a blue/green upgrade; capability
 publication, not mere grant presence, controls visibility.
 
+The store can now produce the canonical scope snapshot consumed by planning.
+Enumeration runs under the grant-store lock, validates every directory and
+generation path, bounds publishers, packages, records, and active entries,
+checks both grant and tombstone revisions against the requested durable state,
+and emits exact receipt evidence in package order. An unfinished upgrade with
+two granted generations for one package fails as unstable until lifecycle
+recovery retires one generation; abandoned atomic-write temporary files carry
+no authority and are ignored.
+
 Grant creation uses a two-phase canonical contract. A
 `a3s.use.plugin-workspace-grant-proposal.v1` proposal binds the operation,
 scope, exact package generation, resolved permissions, policy decision, and
@@ -670,7 +679,7 @@ transitions, rejects extras or omissions, finalizes candidate grants in
 package order, and emits exact prior evidence for post-cutover revocation.
 `ask` apply additionally requires a canonical
 `a3s.use.plugin-operation-confirmation.v1` record even when an uninstall has no
-new proposal. Persisting an entire resolved change set through the lifecycle
+new proposal. Applying an entire resolved change set through the lifecycle
 saga and validated ACL policy remain pending.
 
 ```bash

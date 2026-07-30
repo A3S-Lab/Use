@@ -61,6 +61,7 @@ pub const PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA: &str =
     "a3s.use.plugin-workspace-grant-snapshot.v1";
 pub const PLUGIN_WORKSPACE_GRANT_SCHEMA: &str = "a3s.use.plugin-workspace-grant.v1";
 pub const MAX_PLUGIN_CONTRACT_BYTES: usize = 512 * 1024;
+pub const MAX_PLUGIN_PLAN_ITEMS: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

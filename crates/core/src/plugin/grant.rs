@@ -74,9 +74,24 @@ impl PluginWorkspaceGrant {
     }
 
     pub fn validate_identity(scope_id: &str, package_id: &str) -> UseResult<()> {
-        if !valid_machine_id(scope_id) || !valid_package_id(package_id) {
+        Self::validate_scope_id(scope_id)?;
+        Self::validate_package_id(package_id)?;
+        Ok(())
+    }
+
+    pub fn validate_package_id(package_id: &str) -> UseResult<()> {
+        if !valid_package_id(package_id) {
             return Err(grant_error(
-                "The plugin workspace grant scope or package identity is invalid.",
+                "The plugin workspace grant package identity is invalid.",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn validate_scope_id(scope_id: &str) -> UseResult<()> {
+        if !valid_machine_id(scope_id) {
+            return Err(grant_error(
+                "The plugin workspace grant scope identity is invalid.",
             ));
         }
         Ok(())

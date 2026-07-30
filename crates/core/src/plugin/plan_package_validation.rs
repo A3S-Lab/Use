@@ -7,17 +7,16 @@ use crate::UseResult;
 use super::plan::{
     plan_error, PlanPackageChangeKind, PlannedPackageState, PlannedPackageTransition,
     PlannedPluginRelease, PlannedSurfaceChange, PluginPlanSource, SurfaceChangeKind,
-    MAX_PLAN_ITEMS,
 };
 use super::validation::{valid_package_id, valid_sha256, valid_target};
 use super::{
     CatalogMcpTransport, CatalogSurface, PluginPermissionCeiling, PluginSurfaceKind,
-    PluginSurfaceRef, ToolWorkloadClass,
+    PluginSurfaceRef, ToolWorkloadClass, MAX_PLUGIN_PLAN_ITEMS,
 };
 
 impl PlannedPackageTransition {
     pub(super) fn validate(&self) -> UseResult<()> {
-        if !valid_package_id(&self.package_id) || self.surfaces.len() > MAX_PLAN_ITEMS {
+        if !valid_package_id(&self.package_id) || self.surfaces.len() > MAX_PLUGIN_PLAN_ITEMS {
             return Err(plan_error("A planned package transition is invalid."));
         }
         if let Some(before) = &self.before {
@@ -125,7 +124,7 @@ impl PlannedPluginRelease {
             || !valid_sha256(&self.manifest_sha256)
             || !valid_sha256(&self.permission_ceiling_digest)
             || self.surfaces.is_empty()
-            || self.surfaces.len() > MAX_PLAN_ITEMS
+            || self.surfaces.len() > MAX_PLUGIN_PLAN_ITEMS
         {
             return Err(plan_error("A planned plugin release identity is invalid."));
         }

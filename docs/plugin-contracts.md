@@ -197,6 +197,16 @@ upgrade prepares and health-checks N+1. The capability snapshot remains the
 visibility boundary. Once the snapshot switches and old leases drain, N is
 revoked without affecting N+1.
 
+Planning obtains `PluginWorkspaceGrantSnapshot` from a locked traversal of this
+store, not from package-declared metadata. The traversal validates the hashed
+scope root and every publisher/package/generation path, bounds all directory
+and record counts, and checks grant and tombstone revisions against the
+requested global state revision. Granted receipts become sorted exact
+evidence; tombstones remain revision evidence but do not become active grants.
+Two granted generations for one package make the scope unstable and block new
+planning until lifecycle recovery completes the interrupted cutover.
+Abandoned `.grant-*.tmp` files are non-authoritative and ignored.
+
 An observed record is evidence, not executable authority. Callers must use the
 active resolver, which rechecks the path identity, exact package digest,
 current signed permission ceiling, grant subset, and lifetime. A missing or

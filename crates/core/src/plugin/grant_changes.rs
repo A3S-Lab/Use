@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{UseError, UseResult};
 
-use super::plan::MAX_PLAN_ITEMS;
 use super::validation::{valid_machine_id, valid_package_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPackageChangeKind,
     PlanPolicyDecision, PlannedPackageState, PlannedPackageTransition, PluginGrantConfirmation,
     PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanEnvelope,
     PluginWorkspaceGrant, PluginWorkspaceGrantProposal, WorkspaceGrantAuthority,
-    PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+    MAX_PLUGIN_PLAN_ITEMS, PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
 const SNAPSHOT_ERROR: &str = "use.plugin.grant_snapshot_invalid";
@@ -87,7 +87,7 @@ impl PluginWorkspaceGrantSnapshot {
         if self.schema != PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA
             || !valid_machine_id(&self.scope_id)
             || self.state_revision == 0
-            || self.grants.len() > MAX_PLAN_ITEMS
+            || self.grants.len() > MAX_PLUGIN_PLAN_ITEMS
             || self
                 .grants
                 .windows(2)
@@ -151,7 +151,7 @@ impl PluginWorkspaceGrantChangeSet {
             || !valid_machine_id(&self.scope_id)
             || self.state_revision == 0
             || self.changes.is_empty()
-            || self.changes.len() > MAX_PLAN_ITEMS
+            || self.changes.len() > MAX_PLUGIN_PLAN_ITEMS
             || self
                 .before_snapshot_digest
                 .as_deref()

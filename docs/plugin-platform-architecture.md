@@ -450,13 +450,22 @@ prior receipt. Writes use a cross-process lock, durable atomic replacement,
 strict path and symlink checks, monotonic revision/time transitions, and
 exact-ownership revocation.
 
+The planning adapter snapshots a scope by traversing those records while
+holding the same cross-process lock used by writers. It validates every
+publisher, package, and generation path, enforces fixed traversal and active
+entry bounds, rejects a requested global revision older than either a grant or
+revocation tombstone, and orders evidence by package ID. Multiple granted
+generations for one package indicate an incomplete lifecycle transition; the
+snapshot fails closed until saga recovery retires the old or failed candidate
+generation. Atomic-write temporary files are never authorization evidence.
+
 The package digest is part of the storage key rather than only a field in one
 mutable package record. This permits N and candidate N+1 grants to coexist
 during blue/green preparation. A grant does not publish a capability: the
 scope-aware capability snapshot still selects the one visible generation.
-After the snapshot switches and leases drain, the old generation receives a
-revocation tombstone. ACL policy evaluation and plan-to-grant resolution remain
-separate lifecycle steps.
+After the capability snapshot switches and leases drain, the old generation
+receives a revocation tombstone. ACL policy evaluation and plan-to-grant
+resolution remain separate lifecycle steps.
 
 ## Runtime Integration
 

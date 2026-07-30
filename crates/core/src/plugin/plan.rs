@@ -10,7 +10,6 @@ use super::{
 
 pub(super) const PLAN_ERROR: &str = "use.plugin.plan_invalid";
 pub(super) const MAX_PLAN_LIFETIME_MS: u64 = 60 * 60 * 1000;
-pub(super) const MAX_PLAN_ITEMS: usize = 512;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

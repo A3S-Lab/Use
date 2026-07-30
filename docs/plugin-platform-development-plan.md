@@ -290,8 +290,11 @@ The workspace impact's before digest identifies a sorted active-grant snapshot;
 its after digest identifies a sorted change set covering root and dependency
 packages. Resolution derives required Add/Replace/Remove entries from the
 package plan and returns prepare-grant plus delayed-revoke phases. The
-lifecycle adapter must apply those phases idempotently around capability
-cutover and record partial progress in the operation saga.
+before snapshot is now built by a bounded, locked traversal of exact durable
+grant generations; stale tombstone/grant revisions and ambiguous parallel
+grants fail closed. The lifecycle adapter must still apply the resolved phases
+idempotently around capability cutover and record partial progress in the
+operation saga.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still

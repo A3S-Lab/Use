@@ -6,12 +6,12 @@ use super::plan::{
     plan_error, PlanActor, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
     PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScopeKind, PlannedPackageState,
     PlannedProviderEvidence, PlannedSecretChange, PlannedSecretChangeKind, PluginOperationAction,
-    PluginOperationPlan, PluginPlanSource, MAX_PLAN_ITEMS, MAX_PLAN_LIFETIME_MS,
+    PluginOperationPlan, PluginPlanSource, MAX_PLAN_LIFETIME_MS,
 };
 use super::validation::{
     strictly_sorted_unique, valid_machine_id, valid_package_id, valid_permission_name, valid_sha256,
 };
-use super::{PluginSurfaceKind, PLUGIN_OPERATION_PLAN_SCHEMA};
+use super::{PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA};
 
 impl PluginOperationPlan {
     pub fn validate(&self) -> UseResult<()> {
@@ -23,10 +23,10 @@ impl PluginOperationPlan {
             || self.expires_at_ms <= self.created_at_ms
             || self.expires_at_ms - self.created_at_ms > MAX_PLAN_LIFETIME_MS
             || self.packages.is_empty()
-            || self.packages.len() > MAX_PLAN_ITEMS
-            || self.secret_changes.len() > MAX_PLAN_ITEMS
-            || self.providers.len() > MAX_PLAN_ITEMS
-            || self.workspace_impacts.len() > MAX_PLAN_ITEMS
+            || self.packages.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self.secret_changes.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self.providers.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self.workspace_impacts.len() > MAX_PLUGIN_PLAN_ITEMS
         {
             return Err(plan_error(
                 "The plugin operation plan identity, lifetime, or item count is invalid.",

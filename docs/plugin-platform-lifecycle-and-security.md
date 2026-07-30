@@ -494,6 +494,16 @@ confirmation time. Resolution emits candidate grants for preparation and
 exact-current evidence for delayed retirement; persistence ordering remains a
 durable saga checkpoint around capability cutover.
 
+The before snapshot is read under the durable grant-store lock. Traversal is
+bounded and validates the hashed scope root plus every publisher, package, and
+generation path. Both receipts and revocation tombstones participate in stale
+state-revision detection. Only granted receipts become active evidence, sorted
+uniquely by package ID. If both N and N+1 remain granted after an interrupted
+operation, planning stops with an unstable-snapshot error until the saga
+recovers; it never guesses which generation capability publication selected.
+Abandoned atomic-write temporary files are ignored because they were never
+activated.
+
 Durable authorization uses two storage schemas:
 `a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision
 and `a3s.use.plugin-workspace-grant-revocation.v1` for a tombstone that binds

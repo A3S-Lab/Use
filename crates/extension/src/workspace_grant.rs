@@ -188,6 +188,10 @@ impl WorkspaceGrantStore {
         &self.root
     }
 
+    pub(super) fn state_root(&self) -> &Path {
+        &self.state_root
+    }
+
     pub async fn put(
         &self,
         receipt: &WorkspaceGrantReceipt,
@@ -308,7 +312,6 @@ impl WorkspaceGrantStore {
         if !valid_sha256(package_digest) {
             return Err(path_error());
         }
-        let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
         let generation_digest = package_digest
             .strip_prefix("sha256:")
             .ok_or_else(path_error)?;
@@ -316,11 +319,21 @@ impl WorkspaceGrantStore {
         let publisher = segments.next().ok_or_else(path_error)?;
         let package = segments.next().ok_or_else(path_error)?;
         Ok(self
-            .root
-            .join(scope_digest)
+            .scope_path(scope_id)?
             .join(publisher)
             .join(package)
             .join(format!("{generation_digest}.json")))
+    }
+
+    pub(super) fn scope_path(&self, scope_id: &str) -> UseResult<PathBuf> {
+        PluginWorkspaceGrant::validate_scope_id(scope_id).map_err(|_| {
+            store_error(
+                "use.plugin.grant_store.path_invalid",
+                "A workspace grant scope path identity is invalid.",
+            )
+        })?;
+        let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
+        Ok(self.root.join(scope_digest))
     }
 }
 
