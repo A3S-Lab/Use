@@ -92,10 +92,11 @@ The main gaps are:
   but is explicitly forbidden from applying them or toggling packages;
 - package-level permission declarations are not precise enough to authorize
   native executable plugins without human review;
-- schema v3 named surfaces and Tool release contracts are implemented and the
-  manager exposes their signed catalog projection; the first typed Runtime
-  adapter can now plan release-backed Tasks and Services and health-gate a
-  directly invoked Service apply, but lifecycle apply is not connected yet;
+- schema v3 named surfaces, Tool release contracts, catalog-v3 executable
+  planning targets, and planning bundles are implemented; the typed Runtime
+  adapter plans release-backed Tasks and Services and can health-gate a
+  directly invoked Service apply, but host-broker lifecycle apply is not
+  connected yet;
 - persisted Tool Task/Service bindings, MCP protocol probes, dependency
   readiness, and Runtime observations are not yet part of the package
   reconciler;
@@ -587,10 +588,34 @@ Implementation status (in progress 2026-07-30):
   compact capability snapshot and umbrella current version, derive exact
   replace/remove transitions and impact, and prevent catalog-v2 upgrades from
   falling back when installed evidence is missing or drifted;
-- pending: define the signed planning bundle needed to carry complete
-  executable workload/release/artifact evidence without downloading the
-  package archive, then wire explicit Runtime provider assignments
-  for Tool and MCP install drafts,
+- completed M5J-C-C-D-C in `a3s-use-core`: add backward-compatible
+  `a3s.use.plugin-catalog.v3` with one exact bounded `planning-v1.json` target,
+  preserving catalog-v1/v2 canonical bytes and requiring target name, length,
+  and SHA-256 for v3;
+- completed M5J-C-C-D-C in `a3s-use-core`: define the strict
+  `a3s.use.plugin-planning-bundle.v1` contract binding package/archive/
+  manifest/permission identities, complete executable surface coverage,
+  release descriptors, and digest-pinned artifacts for Tool Tasks, HTTP Tool
+  Services, and Streamable HTTP MCP Services;
+- completed M5J-C-C-D-D in `a3s-use-extension`: load only the exact signed TUF
+  planning target, compare TUF and catalog identity, reject package custom
+  metadata and raw-byte drift, and rebind the typed bundle without downloading
+  the package archive;
+- completed M5J-C-C-D-E in `a3s-use::plugin_runtime`: convert the signed bundle
+  plus exact package state and canonical grant proposal into provider-neutral
+  Runtime templates, binding proposal authority into semantics and failing
+  closed on permission shapes not representable by Runtime 0.2;
+- completed M5J-C-C-E-D in the umbrella CLI: carry the TUF-verified planning
+  bundle through registry resolution into the component plan and canonical
+  component digest, accept catalog v3 as plan-ready, and require exact
+  catalog/bundle binding before executable planning proceeds;
+- completed architecture decision: freeze the host-owned two-pass Plugin
+  Runtime Broker boundary in
+  `docs/adr-001-plugin-runtime-broker-boundary.md`; packages cannot register
+  providers and a provider failure has no fallback;
+- pending: inject that Runtime Broker into the shared Plugin Manager, assemble
+  canonical workspace grant changes and explicit provider assignments for Tool
+  and MCP drafts, then complete
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,
   filesystem/network/child-process enforcement, durable binding

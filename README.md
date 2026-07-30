@@ -651,7 +651,7 @@ this planning evidence.
 The package-specific `extension planning-evidence <publisher/name> --json`
 command now expands that summary into the strict
 `a3s.use.installed-plugin-plan-evidence.v1` contract. It binds the exact
-catalog-v2 record and receipt digest to the same capability generation,
+plan-ready catalog record and receipt digest to the same capability generation,
 revision, desired state, and dependency-closed surface set. Consumers can
 therefore derive upgrade or uninstall `before` state without trusting a
 mutable package path or treating the compact global snapshot as complete
@@ -759,9 +759,10 @@ revision before host binding. Apply rechecks that revision and advances a
 private atomic state record idempotently after the child mutation succeeds.
 Catalog-v1 plans remain compatible without claiming complete plugin evidence.
 
-Tool or MCP surfaces and any nonempty permission ceiling fail closed until the
-umbrella host supplies explicit Runtime provider assignments and the durable
-grant saga is connected.
+Tool or MCP surfaces and any nonempty permission ceiling still fail closed at
+the final shared-Manager draft until the umbrella host supplies explicit
+Runtime provider assignments and the durable grant saga is connected. Their
+metadata-only planning path is now implemented as described below.
 
 The umbrella CLI now consumes package-specific installed planning evidence for
 permission-free Skill/UI registry upgrades and uninstalls. It matches the full
@@ -781,20 +782,37 @@ the activation boundary needed for small plugin installs; packages such as
 Science must still publish independently useful archives when users should
 avoid downloading unrelated assets.
 
-A verified catalog-v2 record can now derive a plan-ready registry install
-transition. The transition keeps signed TUF provenance and archive evidence,
-uses the mandatory manifest and expanded-package digests, narrows release and
-permission evidence to the resolved surface closure, and derives the exact
-surface delta. Archive download bytes and expanded package footprint remain
-the full package values; only activation is narrowed.
+Catalog v3 adds one exact, separately signed `planning-v1.json` TUF target.
+The strict `a3s.use.plugin-planning-bundle.v1` contract carries complete
+release, workload, and digest-pinned artifact evidence for every executable
+Tool or MCP surface. Registry resolution downloads only that bounded planning
+target before review; it does not download the package archive. The umbrella
+CLI includes the verified typed bundle in its component plan and digest, and
+the shared Manager rechecks its catalog binding.
 
-Remote installation now carries the selected catalog-v2 record through target
-download and persists it in extension receipt v2. Receipt loading validates
-the catalog provenance, reconstructs and compares the exact TUF target, hashes
-the installed manifest and expanded package again, and rejects any broken
-binding. Catalog-v1, local, and release-bundle installs continue to use the
-compatible receipt-v1 shape; they remain installable but do not provide the
-complete before-state required for automatic upgrade or uninstall planning.
+`plan_runtime_bundle` converts a verified planning bundle, selected package
+state, canonical pre-confirmation grant proposal, and generation into
+provider-neutral Runtime templates. It maps a release-backed CLI Tool to a
+Task and an HTTP Tool or Streamable HTTP MCP server to a private Service. The
+host must inject explicit provider assignments through `RuntimeClientRegistry`;
+package metadata cannot select a backend, and unsupported authority fails
+closed.
+
+A verified catalog-v2 or catalog-v3 record can derive a plan-ready registry
+install transition. The transition keeps signed TUF provenance and archive
+evidence, uses the mandatory manifest and expanded-package digests, narrows
+release and permission evidence to the resolved surface closure, and derives
+the exact surface delta. Archive download bytes and expanded package footprint
+remain the full package values; only activation is narrowed.
+
+Remote installation now carries the selected plan-ready catalog record
+through target download and persists it in extension receipt v2. Receipt
+loading validates the catalog provenance, reconstructs and compares the exact
+TUF target, hashes the installed manifest and expanded package again, and
+rejects any broken binding. Catalog-v1, local, and release-bundle installs
+continue to use the compatible receipt-v1 shape; they remain installable but
+do not provide the complete before-state required for automatic upgrade or
+uninstall planning.
 
 Catalog-v2 evidence can now resolve a selected package state and derive exact
 remove or registry-replace transitions. `InstalledExtension` exposes the same
@@ -902,7 +920,8 @@ Skill, CLI/HTTP Tool, MCP, UI, Runtime, and lifecycle boundaries. The
 [complete lifecycle flow](docs/plugin-platform-lifecycle-and-security.md) and
 [frozen M0 contracts](docs/plugin-contracts.md) define the plan/apply,
 permission, signed-catalog, and management MCP invariants used by subsequent
-implementation milestones.
+implementation milestones. [ADR-001](docs/adr-001-plugin-runtime-broker-boundary.md)
+records the host-owned Runtime broker and no-provider-fallback decision.
 
 The M4 read-only management surface is now live through the umbrella A3S host.
 Code attaches its seven frozen search, inspection, installed-state, and

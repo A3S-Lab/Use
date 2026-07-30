@@ -1,10 +1,11 @@
 # A3S Use Plugin Platform Architecture
 
-- Status: proposed
+- Status: accepted target architecture; implementation in progress
 - Planning baseline: 2026-07-30
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
+- Runtime decision: [ADR-001: Host-Owned Plugin Runtime Broker](adr-001-plugin-runtime-broker-boundary.md)
 
 This document defines the target architecture for installing and operating an
 immutable plugin that may contribute Skills, executable Tools, standard MCP
@@ -504,6 +505,14 @@ Runtime, route, lease-drain, and global capability checkpoints.
 Runtime is injected through a typed `RuntimeClient`; A3S Use must not construct
 or infer a backend name from a string in a package.
 
+The normative composition boundary is the host-owned
+[Plugin Runtime Broker](adr-001-plugin-runtime-broker-boundary.md). A3S Use
+produces provider-neutral templates from signed package evidence; the
+umbrella CLI, Desktop/Web host, or Cloud node supplies configured provider
+assignments and clients. A package cannot register a provider. A local OCI
+component is not an `a3s-runtime` provider unless a host adapter implements the
+typed factory/client contract and passes provider conformance.
+
 Provider selection occurs during planning:
 
 1. derive required artifact media type, unit class, isolation, network, mount,
@@ -523,6 +532,15 @@ the complete Runtime spec plus required lifecycle features, and returns both
 sorted immutable plan evidence and the exact client selected for later
 prepare/apply. Provider choice remains host input; package metadata cannot
 name or prioritize a provider.
+
+Executable planning now has a metadata-only path. Catalog v3 binds the exact
+small `planning-v1.json` TUF target. The bundle carries complete immutable
+Tool Task, Tool Service, or Streamable HTTP MCP release/artifact evidence.
+`plan_runtime_bundle` converts that evidence and a canonical
+pre-confirmation grant proposal into Runtime templates. It currently accepts
+only containerized authority representable by Runtime 0.2 and rejects
+filesystem, exact egress, secret, child-process, and native authority until
+typed enforcement adapters exist.
 
 The Runtime unit uses a deterministic unit ID and a monotonic Runtime
 generation. Its semantics-profile digest binds at least:
@@ -693,9 +711,14 @@ review and apply and advances idempotently after successful child mutation.
 The same safe slice now covers registry upgrade and uninstall by joining the
 package-specific installed catalog and receipt to the compact capability
 snapshot and umbrella current version, then deriving exact replace or remove
-transitions. Executable or permission-bearing packages fail closed until a
-signed executable planning bundle, explicit Runtime provider selection, and
-the grant saga are connected.
+transitions.
+
+For executable candidates, catalog v3, the separately signed planning bundle,
+TUF target-only loading, provider-neutral Runtime templates, and CLI
+component-plan transport are implemented. The shared Manager revalidates that
+the typed bundle matches the exact catalog evidence. Executable or
+permission-bearing drafts still fail closed until the host Runtime Broker,
+two-pass provider selection, and workspace grant saga are connected.
 
 ## Compatibility and Migration
 
@@ -721,16 +744,17 @@ package generation.
 
 ## Required Architecture Decisions
 
-Implementation should record focused ADRs before M0 exits:
+Implementation records focused ADRs for decisions that cross repository
+boundaries. [ADR-001](adr-001-plugin-runtime-broker-boundary.md) freezes the
+Tool/MCP Runtime ownership and provider-selection boundary. Additional ADRs
+remain required for:
 
 1. manifest schema v3 and v1/v2 adapter rules;
-2. Tool release descriptor and Task/Service mapping;
-3. provider-selection policy and no-fallback semantics;
-4. Skill dependency and managed-root projection;
-5. private Service endpoint and UI reverse-proxy binding;
-6. operation saga, idempotency, and crash reconciliation;
-7. workspace grants and global package reference counting; and
-8. stdio MCP compatibility and future Runtime session boundary.
+2. Skill dependency and managed-root projection;
+3. private Service endpoint and UI reverse-proxy binding;
+4. operation saga, idempotency, and crash reconciliation;
+5. workspace grants and global package reference counting; and
+6. stdio MCP compatibility and future Runtime session boundary.
 
 ## Architecture Acceptance Gates
 

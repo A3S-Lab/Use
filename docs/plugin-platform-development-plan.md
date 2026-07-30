@@ -31,6 +31,9 @@ The architecture document owns domain and runtime boundaries.
                     umbrella authorization broker
                   ACL policy / confirmation / grants
                                   |
+                      host Plugin Runtime Broker
+              signed templates / explicit provider evidence
+                                  |
                          A3S Use package store
                  stage / verify / activate / receipt
                                   |
@@ -125,6 +128,8 @@ downloading its archive:
 - package-level permission summary;
 - license and canonical source repository;
 - registry identity, TUF role versions, archive target, and SHA-256;
+- for catalog v3, one exact bounded `planning-v1.json` target name, length,
+  and SHA-256 for pre-archive executable planning;
 - deprecation, replacement, or security-withdrawal state.
 
 Search operates locally over verified metadata after a bounded refresh. Results
@@ -149,6 +154,31 @@ Install, upgrade, and uninstall plans include:
 
 Apply accepts the digest, repeats resolution, and rejects any changed target,
 metadata version, permission set, package content, or ownership state.
+
+The executable planning boundary is
+[ADR-001](adr-001-plugin-runtime-broker-boundary.md). Catalog-v3 resolution
+downloads only the small signed planning target. A3S Use derives
+provider-neutral Task/Service templates; the host supplies explicit provider
+assignments and clients. Provider preflight, policy/grant resolution, and
+final semantics selection are two deterministic, side-effect-free passes.
+The package archive is not downloaded until an authorized apply.
+
+Implemented as of the planning baseline:
+
+- strict catalog-v3 planning-target and executable planning-bundle contracts;
+- exact TUF target-only loading and catalog rebinding;
+- provider-neutral Tool Task, Tool Service, and Streamable HTTP MCP templates;
+- explicit `RuntimeClientRegistry` provider selection and evidence; and
+- verified planning-bundle transport in the umbrella CLI component plan.
+
+Remaining on the critical path:
+
+- inject the host Runtime Broker into the shared Plugin Manager;
+- assemble workspace grant proposals/change sets before final draft binding;
+- coordinate package, grant, Runtime, Gateway, projection, capability, and
+  drain checkpoints in the parent saga; and
+- pass CLI/Web/agent install-use-upgrade-uninstall E2E with production
+  providers.
 
 ## Authorization Model
 

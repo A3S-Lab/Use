@@ -29,7 +29,15 @@ flowchart TD
     resolveInstall["Resolve exact package and dependency digests<br/>Action: install"]
     resolveUpgrade["Resolve N+1, permission diff, dependencies,<br/>and provider requirements<br/>Action: upgrade"]
     resolveUninstall["Resolve owned resources, workspace impact,<br/>leases, and retained data<br/>Action: uninstall"]
-    buildPlan["Persist canonical expiring plan and allocate operationId<br/>Bind registry root, metadata versions, digests,<br/>scope, grant proposals, provider evidence, and impact"]
+    hostContext["Allocate operationId and host context<br/>Bind actor, scope, policy identity, lifetime,<br/>capability generation, and state revision"]
+    executable{"Resulting package state contains<br/>Tool or Runtime-backed MCP surfaces?"}
+    planningTarget["Fetch only signed catalog-v3 planning-v1.json<br/>Verify exact TUF name, length, SHA-256,<br/>package identity, and executable surface closure"]
+    providerPreflight["Host Runtime broker preflight<br/>Use host-configured assignment and capabilities;<br/>package cannot select or register a provider"]
+    providerCapable{"One explicit provider can enforce<br/>the required workload and permission profile?"}
+    rejectPlanning["Reject as unplannable<br/>No archive download and no mutation"]
+    grantProposal["Resolve canonical pre-confirmation grant proposal<br/>Bind operation, actor, scope, policy, package,<br/>permission ceiling, lifetime, and state revision"]
+    runtimePlan["Build provider-neutral Runtime templates<br/>Bind the grant-proposal digest, then select again<br/>against the same provider/build/capability evidence"]
+    buildPlan["Persist canonical expiring plan<br/>Bind registry root, metadata versions, digests,<br/>scope, grant proposals, provider evidence, and impact"]
   end
 
   command -- "Search / inspect / install" --> catalog
@@ -39,9 +47,19 @@ flowchart TD
   installChoice -- "Yes" --> resolveInstall
   command -- "Upgrade" --> resolveUpgrade
   command -- "Uninstall" --> resolveUninstall
-  resolveInstall --> buildPlan
-  resolveUpgrade --> buildPlan
-  resolveUninstall --> buildPlan
+  resolveInstall --> hostContext
+  resolveUpgrade --> hostContext
+  resolveUninstall --> hostContext
+  hostContext --> executable
+  executable -- "No: uninstall or Skill/UI only" --> buildPlan
+  executable -- "Yes" --> planningTarget
+  planningTarget --> providerPreflight
+  providerPreflight --> providerCapable
+  providerCapable -- "No" --> rejectPlanning
+  rejectPlanning --> command
+  providerCapable -- "Yes" --> grantProposal
+  grantProposal --> runtimePlan
+  runtimePlan --> buildPlan
 
   subgraph authorization["2. Authorization and immutable apply"]
     policy{"ACL policy decision"}
@@ -297,13 +315,17 @@ flowchart TD
   classDef durable fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
   classDef runtime fill:#fff8e1,stroke:#f9a825,color:#5d4037;
   class ready,degraded,installedDisabled,removed,keepPrevious,keepPreviousDisabled stable;
-  class denied,drift,rejectPackage,rejectUse,broken failure;
-  class buildPlan,confirmationEvidence,intent,toggleIntent,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
-  class taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,removeRuntime runtime;
+  class denied,drift,rejectPlanning,rejectPackage,rejectUse,broken failure;
+  class hostContext,planningTarget,grantProposal,buildPlan,confirmationEvidence,intent,toggleIntent,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
+  class providerPreflight,providerCapable,runtimePlan,taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,removeRuntime runtime;
 ```
 
-The graph has five important invariants:
+The graph has nine important invariants:
 
+- search and inspection never download a package archive;
+- an executable plan downloads only the small, separately signed planning
+  target before review;
+- provider choice is host input and is rechecked without fallback;
 - a repeated `operationId + planDigest` returns the durable result without
   starting another child process or side effect;
 - package installation commits a disabled receipt before any capability is
@@ -415,20 +437,23 @@ The integrity chain is:
 
 ```text
 trusted registry root
-  -> signed target metadata
+  -> signed catalog target metadata
+  -> verified catalog-v3 planning target name, length, and digest
+  -> typed executable planning bundle
   -> package archive digest
   -> manifest and surface content digests
   -> release descriptor digest
   -> signed permission ceiling
   -> active workspace grant snapshot
   -> canonical workspace grant proposal
+  -> host-selected provider/build/capability evidence
+  -> Runtime template semantics digest
   -> sorted multi-package grant change set
   -> immutable operation plan digest
   -> user confirmation digest for ask decisions
   -> finalized workspace grant digest
   -> exact-generation workspace grant receipt
   -> executable or image artifact digest
-  -> Runtime semantics digest
   -> binding receipt
   -> capability snapshot generation
 ```

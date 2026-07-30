@@ -29,6 +29,8 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Compatible search and review metadata without package download |
 | Catalog record | `a3s.use.plugin-catalog.v2` | Plan-ready manifest evidence and surface dependency closure |
+| Catalog record | `a3s.use.plugin-catalog.v3` | Exact separately signed executable planning-target evidence |
+| Planning bundle | `a3s.use.plugin-planning-bundle.v1` | Pre-archive Tool/MCP workload, release, and artifact evidence |
 | Installed plan evidence | `a3s.use.installed-plugin-plan-evidence.v1` | Package-specific receipt, catalog, surface, and capability join |
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
@@ -265,16 +267,25 @@ cyclic edges fail closed. Catalog v1 remains readable and retains its exact
 canonical digest, but cannot carry these v2-only fields and is not sufficient
 by itself for complete-plan emission.
 
-`VerifiedPluginCatalogRecord::install_transition` converts one catalog-v2
-record into the exact registry `add` transition consumed by the operation-plan
-draft. It preserves verified catalog provenance and archive evidence, requires
+Catalog v3 preserves the v2 package evidence and adds one exact
+`planning-v1.json` target name, byte length, and SHA-256. The strict
+`a3s.use.plugin-planning-bundle.v1` target binds the package, archive,
+manifest, permission ceiling, and every executable surface to a complete
+release descriptor and digest-pinned artifact. It is fetched through TUF
+before archive download. Mutable OCI tags, missing executable surfaces, stdio
+MCP, or workload/catalog drift fail closed.
+
+`VerifiedPluginCatalogRecord::install_transition` converts one plan-ready
+catalog-v2 or catalog-v3 record into the exact registry `add` transition
+consumed by the operation-plan draft. It preserves verified catalog
+provenance and archive evidence, requires
 both expanded-package and raw manifest digests, derives the selected permission
 ceiling and its digest, and derives all surface additions. Surface selection
 does not change archive download length or expanded package size. Avoiding
 unrelated downloads requires separate package archives, not merely optional
 surface flags.
 
-For a TUF installation selected from catalog v2,
+For a TUF installation selected from catalog v2 or v3,
 `a3s-use-extension` persists the complete `VerifiedPluginCatalogRecord` in
 extension receipt schema 2. Loading that receipt:
 
@@ -288,7 +299,13 @@ extension receipt schema 2. Loading that receipt:
 This receipt is durable plan-ready before-state for later upgrade and
 uninstall resolution. Receipt schema 1 remains readable for catalog-v1,
 explicit-local, and release-bundle installs, but its absence of signed
-catalog-v2 evidence must not be silently upgraded into a complete plan.
+plan-ready catalog evidence must not be silently upgraded into a complete plan.
+
+`PreparedRemotePackage::load_planning_bundle` performs a target-only read for
+catalog v3. It requires the exact target in signed TUF metadata, compares TUF
+and catalog length/SHA-256, rejects package-target custom metadata on the
+planning target, and rebinds the parsed bundle to the verified catalog.
+Catalog v1/v2 returns no planning bundle and preserves existing digests.
 
 `VerifiedPluginCatalogRecord::selected_state` resolves a package state from
 signed release evidence and a selected surface set.
@@ -310,12 +327,13 @@ this block.
 
 `a3s use extension planning-evidence <publisher/name> --json` resolves the
 package-specific `a3s.use.installed-plugin-plan-evidence.v1` record. The strict
-contract joins the complete verified catalog-v2 record and canonical receipt
-digest to the same capability generation, revision, desired enabled state, and
-sorted selected-surface closure. It is rederived from a stable capability
-snapshot and a freshly validated installed receipt; any package, digest,
-catalog, version, desired-state, or surface mismatch fails closed. This is the
-authoritative `before` evidence for upgrade and uninstall draft assembly.
+contract joins the complete verified plan-ready catalog record and canonical
+receipt digest to the same capability generation, revision, desired enabled
+state, and sorted selected-surface closure. It is rederived from a stable
+capability snapshot and a freshly validated installed receipt; any package,
+digest, catalog, version, desired-state, or surface mismatch fails closed.
+This is the authoritative `before` evidence for upgrade and uninstall draft
+assembly.
 
 ## Immutable Operation Plan
 
@@ -356,6 +374,14 @@ provider ID/build, normalized capability digest, enforcement profile, and
 semantics-profile digest, and returns evidence sorted by qualified surface.
 The selection also retains the exact connected client for apply-time
 revalidation. No missing or failed assignment falls back to another provider.
+
+For a catalog-v3 candidate, `plan_runtime_bundle` first converts the verified
+planning bundle, exact selected package state, canonical pre-confirmation
+grant proposal, and generation into provider-neutral Runtime templates. The
+initial safe subset maps a release-backed CLI Tool to a Runtime Task and an
+HTTP Tool or Streamable HTTP MCP server to a private Runtime Service. Authority
+that Runtime 0.2 cannot represent exactly fails with
+`use.plugin.runtime.authorization_unsupported`.
 
 ## Host Authorization Policy
 
@@ -430,8 +456,11 @@ planner revision before intent, then advances the planner revision atomically
 and idempotently after successful child mutation.
 
 Catalog-v1 component plans remain compatible without claiming a complete
-plugin plan. A catalog-v2 plan containing a Tool, MCP server, or any permission
-ceiling fails closed until the umbrella host provides explicit Runtime
+plugin plan. For catalog v3, the CLI registry resolver fetches only the signed
+planning target and includes its typed bundle in the upstream component plan
+and digest. The shared Manager requires that bundle and rechecks its exact
+catalog binding. A plan containing a Tool, MCP server, or any permission
+ceiling still fails closed until the umbrella host provides explicit Runtime
 provider assignments and durable grant-saga evidence. Registry no-op upgrades
 remain compatible component-only plans.
 
