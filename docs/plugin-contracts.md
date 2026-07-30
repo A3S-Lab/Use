@@ -329,6 +329,15 @@ stored immutable plan, re-resolve external state, compare every bound field,
 persist durable intent, and then begin side effects. A changed result requires
 a new plan and review.
 
+Planning uses `RuntimeProviderSelector` to turn host-supplied, explicit
+per-surface assignments into `PlannedProviderEvidence`. It resolves only the
+named entries in `RuntimeClientRegistry`, validates each complete Runtime spec
+and required lifecycle features against freshly read capabilities, binds the
+provider ID/build, normalized capability digest, enforcement profile, and
+semantics-profile digest, and returns evidence sorted by qualified surface.
+The selection also retains the exact connected client for apply-time
+revalidation. No missing or failed assignment falls back to another provider.
+
 ## Host Authorization Policy
 
 The umbrella CLI owns the strict `a3s.plugin-policy.v1` ACL contract. The

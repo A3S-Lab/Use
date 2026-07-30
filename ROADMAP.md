@@ -558,8 +558,13 @@ Implementation status (in progress 2026-07-30):
   transitions from plan-ready installed evidence plus caller-supplied active
   surfaces; receipts remain immutable release evidence and never infer the
   live activation set;
-- pending: feed verified registry/package records, installed receipts,
-  explicit Runtime provider selection, and current capability state into the
+- completed M5J-C-C-D-A in `a3s-use::plugin_runtime`: resolve explicit
+  per-surface Runtime provider assignments through `RuntimeClientRegistry`,
+  bind provider/build/capability/enforcement/semantics evidence, return the
+  exact connected clients, sort evidence for plan construction, and reject
+  duplicate, unavailable, or incapable assignments without fallback;
+- pending: join verified registry/package records, installed receipts,
+  selected Runtime provider evidence, and current capability state into the
   draft and emit it from the live umbrella plan,
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,

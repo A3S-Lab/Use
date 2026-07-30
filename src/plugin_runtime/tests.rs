@@ -2,10 +2,30 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use a3s_runtime::contract::{NetworkMode, RuntimeLogStream, RuntimeUnitClass};
+use a3s_runtime::{
+    ProviderId, RuntimeClient, RuntimeClientRegistry, RuntimeProviderFactory, RuntimeResult,
+};
 use a3s_use_core::{PluginSurfaceKind, ToolWorkloadContract};
+use async_trait::async_trait;
 
 use super::test_support::*;
 use super::*;
+
+struct StaticRuntimeFactory {
+    provider_id: ProviderId,
+    client: Arc<dyn RuntimeClient>,
+}
+
+#[async_trait]
+impl RuntimeProviderFactory for StaticRuntimeFactory {
+    fn provider_id(&self) -> &ProviderId {
+        &self.provider_id
+    }
+
+    async fn create(&self) -> RuntimeResult<Arc<dyn RuntimeClient>> {
+        Ok(self.client.clone())
+    }
+}
 
 #[test]
 fn tool_task_plan_binds_invocation_and_release_semantics() {
@@ -167,6 +187,115 @@ async fn explicit_provider_evidence_is_rechecked_without_fallback() {
     let client = PluginRuntimeClient::new(Arc::new(FakeRuntime::new(changed, true)));
     let error = client.prepare_task(&plan, &provider).await.unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.provider_evidence_changed");
+}
+
+#[tokio::test]
+async fn explicit_provider_assignments_resolve_sorted_evidence_without_fallback() {
+    let task_descriptor = task_descriptor();
+    let task = plan_tool_task_release(
+        context(PluginSurfaceKind::Tool, "convert"),
+        &task_surface(),
+        &task_descriptor,
+        artifact(
+            &task_descriptor.artifact.digest,
+            &task_descriptor.artifact.media_type,
+        ),
+        RuntimeTaskInvocation::new("invoke-01", Vec::new()).unwrap(),
+        policy(),
+        NetworkMode::None,
+    )
+    .unwrap();
+    let service_descriptor = service_descriptor();
+    let service = plan_tool_service_release(
+        context(PluginSurfaceKind::Tool, "index"),
+        &service_surface(),
+        &service_descriptor,
+        artifact(
+            &service_descriptor.artifact.digest,
+            &service_descriptor.artifact.media_type,
+        ),
+        policy(),
+    )
+    .unwrap();
+    let mut runtime_capabilities = capabilities(&task);
+    if !runtime_capabilities
+        .artifact_media_types
+        .contains(&service.spec().artifact.media_type)
+    {
+        runtime_capabilities
+            .artifact_media_types
+            .push(service.spec().artifact.media_type.clone());
+    }
+    let runtime = Arc::new(FakeRuntime::new(runtime_capabilities, true));
+    let provider_id = ProviderId::parse("test-runtime").unwrap();
+    let mut registry = RuntimeClientRegistry::new();
+    registry
+        .register(Arc::new(StaticRuntimeFactory {
+            provider_id,
+            client: runtime,
+        }))
+        .unwrap();
+    let selector = RuntimeProviderSelector::new(&registry);
+
+    let selected = selector
+        .select(
+            vec![service.clone(), task.clone()],
+            vec![
+                RuntimeProviderAssignment::new(service.surface(), "test-runtime").unwrap(),
+                RuntimeProviderAssignment::new(task.surface(), "test-runtime").unwrap(),
+            ],
+        )
+        .await
+        .unwrap();
+
+    let evidence = selected.provider_evidence();
+    assert_eq!(evidence.len(), 2);
+    assert_eq!(evidence[0].surface.surface.id, "convert");
+    assert_eq!(evidence[1].surface.surface.id, "index");
+    assert!(evidence
+        .iter()
+        .all(|provider| provider.provider_id == "test-runtime"));
+    selected.surfaces()[0]
+        .client()
+        .verify_plan(
+            selected.surfaces()[0].plan(),
+            selected.surfaces()[0].provider(),
+        )
+        .await
+        .unwrap();
+
+    let missing = selector
+        .select(
+            vec![task.clone()],
+            vec![RuntimeProviderAssignment::new(task.surface(), "missing-runtime").unwrap()],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(missing.code, "use.plugin.runtime.provider_unavailable");
+
+    let incomplete = selector
+        .select(vec![task.clone()], Vec::new())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        incomplete.code,
+        "use.plugin.runtime.provider_assignment_invalid"
+    );
+
+    let duplicate = selector
+        .select(
+            vec![task.clone()],
+            vec![
+                RuntimeProviderAssignment::new(task.surface(), "test-runtime").unwrap(),
+                RuntimeProviderAssignment::new(task.surface(), "test-runtime").unwrap(),
+            ],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        duplicate.code,
+        "use.plugin.runtime.provider_assignment_invalid"
+    );
 }
 
 #[tokio::test]

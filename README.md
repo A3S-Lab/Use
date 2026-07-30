@@ -588,6 +588,14 @@ needs a persisted binding, and HTTP services require a separate opaque
 `gateway:` binding reference. The adapter is not yet called automatically by
 extension installation or enablement.
 
+`RuntimeProviderSelector` now performs the planning-time provider join. The
+host assigns an explicit provider to every Runtime surface; the selector
+connects each named provider, re-reads and validates its capabilities, checks
+the complete surface spec and lifecycle requirements, and emits sorted
+`PlannedProviderEvidence`. It returns the exact connected client with each
+selection for later prepare/apply. Missing assignments, duplicate assignments,
+unsupported enforcement, or unavailable providers fail without fallback.
+
 Prepared Task and converged Service receipts can be stored under
 `<state-root>/bindings/runtime`. The store hashes the scope in its path, writes
 bounded receipts atomically under a cross-process lock, permits only monotonic

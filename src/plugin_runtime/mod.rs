@@ -8,6 +8,7 @@ mod client;
 mod lifecycle;
 mod model;
 mod planner;
+mod provider_selector;
 mod receipt;
 mod store;
 mod surface_observer;
@@ -25,6 +26,10 @@ pub use model::{
     RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_TASK_BINDING_SCHEMA,
 };
 pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release};
+pub use provider_selector::{
+    RuntimeProviderAssignment, RuntimeProviderSelection, RuntimeProviderSelector,
+    SelectedRuntimeSurface,
+};
 pub use receipt::{RuntimeBindingReadiness, RuntimeBindingReceipt};
 pub use store::RuntimeBindingStore;
 pub use surface_observer::{

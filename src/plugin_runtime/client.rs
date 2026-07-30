@@ -54,28 +54,7 @@ impl PluginRuntimeClient {
             )
             .with_detail("observedCapabilityDigest", capability_digest));
         }
-
-        let mut missing = capabilities
-            .missing_for(plan.spec())
-            .map_err(runtime_contract_error)?;
-        for feature in required_lifecycle_features(plan.contract()) {
-            if !capabilities.supports_feature(feature) {
-                missing.push(format!("feature:{feature:?}"));
-            }
-        }
-        missing.sort();
-        missing.dedup();
-        if !missing.is_empty() {
-            return Err(UseError::new(
-                "use.plugin.runtime.capability_missing",
-                "The selected Runtime provider cannot satisfy the reviewed surface plan.",
-            )
-            .with_detail("providerId", capabilities.provider_id.as_str().to_string())
-            .with_detail(
-                "missing",
-                serde_json::to_value(&missing).unwrap_or_default(),
-            ));
-        }
+        validate_capabilities_for_plan(plan, &capabilities)?;
         Ok(capabilities)
     }
 
@@ -204,14 +183,10 @@ fn validate_plan_evidence(
         .semantics_profile_digest
         .as_deref()
         .ok_or_else(|| runtime_contract_error("Runtime plan omitted its semantics profile."))?;
-    let expected_isolation = match provider.enforcement {
-        PlanEnforcementProfile::Container => IsolationLevel::Container,
-        PlanEnforcementProfile::Sandbox => IsolationLevel::Sandbox,
-        PlanEnforcementProfile::NativeUnconfined => IsolationLevel::Process,
-    };
+    let expected_enforcement = enforcement_profile(plan.spec().isolation)?;
     if provider.surface != plan.surface()
         || provider.semantics_profile_digest != semantics_profile_digest
-        || plan.spec().isolation != expected_isolation
+        || provider.enforcement != expected_enforcement
     {
         return Err(UseError::new(
             "use.plugin.runtime.plan_evidence_mismatch",
@@ -219,6 +194,47 @@ fn validate_plan_evidence(
         ));
     }
     Ok(())
+}
+
+pub(super) fn validate_capabilities_for_plan(
+    plan: &RuntimeSurfacePlan,
+    capabilities: &RuntimeCapabilities,
+) -> UseResult<()> {
+    capabilities.validate().map_err(runtime_contract_error)?;
+    let mut missing = capabilities
+        .missing_for(plan.spec())
+        .map_err(runtime_contract_error)?;
+    for feature in required_lifecycle_features(plan.contract()) {
+        if !capabilities.supports_feature(feature) {
+            missing.push(format!("feature:{feature:?}"));
+        }
+    }
+    missing.sort();
+    missing.dedup();
+    if !missing.is_empty() {
+        return Err(UseError::new(
+            "use.plugin.runtime.capability_missing",
+            "The selected Runtime provider cannot satisfy the reviewed surface plan.",
+        )
+        .with_detail("providerId", capabilities.provider_id.as_str().to_string())
+        .with_detail(
+            "missing",
+            serde_json::to_value(&missing).unwrap_or_default(),
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn enforcement_profile(isolation: IsolationLevel) -> UseResult<PlanEnforcementProfile> {
+    match isolation {
+        IsolationLevel::Container => Ok(PlanEnforcementProfile::Container),
+        IsolationLevel::Sandbox => Ok(PlanEnforcementProfile::Sandbox),
+        IsolationLevel::Process => Ok(PlanEnforcementProfile::NativeUnconfined),
+        IsolationLevel::Confidential => Err(UseError::new(
+            "use.plugin.runtime.enforcement_unsupported",
+            "Confidential Runtime isolation is not representable in the plugin plan contract.",
+        )),
+    }
 }
 
 fn required_lifecycle_features(contract: &RuntimeSurfaceContract) -> Vec<RuntimeFeature> {

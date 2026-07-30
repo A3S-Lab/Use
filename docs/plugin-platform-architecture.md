@@ -516,6 +516,14 @@ Provider selection occurs during planning:
 There is no silent fallback. A provider failure is surfaced as a typed
 per-surface failure.
 
+The implemented `RuntimeProviderSelector` accepts one explicit assignment per
+Runtime-backed surface. It rejects duplicate assignments before connecting,
+connects only those provider IDs through `RuntimeClientRegistry`, validates
+the complete Runtime spec plus required lifecycle features, and returns both
+sorted immutable plan evidence and the exact client selected for later
+prepare/apply. Provider choice remains host input; package metadata cannot
+name or prioritize a provider.
+
 The Runtime unit uses a deterministic unit ID and a monotonic Runtime
 generation. Its semantics-profile digest binds at least:
 
