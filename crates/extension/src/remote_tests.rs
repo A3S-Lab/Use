@@ -1,10 +1,18 @@
 use std::path::PathBuf;
 
+use a3s_use_core::{
+    PluginCatalogRecord, PluginSurfaceKind, PluginSurfaceRef, PLUGIN_CATALOG_SCHEMA_V2,
+};
+use sha2::{Digest, Sha256};
+
 use super::test_support::{
     extension_archive, find_subslice, TestRepository, TestServer, EXPIRED, FUTURE, PACKAGE_VERSION,
 };
 use super::*;
 use crate::{ExtensionPaths, ExtensionRegistry, ExtensionTrust};
+
+const COMPLETE_CATALOG: &[u8] =
+    include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v1.json");
 
 #[tokio::test]
 async fn tuf_refresh_verifies_metadata_without_downloading_targets() {
@@ -115,6 +123,96 @@ async fn tuf_install_records_signed_provenance_and_converges() {
         .requests()
         .iter()
         .all(|request| !request.starts_with("/targets/")));
+}
+
+#[tokio::test]
+async fn tuf_catalog_v2_install_persists_and_revalidates_plan_ready_evidence() {
+    let archive = extension_archive(PACKAGE_VERSION);
+    let temp = tempfile::tempdir().unwrap();
+    let archive_path = temp.path().join("science.tar.gz");
+    tokio::fs::write(&archive_path, &archive).await.unwrap();
+    let source = crate::source::prepare_package_source(&archive_path)
+        .await
+        .unwrap();
+    let fingerprint = crate::digest::package_fingerprint(source.root())
+        .await
+        .unwrap();
+    let manifest_bytes = tokio::fs::read(source.root().join("a3s-use-extension.acl"))
+        .await
+        .unwrap();
+    let target = host_target().unwrap();
+    let target_name = format!(
+        "extensions/a3s/science/{PACKAGE_VERSION}/stable/{target}/a3s-use-science-{PACKAGE_VERSION}-{target}.tar.gz"
+    );
+    let mut catalog = PluginCatalogRecord::from_json(COMPLETE_CATALOG).unwrap();
+    catalog.schema = PLUGIN_CATALOG_SCHEMA_V2.to_owned();
+    catalog.package_id = "a3s/science".to_owned();
+    catalog.display_name = "A3S Science".to_owned();
+    catalog.description = "Scientific research capabilities for A3S agents.".to_owned();
+    catalog.publisher = "a3s".to_owned();
+    catalog.version = PACKAGE_VERSION.to_owned();
+    catalog.requires_use = ">=0.2.0, <0.3.0".to_owned();
+    catalog.target = target;
+    catalog.archive.target_name = target_name.clone();
+    catalog.archive.length = archive.len() as u64;
+    catalog.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&archive));
+    catalog.package.expanded_bytes = fingerprint.byte_count;
+    catalog.package.file_count = fingerprint.file_count;
+    catalog.package.sha256 = Some(format!("sha256:{}", fingerprint.sha256));
+    catalog.package.manifest_sha256 = Some(format!("sha256:{:x}", Sha256::digest(&manifest_bytes)));
+    catalog.repository = "https://github.com/A3S-Lab/Science".to_owned();
+    catalog
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.kind == PluginSurfaceKind::Ui && surface.id == "review")
+        .unwrap()
+        .requires = vec![PluginSurfaceRef {
+        kind: PluginSurfaceKind::Tool,
+        id: "index".to_owned(),
+    }];
+    catalog.validate().unwrap();
+
+    let repository = TestRepository::with_target_metadata(
+        archive,
+        target_name,
+        serde_json::to_value(&catalog).unwrap(),
+        9,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+    let registry = ExtensionRegistry::new(ExtensionPaths::new(
+        temp.path().join("data"),
+        temp.path().join("extension-state"),
+    ));
+
+    let installed = registry
+        .install_remote("a3s/science", &trusted, None, "stable", None, false)
+        .await
+        .unwrap();
+
+    assert_eq!(installed.extension.receipt.schema_version, 2);
+    let verified = installed
+        .extension
+        .receipt
+        .verified_catalog
+        .as_ref()
+        .unwrap();
+    assert_eq!(verified.record, catalog);
+    assert_eq!(
+        installed.extension.receipt.registry.as_ref(),
+        Some(&ResolvedRemotePackage::from_verified_catalog(verified).unwrap())
+    );
+    assert!(registry.get("a3s/science").await.unwrap().is_some());
+
+    tokio::fs::write(
+        installed.extension.cli_executable().unwrap(),
+        b"tampered executable",
+    )
+    .await
+    .unwrap();
+    let error = registry.get("a3s/science").await.unwrap_err();
+    assert_eq!(error.code, "use.extension.package_digest_mismatch");
 }
 
 #[tokio::test]

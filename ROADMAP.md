@@ -548,6 +548,11 @@ Implementation status (in progress 2026-07-30):
   transition from verified catalog-v2 evidence, preserving TUF/archive
   provenance, binding manifest and expanded-package digests, narrowing only
   selected surface/permission evidence, and deriving the exact surface delta;
+- completed M5J-C-C-C-B in `a3s-use-extension`: carry the selected verified
+  catalog-v2 record through TUF target download into receipt v2, then
+  revalidate catalog provenance, exact target resolution, raw manifest digest,
+  and expanded-package digest whenever that receipt is loaded; retain receipt
+  v1 compatibility for catalog-v1, local, and release-bundle installations;
 - pending: feed verified registry/package records, installed receipts,
   explicit Runtime provider selection, and current capability state into the
   draft and emit it from the live umbrella plan,

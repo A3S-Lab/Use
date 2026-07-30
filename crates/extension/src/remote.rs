@@ -9,7 +9,7 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use a3s_use_core::{UseError, UseResult, VerifiedPluginCatalogRecord};
+use a3s_use_core::{UseError, UseResult, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
 use fs2::FileExt;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -277,6 +277,7 @@ pub struct PreparedRemotePackage {
     repository: Repository,
     target_name: TargetName,
     resolved: ResolvedRemotePackage,
+    verified_catalog: Option<VerifiedPluginCatalogRecord>,
 }
 
 impl std::fmt::Debug for PreparedRemotePackage {
@@ -291,6 +292,10 @@ impl std::fmt::Debug for PreparedRemotePackage {
 impl PreparedRemotePackage {
     pub fn resolved(&self) -> &ResolvedRemotePackage {
         &self.resolved
+    }
+
+    pub fn verified_catalog(&self) -> Option<&VerifiedPluginCatalogRecord> {
+        self.verified_catalog.as_ref()
     }
 
     pub async fn download(self) -> UseResult<DownloadedRemotePackage> {
@@ -333,6 +338,7 @@ impl PreparedRemotePackage {
         Ok(DownloadedRemotePackage {
             path,
             resolved: self.resolved,
+            verified_catalog: self.verified_catalog,
             _temporary: temporary,
         })
     }
@@ -343,6 +349,7 @@ impl PreparedRemotePackage {
 pub struct DownloadedRemotePackage {
     path: PathBuf,
     resolved: ResolvedRemotePackage,
+    verified_catalog: Option<VerifiedPluginCatalogRecord>,
     _temporary: TempDir,
 }
 
@@ -353,6 +360,10 @@ impl DownloadedRemotePackage {
 
     pub fn resolved(&self) -> &ResolvedRemotePackage {
         &self.resolved
+    }
+
+    pub fn verified_catalog(&self) -> Option<&VerifiedPluginCatalogRecord> {
+        self.verified_catalog.as_ref()
     }
 }
 
@@ -485,12 +496,44 @@ pub async fn prepare_remote_package(
             "The TUF repository resolves the same package version to multiple targets.",
         ));
     }
+    let verified_catalog = metadata
+        .catalog_record()
+        .cloned()
+        .map(|record| verified_catalog_record(registry, &repository, record))
+        .transpose()?;
     let resolved = resolved_remote_package(registry, &repository, &metadata, &target_name, &target);
     resolved.verify_expected_plan(expected_plan_digest)?;
     Ok(PreparedRemotePackage {
         repository,
         target_name,
         resolved,
+        verified_catalog,
+    })
+}
+
+fn verified_catalog_record(
+    registry: &TrustedRegistry,
+    repository: &Repository,
+    record: a3s_use_core::PluginCatalogRecord,
+) -> UseResult<VerifiedPluginCatalogRecord> {
+    let provenance = VerifiedCatalogProvenance {
+        registry_name: registry.name().to_owned(),
+        registry_url: registry.base_url().to_string(),
+        root_sha256: format!("sha256:{}", registry.root_sha256()),
+        root_version: repository.root().signed.version.get(),
+        timestamp_version: repository.timestamp().signed.version.get(),
+        snapshot_version: repository.snapshot().signed.version.get(),
+        targets_version: repository.targets().signed.version.get(),
+        catalog_record_digest: record.descriptor_digest()?,
+    };
+    VerifiedPluginCatalogRecord::new(record, provenance).map_err(|error| {
+        UseError::new(
+            "use.extension.registry_target_invalid",
+            format!(
+                "A TUF catalog record has invalid verified provenance: {}",
+                error.message
+            ),
+        )
     })
 }
 

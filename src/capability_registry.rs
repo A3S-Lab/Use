@@ -671,6 +671,7 @@ extension "acme/slack" {
             package_sha256: None,
             trust: a3s_use_extension::ExtensionTrust::LocalExplicit,
             registry: None,
+            verified_catalog: None,
             installed_at_unix: 0,
             enabled,
         };

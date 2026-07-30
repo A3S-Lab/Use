@@ -2,7 +2,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::{UseError, UseResult, VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -18,7 +18,8 @@ use super::route_lock::{acquire_drain_lock, deadline_after, open_route_lock};
 use super::source::prepare_package_source;
 use super::{ExtensionManifest, ExtensionPaths, McpTransport};
 
-const RECEIPT_SCHEMA_VERSION: u32 = 1;
+const RECEIPT_SCHEMA_VERSION_V1: u32 = 1;
+const RECEIPT_SCHEMA_VERSION_V2: u32 = 2;
 pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 1;
 const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 const WATCH_INTERVAL: Duration = Duration::from_millis(50);
@@ -46,6 +47,8 @@ pub struct ExtensionReceipt {
     pub trust: ExtensionTrust,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<ResolvedRemotePackage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_catalog: Option<VerifiedPluginCatalogRecord>,
     pub installed_at_unix: u64,
     #[serde(default = "enabled_by_default")]
     pub enabled: bool,
@@ -384,6 +387,7 @@ impl ExtensionRegistry {
             options.force,
             ExtensionTrust::LocalExplicit,
             None,
+            None,
         )
         .await
     }
@@ -426,6 +430,7 @@ impl ExtensionRegistry {
             force,
             ExtensionTrust::ReleaseBundle,
             None,
+            None,
         )
         .await
     }
@@ -455,7 +460,13 @@ impl ExtensionRegistry {
         .await?;
         if !force {
             if let Some(result) = self
-                .converged_remote_install(&expected_package_id, prepared.resolved())
+                .converged_remote_install(
+                    &expected_package_id,
+                    prepared.resolved(),
+                    prepared
+                        .verified_catalog()
+                        .filter(|catalog| catalog.record.schema == PLUGIN_CATALOG_SCHEMA_V2),
+                )
                 .await?
             {
                 return Ok(result);
@@ -463,6 +474,10 @@ impl ExtensionRegistry {
         }
         let downloaded = prepared.download().await?;
         let provenance = downloaded.resolved().clone();
+        let verified_catalog = downloaded
+            .verified_catalog()
+            .filter(|catalog| catalog.record.schema == PLUGIN_CATALOG_SCHEMA_V2)
+            .cloned();
         let source = prepare_package_source(downloaded.path()).await?;
         self.install_prepared(
             &expected_package_id,
@@ -470,6 +485,7 @@ impl ExtensionRegistry {
             force,
             ExtensionTrust::RegistryTuf,
             Some(provenance),
+            verified_catalog,
         )
         .await
     }
@@ -478,6 +494,7 @@ impl ExtensionRegistry {
         &self,
         expected_package_id: &str,
         resolved: &ResolvedRemotePackage,
+        verified_catalog: Option<&VerifiedPluginCatalogRecord>,
     ) -> UseResult<Option<InstallResult>> {
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let Some(current) = self.get(expected_package_id).await? else {
@@ -486,7 +503,8 @@ impl ExtensionRegistry {
         let same_target = current.receipt.trust == ExtensionTrust::RegistryTuf
             && current.receipt.version == resolved.version
             && registry_identity(current.receipt.registry.as_ref())
-                == registry_identity(Some(resolved));
+                == registry_identity(Some(resolved))
+            && current.receipt.verified_catalog.as_ref() == verified_catalog;
         if !same_target {
             return Ok(None);
         }
@@ -505,10 +523,12 @@ impl ExtensionRegistry {
         force: bool,
         trust: ExtensionTrust,
         registry: Option<ResolvedRemotePackage>,
+        verified_catalog: Option<VerifiedPluginCatalogRecord>,
     ) -> UseResult<InstallResult> {
-        match (trust, registry.as_ref()) {
-            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None)
-            | (ExtensionTrust::RegistryTuf, Some(_)) => {}
+        match (trust, registry.as_ref(), verified_catalog.as_ref()) {
+            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None)
+            | (ExtensionTrust::RegistryTuf, Some(_), None)
+            | (ExtensionTrust::RegistryTuf, Some(_), Some(_)) => {}
             _ => {
                 return Err(UseError::new(
                     "use.extension.trust_invalid",
@@ -556,6 +576,13 @@ impl ExtensionRegistry {
         }
         validate_surface_files(&manifest, source).await?;
         let package_digest = package_sha256(source).await?;
+        validate_catalog_package(
+            verified_catalog.as_ref(),
+            registry.as_ref(),
+            &manifest,
+            &manifest_bytes,
+            &package_digest,
+        )?;
 
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let installed = self.list().await?;
@@ -583,7 +610,8 @@ impl ExtensionRegistry {
             };
             let same_provenance = current.receipt.trust == trust
                 && registry_identity(current.receipt.registry.as_ref())
-                    == registry_identity(registry.as_ref());
+                    == registry_identity(registry.as_ref())
+                && current.receipt.verified_catalog.as_ref() == verified_catalog.as_ref();
             if !force
                 && current.receipt.version == manifest.version
                 && current_package_digest == package_digest
@@ -653,7 +681,11 @@ impl ExtensionRegistry {
             .unwrap_or(true);
 
         let receipt = ExtensionReceipt {
-            schema_version: RECEIPT_SCHEMA_VERSION,
+            schema_version: if verified_catalog.is_some() {
+                RECEIPT_SCHEMA_VERSION_V2
+            } else {
+                RECEIPT_SCHEMA_VERSION_V1
+            },
             package_id: expected_package_id.to_string(),
             component_id: format!("use/{expected_package_id}"),
             route: manifest.route.clone(),
@@ -663,6 +695,7 @@ impl ExtensionRegistry {
             package_sha256: Some(package_digest),
             trust,
             registry,
+            verified_catalog,
             installed_at_unix: unix_timestamp(),
             enabled,
         };
@@ -874,7 +907,10 @@ impl ExtensionRegistry {
                 ),
             )
         })?;
-        if receipt.schema_version != RECEIPT_SCHEMA_VERSION {
+        if !matches!(
+            receipt.schema_version,
+            RECEIPT_SCHEMA_VERSION_V1 | RECEIPT_SCHEMA_VERSION_V2
+        ) {
             return Err(UseError::new(
                 "use.extension.receipt_incompatible",
                 format!(
@@ -882,6 +918,23 @@ impl ExtensionRegistry {
                     receipt.schema_version
                 ),
             ));
+        }
+        match (
+            receipt.schema_version,
+            receipt.verified_catalog.as_ref(),
+            receipt.package_sha256.as_ref(),
+        ) {
+            (RECEIPT_SCHEMA_VERSION_V1, None, _)
+            | (RECEIPT_SCHEMA_VERSION_V2, Some(_), Some(_)) => {}
+            _ => {
+                return Err(UseError::new(
+                    "use.extension.receipt_invalid",
+                    format!(
+                        "Extension receipt for '{}' has inconsistent catalog evidence.",
+                        receipt.package_id
+                    ),
+                ))
+            }
         }
         if receipt.package_sha256.as_deref().is_some_and(|digest| {
             digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -894,9 +947,13 @@ impl ExtensionRegistry {
                 ),
             ));
         }
-        match (receipt.trust, receipt.registry.as_ref()) {
-            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None) => {}
-            (ExtensionTrust::RegistryTuf, Some(registry)) => {
+        match (
+            receipt.trust,
+            receipt.registry.as_ref(),
+            receipt.verified_catalog.as_ref(),
+        ) {
+            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None) => {}
+            (ExtensionTrust::RegistryTuf, Some(registry), catalog) => {
                 registry.validate_provenance()?;
                 if registry.package_id != receipt.package_id || registry.version != receipt.version
                 {
@@ -904,6 +961,16 @@ impl ExtensionRegistry {
                         "use.extension.receipt_invalid",
                         format!(
                             "Registry provenance for '{}' does not match its receipt.",
+                            receipt.package_id
+                        ),
+                    ));
+                }
+                if catalog.is_some_and(|catalog| catalog.record.schema != PLUGIN_CATALOG_SCHEMA_V2)
+                {
+                    return Err(UseError::new(
+                        "use.extension.receipt_invalid",
+                        format!(
+                            "Extension receipt for '{}' contains non-plan-ready catalog evidence.",
                             receipt.package_id
                         ),
                     ));
@@ -946,6 +1013,26 @@ impl ExtensionRegistry {
             ));
         }
         validate_surface_files(&manifest, &receipt.package_root).await?;
+        if let Some(catalog) = receipt.verified_catalog.as_ref() {
+            let package_digest = package_sha256(&receipt.package_root).await?;
+            if receipt.package_sha256.as_deref() != Some(package_digest.as_str()) {
+                return Err(UseError::new(
+                    "use.extension.package_digest_mismatch",
+                    format!(
+                        "Installed package '{}' no longer matches its recorded digest.",
+                        receipt.package_id
+                    ),
+                )
+                .with_suggestion("Reinstall the extension from its trusted source."));
+            }
+            validate_catalog_package(
+                Some(catalog),
+                receipt.registry.as_ref(),
+                &manifest,
+                &manifest_bytes,
+                &package_digest,
+            )?;
+        }
         Ok(InstalledExtension { receipt, manifest })
     }
 }
@@ -1031,6 +1118,65 @@ fn registry_identity(registry: Option<&ResolvedRemotePackage>) -> Option<(&str, 
             registry.sha256.as_str(),
         )
     })
+}
+
+fn validate_catalog_package(
+    catalog: Option<&VerifiedPluginCatalogRecord>,
+    registry: Option<&ResolvedRemotePackage>,
+    manifest: &ExtensionManifest,
+    manifest_bytes: &[u8],
+    package_digest: &str,
+) -> UseResult<()> {
+    let Some(catalog) = catalog else {
+        return Ok(());
+    };
+    catalog.validate().map_err(|error| {
+        catalog_package_error(format!(
+            "The verified catalog evidence is invalid: {}",
+            error.message
+        ))
+    })?;
+    if catalog.record.schema != PLUGIN_CATALOG_SCHEMA_V2 {
+        return Err(catalog_package_error(
+            "Only catalog-v2 evidence can be persisted as plan-ready installation state.",
+        ));
+    }
+    let resolved = ResolvedRemotePackage::from_verified_catalog(catalog).map_err(|error| {
+        catalog_package_error(format!(
+            "The verified catalog cannot reconstruct its registry target: {}",
+            error.message
+        ))
+    })?;
+    if registry != Some(&resolved) {
+        return Err(catalog_package_error(
+            "The verified catalog does not match the selected registry target.",
+        ));
+    }
+    let record = &catalog.record;
+    let expected_package_digest = record
+        .package
+        .sha256
+        .as_deref()
+        .and_then(|digest| digest.strip_prefix("sha256:"));
+    let expected_manifest_digest = record
+        .package
+        .manifest_sha256
+        .as_deref()
+        .and_then(|digest| digest.strip_prefix("sha256:"));
+    if record.package_id != manifest.package_id
+        || record.version != manifest.version
+        || expected_package_digest != Some(package_digest)
+        || expected_manifest_digest != Some(sha256(manifest_bytes).as_str())
+    {
+        return Err(catalog_package_error(
+            "The verified catalog does not match the installed package and manifest.",
+        ));
+    }
+    Ok(())
+}
+
+fn catalog_package_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.extension.catalog_package_mismatch", message)
 }
 
 fn ensure_unique_routes(installed: &[InstalledExtension]) -> UseResult<()> {

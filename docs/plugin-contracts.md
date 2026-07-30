@@ -273,6 +273,22 @@ does not change archive download length or expanded package size. Avoiding
 unrelated downloads requires separate package archives, not merely optional
 surface flags.
 
+For a TUF installation selected from catalog v2,
+`a3s-use-extension` persists the complete `VerifiedPluginCatalogRecord` in
+extension receipt schema 2. Loading that receipt:
+
+1. validates the canonical catalog record and its TUF role provenance;
+2. reconstructs `ResolvedRemotePackage` and requires exact equality with the
+   recorded target;
+3. hashes the installed manifest and compares the signed raw-manifest digest;
+4. hashes the complete expanded package and compares both the signed catalog
+   digest and receipt digest.
+
+This receipt is durable plan-ready before-state for later upgrade and
+uninstall resolution. Receipt schema 1 remains readable for catalog-v1,
+explicit-local, and release-bundle installs, but its absence of signed
+catalog-v2 evidence must not be silently upgraded into a complete plan.
+
 ## Immutable Operation Plan
 
 `PluginOperationPlan` binds one complete resolution result:
@@ -357,9 +373,10 @@ decision requires a matching `a3s.use.plugin-operation-confirmation.v1` from a
 trusted user-facing adapter. The confirmation is stored in the append-only
 intent. Recovery validates that recorded evidence rather than abandoning
 already-started side effects after a later policy change. Legacy
-component-only records remain compatible. A3S Use planner emission of the
-complete draft remains pending on registry, receipt, Runtime provider, and
-capability-state wiring.
+component-only records remain compatible. Registry install transitions and
+plan-ready installed receipt evidence are now available. A3S Use planner
+emission of the complete draft remains pending on deriving upgrade/uninstall
+transitions from receipts plus Runtime-provider and capability-state wiring.
 
 Each reviewed Manager record binds the actor supplied by its trusted adapter:
 CLI and Web select `user`, while management MCP selects `agent`. Untrusted

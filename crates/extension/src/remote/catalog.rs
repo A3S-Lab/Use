@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use a3s_use_core::{
-    PluginReleaseChannel, PluginSurfaceKind, UseError, UseResult, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord,
+    PluginReleaseChannel, PluginSurfaceKind, UseError, UseResult, VerifiedPluginCatalogRecord,
 };
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -10,8 +9,9 @@ use tough::{Repository, TargetName};
 
 use super::{
     decode_registry_target_metadata, host_target, load_repository, resolved_remote_package,
-    validate_target_metadata, verified_registry_metadata, RegistryTargetMetadata,
-    ResolvedRemotePackage, TrustedRegistry, MAX_REGISTRY_PACKAGE_TARGETS, REGISTRY_METADATA_KEY,
+    validate_target_metadata, verified_catalog_record, verified_registry_metadata,
+    RegistryTargetMetadata, ResolvedRemotePackage, TrustedRegistry, MAX_REGISTRY_PACKAGE_TARGETS,
+    REGISTRY_METADATA_KEY,
 };
 
 mod cache;
@@ -427,23 +427,7 @@ fn collect_catalog_entries(
                 target_name.raw()
             ))
         })?;
-        let provenance = VerifiedCatalogProvenance {
-            registry_name: registry.name().to_owned(),
-            registry_url: registry.base_url().to_string(),
-            root_sha256: format!("sha256:{}", registry.root_sha256()),
-            root_version: repository.root().signed.version.get(),
-            timestamp_version: repository.timestamp().signed.version.get(),
-            snapshot_version: repository.snapshot().signed.version.get(),
-            targets_version: repository.targets().signed.version.get(),
-            catalog_record_digest: record.descriptor_digest()?,
-        };
-        let plugin = VerifiedPluginCatalogRecord::new(record, provenance).map_err(|error| {
-            registry_target_error(format!(
-                "TUF target '{}' has invalid verified catalog provenance: {}",
-                target_name.raw(),
-                error.message
-            ))
-        })?;
+        let plugin = verified_catalog_record(registry, repository, record)?;
         entries.push(CatalogEntry { plugin, version });
         if entries.len() as u64 > MAX_REGISTRY_PACKAGE_TARGETS {
             return Err(registry_target_error(format!(

@@ -743,6 +743,14 @@ permission evidence to the resolved surface closure, and derives the exact
 surface delta. Archive download bytes and expanded package footprint remain
 the full package values; only activation is narrowed.
 
+Remote installation now carries the selected catalog-v2 record through target
+download and persists it in extension receipt v2. Receipt loading validates
+the catalog provenance, reconstructs and compares the exact TUF target, hashes
+the installed manifest and expanded package again, and rejects any broken
+binding. Catalog-v1, local, and release-bundle installs continue to use the
+compatible receipt-v1 shape; they remain installable but do not provide the
+complete before-state required for automatic upgrade or uninstall planning.
+
 Reviewed Manager records now also bind the actor selected by the trusted host
 adapter. CLI and Web create user plans; management MCP creates agent plans.
 Package content and MCP input cannot select that principal. The current
