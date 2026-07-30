@@ -3,15 +3,20 @@ use a3s_use_core::{
     PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOperationImpact,
     PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease, PlannedProviderEvidence,
     PlannedSecretChange, PlannedSecretChangeKind, PlannedStateEvidence, PlannedSurfaceChange,
-    PlannedWorkspaceImpact, PluginCatalogRecord, PluginOperationAction, PluginOperationPlan,
-    PluginOperationPlanEnvelope, PluginPlanSource, PluginSurfaceKind, PluginSurfaceRef,
-    SurfaceChangeKind, VerifiedCatalogProvenance, PLUGIN_OPERATION_PLAN_SCHEMA,
+    PlannedWorkspaceImpact, PluginCatalogRecord, PluginOperationAction,
+    PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanEnvelope,
+    PluginPlanSource, PluginSurfaceKind, PluginSurfaceRef, SurfaceChangeKind,
+    VerifiedCatalogProvenance, PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA,
 };
 
 const CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-v1.json");
 const INSTALL_PLAN: &[u8] = include_bytes!("../fixtures/plugins/operation-plan-install-v1.json");
 const INSTALL_PLAN_DIGEST: &str =
     include_str!("../fixtures/plugins/operation-plan-install-v1.sha256").trim_ascii_end();
+const OPERATION_CONFIRMATION: &[u8] =
+    include_bytes!("../fixtures/plugins/operation-confirmation-v1.json");
+const OPERATION_CONFIRMATION_DIGEST: &str =
+    include_str!("../fixtures/plugins/operation-confirmation-v1.sha256").trim_ascii_end();
 const DIGEST_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const DIGEST_C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const DIGEST_D: &str = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
@@ -207,6 +212,87 @@ fn apply_requires_the_reviewed_digest_and_valid_time_window() {
         )
         .unwrap_err();
     assert_eq!(expired.code, "use.plugin.plan_expired");
+}
+
+#[test]
+fn ask_apply_requires_user_confirmation_of_the_exact_operation_plan() {
+    let envelope = PluginOperationPlanEnvelope::new(install_plan()).unwrap();
+    assert_eq!(
+        envelope
+            .verify_confirmed_apply(
+                "install:acme-research:0001",
+                &envelope.plan_digest,
+                None,
+                1_785_360_300_000,
+            )
+            .unwrap_err()
+            .code,
+        "use.plugin.plan_confirmation_required"
+    );
+    let confirmation = PluginOperationConfirmation {
+        schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_string(),
+        operation_id: envelope.plan.operation_id.clone(),
+        plan_digest: envelope.plan_digest.clone(),
+        confirmed_by: PlanActor::User,
+        confirmed_at_ms: 1_785_360_200_000,
+    };
+    assert_eq!(
+        confirmation.canonical_bytes().unwrap(),
+        canonical_fixture(OPERATION_CONFIRMATION)
+    );
+    assert_eq!(
+        PluginOperationConfirmation::from_json(OPERATION_CONFIRMATION).unwrap(),
+        confirmation
+    );
+    assert_eq!(
+        confirmation.descriptor_digest().unwrap(),
+        OPERATION_CONFIRMATION_DIGEST
+    );
+    envelope
+        .verify_confirmed_apply(
+            "install:acme-research:0001",
+            &envelope.plan_digest,
+            Some(&confirmation),
+            1_785_360_300_000,
+        )
+        .unwrap();
+
+    let mut substituted = confirmation;
+    substituted.plan_digest = DIGEST_F.to_string();
+    assert_eq!(
+        envelope
+            .verify_confirmed_apply(
+                "install:acme-research:0001",
+                &envelope.plan_digest,
+                Some(&substituted),
+                1_785_360_300_000,
+            )
+            .unwrap_err()
+            .code,
+        "use.plugin.plan_confirmation_mismatch"
+    );
+
+    let mut future = PluginOperationConfirmation::from_json(OPERATION_CONFIRMATION).unwrap();
+    future.confirmed_at_ms = 1_785_360_300_001;
+    assert_eq!(
+        envelope
+            .verify_confirmed_apply(
+                "install:acme-research:0001",
+                &envelope.plan_digest,
+                Some(&future),
+                1_785_360_300_000,
+            )
+            .unwrap_err()
+            .code,
+        "use.plugin.plan_confirmation_mismatch"
+    );
+
+    let mut unknown: serde_json::Value = serde_json::from_slice(OPERATION_CONFIRMATION).unwrap();
+    unknown["userToken"] = serde_json::json!("do-not-echo");
+    let error =
+        PluginOperationConfirmation::from_json(&serde_json::to_vec(&unknown).unwrap()).unwrap_err();
+    assert_eq!(error.code, "use.plugin.plan_confirmation_invalid");
+    assert!(!error.message.contains("do-not-echo"));
 }
 
 #[test]

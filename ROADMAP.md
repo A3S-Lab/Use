@@ -465,13 +465,25 @@ Implementation status (in progress 2026-07-30):
   and ceiling escalation;
 - completed M5H-A: verify the proposal-to-final-grant-to-durable-store path in
   a cross-crate integration test;
-- pending: validated ACL policy, operation-plan schema support for
-  multi-package grant proposals, full grant/revoke/no-op transition
-  resolution, secret-reference adapters, filesystem/network/child-process
-  enforcement, durable binding orchestration, streaming/file-backed large
-  Task output, the actual MCP initialize client adapter, stdio supervision,
-  Gateway route revocation, binding-store cleanup orchestration, and
-  scope-aware capability/session snapshot wiring.
+- completed M5H-B: define canonical workspace grant snapshots and sorted
+  multi-package change sets, binding them to the existing operation plan's
+  `grantBeforeDigest` and `grantAfterDigest` workspace-impact evidence;
+- completed M5H-B: derive required grant/revoke/no-op coverage from every root
+  and dependency Add/Replace/Remove transition, reject missing or injected
+  packages, state/receipt revision rollback, plan drift, and duplicate or
+  unrelated confirmation;
+- completed M5H-B: add a canonical operation-confirmation contract so every
+  `ask` apply, including revoke-only uninstall, binds the exact operation plan;
+- completed M5H-B: resolve ordered candidate grants and exact delayed
+  revocations with one monotonic next state revision, preserving N until N+1
+  capability cutover;
+- pending: validated ACL policy, durable lifecycle application of a complete
+  resolved grant change set, secret-reference adapters,
+  filesystem/network/child-process enforcement, durable binding
+  orchestration, streaming/file-backed large Task output, the actual MCP
+  initialize client adapter, stdio supervision, Gateway route revocation,
+  binding-store cleanup orchestration, and scope-aware capability/session
+  snapshot wiring.
 
 Deliverables:
 

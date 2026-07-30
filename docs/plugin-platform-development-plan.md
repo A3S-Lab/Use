@@ -284,8 +284,14 @@ clock.
 Plan construction must bind canonical pre-confirmation grant proposals, not
 invent a final grant digest before an `ask` decision exists. The subsequent
 user confirmation binds both plan and proposal digests; only then may apply
-finalize and persist a grant. The operation-plan schema still needs an ordered
-proposal list covering root and dependency package transitions.
+finalize and persist a grant.
+
+The workspace impact's before digest identifies a sorted active-grant snapshot;
+its after digest identifies a sorted change set covering root and dependency
+packages. Resolution derives required Add/Replace/Remove entries from the
+package plan and returns prepare-grant plus delayed-revoke phases. The
+lifecycle adapter must apply those phases idempotently around capability
+cutover and record partial progress in the operation saga.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still

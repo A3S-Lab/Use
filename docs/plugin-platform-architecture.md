@@ -423,9 +423,23 @@ The proposal contains no premature confirmation claim. `allow` finalizes at
 trusted apply time without confirmation; `ask` requires an exact, in-window
 user confirmation record. This prevents the circular construction that would
 result if a pre-confirmation plan tried to contain the digest of a final grant
-whose own digest includes later confirmation evidence. Multi-package proposal
-embedding and transition ordering are still pending operation-plan schema
-work.
+whose own digest includes later confirmation evidence.
+
+The existing operation-plan workspace impact carries two aggregate references:
+`grantBeforeDigest` is the canonical active-grant snapshot, while
+`grantAfterDigest` is the canonical sorted multi-package change set. The latter
+contains exact before evidence and/or after proposals per package. Validation
+derives the required package keys and sides from Add, Replace, and Remove
+transitions for root plus dependencies. Retained packages are no-op; an
+injected, missing, reordered, stale, or generation-mismatched entry fails
+closed.
+
+One plan-level operation confirmation authorizes an `ask` apply, including a
+revoke-only operation. Each new proposal confirmation must refer to the same
+plan and confirmation time. Resolution returns candidate grants for the
+prepare phase and exact prior grant evidence for retirement after capability
+cutover. Both share `stateRevision + 1`, but their side effects remain ordered
+by the lifecycle saga rather than pretending to be one filesystem transaction.
 
 Durable grant state is stored separately from package receipts at
 `<state-root>/grants/<scope-sha256>/<publisher>/<package>/<package-sha256>.json`.

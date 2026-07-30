@@ -659,9 +659,19 @@ review lifetime without pretending that confirmation already exists. For an
 and proposal digest under `a3s.use.plugin-grant-confirmation.v1`; apply
 deterministically finalizes the grant and stores only the confirmation digest.
 This removes the plan/confirmation digest cycle and rejects substitution,
-future, or expired evidence. Validated ACL policy, multi-package proposal
-embedding in operation plans, and complete grant-transition resolution remain
-pending.
+future, or expired evidence.
+
+Multi-package plans now bind grant state without changing the v1 operation
+plan shape. `grantBeforeDigest` identifies a canonical, revisioned active-grant
+snapshot; `grantAfterDigest` identifies a sorted
+`a3s.use.plugin-workspace-grant-changes.v1` change set. The resolver derives
+required root and dependency entries from Add/Replace/Remove package
+transitions, rejects extras or omissions, finalizes candidate grants in
+package order, and emits exact prior evidence for post-cutover revocation.
+`ask` apply additionally requires a canonical
+`a3s.use.plugin-operation-confirmation.v1` record even when an uninstall has no
+new proposal. Persisting an entire resolved change set through the lifecycle
+saga and validated ACL policy remain pending.
 
 ```bash
 a3s-use capability snapshot --json

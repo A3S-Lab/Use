@@ -21,6 +21,9 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Permission ceiling | `a3s.use.plugin-permissions.v1` | Maximum authority per executable/UI surface |
 | Workspace grant proposal | `a3s.use.plugin-workspace-grant-proposal.v1` | Reviewable pre-confirmation resolved authority |
 | Grant confirmation | `a3s.use.plugin-grant-confirmation.v1` | User evidence binding an exact plan and proposal |
+| Operation confirmation | `a3s.use.plugin-operation-confirmation.v1` | User evidence binding every `ask` apply to one plan |
+| Workspace grant snapshot | `a3s.use.plugin-workspace-grant-snapshot.v1` | Revisioned active-grant evidence before mutation |
+| Workspace grant changes | `a3s.use.plugin-workspace-grant-changes.v1` | Sorted root/dependency grant and revoke transition set |
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Search and review metadata without package download |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
@@ -152,6 +155,31 @@ This ordering avoids a digest cycle: the plan can bind a proposal before a
 user decision exists, while the later confirmation binds both immutable
 objects. Untrusted package, Skill, Tool, MCP, or UI content cannot act as
 confirmation evidence.
+
+### Snapshot and multi-package changes
+
+`PluginWorkspaceGrantSnapshot` is the canonical before-state for one scope and
+durable state revision. Its sorted evidence entries bind package ID and digest,
+grant receipt revision, and canonical grant digest. Evidence cannot claim a
+revision newer than the enclosing durable state.
+
+`PluginWorkspaceGrantChangeSet` binds an operation, scope, state revision,
+optional before-snapshot digest, and sorted package changes. A change carries
+exact prior evidence, a reviewed after proposal, or both. Against an immutable
+operation plan, the resolver:
+
+1. requires `grantBeforeDigest` to equal the snapshot digest;
+2. requires `grantAfterDigest` to equal the change-set digest;
+3. derives required entries from every permission-bearing root and dependency
+   Add, Replace, or Remove transition and workspace enablement state;
+4. rechecks proposal package generation, ceiling, authority, and lifetime;
+5. rejects missing, extra, reordered, stale, or substituted evidence; and
+6. resolves candidate grants separately from exact delayed revocations.
+
+The plan-level `PluginOperationConfirmation` covers every `ask` mutation,
+including revoke-only uninstall. Proposal confirmations additionally bind each
+new authority proposal to that same plan and confirmation event. `allow`
+accepts neither form of unrelated confirmation.
 
 ### Durable grant state
 

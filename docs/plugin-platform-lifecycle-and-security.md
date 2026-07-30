@@ -338,7 +338,8 @@ of truth for mutations while still making adapter retries idempotent.
 ### Install and enable
 
 1. Resolve verified metadata, dependencies, provider requirements, and grants.
-2. Produce a canonical, expiring plan with exact digests and provider choice.
+2. Snapshot active grant evidence, derive the sorted root/dependency change
+   set, and bind both digests into the canonical expiring plan.
 3. Re-resolve on apply and persist an operation intent before side effects.
 4. Download to a bounded staging root and verify archive and surface digests.
 5. Atomically commit the immutable package and a disabled receipt.
@@ -419,7 +420,9 @@ trusted registry root
   -> manifest and surface content digests
   -> release descriptor digest
   -> signed permission ceiling
+  -> active workspace grant snapshot
   -> canonical workspace grant proposal
+  -> sorted multi-package grant change set
   -> immutable operation plan digest
   -> user confirmation digest for ask decisions
   -> finalized workspace grant digest
@@ -473,6 +476,23 @@ confirmation time. Finalization rejects plan/proposal substitution, future
 evidence, and expired review windows. This two-phase ordering avoids a circular
 digest between a pre-confirmation plan and a final grant containing
 confirmation evidence.
+
+Before-state uses
+`a3s.use.plugin-workspace-grant-snapshot.v1`: sorted active evidence binds
+package ID/digest, receipt revision, grant digest, scope, and global state
+revision. The corresponding
+`a3s.use.plugin-workspace-grant-changes.v1` record contains sorted per-package
+before evidence and/or after proposals. Its validator derives the exact package
+keys and sides required by the plan's Add, Replace, and Remove transitions,
+including dependencies. `grantBeforeDigest` binds the snapshot and
+`grantAfterDigest` binds the change set.
+
+Every `ask` apply also carries
+`a3s.use.plugin-operation-confirmation.v1`, including revoke-only uninstall
+where no new proposal exists. Proposal confirmations must share its plan and
+confirmation time. Resolution emits candidate grants for preparation and
+exact-current evidence for delayed retirement; persistence ordering remains a
+durable saga checkpoint around capability cutover.
 
 Durable authorization uses two storage schemas:
 `a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision

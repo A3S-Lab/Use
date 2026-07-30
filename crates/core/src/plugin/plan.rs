@@ -281,6 +281,10 @@ impl PluginOperationPlanEnvelope {
         Ok(())
     }
 
+    /// Verifies immutable plan identity, policy, and lifetime only.
+    ///
+    /// Mutation entrypoints must call `verify_confirmed_apply` so an `ask`
+    /// decision cannot be applied without exact user confirmation.
     pub fn verify_apply(
         &self,
         operation_id: &str,
