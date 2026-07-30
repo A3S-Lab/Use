@@ -232,6 +232,13 @@ Implementation status (2026-07-30):
 - completed in Code Web: the Plugins feature is a thin HTTP adapter over the
   shared manager and preserves the existing timeout, JSON-size, HTTP error, and
   reviewed-plan behavior;
+- completed in the umbrella CLI: first-class `a3s plugin search`, `inspect`,
+  and `list` commands are thin adapters over the shared manager, with canonical
+  package identities, bounded filters, cached-only offline reads, typed errors,
+  and stable human/JSON output;
+- completed in the umbrella CLI: installed state comes from the bounded A3S Use
+  capability snapshot and distinguishes desired enablement, current
+  callability, readiness, and an unavailable observation;
 - completed in the umbrella CLI library: immutable one-hour reviewed plans
   receive cryptographically random operation IDs and are stored with
   append-only apply intents and seven-day replayable successful results;
@@ -257,10 +264,11 @@ Implementation status (2026-07-30):
   validation, Use-owned JSON output, operation ID uniqueness, expiry,
   append-only replay, corruption rejection, cross-process locking, Web adapter
   compilation, deterministic surface graph/readiness fixtures, dependency-gated
-  Skill projection, and a controlled Web Marketplace/invalid-plan smoke test;
-- pending: the first-class CLI adapter, Runtime/MCP/UI observation and apply
-  adapters, management MCP adapter, and Unix Marketplace lifecycle E2E through
-  the shared service.
+  Skill projection, read-only CLI parser/offline/list/error contracts, and a
+  controlled Web Marketplace/invalid-plan smoke test;
+- pending: first-class CLI lifecycle verbs, Runtime/MCP/UI observation and
+  apply adapters, management MCP adapter, and Unix Marketplace lifecycle E2E
+  through the shared service.
 
 Deliverables:
 
