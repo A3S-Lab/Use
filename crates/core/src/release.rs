@@ -20,6 +20,7 @@ pub const MCP_RELEASE_SCHEMA: &str = "a3s.use.mcp-release.v1";
 pub const SKILL_RELEASE_SCHEMA: &str = "a3s.use.skill-release.v1";
 pub const TOOL_RELEASE_SCHEMA: &str = "a3s.use.tool-release.v1";
 pub const MAX_RELEASE_DESCRIPTOR_BYTES: usize = 256 * 1024;
+pub const MAX_TASK_CAPTURE_BYTES: u64 = 1024 * 1024 * 1024;
 
 const OCI_IMAGE_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
 const OCI_IMAGE_INDEX: &str = "application/vnd.oci.image.index.v1+json";

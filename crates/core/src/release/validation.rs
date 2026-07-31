@@ -8,12 +8,11 @@ use crate::{UseError, UseResult};
 use super::{
     HttpHealthContract, McpServiceContract, ReleaseArtifact, ReleaseCompatibility,
     ReleaseDependency, ReleaseProvenance, ReleaseResolution, SkillContentContract,
-    ToolWorkloadContract,
+    ToolWorkloadContract, MAX_TASK_CAPTURE_BYTES,
 };
 
 const MAX_ARTIFACT_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 const MAX_LIFECYCLE_MS: u64 = 60 * 60 * 1000;
-const MAX_CAPTURE_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_PROCESS_ARGUMENTS: usize = 64;
 const MAX_PROCESS_ARGUMENT_BYTES: usize = 32 * 1024;
 const MAX_PROCESS_COMMAND_BYTES: usize = 128 * 1024;
@@ -70,9 +69,9 @@ impl ToolWorkloadContract {
                     || *timeout_ms == 0
                     || *timeout_ms > MAX_LIFECYCLE_MS
                     || *max_stdout_bytes == 0
-                    || *max_stdout_bytes > MAX_CAPTURE_BYTES
+                    || *max_stdout_bytes > MAX_TASK_CAPTURE_BYTES
                     || *max_stderr_bytes == 0
-                    || *max_stderr_bytes > MAX_CAPTURE_BYTES
+                    || *max_stderr_bytes > MAX_TASK_CAPTURE_BYTES
                     || success_exit_codes.is_empty()
                     || success_exit_codes.windows(2).any(|pair| pair[0] >= pair[1])
                 {

@@ -15,6 +15,14 @@ const MAX_WORKSPACE_GRANT_RECORD_BYTES: u64 = 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<StdFile> {
+    acquire_store_lock(state_root, root, false).await
+}
+
+pub(super) async fn acquire_read_lock(state_root: &Path, root: &Path) -> UseResult<StdFile> {
+    acquire_store_lock(state_root, root, true).await
+}
+
+async fn acquire_store_lock(state_root: &Path, root: &Path, shared: bool) -> UseResult<StdFile> {
     fs::create_dir_all(state_root)
         .await
         .map_err(|error| path_io_error("create workspace grant state root", state_root, error))?;
@@ -46,7 +54,11 @@ pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<St
             .read(true)
             .write(true)
             .open(&lock_path)?;
-        file.lock_exclusive()?;
+        if shared {
+            FileExt::lock_shared(&file)?;
+        } else {
+            FileExt::lock_exclusive(&file)?;
+        }
         Ok::<_, io::Error>(file)
     })
     .await

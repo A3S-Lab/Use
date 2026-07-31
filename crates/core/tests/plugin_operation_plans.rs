@@ -124,19 +124,19 @@ fn install_plan() -> PluginOperationPlan {
             provider(
                 PluginSurfaceKind::Mcp,
                 "library",
-                "runtime:mcp-http",
+                "runtime-mcp-http",
                 PlanEnforcementProfile::Container,
             ),
             provider(
                 PluginSurfaceKind::Tool,
                 "convert",
-                "runtime:tool-task",
+                "runtime-tool-task",
                 PlanEnforcementProfile::Sandbox,
             ),
             provider(
                 PluginSurfaceKind::Tool,
                 "index",
-                "runtime:tool-service",
+                "runtime-tool-service",
                 PlanEnforcementProfile::Container,
             ),
         ],
@@ -304,6 +304,10 @@ fn plan_rejects_permission_provider_and_source_drift() {
     let mut provider_drift = install_plan();
     provider_drift.providers[1].enforcement = PlanEnforcementProfile::Container;
     assert!(provider_drift.validate().is_err());
+
+    let mut provider_id_drift = install_plan();
+    provider_id_drift.providers[1].provider_id = "runtime:tool-task".to_owned();
+    assert!(provider_id_drift.validate().is_err());
 
     let mut source_drift = install_plan();
     source_drift.packages[0].source = Some(PluginPlanSource::ReleaseBundle {

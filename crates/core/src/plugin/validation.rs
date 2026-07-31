@@ -58,6 +58,18 @@ pub(super) fn valid_machine_id(value: &str) -> bool {
         })
 }
 
+/// Match the public `a3s-runtime::ProviderId` portable grammar without making
+/// the contract-only core crate depend on the Runtime implementation crate.
+pub(super) fn valid_provider_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || (byte == b'-' && index > 0 && index + 1 < value.len())
+        })
+}
+
 pub(super) fn valid_portable_scope_path(value: &str) -> bool {
     value == "."
         || (!value.is_empty()

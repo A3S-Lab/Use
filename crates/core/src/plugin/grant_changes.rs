@@ -4,14 +4,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::{UseError, UseResult};
 
+use super::plan::MAX_PLAN_LIFETIME_MS;
 use super::resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantChangeSet};
 use super::validation::{valid_machine_id, valid_package_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPackageChangeKind,
-    PlanPolicyDecision, PlannedPackageState, PlannedPackageTransition, PluginGrantConfirmation,
-    PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanEnvelope,
-    PluginWorkspaceGrantProposal, WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS,
-    PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+    PlanPackageRole, PlanPolicyDecision, PlannedPackageState, PlannedPackageTransition,
+    PlannedWorkspaceImpact, PluginGrantConfirmation, PluginOperationConfirmation,
+    PluginOperationPlan, PluginOperationPlanBinding, PluginOperationPlanEnvelope,
+    PluginWorkspaceGrantProposal, WorkspaceGrantAuthority, WorkspaceGrantProposalAuthority,
+    MAX_PLUGIN_PLAN_ITEMS, PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
 const SNAPSHOT_ERROR: &str = "use.plugin.grant_snapshot_invalid";
@@ -55,6 +58,16 @@ pub struct PlannedWorkspaceGrantChange {
     pub before: Option<WorkspaceGrantEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<PluginWorkspaceGrantProposal>,
+}
+
+/// Canonical grant change-set and the exact workspace impact bound into a plan.
+///
+/// This is process-local construction evidence, not an additional serialized
+/// contract. The nested change set remains the versioned persisted artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginWorkspaceGrantPlan {
+    change_set: PluginWorkspaceGrantChangeSet,
+    impact: PlannedWorkspaceImpact,
 }
 
 impl PluginWorkspaceGrantSnapshot {
@@ -104,6 +117,98 @@ impl PluginWorkspaceGrantSnapshot {
     }
 }
 
+impl PluginWorkspaceGrantPlan {
+    pub fn change_set(&self) -> &PluginWorkspaceGrantChangeSet {
+        &self.change_set
+    }
+
+    pub fn impact(&self) -> &PlannedWorkspaceImpact {
+        &self.impact
+    }
+
+    pub fn into_parts(self) -> (PluginWorkspaceGrantChangeSet, PlannedWorkspaceImpact) {
+        (self.change_set, self.impact)
+    }
+
+    pub fn validate(&self) -> UseResult<()> {
+        self.change_set.validate()?;
+        let change_set_digest = self.change_set.descriptor_digest()?;
+        if self.impact.scope_id != self.change_set.scope_id
+            || self.impact.grant_before_digest != self.change_set.before_snapshot_digest
+            || self.impact.grant_after_digest.as_deref() != Some(change_set_digest.as_str())
+            || (self.impact.grant_before_digest == self.impact.grant_after_digest
+                && self.impact.enabled_before == self.impact.enabled_after)
+        {
+            return Err(change_set_error(
+                "The workspace grant plan impact does not bind its canonical change set.",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Resolve every required grant and delayed revocation from one exact
+    /// host binding, package transition set, and durable scope snapshot.
+    ///
+    /// The complete snapshot is always digest-bound, including an empty
+    /// install snapshot. Permission-free or disabled transitions return
+    /// `None` because they require no grant lifecycle.
+    pub fn resolve(
+        binding: &PluginOperationPlanBinding,
+        state_revision: u64,
+        packages: &[PlannedPackageTransition],
+        before: &PluginWorkspaceGrantSnapshot,
+        enabled_before: bool,
+        enabled_after: bool,
+    ) -> UseResult<Option<Self>> {
+        validate_planning_inputs(binding, state_revision, packages, before)?;
+
+        let mut changes = Vec::new();
+        for package in packages {
+            let before_required = grant_before_required(package, enabled_before);
+            let after_required = grant_after_required(package, enabled_after);
+            if !before_required && !after_required {
+                continue;
+            }
+
+            let prior = before_required
+                .then(|| prior_evidence(package, before))
+                .transpose()?;
+            let candidate = after_required
+                .then(|| proposal_for(binding, package))
+                .transpose()?;
+            changes.push(PlannedWorkspaceGrantChange {
+                package_id: package.package_id.clone(),
+                before: prior,
+                after: candidate,
+            });
+        }
+        if changes.is_empty() {
+            return Ok(None);
+        }
+
+        let before_snapshot_digest = before.descriptor_digest()?;
+        let change_set = PluginWorkspaceGrantChangeSet {
+            schema: PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA.to_string(),
+            operation_id: binding.operation_id.clone(),
+            scope_id: binding.scope.id.clone(),
+            state_revision,
+            before_snapshot_digest: Some(before_snapshot_digest.clone()),
+            changes,
+        };
+        change_set.validate()?;
+        let impact = PlannedWorkspaceImpact {
+            scope_id: binding.scope.id.clone(),
+            grant_before_digest: Some(before_snapshot_digest),
+            grant_after_digest: Some(change_set.descriptor_digest()?),
+            enabled_before,
+            enabled_after,
+        };
+        let plan = Self { change_set, impact };
+        plan.validate()?;
+        Ok(Some(plan))
+    }
+}
+
 impl WorkspaceGrantEvidence {
     pub fn validate(&self) -> UseResult<()> {
         if !valid_package_id(&self.package_id)
@@ -117,6 +222,86 @@ impl WorkspaceGrantEvidence {
         }
         Ok(())
     }
+}
+
+fn validate_planning_inputs(
+    binding: &PluginOperationPlanBinding,
+    state_revision: u64,
+    packages: &[PlannedPackageTransition],
+    before: &PluginWorkspaceGrantSnapshot,
+) -> UseResult<()> {
+    before.validate().map_err(|_| plan_mismatch())?;
+    if PluginOperationPlan::validate_operation_id(&binding.operation_id).is_err()
+        || state_revision == 0
+        || before.scope_id != binding.scope.id
+        || before.state_revision != state_revision
+        || binding.created_at_ms == 0
+        || binding.expires_at_ms <= binding.created_at_ms
+        || binding.expires_at_ms - binding.created_at_ms > MAX_PLAN_LIFETIME_MS
+        || !valid_sha256(&binding.authority.policy_digest)
+        || binding.authority.confirmation_required
+            != (binding.authority.decision == PlanPolicyDecision::Ask)
+        || packages.is_empty()
+        || packages.len() > MAX_PLUGIN_PLAN_ITEMS
+        || packages
+            .windows(2)
+            .any(|pair| pair[0].package_id >= pair[1].package_id)
+        || packages
+            .iter()
+            .filter(|package| package.role == PlanPackageRole::Root)
+            .count()
+            != 1
+    {
+        return Err(plan_mismatch());
+    }
+    for package in packages {
+        package.validate().map_err(|_| plan_mismatch())?;
+    }
+    Ok(())
+}
+
+fn prior_evidence(
+    package: &PlannedPackageTransition,
+    snapshot: &PluginWorkspaceGrantSnapshot,
+) -> UseResult<WorkspaceGrantEvidence> {
+    let state = package.before.as_ref().ok_or_else(plan_mismatch)?;
+    let evidence = snapshot
+        .grants
+        .binary_search_by(|evidence| evidence.package_id.cmp(&package.package_id))
+        .ok()
+        .and_then(|index| snapshot.grants.get(index))
+        .ok_or_else(plan_mismatch)?;
+    if evidence.package_digest != state.release.package_sha256 {
+        return Err(plan_mismatch());
+    }
+    Ok(evidence.clone())
+}
+
+fn proposal_for(
+    binding: &PluginOperationPlanBinding,
+    package: &PlannedPackageTransition,
+) -> UseResult<PluginWorkspaceGrantProposal> {
+    let state = package.after.as_ref().ok_or_else(plan_mismatch)?;
+    let proposal = PluginWorkspaceGrantProposal {
+        schema: PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA.to_string(),
+        operation_id: binding.operation_id.clone(),
+        scope_id: binding.scope.id.clone(),
+        package_id: package.package_id.clone(),
+        package_digest: state.release.package_sha256.clone(),
+        permission_ceiling_digest: state.release.permission_ceiling_digest.clone(),
+        permissions_digest: state.permissions.descriptor_digest()?,
+        permissions: state.permissions.clone(),
+        authority: WorkspaceGrantProposalAuthority {
+            actor: binding.authority.actor,
+            decision: binding.authority.decision,
+            policy_digest: binding.authority.policy_digest.clone(),
+        },
+        created_at_ms: binding.created_at_ms,
+        apply_expires_at_ms: binding.expires_at_ms,
+        grant_expires_at_ms: None,
+    };
+    proposal.validate_against(&state.permissions)?;
+    Ok(proposal)
 }
 
 impl PluginWorkspaceGrantChangeSet {

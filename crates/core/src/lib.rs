@@ -23,11 +23,11 @@ pub use plugin::{
     PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
     PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle, PluginReleaseChannel,
     PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrant, PluginWorkspaceGrantChangeSet,
-    PluginWorkspaceGrantProposal, PluginWorkspaceGrantSnapshot, ResolvedWorkspaceGrant,
-    ResolvedWorkspaceGrantChangeSet, ResourcePermissionCeiling, SurfaceChangeKind,
-    SurfacePermissionCeiling, ToolWorkloadClass, UiHttpPermission, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord, WorkspaceGrantAuthority, WorkspaceGrantEvidence,
-    WorkspaceGrantProposalAuthority, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
+    PluginWorkspaceGrantPlan, PluginWorkspaceGrantProposal, PluginWorkspaceGrantSnapshot,
+    ResolvedWorkspaceGrant, ResolvedWorkspaceGrantChangeSet, ResourcePermissionCeiling,
+    SurfaceChangeKind, SurfacePermissionCeiling, ToolWorkloadClass, UiHttpPermission,
+    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, WorkspaceGrantAuthority,
+    WorkspaceGrantEvidence, WorkspaceGrantProposalAuthority, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
     MAX_PLUGIN_CONTRACT_BYTES, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_CATALOG_SCHEMA,
     PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_GRANT_CONFIRMATION_SCHEMA,
     PLUGIN_MANAGER_TOOLSET_SCHEMA, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
@@ -41,8 +41,8 @@ pub use release::{
     ReleaseArtifact, ReleaseCompatibility, ReleaseDependency, ReleaseKind, ReleaseProvenance,
     ReleaseResolution, SkillBindingContract, SkillBindingTarget, SkillContentContract,
     SkillReleaseDescriptor, ToolReleaseDescriptor, ToolServiceInterface, ToolServiceNetwork,
-    ToolTaskInterface, ToolWorkloadContract, MAX_RELEASE_DESCRIPTOR_BYTES, MCP_RELEASE_SCHEMA,
-    SKILL_RELEASE_SCHEMA, TOOL_RELEASE_SCHEMA,
+    ToolTaskInterface, ToolWorkloadContract, MAX_RELEASE_DESCRIPTOR_BYTES, MAX_TASK_CAPTURE_BYTES,
+    MCP_RELEASE_SCHEMA, SKILL_RELEASE_SCHEMA, TOOL_RELEASE_SCHEMA,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

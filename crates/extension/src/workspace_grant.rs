@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::workspace_grant_io::{
-    acquire_lock, ensure_owned_directory, read_optional_record, validate_existing_directory_chain,
-    write_record,
+    acquire_lock, acquire_read_lock, ensure_owned_directory, read_optional_record,
+    validate_existing_directory_chain, write_record,
 };
 use super::ExtensionPaths;
 
@@ -241,6 +241,7 @@ impl WorkspaceGrantStore {
         package_id: &str,
         package_digest: &str,
     ) -> UseResult<Option<StoredWorkspaceGrant>> {
+        let _lock = acquire_read_lock(&self.state_root, &self.root).await?;
         self.observe_record(scope_id, package_id, package_digest)
             .await
     }

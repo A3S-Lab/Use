@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use a3s_use_core::{
     ReleaseDependency, ReleaseKind, ReleaseResolution, ToolReleaseDescriptor, ToolServiceInterface,
-    ToolServiceNetwork, ToolTaskInterface, ToolWorkloadContract,
+    ToolServiceNetwork, ToolTaskInterface, ToolWorkloadContract, MAX_TASK_CAPTURE_BYTES,
 };
 
 const TASK_FIXTURE: &[u8] = include_bytes!("../fixtures/releases/tool-task-release-v1.json");
@@ -146,6 +146,34 @@ fn tool_workload_contracts_fail_closed() {
     service.artifact.media_type = "application/vnd.a3s.skill.bundle.v1+tar+gzip".to_string();
     assert_eq!(
         service.canonical_bytes().unwrap_err().code,
+        "use.release.descriptor_invalid"
+    );
+}
+
+#[test]
+fn tool_task_capture_uses_the_exported_release_ceiling() {
+    let mut task = ToolReleaseDescriptor::from_json(TASK_FIXTURE).unwrap();
+    let ToolWorkloadContract::Task {
+        max_stdout_bytes,
+        max_stderr_bytes,
+        ..
+    } = &mut task.workload
+    else {
+        panic!("fixture must describe a Tool Task");
+    };
+    *max_stdout_bytes = MAX_TASK_CAPTURE_BYTES;
+    *max_stderr_bytes = MAX_TASK_CAPTURE_BYTES;
+    task.validate().unwrap();
+
+    let ToolWorkloadContract::Task {
+        max_stdout_bytes, ..
+    } = &mut task.workload
+    else {
+        panic!("fixture must describe a Tool Task");
+    };
+    *max_stdout_bytes = MAX_TASK_CAPTURE_BYTES + 1;
+    assert_eq!(
+        task.validate().unwrap_err().code,
         "use.release.descriptor_invalid"
     );
 }

@@ -222,7 +222,7 @@ fn helper_provider() -> PlannedProviderEvidence {
                 id: "run".to_string(),
             },
         },
-        provider_id: "runtime:helper".to_string(),
+        provider_id: "runtime-helper".to_string(),
         provider_build_id: "runtime:0.3.0:linux-x86_64".to_string(),
         capability_digest: DIGEST_D.to_string(),
         semantics_profile_digest: DIGEST_E.to_string(),

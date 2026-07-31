@@ -30,14 +30,14 @@ async fn install_intent_prepares_cuts_over_and_completes_idempotently() {
     );
     assert_eq!(
         store
-            .observe_change_set(&fixture.resolved.operation_id)
+            .observe_change_set(&fixture.resolved.scope_id, &fixture.resolved.operation_id,)
             .await
             .unwrap(),
         Some(intent.clone())
     );
     assert_eq!(
         store
-            .retire_change_set(&fixture.resolved.operation_id)
+            .retire_change_set(&fixture.resolved.scope_id, &fixture.resolved.operation_id,)
             .await
             .unwrap_err()
             .code,
@@ -46,6 +46,7 @@ async fn install_intent_prepares_cuts_over_and_completes_idempotently() {
     assert_eq!(
         store
             .commit_change_set_cutover(
+                &fixture.resolved.scope_id,
                 &fixture.resolved.operation_id,
                 cutover(&fixture.resolved),
                 1_400,
@@ -57,13 +58,21 @@ async fn install_intent_prepares_cuts_over_and_completes_idempotently() {
     );
 
     let prepared = store
-        .prepare_change_set(&fixture.resolved.operation_id, 1_250)
+        .prepare_change_set(
+            &fixture.resolved.scope_id,
+            &fixture.resolved.operation_id,
+            1_250,
+        )
         .await
         .unwrap();
     assert_eq!(prepared.phase, WorkspaceGrantLifecyclePhase::Prepared);
     assert_eq!(
         store
-            .prepare_change_set(&fixture.resolved.operation_id, 1_250)
+            .prepare_change_set(
+                &fixture.resolved.scope_id,
+                &fixture.resolved.operation_id,
+                1_250,
+            )
             .await
             .unwrap(),
         prepared
@@ -87,6 +96,7 @@ async fn install_intent_prepares_cuts_over_and_completes_idempotently() {
     let cutover = cutover(&fixture.resolved);
     let committed = store
         .commit_change_set_cutover(
+            &fixture.resolved.scope_id,
             &fixture.resolved.operation_id,
             cutover.clone(),
             cutover.committed_at_ms,
@@ -100,6 +110,7 @@ async fn install_intent_prepares_cuts_over_and_completes_idempotently() {
     assert_eq!(
         store
             .commit_change_set_cutover(
+                &fixture.resolved.scope_id,
                 &fixture.resolved.operation_id,
                 cutover.clone(),
                 cutover.committed_at_ms,
@@ -110,13 +121,13 @@ async fn install_intent_prepares_cuts_over_and_completes_idempotently() {
     );
 
     let completed = store
-        .retire_change_set(&fixture.resolved.operation_id)
+        .retire_change_set(&fixture.resolved.scope_id, &fixture.resolved.operation_id)
         .await
         .unwrap();
     assert_eq!(completed.phase, WorkspaceGrantLifecyclePhase::Completed);
     assert_eq!(
         store
-            .retire_change_set(&fixture.resolved.operation_id)
+            .retire_change_set(&fixture.resolved.scope_id, &fixture.resolved.operation_id,)
             .await
             .unwrap(),
         completed
@@ -156,7 +167,11 @@ async fn upgrade_recovers_partial_prepare_and_partial_retirement() {
     drop(store);
     let store = WorkspaceGrantStore::new(temporary.path());
     let prepared = store
-        .prepare_change_set(&fixture.resolved.operation_id, 1_250)
+        .prepare_change_set(
+            &fixture.resolved.scope_id,
+            &fixture.resolved.operation_id,
+            1_250,
+        )
         .await
         .unwrap();
     assert_eq!(prepared.phase, WorkspaceGrantLifecyclePhase::Prepared);
@@ -172,6 +187,7 @@ async fn upgrade_recovers_partial_prepare_and_partial_retirement() {
     let cutover = cutover(&fixture.resolved);
     store
         .commit_change_set_cutover(
+            &fixture.resolved.scope_id,
             &fixture.resolved.operation_id,
             cutover.clone(),
             cutover.committed_at_ms,
@@ -194,7 +210,7 @@ async fn upgrade_recovers_partial_prepare_and_partial_retirement() {
     drop(store);
     let store = WorkspaceGrantStore::new(temporary.path());
     let completed = store
-        .retire_change_set(&fixture.resolved.operation_id)
+        .retire_change_set(&fixture.resolved.scope_id, &fixture.resolved.operation_id)
         .await
         .unwrap();
     assert_eq!(completed.phase, WorkspaceGrantLifecyclePhase::Completed);
@@ -265,13 +281,18 @@ async fn lifecycle_rejects_conflict_future_cutover_and_candidate_drift() {
     );
 
     let prepared = store
-        .prepare_change_set(&fixture.resolved.operation_id, 1_250)
+        .prepare_change_set(
+            &fixture.resolved.scope_id,
+            &fixture.resolved.operation_id,
+            1_250,
+        )
         .await
         .unwrap();
     let cutover = cutover(&fixture.resolved);
     assert_eq!(
         store
             .commit_change_set_cutover(
+                &fixture.resolved.scope_id,
                 &fixture.resolved.operation_id,
                 cutover.clone(),
                 cutover.committed_at_ms - 1,
@@ -293,6 +314,7 @@ async fn lifecycle_rejects_conflict_future_cutover_and_candidate_drift() {
     assert_eq!(
         store
             .commit_change_set_cutover(
+                &fixture.resolved.scope_id,
                 &fixture.resolved.operation_id,
                 cutover.clone(),
                 cutover.committed_at_ms,
@@ -345,12 +367,17 @@ async fn same_generation_grant_replacement_is_not_revoked_after_cutover() {
         .await
         .unwrap();
     let prepared = store
-        .prepare_change_set(&fixture.resolved.operation_id, 1_250)
+        .prepare_change_set(
+            &fixture.resolved.scope_id,
+            &fixture.resolved.operation_id,
+            1_250,
+        )
         .await
         .unwrap();
     let cutover = cutover(&fixture.resolved);
     store
         .commit_change_set_cutover(
+            &fixture.resolved.scope_id,
             &fixture.resolved.operation_id,
             cutover.clone(),
             cutover.committed_at_ms,
@@ -358,7 +385,7 @@ async fn same_generation_grant_replacement_is_not_revoked_after_cutover() {
         .await
         .unwrap();
     let completed = store
-        .retire_change_set(&fixture.resolved.operation_id)
+        .retire_change_set(&fixture.resolved.scope_id, &fixture.resolved.operation_id)
         .await
         .unwrap();
     assert_eq!(completed.phase, WorkspaceGrantLifecyclePhase::Completed);
@@ -391,9 +418,11 @@ async fn operation_journal_fails_closed_on_unknown_privileged_fields() {
         "{:x}",
         Sha256::digest(fixture.resolved.operation_id.as_bytes())
     );
+    let scope_digest = format!("{:x}", Sha256::digest(fixture.resolved.scope_id.as_bytes()));
     let path = store
         .root()
         .join(".operations")
+        .join(scope_digest)
         .join(format!("{operation_digest}.json"));
     let bytes = fs::read(&path).await.unwrap();
     let mut document = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap();
@@ -403,11 +432,56 @@ async fn operation_journal_fails_closed_on_unknown_privileged_fields() {
         .unwrap();
 
     let error = store
-        .observe_change_set(&fixture.resolved.operation_id)
+        .observe_change_set(&fixture.resolved.scope_id, &fixture.resolved.operation_id)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.grant_operation.invalid");
     assert!(!error.message.contains("do-not-echo"));
+}
+
+#[tokio::test]
+async fn one_operation_keeps_scope_specific_grant_journals_disjoint() {
+    let temporary = TempDir::new().unwrap();
+    let store = WorkspaceGrantStore::new(temporary.path());
+    let first = install_fixture();
+    let mut second = install_fixture();
+    second.resolved.scope_id = "workspace-02".to_string();
+    second.resolved.before_snapshot_digest = None;
+    for candidate in &mut second.resolved.grants {
+        candidate.grant.scope_id = second.resolved.scope_id.clone();
+    }
+
+    let first_journal = store
+        .begin_change_set(&first.resolved, &first.ceilings)
+        .await
+        .unwrap();
+    let second_journal = store
+        .begin_change_set(&second.resolved, &second.ceilings)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        first_journal.intent.operation_id,
+        second_journal.intent.operation_id
+    );
+    assert_ne!(
+        first_journal.intent.scope_id,
+        second_journal.intent.scope_id
+    );
+    assert_eq!(
+        store
+            .observe_change_set(&first.resolved.scope_id, &first.resolved.operation_id)
+            .await
+            .unwrap(),
+        Some(first_journal)
+    );
+    assert_eq!(
+        store
+            .observe_change_set(&second.resolved.scope_id, &second.resolved.operation_id)
+            .await
+            .unwrap(),
+        Some(second_journal)
+    );
 }
 
 #[test]

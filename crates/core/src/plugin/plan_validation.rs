@@ -9,7 +9,8 @@ use super::plan::{
     PluginOperationPlan, PluginPlanSource, MAX_PLAN_LIFETIME_MS,
 };
 use super::validation::{
-    strictly_sorted_unique, valid_machine_id, valid_package_id, valid_permission_name, valid_sha256,
+    strictly_sorted_unique, valid_machine_id, valid_package_id, valid_permission_name,
+    valid_provider_id, valid_sha256,
 };
 use super::{PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA};
 
@@ -293,7 +294,7 @@ impl PlannedProviderEvidence {
         required: &PlanQualifiedSurfaceRef,
     ) -> UseResult<()> {
         if &self.surface != required
-            || !valid_machine_id(&self.provider_id)
+            || !valid_provider_id(&self.provider_id)
             || !valid_machine_id(&self.provider_build_id)
             || !valid_sha256(&self.capability_digest)
             || !valid_sha256(&self.semantics_profile_digest)

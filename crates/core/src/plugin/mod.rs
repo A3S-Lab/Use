@@ -30,8 +30,8 @@ pub use catalog::{
 pub use catalog_trust::{VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
 pub use grant::{PluginWorkspaceGrant, WorkspaceGrantAuthority};
 pub use grant_changes::{
-    PlannedWorkspaceGrantChange, PluginWorkspaceGrantChangeSet, PluginWorkspaceGrantSnapshot,
-    WorkspaceGrantEvidence,
+    PlannedWorkspaceGrantChange, PluginWorkspaceGrantChangeSet, PluginWorkspaceGrantPlan,
+    PluginWorkspaceGrantSnapshot, WorkspaceGrantEvidence,
 };
 pub use grant_resolution::{
     PluginGrantConfirmation, PluginWorkspaceGrantProposal, WorkspaceGrantProposalAuthority,

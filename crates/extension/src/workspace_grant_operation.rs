@@ -260,14 +260,23 @@ impl WorkspaceGrantOperationJournal {
 }
 
 impl WorkspaceGrantStore {
-    pub(super) fn operation_path(&self, operation_id: &str) -> UseResult<std::path::PathBuf> {
+    pub(super) fn operation_path(
+        &self,
+        scope_id: &str,
+        operation_id: &str,
+    ) -> UseResult<std::path::PathBuf> {
+        PluginWorkspaceGrant::validate_scope_id(scope_id).map_err(|_| {
+            operation_error("A workspace grant operation scope path identity is invalid.")
+        })?;
         PluginOperationPlan::validate_operation_id(operation_id).map_err(|_| {
             operation_error("A workspace grant operation path identity is invalid.")
         })?;
+        let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
         let operation_digest = format!("{:x}", Sha256::digest(operation_id.as_bytes()));
         Ok(self
             .root()
             .join(".operations")
+            .join(scope_digest)
             .join(format!("{operation_digest}.json")))
     }
 }

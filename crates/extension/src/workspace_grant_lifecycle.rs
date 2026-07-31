@@ -23,11 +23,11 @@ impl WorkspaceGrantStore {
         validate_resolved(resolved)?;
         let candidates = build_candidates(resolved, ceilings)?;
         let _lock = acquire_lock(self.state_root(), self.root()).await?;
-        let path = self.operation_path(&resolved.operation_id)?;
+        let path = self.operation_path(&resolved.scope_id, &resolved.operation_id)?;
         ensure_owned_directory(self.root(), path.parent()).await?;
 
         if let Some(existing) = read_optional_operation(&path).await? {
-            verify_operation_ownership(&existing, &resolved.operation_id)?;
+            verify_operation_ownership(&existing, &resolved.scope_id, &resolved.operation_id)?;
             if !intent_matches_resolved(&existing.intent, resolved, &candidates) {
                 return Err(operation_conflict());
             }
@@ -92,12 +92,13 @@ impl WorkspaceGrantStore {
     /// Idempotently writes every candidate grant and checkpoints preparation.
     pub async fn prepare_change_set(
         &self,
+        scope_id: &str,
         operation_id: &str,
         now_ms: u64,
     ) -> UseResult<WorkspaceGrantOperationJournal> {
         let _lock = acquire_lock(self.state_root(), self.root()).await?;
-        let path = self.operation_path(operation_id)?;
-        let mut journal = self.load_operation(&path, operation_id).await?;
+        let path = self.operation_path(scope_id, operation_id)?;
+        let mut journal = self.load_operation(&path, scope_id, operation_id).await?;
         match journal.phase {
             WorkspaceGrantLifecyclePhase::IntentRecorded => {
                 journal.phase = WorkspaceGrantLifecyclePhase::Preparing;
@@ -121,13 +122,14 @@ impl WorkspaceGrantStore {
     /// Persists proof that capability publication selected the prepared generation.
     pub async fn commit_change_set_cutover(
         &self,
+        scope_id: &str,
         operation_id: &str,
         cutover: WorkspaceGrantCutoverEvidence,
         now_ms: u64,
     ) -> UseResult<WorkspaceGrantOperationJournal> {
         let _lock = acquire_lock(self.state_root(), self.root()).await?;
-        let path = self.operation_path(operation_id)?;
-        let mut journal = self.load_operation(&path, operation_id).await?;
+        let path = self.operation_path(scope_id, operation_id)?;
+        let mut journal = self.load_operation(&path, scope_id, operation_id).await?;
         cutover.validate_against(&journal.intent)?;
         if cutover.committed_at_ms > now_ms {
             return Err(operation_state_error(
@@ -164,11 +166,12 @@ impl WorkspaceGrantStore {
     /// Idempotently revokes exact prior generations after durable cutover proof.
     pub async fn retire_change_set(
         &self,
+        scope_id: &str,
         operation_id: &str,
     ) -> UseResult<WorkspaceGrantOperationJournal> {
         let _lock = acquire_lock(self.state_root(), self.root()).await?;
-        let path = self.operation_path(operation_id)?;
-        let mut journal = self.load_operation(&path, operation_id).await?;
+        let path = self.operation_path(scope_id, operation_id)?;
+        let mut journal = self.load_operation(&path, scope_id, operation_id).await?;
         match journal.phase {
             WorkspaceGrantLifecyclePhase::CutoverCommitted => {
                 journal.phase = WorkspaceGrantLifecyclePhase::Retiring;
@@ -222,16 +225,17 @@ impl WorkspaceGrantStore {
 
     pub async fn observe_change_set(
         &self,
+        scope_id: &str,
         operation_id: &str,
     ) -> UseResult<Option<WorkspaceGrantOperationJournal>> {
         let _lock = acquire_lock(self.state_root(), self.root()).await?;
-        let path = self.operation_path(operation_id)?;
+        let path = self.operation_path(scope_id, operation_id)?;
         if !validate_existing_directory_chain(self.state_root(), path.parent()).await? {
             return Ok(None);
         }
         let journal = read_optional_operation(&path).await?;
         if let Some(journal) = &journal {
-            verify_operation_ownership(journal, operation_id)?;
+            verify_operation_ownership(journal, scope_id, operation_id)?;
         }
         Ok(journal)
     }
@@ -239,6 +243,7 @@ impl WorkspaceGrantStore {
     async fn load_operation(
         &self,
         path: &std::path::Path,
+        scope_id: &str,
         operation_id: &str,
     ) -> UseResult<WorkspaceGrantOperationJournal> {
         if !validate_existing_directory_chain(self.state_root(), path.parent()).await? {
@@ -247,7 +252,7 @@ impl WorkspaceGrantStore {
         let journal = read_optional_operation(path)
             .await?
             .ok_or_else(operation_not_found)?;
-        verify_operation_ownership(&journal, operation_id)?;
+        verify_operation_ownership(&journal, scope_id, operation_id)?;
         Ok(journal)
     }
 
@@ -371,9 +376,10 @@ fn matching_candidate<'a>(
 
 fn verify_operation_ownership(
     journal: &WorkspaceGrantOperationJournal,
+    scope_id: &str,
     operation_id: &str,
 ) -> UseResult<()> {
-    if journal.intent.operation_id != operation_id {
+    if journal.intent.scope_id != scope_id || journal.intent.operation_id != operation_id {
         return Err(operation_state_error(
             "use.plugin.grant_operation.ownership_mismatch",
             "A workspace grant operation journal does not match its operation path.",

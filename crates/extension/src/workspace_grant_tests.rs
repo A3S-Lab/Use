@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::Duration;
 
 use a3s_use_core::{
     PlanActor, PlanPolicyDecision, PluginPermissionCeiling, PluginWorkspaceGrant,
@@ -333,6 +334,70 @@ async fn concurrent_grant_writes_converge_on_the_highest_revision() {
             .await
             .unwrap(),
         Some(third)
+    );
+}
+
+#[tokio::test]
+async fn exact_record_observation_serializes_with_atomic_replacement() {
+    let temporary = TempDir::new().unwrap();
+    let store = WorkspaceGrantStore::new(temporary.path());
+    let ceiling = permission_ceiling();
+    let first = receipt(1, grant(&ceiling, 1_000, Some(3_000)));
+    store.put(&first, &ceiling, 1_500).await.unwrap();
+
+    let exclusive = super::workspace_grant_io::acquire_lock(store.state_root(), store.root())
+        .await
+        .unwrap();
+    let observed_store = store.clone();
+    let (observer_started, observer_ready) = tokio::sync::oneshot::channel();
+    let observer = tokio::spawn(async move {
+        observer_started.send(()).unwrap();
+        observed_store
+            .observe("workspace-01", "acme/research", PACKAGE_DIGEST)
+            .await
+    });
+    observer_ready.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(!observer.is_finished());
+    drop(exclusive);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(1), observer)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        Some(StoredWorkspaceGrant::Granted(first))
+    );
+
+    let shared = super::workspace_grant_io::acquire_read_lock(store.state_root(), store.root())
+        .await
+        .unwrap();
+    let replacement = receipt(2, grant(&ceiling, 1_100, Some(3_000)));
+    let replacement_for_write = replacement.clone();
+    let replacement_ceiling = ceiling.clone();
+    let writing_store = store.clone();
+    let (writer_started, writer_ready) = tokio::sync::oneshot::channel();
+    let writer = tokio::spawn(async move {
+        writer_started.send(()).unwrap();
+        writing_store
+            .put(&replacement_for_write, &replacement_ceiling, 1_500)
+            .await
+    });
+    writer_ready.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(!writer.is_finished());
+    drop(shared);
+    assert!(tokio::time::timeout(Duration::from_secs(1), writer)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap());
+    assert_eq!(
+        store
+            .observe("workspace-01", "acme/research", PACKAGE_DIGEST)
+            .await
+            .unwrap(),
+        Some(StoredWorkspaceGrant::Granted(replacement))
     );
 }
 
