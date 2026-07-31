@@ -1,154 +1,98 @@
-# A3S Use
-
 <p align="center">
-  <strong>Typed Application Capabilities for A3S</strong>
+  <img
+    src="assets/readme/hero.svg"
+    width="1200"
+    alt="A3S Use — AI Native Package Manager for native tools and cognitive plugins"
+  />
 </p>
 
 <p align="center">
-  <em>Use browsers, OCR, and independently shipped application domains through native CLI, standard MCP, and Skills</em>
+  <strong>One trusted package lifecycle for native tools and cognitive plugins on Linux, macOS, and Windows.</strong>
 </p>
 
 <p align="center">
-  <a href="#overview">Overview</a> •
-  <a href="#features">Features</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#browser">Browser</a> •
-  <a href="#office">Office</a> •
-  <a href="#ocr">OCR</a> •
-  <a href="#external-extensions">Extensions</a> •
-  <a href="#immutable-mcp-and-skill-releases">Releases</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#development">Development</a>
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#the-a3s-package-model">Package model</a> ·
+  <a href="#trust-and-lifecycle">Trust</a> ·
+  <a href="#current-capabilities">Capabilities</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#roadmap">Roadmap</a>
 </p>
 
----
+## What is A3S Use?
 
-## Overview
+**A3S Use is the AI Native Package Manager for the A3S ecosystem.** It brings
+platform-native executables and agent-facing cognition into one versioned,
+verifiable package lifecycle, then projects installed capabilities through
+native CLI, standard MCP, and content-bound Skills.
 
-**A3S Use** is the application-capability layer for A3S. Browser and OCR are
-first-party domains in the default distribution, and Box is a component-backed
-route. Independently distributed repositories, including A3S Office, add
-domains without rebuilding Use by packaging native CLI, standard MCP, and/or
-`SKILL.md` surfaces in an A3S ACL manifest.
+It is an **A3S package manager**, not a replacement for `apt`, Homebrew, or
+WinGet. A3S Use manages packages that participate in the A3S capability and
+security model; operating-system package managers continue to own arbitrary
+system software.
 
-The primary user entry point is `a3s use`; `a3s-use` is the standalone binary
-used by the umbrella CLI and remains available for direct use, automation, and
-diagnostics. A3S Search does not call either CLI: it depends directly on the
-small `a3s-use-browser` Rust crate and injects `Arc<dyn PageRenderer>`.
+> [!IMPORTANT]
+> **Product direction and current implementation are deliberately separated.**
+> The `v0.2` line is the package-management foundation: it manages built-in
+> providers and external packages with one CLI, one MCP server, and/or one
+> `SKILL.md`, backed by reviewed local sources, release digests, or TUF
+> registries. The generalized native package graph and the full A3S cognitive
+> plugin schema described in the [roadmap](#roadmap) are target architecture,
+> not shipped claims.
 
-Use is not a workflow engine, a universal operating-system package manager, or
-a new RPC protocol. It owns typed capability contracts and the lifecycle of
-its managed providers and extension packages. The umbrella A3S CLI owns the
-top-level component catalog, release sources, and product installation policy.
+The user-facing entry point is `a3s use`. The standalone `a3s-use` binary is
+the package engine used by the umbrella CLI and remains available for direct
+automation and diagnostics.
 
-### Basic usage
+## Why AI Native?
 
-```bash
-# Inspect built-in and installed capability domains.
-a3s use capabilities --json
-a3s use doctor --json
+Traditional package managers stop after placing binaries on disk. A3S Use
+treats two forms as installable products:
 
-# Use Browser directly or preserve an interactive session across commands.
-a3s use browser render https://example.com --output page.html
-a3s use browser open https://example.com --session research
-a3s use browser snapshot --session research --json
-a3s use browser click @e1 --session research
-a3s use browser close --session research
+- A **native package** delivers target-specific executables and runtime assets.
+- A **cognitive plugin** delivers A3S-defined agent contributions. The current
+  adapter installs MCP and `SKILL.md`; the target schema adds agents, prompts,
+  hooks, knowledge, and typed memory/context providers.
 
-# Install an independently built Office capability package.
-a3s use component install a3s/office \
-  --from ./a3s-use-office \
-  --allow-unsigned \
-  --json
-a3s use office --help
-a3s use mcp serve office
+They can ship separately or under one package identity. An AI-native package
+therefore describes both what runs and what an agent may discover, understand,
+invoke, and reload safely.
 
-# Built-in local PP-OCRv6.
-a3s use ocr doctor --json
-a3s use ocr extract ./scan.png --json
-a3s use mcp serve ocr
+```text
+A3S package
+├── native plane       executable · runtime assets · target · provenance
+└── cognitive plane    MCP · Skill · agent guidance · knowledge · providers
 ```
 
-Every domain argument accepted by `a3s use ...` can also be passed directly to
-`a3s-use ...`.
+Today, A3S Use already binds native execution to standard MCP and content-bound
+Skill discovery. The target model extends that same package identity to the
+complete set of A3S cognitive contributions without inventing a private action
+protocol.
 
-## Features
+| Plane | Available in `v0.2` | Target model |
+| --- | --- | --- |
+| Native | Built-in providers plus a package-declared CLI and MCP executable | Target-specific artifacts, dependencies, and transactional package graphs |
+| Cognitive | Standard MCP, one content-bound `SKILL.md`, and integrity-bound Activity Bar assets | Multiple Skills, agents, prompts, hooks, knowledge, and typed memory/context providers |
+| Control | ACL manifest, provenance, compatibility range, receipts, route leases, and capability snapshots | Unified lock state, rollback, garbage collection, and policy-aware contribution activation |
 
-- **Standard external repositories**: Bind independently released packages to a canonical HTTPS source repository and a SemVer A3S Use compatibility range.
-- **Native integration surfaces**: Preserve CLI argv and process status, standard MCP lifecycle, and existing `SKILL.md` packages without a private RPC envelope.
-- **Atomic lifecycle**: Install, upgrade, enable, disable, watch, drain, and uninstall immutable package generations without restarting resident hosts.
-- **Explicit trust**: Admit reviewed local packages, digest-bound release bundles, or TUF-verified registry targets; never clone and execute arbitrary source.
-- **Route-based UX**: Invoke, diagnose, inspect, serve MCP, and uninstall by a unique route while keeping the package ID as the stable lifecycle identity.
-- **Agent Browser compatibility**: Provide the locked Browser command, MCP, Skill, Dashboard, and interactive runtime surface.
-- **First-party OCR**: Run pinned PP-OCRv6 detection and recognition locally through ONNX Runtime with bounded source evidence.
-- **Content-bound discovery**: Publish generation and revision snapshots with hashes for Skills and workbench assets.
-- **Immutable release contracts**: Canonicalize and digest MCP Runtime Service and Skill Agent-input descriptors with exact provenance and dependencies.
-- **Component ownership**: Remove only A3S-managed provider or package files; system tools and user data remain outside normal uninstall.
+## Quick start
 
-### Capability matrix
-
-| Domain | Origin | CLI | MCP | Skill | Runtime owner |
-| --- | --- | --- | --- | --- | --- |
-| Browser | Built in | Full Browser vocabulary with first-launch preparation | A3S Use standard MCP server with confirmed installer | Six packaged Browser Skills | A3S Use |
-| Office | External `a3s/office` package | Native `a3s-office` vocabulary | Package-declared standard MCP server | Packaged `a3s-office` Skill | [A3S Office](https://github.com/A3S-Lab/Office) |
-| Box | Reserved built-in route | Native A3S Box vocabulary | — | — | Umbrella A3S CLI |
-| OCR | Built in | Doctor and typed image extraction | `ocr_doctor` and `ocr_extract` | One local PP-OCRv6 Skill | A3S Use process with ONNX Runtime |
-| Science | External `a3s/science` package | Source-specific retrieval commands | 13 typed `science_*` tools | One research workflow Skill | Science extension process |
-| External domain | Installed extension | Optional native executable | Optional standard MCP server | Optional `SKILL.md` | Extension package plus A3S Use lifecycle |
-
-The Box route is component-backed. The umbrella CLI resolves its authoritative
-Box executable and passes the canonical path to Use for one invocation. Use
-does not copy Box, discover a replacement on `PATH`, or write a second receipt.
-
-### Cargo feature matrix
-
-Default features are `browser`, `ocr`, `extensions`, and `mcp`.
-
-| Feature | Included capability |
-| --- | --- |
-| `browser` | Typed Browser library from the independent Browser repository plus full driver delegation |
-| `ocr` | Provider-oriented OCR CLI/MCP with PP-OCRv6 as the default local provider |
-| `extensions` | ACL manifests, package receipts, hot-plug registry, and external CLI/MCP/Skill routes |
-| `mcp` | Standard MCP servers plus the managed Browser Streamable HTTP lifecycle |
-| `lightpanda` | Explicit opt-in Lightpanda provider support in addition to Chrome |
-
-A compiled command surface is not proof that its provider is installed. Use
-`doctor`, `component status`, or `capabilities` to inspect runtime readiness.
-
-### Crates
-
-| Crate | Responsibility |
-| --- | --- |
-| `a3s-use-core` | Shared diagnostics, errors, artifacts, session IDs, risk classes, and immutable MCP/Skill release descriptors |
-| `a3s-use-browser` | Independent object-safe rendering contract, providers, managed runtimes, and sessions |
-| `a3s-use-browser-driver` | Independently maintained interactive Browser CLI, MCP tools, Skills, Dashboard, and compatibility runtime |
-| `a3s-use-extension` | A3S ACL manifest model, package registry, leases, and native surface descriptors |
-| `a3s-use-ocr` | Independent `OcrProvider` contract, CLI/MCP host, default PP-OCRv6 provider, and release-packaged Skill assets |
-| `a3s-use-science` | Typed public life-science APIs, CLI, MCP tools, and extension package assets |
-| `a3s-use` | Facade library, standalone CLI host, capability projection, and MCP entry points |
-
-## Quick Start
-
-### Installation
-
-The preferred product installation goes through the umbrella CLI, which owns
-release selection and the top-level component receipt:
+Install the verified A3S Use release through the umbrella CLI:
 
 ```bash
 a3s install use --source release
-# Optional deterministic pre-warm; normal first use prepares these as needed.
-a3s install use/browser
 a3s use doctor --json
+a3s use capabilities --json
 ```
 
-Prebuilt archives are also published on
-[GitHub Releases](https://github.com/A3S-Lab/Use/releases). A complete archive
-contains `a3s-use`, its sibling `a3s-use-browser-driver`, Browser Skills, the
-Dashboard, and license/provenance notices. Keep those packaged assets together;
-installing only the facade binary does not provide the complete Browser
-surface. Office is released independently from its own repository.
+Try the built-in Browser and local OCR capabilities:
 
-Build the Use-owned binaries from source with:
+```bash
+a3s use browser render https://example.com --output page.html
+a3s use ocr extract ./scan.png --json
+```
+
+Build the standalone engine from source:
 
 ```bash
 git clone https://github.com/A3S-Lab/Use.git
@@ -157,310 +101,134 @@ cargo build --workspace --bins --locked
 ./target/debug/a3s-use doctor --json
 ```
 
-The complete product release also checks out the exact Browser and OCR
-revisions pinned in `Cargo.toml`; Browser owns the sibling driver, Skills, and
-Dashboard, while OCR owns provider code, default models, and its Skill.
-Publish the matching `a3s-use-browser` and `a3s-use-ocr` crates before creating
-the Use release tag. The release workflow waits for both exact versions to
-become visible on crates.io before assembling the product archive.
+Prebuilt archives are published on
+[GitHub Releases](https://github.com/A3S-Lab/Use/releases). Keep each archive's
+binary, Skills, Dashboard, model assets, licenses, and provenance files
+together; the facade binary alone is not the complete product surface.
 
-### Embed Browser rendering
+## The A3S package model
 
-Applications that only need page rendering should depend on the Browser crate,
-not the facade binary:
+The current external package contract uses one
+`a3s-use-extension.acl` manifest at the package root. ACL is the
+[A3S Agent Configuration Language](https://github.com/A3S-Lab/ACL), not HCL.
 
-```toml
-[dependencies]
-a3s-use-browser = "0.3.0"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-url = "2"
+```text
+calendar-package/
+├── a3s-use-extension.acl
+├── bin/
+│   └── acme-calendar
+└── skills/
+    └── calendar/
+        └── SKILL.md
 ```
 
-```rust,no_run
-use std::sync::Arc;
-
-use a3s_use_browser::{BrowserPool, BrowserPoolConfig, PageRenderer, RenderRequest};
-use url::Url;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let browser = Arc::new(BrowserPool::new(BrowserPoolConfig::default()));
-    let page = browser
-        .render(RenderRequest::new(Url::parse("https://example.com")?))
-        .await?;
-
-    println!("{}", page.html);
-    browser.shutdown().await;
-    Ok(())
-}
-```
-
-`BrowserPoolConfig::default()` remains non-installing for embedded callers such
-as Search. Product commands validate their arguments and then prepare the same
-shared managed runtime on the first local Browser launch when policy allows.
-
-## Browser
-
-Browser has two deliberately separate integration levels:
-
-- `a3s-use-browser` is the small typed library used by Search and embedded Rust
-  applications. `browser render` also uses this direct in-process path.
-- `a3s-use-browser-driver` provides the complete interactive automation surface
-  and is shipped as a sibling executable in release archives.
-
-Both layers are maintained in the independent
-[A3S Browser repository](https://github.com/A3S-Lab/Browser). Use pins one
-immutable Browser revision for the typed dependency and release assembly, then
-projects it through the built-in `browser` route.
-
-The compatibility driver tracks
-[vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser)
-`0.32.1` at commit
-`2b202640ee89dc7aadb5e8c9d600e089e9056985`. Automated parity gates pin 82
-accepted top-level commands, 151 typed MCP tools, and the `core`, `electron`,
-`slack`, `dogfood`, `vercel-sandbox`, and `agentcore` Skills. Existing MCP
-clients retain the `agent_browser_*` tool names.
-
-With `--allowed-domains`, locally launched Chromium applies network controls
-before paused pages, popups, workers, and out-of-process iframes resume. It
-also blocks peer-connection constructors and non-proxied WebRTC UDP. Modes
-that cannot guarantee early containment—including existing CDP sessions,
-auto-connect, profiles, restore/state replay, direct-page providers, unsafe
-startup arguments, iOS, and Safari—are rejected explicitly. Standalone
-`wait --load load` and `wait --load domcontentloaded` also resolve immediately
-when the active document has already reached the requested state.
-
-`a3s-use mcp serve browser` exposes the A3S-owned standard MCP server over
-stdio. `mcp start`, `mcp status`, and `mcp stop` manage its optional persistent
-Streamable HTTP deployment. That deployment binds to an ephemeral loopback
-port, requires a private bearer token, has bounded idle and maximum lifetimes,
-and shares typed Browser session state. It is an MCP deployment, not an A3S
-JSON-RPC service.
-
-Provider selection stays typed. Embedded `Discovered*` providers never
-download software. A direct local Browser launch is first-use authority for the
-A3S product CLI; Code workers request the bounded installer through parent
-confirmation. Both paths reuse a system browser or the shared A3S-managed
-cache before downloading. Managed Chrome and Lightpanda installations use
-bounded staging and atomic activation; Lightpanda assets require the publisher
-SHA-256. Chrome for Testing does not publish an independent checksum in its
-current version feed, so A3S records HTTPS provenance and the locally observed
-digest without claiming publisher verification. Help, version, doctor, Skills,
-profiles, and MCP server startup never install a browser.
-
-See [Agent Browser Compatibility Baseline](docs/agent-browser-parity.md) for the
-locked schemas, digests, runtime evidence, and promotion criteria.
-
-## Office
-
-A3S Office is developed and released independently at
-[A3S-Lab/Office](https://github.com/A3S-Lab/Office). It is no longer compiled
-into A3S Use. The repository publishes the `a3s-office` CLI, standard MCP
-server, Office Skill, Rust OOXML engine, and `@a3s-lab/office` web component
-library.
-
-Office integrates through the same schema v2 external repository contract used
-by every other independent domain. Its package ID is `a3s/office` and its route
-is `office`:
-
-```bash
-# From an A3S Office checkout.
-./scripts/package-a3s-use-extension.sh ./dist/a3s-use-office
-
-a3s-use component install a3s/office \
-  --from ./dist/a3s-use-office \
-  --allow-unsigned \
-  --json
-
-a3s-use office --help
-a3s-use mcp serve office
-```
-
-See [External Repository Capabilities](docs/external-repositories.md) for the
-package, trust, compatibility, route, and lifecycle contract. Office-specific
-commands and APIs are documented in the Office repository.
-
-## OCR
-
-`a3s-use-ocr` implements the reserved built-in `ocr` route. The default Use
-release packages its `a3s-use-ocr` Skill and exposes `ocr_doctor` plus
-`ocr_extract` over standard MCP, so a resident A3S Code session receives
-`mcp__use_ocr__*` without installing a separate extension.
-
-This Use assembly injects one default provider: the pinned `PP-OCRv6_small`
-detection and recognition models running locally through ONNX Runtime. The
-independent OCR library exposes an object-safe provider interface for other
-typed SDK integrations; Use does not select providers through a raw backend
-name. Release archives package the default models, and
-`a3s install use/ocr` explicitly installs or repairs the same pinned bundle
-when needed. Supported inputs are bounded local PNG, JPEG, WebP, GIF, BMP, and
-TIFF files. The result binds the canonical source path, media type, byte length,
-and SHA-256 alongside available text, confidence, polygon, and bounding-box
-evidence.
-
-The pipeline decodes and normalizes the image, runs
-`PP-OCRv6_small_det`, applies DB post-processing and reading-order sorting,
-perspective-rectifies and rotates text crops, runs batched
-`PP-OCRv6_small_rec`, and applies CTC decoding. It does not require Python or
-PaddlePaddle, call a remote OCR API, or transfer source bytes off the device.
-
-```bash
-a3s use ocr doctor --json
-a3s use ocr extract ./scan.png --json
-a3s use mcp serve ocr
-```
-
-A3S Code may first-use install the verified parent Use release. A missing or
-damaged managed model bundle is repaired explicitly with
-`a3s install use/ocr`; the Code `use` worker never installs it implicitly.
-
-See the independent [A3S OCR repository](https://github.com/A3S-Lab/OCR) for
-the provider interface, model resolution, the default inference workflow, and
-input boundaries. Use pins its immutable source revision and packages the
-matching Skill and model assets while retaining the reserved built-in `ocr`
-route.
-
-## Science Toolkit
-
-The repository includes `a3s-use-science` as a reference external extension,
-not as another built-in route. Its process exposes one typed Rust client as 13
-read-only MCP tools plus source-specific CLI commands for PubMed, ChEMBL,
-ClinicalTrials.gov, bioRxiv, and Ensembl. The broader first-party catalog of
-scientific Skills, MCP services, and compute workflows lives in
-[A3S Science](https://github.com/A3S-Lab/Science). The package also contributes
-a research brief view with declared HTML, CSS, and JavaScript assets bound to
-its `a3s-use-science` Skill; A3S Web renders it in its own sandbox and review
-flow.
-
-Official A3S Use archives carry the complete platform-specific package under
-`extensions/a3s/science`. It is only a trusted installation source: Science is
-not registered or started until the user selects **Install** in A3S Web Market
-or applies the reviewed umbrella CLI plan. The plan includes the exact expanded
-package digest; A3S Use resolves the release-owned directory again, rechecks
-that digest, and records `release-bundle` provenance. The installed package can
-still be disabled, enabled, upgraded with a newer Use release, or uninstalled.
-Remote TUF distribution remains available for packages not carried by a Use
-release.
-
-The release-owned catalog is inspectable without installing anything:
-
-```bash
-a3s-use extension catalog --json
-```
-
-Build a local package into a new directory and install it explicitly:
-
-```bash
-./crates/science/scripts/package.sh /tmp/a3s-use-science-package
-a3s install use/a3s/science \
-  --from /tmp/a3s-use-science-package \
-  --allow-unsigned
-
-export A3S_SCIENCE_CONTACT_EMAIL=researcher@example.org
-a3s use science pubmed search "single-cell atlas" --limit 10 --json
-a3s use science ensembl lookup homo_sapiens TP53 --json
-a3s use mcp serve a3s/science
-```
-
-The same package can be installed from a local archive:
-
-```bash
-COPYFILE_DISABLE=1 tar -czf /tmp/a3s-use-science-package.tar.gz \
-  -C /tmp/a3s-use-science-package .
-a3s install use/a3s/science \
-  --from /tmp/a3s-use-science-package.tar.gz \
-  --allow-unsigned
-```
-
-Developer-provided local directories, `.tar.gz`, `.tgz`, and `.zip` packages
-require `--allow-unsigned`; use them only after explicit review. A signed remote
-distribution can publish the same package through a configured TUF registry;
-the umbrella CLI then installs it without `--from` or `--allow-unsigned`.
-PubMed requires the contact email, while `NCBI_API_KEY` is optional. See the
-[Science crate](crates/science/README.md), its
-[data-source notice](crates/science/DATA_SOURCES.md), and
-[A3S Science repository boundary](crates/science/UPSTREAM.md) for the full
-command set, data egress, limits, and interpretation boundaries.
-
-## External Extensions
-
-External Use domains stay behind process boundaries. A package contains an
-`a3s-use-extension.acl` manifest parsed by `a3s-acl` and any declared native
-executables or Skill files. ACL is the A3S Agent Configuration Language; it is
-not HCL and is not parsed with an HCL parser.
+A schema `v2` package binds identity, compatibility, repository provenance,
+risk classes, and native surfaces:
 
 ```acl
-extension "acme/slack" {
+extension "acme/calendar" {
   schema_version = 2
-  version        = "1.0.0"
-  route          = "slack"
+  version        = "1.4.0"
+  route          = "calendar"
   requires_use   = ">=0.2.0, <0.3.0"
   actions        = ["read", "mutate"]
 
   repository {
-    url = "https://github.com/acme/slack"
+    url      = "https://github.com/acme/calendar"
+    revision = "0123456789abcdef0123456789abcdef01234567"
   }
 
   cli {
-    executable  = "bin/a3s-use-acme-slack"
+    executable  = "bin/acme-calendar"
     json_output = true
   }
 
   mcp {
-    executable = "bin/a3s-use-acme-slack"
-    args       = ["serve", "--mcp"]
+    executable = "bin/acme-calendar"
+    args       = ["mcp"]
     transport  = "stdio"
   }
 
   skill {
-    path = "skills/slack/SKILL.md"
-  }
-
-  contributes {
-    activity_bar "channels" {
-      title       = "Slack"
-      description = "Prepare a reviewed Slack context."
-      icon        = "messages-square"
-      entry       = "web/activity.html"
-      skill       = "slack"
-      order       = 140
-    }
+    path = "skills/calendar/SKILL.md"
   }
 }
 ```
 
-Install an explicitly trusted local package and invoke its route with:
+All paths are package-relative. Installation rejects missing or non-executable
+surfaces, path traversal, links, invalid archives, route collisions, oversized
+packages, identity drift, and incompatible `requires_use` ranges before
+activation.
+
+### Local package workflow
+
+An unsigned local directory or `.tar.gz`, `.tgz`, or `.zip` archive requires
+explicit trust:
 
 ```bash
-a3s install use/acme/slack --from ./slack-extension --allow-unsigned
-a3s use slack channels list
-a3s use doctor slack --json
-a3s use mcp serve slack
+a3s-use component install acme/calendar \
+  --from ./calendar-package \
+  --allow-unsigned \
+  --json
 
-a3s use extension disable acme/slack --json
-a3s use extension enable acme/slack --json
-a3s uninstall use/acme/slack
+a3s-use component status calendar --json
+a3s-use calendar events list --json
+a3s-use mcp serve calendar
+
+a3s-use extension disable acme/calendar --json
+a3s-use extension enable acme/calendar --json
+a3s-use component uninstall calendar --json
 ```
 
-The current extension source is an explicit local directory or a `.tar.gz`,
-`.tgz`, or `.zip` archive. Archives must contain exactly one package manifest;
-every entry must belong to that manifest's package root. Installation rejects
-links, traversal, duplicate paths, unsupported entries, excessive expansion,
-and non-portable paths before validating the manifest, route, executable, and
-Skill surfaces. Unsigned content requires `--allow-unsigned`. Use does not
-silently install arbitrary Homebrew, npm, Cargo, system, or `PATH` packages.
+The package ID (`acme/calendar`) is the stable lifecycle identity. The route
+(`calendar`) is the human-facing invocation alias. A3S Use preserves native
+`argv`, stdin, stdout, stderr, and process status; MCP remains standard MCP;
+Skills remain normal `SKILL.md` packages.
 
-A release-bundled source is a separate first-party provenance. It must live
-under the installed A3S Use release's `extensions/<publisher>/<name>` tree,
-appear in `extension catalog`, and match the digest in the reviewed umbrella
-plan. It never uses `--allow-unsigned` and cannot be combined with registry or
-local-package options.
+See [External Repository Capabilities](docs/external-repositories.md) for the
+complete manifest, archive, route, compatibility, and lifecycle contract.
 
-### Signed extension registries
+## Trust and lifecycle
 
-Remote extensions use TUF metadata and a separately established bootstrap-root
-digest. Enroll a registry with either a root file or its SHA-256, verify it,
-review the immutable component plan, and apply that exact plan:
+Every install enters through an explicit trust path:
+
+| Source | Trust decision | Intended use |
+| --- | --- | --- |
+| Local directory or archive | Human review plus `--allow-unsigned` | Development and private packages |
+| Release-bundled package | Exact digest in a reviewed A3S component plan | First-party packages shipped with a Use release |
+| Remote registry | Pinned TUF root, expiration and rollback checks, signed target metadata, and package digest | Production distribution |
+
+The activation path is designed so untrusted bytes do not become live routes:
+
+```text
+resolve source
+    → verify metadata and digest
+    → validate archive and ACL
+    → stage immutable generation
+    → commit receipt
+    → publish capability snapshot
+    → drain superseded generation
+```
+
+Key guarantees available today:
+
+- **No source execution:** Use installs built artifacts; it does not clone a
+  repository, resolve a mutable branch, or run package build scripts.
+- **Bounded extraction:** archives reject links, traversal, duplicate paths,
+  unsupported entries, non-portable names, and excessive expansion.
+- **Immutable activation:** install and upgrade stage a unique package
+  generation before atomically switching the active receipt.
+- **Safe hot updates:** accepted CLI and MCP calls retain a shared lease on
+  their generation; disable and uninstall hide the route before draining it.
+- **Recoverable publication:** receipts are authoritative, and reconciliation
+  repairs a capability snapshot missed by a crash.
+- **Content-bound cognition:** projected Skill and workbench assets carry
+  absolute package paths and lowercase SHA-256 digests.
+
+### TUF registry install
+
+Enroll a registry with a trusted root, refresh signed metadata, review the
+immutable plan, and apply that exact plan:
 
 ```bash
 a3s registry add https://packages.example.org/a3s/ \
@@ -468,182 +236,170 @@ a3s registry add https://packages.example.org/a3s/ \
   --yes
 a3s registry refresh packages
 
-a3s --output json install use/a3s/science --dry-run
-a3s --output json install use/a3s/science \
+a3s --output json install use/acme/calendar --dry-run
+a3s --output json install use/acme/calendar \
   --plan-digest <reviewed-plan-sha256>
-
-a3s --output json upgrade use/a3s/science --dry-run
-a3s --output json upgrade use/a3s/science \
-  --plan-digest <reviewed-upgrade-sha256>
 ```
 
-When a root file is supplied, the umbrella CLI copies it into registry-owned
-configuration and records its digest. With a digest-only enrollment, Use may
-fetch `<registry>/metadata/root.json`, but it caches the file only after the
-bytes match the pinned SHA-256. Subsequent root rotation, timestamp, snapshot,
-and targets metadata are verified by TUF with expiration and rollback
-enforcement. Registry URLs require HTTPS; loopback HTTP is accepted only for
-tests and local development.
+Registry targets are selected for `darwin-arm64`, `darwin-x86_64`,
+`linux-arm64`, `linux-x86_64`, `windows-x86_64`, or the portable `any` target.
+The reviewed plan binds the registry identity, bootstrap root, TUF metadata
+versions, channel, target, archive length, and SHA-256.
 
-A dry-run verifies metadata but does not download the target archive. Its outer
-component digest includes the exact `ResolvedRemotePackage`: registry identity,
-bootstrap root, every TUF metadata version, package version and channel,
-platform target, archive path, length, and SHA-256. Apply resolves again and
-fails before target download if that plan changed. It then passes the resolved
-package's own digest to `a3s-use`, which repeats TUF verification immediately
-before downloading and activating the archive. The installed receipt records
-`registry-tuf` trust and the complete signed provenance. Registry installs
-reject `--allow-unsigned`; local `--from` installs cannot provide registry
-options.
+## Current capabilities
 
-Registry upgrades reuse the registry identity and channel recorded in that
-signed provenance instead of searching every configured source again. A
-missing registry, changed URL or bootstrap root, and semantic-version downgrade
-are rejected before payload download. Plain `a3s upgrade` reports newer signed
-targets, while `a3s upgrade --all` includes them in the selected batch. If the
-verified target is identical to the installed target, `a3s-use` validates and
-reconciles the receipt and registry snapshot without downloading or
-reactivating the package.
+### Package engine
 
-Publish metadata below `<registry>/metadata/` and payloads below
-`<registry>/targets/`. An extension target uses this canonical path:
+| Capability | Status |
+| --- | --- |
+| Local directories and bounded archives | Available |
+| Digest-reviewed release bundles | Available |
+| TUF-verified remote registries | Available |
+| Target-aware remote package selection | Available |
+| ACL identity, repository provenance, and SemVer host compatibility | Available |
+| Native CLI delegation | Available, one surface per package |
+| Standard MCP launch | Available, one surface per package |
+| Content-bound Skill installation | Available, one `SKILL.md` per package |
+| Atomic install, upgrade, enable, disable, drain, and uninstall | Available |
+| Generation/revision capability snapshots and long-poll watch | Available |
+| General dependency/conflict solver and lock graph | Target architecture |
+| Automatic generation rollback and package garbage collection | Target architecture |
+| Full cognitive plugin contribution schema | Target architecture |
 
-```text
-extensions/<publisher>/<name>/<version>/<channel>/<target>/<archive>
-```
+### Built-in and external domains
 
-Its TUF target `custom.a3s` object must contain `schemaVersion`, `packageId`,
-`version`, `channel` (`stable`, `beta`, or `nightly`), and `target` (an A3S host
-target or `any`). Duplicate identities, mismatched paths, unsupported archives,
-and oversized targets are rejected before payload download.
+| Domain | Origin | Surfaces | Ownership |
+| --- | --- | --- | --- |
+| Browser | Reserved built-in route | Typed Rust API, CLI, standard MCP, Skills, Dashboard | Use + [A3S Browser](https://github.com/A3S-Lab/Browser) |
+| OCR | Reserved built-in route | Local PP-OCRv6 CLI, standard MCP, Skill | Use + [A3S OCR](https://github.com/A3S-Lab/OCR) |
+| Box | Component-backed route | Native CLI | Umbrella A3S CLI |
+| Office | External `a3s/office` package | Package-declared CLI, MCP, Skill | [A3S Office](https://github.com/A3S-Lab/Office) |
+| Science | External `a3s/science` reference package | Source-specific CLI, 13 MCP tools, Skill, Activity Bar assets | Use + [A3S Science](https://github.com/A3S-Lab/Science) |
+| Any external domain | Installed package | Optional CLI, MCP, and/or Skill | Package repository + Use lifecycle |
 
-Hosts can call `a3s_use_extension::list_remote_packages` to obtain a fully
-verified, host-compatible package catalog without downloading archives. The
-returned catalog includes the verified metadata versions and immutable
-`ResolvedRemotePackage` entries required for review and subsequent installation.
-
-Built-in and management routes are reserved. Extensions cannot shadow
-`browser`, `ocr`, `box`, `component`, `capability`, or other host commands.
-See [External Repository Capabilities](docs/external-repositories.md) for the
-schema v2 repository, compatibility, route-resolution, and lifecycle contract.
-
-## Live Host Integration
-
-Resident hosts consume `capability snapshot` and `capability watch`. The
-projection presents Browser, OCR, Box, and installed extensions through one
-read-only schema while preserving each binding's `built-in` or `extension`
-origin. External bindings include their repository identity and required A3S
-Use range. The extension generation advances on receipt mutations; a content
-revision also changes when built-in readiness or projected content changes.
+A compiled route is not proof that its provider is installed. Inspect runtime
+readiness with:
 
 ```bash
+a3s use doctor --json
+a3s use component list --json
 a3s-use capability snapshot --json
+```
+
+Resident hosts can reload packages without restarting:
+
+```bash
 a3s-use capability watch \
-  --after-generation 3 \
+  --after-generation 12 \
   --after-revision <sha256> \
   --timeout-ms 30000 \
   --json
 ```
 
-A3S Code uses this contract to maintain a dedicated `use` worker for TUI and
-Web sessions. The worker is default-deny and receives only `mcp__use_*` tools;
-it cannot use the workspace, shell, unrelated MCP servers, or recursive task
-tools. Projected Skills provide guidance only and cannot expand permissions or
-authorize installation. Code verifies their projected SHA-256 before loading
-the exact bytes. Ordinary built-in Browser and OCR operations may run inside
-that worker, while bounded provider installers and newly projected extension
-tools retain the parent host's interactive confirmation boundary.
-
-An installed `a3s/office` package appears as an external `office` route with
-the CLI, MCP, Skill, repository, and compatibility metadata declared by the
-Office release. A3S Use does not duplicate or replace those surfaces.
-
-A capability becomes callable only after its MCP connection is ready. A
-removed or replaced route leaves the worker catalog before its old connection
-drains. Code TUI resolves the catalogued Use component on first launch and may
-install its verified release before terminal takeover. Offline mode and
-`A3S_NO_AUTO_INSTALL=1` remain strict no-mutation boundaries; setup failure is
-non-fatal and stays visible through `/use`.
-
-## Protocol and Lifecycle Boundaries
-
-Use preserves each native integration contract:
-
-| Surface | Contract |
-| --- | --- |
-| CLI | `argv`, stdin, stdout, stderr, process status, and optional versioned `--json` output |
-| MCP | Standard MCP client/server lifecycle and the package's declared transport |
-| Skill | Existing `SKILL.md` package convention with a content digest in registry projections |
-
-`--json` is structured CLI output, not JSON-RPC. Use does not define a generic
-`execute(domain, action, payload)` envelope, translate one MCP vocabulary into
-another, load Rust dynamic libraries, or aggregate every domain into one server.
-
-Extension install and upgrade stage a unique immutable package directory, then
-commit a receipt and atomically publish a new registry snapshot. Accepted CLI
-or MCP invocations hold a shared route lease until their child process exits.
-Disable and uninstall first hide the route from new callers, then wait for an
-exclusive drain lease before deleting owned files. A drain timeout leaves the
-route disabled, so retrying the lifecycle operation converges safely.
-
-The receipt is authoritative. Reconciliation rebuilds a snapshot missed by a
-crash, and in-flight calls retain the exact package generation they accepted.
+The generation changes on package lifecycle commits. The revision also changes
+when projected provider readiness, Skill content, or workbench assets change.
 
 ## Architecture
 
 ```text
-                         user / script / agent
+     local package          release bundle          TUF registry
+           └──────────────────────┬──────────────────────┘
                                   │
-                          a3s umbrella CLI
-                     catalog, sources, receipts
-                                  │
-                              a3s use
-                                  │
-                              a3s-use host
-                ┌──────────┬──────────┬─────────────────────────┐
-                │          │          │                         │
-             Browser      OCR     extension registry ──► Office, Science, …
-          typed + driver  ONNX      CLI / MCP / Skill
-                │          │          │
-                └──── capability snapshot/watch ───────────────► A3S Code
-
-  a3s-search ── Arc<dyn PageRenderer> ──► a3s-use-browser
-
-  a3s use box ── canonical executable supplied by a3s ──► A3S Box
+                       a3s umbrella CLI
+              catalog · source policy · plan review · product receipt
+                                  │ reviewed package input
+                                  ▼
+                         a3s-use package engine
+       resolve · verify · validate · stage · receipt · activate · drain
+                    ┌─────────────┴─────────────┐
+                    │                           │
+               native plane               cognitive plane
+          executable · runtime             MCP · Skill · assets
+                    │                           │
+          OS process boundary        capability snapshot / watch
+                    │                           │
+                    └─────────────┬─────────────┘
+                                  ▼
+                       A3S Code · Web · agents
 ```
 
-The dependency arrows are intentional. Search links only the Browser contract,
-so rendering does not require `a3s-use`, MCP, or a resident process. OCR runs
-the pinned PP-OCRv6 models locally through ONNX Runtime; model installation is
-an explicit component operation. Office and other external domains retain
-their repository and process boundaries. A3S Code consumes the read-only
-projection and connects standard MCP/Skill surfaces; bounded component
-installation requests still require the parent TUI's authority.
+The boundaries are intentional:
 
-Source is split between the facade under `src/` and focused workspace crates
-under `crates/`. See [Architecture](docs/architecture.md) for package leases,
-registry publication, persistent sessions, component ownership, and roadmap
-details.
+- **The umbrella `a3s` CLI** currently owns product discovery, top-level
+  component policy, release selection, reviewed plans, and the product receipt.
+- **A3S Use** owns package validation, trust provenance, immutable generations,
+  activation receipts, route leases, and the unified capability projection.
+- **Package processes** own their domain behavior and MCP vocabulary. Use does
+  not translate them into a universal `execute(action, payload)` envelope or
+  load extension code with `dlopen`.
+- **A3S hosts** own sandboxing, user confirmation, permissions, and rendering.
+  A projected Skill supplies guidance; it cannot expand authority.
+- **Embedded consumers** can depend on typed crates directly. For example,
+  A3S Search uses `Arc<dyn PageRenderer>` from `a3s-use-browser` and does not
+  require the facade CLI or an MCP process.
 
-## Platform Support
+The target package-manager architecture keeps these boundaries while expanding
+the manifest from today's external capability schema into a unified native and
+cognitive contribution model. One package identity should bind target
+artifacts, dependency state, permissions, cognition, provenance, and lifecycle
+without conflating installation authority with runtime authority.
+
+See [Architecture](docs/architecture.md) for route leases, registry
+publication, persistent sessions, component ownership, and current
+implementation details.
+
+## Platform support
 
 | Platform | Status | Current guarantee |
 | --- | --- | --- |
-| macOS arm64 / x86_64 | Supported | Managed providers, extension lifecycle, complete Browser compatibility gates, and release archives |
-| Linux arm64 / x86_64 | Supported | Managed providers, extension lifecycle, complete Browser compatibility gates, and release archives |
-| WSL | Supported through Linux | Follows the Linux runtime and filesystem contract |
-| Windows x86_64 | Preview / roadmap | Release packaging plus real Microsoft Edge core-profile and local OCR process coverage |
+| macOS arm64 / x86_64 | Supported | Release archives, managed providers, extension lifecycle, and complete Browser compatibility gates |
+| Linux arm64 / x86_64 | Supported | Release archives, managed providers, extension lifecycle, and complete Browser compatibility gates |
+| WSL | Supported through Linux | Linux runtime and filesystem contract |
+| Windows x86_64 | Preview | Release archive, facade/package contract gates, Edge core-profile evidence, and local OCR process coverage |
 
-Windows is not yet part of the complete Browser compatibility claim. The
-default 31-tool core profile now has real Microsoft Edge evidence through Code
-TUI and standard MCP, including bounded Doctor, namespaced daemon startup,
-navigation, interaction, screenshots, reads, tabs, and cleanup. Promotion still
-requires persistent sessions across separate invocations plus the advanced
-Browser profiles and the same lifecycle guarantees as macOS and Linux.
+Windows is a first-class target in the package format and release matrix, but
+it is not yet part of the complete runtime parity claim. Promotion requires
+persistent Browser sessions across invocations, advanced Browser profiles, and
+the same full-workspace lifecycle evidence as Linux and macOS.
+
+## Roadmap
+
+### Foundation — available
+
+- [x] ACL package identity, repository provenance, and host compatibility
+- [x] Reviewed local, release-bundled, and TUF-verified sources
+- [x] Immutable staging, atomic receipts, route leases, drain, and hot reload
+- [x] Native CLI, standard MCP, content-bound Skill, and workbench projection
+- [x] Cross-platform release artifacts for Linux, macOS, and Windows x86_64
+
+### AI Native Package Manager — next
+
+- [ ] Promote the external extension contract into a unified A3S package
+      specification for native payloads and cognitive plugins
+- [ ] Add dependency and conflict resolution, a deterministic lock graph, and
+      multi-package transactions
+- [ ] Model multiple Skills, agents, prompts, hooks, knowledge bundles, and
+      typed memory/context providers as integrity-bound contributions
+- [ ] Add permission declarations and policy evaluation before cognitive
+      contribution activation
+- [ ] Add explicit rollback, retained-generation policy, and garbage collection
+- [ ] Promote Windows after complete lifecycle and Browser parity gates pass
+
+## Workspace
+
+| Crate | Responsibility |
+| --- | --- |
+| `a3s-use` | Facade library, standalone package engine, capability projection, and MCP entry points |
+| `a3s-use-core` | Shared errors, diagnostics, artifacts, and immutable MCP/Skill release descriptors |
+| `a3s-use-extension` | ACL package model, source trust, TUF registry, receipts, leases, and native surface descriptors |
+| `a3s-use-science` | Reference multi-surface external package |
+
+Browser and OCR are maintained in independent repositories and pinned to exact
+revisions for release assembly.
 
 ## Development
 
-Run checks from the A3S Use repository directory:
+Run checks from this repository, not from the parent A3S monorepo:
 
 ```bash
 cargo fmt --all -- --check
@@ -652,17 +408,23 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 ```
 
-The suite covers facade contracts, extension validation, repository
-compatibility, route draining, capability snapshots, MCP projection, and
-release assembly. Browser provider, driver, Dashboard, and real-Chrome gates
-run in the independent A3S Browser repository. OCR provider and default-model
-tests run in the independent A3S OCR repository; Office engine and editor tests
-run in the independent A3S Office repository.
+Focused package-engine validation:
+
+```bash
+cargo test -p a3s-use-extension --locked
+cargo test -p a3s-use --test cli --locked
+```
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [External Repository Capabilities](docs/external-repositories.md)
+- [Immutable MCP and Skill Release Descriptors](docs/release-descriptors.md)
+- [Agent Browser Compatibility Baseline](docs/agent-browser-parity.md)
+- [Science Reference Package](crates/science/README.md)
+- [Third-Party Notices](THIRD_PARTY_NOTICES.md)
 
 ## License
 
-A3S Use is licensed under the [MIT License](LICENSE). Release archives
-redistribute the Browser compatibility driver, which contains work derived
-from `vercel-labs/agent-browser` under Apache-2.0; see
-[Third-Party Notices](THIRD_PARTY_NOTICES.md) and the
-[Browser upstream provenance](https://github.com/A3S-Lab/Browser/blob/1830c7b6896b0a38637eba2b61a386bf8a36eada/crates/browser-driver/UPSTREAM.md).
+A3S Use is licensed under the [MIT License](LICENSE). Release archives include
+third-party components with their original licenses and provenance notices.
