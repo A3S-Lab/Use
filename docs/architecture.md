@@ -189,10 +189,21 @@ in-process Rust calls and never require the service.
 
 External repositories own their domain-specific session models. A3S Office, for example, exposes typed document sessions from its own `a3s-office mcp` standard MCP server. A3S Use only acquires the installed package lease and launches the manifest-declared surface; it does not duplicate the Office engine or its MCP tool vocabulary.
 
-External MCP packages are launched from their declared executable, arguments,
-and transport. A3S Use owns package identity and activation, not the package's
-MCP tool vocabulary. The managed Browser deployment does not aggregate,
-translate, or proxy Office and extension tool vocabularies.
+Legacy v1/v2 external MCP packages retain the direct route-compatible launcher.
+Named schema-v3 stdio MCP surfaces use the scoped `StdioMcpSupervisor`
+contract: a trusted host supplies an exact package lease, active workspace
+grant, roots, and an enforcement-capable process provider, while Use performs
+bounded standard MCP initialization, monitors the exact durable grant for
+revocation or drift, and retains the lease until exact provider-owned
+process-unit shutdown evidence even when provider waiting fails.
+`NativeUnconfinedStdioMcpHost` supplies a production POSIX process-group/
+Windows Job Object implementation with canonical launch checks, sanitized
+environment, and stderr draining. It requires explicit user confirmation and
+is not a sandbox; production confinement and resident host injection remain
+separate work. Streamable HTTP MCP remains Runtime-owned. A3S Use owns package
+identity and activation, not the package's MCP tool vocabulary. The managed
+Browser deployment does not aggregate, translate, or proxy Office and
+extension tool vocabularies.
 
 ## Component CLI contract
 

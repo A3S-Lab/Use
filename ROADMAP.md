@@ -98,8 +98,9 @@ The main gaps are:
   directly invoked Service apply, but host-broker lifecycle apply is not
   connected yet;
 - persisted Tool Task/Service bindings, MCP protocol probes, dependency
-  readiness, and Runtime observations are not yet part of the package
-  reconciler;
+  readiness, exact-scope Runtime observation, session snapshot composition,
+  and cross-sub-saga binding/cutover gates are implemented in A3S Use, but the
+  shared Plugin Manager parent saga does not invoke those checkpoints yet;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
   its bounded read-only management MCP is connected, while Runtime/MCP/UI apply
@@ -412,7 +413,8 @@ Implementation status (in progress 2026-07-30):
   checks, and separately bounded stdout/stderr collection through Runtime
   logs;
 - completed M5C: cap the current in-memory output adapter at 16 MiB per stream
-  and reject a larger release capture contract before starting the Task;
+  and reject a larger capture on that compatibility path before starting the
+  Task;
 - completed M5D: remove each terminal Task unit after output capture, attempt
   bounded stop/remove cleanup for ambiguous apply failures and invalid or
   non-terminal observations, and retain cleanup error evidence without
@@ -605,6 +607,104 @@ Implementation status (in progress 2026-07-30):
   plus exact package state and canonical grant proposal into provider-neutral
   Runtime templates, binding proposal authority into semantics and failing
   closed on permission shapes not representable by Runtime 0.2;
+- completed M5J-C-C-D-F in `a3s-use::plugin_runtime`: implement the host-
+  composed two-pass `PluginRuntimeBroker`; capability preflight connects only
+  explicit assignments and retains exact clients, while authorized
+  finalization binds the canonical grant-proposal digest and fails closed on
+  provider build, capability, surface, scope, or semantics drift;
+- completed M5J-C-C-E-E in `a3s-use-core` and `a3s-use::plugin_runtime`:
+  deterministically construct canonical install/upgrade/uninstall workspace
+  grant plans from the exact host binding, sorted package transitions, and
+  complete durable scope snapshot, and let Runtime authorization select only
+  its exact candidate proposal from that validated multi-package plan;
+- completed M5J-C-C-E-F in `a3s-use::plugin_runtime`: map exact reviewed
+  filesystem permissions and secret names through typed host-owned Runtime
+  authority bindings, deterministic container targets, bounded Tmpfs, opaque
+  secret references, and provider capability evidence retained across both
+  Broker passes; exact egress and child-process authority remain fail-closed
+  under Runtime 0.2;
+- completed M5J-C-C-E-G in `a3s-use::plugin_runtime`: add the bounded durable
+  Runtime binding-operation journal that binds the operation, plan,
+  grant-change set, state revision, capability generation, exact prepared
+  candidates, capability cutover, and exact prior retirements; install,
+  upgrade, uninstall, partial preparation/publication, and post-removal replay
+  converge without adopting unknown Runtime ownership;
+- completed M5J-C-C-E-H in `a3s-use-core` and
+  `a3s-use::plugin_runtime`: expose the canonical 1 GiB release capture ceiling
+  and stream independently bounded Task stdout/stderr into caller-owned async
+  sinks with cursor/order validation, UTF-8-safe truncation, byte summaries,
+  backpressure, and exact Runtime cleanup on sink failure; retain the 16 MiB
+  in-memory convenience ceiling without blocking preparation;
+- completed M5J-C-C-E-I in `a3s-use::plugin_runtime`: perform a real bounded,
+  bearer-authenticated Streamable HTTP MCP initialize handshake through a
+  host-only connection bound to the opaque Gateway reference and exact Runtime
+  unit/generation/start identity; accept only the signed release protocol,
+  redact URL/token material, close the probe session, and reject timeout,
+  downgrade, plaintext-remote, or stale-process evidence;
+- completed M5J-C-C-E-J in `a3s-use`: expose a typed
+  `CapabilitySessionSnapshotBuilder` that binds one explicit scope and stable
+  extension generation to immutable package-digest host observations plus
+  exact Runtime provider/generation evidence, with the complete evidence
+  covered by the session revision;
+- completed M5J-C-C-E-J in `a3s-use`: derive surface ownership from the actual
+  workload boundary (Runtime release/Service, package Tool host, stdio MCP
+  host, Skill host, or UI host) in reconciliation schema v2, require explicit
+  scoped Skill evidence, reject owner substitution and unknown generations,
+  and prevent another adapter from claiming even an unbound Runtime surface;
+- completed M5J-C-C-E-K in `a3s-use::stdio_mcp`: define the injected
+  compatibility-host boundary and immutable session plan binding the exact
+  package lease, receipt/catalog/manifest/package digests, active workspace
+  grant revision/authority/expiry, named permission, disjoint host roots,
+  executable/argv, sanitized environment, provider build/capabilities, and
+  bounded lifecycle deadlines;
+- completed M5J-C-C-E-K in `a3s-use::stdio_mcp`: perform a real standard MCP
+  initialize exchange over 4 MiB-bounded stdio framing, publish typed
+  prepared/healthy/failed/stopped host observations, retain the package lease
+  until exact provider-owned process-unit settlement, terminate on grant
+  expiry, and reject provider drift, pre-spawn revocation, timeout, premature
+  exit, or incomplete cleanup;
+- completed M5J-C-C-E-K in `a3s-use::stdio_mcp`: bind a bounded durable-grant
+  recheck interval into the immutable plan, publish typed live authorization
+  observations, terminate on revocation, replacement, disappearance, expiry,
+  or observation failure, and retain the package lease across provider wait
+  errors until exact terminal process-unit evidence arrives;
+- completed M5J-C-C-E-L in `a3s-use-core`, `a3s-use-extension`, and
+  `a3s-use::plugin_lifecycle`: align reviewed provider IDs with the public
+  Runtime grammar, key grant and Runtime child journals by scope plus
+  operation, and define a strict parent binding that covers the reviewed plan
+  plus every exact scope-specific child intent and Runtime provider/surface;
+- completed M5J-C-C-E-L in `a3s-use::plugin_lifecycle`: gate one host-owned
+  capability publication on all grant children being prepared and all Runtime
+  children being published, derive both child cutovers from one state/
+  capability generation, snapshot digest, and trusted time, then verify exact
+  completion across crash/reopen and idempotent partial-cutover replay;
+- completed M5J-C-C-E-L in `a3s-use-extension`: serialize exact grant-record
+  observations under a shared cross-process store lock, preventing live
+  authorization monitors from racing atomic replacement on Windows while
+  retaining concurrent readers;
+- completed M5J-C-C-E-M in `a3s-use::stdio_mcp`: ship the production
+  `NativeUnconfinedStdioMcpHost` with immutable OS/architecture/build evidence,
+  canonical package/executable/root checks, exact working directory and
+  sanitized environment, continuous stderr drain, POSIX process-group or
+  Windows Job Object ownership, and fail-safe termination/reap before terminal
+  provider evidence;
+- completed M5J-C-C-E-M in `a3s-use::stdio_mcp`: validate the native provider
+  with real copied-package executables, ambient-environment denial, a
+  pipe-capacity stderr stress case, provider-build drift, invalid owned roots,
+  and descendant cleanup; retain the explicit `native-unconfined` boundary
+  because POSIX process groups are lifecycle ownership rather than adversarial
+  child-process confinement;
+- completed M5J-C-C-E-N in `a3s-use::plugin_runtime`: add the explicit
+  provider-keyed `RuntimeAuthorityResolverRegistry` and Broker entry point,
+  bind each planning-only request to exact scope/package/permission/surface/
+  generation/provider identity, enforce one total bounded deadline with no
+  fallback, redact resolver failures, and independently revalidate exact
+  Volume/Tmpfs/secret-reference output;
+- completed M5J-C-C-E-N in `a3s-use::plugin_runtime`: bind every
+  `RuntimeAuthorityBindings` surface to its explicit provider assignment,
+  reject cross-provider reuse and host-path-like Volume IDs, and accept
+  scheme-qualified provider references such as Cloud's
+  `a3s-cloud-secret://` without admitting inline raw values;
 - completed M5J-C-C-E-D in the umbrella CLI: carry the TUF-verified planning
   bundle through registry resolution into the component plan and canonical
   component digest, accept catalog v3 as plan-ready, and require exact
@@ -613,16 +713,15 @@ Implementation status (in progress 2026-07-30):
   Runtime Broker boundary in
   `docs/adr-001-plugin-runtime-broker-boundary.md`; packages cannot register
   providers and a provider failure has no fallback;
-- pending: inject that Runtime Broker into the shared Plugin Manager, assemble
-  canonical workspace grant changes and explicit provider assignments for Tool
-  and MCP drafts, then complete
-  package/Runtime/capability saga wiring for the durable grant journal,
-  secret-reference adapters,
-  filesystem/network/child-process enforcement, durable binding
-  orchestration, streaming/file-backed large Task output, the actual MCP
-  initialize client adapter, stdio supervision, Gateway route revocation,
-  binding-store cleanup orchestration, and scope-aware capability/session
-  snapshot wiring.
+- pending: inject that Runtime Broker and canonical grant-plan builder into the
+  shared Plugin Manager, supply explicit provider assignments for Tool and MCP
+  drafts, persist and invoke the implemented parent binding/cutover gates
+  around package mutation, capability publication, Gateway revocation, lease
+  drain, and production provider cleanup; also supply concrete production
+  Volume/secret-reference implementations in each host composition root
+  using the completed resolver boundary, exact network/child-process enforcement,
+  sandbox stdio providers and typed stdio secret delivery, then inject the
+  native/sandbox supervisor into resident CLI/Web/Code sessions.
 
 Deliverables:
 

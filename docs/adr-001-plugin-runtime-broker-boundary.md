@@ -110,13 +110,15 @@ selected exact package state
 resolved permission ceiling
 active grant snapshot
 host-configured provider assignment per executable surface
+host-configured authority resolver per provider
 ```
 
 It returns:
 
 ```text
 canonical grant proposal and change-set evidence
-provider-neutral Runtime templates
+provider-neutral Runtime workload semantics
+exact provider-bound Volume/Tmpfs/opaque-secret bindings
 one provider/build/capability/enforcement/semantics proof per surface
 exact provider clients retained for the apply saga
 typed unsupported-capability or policy diagnostics
@@ -131,6 +133,8 @@ Planning has a deliberate two-pass structure to avoid a digest cycle between
 policy, grant proposals, Runtime semantics, and provider evidence:
 
 1. **Capability preflight**
+   - resolve only provider-bound opaque Volume IDs, bounded Tmpfs allocations,
+     and typed secret references through the host registry under one deadline;
    - derive the required Task/Service, artifact, isolation, network, health,
      mount, resource, output, secret-reference, and lifecycle profile;
    - query only the host-assigned provider;
@@ -239,6 +243,45 @@ Implemented:
 - provider-neutral Runtime templates for release-backed Tool Tasks, HTTP Tool
   Services, and Streamable HTTP MCP Services;
 - explicit `RuntimeClientRegistry` selection and immutable provider evidence;
+- process-local `PluginRuntimeBroker` preflight and authorized-finalization
+  passes that retain the exact selected clients, replace provisional semantics
+  with grant-proposal-bound semantics, and reject provider drift;
+- canonical `PluginWorkspaceGrantPlan` construction for install, upgrade, and
+  uninstall from the exact host binding, sorted package transitions, and
+  durable scope snapshot, with direct Broker consumption of its package
+  proposal;
+- typed `RuntimeAuthorityBindings` for exact reviewed filesystem and secret
+  coverage, deterministic container mount targets, bounded Tmpfs, opaque
+  secret references, provider capability checks, and retention across both
+  Broker passes;
+- an explicit provider-keyed `RuntimeAuthorityResolverRegistry` that binds
+  non-secret resolution requests to exact scope/package/permission/surface/
+  generation/provider identity, has no default or fallback, enforces one
+  bounded total deadline, redacts provider failures, rejects cross-provider
+  reuse, and revalidates all returned resources before Broker preflight;
+- bounded durable Runtime binding-operation intent, candidate preparation and
+  publication checkpoints, parent-derived capability cutover, and exact
+  post-cutover Task/Service retirement evidence;
+- a strict cross-sub-saga lifecycle binding covering the reviewed plan and
+  every scope-specific grant/Runtime child intent, with one readiness gate,
+  one parent capability cutover, exact child derivation, and crash-safe
+  completion verification;
+- bounded, authenticated standard MCP initialization through a redacted
+  host-only Gateway connection bound to exact Runtime process identity and
+  signed protocol negotiation;
+- an injected stdio MCP compatibility-host contract whose immutable plan binds
+  the package-generation lease, active grant authority/expiry, exact surface
+  permission, disjoint host roots, sanitized environment, and provider
+  capability evidence plus a bounded durable-grant recheck interval;
+- Use-owned 4 MiB-bounded standard MCP stdio initialization, live process/
+  transport observation, typed revocation/drift/expiry enforcement, and
+  package-lease retention across wait errors until exact provider-reported
+  process-unit settlement;
+- a production native-unconfined stdio provider with immutable
+  OS/architecture/build evidence, canonical package-owned launch checks,
+  sanitized environment, continuous stderr draining, and POSIX process-group
+  or Windows Job Object termination/reap, explicitly without sandbox or
+  adversarial POSIX child-escape claims;
 - CLI component-plan transport of the verified planning bundle without package
   archive download; and
 - fail-closed rejection while complete provider/grant lifecycle evidence is
@@ -247,12 +290,18 @@ Implemented:
 Remaining:
 
 - host broker integration into the shared Plugin Manager's final draft;
-- two-pass preflight/authorization/final selection;
-- workspace-aware grant-change and Runtime binding saga coordination;
+- shared-Manager host policy evaluation and invocation of canonical
+  workspace-grant planning between the implemented provider passes;
+- durable shared-Manager invocation of the implemented workspace-aware parent
+  binding/cutover gates with package, capability, route, and drain state;
 - production provider injection for every CLI/Web/Cloud host;
-- secret, filesystem, egress, and child-process enforcement adapters;
-- Gateway route and MCP initialization orchestration;
-- stdio MCP supervision; and
+- concrete production Volume and secret-reference resolver implementations in
+  each CLI/Web/Cloud host composition root;
+- exact egress and child-process enforcement adapters;
+- Gateway route lifecycle and parent-saga invocation of the implemented MCP
+  initializer;
+- production sandbox stdio providers, typed secret delivery, and
+  native/sandbox resident-session supervisor injection; and
 - cross-platform lifecycle E2E.
 
 ## Consequences

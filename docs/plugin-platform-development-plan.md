@@ -158,25 +158,73 @@ metadata version, permission set, package content, or ownership state.
 The executable planning boundary is
 [ADR-001](adr-001-plugin-runtime-broker-boundary.md). Catalog-v3 resolution
 downloads only the small signed planning target. A3S Use derives
-provider-neutral Task/Service templates; the host supplies explicit provider
-assignments and clients. Provider preflight, policy/grant resolution, and
-final semantics selection are two deterministic, side-effect-free passes.
-The package archive is not downloaded until an authorized apply.
+provider-neutral Task/Service workload semantics; the host supplies explicit
+provider assignments, clients, and provider-specific opaque resource
+resolvers. Provider preflight, policy/grant resolution, and final semantics
+selection are deterministic, side-effect-free passes. The package archive is
+not downloaded until an authorized apply.
 
 Implemented as of the planning baseline:
 
 - strict catalog-v3 planning-target and executable planning-bundle contracts;
 - exact TUF target-only loading and catalog rebinding;
 - provider-neutral Tool Task, Tool Service, and Streamable HTTP MCP templates;
-- explicit `RuntimeClientRegistry` provider selection and evidence; and
+- explicit `RuntimeClientRegistry` provider selection and evidence;
+- a process-local two-pass Runtime Broker that retains exact provider clients,
+  rebinds final semantics to the canonical grant proposal, and rejects
+  provider drift;
+- canonical install/upgrade/uninstall grant-plan construction from the exact
+  host binding, package transitions, and durable scope snapshot, with direct
+  Runtime Broker proposal selection;
+- typed, exact Runtime filesystem/secret authority bindings retained across
+  both Broker passes, including deterministic mount targets, bounded Tmpfs,
+  opaque secret references, exact provider identity, and provider capability
+  validation;
+- an explicit provider-keyed Runtime authority resolver registry with no
+  default or fallback, exact immutable request identity, one bounded total
+  deadline, redacted provider failures, and independent exact validation of
+  every returned Volume/Tmpfs/secret-reference binding;
+- a bounded durable Runtime binding journal for immutable candidate intent,
+  partial preparation and publication replay, parent-derived capability
+  cutover, and exact Task/Service retirement evidence;
+- a strict cross-sub-saga binding that covers one reviewed plan plus every
+  scope-specific grant/Runtime child intent, gates one capability publication,
+  derives exact child cutovers, and verifies crash-replayed completion;
+- caller-owned async Task output streaming up to the canonical release bound,
+  with separate stdout/stderr accounting, UTF-8-safe truncation, and exact
+  cleanup after sink failure;
+- a real bounded Streamable HTTP MCP initialize client using a host-only,
+  redacted Gateway connection bound to exact Runtime process identity and
+  exact signed protocol negotiation;
+- a scope-aware capability session builder that rechecks one stable extension
+  generation, gathers only exact-scope Runtime receipts/providers, validates
+  immutable package-digest observations from Tool/stdio-MCP/Skill/UI hosts,
+  and binds the complete evidence into the session revision;
+- a typed stdio MCP supervisor that binds an active package-generation lease,
+  workspace grant authority/expiry, named permission, host roots, sanitized
+  environment, and exact injected provider evidence, then performs bounded
+  standard MCP initialization, continuously rechecks exact durable
+  authorization, and retains the lease across wait failures until exact
+  process-unit settlement;
+- a production `NativeUnconfinedStdioMcpHost` that verifies canonical
+  package-owned launch paths and disjoint roots, clears ambient environment,
+  drains stderr, and owns POSIX process-group or Windows Job Object cleanup,
+  while explicitly declining sandbox and adversarial child-confinement
+  claims; and
 - verified planning-bundle transport in the umbrella CLI component plan.
 
 Remaining on the critical path:
 
-- inject the host Runtime Broker into the shared Plugin Manager;
-- assemble workspace grant proposals/change sets before final draft binding;
-- coordinate package, grant, Runtime, Gateway, projection, capability, and
-  drain checkpoints in the parent saga; and
+- inject the host Runtime Broker and canonical grant-plan builder into the
+  shared Plugin Manager's final draft;
+- persist and invoke the implemented cross-sub-saga binding/cutover gates with
+  package, Gateway, projection, capability, and drain checkpoints in the
+  shared Manager's durable parent saga;
+- inject concrete production Volume/secret-reference resolver implementations
+  into each CLI/Web/Cloud host while retaining fail-closed exact egress and
+  child-process authority;
+- inject production sandbox stdio providers and typed secret delivery, then
+  inject the native/sandbox supervisor into resident CLI/Web/Code sessions; and
 - pass CLI/Web/agent install-use-upgrade-uninstall E2E with production
   providers.
 
@@ -353,10 +401,14 @@ before snapshot is now built by a bounded, locked traversal of exact durable
 grant generations; stale tombstone/grant revisions and ambiguous parallel
 grants fail closed. The grant lifecycle adapter now records immutable intent,
 applies candidate receipts idempotently, checkpoints exact capability cutover,
-and retires prior receipts with crash-safe replay. The remaining integration is
-for the Plugin Manager's parent saga to coordinate these checkpoints with
-package commit, Runtime health, capability publication, route switching, and
-lease drain.
+and retires prior receipts with crash-safe replay. The Runtime binding adapter
+likewise journals exact candidate preparation and active publication, accepts
+its exact parent-derived cutover, and checkpoints exact Task/Service
+retirement. `PluginLifecycleOperationBinding` now validates both scope-specific
+child sets, gates publication, and verifies completion under one
+`PluginLifecycleCutoverEvidence` snapshot. The remaining integration is for
+the Plugin Manager's durable parent saga to persist and invoke those gates
+with package commit, Runtime health, route switching, and lease drain.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still

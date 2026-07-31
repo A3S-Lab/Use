@@ -570,8 +570,9 @@ Use range. The extension generation advances on receipt mutations; a content
 revision also changes when built-in readiness or projected content changes.
 
 Schema v3 extension bindings additionally expose a deterministic
-`reconciliation` snapshot with package desired/observed state, dependency
-levels, ownership, and every named surface's desired/observed state. The
+`reconciliation` schema-v2 snapshot with package desired/observed state,
+dependency levels, workload-derived ownership, and every named surface's
+desired/observed state. The
 top-level `enabled` flag means callable, not merely requested: a named Skill is
 projected only after its required Tool and MCP closure is prepared or healthy.
 Until the corresponding Runtime, MCP, or UI host adapter submits real evidence,
@@ -596,6 +597,41 @@ the complete surface spec and lifecycle requirements, and emits sorted
 selection for later prepare/apply. Missing assignments, duplicate assignments,
 unsupported enforcement, or unavailable providers fail without fallback.
 
+`RuntimeAuthorityBindings` is the typed host adapter for the subset of
+filesystem and secret authority that Runtime 0.2 can enforce exactly. Every
+binding is tied to the exact explicitly assigned Runtime provider, and every
+reviewed filesystem permission must have one matching binding:
+`plugin-data` and `workspace` use distinct host-owned Volume IDs, while
+`temporary` uses positive Tmpfs allocations whose total cannot exceed the
+reviewed ephemeral-storage ceiling. Mount targets are deterministic under
+`/a3s/plugin-data`, `/a3s/temporary`, and `/a3s/workspace`, and read access
+always becomes a read-only mount. Every requested secret name must map to one
+scheme-qualified opaque provider reference, such as `secret://...` or
+`a3s-cloud-secret://...`, and a unique typed Runtime delivery target. Extra,
+missing, duplicate, cross-surface, cross-provider, raw-value-like, host-path,
+or capability-unsupported bindings fail closed.
+
+`RuntimeAuthorityResolverRegistry` is the process-local host composition
+boundary that produces those bindings. It has one explicit resolver per
+provider, no default or fallback, and one total planning deadline of at most
+60 seconds. Each request binds the exact scope, package and permission
+digests, qualified surface, generation, provider, reviewed filesystem
+permissions, secret names, and ephemeral-storage limit. Resolver errors are
+redacted; returned bindings are sorted and independently revalidated for
+exact coverage. Resolution is planning-only and must not fetch secret material
+or mutate provider resources.
+
+`PluginRuntimeBroker::preflight_bundle_with_resolvers` resolves and retains
+the exact provider-bound resources across capability preflight and authorized
+finalization, so the canonical grant-proposal digest changes without allowing
+mounts, secret references, or provider identity to drift.
+`preflight_bundle_with_authority` remains available when a trusted host has
+already built the validated bindings. Runtime 0.2 cannot express exact
+host/port egress allowlists or prove child-process denial; those authorities
+remain unsupported instead of being widened to generic outbound/process
+access. Concrete CLI/Web/Cloud resolver implementations still belong to their
+host composition roots.
+
 Prepared Task and converged Service receipts can be stored under
 `<state-root>/bindings/runtime`. The store hashes the scope in its path, writes
 bounded receipts atomically under a cross-process lock, permits only monotonic
@@ -604,17 +640,66 @@ receipt. Task receipts bind a stable launcher template rather than one
 invocation's argv. Streamable HTTP MCP receipts additionally require matching
 standard initialize evidence; process health by itself is insufficient.
 
+`RuntimeMcpInitializer` now obtains that evidence through a real RMCP
+Streamable HTTP handshake. A trusted Gateway adapter supplies a process-local
+`RuntimeMcpHttpConnection` binding the opaque `gateway:` reference to the
+exact Runtime unit, generation, and process start time. Its URL and bearer
+token are never serializable and are redacted from debug output; plaintext
+HTTP is accepted only over loopback, while remote connections require HTTPS
+and cannot carry URL credentials, query tokens, or fragments. The probe is
+bounded, advertises the signed release protocol, requires the negotiated
+protocol to match exactly, explicitly closes its MCP session, and only then
+returns timestamped initialize evidence. Timeout, authentication/transport
+failure, protocol downgrade, or stale Runtime identity cannot create a
+binding receipt.
+
+Runtime binding transitions now have a durable sub-saga at
+`<state-root>/bindings/runtime/.operations/<scope-sha256>/<operation-sha256>.json`.
+Its immutable intent binds the operation and plan, optional scope grant-change
+set, state revision, capability generation, exact candidate binding plans, and
+exact prior receipts. The journal checkpoints intent, partial preparation,
+multi-surface publication, parent-derived capability cutover, and exact
+post-cutover retirement. A Service retirement requires typed `RuntimeRemoval`
+evidence for its unit and generation; Task launcher retirement uses a trusted
+timestamp. Install, upgrade, uninstall, and crashes between active-receipt
+cleanup and its journal checkpoint replay idempotently, while changed
+candidates or ownership fail closed.
+
+`plugin_lifecycle` supplies the cross-sub-saga contract without replacing the
+umbrella host's durable parent journal. The strict
+`a3s.use.plugin-lifecycle-operation-binding.v1` record binds one reviewed plan,
+state/capability transition, and exact sorted grant and Runtime child-intent
+digests for every affected scope. It rejects missing, duplicate, substituted,
+or provider-incomplete Runtime children. The parent readiness gate requires
+every grant child to be `prepared` and every Runtime child to be
+`bindings-published`.
+
+After the host atomically publishes one capability snapshot,
+`a3s.use.plugin-lifecycle-cutover.v1` binds its digest, generation, state
+revision, and trusted commit time. Exact grant and Runtime cutover records are
+derived independently from that one parent record, so a scope with no grant
+child does not require fabricated grant evidence. Completion validation
+requires every child journal to contain that exact derived cutover and reach
+`completed`; reopening the stores after only one child committed safely
+resumes the others.
+
 A prepared Task binding can be invoked through
 `PluginRuntimeClient::invoke_task`. The caller supplies the native argv; A3S
 Use rechecks the exact installed binding and provider evidence, applies one
 Runtime Task, requires terminal success, and reads stdout and stderr as
-separate Runtime log streams. The current adapter keeps at most 16 MiB per
-stream in memory and rejects a larger declared capture bound before execution.
-Because Runtime 0.2 does not expose the Task process exit code, this path
-continues to accept only release contracts whose sole success code is `0`.
-After capture, the per-invocation Task unit is removed; ambiguous apply
-failures and invalid, failed, or non-terminal observations trigger bounded
-cleanup, with any cleanup failure attached to the primary typed error.
+separate Runtime log streams. That compatibility method keeps at most 16 MiB
+per stream in memory and rejects a larger capture before apply.
+`invoke_task_streaming` instead writes up to the canonical 1 GiB release bound
+per stream into caller-owned `AsyncWrite` sinks, including host-opened files.
+No host path enters the plan or receipt. It validates stream identity,
+monotonic sequence/cursor progress, honors sink backpressure, truncates only at
+a UTF-8 boundary, flushes both sinks, and returns independent byte/truncation
+summaries. Because Runtime 0.2 does not expose the Task process exit code,
+these paths continue to accept only release contracts whose sole success code
+is `0`. After capture, the per-invocation Task unit is removed; ambiguous
+apply failures, sink failures, and invalid, failed, or non-terminal
+observations trigger bounded cleanup, with any cleanup failure attached to the
+primary typed error.
 
 `PluginRuntimeClient::observe_binding` rechecks persisted evidence and live
 Runtime identity. A Service is healthy only while its provider/build,
@@ -636,9 +721,65 @@ surfaces stay pending, while missing, failed, or stale bound surfaces cannot
 publish dependent Skills.
 
 The process-wide `capability snapshot` command still has no workspace argument,
-so it deliberately does not guess a scope or inject a Runtime snapshot. A
-scope-aware lifecycle/session caller must assemble Runtime, stdio MCP, Skill,
-and UI host observations before capability publication.
+so it deliberately does not guess a scope or inject a Runtime snapshot.
+Resident lifecycle/session hosts instead use
+`CapabilitySessionSnapshotBuilder`. The caller supplies one validated
+`CapabilitySessionObservations` envelope for an explicit scope; each
+package-executable Tool, stdio MCP, Skill, or UI observation is bound to the
+immutable package digest and its manifest-derived owner. The builder reads
+Runtime receipts only from that scope, connects only their recorded providers,
+and double-checks the extension registry generation before publication.
+Missing host evidence remains pending, an unbound Runtime surface cannot be
+claimed by another adapter, and observations for another package generation
+or unknown package fail closed. The session revision binds the scope, complete
+host evidence, exact Runtime provider/generation evidence, and projected
+capabilities, while the extension generation remains independently monotonic.
+
+Named stdio MCP surfaces now use the typed `stdio_mcp` compatibility boundary.
+`StdioMcpSupervisor` accepts only a registry-owned package-generation lease,
+an exact active workspace grant, explicit disjoint package-data/temporary/
+workspace roots, and one host-injected provider. Its immutable session plan
+binds the receipt, verified catalog, manifest, package digest, grant revision
+and authority, named surface permission, executable/argv, provider build and
+capabilities, initialize/shutdown deadlines, durable-grant recheck interval,
+and sanitized package-visible environment. Packages cannot register a
+provider or inherit the caller's environment.
+
+Use performs the real standard MCP initialize exchange over a 4 MiB-bounded
+stdio transport and publishes `Healthy` only while both the exact process
+identity and RMCP transport remain live. It revalidates authorization
+immediately before spawn and after spawn, then polls the exact durable grant
+revision and digest. Revocation, replacement, disappearance, observation
+failure, provider drift, startup timeout, process exit, or malformed
+initialize evidence fails closed and requests process-unit termination.
+A detached lease monitor retains the immutable package generation through
+graceful or forced provider-owned process-unit settlement. A provider wait
+error is not terminal evidence: the monitor retries after termination and
+keeps the lease until an exact terminal process observation arrives. Grant
+expiry terminates the session even if its caller drops the handle. The
+injected provider must attest stderr draining, process identity, process-unit
+cleanup, owned roots, and environment sanitization. Sandbox providers must
+additionally attest filesystem, network, child-process, and resource
+enforcement; a
+`native-unconfined` provider requires explicit user `ask` confirmation.
+
+Use now ships `NativeUnconfinedStdioMcpHost` as the production native
+compatibility provider. Its immutable evidence binds a caller-supplied build
+ID plus the host OS and architecture. Before spawn it canonicalizes the
+package, executable, and writable roots, rejects final symlinks and aliased
+roots, and requires the executable to remain inside the immutable package
+root. It then uses native argv with that exact root as the working directory,
+clears the ambient environment, drains stderr continuously, and owns a POSIX
+process group or Windows Job Object through termination and reap before
+publishing terminal evidence.
+
+This provider is not a sandbox. In particular, POSIX process-group ownership
+does not prevent a deliberately daemonizing child from escaping the group.
+Filesystem, network, child-process, and resource confinement therefore still
+require a production sandbox provider. Shared Plugin Manager and resident
+CLI/Web/Code injection also remain host integration work. Stdio secret
+delivery remains unavailable until a typed opaque secret-reference resolver
+is supplied.
 
 For a plan-ready schema-v3 registry package, the snapshot includes a strict
 `plannerEvidence` block. It binds the canonical receipt digest,
@@ -675,6 +816,9 @@ and exact-ownership guarded. Active resolution revalidates the current package
 digest, signed permission ceiling, and lifetime. Separate digest keys let N and
 candidate N+1 grants coexist during a blue/green upgrade; capability
 publication, not mere grant presence, controls visibility.
+Exact-record observations take a shared store lock, so authorization monitors
+cannot hold a Windows record open across atomic replacement while independent
+readers may still proceed concurrently.
 
 The store can now produce the canonical scope snapshot consumed by planning.
 Enumeration runs under the grant-store lock, validates every directory and
@@ -706,17 +850,27 @@ package order, and emits exact prior evidence for post-cutover revocation.
 `a3s.use.plugin-operation-confirmation.v1` record even when an uninstall has no
 new proposal.
 
+`PluginWorkspaceGrantPlan::resolve` now constructs that evidence instead of
+requiring a host to assemble contract fields manually. It validates the exact
+host operation binding, sorted root/dependency transitions, durable state
+revision, and complete locked scope snapshot; then deterministically emits
+candidate proposals, delayed-revocation evidence, and the matching workspace
+impact. Install binds even an empty before snapshot, upgrade preserves N until
+N+1 cutover, uninstall selects only exact prior receipts, and
+permission-free/disabled transitions produce no grant lifecycle. The Runtime
+Broker can consume the resulting package proposal directly.
+
 Resolved changes now flow through a durable grant-operation journal at
-`<state-root>/grants/.operations/<operation-sha256>.json`. The immutable intent
-binds the operation, plan and change-set digests, observed before snapshot,
-state revision, capability generations, exact candidate receipts and ceilings,
-and exact prior receipts. Its state machine records intent before effects,
-idempotently prepares candidates, accepts exact non-future capability-cutover
-evidence, and only then retires prior generations. Interrupted prepare and
-retire phases resume from disk; conflicting operation reuse, stale snapshots,
-candidate drift, and unknown privileged fields fail closed. Wiring this grant
-journal into the Plugin Manager's overall package/Runtime/capability saga
-remains pending.
+`<state-root>/grants/.operations/<scope-sha256>/<operation-sha256>.json`. The
+immutable intent binds the operation, plan and change-set digests, observed
+before snapshot, state revision, capability generations, exact candidate
+receipts and ceilings, and exact prior receipts. Its state machine records
+intent before effects, idempotently prepares candidates, accepts exact
+non-future capability-cutover evidence, and only then retires prior
+generations. Interrupted prepare and retire phases resume from disk;
+conflicting operation reuse, stale snapshots, candidate drift, and unknown
+privileged fields fail closed. Scope-qualified paths let one parent operation
+retain disjoint child journals for multiple workspaces.
 
 The umbrella CLI now owns the strict `a3s.plugin-policy.v1` ACL parser and
 deterministic evaluator for complete Use operation plans. It normalizes
@@ -792,11 +946,28 @@ the shared Manager rechecks its catalog binding.
 
 `plan_runtime_bundle` converts a verified planning bundle, selected package
 state, canonical pre-confirmation grant proposal, and generation into
-provider-neutral Runtime templates. It maps a release-backed CLI Tool to a
-Task and an HTTP Tool or Streamable HTTP MCP server to a private Service. The
-host must inject explicit provider assignments through `RuntimeClientRegistry`;
-package metadata cannot select a backend, and unsupported authority fails
-closed.
+provider-neutral Runtime templates. The
+`plan_runtime_bundle_with_authority` variant additionally consumes exact
+provider-bound host-owned Volume, Tmpfs, and opaque secret-reference bindings
+plus the same explicit provider assignments. Both map a release-backed CLI
+Tool to a Task and an HTTP Tool or Streamable HTTP MCP server to a private
+Service. The host must inject explicit provider assignments through
+`RuntimeClientRegistry`; package metadata cannot select a backend, and
+unsupported authority fails closed.
+
+`PluginRuntimeBroker` now implements the two process-local provider passes.
+`preflight_bundle` derives the exact workload profile with a non-authorizing
+placeholder digest. `preflight_bundle_with_resolvers` first uses the exact
+provider-keyed host resolver registry; `preflight_bundle_with_authority`
+accepts bindings already produced by a trusted host. Both connect only
+explicitly assigned providers and retain their clients, provider-bound
+authority, build, capability, and enforcement evidence. After the host
+evaluates policy and constructs the canonical grant proposal, `authorize`
+rebuilds the Runtime templates with that proposal digest and rechecks the same
+clients and authority bindings. Provider, build, capability, scope, surface,
+binding, or semantics drift fails without reconnecting to a fallback. The
+cross-sub-saga parent binding and cutover gates are implemented; injection and
+durable invocation of them in the shared Plugin Manager remain pending.
 
 A verified catalog-v2 or catalog-v3 record can derive a plan-ready registry
 install transition. The transition keeps signed TUF provenance and archive
