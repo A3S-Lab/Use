@@ -11,15 +11,15 @@ pub mod cli;
 mod component_route;
 mod extension_cli;
 mod first_use;
-#[cfg(feature = "extensions")]
+#[cfg(feature = "plugin-runtime")]
 pub mod plugin_lifecycle;
-#[cfg(feature = "extensions")]
+#[cfg(feature = "plugin-runtime")]
 pub mod plugin_runtime;
 #[cfg(feature = "extensions")]
 mod release_bundles;
 #[cfg(feature = "extensions")]
 pub mod stdio_mcp;
-#[cfg(feature = "extensions")]
+#[cfg(feature = "plugin-runtime")]
 mod surface_reconciler;
 
 #[cfg(feature = "ocr")]
@@ -46,5 +46,5 @@ pub use a3s_use_browser as browser;
 #[cfg(feature = "ocr")]
 pub use a3s_use_ocr as ocr;
 
-#[cfg(feature = "extensions")]
+#[cfg(feature = "plugin-runtime")]
 pub use a3s_use_extension as extension;

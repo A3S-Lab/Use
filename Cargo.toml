@@ -67,16 +67,19 @@ path = "src/main.rs"
 default = ["browser", "ocr", "extensions", "mcp"]
 browser = ["dep:a3s-use-browser"]
 ocr = ["dep:a3s-use-ocr"]
-extensions = [
+plugin-runtime = [
     "dep:a3s-use-extension",
     "dep:a3s-runtime",
     "dep:async-trait",
     "dep:fs2",
+    "dep:tempfile",
+]
+extensions = [
+    "plugin-runtime",
     "dep:futures-util",
     "dep:libc",
     "dep:process-wrap",
     "dep:rmcp",
-    "dep:tempfile",
     "dep:tokio-util",
 ]
 mcp = [

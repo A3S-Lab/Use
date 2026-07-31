@@ -15,6 +15,7 @@ mod broker;
 mod bundle_planner;
 mod client;
 mod lifecycle;
+#[cfg(feature = "extensions")]
 mod mcp_initializer;
 mod model;
 mod planner;
@@ -46,6 +47,7 @@ pub use broker::{PluginRuntimeBroker, RuntimeBundlePreflight};
 pub use bundle_planner::{plan_runtime_bundle, plan_runtime_bundle_with_authority};
 pub use client::{runtime_capabilities_digest, PluginRuntimeClient};
 pub use lifecycle::{RuntimeBindingObservation, RuntimeBindingObservedState};
+#[cfg(feature = "extensions")]
 pub use mcp_initializer::{RuntimeMcpBearerToken, RuntimeMcpHttpConnection, RuntimeMcpInitializer};
 pub use model::{
     RuntimeEndpointRef, RuntimeMcpInitializeEvidence, RuntimePreparedTaskBinding,
@@ -76,7 +78,7 @@ mod authority_resolver_tests;
 mod authority_tests;
 #[cfg(test)]
 mod binding_operation_tests;
-#[cfg(all(test, feature = "mcp"))]
+#[cfg(all(test, feature = "mcp", feature = "extensions"))]
 mod mcp_initializer_tests;
 #[cfg(test)]
 mod store_tests;
