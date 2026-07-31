@@ -966,8 +966,11 @@ evaluates policy and constructs the canonical grant proposal, `authorize`
 rebuilds the Runtime templates with that proposal digest and rechecks the same
 clients and authority bindings. Provider, build, capability, scope, surface,
 binding, or semantics drift fails without reconnecting to a fallback. The
-cross-sub-saga parent binding and cutover gates are implemented; injection and
-durable invocation of them in the shared Plugin Manager remain pending.
+cross-sub-saga parent binding and cutover gates are implemented. The shared
+Plugin Manager now persists and invokes the empty-child parent path for
+permission-free Skill/UI plans, including exact next-generation capability
+evidence and crash-safe result replay. Injection of scope-specific grant and
+Runtime children remains pending for permission-bearing Tool/MCP plans.
 
 A verified catalog-v2 or catalog-v3 record can derive a plan-ready registry
 install transition. The transition keeps signed TUF provenance and archive

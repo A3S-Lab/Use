@@ -99,8 +99,10 @@ The main gaps are:
   connected yet;
 - persisted Tool Task/Service bindings, MCP protocol probes, dependency
   readiness, exact-scope Runtime observation, session snapshot composition,
-  and cross-sub-saga binding/cutover gates are implemented in A3S Use, but the
-  shared Plugin Manager parent saga does not invoke those checkpoints yet;
+  and cross-sub-saga binding/cutover gates are implemented in A3S Use; the
+  shared Plugin Manager now persists and invokes the empty-child parent gate
+  for permission-free Skill/UI plans, while grant and Runtime child injection
+  remains pending;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
   its bounded read-only management MCP is connected, while Runtime/MCP/UI apply
@@ -263,11 +265,17 @@ Implementation status (2026-07-30):
   expired or capability-drifted plans before first mutation, and resumes an
   existing intent through the umbrella component journal;
 - completed: a cross-process manager mutation lock prevents two adapters from
-  racing result publication, while the existing component journal remains the
-  sole per-side-effect checkpoint journal;
+  racing result publication; the Manager now durably owns the parent lifecycle
+  binding/cutover, while the existing component journal remains the sole
+  package-side-effect checkpoint journal;
 - completed: plans and results carry explicit A3S Use capability
-  generation/revision evidence, including a bounded unavailable state that
-  cannot turn a successful mutation into a false failure;
+  generation/revision evidence; legacy plans retain a bounded unavailable
+  state, while complete plans leave parent cutover pending until the exact next
+  generation and a verified snapshot revision are observable;
+- completed in the umbrella CLI: permission-free Skill/UI plans persist A3S
+  Use's canonical parent binding before package mutation, prove that no grant
+  or Runtime child was omitted, and persist/replay one capability cutover after
+  the exact next generation and planner revision are verified;
 - completed in A3S Use: a deterministic, level-based schema v3 Surface
   Reconciler calculates required dependency closure, per-surface
   desired/observed state, aggregate ready/degraded/broken state, and atomic
@@ -715,9 +723,9 @@ Implementation status (in progress 2026-07-30):
   providers and a provider failure has no fallback;
 - pending: inject that Runtime Broker and canonical grant-plan builder into the
   shared Plugin Manager, supply explicit provider assignments for Tool and MCP
-  drafts, persist and invoke the implemented parent binding/cutover gates
-  around package mutation, capability publication, Gateway revocation, lease
-  drain, and production provider cleanup; also supply concrete production
+  drafts, and extend the now-live parent binding/cutover path with exact grant
+  and Runtime children around capability publication, Gateway revocation,
+  lease drain, and production provider cleanup; also supply concrete production
   Volume/secret-reference implementations in each host composition root
   using the completed resolver boundary, exact network/child-process enforcement,
   sandbox stdio providers and typed stdio secret delivery, then inject the
