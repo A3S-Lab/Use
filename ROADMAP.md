@@ -2,12 +2,14 @@
 
 - Status: in progress
 - Planning baseline: 2026-07-30
-- Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web, and plugin registries
+- Product amendment: first-class OKF knowledge contribution accepted 2026-07-31
+- Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
 platform where a user or an authorized agent can discover, install, enable,
 use, disable, and uninstall an immutable package that contributes Skills,
-executable Tools, standard MCP servers, and sandboxed UI.
+executable Tools, standard MCP servers, sandboxed UI, and Open Knowledge Format
+(OKF) knowledge packages.
 
 The milestones are dependency ordered. They are not calendar commitments.
 Effort ranges assume one primary engineer with review and cross-platform CI
@@ -22,7 +24,7 @@ search catalog
   -> inspect signed metadata, permissions, provenance, and size
   -> review an immutable install plan
   -> install and enable one selected package
-  -> use its Skill, CLI/HTTP Tool, MCP capabilities, or UI
+  -> use its Skill, CLI/HTTP Tool, MCP capabilities, UI, or cited OKF knowledge
   -> disable or uninstall it without restarting the host
 ```
 
@@ -43,7 +45,7 @@ These decisions are part of the target contract:
 3. "Plugin" is the user-facing product term. Existing extension manifests and
    commands remain compatible until a versioned migration is complete.
 4. A plugin may contribute multiple named Skills, executable Tools, standard
-   MCP servers, and sandboxed UIs.
+   MCP servers, sandboxed UIs, and conformant OKF knowledge bundles.
 5. A Plugin Tool is a real workload on which a Skill or UI may depend. A CLI
    Tool maps to a one-shot Runtime Task; an HTTP Tool maps to a Runtime Service.
    It is distinct from an MCP `tools/list` item and retains its native argv or
@@ -53,7 +55,7 @@ These decisions are part of the target contract:
    `execute(plugin, action, payload)` RPC.
 7. Catalog availability and active capability projection are separate.
    Uninstalled packages may appear in search results but never in the active
-   Skill, Tool binding, MCP, or UI registry.
+   Skill, Tool binding, MCP, UI, or OKF registry.
 8. Registry metadata is fetched separately from package payloads. Browsing,
    searching, Code startup, and Skill matching never install a package.
 9. Every install, upgrade, or uninstall uses plan/apply. Apply repeats
@@ -62,6 +64,12 @@ These decisions are part of the target contract:
    deletion remain user-owned authority.
 11. Normal uninstall removes only receipt-owned package files. User data is
     retained unless a separate destructive purge is explicitly authorized.
+12. OKF is a non-executable Open Knowledge Format contribution, not a Skill
+    alias, Runtime workload, MCP server, or personal knowledge vault. The first
+    contract freeze targets current OKF v0.2 while preserving an explicit v0.1
+    compatibility path. A3S Use owns package-generation integrity; A3S
+    Knowledge owns conformant atomic promotion, indexing, cited retrieval, and
+    last-good-generation preservation.
 
 ## Current Baseline
 
@@ -86,6 +94,12 @@ The following foundations are implemented:
 - generation/revision capability snapshots consumed by A3S Code;
 - live MCP and Skill projection into a dedicated A3S Use worker.
 
+The first-class OKF product decision is newer than this implemented baseline.
+No current `a3s.extension/v3`, permission, catalog, receipt, projection, or
+Knowledge observation contract contains an OKF surface. The current parser
+must reject an undefined `okf` block until the M0K follow-up is frozen and
+implemented.
+
 The main gaps are:
 
 - the agent worker can discover plugins and create reviewed lifecycle plans,
@@ -106,6 +120,8 @@ The main gaps are:
   adapters remain to be connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
+- OKF manifest, conformance, catalog, plan, policy, receipt, projection, and
+  A3S Knowledge atomic-index contracts remain to be frozen and implemented;
 - official registry key operations and Windows Browser parity are not yet at
   the final production gate.
 
@@ -122,15 +138,18 @@ below are the delivery sequence for those documents.
 
 ### Delivery sequencing
 
-The critical path is `M0 -> M1 -> M2 -> M5 -> M6 -> M7`. Science package
+The core critical path is `M0 -> M1 -> M2 -> M5 -> M6 -> M7`. The required OKF
+lane is `M0K -> M2/M5 -> M6 -> M7` and must also finish before the cognitive
+plugin platform is production-ready. Science and OKF package
 splitting in M3 can proceed after the catalog and manager contracts stabilize.
 The read-only management MCP in M4 can proceed alongside user UX after M2.
 Runtime provider conformance work for M5 should begin after the M0 descriptor
 fixtures, in parallel with M1 and M2 implementation.
 
-The indicative total is 16–21 primary-engineer weeks. This is an effort range,
-not a calendar promise; Runtime provider, Code/Web, Science, release-security,
-and cross-platform CI work can run in parallel when separately staffed.
+The indicative total is 20–26 primary-engineer weeks after adding OKF. This is
+an effort range, not a calendar promise; Runtime provider, Code/Web/Knowledge,
+Science, release-security, and cross-platform CI work can run in parallel when
+separately staffed.
 
 ## Milestones
 
@@ -175,6 +194,45 @@ Exit criteria:
 - new fixtures reject unknown privilege-bearing fields and noncanonical data;
 - cross-SDK digest fixtures are deterministic;
 - no lifecycle mutation is implemented before its plan schema is fixed.
+
+### M0K — OKF contribution contract and fixtures (planned 2026-07-31)
+
+Estimated effort: 2–3 weeks
+
+This is an additive product amendment. It does not reopen or mislabel the
+completed Tool/MCP/Skill/UI M0 fixture set.
+
+Deliverables:
+
+- freeze a named OKF surface with a declared format version, current v0.2
+  semantics, explicit v0.1 fallback behavior, bundle root, canonical content
+  digest, concept/file count, expanded bytes, and limits;
+- define bounded UTF-8 Markdown, properly delimited YAML frontmatter, required
+  non-empty scalar `type` for non-reserved concepts, canonical concept IDs,
+  reserved `index.md`/`log.md`, and standard-link handling;
+- preserve unknown concept types and extension keys, treat safe dangling links
+  as diagnostics rather than nonconformance, and reject only unsafe path or
+  resource resolution at the package boundary;
+- extend catalog, operation plan, dependency closure, permission policy,
+  receipt, projection, capability snapshot, and host observation contracts;
+- define the idempotent A3S Knowledge stage/promote/index boundary with exact
+  package generation, index schema/build evidence, and last-good selection;
+- add canonical ACL/JSON/package fixtures and stable SHA-256 digests; and
+- freeze disable, upgrade, uninstall, retained-data, personal-vault isolation,
+  and crash-replay semantics.
+
+Exit criteria:
+
+- schema v1/v2 and the existing schema-v3 fixture remain byte-compatible;
+- the current parser continues to reject `okf` until the additive contract is
+  implemented as a complete slice;
+- conformant v0.1/v0.2 and malicious OKF fixtures have deterministic cross-SDK
+  results;
+- an OKF plan binds the exact normalized bundle that Knowledge would promote;
+- concept/frontmatter/link content cannot add authority;
+- v0.2 Attested Computation metadata cannot implicitly select or invoke a Tool,
+  executor, attester, Runtime provider, or secret; and
+- no package receipt can remove personal notes or another package's index.
 
 ### M1 – Signed searchable catalog (complete 2026-07-30)
 
@@ -305,7 +363,7 @@ Exit criteria:
 - a plan changed between review and apply is rejected;
 - simultaneous operations cannot publish conflicting package generations.
 
-### M3 — User plugin UX and on-demand Science delivery
+### M3 — User plugin UX and on-demand Science/OKF delivery
 
 Estimated effort: 2 weeks
 
@@ -318,15 +376,20 @@ Deliverables:
 - stop embedding the `a3s/science` reference payload in every A3S Use release;
 - publish independently useful Science capability groups through its signed
   registry, with an optional metadata-only collection package;
+- publish at least one conformant, independently selectable OKF knowledge
+  package and display its format version, concept count, expanded bytes,
+  digest, provenance, and Knowledge-host compatibility before confirmation;
 - retain explicit local-package and optional offline-pack workflows.
 
 Exit criteria:
 
-- a default A3S Use archive contains no Science executable, Skill, or UI
+- a default A3S Use archive contains no Science executable, Skill, UI, or OKF
   payload;
 - opening Code or Marketplace downloads no plugin archive;
 - installing one Science entry downloads and activates only its selected TUF
   target and exact content-addressed dependency closure;
+- installing one OKF entry promotes only its selected normalized bundle and
+  produces cited search results without installing or executing a compiler;
 - uninstall removes the package generation while retaining user data.
 
 ### M4 — Agent read-only plugin management (complete 2026-07-30)
@@ -641,17 +704,24 @@ Deliverables:
 - enforce available filesystem, network, and child-process restrictions;
 - classify unsupported native confinement as `native-unconfined`;
 - persist workspace grants separately from package receipts.
+- add the canonical `okf` policy surface and bounded OKF conformance validator
+  only after M0K fixtures are frozen;
+- implement an injected A3S Knowledge stage/promote/remove adapter with
+  exact-generation receipt and observation evidence, atomic index cutover, and
+  last-good-generation preservation.
 
 Exit criteria:
 
 - policy evaluation is deterministic and independently testable;
-- a Skill, UI, Tool output/API document, or MCP description cannot expand
-  package permissions;
+- a Skill, UI, OKF concept/frontmatter, Tool output/API document, or MCP
+  description cannot expand package permissions;
 - upgrades that add permission fail pending a new grant;
 - unattended native installation is impossible without an enforced sandbox;
 - an HTTP Tool cannot become ready on a provider without Service networking
   and health-check support;
 - secret values never enter plans, receipts, logs, catalog output, or UI.
+- malformed or failed candidate OKF content never replaces the last good
+  searchable generation or mutates a personal knowledge vault.
 
 ### M6 — Authorized agent lifecycle and hot use
 
@@ -664,9 +734,10 @@ Deliverables:
 - inherit parent confirmation for `ask` decisions;
 - support unattended apply only when every policy ceiling passes;
 - refresh the active capability registry after successful mutation;
-- attach new Tool bindings, MCP, Skill, and UI surfaces to active sessions
+- attach new Tool bindings, MCP, Skill, UI, and OKF surfaces to active sessions
   without restart;
-- publish a Skill only after every required Tool and MCP binding is usable;
+- publish a Skill only after every required Tool, MCP, and OKF binding is
+  usable;
 - hide routes before drain and remove package files only after lease release;
 - report partial readiness and typed provider failures without fallback.
 
@@ -675,6 +746,9 @@ Exit criteria:
 - an E2E agent can search, inspect, plan, obtain confirmation, install, invoke
   one CLI Tool, one HTTP Tool, and one plugin MCP capability, then disable,
   re-enable, and uninstall the package;
+- an E2E user and agent can install a signed OKF-bearing package, retrieve a
+  line-cited concept from its exact generation, upgrade atomically, and retain
+  the prior searchable generation after an injected index failure;
 - the same E2E succeeds without a prompt only under an explicit matching ACL
   policy;
 - denial, cancellation, timeout, plan drift, permission drift, and drain
@@ -693,6 +767,8 @@ Deliverables:
 - publish reproducible package provenance and release attestations;
 - add security withdrawal and deprecation metadata;
 - verify installed release archives through CLI, Web, and agent lifecycle E2E;
+- verify reproducible OKF bundle/catalog digests and A3S Knowledge conformance
+  evidence in release automation;
 - complete the Windows persistent-session and advanced Browser compatibility
   gates required for supported status;
 - document incident response and registry disable behavior.
@@ -716,7 +792,7 @@ The plugin-platform objective is complete when:
 2. an agent can perform the same lifecycle through standard MCP, with default
    confirmation and policy-bounded unattended operation;
 3. installing one plugin downloads only its metadata-selected payload;
-4. Skills, CLI/HTTP Tools, MCP capabilities, and UI remain bound to one
+4. Skills, CLI/HTTP Tools, MCP capabilities, UI, and OKF remain bound to one
    immutable package identity and generation;
 5. authorization, secrets, sandboxing, plan integrity, route draining, and
    owned-file removal fail closed;

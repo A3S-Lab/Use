@@ -2,6 +2,7 @@
 
 - Status: M0 complete
 - Baseline date: 2026-07-30
+- Product amendment: OKF target accepted 2026-07-31; contract freeze pending
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -35,6 +36,30 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
+
+### OKF target is not in the frozen set
+
+Open Knowledge Format (OKF) is now an accepted first-class cognitive package
+surface, but it is not present in `a3s.extension/v3` or any contract in the
+table above. The completed M0 claim applies to Tool, MCP, Skill, and UI. The
+current manifest and policy parsers must continue rejecting an unknown `okf`
+surface until an additive follow-up freezes and implements:
+
+- named manifest identity, current Open Knowledge Format v0.2 semantics,
+  explicit v0.1 compatibility, declared format version, and bundle root;
+- canonical content digest, concept/file count, expanded bytes, and limits;
+- UTF-8 Markdown/frontmatter/link conformance, preserved extension fields,
+  non-fatal safe-link diagnostics, and deterministic fixtures;
+- catalog, operation-plan impact, permission/policy enum, and dependency
+  closure fields;
+- exact-generation receipt, host projection, and Knowledge index observation;
+  and
+- upgrade, last-good-generation, disable, uninstall, and retained-data
+  semantics.
+
+No document may encode illustrative OKF syntax and present it as accepted by
+the current parser. The target semantics are defined in
+[Plugin Platform Architecture](plugin-platform-architecture.md#target-okf-contribution-contract).
 
 All JSON contracts:
 
@@ -163,8 +188,8 @@ grant.
 
 This ordering avoids a digest cycle: the plan can bind a proposal before a
 user decision exists, while the later confirmation binds both immutable
-objects. Untrusted package, Skill, Tool, MCP, or UI content cannot act as
-confirmation evidence.
+objects. Untrusted package, Skill, Tool, MCP, UI, or target OKF content cannot
+act as confirmation evidence.
 
 ### Snapshot and multi-package changes
 
@@ -266,6 +291,10 @@ require Skill, Tool, or MCP surfaces. Missing, duplicate, kind-invalid, and
 cyclic edges fail closed. Catalog v1 remains readable and retains its exact
 canonical digest, but cannot carry these v2-only fields and is not sufficient
 by itself for complete-plan emission.
+
+The additive OKF contract may allow a Skill to require a named OKF surface, but
+that dependency kind is not present in the current v2/v3 schema and must not be
+encoded until M0K freezes canonical ordering and compatibility behavior.
 
 Catalog v3 preserves the v2 package evidence and adds one exact
 `planning-v1.json` target name, byte length, and SHA-256. The strict

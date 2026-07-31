@@ -1,0 +1,86 @@
+---
+title: 架构
+description: A3S Use、共享 Plugin Manager、Runtime Broker 与 A3S 宿主之间的职责边界。
+---
+
+# 架构
+
+目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、Web 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
+
+```text
+     local package          release bundle          TUF registry
+           └──────────────────────┬──────────────────────┘
+                                  │
+                    shared host Plugin Manager
+         catalog · policy · confirmation · plan/apply · replay
+                                  │ reviewed package input
+                                  ▼
+                         a3s-use package engine
+       verify · stage · receipt · grant · bind · reconcile · drain
+                    ┌─────────────┴─────────────┐
+                    │                           │
+               native plane               cognitive plane
+          Runtime Task/Service       MCP · Skill · UI · OKF · context
+                    │                           │
+                    └─────────────┬─────────────┘
+                                  ▼
+                 A3S Code · Web · Knowledge · agents
+```
+
+## 所有权
+
+| 组件                   | 拥有内容                                                                                              | 不拥有内容                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Umbrella host          | Registry 配置、trust root、ACL policy、用户确认、secret、Runtime provider composition                 | 包存储与第二套 lifecycle manager              |
+| Shared Plugin Manager  | catalog、policy、plan/apply、operation replay 与父级 saga                                             | package archive 格式或 provider 内部调度      |
+| A3S Use                | 包验证、不可变 generation、receipt、grant、binding evidence、route lease 与 capability reconciliation | 通用 scheduler、UI renderer 或 agent RPC 协议 |
+| A3S Runtime            | Task/Service workload 与 provider capability                                                          | 包解析、信任根与用户授权                      |
+| A3S Code/Web/Knowledge | Skill session registry、sandboxed UI、OKF registry/index 与用户体验                                   | 包安装事务与 Runtime provider 注册            |
+| Package process        | 自己的 CLI、HTTP 和 MCP vocabulary                                                                    | 宿主 policy 或 ambient authority              |
+
+## 单一事实来源
+
+当前实现应复用下列现有模块：
+
+- `a3s-use-core`：canonical package/plugin、catalog、plan、permission、grant 和 release contract；
+- `a3s-use-extension`：ACL manifest、TUF catalog、package store、receipt、lease 和 workspace grant；
+- `src/plugin_runtime`：Runtime selection、binding、receipt、invocation 与 observation；
+- `src/surface_reconciler` + `src/capability_registry`：依赖 readiness 和 capability publication；
+- umbrella CLI 共享 Plugin Manager：唯一 lifecycle application service。
+
+不得新增第二个 manager、grant store、Runtime selector、capability registry 或 generic execution protocol。
+
+## Host-owned Runtime Broker
+
+包可以声明 workload 需求，但不能选择 provider。宿主提供显式 `RuntimeClientRegistry` 和 assignment，Planner 执行两次确定性选择：
+
+1. 在下载 archive 前，用签名 planning target 检查是否存在兼容 provider。
+2. grant proposal 固定后，用相同 provider/build/capability evidence 完成最终语义选择。
+
+任何阶段没有满足要求的 provider 都 fail closed，不得回退到 native execution 或另一个 provider。该边界已由 [ADR-001](https://github.com/A3S-Lab/Use/blob/main/docs/adr-001-plugin-runtime-broker-boundary.md) 冻结。
+
+## 为什么使用 Saga
+
+包存储、workspace grant、Runtime、Gateway、projection 和 capability publication 不共享数据库事务。因此完整 apply 是 durable、idempotent 的 parent saga：
+
+```text
+intent
+  → package checkpoint
+  → grant checkpoint
+  → Runtime checkpoint
+  → Gateway checkpoint
+  → projection checkpoint
+  → capability publication checkpoint
+  → old-generation drain checkpoint
+  → terminal result
+```
+
+每个 checkpoint 使用 operation ID 和 surface idempotency key。崩溃恢复从 durable intent 和最后成功 checkpoint 继续；重复 apply 返回同一 terminal result，不重复副作用。
+
+## 运行时可见性
+
+Surface Reconciler 观察 desired state、generation receipt、grant、binding、Runtime/Gateway health，以及 Skill/UI/目标 OKF projection。只有完整 evidence 对同一 generation 一致时，Capability Registry 才发布新 snapshot。常驻宿主可通过 generation + revision long-poll watch 热更新，无需重启。
+
+OKF 的宿主边界与 Runtime 不同：它不运行进程。Use 验证并记录精确 package generation；A3S Knowledge 负责合规检查后的原子 promotion、索引与带引用检索。失败的新 OKF generation 不得替换最后一个可搜索 generation。
+
+详细设计见 [Plugin Platform Architecture](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-architecture.md)。

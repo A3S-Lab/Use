@@ -1,0 +1,98 @@
+---
+title: 快速开始
+description: 安装 A3S Use，检查本机能力，并了解稳定包管理基础与认知插件平台基线的边界。
+---
+
+# 快速开始
+
+A3S Use 是 A3S 生态的 **AI Native Package Manager**。它不替代 `apt`、Homebrew 或 WinGet，而是管理参与 A3S 能力与安全模型的原生工具和认知插件。
+
+## 当前可用范围
+
+| 能力                                            | 状态                   |
+| ----------------------------------------------- | ---------------------- |
+| 本地目录与有界归档安装                          | v0.2 可用              |
+| Release 摘要审查与 TUF Registry                 | v0.2 可用              |
+| 原生 CLI、标准 MCP、内容绑定 Skill              | v0.2 可用              |
+| schema-v3 Tool、MCP、Skill、UI 合约             | `main` 已实现基线      |
+| OKF（Open Knowledge Format）知识表面            | 目标合约，待冻结与实现 |
+| 完整 Plugin Manager apply saga 与生产宿主适配器 | 开发中                 |
+
+认知插件合约已经进入 `main`，但完整的父级 apply saga 仍在收口。生产部署前请以 [路线图](./roadmap) 为准。
+
+## 安装发布版
+
+推荐通过 A3S CLI 安装完整、已验证的发布包：
+
+```bash
+a3s install use --source release
+a3s use doctor --json
+a3s use capabilities --json
+```
+
+预构建归档也发布在 [GitHub Releases](https://github.com/A3S-Lab/Use/releases)。请保持归档中的二进制、Skills、Dashboard、模型资产、许可证和 provenance 文件完整；单独复制 facade binary 不是完整产品表面。
+
+## 试用内置能力
+
+渲染网页并将结果写入本地文件：
+
+```bash
+a3s use browser render https://example.com --output page.html
+```
+
+使用本地 OCR 并返回 JSON：
+
+```bash
+a3s use ocr extract ./scan.png --json
+```
+
+查看不可变能力快照：
+
+```bash
+a3s-use capability snapshot --json
+```
+
+## 从源码构建
+
+需要 Rust 1.85 或更高版本：
+
+```bash
+git clone https://github.com/A3S-Lab/Use.git
+cd Use
+cargo build --workspace --bins --locked
+./target/debug/a3s-use doctor --json
+```
+
+开发检查必须在 Use 仓库内运行：
+
+```bash
+cargo fmt --all -- --check
+cargo test --workspace --all-features --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+```
+
+## 安装本地包
+
+未签名的本地目录、`.tar.gz`、`.tgz` 或 `.zip` 需要明确授信：
+
+```bash
+a3s-use component install acme/calendar \
+  --from ./calendar-package \
+  --allow-unsigned \
+  --json
+
+a3s-use component status calendar --json
+a3s-use extension disable acme/calendar --json
+a3s-use extension enable acme/calendar --json
+a3s-use component uninstall calendar --json
+```
+
+包 ID 是稳定生命周期身份，route 只是展示和分发别名。A3S Use 保留原生 `argv`、stdin、stdout、stderr、退出状态和标准 MCP，不添加通用 action envelope。
+
+## 下一步
+
+- [理解 native + cognitive 包模型](./package-model)
+- [设计 OKF 可共享知识包](./okf)
+- [配置供应链信任和授权边界](./trust-security)
+- [查看 Plugin Manager、Use 与 Runtime 的所有权](./architecture)
+- [跟踪开发里程碑](./roadmap)
