@@ -2,7 +2,8 @@
 
 - Status: in progress
 - Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted 2026-07-31
+- Product amendment: first-class OKF knowledge contribution accepted and M0K-A
+  bundle contract frozen 2026-07-31
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -65,8 +66,8 @@ These decisions are part of the target contract:
 11. Normal uninstall removes only receipt-owned package files. User data is
     retained unless a separate destructive purge is explicitly authorized.
 12. OKF is a non-executable Open Knowledge Format contribution, not a Skill
-    alias, Runtime workload, MCP server, or personal knowledge vault. The first
-    contract freeze targets current OKF v0.2 while preserving an explicit v0.1
+    alias, Runtime workload, MCP server, or personal knowledge vault. The frozen
+    content contract targets current OKF v0.2 while preserving an explicit v0.1
     compatibility path. A3S Use owns package-generation integrity; A3S
     Knowledge owns conformant atomic promotion, indexing, cited retrieval, and
     last-good-generation preservation.
@@ -95,10 +96,11 @@ The following foundations are implemented:
 - live MCP and Skill projection into a dedicated A3S Use worker.
 
 The first-class OKF product decision is newer than this implemented baseline.
-No current `a3s.extension/v3`, permission, catalog, receipt, projection, or
-Knowledge observation contract contains an OKF surface. The current parser
-must reject an undefined `okf` block until the M0K follow-up is frozen and
-implemented.
+The shared bundle descriptor, conformance inspector, and fixtures are now
+implemented, but no current `a3s.extension/v3`, permission, catalog, receipt,
+projection, or Knowledge observation contract contains an OKF surface. The
+current parser must reject an undefined `okf` block until the remaining M0K
+control-plane slice is frozen and implemented.
 
 The main gaps are:
 
@@ -120,8 +122,9 @@ The main gaps are:
   adapters remain to be connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
-- OKF manifest, conformance, catalog, plan, policy, receipt, projection, and
-  A3S Knowledge atomic-index contracts remain to be frozen and implemented;
+- OKF manifest, catalog, plan, policy, receipt, projection, and A3S Knowledge
+  atomic-index contracts remain to be frozen and implemented around the
+  shared conformance core;
 - official registry key operations and Windows Browser parity are not yet at
   the final production gate.
 
@@ -195,12 +198,30 @@ Exit criteria:
 - cross-SDK digest fixtures are deterministic;
 - no lifecycle mutation is implemented before its plan schema is fixed.
 
-### M0K — OKF contribution contract and fixtures (planned 2026-07-31)
+### M0K — OKF contribution contract and fixtures (in progress 2026-07-31)
 
 Estimated effort: 2–3 weeks
 
 This is an additive product amendment. It does not reopen or mislabel the
 completed Tool/MCP/Skill/UI M0 fixture set.
+
+Implementation status (2026-07-31):
+
+- completed M0K-A in `a3s-use-core`: the canonical
+  `a3s.use.okf-bundle.v1` JSON descriptor binds format version, bundle root,
+  exact content digest, concept/file counts, expanded bytes, and declared
+  limits;
+- completed M0K-A in `a3s-use-core`: one bounded inspector handles v0.2 and
+  v0.1 fallback content, UTF-8 Markdown, YAML frontmatter, reserved files,
+  canonical concept IDs, standard Markdown links, inert path-valued metadata,
+  deterministic summaries, and non-fatal safe dangling-link diagnostics;
+- completed M0K-A fixtures: canonical JSON and bundle digest goldens plus
+  conformant, compatibility, drift, limit, malformed-content, and path-escape
+  tests; and
+- deliberately pending: `a3s.extension/v3`, catalog, permission, plan,
+  receipt, projection, capability snapshot, Knowledge observation, and
+  lifecycle wiring. The manifest parser continues to reject `okf` until that
+  complete control-plane slice is implemented.
 
 Deliverables:
 
@@ -704,8 +725,8 @@ Deliverables:
 - enforce available filesystem, network, and child-process restrictions;
 - classify unsupported native confinement as `native-unconfined`;
 - persist workspace grants separately from package receipts.
-- add the canonical `okf` policy surface and bounded OKF conformance validator
-  only after M0K fixtures are frozen;
+- add the canonical `okf` policy surface and integrate the frozen bounded OKF
+  conformance validator;
 - implement an injected A3S Knowledge stage/promote/remove adapter with
   exact-generation receipt and observation evidence, atomic index cutover, and
   last-good-generation preservation.

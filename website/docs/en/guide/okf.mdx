@@ -9,7 +9,7 @@ description: How Open Knowledge Format becomes a first-class, non-executable A3S
 
 In the A3S Use target architecture, OKF is a first-class cognitive surface alongside Tool, MCP, Skill, and UI, but it is not an executable workload.
 
-> Current status: OKF is accepted product scope. Its manifest contract, canonical fixtures, receipt/projection, and A3S Knowledge atomic-index protocol are not frozen yet. The current schema-v3 parser does not accept an undefined `okf` block.
+> Current status: `a3s-use-core` now implements the frozen `a3s.use.okf-bundle.v1` descriptor, bounded v0.2/v0.1 conformance inspector, and canonical fixtures. Manifest, catalog, plan, receipt/projection, lifecycle, and A3S Knowledge atomic-index integration remain pending. The current schema-v3 parser rejects an undefined `okf` block.
 
 ## Bundle structure
 
@@ -94,7 +94,7 @@ PDF, Office, image, email, archive, and web content are compiler inputs—not OK
 ## Security and uninstall
 
 - Concept text, frontmatter, links, and compiler provenance cannot change ACL policy or grants.
-- Paths, links, file count, expanded bytes, and parsed-node size are bounded. A safe dangling link is diagnostic; a reference that resolves outside the package boundary is rejected.
+- Paths, file count, expanded bytes, document bytes, and links per document are bounded. A safe dangling link is diagnostic; a reference that resolves outside the package boundary is rejected.
 - Search admits only a conformant generation atomically promoted by the host; it never infers success from a staging directory.
 - Disable only hides the OKF capability from new sessions.
 - Uninstall removes only package receipt-owned projection/index content, never personal notes, raw sources, or another package's index.

@@ -26,9 +26,9 @@ A3S package
 
 这里的 **Tool 不是 MCP `tools/list` item**。Tool 保留它自己的 CLI 或 HTTP 合约；Use 不将所有工作负载翻译为私有通用协议。静态 UI 也不是 Runtime 工作负载，只有它声明的 Tool 或 MCP 后端进入 Runtime。
 
-Tool、MCP、Skill 与 UI 已有 schema-v3 contract baseline。OKF 是最新目标架构中的一等认知表面，正式 manifest contract、fixture 和 host projection 尚待冻结；当前 parser 不接受尚未定义的 `okf` block。
+Tool、MCP、Skill 与 UI 已有 schema-v3 contract baseline。OKF 是最新目标架构中的一等认知表面，其共享 bundle descriptor、有界 inspector 与 canonical fixtures 已冻结。Manifest、catalog、lifecycle 和 host projection 仍待完成，因此当前 parser 会拒绝未定义的 `okf` block。
 
-OKF 不是可执行 workload。它是一个可共享知识包：每个非保留概念是带 YAML frontmatter 的 UTF-8 Markdown，文件路径是概念身份，标准 Markdown links 形成知识图，`type` 是必需字段。第一次冻结以 OKF v0.2 为目标，并明确兼容 v0.1。原始 PDF、Office、图片或网页不直接作为 OKF 权威内容；独立 compiler 必须先生成合规 bundle。
+OKF 不是可执行 workload。它是一个可共享知识包：每个非保留概念是带 YAML frontmatter 的 UTF-8 Markdown，文件路径是概念身份，标准 Markdown links 形成知识图，`type` 是必需字段。已冻结的内容合约以 OKF v0.2 为目标，并明确兼容 v0.1。原始 PDF、Office、图片或网页不直接作为 OKF 权威内容；独立 compiler 必须先生成合规 bundle。
 
 ## ACL manifest
 

@@ -2,7 +2,8 @@
 
 - Status: accepted M0 contract baseline; runtime implementation in progress
 - Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted 2026-07-31
+- Product amendment: first-class OKF knowledge contribution accepted and M0K-A
+  bundle contract frozen 2026-07-31
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -11,9 +12,11 @@ This document is the operational companion to the plugin platform
 architecture. It defines lifecycle consistency, failure recovery, security,
 storage, public application contracts, and observability.
 
-The checked-in M0 contracts cover Tool, MCP, Skill, and UI. OKF lifecycle text
-below is accepted target behavior, not a claim that the current schema-v3
-parser, reconciler, or A3S Knowledge adapter implements an OKF surface.
+The checked-in M0 contracts cover Tool, MCP, Skill, and UI. The shared OKF
+bundle descriptor and conformance inspector are implemented, but the OKF
+lifecycle text below is accepted target behavior, not a claim that the current
+schema-v3 parser, reconciler, or A3S Knowledge adapter implements an OKF
+surface.
 
 ## Complete End-to-End Lifecycle Flow
 

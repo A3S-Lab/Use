@@ -9,7 +9,7 @@ description: Open Knowledge Format 如何作为 A3S Use 的一等、非执行型
 
 在 A3S Use 目标架构中，OKF 是与 Tool、MCP、Skill、UI 并列的一等认知表面，但它不是可执行 workload。
 
-> 当前状态：产品范围已接受 OKF；manifest contract、canonical fixture、receipt/projection 与 A3S Knowledge 原子索引协议尚未冻结。当前 schema-v3 parser 不接受未定义的 `okf` block。
+> 当前状态：`a3s-use-core` 已实现冻结的 `a3s.use.okf-bundle.v1` descriptor、支持 v0.2/v0.1 的有界 conformance inspector 与 canonical fixtures。Manifest、catalog、plan、receipt/projection、lifecycle 和 A3S Knowledge 原子索引集成仍待完成；当前 schema-v3 parser 会拒绝未定义的 `okf` block。
 
 ## Bundle 结构
 
@@ -94,7 +94,7 @@ PDF、Office、图片、邮件、归档和网页是 compiler input，不是 OKF 
 ## 安全与卸载
 
 - 概念文本、frontmatter、links 和 compiler provenance 都不能修改 ACL policy 或 grant。
-- 所有 path、link、file count、expanded bytes 与 parsed-node size 都必须有界。安全 dangling link 只产生诊断；解析到包边界外的 reference 会被拒绝。
+- 所有 path、file count、expanded bytes、document bytes 与单文档 link 数都必须有界。安全 dangling link 只产生诊断；解析到包边界外的 reference 会被拒绝。
 - Search 只接纳宿主原子 promotion 的合规 generation，不从 staging 目录推断成功。
 - Disable 只隐藏新会话中的 OKF capability。
 - Uninstall 只移除 package receipt-owned projection/index，不删除个人笔记、raw sources 或另一个包的 index。

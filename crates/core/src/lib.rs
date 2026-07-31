@@ -5,9 +5,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod okf;
 pub mod plugin;
 pub mod release;
 
+pub use okf::{
+    inspect_okf_bundle, OkfBundleContract, OkfBundleDiagnostic, OkfBundleFile, OkfBundleInspection,
+    OkfBundleLimits, OkfConceptSummary, OkfDiagnosticCode, OkfFormatVersion,
+    OKF_BUNDLE_CONTRACT_SCHEMA,
+};
 pub use plugin::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,
     CatalogPlanningTarget, CatalogSurface, ExecutablePlanningSurface, FilesystemAccess,

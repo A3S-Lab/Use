@@ -2,7 +2,8 @@
 
 - Status: M0 complete
 - Baseline date: 2026-07-30
-- Product amendment: OKF target accepted 2026-07-31; contract freeze pending
+- Product amendment: OKF bundle contract/conformance frozen 2026-07-31;
+  plugin-surface integration pending
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -18,6 +19,7 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Contract | Schema | Purpose |
 | --- | --- | --- |
 | Plugin manifest | `a3s.extension/v3` | Named Skill, MCP, Tool, and UI surfaces |
+| OKF bundle | `a3s.use.okf-bundle.v1` | Exact non-executable OKF version, root, digest, counts, bytes, and conformance limits |
 | Tool release | `a3s.use.tool-release.v1` | Immutable CLI Task or HTTP Service workload |
 | Permission ceiling | `a3s.use.plugin-permissions.v1` | Maximum authority per executable/UI surface |
 | Workspace grant proposal | `a3s.use.plugin-workspace-grant-proposal.v1` | Reviewable pre-confirmation resolved authority |
@@ -37,25 +39,24 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
 
-### OKF target is not in the frozen set
+### OKF bundle contract is frozen; the plugin surface is not
 
 Open Knowledge Format (OKF) is now an accepted first-class cognitive package
-surface, but it is not present in `a3s.extension/v3` or any contract in the
-table above. The completed M0 claim applies to Tool, MCP, Skill, and UI. The
-current manifest and policy parsers must continue rejecting an unknown `okf`
-surface until an additive follow-up freezes and implements:
+surface. The shared `a3s.use.okf-bundle.v1` descriptor and inspector are now
+implemented in `a3s-use-core`. They bind the declared v0.2 or v0.1 format,
+bundle root, byte-exact deterministic digest, concept/file counts, expanded
+bytes, and hard-bounded declared limits. The inspector never rewrites bundle
+bytes, tolerates unknown concept types and extension keys, reports safe
+dangling links as diagnostics, rejects unsafe path resolution, and treats
+Attested Computation executor/attester fields as inert data.
 
-- named manifest identity, current Open Knowledge Format v0.2 semantics,
-  explicit v0.1 compatibility, declared format version, and bundle root;
-- canonical content digest, concept/file count, expanded bytes, and limits;
-- UTF-8 Markdown/frontmatter/link conformance, preserved extension fields,
-  non-fatal safe-link diagnostics, and deterministic fixtures;
-- catalog, operation-plan impact, permission/policy enum, and dependency
-  closure fields;
-- exact-generation receipt, host projection, and Knowledge index observation;
-  and
-- upgrade, last-good-generation, disable, uninstall, and retained-data
-  semantics.
+This shared content contract does not add a second package lifecycle and does
+not yet add `okf` to `a3s.extension/v3`, `PluginSurfaceKind`, catalog,
+permission, plan, receipt, projection, capability snapshot, or Knowledge
+observation schemas. The completed M0 claim still applies to Tool, MCP, Skill,
+and UI. Current manifest and policy parsers must continue rejecting an unknown
+`okf` surface until the remaining additive control-plane and lifecycle slice
+is frozen and implemented.
 
 No document may encode illustrative OKF syntax and present it as accepted by
 the current parser. The target semantics are defined in
