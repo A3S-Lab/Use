@@ -5,13 +5,44 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod plugin;
 pub mod release;
 
+pub use plugin::{
+    CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,
+    CatalogPlanningTarget, CatalogSurface, ExecutablePlanningSurface, FilesystemAccess,
+    FilesystemPermission, FilesystemScope, HttpMethod, InstalledPluginPlanEvidence,
+    NetworkEgressPermission, PlanActor, PlanAuthority, PlanEnforcementProfile,
+    PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope,
+    PlanScopeKind, PlannedOperationImpact, PlannedPackageState, PlannedPackageTransition,
+    PlannedPluginRelease, PlannedProviderEvidence, PlannedSecretChange, PlannedSecretChangeKind,
+    PlannedStateEvidence, PlannedSurfaceChange, PlannedWorkspaceGrantChange,
+    PlannedWorkspaceImpact, PlanningArtifactRef, PlanningSurfaceActivation, PluginCatalogRecord,
+    PluginGrantConfirmation, PluginManagerToolAnnotations, PluginManagerToolDefinition,
+    PluginManagerToolset, PluginOperationAction, PluginOperationConfirmation, PluginOperationPlan,
+    PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
+    PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle, PluginReleaseChannel,
+    PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrant, PluginWorkspaceGrantChangeSet,
+    PluginWorkspaceGrantProposal, PluginWorkspaceGrantSnapshot, ResolvedWorkspaceGrant,
+    ResolvedWorkspaceGrantChangeSet, ResourcePermissionCeiling, SurfaceChangeKind,
+    SurfacePermissionCeiling, ToolWorkloadClass, UiHttpPermission, VerifiedCatalogProvenance,
+    VerifiedPluginCatalogRecord, WorkspaceGrantAuthority, WorkspaceGrantEvidence,
+    WorkspaceGrantProposalAuthority, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
+    MAX_PLUGIN_CONTRACT_BYTES, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_CATALOG_SCHEMA,
+    PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_GRANT_CONFIRMATION_SCHEMA,
+    PLUGIN_MANAGER_TOOLSET_SCHEMA, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA, PLUGIN_PERMISSION_SCHEMA,
+    PLUGIN_PLANNING_BUNDLE_SCHEMA, PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA, PLUGIN_WORKSPACE_GRANT_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+};
 pub use release::{
     HttpHealthContract, McpReleaseDescriptor, McpServiceContract, McpServiceTransport,
     ReleaseArtifact, ReleaseCompatibility, ReleaseDependency, ReleaseKind, ReleaseProvenance,
     ReleaseResolution, SkillBindingContract, SkillBindingTarget, SkillContentContract,
-    SkillReleaseDescriptor, MAX_RELEASE_DESCRIPTOR_BYTES, MCP_RELEASE_SCHEMA, SKILL_RELEASE_SCHEMA,
+    SkillReleaseDescriptor, ToolReleaseDescriptor, ToolServiceInterface, ToolServiceNetwork,
+    ToolTaskInterface, ToolWorkloadContract, MAX_RELEASE_DESCRIPTOR_BYTES, MCP_RELEASE_SCHEMA,
+    SKILL_RELEASE_SCHEMA, TOOL_RELEASE_SCHEMA,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

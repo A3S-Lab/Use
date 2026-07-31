@@ -1,22 +1,27 @@
-# Immutable MCP and Skill Release Descriptors
+# Immutable MCP, Skill, and Tool Release Descriptors
 
 ## Purpose
 
-A3S Cloud needs one content-addressed release boundary for hosted MCP services
-and Skill inputs. A3S Use owns the provider-neutral descriptor contract:
+A3S Cloud needs one content-addressed release boundary for hosted MCP services,
+Skill inputs, and executable Tools. A3S Use owns the provider-neutral
+descriptor contract:
 
 - `a3s.use.mcp-release.v1` describes a headless MCP Runtime Service;
 - `a3s.use.skill-release.v1` describes immutable Skill input for an Agent; and
-- neither schema contains a mutable artifact tag, secret value, provider
-  configuration, or generic orchestration payload.
+- `a3s.use.tool-release.v1` describes either a finite CLI Runtime Task or a
+  private HTTP Runtime Service.
+
+None of the schemas contains a mutable artifact tag, secret value, provider
+configuration, or generic orchestration payload.
 
 These are machine-owned, versioned JSON records. Human-authored extension
 configuration remains A3S ACL and continues to be parsed with `a3s-acl`.
 
 ## Canonical identity
 
-`McpReleaseDescriptor::canonical_bytes` and
-`SkillReleaseDescriptor::canonical_bytes` validate a descriptor and encode it
+`McpReleaseDescriptor::canonical_bytes`,
+`SkillReleaseDescriptor::canonical_bytes`, and
+`ToolReleaseDescriptor::canonical_bytes` validate a descriptor and encode it
 as OLPC canonical JSON:
 
 - object keys are sorted;
@@ -42,17 +47,19 @@ The repository publishes canonical cross-SDK fixtures and digest goldens:
 | --- | --- | --- |
 | MCP v1 | [`mcp-release-v1.json`](../crates/core/fixtures/releases/mcp-release-v1.json) | [`mcp-release-v1.sha256`](../crates/core/fixtures/releases/mcp-release-v1.sha256) |
 | Skill v1 | [`skill-release-v1.json`](../crates/core/fixtures/releases/skill-release-v1.json) | [`skill-release-v1.sha256`](../crates/core/fixtures/releases/skill-release-v1.sha256) |
+| Tool Task v1 | [`tool-task-release-v1.json`](../crates/core/fixtures/releases/tool-task-release-v1.json) | [`tool-task-release-v1.sha256`](../crates/core/fixtures/releases/tool-task-release-v1.sha256) |
+| Tool Service v1 | [`tool-service-release-v1.json`](../crates/core/fixtures/releases/tool-service-release-v1.json) | [`tool-service-release-v1.sha256`](../crates/core/fixtures/releases/tool-service-release-v1.sha256) |
 
 The text fixtures end with one repository newline. That newline is not part of
 the canonical JSON bytes and is not included in the adjacent digest.
 
 ## Common fields
 
-Both descriptors carry:
+All three descriptor kinds carry:
 
 | Field | Contract |
 | --- | --- |
-| `schema` and `kind` | Exact matching v1 schema and `mcp` or `skill` kind |
+| `schema` and `kind` | Exact matching v1 schema and `mcp`, `skill`, or `tool` kind |
 | `name` | Lowercase `<publisher>/<name>` identity |
 | `version` | Canonical semantic version |
 | `provenance.sourceRepository` | Canonical HTTPS URL without credentials, query, or fragment |
@@ -62,7 +69,13 @@ Both descriptors carry:
 | `provenance.buildOperationId` | Stable non-secret build operation identity |
 | `artifact` | Media type, exact SHA-256, and positive bounded byte size |
 | `compatibility` | Sorted component names and semantic-version requirements |
-| `dependencies` | Exact release kind, name, version, and descriptor digest, sorted by kind (`mcp` before `skill`) and then name with each kind/name identity unique |
+| `dependencies` | Exact release kind, name, version, and descriptor digest, sorted by kind (`mcp`, `skill`, then `tool`) and then name with each kind/name identity unique |
+
+MCP v1 and Skill v1 continue to reject `tool` dependencies because adding an
+enum value to either frozen schema would change its accepted inputs. Tool v1
+may use all three dependency kinds. A future MCP or Skill schema must opt in
+explicitly if it needs a release-level Tool dependency; schema v3 plugin
+surface dependencies are already represented separately in ACL.
 
 Artifact records deliberately have no location or tag. Cloud resolves the
 digest through its Artifact aggregate after validating the descriptor. A
@@ -104,6 +117,61 @@ shutdown, cleanup, and restart behavior on the target Linux environment.
 
 Stdio MCP remains a local native extension surface. It is not a hosted MCP v1
 release transport and cannot be presented as a Runtime Service.
+
+## Tool v1
+
+A Tool v1 artifact is a digest-pinned OCI image manifest or image index. Its
+`workload.class` selects exactly one closed contract:
+
+| Class | Interface | Runtime mapping |
+| --- | --- | --- |
+| `task` | `cli` | One finite `RuntimeUnitClass::Task` per invocation |
+| `service` | `http` | One long-running `RuntimeUnitClass::Service` per plugin generation |
+
+Tool means the executable program or web service on which a Skill or UI
+depends. It does not mean an item returned by MCP `tools/list`. A3S preserves
+the Tool's native argv, exit status, and HTTP API; the descriptor does not
+define business operations or a universal action envelope.
+
+### Task + CLI
+
+The Task contract declares:
+
+- a bounded process `entrypoint` vector without shell interpolation;
+- `interactive: false`, which requires closed stdin and no TTY or prompt;
+- a bounded execution timeout;
+- independent stdout and stderr capture limits; and
+- a non-empty sorted set of successful process exit codes.
+
+Invocation arguments are supplied by the binding broker and appended without
+reinterpretation. Permissions, mounts, secrets, resource limits, and network
+access come from the reviewed operation plan and Runtime policy; they are not
+silently inferred from `SKILL.md` or embedded as plaintext configuration.
+
+### Service + HTTP
+
+The Service contract declares:
+
+- the sole `http` interface and `private` network exposure;
+- one named TCP container port and package-owned HTTP base path;
+- an HTTP health contract;
+- bounded startup and graceful-shutdown intervals; and
+- an optional SHA-256 of the reviewed OpenAPI contract.
+
+`private` maps to Runtime service networking but does not create public
+ingress. A3S Use exposes only manifest-approved bindings through its
+origin-scoped proxy. The optional API digest is integrity and review evidence;
+it does not turn HTTP operations into A3S RPC methods. The OCI image
+configuration supplies the service process entrypoint.
+
+### Deterministic Runtime mapping
+
+The release descriptor supplies immutable workload facts. The reconciler adds
+the exact plugin generation, approved permissions, resource policy, secret
+references, mounts, and provider selection to construct a Runtime unit spec.
+It must reject a provider that cannot enforce the planned contract. Mutable
+image tags, public endpoint URLs, provider configuration, raw secret values,
+and environment maps are forbidden from descriptor v1.
 
 ## Skill v1
 
@@ -155,7 +223,7 @@ The schema string is the compatibility boundary. A decoder:
 - accepts only the exact v1 schema it implements;
 - rejects unknown fields and enum values;
 - never guesses a default for a future field; and
-- never reinterprets MCP as Skill or Skill as MCP.
+- never reinterprets MCP, Skill, or Tool kinds or Tool workload classes.
 
 Changing field meaning, adding a field, adding a transport or binding target,
 or changing canonicalization requires a new schema identifier and new fixture

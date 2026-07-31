@@ -621,6 +621,64 @@ async fn receipt_rejects_an_invalid_optional_package_digest() {
 }
 
 #[tokio::test]
+async fn receipt_v2_requires_plan_ready_catalog_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    package(&source, "acme/slack", "slack", "1.0.0").await;
+    let registry = registry(temp.path());
+
+    registry
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap();
+
+    let receipt_path = registry.paths().receipt_path("acme/slack");
+    let mut invalid: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).await.unwrap()).unwrap();
+    invalid["schemaVersion"] = serde_json::json!(2);
+    fs::write(&receipt_path, serde_json::to_vec_pretty(&invalid).unwrap())
+        .await
+        .unwrap();
+
+    let error = registry.get("acme/slack").await.unwrap_err();
+    assert_eq!(error.code, "use.extension.receipt_invalid");
+}
+
+#[tokio::test]
+async fn receipt_digest_is_stable_and_binds_desired_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    package(&source, "acme/slack", "slack", "1.0.0").await;
+    let registry = registry(temp.path());
+    let installed = registry
+        .install_local(
+            "acme/slack",
+            &source,
+            InstallOptions {
+                allow_unsigned: true,
+                force: false,
+            },
+        )
+        .await
+        .unwrap()
+        .extension;
+
+    let digest = installed.receipt.descriptor_digest().unwrap();
+    assert_eq!(installed.receipt.descriptor_digest().unwrap(), digest);
+    assert!(digest.starts_with("sha256:"));
+    let mut disabled = installed.receipt;
+    disabled.enabled = false;
+    assert_ne!(disabled.descriptor_digest().unwrap(), digest);
+}
+
+#[tokio::test]
 async fn snapshot_reconciles_a_pre_activation_identity_binding() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("source");

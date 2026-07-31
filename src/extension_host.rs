@@ -98,7 +98,7 @@ pub async fn run_route(route: &str, args: &[String]) -> UseResult<Option<u8>> {
     let extension = lease.extension();
     let Some(executable) = extension.cli_executable() else {
         let surfaces = extension.surfaces();
-        let suggestion = if extension.manifest.mcp.is_some() {
+        let suggestion = if extension.manifest.has_mcp() {
             format!(
                 "Connect to the standard MCP surface declared by '{}'.",
                 extension.receipt.package_id

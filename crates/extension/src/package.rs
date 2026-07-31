@@ -15,8 +15,8 @@ use super::{ExtensionManifest, ExtensionPaths};
 pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
 pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
-const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
-const MAX_ACTIVITY_RESOURCE_BYTES: u64 = 2 * 1024 * 1024;
+pub(super) const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
+pub(super) const MAX_ACTIVITY_RESOURCE_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) async fn read_manifest(package_root: &Path) -> UseResult<(ExtensionManifest, Vec<u8>)> {
     let path = package_root.join(MANIFEST_NAME);
@@ -97,10 +97,31 @@ pub(crate) async fn validate_surface_files(
             .await?;
         }
     }
+    super::surface_files::validate_named_surface_files(manifest, &canonical_root, package_root)
+        .await?;
     Ok(())
 }
 
 async fn validate_activity_text_asset(
+    label: &str,
+    content_type: &str,
+    canonical_root: &Path,
+    path: &Path,
+    max_bytes: u64,
+) -> UseResult<()> {
+    validate_text_asset(
+        "use.extension.activity_asset_invalid",
+        label,
+        content_type,
+        canonical_root,
+        path,
+        max_bytes,
+    )
+    .await
+}
+
+pub(super) async fn validate_text_asset(
+    error_code: &'static str,
     label: &str,
     content_type: &str,
     canonical_root: &Path,
@@ -113,7 +134,7 @@ async fn validate_activity_text_asset(
         .map_err(|error| io_error(&format!("inspect {label}"), path, error))?;
     if metadata.len() == 0 || metadata.len() > max_bytes {
         return Err(UseError::new(
-            "use.extension.activity_asset_invalid",
+            error_code,
             format!(
                 "{label} '{}' must contain between 1 byte and {max_bytes} bytes.",
                 path.display()
@@ -125,7 +146,7 @@ async fn validate_activity_text_asset(
         .map_err(|error| io_error(&format!("read {label}"), path, error))?;
     std::str::from_utf8(&bytes).map_err(|error| {
         UseError::new(
-            "use.extension.activity_asset_invalid",
+            error_code,
             format!(
                 "{label} '{}' must be UTF-8 {content_type}: {error}",
                 path.display()
@@ -135,7 +156,7 @@ async fn validate_activity_text_asset(
     Ok(())
 }
 
-async fn validate_surface_file(
+pub(super) async fn validate_surface_file(
     label: &str,
     canonical_root: &Path,
     path: &Path,

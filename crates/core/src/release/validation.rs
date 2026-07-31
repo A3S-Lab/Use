@@ -8,10 +8,15 @@ use crate::{UseError, UseResult};
 use super::{
     HttpHealthContract, McpServiceContract, ReleaseArtifact, ReleaseCompatibility,
     ReleaseDependency, ReleaseProvenance, ReleaseResolution, SkillContentContract,
+    ToolWorkloadContract,
 };
 
 const MAX_ARTIFACT_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 const MAX_LIFECYCLE_MS: u64 = 60 * 60 * 1000;
+const MAX_CAPTURE_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_PROCESS_ARGUMENTS: usize = 64;
+const MAX_PROCESS_ARGUMENT_BYTES: usize = 32 * 1024;
+const MAX_PROCESS_COMMAND_BYTES: usize = 128 * 1024;
 
 impl McpServiceContract {
     pub(super) fn validate(&self) -> UseResult<()> {
@@ -26,12 +31,12 @@ impl McpServiceContract {
         {
             return Err(descriptor_error("The MCP service contract is invalid."));
         }
-        self.health.validate()
+        self.health.validate("MCP")
     }
 }
 
 impl HttpHealthContract {
-    fn validate(&self) -> UseResult<()> {
+    fn validate(&self, owner: &str) -> UseResult<()> {
         if !valid_http_path(&self.path)
             || self.interval_ms == 0
             || self.interval_ms > MAX_LIFECYCLE_MS
@@ -40,9 +45,67 @@ impl HttpHealthContract {
             || !(1..=100).contains(&self.success_threshold)
             || !(1..=100).contains(&self.failure_threshold)
         {
-            return Err(descriptor_error("The MCP health contract is invalid."));
+            return Err(descriptor_error(format!(
+                "The {owner} health contract is invalid."
+            )));
         }
         Ok(())
+    }
+}
+
+impl ToolWorkloadContract {
+    pub(super) fn validate(&self) -> UseResult<()> {
+        match self {
+            Self::Task {
+                entrypoint,
+                interactive,
+                timeout_ms,
+                max_stdout_bytes,
+                max_stderr_bytes,
+                success_exit_codes,
+                ..
+            } => {
+                if !valid_process_entrypoint(entrypoint)
+                    || *interactive
+                    || *timeout_ms == 0
+                    || *timeout_ms > MAX_LIFECYCLE_MS
+                    || *max_stdout_bytes == 0
+                    || *max_stdout_bytes > MAX_CAPTURE_BYTES
+                    || *max_stderr_bytes == 0
+                    || *max_stderr_bytes > MAX_CAPTURE_BYTES
+                    || success_exit_codes.is_empty()
+                    || success_exit_codes.windows(2).any(|pair| pair[0] >= pair[1])
+                {
+                    return Err(descriptor_error("The Tool Task contract is invalid."));
+                }
+                Ok(())
+            }
+            Self::Service {
+                port_name,
+                port,
+                base_path,
+                health,
+                startup_timeout_ms,
+                shutdown_grace_ms,
+                api_contract_digest,
+                ..
+            } => {
+                if !valid_segment(port_name)
+                    || *port == 0
+                    || !valid_http_path(base_path)
+                    || *startup_timeout_ms == 0
+                    || *startup_timeout_ms > MAX_LIFECYCLE_MS
+                    || *shutdown_grace_ms == 0
+                    || *shutdown_grace_ms > MAX_LIFECYCLE_MS
+                    || api_contract_digest
+                        .as_deref()
+                        .is_some_and(|digest| !valid_sha256(digest))
+                {
+                    return Err(descriptor_error("The Tool Service contract is invalid."));
+                }
+                health.validate("Tool Service")
+            }
+        }
     }
 }
 
@@ -351,6 +414,24 @@ fn valid_http_path(value: &str) -> bool {
         && !value
             .split('/')
             .any(|segment| matches!(segment, "." | ".."))
+}
+
+fn valid_process_entrypoint(values: &[String]) -> bool {
+    !values.is_empty()
+        && values.len() <= MAX_PROCESS_ARGUMENTS
+        && values
+            .iter()
+            .try_fold(0usize, |total, value| {
+                if value.is_empty()
+                    || value.len() > MAX_PROCESS_ARGUMENT_BYTES
+                    || value.contains(['\0', '\r', '\n'])
+                {
+                    None
+                } else {
+                    total.checked_add(value.len())
+                }
+            })
+            .is_some_and(|total| total <= MAX_PROCESS_COMMAND_BYTES)
 }
 
 fn valid_skill_path(value: &str) -> bool {

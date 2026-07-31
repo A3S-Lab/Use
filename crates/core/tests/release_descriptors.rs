@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use a3s_use_core::{McpReleaseDescriptor, ReleaseResolution, SkillReleaseDescriptor};
+use a3s_use_core::{McpReleaseDescriptor, ReleaseKind, ReleaseResolution, SkillReleaseDescriptor};
 
 const MCP_FIXTURE: &[u8] = include_bytes!("../fixtures/releases/mcp-release-v1.json");
 const SKILL_FIXTURE: &[u8] = include_bytes!("../fixtures/releases/skill-release-v1.json");
@@ -103,6 +103,13 @@ fn descriptors_reject_noncanonical_identity_and_set_values() {
 
     let mut mcp = McpReleaseDescriptor::from_json(MCP_FIXTURE).unwrap();
     mcp.service.protocol_version = "2025-02-31".to_string();
+    assert_eq!(
+        mcp.canonical_bytes().unwrap_err().code,
+        "use.release.descriptor_invalid"
+    );
+
+    let mut mcp = McpReleaseDescriptor::from_json(MCP_FIXTURE).unwrap();
+    mcp.dependencies[0].kind = ReleaseKind::Tool;
     assert_eq!(
         mcp.canonical_bytes().unwrap_err().code,
         "use.release.descriptor_invalid"

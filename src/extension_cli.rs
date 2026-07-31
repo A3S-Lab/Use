@@ -167,6 +167,17 @@ pub(crate) async fn extension_inspect(package_id: &str) -> UseResult<CommandOutp
     ))
 }
 
+pub(crate) async fn extension_planning_evidence(package_id: &str) -> UseResult<CommandOutput> {
+    let evidence = crate::capability_registry::installed_plugin_plan_evidence(package_id).await?;
+    Ok(CommandOutput::success(
+        format!(
+            "Resolved plan-ready installed evidence for '{}'.",
+            evidence.package_id
+        ),
+        serde_json::json!({ "planningEvidence": evidence }),
+    ))
+}
+
 pub(crate) async fn extension_enable(package_id: &str) -> UseResult<CommandOutput> {
     let result = activate_extension(package_id, true, Duration::ZERO).await?;
     Ok(CommandOutput::success(

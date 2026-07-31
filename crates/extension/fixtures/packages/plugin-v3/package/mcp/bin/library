@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+if [ "${1:-}" = "serve" ] && [ "${2:-}" = "--stdio" ]; then
+  exec printf '{"jsonrpc":"2.0","error":{"code":-32600,"message":"fixture"}}\n'
+fi
+exit 64

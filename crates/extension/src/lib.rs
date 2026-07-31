@@ -6,16 +6,36 @@ use a3s_use_core::{RiskClass, UseError, UseResult};
 use serde::{Deserialize, Serialize};
 
 mod digest;
+#[cfg(test)]
+mod manifest_tests;
 mod package;
+#[cfg(test)]
+mod package_tests;
 mod paths;
+mod plugin_manifest;
+#[cfg(test)]
+mod plugin_manifest_tests;
 mod registry;
 mod registry_io;
 mod release_bundle;
 mod remote;
 mod route_lock;
 mod source;
+mod surface_files;
+mod workspace_grant;
+mod workspace_grant_io;
+mod workspace_grant_lifecycle;
+mod workspace_grant_operation;
+mod workspace_grant_operation_io;
+mod workspace_grant_snapshot;
+#[cfg(test)]
+mod workspace_grant_tests;
 
 pub use paths::ExtensionPaths;
+pub use plugin_manifest::{
+    PluginMcpLaunch, PluginMcpSurface, PluginSkillSurface, PluginUiSurface, SurfaceActivation,
+    ToolServiceSurface, ToolSurface, ToolTaskSource, ToolTaskSurface, ToolWorkload,
+};
 pub use registry::{
     ActivationResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
     ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult,
@@ -25,9 +45,21 @@ pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
 };
 pub use remote::{
-    list_remote_packages, prepare_remote_package, refresh_remote_registry, DownloadedRemotePackage,
-    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog,
-    VerifiedRegistryMetadata,
+    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, prepare_remote_package,
+    refresh_remote_registry, search_cached_plugins, search_remote_plugins, DownloadedRemotePackage,
+    PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection, PluginCatalogPage,
+    PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource, PreparedRemotePackage,
+    ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog, VerifiedRegistryMetadata,
+    MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
+};
+pub use workspace_grant::{
+    StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,
+    WORKSPACE_GRANT_RECEIPT_SCHEMA, WORKSPACE_GRANT_REVOCATION_SCHEMA,
+};
+pub use workspace_grant_operation::{
+    WorkspaceGrantCandidateCeiling, WorkspaceGrantCutoverEvidence, WorkspaceGrantLifecyclePhase,
+    WorkspaceGrantOperationIntent, WorkspaceGrantOperationJournal, WorkspaceGrantPreparedCandidate,
+    WorkspaceGrantRetirement, WORKSPACE_GRANT_CUTOVER_SCHEMA, WORKSPACE_GRANT_OPERATION_SCHEMA,
 };
 
 const RESERVED_ROUTES: &[&str] = &[
@@ -64,6 +96,14 @@ pub struct ExtensionManifest {
     pub skill: Option<SkillSurface>,
     #[serde(default, skip_serializing_if = "ExtensionContributions::is_empty")]
     pub contributes: ExtensionContributions,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<PluginMcpSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<PluginSkillSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ui: Vec<PluginUiSurface>,
 }
 
 /// Source repository identity carried by a versioned external capability
@@ -172,23 +212,27 @@ impl ExtensionManifest {
     }
 
     pub fn validate_package_root(&self, package_root: &Path) -> UseResult<()> {
-        for path in self
-            .cli
-            .iter()
-            .map(|surface| &surface.executable)
-            .chain(self.mcp.iter().map(|surface| &surface.executable))
-            .chain(self.skill.iter().map(|surface| &surface.path))
-            .chain(
-                self.contributes
-                    .activity_bar
-                    .iter()
-                    .flat_map(|contribution| {
-                        std::iter::once(&contribution.entry)
-                            .chain(contribution.styles.iter())
-                            .chain(contribution.scripts.iter())
-                    }),
-            )
-        {
+        let mut paths = Vec::new();
+        paths.extend(self.cli.iter().map(|surface| surface.executable.as_path()));
+        paths.extend(self.mcp.iter().map(|surface| surface.executable.as_path()));
+        paths.extend(self.skill.iter().map(|surface| surface.path.as_path()));
+        for contribution in &self.contributes.activity_bar {
+            paths.push(contribution.entry.as_path());
+            paths.extend(contribution.styles.iter().map(PathBuf::as_path));
+            paths.extend(contribution.scripts.iter().map(PathBuf::as_path));
+        }
+        for tool in &self.tools {
+            paths.extend(tool.package_paths());
+        }
+        for mcp in &self.mcp_servers {
+            paths.extend(mcp.package_paths());
+        }
+        paths.extend(self.skills.iter().map(|surface| surface.path.as_path()));
+        for ui in &self.ui {
+            paths.extend(ui.package_paths());
+        }
+
+        for path in paths {
             validate_relative_path(path)?;
             let resolved = package_root.join(path);
             if !resolved.starts_with(package_root) {
@@ -199,6 +243,34 @@ impl ExtensionManifest {
             }
         }
         Ok(())
+    }
+
+    pub fn surface_kinds(&self) -> Vec<&'static str> {
+        let mut surfaces = Vec::with_capacity(4);
+        if self.cli.is_some() {
+            surfaces.push("cli");
+        }
+        if !self.tools.is_empty() {
+            surfaces.push("tool");
+        }
+        if self.mcp.is_some() || !self.mcp_servers.is_empty() {
+            surfaces.push("mcp");
+        }
+        if self.skill.is_some() || !self.skills.is_empty() {
+            surfaces.push("skill");
+        }
+        if !self.ui.is_empty() {
+            surfaces.push("ui");
+        }
+        surfaces
+    }
+
+    pub fn has_mcp(&self) -> bool {
+        self.mcp.is_some() || !self.mcp_servers.is_empty()
+    }
+
+    pub fn ui_count(&self) -> usize {
+        self.contributes.activity_bar.len() + self.ui.len()
     }
 
     pub fn supports_use_version(&self, version: &str) -> UseResult<bool> {
@@ -248,9 +320,9 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         ));
     }
     let schema_version = schema_number as u32;
-    if !(1..=2).contains(&schema_version) {
+    if !(1..=3).contains(&schema_version) {
         return Err(manifest_error(
-            "Only extension schema versions 1 and 2 are supported.",
+            "Only extension schema versions 1, 2, and 3 are supported.",
         ));
     }
     let version = string_attribute(block, "version")?;
@@ -276,18 +348,47 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     let mut skill = None;
     let mut repository = None;
     let mut contributes = ExtensionContributions::default();
+    let mut tools = Vec::new();
+    let mut mcp_servers = Vec::new();
+    let mut skills = Vec::new();
+    let mut ui = Vec::new();
     for surface in &block.blocks {
-        if !seen.insert(surface.name.as_str()) {
+        let name = surface.name.as_str();
+        let singleton = matches!(name, "cli" | "repository" | "contributes")
+            || (schema_version < 3 && matches!(name, "mcp" | "skill"));
+        if singleton && !seen.insert(name) {
             return Err(manifest_error(format!(
                 "Duplicate '{}' surface.",
                 surface.name
             )));
         }
-        match surface.name.as_str() {
+        match name {
+            "cli" if schema_version == 3 => {
+                return Err(manifest_error(
+                    "Schema version 3 cannot declare legacy 'cli' or 'contributes' surfaces.",
+                ))
+            }
             "cli" => cli = Some(parse_cli(surface)?),
+            "tool" if schema_version == 3 => {
+                tools.push(plugin_manifest::parse_tool(surface)?);
+            }
+            "mcp" if schema_version == 3 => {
+                mcp_servers.push(plugin_manifest::parse_mcp(surface)?);
+            }
             "mcp" => mcp = Some(parse_mcp(surface)?),
+            "skill" if schema_version == 3 => {
+                skills.push(plugin_manifest::parse_skill(surface)?);
+            }
             "skill" => skill = Some(parse_skill(surface)?),
+            "ui" if schema_version == 3 => {
+                ui.push(plugin_manifest::parse_ui(surface)?);
+            }
             "repository" => repository = Some(parse_repository(surface)?),
+            "contributes" if schema_version == 3 => {
+                return Err(manifest_error(
+                    "Schema version 3 cannot declare legacy 'cli' or 'contributes' surfaces.",
+                ))
+            }
             "contributes" => contributes = parse_contributes(surface)?,
             name => {
                 return Err(manifest_error(format!(
@@ -296,10 +397,23 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             }
         }
     }
-    if cli.is_none() && mcp.is_none() && skill.is_none() {
+    if schema_version < 3 && cli.is_none() && mcp.is_none() && skill.is_none() {
         return Err(manifest_error(
             "An extension must declare CLI, MCP, and/or Skill.",
         ));
+    }
+    if schema_version == 3
+        && tools.is_empty()
+        && mcp_servers.is_empty()
+        && skills.is_empty()
+        && ui.is_empty()
+    {
+        return Err(manifest_error(
+            "A schema version 3 extension must declare Tool, MCP, Skill, and/or UI.",
+        ));
+    }
+    if schema_version == 3 {
+        plugin_manifest::validate_dependencies(&tools, &mcp_servers, &skills, &ui)?;
     }
     if !contributes.activity_bar.is_empty() && skill.is_none() {
         return Err(manifest_error(
@@ -312,19 +426,37 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             "Repository identity and A3S Use compatibility require extension schema version 2.",
         ));
     }
-    if schema_version == 2 {
-        let requirement = requires_use
-            .as_deref()
-            .ok_or_else(|| manifest_error("Extension schema version 2 requires 'requires_use'."))?;
-        semver::VersionReq::parse(requirement).map_err(|error| {
+    if schema_version >= 2 {
+        let requirement = requires_use.as_deref().ok_or_else(|| {
+            manifest_error(format!(
+                "Extension schema version {schema_version} requires 'requires_use'."
+            ))
+        })?;
+        let requirement = semver::VersionReq::parse(requirement).map_err(|error| {
             manifest_error(format!(
                 "Invalid A3S Use compatibility requirement '{requirement}': {error}"
             ))
         })?;
         if repository.is_none() {
-            return Err(manifest_error(
-                "Extension schema version 2 requires a repository block.",
-            ));
+            return Err(manifest_error(format!(
+                "Extension schema version {schema_version} requires a repository block."
+            )));
+        }
+        if schema_version == 3 {
+            let v3_host = semver::Version::new(0, 3, 0);
+            let current_host =
+                semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|error| {
+                    manifest_error(format!(
+                        "The A3S Use package version is invalid during schema validation: {error}"
+                    ))
+                })?;
+            if !requirement.matches(&v3_host)
+                || (current_host < v3_host && requirement.matches(&current_host))
+            {
+                return Err(manifest_error(
+                    "Schema version 3 must require A3S Use 0.3 and exclude pre-0.3 hosts.",
+                ));
+            }
         }
     }
     Ok(ExtensionManifest {
@@ -339,6 +471,10 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         mcp,
         skill,
         contributes,
+        tools,
+        mcp_servers,
+        skills,
+        ui,
     })
 }
 
@@ -725,158 +861,4 @@ fn valid_segment(value: &str) -> bool {
 
 fn manifest_error(message: impl Into<String>) -> UseError {
     UseError::new("use.extension.manifest_invalid", message)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const MANIFEST: &str = r#"
-extension "acme/slack" {
-  schema_version = 1
-  version        = "1.2.0"
-  route          = "slack"
-  actions        = ["read", "mutate"]
-
-  cli {
-    executable  = "bin/a3s-use-acme-slack"
-    json_output = true
-  }
-
-  mcp {
-    executable = "bin/a3s-use-acme-slack"
-    args       = ["serve", "--mcp"]
-    transport  = "stdio"
-  }
-
-  skill {
-    path = "skills/slack/SKILL.md"
-  }
-
-  contributes {
-    activity_bar "inbox" {
-      title       = "Slack Inbox"
-      description = "Review Slack activity with the installed Slack capability."
-      icon        = "messages-square"
-      entry       = "web/activity.html"
-      styles      = ["web/activity.css"]
-      scripts     = ["web/activity.js"]
-      skill       = "slack"
-      order       = 120
-    }
-  }
-}
-"#;
-
-    #[test]
-    fn parses_acl_into_native_surfaces() {
-        let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
-        assert_eq!(manifest.package_id, "acme/slack");
-        assert!(manifest.cli.is_some());
-        assert!(manifest.mcp.is_some());
-        assert!(manifest.skill.is_some());
-        assert_eq!(manifest.contributes.activity_bar.len(), 1);
-        let activity = &manifest.contributes.activity_bar[0];
-        assert_eq!(activity.id, "inbox");
-        assert_eq!(activity.title, "Slack Inbox");
-        assert_eq!(activity.entry, PathBuf::from("web/activity.html"));
-        assert_eq!(activity.styles, [PathBuf::from("web/activity.css")]);
-        assert_eq!(activity.scripts, [PathBuf::from("web/activity.js")]);
-        assert_eq!(activity.skill, "slack");
-        assert_eq!(activity.order, 120);
-    }
-
-    #[test]
-    fn parses_external_repository_identity_and_host_compatibility() {
-        let manifest = MANIFEST
-            .replace("schema_version = 1", "schema_version = 2")
-            .replace(
-                "route          = \"slack\"",
-                concat!(
-                    "route          = \"slack\"\n",
-                    "  requires_use   = \">=0.2.0, <0.3.0\"\n\n",
-                    "  repository {\n",
-                    "    url      = \"https://github.com/acme/slack\"\n",
-                    "    revision = \"0123456789abcdef0123456789abcdef01234567\"\n",
-                    "  }"
-                ),
-            );
-        let manifest = ExtensionManifest::parse_acl(&manifest).unwrap();
-
-        assert_eq!(manifest.schema_version, 2);
-        assert!(manifest.supports_use_version("0.2.0").unwrap());
-        assert!(!manifest.supports_use_version("0.3.0").unwrap());
-        assert_eq!(
-            manifest.repository.unwrap(),
-            ExtensionRepository {
-                url: "https://github.com/acme/slack".to_string(),
-                revision: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
-            }
-        );
-    }
-
-    #[test]
-    fn rejects_incomplete_or_unsafe_repository_manifests() {
-        let schema_two = MANIFEST.replace("schema_version = 1", "schema_version = 2");
-        assert!(ExtensionManifest::parse_acl(&schema_two).is_err());
-
-        let unsafe_repository = schema_two.replace(
-            "route          = \"slack\"",
-            concat!(
-                "route          = \"slack\"\n",
-                "  requires_use   = \">=0.2.0\"\n\n",
-                "  repository {\n",
-                "    url = \"https://user@example.com/acme/slack?ref=main\"\n",
-                "  }"
-            ),
-        );
-        assert!(ExtensionManifest::parse_acl(&unsafe_repository).is_err());
-    }
-
-    #[test]
-    fn rejects_custom_rpc_fields_and_path_escape() {
-        let custom_rpc = MANIFEST.replace(
-            "json_output = true",
-            "json_output = true\n    jsonrpc = \"2.0\"",
-        );
-        assert!(ExtensionManifest::parse_acl(&custom_rpc).is_err());
-        let escaping = MANIFEST.replace("bin/a3s-use-acme-slack", "../a3s-use-acme-slack");
-        assert!(ExtensionManifest::parse_acl(&escaping).is_err());
-    }
-
-    #[test]
-    fn rejects_reserved_routes() {
-        for route in ["browser", "box", "ocr"] {
-            let manifest = MANIFEST.replace(
-                "route          = \"slack\"",
-                &format!("route = \"{route}\""),
-            );
-            assert!(ExtensionManifest::parse_acl(&manifest).is_err());
-        }
-    }
-
-    #[test]
-    fn rejects_activity_contributions_without_a_skill_surface() {
-        let manifest =
-            MANIFEST.replace("  skill {\n    path = \"skills/slack/SKILL.md\"\n  }\n", "");
-        let error = ExtensionManifest::parse_acl(&manifest).unwrap_err();
-        assert!(error
-            .message
-            .contains("Activity Bar contributions require a Skill surface"));
-    }
-
-    #[test]
-    fn rejects_escaping_or_non_html_activity_assets() {
-        let escaping = MANIFEST.replace("web/activity.html", "../activity.html");
-        assert!(ExtensionManifest::parse_acl(&escaping).is_err());
-        let script = MANIFEST.replace("web/activity.html", "web/activity.js");
-        assert!(ExtensionManifest::parse_acl(&script).is_err());
-        let wrong_style = MANIFEST.replace("web/activity.css", "web/activity.js");
-        assert!(ExtensionManifest::parse_acl(&wrong_style).is_err());
-        let duplicate = MANIFEST.replace(
-            "scripts     = [\"web/activity.js\"]",
-            "scripts     = [\"web/activity.css\"]",
-        );
-        assert!(ExtensionManifest::parse_acl(&duplicate).is_err());
-    }
 }

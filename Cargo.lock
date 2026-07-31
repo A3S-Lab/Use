@@ -9,9 +9,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2dc4eb3b0dd1b11efa0ad9bf397c97fd1d16e3eb4f9ca43872df069560d0b69"
 
 [[package]]
+name = "a3s-runtime"
+version = "0.2.0"
+source = "git+https://github.com/A3S-Lab/Runtime?rev=cfaac63af6f76beebdc64a1ec228cedc42bb98ec#cfaac63af6f76beebdc64a1ec228cedc42bb98ec"
+dependencies = [
+ "async-trait",
+ "fs2",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+]
+
+[[package]]
 name = "a3s-use"
 version = "0.2.1"
 dependencies = [
+ "a3s-runtime",
  "a3s-use-browser",
  "a3s-use-core",
  "a3s-use-extension",

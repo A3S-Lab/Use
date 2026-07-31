@@ -141,17 +141,21 @@ CLI output, not a new RPC transport.
 
 The live capability projection describes locally callable surfaces; it is not
 the Cloud release record. `a3s-use-core` separately owns the versioned
-`a3s.use.mcp-release.v1` and `a3s.use.skill-release.v1` machine contracts.
-Their OLPC canonical JSON digest binds source commit, admitted manifest,
-artifact, compatibility, and exact release dependencies.
+`a3s.use.mcp-release.v1`, `a3s.use.skill-release.v1`, and
+`a3s.use.tool-release.v1` machine contracts. Their OLPC canonical JSON digest
+binds source commit, admitted manifest, artifact, compatibility, and exact
+release dependencies.
 
 MCP v1 maps only a digest-pinned OCI artifact and standard Streamable HTTP
 health/lifecycle contract to a Runtime Service. Skill v1 maps only a
 content-bound `SKILL.md` bundle to immutable Agent input. It has no executable,
-port, health, or Runtime fields and cannot be deployed alone. Cloud resolves
-artifact storage separately by digest; mutable tags and source branches never
-enter release identity. The complete contract and cross-SDK fixtures are in
-[release descriptors](release-descriptors.md).
+port, health, or Runtime fields and cannot be deployed alone. Tool v1 maps a
+non-interactive CLI workload to a finite Runtime Task or a private HTTP
+workload to a Runtime Service without translating its argv or HTTP API into a
+private RPC protocol. Cloud resolves artifact storage separately by digest;
+mutable tags and source branches never enter release identity. The complete
+contract and cross-SDK fixtures are in [release
+descriptors](release-descriptors.md).
 
 ## Component-backed routes
 
@@ -217,19 +221,12 @@ activation, route leases, and removal.
 
 ## Roadmap
 
-Implemented:
-
-1. Typed Browser, OCR, Box, extension, and component contracts.
-2. Native CLI, standard MCP, Skill, and content-bound workbench extension surfaces.
-3. Atomic extension install, upgrade, enable, disable, uninstall, watch, and route draining.
-4. Local reviewed packages, release-bundled packages, and TUF-verified registries.
-5. A unified generation and revision capability projection for resident hosts.
-6. Schema v2 repository identity and SemVer host compatibility.
-7. Package-ID and route-based discovery, diagnosis, delegation, MCP launch, and removal.
-8. A3S Office as an independently released reference repository package.
-
-Next:
-
-1. Production publication for the official A3S extension registry, including an offline-held root-key policy and release automation.
-2. Additional external repositories adopting schema v2 and publishing reproducible package provenance.
-3. Windows real-Chrome persistent sessions with the same runtime guarantees as macOS and Linux.
+The completed contract baseline and the dependency-ordered development plan
+for user- and agent-managed plugins now live in the
+[A3S Use Plugin Platform Roadmap](../ROADMAP.md). That document is the single
+source of truth for searchable catalogs, shared lifecycle management, agent
+authorization, on-demand Science delivery, supply-chain hardening, and
+cross-platform completion gates. The corresponding
+[Plugin Platform Architecture](plugin-platform-architecture.md) defines the
+multi-surface package, Tool Task/Service, Runtime binding, reconciliation,
+consistency, and security model.
