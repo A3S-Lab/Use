@@ -26,9 +26,9 @@ A3S package
 
 In this model, a **Tool is not an MCP `tools/list` item**. A Tool keeps its own CLI or HTTP contract; Use does not translate every workload into a private universal protocol. Static UI is not a Runtime workload either. Only its declared Tool or MCP backend enters Runtime.
 
-Tool, MCP, Skill, and UI have a schema-v3 contract baseline. OKF is now a first-class cognitive surface in the target architecture; its manifest contract, fixtures, and host projection still need to be frozen. The current parser does not accept an undefined `okf` block.
+Tool, MCP, Skill, and UI have a schema-v3 contract baseline. OKF is now a first-class cognitive surface in the target architecture; its shared bundle descriptor, bounded inspector, and canonical fixtures are frozen. Manifest, catalog, lifecycle, and host projection remain pending, so the current parser rejects an undefined `okf` block.
 
-OKF is not an executable workload. It is a shareable knowledge package: each non-reserved concept is UTF-8 Markdown with YAML frontmatter, the file path is concept identity, standard Markdown links form the knowledge graph, and `type` is required. The first freeze targets OKF v0.2 with explicit v0.1 compatibility. Raw PDF, Office, image, or web sources do not become OKF authority directly; an independent compiler must emit a conformant bundle first.
+OKF is not an executable workload. It is a shareable knowledge package: each non-reserved concept is UTF-8 Markdown with YAML frontmatter, the file path is concept identity, standard Markdown links form the knowledge graph, and `type` is required. The frozen content contract targets OKF v0.2 with explicit v0.1 compatibility. Raw PDF, Office, image, or web sources do not become OKF authority directly; an independent compiler must emit a conformant bundle first.
 
 ## ACL manifest
 

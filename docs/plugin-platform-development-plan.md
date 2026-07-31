@@ -2,7 +2,8 @@
 
 - Status: implementation in progress
 - Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted 2026-07-31
+- Product amendment: first-class OKF knowledge contribution accepted and M0K-A
+  bundle contract frozen 2026-07-31
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -311,6 +312,13 @@ The dependency-ordered slices are:
    download; review provenance, concept count, bytes, and permission impact;
    install and query cited concepts; upgrade atomically; disable/uninstall; and
    recover each checkpoint after injected crashes.
+
+Implementation status (2026-07-31): M0K-A has completed the shared
+`a3s.use.okf-bundle.v1` descriptor, deterministic content identity, bounded
+v0.2/v0.1 inspector, and canonical/malicious fixtures in `a3s-use-core`. This
+is the single conformance implementation intended for slices 1–4. Production
+manifest acceptance remains fail-closed until the rest of slice 1 and the
+Knowledge observation/lifecycle schemas are implemented.
 
 The workstream does not compile PDFs, Office files, images, archives, or web
 pages during install. Independent compilers produce normalized OKF before

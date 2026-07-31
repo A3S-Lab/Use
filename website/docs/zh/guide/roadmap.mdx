@@ -16,17 +16,19 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 - immutable operation plan、permission ceiling、grant 与 provider evidence contract；
 - exact-generation workspace grant store 和 recoverable journal；
 - Runtime Task/Service binding、invocation、receipt 与 observation typed adapter；
-- dependency-gated Surface Reconciler、planner evidence 和 capability snapshot。
+- dependency-gated Surface Reconciler、planner evidence 和 capability snapshot；
+- M0K-A `a3s.use.okf-bundle.v1` descriptor、支持 v0.2/v0.1 的有界 inspector 与 canonical fixtures。
 
 稳定 v0.2 package foundation 仍可独立使用。上述 plugin-platform baseline 是 `main` 上的在建能力，不能被描述为完整 production plugin product。
 
-最新产品范围还把 **OKF（Open Knowledge Format）** 加入一等认知表面。OKF contract 尚未进入当前 schema-v3 baseline；必须先冻结 manifest、conformance、receipt、projection 与 A3S Knowledge 原子索引协议，不能用未定义字段冒充已实现能力。
+最新产品范围还把 **OKF（Open Knowledge Format）** 加入一等认知表面。共享内容合约已经冻结，但尚未进入 schema-v3 surface baseline；必须继续完成 manifest、catalog、plan、receipt、projection、lifecycle 与 A3S Knowledge 原子索引协议，才能把 OKF 描述为可安装表面。
 
 ## 里程碑
 
 | 里程碑                              | 状态     | 结果                                                                 |
 | ----------------------------------- | -------- | -------------------------------------------------------------------- |
 | M0 — Contract freeze and fixtures   | 完成     | 冻结 identity、surface、permission、plan、grant 与 release fixture   |
+| M0K-A — OKF bundle contract         | 完成     | 精确内容身份、有界 conformance 与 canonical fixtures                 |
 | M1 — Signed searchable catalog      | 完成     | TUF 签名目录、bounded search、planning bundle 与 cache               |
 | M2 — Shared Plugin Manager          | 进行中   | 统一 CLI/Web/MCP lifecycle、durable plan/apply/replay 与 parent saga |
 | M3 — User plugin UX                 | 待完成   | `a3s plugin` 用户词汇、on-demand Science/OKF 包与 E2E                |
@@ -41,7 +43,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 2. 在一个 recoverable parent saga 中协调 package、grant、Runtime、Gateway、projection、capability 和 drain checkpoint。
 3. 用 production provider 完成 CLI、Web、Agent install → use → upgrade → uninstall E2E。
 4. 增加通用 package dependency solver、deterministic lock graph、retained-generation rollback 与 garbage collection。
-5. 冻结 OKF package contribution：当前 Open Knowledge Format v0.2 conformance、明确 v0.1 兼容、内容摘要、receipt、host projection、原子索引 generation 与卸载语义。
+5. 围绕共享内容合约冻结剩余 OKF manifest、receipt、host projection、原子索引 generation 与卸载语义。
 6. 每个宿主合约冻结后，再扩展 Agent、prompt、hook、memory 与 context-provider contribution。
 7. 完成官方 Registry 运维与 Windows platform gate。
 

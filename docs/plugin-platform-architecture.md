@@ -2,7 +2,8 @@
 
 - Status: accepted target architecture; implementation in progress
 - Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted 2026-07-31
+- Product amendment: first-class OKF knowledge contribution accepted and M0K-A
+  bundle contract frozen 2026-07-31
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -33,10 +34,11 @@ each declared surface into the host that owns its execution:
 | OKF | A conformant Open Knowledge Format bundle of cross-linked Markdown concepts | A3S Knowledge service, host OKF registry, and local cited-search index |
 
 Tool, MCP, Skill, and UI have an implemented schema-v3 contract baseline. OKF
-is an accepted target surface whose manifest contract, canonical fixtures,
-receipt/projection semantics, and host binding remain to be implemented. The
-current parser must reject an undefined `okf` block rather than interpret this
-target architecture as a shipped schema.
+has a shared bundle descriptor, bounded conformance inspector, and canonical
+fixtures, while its manifest, catalog, plan, receipt/projection, lifecycle,
+and host binding remain to be implemented. The current parser must reject an
+undefined `okf` block rather than interpret this target architecture as a
+shipped installable surface.
 
 In this architecture, **Tool does not mean an MCP `tools/list` item**. A Tool
 is a workload on which a Skill or UI can depend. It keeps its native CLI or
@@ -49,7 +51,7 @@ is deployed through Runtime.
 OKF is also not a Runtime workload. It is normalized, shareable knowledge:
 UTF-8 Markdown concepts with properly delimited YAML frontmatter, one required
 non-empty `type` for each non-reserved concept, bundle-relative path identity,
-and standard Markdown graph links. The first contract freeze targets current
+and standard Markdown graph links. The frozen content contract targets current
 OKF v0.2 with explicit v0.1 compatibility. Raw source formats are compiler
 inputs, not searchable OKF authority. A3S Use owns package integrity and
 exact-generation evidence; A3S Knowledge owns conformant atomic promotion,
@@ -301,7 +303,8 @@ documentation and validation evidence, not a new A3S execution protocol.
 ### Target OKF contribution contract
 
 The first-class OKF surface is an additive follow-up to the checked-in schema-v3
-fixture. Its contract must be frozen before parser or lifecycle implementation
+fixture. Its shared content contract is frozen; the remaining manifest and
+control-plane contract must be frozen before parser or lifecycle implementation
 and must reuse the package identity, plan, receipt, grant, reconciliation, and
 capability-generation machinery already present.
 
@@ -725,8 +728,8 @@ The existing process-wide capability snapshot has no workspace identity and
 therefore does not select one implicitly. Automatic capability/session
 publication remains pending until the lifecycle caller supplies the explicit
 scope plus Runtime, compatibility-host, Skill, and UI observations. After the
-additive OKF contract is frozen, its separate Knowledge-host observation joins
-at the same boundary.
+remaining additive OKF surface contract is frozen, its separate Knowledge-host
+observation joins at the same boundary.
 
 Current provider evidence matters:
 
@@ -810,9 +813,9 @@ Migration is additive:
 2. interpret legacy `cli` as one Tool Task with user exposure and retain its
    existing direct launcher behavior;
 3. add schema v3 fixtures for multiple Skills, Tools, MCP servers, and UIs;
-4. freeze an additive OKF manifest, fixture, conformance, receipt, projection,
-   and A3S Knowledge index-observation contract without reinterpreting the
-   existing v3 fixture;
+4. use the frozen shared OKF fixture/conformance core while freezing an
+   additive manifest, receipt, projection, and A3S Knowledge index-observation
+   contract without reinterpreting the existing v3 fixture;
 5. introduce the Tool release descriptor and Runtime mapping behind typed
    interfaces;
 6. move Science to registry-only delivery and model its real executables or

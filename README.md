@@ -160,15 +160,16 @@ extension "acme/research" {
 
 The accepted target model also includes
 **[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)**
-as a first-class, non-executable cognitive surface. The first contract freeze
-targets current OKF v0.2 with an explicit v0.1 compatibility path. An OKF
-contribution is a shareable graph of UTF-8 Markdown concepts with YAML
+as a first-class, non-executable cognitive surface. The frozen content
+contract targets current OKF v0.2 with an explicit v0.1 compatibility path.
+An OKF contribution is a shareable graph of UTF-8 Markdown concepts with YAML
 frontmatter; every non-reserved concept requires a non-empty `type`, its
 bundle-relative path is its identity, and standard Markdown links form the
-graph. The manifest contract, canonical fixtures, receipt/projection
-semantics, and A3S Knowledge atomic-index binding are planned follow-up work.
-The current schema-v3 parser does not accept an undefined `okf` block, so OKF
-must not be advertised as implemented yet.
+graph. The shared bundle descriptor, bounded conformance inspector, and
+canonical fixtures are implemented in `a3s-use-core`. The manifest, catalog,
+plan, receipt/projection, lifecycle, and A3S Knowledge atomic-index contracts
+remain planned follow-up work. The current schema-v3 parser rejects an
+undefined `okf` block, so OKF must not be advertised as installable yet.
 
 The executable schema-v3 fixture is
 [`crates/extension/fixtures/manifests/plugin-v3.acl`](crates/extension/fixtures/manifests/plugin-v3.acl).
@@ -275,7 +276,7 @@ surfaces so review does not require downloading the package archive.
 | Capability | Status |
 | --- | --- |
 | Schema-v3 named Tool Task/Service, MCP, Skill, and UI contracts | Implemented |
-| First-class OKF knowledge-package contribution | Target contract; not yet implemented |
+| First-class OKF knowledge-package contribution | Shared bundle contract and bounded conformance core implemented; manifest/lifecycle integration pending |
 | Signed catalog v1–v3, offline verification, search, and planning target | Implemented |
 | Immutable operation-plan, permission-ceiling, and provider-evidence contracts | Implemented |
 | Exact-generation workspace grant store and recoverable grant journal | Implemented |
@@ -285,7 +286,7 @@ surfaces so review does not require downloading the package archive.
 | Production secret, egress, filesystem, child-process, Gateway, and stdio-MCP adapters | In progress |
 | General package dependency solver and deterministic lock graph | Target architecture |
 | Automatic generation rollback and garbage collection | Target architecture |
-| Agent, prompt, hook, memory, and context-provider contributions | Target architecture after OKF contract freeze |
+| Agent, prompt, hook, memory, and context-provider contributions | Target architecture after OKF lifecycle integration |
 
 The baseline intentionally fails closed while host-owned Runtime, permission,
 and apply evidence is incomplete. It does not silently fall back to native
@@ -388,8 +389,8 @@ plugin platform. The current critical path is:
 3. complete CLI/Web/agent lifecycle E2E with production providers;
 4. add the general package dependency solver, deterministic lock graph,
    retained-generation rollback, and garbage collection;
-5. freeze the OKF manifest, conformance, receipt, projection, atomic-index,
-   and uninstall contracts with A3S Knowledge;
+5. freeze the remaining OKF manifest, receipt, projection, atomic-index, and
+   uninstall contracts with A3S Knowledge around the shared conformance core;
 6. extend the remaining cognitive contribution model only after each host
    contract is frozen; and
 7. complete official registry operations and Windows platform gates.
@@ -399,7 +400,7 @@ plugin platform. The current critical path is:
 | Crate | Responsibility |
 | --- | --- |
 | `a3s-use` | Facade, package engine, Runtime adapters, capability reconciliation, and MCP entry points |
-| `a3s-use-core` | Canonical package/plugin, catalog, plan, permission, grant, and release contracts |
+| `a3s-use-core` | Canonical package/plugin, catalog, plan, permission, grant, release, and OKF bundle contracts |
 | `a3s-use-extension` | ACL manifests, TUF catalog, package store, receipts, leases, and workspace grants |
 | `a3s-use-science` | Reference external package implementation |
 

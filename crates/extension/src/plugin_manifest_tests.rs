@@ -135,3 +135,21 @@ fn schema_v3_requires_an_explicit_v3_host_compatibility_gate() {
         .message
         .contains("Schema version 3 must require A3S Use 0.3"));
 }
+
+#[test]
+fn schema_v3_keeps_okf_fail_closed_until_the_full_m0k_contract_is_wired() {
+    let okf = r#"
+
+  okf "domain-knowledge" {
+    format_version = "0.2"
+    root           = "okf/domain-knowledge"
+  }
+"#;
+    let manifest = NAMED_SURFACE_MANIFEST.replace(
+        "\n  tool \"convert\" {",
+        &format!("{okf}\n  tool \"convert\" {{"),
+    );
+
+    let error = ExtensionManifest::parse_acl(&manifest).unwrap_err();
+    assert!(error.message.contains("Unknown extension surface 'okf'"));
+}

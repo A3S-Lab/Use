@@ -16,17 +16,19 @@ As of 2026-07-31, `main` contains:
 - immutable operation plan, permission ceiling, grant, and provider evidence contracts;
 - exact-generation workspace grant storage and a recoverable journal;
 - typed Runtime Task/Service binding, invocation, receipt, and observation adapters;
-- dependency-gated Surface Reconciler, planner evidence, and capability snapshots.
+- dependency-gated Surface Reconciler, planner evidence, and capability snapshots;
+- the M0K-A `a3s.use.okf-bundle.v1` descriptor, bounded v0.2/v0.1 inspector, and canonical fixtures.
 
 The stable v0.2 package foundation remains independently usable. The plugin-platform baseline above is in development on `main` and is not a complete production plugin product.
 
-The latest product scope also adds **OKF (Open Knowledge Format)** as a first-class cognitive surface. The OKF contract is not part of the current schema-v3 baseline. Manifest, conformance, receipt, projection, and A3S Knowledge atomic-index protocols must be frozen before the feature can be described as implemented.
+The latest product scope also adds **OKF (Open Knowledge Format)** as a first-class cognitive surface. Its shared content contract is frozen but is not yet part of the schema-v3 surface baseline. Manifest, catalog, plan, receipt, projection, lifecycle, and A3S Knowledge atomic-index protocols must be completed before OKF can be described as an installable surface.
 
 ## Milestones
 
 | Milestone                           | Status             | Outcome                                                                     |
 | ----------------------------------- | ------------------ | --------------------------------------------------------------------------- |
 | M0 — Contract freeze and fixtures   | Complete           | Identity, surface, permission, plan, grant, and release fixtures frozen     |
+| M0K-A — OKF bundle contract         | Complete           | Exact content identity, bounded conformance, and canonical fixtures         |
 | M1 — Signed searchable catalog      | Complete           | TUF-signed catalog, bounded search, planning bundle, and cache              |
 | M2 — Shared Plugin Manager          | In progress        | Unified CLI/Web/MCP lifecycle, durable plan/apply/replay, and parent saga   |
 | M3 — User plugin UX                 | Pending            | `a3s plugin` vocabulary, on-demand Science/OKF packages, and E2E            |
@@ -41,7 +43,7 @@ The latest product scope also adds **OKF (Open Knowledge Format)** as a first-cl
 2. Coordinate package, grant, Runtime, Gateway, projection, capability, and drain checkpoints in one recoverable parent saga.
 3. Complete CLI, Web, and agent install → use → upgrade → uninstall E2E with production providers.
 4. Add the general package dependency solver, deterministic lock graph, retained-generation rollback, and garbage collection.
-5. Freeze the OKF package contribution: current Open Knowledge Format v0.2 conformance, explicit v0.1 compatibility, content digest, receipts, host projection, atomic index generation, and uninstall semantics.
+5. Freeze the remaining OKF manifest, receipts, host projection, atomic index generation, and uninstall semantics around the shared content contract.
 6. Extend Agent, prompt, hook, memory, and context-provider contributions only after each host contract is frozen.
 7. Complete official registry operations and Windows platform gates.
 
