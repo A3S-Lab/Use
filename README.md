@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://a3s-lab.github.io/Use/">Website</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#package-model">Package model</a> ·
   <a href="#trust-and-lifecycle">Trust</a> ·
@@ -60,13 +61,13 @@ They may ship separately or under one immutable package identity:
 ```text
 A3S package
 ├── native plane       executable · runtime assets · target · provenance
-└── cognitive plane    Tool · MCP · Skill · UI · agent context
+└── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
 ```
 
 | Plane | Implemented foundation | Product direction |
 | --- | --- | --- |
 | Native | Built-in providers, external CLI/MCP executables, immutable generations | Target-specific dependency graphs and transactional lock state |
-| Cognitive | Named Tool Task/Service, MCP, Skill, and UI contracts on `main` | Agents, prompts, hooks, knowledge, and typed memory/context providers |
+| Cognitive | Named Tool Task/Service, MCP, Skill, and UI contracts on `main` | First-class OKF knowledge packages, then Agents, prompts, hooks, and typed memory/context providers |
 | Control | TUF provenance, plan digests, receipts, grants, route leases, and capability snapshots | Complete apply saga, rollback, garbage collection, and policy-aware activation |
 
 ## Quick start
@@ -156,6 +157,18 @@ extension "acme/research" {
   }
 }
 ```
+
+The accepted target model also includes
+**[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)**
+as a first-class, non-executable cognitive surface. The first contract freeze
+targets current OKF v0.2 with an explicit v0.1 compatibility path. An OKF
+contribution is a shareable graph of UTF-8 Markdown concepts with YAML
+frontmatter; every non-reserved concept requires a non-empty `type`, its
+bundle-relative path is its identity, and standard Markdown links form the
+graph. The manifest contract, canonical fixtures, receipt/projection
+semantics, and A3S Knowledge atomic-index binding are planned follow-up work.
+The current schema-v3 parser does not accept an undefined `okf` block, so OKF
+must not be advertised as implemented yet.
 
 The executable schema-v3 fixture is
 [`crates/extension/fixtures/manifests/plugin-v3.acl`](crates/extension/fixtures/manifests/plugin-v3.acl).
@@ -262,6 +275,7 @@ surfaces so review does not require downloading the package archive.
 | Capability | Status |
 | --- | --- |
 | Schema-v3 named Tool Task/Service, MCP, Skill, and UI contracts | Implemented |
+| First-class OKF knowledge-package contribution | Target contract; not yet implemented |
 | Signed catalog v1–v3, offline verification, search, and planning target | Implemented |
 | Immutable operation-plan, permission-ceiling, and provider-evidence contracts | Implemented |
 | Exact-generation workspace grant store and recoverable grant journal | Implemented |
@@ -271,7 +285,7 @@ surfaces so review does not require downloading the package archive.
 | Production secret, egress, filesystem, child-process, Gateway, and stdio-MCP adapters | In progress |
 | General package dependency solver and deterministic lock graph | Target architecture |
 | Automatic generation rollback and garbage collection | Target architecture |
-| Agent, prompt, hook, knowledge, memory, and context-provider contributions | Target architecture |
+| Agent, prompt, hook, memory, and context-provider contributions | Target architecture after OKF contract freeze |
 
 The baseline intentionally fails closed while host-owned Runtime, permission,
 and apply evidence is incomplete. It does not silently fall back to native
@@ -321,11 +335,11 @@ a3s-use capability watch \
                     ┌─────────────┴─────────────┐
                     │                           │
                native plane               cognitive plane
-          Runtime Task/Service       MCP · Skill · UI · context
+          Runtime Task/Service       MCP · Skill · UI · OKF · context
                     │                           │
                     └─────────────┬─────────────┘
                                   ▼
-                       A3S Code · Web · agents
+                 A3S Code · Web · Knowledge · agents
 ```
 
 The boundaries are intentional:
@@ -339,8 +353,8 @@ The boundaries are intentional:
 - **Package processes** own their CLI, HTTP, and MCP vocabulary. Use does not
   translate them into `execute(plugin, action, payload)` or load them through
   `dlopen`.
-- **A3S hosts** own sandboxing and rendering. Skill, UI, Tool, and remote
-  content are data and cannot grant authority.
+- **A3S hosts** own sandboxing, rendering, and OKF indexing. Skill, UI, OKF,
+  Tool, and remote content are data and cannot grant authority.
 
 The host-owned Runtime Broker boundary and no-provider-fallback rule are
 frozen in
@@ -374,9 +388,11 @@ plugin platform. The current critical path is:
 3. complete CLI/Web/agent lifecycle E2E with production providers;
 4. add the general package dependency solver, deterministic lock graph,
    retained-generation rollback, and garbage collection;
-5. extend the cognitive contribution model only after each host contract is
-   frozen; and
-6. complete official registry operations and Windows platform gates.
+5. freeze the OKF manifest, conformance, receipt, projection, atomic-index,
+   and uninstall contracts with A3S Knowledge;
+6. extend the remaining cognitive contribution model only after each host
+   contract is frozen; and
+7. complete official registry operations and Windows platform gates.
 
 ## Workspace
 
@@ -411,6 +427,7 @@ cargo test -p a3s-use --lib --bin a3s-use --locked
 
 ## Documentation
 
+- [Official website](https://a3s-lab.github.io/Use/)
 - [Plugin Platform Roadmap](ROADMAP.md)
 - [Plugin Platform Architecture](docs/plugin-platform-architecture.md)
 - [Plugin Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md)

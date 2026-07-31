@@ -1,0 +1,43 @@
+[
+  {
+    "text": "Getting Started",
+    "link": "/guide/"
+  },
+  {
+    "text": "Package Model",
+    "link": "/guide/package-model"
+  },
+  {
+    "text": "OKF",
+    "link": "/guide/okf"
+  },
+  {
+    "text": "Trust & Security",
+    "link": "/guide/trust-security"
+  },
+  {
+    "text": "Architecture",
+    "link": "/guide/architecture"
+  },
+  {
+    "text": "Roadmap",
+    "link": "/guide/roadmap"
+  },
+  {
+    "text": "Resources",
+    "items": [
+      {
+        "text": "GitHub",
+        "link": "https://github.com/A3S-Lab/Use"
+      },
+      {
+        "text": "Releases",
+        "link": "https://github.com/A3S-Lab/Use/releases"
+      },
+      {
+        "text": "A3S",
+        "link": "https://github.com/A3S-Lab/a3s"
+      }
+    ]
+  }
+]

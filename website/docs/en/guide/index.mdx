@@ -1,0 +1,98 @@
+---
+title: Getting Started
+description: Install A3S Use, inspect local capabilities, and understand the boundary between the stable package foundation and plugin-platform baseline.
+---
+
+# Getting Started
+
+A3S Use is the **AI Native Package Manager** for the A3S ecosystem. It does not replace `apt`, Homebrew, or WinGet. It manages native tools and cognitive plugins that participate in the A3S capability and security model.
+
+## What is available now
+
+| Capability                                                      | Status                                             |
+| --------------------------------------------------------------- | -------------------------------------------------- |
+| Local directories and bounded archives                          | Available in v0.2                                  |
+| Digest-reviewed releases and TUF registries                     | Available in v0.2                                  |
+| Native CLI, standard MCP, and content-bound Skills              | Available in v0.2                                  |
+| Schema-v3 Tool, MCP, Skill, and UI contracts                    | Baseline implemented on `main`                     |
+| OKF (Open Knowledge Format) knowledge surface                   | Target contract; freeze and implementation pending |
+| Complete Plugin Manager apply saga and production host adapters | In development                                     |
+
+The cognitive plugin contracts are on `main`, but the complete parent apply saga is still converging. Use the [roadmap](./roadmap) as the source of truth before production deployment.
+
+## Install a release
+
+Install the complete, verified release through the A3S CLI:
+
+```bash
+a3s install use --source release
+a3s use doctor --json
+a3s use capabilities --json
+```
+
+Prebuilt archives are also published on [GitHub Releases](https://github.com/A3S-Lab/Use/releases). Keep each archive's binary, Skills, Dashboard, model assets, licenses, and provenance files together. Copying the facade binary alone does not preserve the complete product surface.
+
+## Try built-in capabilities
+
+Render a web page to a local file:
+
+```bash
+a3s use browser render https://example.com --output page.html
+```
+
+Run local OCR and return JSON:
+
+```bash
+a3s use ocr extract ./scan.png --json
+```
+
+Inspect the immutable capability snapshot:
+
+```bash
+a3s-use capability snapshot --json
+```
+
+## Build from source
+
+Rust 1.85 or newer is required:
+
+```bash
+git clone https://github.com/A3S-Lab/Use.git
+cd Use
+cargo build --workspace --bins --locked
+./target/debug/a3s-use doctor --json
+```
+
+Run development checks inside the Use repository:
+
+```bash
+cargo fmt --all -- --check
+cargo test --workspace --all-features --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+```
+
+## Install a local package
+
+An unsigned local directory, `.tar.gz`, `.tgz`, or `.zip` requires explicit trust:
+
+```bash
+a3s-use component install acme/calendar \
+  --from ./calendar-package \
+  --allow-unsigned \
+  --json
+
+a3s-use component status calendar --json
+a3s-use extension disable acme/calendar --json
+a3s-use extension enable acme/calendar --json
+a3s-use component uninstall calendar --json
+```
+
+The package ID is the stable lifecycle identity; a route is only a presentation and dispatch alias. A3S Use preserves native `argv`, stdin, stdout, stderr, exit status, and standard MCP. It does not add a universal action envelope.
+
+## Next steps
+
+- [Understand the native + cognitive package model](./package-model)
+- [Design shareable OKF knowledge packages](./okf)
+- [Configure supply-chain trust and authorization boundaries](./trust-security)
+- [Inspect ownership across Plugin Manager, Use, and Runtime](./architecture)
+- [Track delivery milestones](./roadmap)

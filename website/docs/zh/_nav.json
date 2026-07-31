@@ -1,0 +1,43 @@
+[
+  {
+    "text": "快速开始",
+    "link": "/guide/"
+  },
+  {
+    "text": "包模型",
+    "link": "/guide/package-model"
+  },
+  {
+    "text": "OKF",
+    "link": "/guide/okf"
+  },
+  {
+    "text": "信任与安全",
+    "link": "/guide/trust-security"
+  },
+  {
+    "text": "架构",
+    "link": "/guide/architecture"
+  },
+  {
+    "text": "路线图",
+    "link": "/guide/roadmap"
+  },
+  {
+    "text": "资源",
+    "items": [
+      {
+        "text": "GitHub",
+        "link": "https://github.com/A3S-Lab/Use"
+      },
+      {
+        "text": "Releases",
+        "link": "https://github.com/A3S-Lab/Use/releases"
+      },
+      {
+        "text": "A3S",
+        "link": "https://github.com/A3S-Lab/a3s"
+      }
+    ]
+  }
+]

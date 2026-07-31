@@ -1,0 +1,102 @@
+---
+title: OKF 知识包
+description: Open Knowledge Format 如何作为 A3S Use 的一等、非执行型认知包表面，并安全接入 A3S Knowledge。
+---
+
+# OKF 知识包
+
+**[OKF（Open Knowledge Format）](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)** 是面向人和 Agent 的开放知识包格式：just Markdown, just files, just YAML frontmatter。当前 OKF v0.2 把可共享领域知识组织成带类型、可交叉链接、可增量索引的概念图，并定义了 v0.1 内容的兼容路径。
+
+在 A3S Use 目标架构中，OKF 是与 Tool、MCP、Skill、UI 并列的一等认知表面，但它不是可执行 workload。
+
+> 当前状态：产品范围已接受 OKF；manifest contract、canonical fixture、receipt/projection 与 A3S Knowledge 原子索引协议尚未冻结。当前 schema-v3 parser 不接受未定义的 `okf` block。
+
+## Bundle 结构
+
+一个 OKF bundle 是一个有界目录。每个非保留 Markdown 文件代表一个概念，去掉 `.md` 的 bundle-relative path 是 concept ID；可选 `index.md` 提供层级导航，可选 `log.md` 可在任意层级记录历史。
+
+```text
+okf/domain-knowledge/
+├── index.md
+├── concepts/
+│   ├── index.md
+│   ├── package-lifecycle.md
+│   └── runtime-boundary.md
+├── decisions/
+│   ├── index.md
+│   └── no-provider-fallback.md
+└── log.md
+```
+
+概念使用标准 Markdown links，而不是私有 wikilink 语法：
+
+```markdown
+See [Runtime boundary](/concepts/runtime-boundary.md).
+```
+
+## Concept contract
+
+每个非保留概念必须是 UTF-8 Markdown，并以正确分隔的 YAML frontmatter block 开头。OKF 只强制一个字段：非空标量 `type`。
+
+```yaml
+---
+type: Architecture Decision
+title: No provider fallback
+description: Why plugin workloads require one explicit Runtime provider.
+resource: docs/adr-001-plugin-runtime-broker-boundary.md
+tags: [runtime, security, plugins]
+generated:
+  by: a3s-okf-compiler/1.0
+  at: 2026-07-31T00:00:00Z
+sources:
+  - id: runtime-boundary
+    resource: docs/adr-001-plugin-runtime-broker-boundary.md
+    title: Runtime Broker ADR
+---
+```
+
+`title`、`description`、`resource`、`tags` 是推荐字段。OKF v0.2 还定义了可选 provenance、trust、lifecycle 与 attested-computation 字段族。Producer 扩展字段和未知 concept type 仍然合规，消费者必须保留它们；v0.2 consumer 可以回退读取 v0.1 的 `timestamp` 和 `# Citations`。
+
+`index.md` 和 `log.md` 是保留文件，不是普通 concept。只有 bundle 根 `index.md` 可以包含 frontmatter，且仅用于声明 `okf_version`。缺少 index 或安全的 dangling link 仍然合规，应报告诊断而不是拒绝 bundle。
+
+## 与其他表面的关系
+
+| 表面        | 与 OKF 的区别或关系                                                                                                     |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Skill       | Skill 教 Agent 如何完成任务；OKF 提供可引用的领域事实、决策和概念。目标依赖图可允许 Skill 要求一个命名 OKF generation。 |
+| Tool        | Tool 执行真实工作；OKF 不执行进程、Shell 或 HTTP workload。                                                             |
+| MCP         | MCP 是协议 server；OKF 是静态内容，由 Knowledge host 索引和检索。                                                       |
+| UI          | UI 可以呈现知识，但 OKF 本身不运行 JavaScript，也不获得 UI backend binding。                                            |
+| Personal KB | `/kb` 的个人笔记属于用户；OKF 是可发布、可部署、可版本化的共享 package asset。                                          |
+
+OKF v0.2 可以描述 `Attested Computation`、executor 与 attester。A3S Use 只把这些内容视为惰性 metadata，绝不会把它们转换成执行权限；可运行行为仍必须来自单独声明并授权的 Tool 或宿主 binding。
+
+## 安装与索引边界
+
+目标生命周期复用 A3S Use 的 package identity、plan、receipt 和 capability generation：
+
+```text
+signed catalog
+  → review exact OKF digest, concept count, bytes, provenance
+  → verify package and bounded OKF conformance
+  → stage exact package generation
+  → A3S Knowledge builds/stages its deterministic index
+  → atomically promote the candidate OKF generation
+  → publish the shared capability snapshot
+```
+
+A3S Use 负责包与 bundle 完整性；A3S Knowledge 负责合规后的 promotion、索引和带行号引用的检索。Candidate 验证或索引失败时，最后一个成功 generation 继续可搜索。
+
+## 编译不属于安装
+
+PDF、Office、图片、邮件、归档和网页是 compiler input，不是 OKF 搜索权威。独立 knowledge compiler 可以把这些来源标准化为 OKF，但安装计划必须审查最终 normalized bundle；安装阶段不会临时下载或执行一个 compiler 来改变已审查内容。
+
+## 安全与卸载
+
+- 概念文本、frontmatter、links 和 compiler provenance 都不能修改 ACL policy 或 grant。
+- 所有 path、link、file count、expanded bytes 与 parsed-node size 都必须有界。安全 dangling link 只产生诊断；解析到包边界外的 reference 会被拒绝。
+- Search 只接纳宿主原子 promotion 的合规 generation，不从 staging 目录推断成功。
+- Disable 只隐藏新会话中的 OKF capability。
+- Uninstall 只移除 package receipt-owned projection/index，不删除个人笔记、raw sources 或另一个包的 index。
+
+实现顺序见 [路线图](./roadmap) 的 M0K，以及仓库中的 [OKF contribution workstream](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-development-plan.md#okf-contribution-workstream)。

@@ -1,0 +1,108 @@
+---
+title: Package Model
+description: Learn how one immutable A3S package identity delivers native programs and Tool, MCP, Skill, UI, and OKF cognitive surfaces.
+---
+
+# Package Model
+
+An A3S package may contain native capabilities, declarative cognitive content, or both. Every surface shares one signed identity, generation, and uninstall boundary.
+
+```text
+A3S package
+├── native plane       executable · runtime assets · target · provenance
+└── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
+```
+
+## Schema-v3 surfaces and target OKF surface
+
+| Surface      | Meaning                                                            | Activation target                                         |
+| ------------ | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| Tool Task    | A one-shot, non-interactive CLI workload                           | A3S Runtime Task or a constrained legacy runner           |
+| Tool Service | A service with a private HTTP contract                             | Runtime Service through a scoped binding                  |
+| MCP          | A distinct, standard MCP server                                    | Streamable HTTP Service or supervised stdio session       |
+| Skill        | Instructions and supporting content                                | Managed Skill projection or session registry              |
+| UI           | Integrity-bound static HTML/CSS/JS                                 | A3S Code/Web sandbox                                      |
+| OKF          | An Open Knowledge Format package of cross-linked Markdown concepts | A3S Knowledge service, host OKF registry, and local index |
+
+In this model, a **Tool is not an MCP `tools/list` item**. A Tool keeps its own CLI or HTTP contract; Use does not translate every workload into a private universal protocol. Static UI is not a Runtime workload either. Only its declared Tool or MCP backend enters Runtime.
+
+Tool, MCP, Skill, and UI have a schema-v3 contract baseline. OKF is now a first-class cognitive surface in the target architecture; its manifest contract, fixtures, and host projection still need to be frozen. The current parser does not accept an undefined `okf` block.
+
+OKF is not an executable workload. It is a shareable knowledge package: each non-reserved concept is UTF-8 Markdown with YAML frontmatter, the file path is concept identity, standard Markdown links form the knowledge graph, and `type` is required. The first freeze targets OKF v0.2 with explicit v0.1 compatibility. Raw PDF, Office, image, or web sources do not become OKF authority directly; an independent compiler must emit a conformant bundle first.
+
+## ACL manifest
+
+Packages use `a3s-use-extension.acl`, parsed by [A3S ACL](https://github.com/A3S-Lab/ACL). ACL means A3S Agent Configuration Language, not HCL.
+
+```acl
+extension "acme/research" {
+  schema_version = 3
+  version        = "2.0.0"
+  route          = "research"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read", "execute"]
+
+  repository {
+    url      = "https://github.com/acme/research"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  tool "convert" {
+    workload    = "task"
+    interface   = "cli"
+    executable  = "tools/convert/bin/convert"
+    command     = "acme-research-convert"
+    json_output = true
+    interactive = false
+    timeout_ms  = 120000
+    activation  = "lazy"
+    optional    = false
+  }
+
+  mcp "library" {
+    transport  = "streamable-http"
+    release    = "releases/library-mcp-v1.json"
+    activation = "eager"
+    optional   = false
+  }
+
+  skill "review" {
+    path          = "skills/review/SKILL.md"
+    requires_tool = ["convert"]
+    requires_mcp  = ["library"]
+    optional      = false
+  }
+
+  ui "review" {
+    entry    = "ui/review/index.html"
+    skill    = "review"
+    bind_mcp = ["library"]
+    optional = false
+  }
+}
+```
+
+Schema v1 and v2 remain compatible. Schema v3 adds repeatable named surfaces and an acyclic readiness graph. All paths are relative to the package root. Activation rejects path traversal, links, archive ambiguity, route collisions, oversized packages, provenance drift, and incompatible host ranges.
+
+The repository contains an executable [`plugin-v3.acl` fixture](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl).
+
+## Dependencies and readiness
+
+Surfaces are not installed independently. The Surface Reconciler builds a complete dependency closure for one package generation:
+
+1. Tool and MCP require an explicit Runtime provider that satisfies workload, network, resource, and isolation requirements.
+2. Skill content must match its digest, and all required Tool/MCP dependencies must be usable.
+3. UI content must be intact, with every declared backend binding authorized.
+4. A target OKF surface must pass frontmatter, path, link, size, and content-digest checks; A3S Knowledge indexes only a generation atomically promoted by the host.
+5. One capability generation is published atomically only after every required surface is ready.
+6. Optional failure may produce `degraded`; required failure withholds the new generation.
+
+## Identity and ownership
+
+- **package ID**: stable lifecycle identity, such as `acme/research`;
+- **generation**: one immutable installed content set; upgrade creates a new generation;
+- **route**: presentation and dispatch alias that does not own the package;
+- **receipt**: records files, projections, and resources owned by a generation;
+- **grant**: binds actor, scope, permissions, and exact generation.
+
+Uninstall removes receipt-owned content only. Plugin data is retained by default; permanent purge is a separate, explicit, user-only operation.

@@ -1,0 +1,86 @@
+---
+title: Trust & Security
+description: How A3S Use verifies package origin, freezes operation plans, bounds authority, and publishes capability generations safely.
+---
+
+# Trust & Security
+
+The central rule is: **package content may describe requirements, but it cannot authorize itself.** Skill text, UI messages, OKF knowledge, Tool output, MCP descriptions, and remote content remain data.
+
+## Three trust paths
+
+| Source                     | Trust decision                                                       | Intended use                     |
+| -------------------------- | -------------------------------------------------------------------- | -------------------------------- |
+| Local directory or archive | Human review plus explicit `--allow-unsigned`                        | Development and private packages |
+| Release-bundled package    | Exact digest in a reviewed component plan                            | First-party release content      |
+| Remote registry            | Pinned TUF root, signed metadata, rollback checks, and target digest | Production distribution          |
+
+Search runs over verified, size-bounded catalog metadata without downloading package archives. A model or browser cannot invent an installable identity absent from the catalog.
+
+## Immutable plans
+
+Install, upgrade, and uninstall create an expiring canonical plan before mutation. It binds at least:
+
+- package ID, version, channel, target, and source registry;
+- TUF root identity and metadata versions;
+- archive length, SHA-256, and expanded package digest;
+- surface and dependency changes plus Runtime provider evidence;
+- permission ceiling, secret/grant diff, and workspace impact;
+- download/installed size, drain impact, and canonical plan digest.
+
+Apply accepts the reviewed digest, resolves every input again, and rejects target, content, permission, provider, or ownership drift. User confirmation and each grant proposal bind to the same digest.
+
+## Default authorization policy
+
+Agent lifecycle operations default to `ask`, not `allow`. Safe metadata search, inspect, list, and plan operations may be pre-authorized. Adding a trust root, installing an unsigned package, granting a secret, and purging data remain user-only.
+
+A package permission declaration is a ceiling, not authority. Host ACL policy and workspace grants may only narrow it:
+
+```acl
+plugins {
+  schema = "a3s.plugin-policy.v1"
+
+  agent_install   = "allow"
+  agent_upgrade   = "ask"
+  agent_uninstall = "ask"
+
+  trusted_registries = ["a3s"]
+  trusted_publishers = ["a3s"]
+  allowed_surfaces   = ["mcp", "skill", "tool", "ui"]
+
+  permissions {
+    native_execution = false
+    private_service  = true
+    child_process    = false
+    secrets          = false
+
+    network "api.example.com" {
+      ports = [443]
+    }
+  }
+}
+```
+
+An omitted ceiling means zero, empty, or `false`. Duplicates, unknown fields, broad network patterns, and unattended secret grants fail closed.
+
+## Activation order
+
+```text
+resolve signed metadata
+    → build and review immutable plan
+    → verify archive, manifest, and permission evidence
+    → stage immutable generation
+    → prepare grants and Runtime bindings
+    → validate and stage static Skill, UI, and OKF projections
+    → publish one capability generation
+    → hide and drain superseded generation
+    → retire old grants, bindings, and owned files
+```
+
+A new generation stays invisible until every required dependency is usable. A failed upgrade preserves the previous generation. Disable and uninstall hide new calls before draining exact-generation leases.
+
+## Platform isolation boundary
+
+Native process execution is not automatically a sandbox. Until a platform provider enforces filesystem, environment, process, and network restrictions, the state must report `native-unconfined` and cannot use an unattended `allow` path.
+
+Read the complete [Plugin Lifecycle and Security specification](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-lifecycle-and-security.md).

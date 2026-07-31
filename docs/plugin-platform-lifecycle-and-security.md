@@ -2,6 +2,7 @@
 
 - Status: accepted M0 contract baseline; runtime implementation in progress
 - Planning baseline: 2026-07-30
+- Product amendment: first-class OKF knowledge contribution accepted 2026-07-31
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -9,6 +10,10 @@
 This document is the operational companion to the plugin platform
 architecture. It defines lifecycle consistency, failure recovery, security,
 storage, public application contracts, and observability.
+
+The checked-in M0 contracts cover Tool, MCP, Skill, and UI. OKF lifecycle text
+below is accepted target behavior, not a claim that the current schema-v3
+parser, reconciler, or A3S Knowledge adapter implements an OKF surface.
 
 ## Complete End-to-End Lifecycle Flow
 
@@ -51,7 +56,7 @@ flowchart TD
   resolveUpgrade --> hostContext
   resolveUninstall --> hostContext
   hostContext --> executable
-  executable -- "No: uninstall or Skill/UI only" --> buildPlan
+  executable -- "No: uninstall or Skill/UI/OKF only" --> buildPlan
   executable -- "Yes" --> planningTarget
   planningTarget --> providerPreflight
   providerPreflight --> providerCapable
@@ -123,7 +128,7 @@ flowchart TD
     observe["Observe package, desired state, grants,<br/>bindings, projections, Runtime, and Gateway"]
     graph["Build required surface dependency closure<br/>All surfaces required unless explicitly optional"]
     provider{"Explicit provider still satisfies<br/>artifact, Task/Service, isolation, network,<br/>health, mount, resource, and secret capabilities?"}
-    staticVerify["Verify Skill and UI content<br/>and declared dependency references"]
+    staticVerify["Verify Skill, UI, and OKF content<br/>and declared dependency references"]
     taskPrepare["For each CLI Tool:<br/>prepare exact-generation Runtime Task binding<br/>or constrained legacy native binding"]
     serviceApply["For each HTTP Tool:<br/>apply private Runtime Service<br/>and wait for declared health"]
     mcpTransport{"For each MCP surface"}
@@ -137,7 +142,7 @@ flowchart TD
     broken["Withhold or revoke required capabilities<br/>Keep package installed; observed broken"]
     readyBindings["Persist non-secret bindings<br/>and receipt-owned projections"]
     degradedBindings["Persist required bindings only<br/>Record optional-surface failures"]
-    projectionReady{"Skill roots, command shims, UI index,<br/>and backend bindings committed?"}
+    projectionReady{"Skill roots, command shims, UI/OKF indexes,<br/>and backend bindings committed?"}
     publishReady["Atomically publish one capability generation<br/>Then drain/remove any superseded generation"]
     publishDegraded["Atomically publish required capabilities<br/>Mark aggregate degraded; retry optional surfaces"]
   end
@@ -176,7 +181,7 @@ flowchart TD
 
   subgraph use["5. Active use and observation"]
     watch["Session watches capability revision"]
-    useRequest["Skill/UI load or Tool/MCP invocation"]
+    useRequest["Skill/UI/OKF load or Tool/MCP invocation"]
     visible{"Authorized exact-generation binding visible?"}
     rejectUse["Reject new use<br/>disabled, stale, incompatible, or unauthorized"]
     lease["Acquire exact-generation shared lease"]
@@ -184,7 +189,7 @@ flowchart TD
     runTask["CLI Tool:<br/>run one Runtime Task with native argv,<br/>bounded input/output, and exit status"]
     callService["HTTP Tool:<br/>call private Service through scoped Gateway binding"]
     callMcp["MCP:<br/>use standard MCP client and declared transport"]
-    loadStatic["Skill/UI:<br/>load verified generation-scoped projection"]
+    loadStatic["Skill/UI/OKF:<br/>load verified generation-scoped projection"]
     release["Release lease and record bounded observation"]
     changed{"Health or provider observation changed?"}
   end
@@ -202,7 +207,7 @@ flowchart TD
   surfaceKind -- "CLI Tool" --> runTask
   surfaceKind -- "HTTP Tool" --> callService
   surfaceKind -- "MCP" --> callMcp
-  surfaceKind -- "Skill / UI" --> loadStatic
+  surfaceKind -- "Skill / UI / OKF" --> loadStatic
   runTask --> release
   callService --> release
   callMcp --> release
@@ -240,7 +245,7 @@ flowchart TD
     removalAction{"Desired state"}
     stop["Stop eager Tool/MCP workloads<br/>Keep immutable package and data"]
     removeRuntime["Stop and remove Runtime units,<br/>Gateway routes, and endpoint bindings"]
-    removeProjection["Remove receipt-owned Skill roots,<br/>command shims, UI indexes, and bindings"]
+    removeProjection["Remove receipt-owned Skill roots,<br/>command shims, UI/OKF indexes, and bindings"]
     removePackage["Remove scope receipt and unreferenced<br/>immutable package generations"]
     retain["Retain plugin data and secret records by default"]
     removed["Absent / removed"]
@@ -330,12 +335,45 @@ The graph has nine important invariants:
   starting another child process or side effect;
 - package installation commits a disabled receipt before any capability is
   published;
-- a required Skill is invisible until its Tool and MCP dependency closure is
-  usable;
+- a required Skill is invisible until its Tool, MCP, and target OKF dependency
+  closure is usable;
 - a stored grant alone never publishes a capability;
 - upgrade switches all required N+1 bindings in one capability generation or
   keeps N active; and
 - disable or uninstall hides new routes before waiting for existing leases.
+
+### Target OKF readiness and cutover
+
+An OKF surface follows the static-content branch but has a distinct A3S
+Knowledge observation. It is not a Runtime Task or Service and it does not gain
+authority from concept text or YAML frontmatter.
+
+Before publication, the candidate exact generation must provide evidence for:
+
+1. its manifest-local surface ID, Open Knowledge Format version, package and
+   expanded-bundle digests, file/concept counts, and configured limits;
+2. valid UTF-8 Markdown, properly delimited frontmatter, one non-empty scalar
+   `type` per non-reserved concept, canonical in-root paths, reserved index/log
+   handling, bounded standard Markdown links, and preserved extension fields;
+3. an idempotent A3S Knowledge staging result bound to package, scope, surface,
+   generation, bundle digest, and index schema/build identity;
+4. atomic promotion of that exact staged index plus a non-secret observation
+   digest; and
+5. any same-generation consumer dependencies required by Skill or other host
+   projections.
+
+The capability snapshot selects the new OKF generation only after promotion.
+If conformance, staging, or indexing fails, the candidate is `broken` or
+`degraded` according to required closure and the last good searchable
+generation remains selected. Crash replay uses the parent operation ID and OKF
+surface idempotency key; it must neither duplicate an index nor infer success
+from a staging directory.
+
+Disable hides the OKF capability from new sessions without deleting personal
+knowledge. Uninstall removes only the package receipt-owned projection and
+index generation after references are checked. Raw compiler sources, personal
+notes, retained plugin data, and another package's OKF index are outside that
+receipt and remain untouched.
 
 ## Lifecycle and Consistency
 
@@ -367,15 +405,15 @@ of truth for mutations while still making adapter retries idempotent.
 5. Atomically commit the immutable package and a disabled receipt.
 6. Persist any planned exact-generation grant without replacing another
    package generation's authorization.
-7. Record desired `enabled` state and reconcile Tool, MCP, Skill, and UI
+7. Record desired `enabled` state and reconcile Tool, MCP, Skill, UI, and OKF
    bindings in dependency order.
 8. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
 9. Atomically publish one capability generation.
 10. Mark the operation complete and garbage-collect safe staging data.
 
 If activation fails, the package remains installed but disabled or broken with
-typed diagnostics. No partial Skill, command shim, endpoint, MCP route, or UI
-generation is advertised as ready.
+typed diagnostics. No partial Skill, command shim, endpoint, MCP route, UI, or
+OKF generation is advertised as ready.
 
 ### Upgrade
 
@@ -473,9 +511,11 @@ workspace, and actor:
 - UI backend binding and method/path ceilings where configured; and
 - user-only destructive operations.
 
-Skill instructions, Tool output, MCP descriptions, OpenAPI text, UI messages,
-and catalog descriptions are untrusted content. They cannot create a grant,
-change provider selection, add a dependency, or authorize lifecycle mutation.
+Skill instructions, OKF concepts, Tool output, MCP descriptions, OpenAPI text,
+UI messages, and catalog descriptions are untrusted content. They cannot
+create a grant, change provider selection, add a dependency, or authorize
+lifecycle mutation. OKF Attested Computation metadata cannot implicitly invoke
+an executor or attester.
 
 Secrets are delivered by reference at invocation or Service start. They are
 excluded from manifests, descriptors, plans, receipts, binding snapshots,
@@ -616,7 +656,7 @@ data/use/
     bindings/              non-secret Runtime and host bindings
     grants/                workspace permission decisions
   projections/
-    <host>/<scope>/         generated Skills, command shims, UI indexes
+    <host>/<scope>/         generated Skills, command shims, UI/OKF indexes
   plugin-data/             retained mutable plugin data
   cache/                   evictable metadata and artifact cache
   staging/                 bounded incomplete operations

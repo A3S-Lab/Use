@@ -1,0 +1,108 @@
+---
+title: 包模型
+description: 了解 A3S package 如何用一个不可变身份交付原生程序与 Tool、MCP、Skill、UI、OKF 认知表面。
+---
+
+# 包模型
+
+一个 A3S package 可以只包含原生能力、只包含声明式认知内容，或同时包含两者。它们共享一个签名身份、一个代际和一个卸载边界。
+
+```text
+A3S package
+├── native plane       executable · runtime assets · target · provenance
+└── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
+```
+
+## schema-v3 表面与目标 OKF 表面
+
+| 表面         | 含义                                           | 激活目标                                            |
+| ------------ | ---------------------------------------------- | --------------------------------------------------- |
+| Tool Task    | 一次性、非交互 CLI 工作负载                    | A3S Runtime Task 或受约束的 legacy runner           |
+| Tool Service | 提供私有 HTTP 合约的服务                       | 通过 scoped binding 暴露的 Runtime Service          |
+| MCP          | 独立的标准 MCP server                          | Streamable HTTP Service 或受监督 stdio 会话         |
+| Skill        | 指令与支持内容                                 | 受管理 Skill 投影或 session registry                |
+| UI           | 完整性绑定的静态 HTML/CSS/JS                   | A3S Code/Web 沙箱                                   |
+| OKF          | Open Knowledge Format 交叉链接 Markdown 概念包 | A3S Knowledge service、宿主 OKF registry 与本地索引 |
+
+这里的 **Tool 不是 MCP `tools/list` item**。Tool 保留它自己的 CLI 或 HTTP 合约；Use 不将所有工作负载翻译为私有通用协议。静态 UI 也不是 Runtime 工作负载，只有它声明的 Tool 或 MCP 后端进入 Runtime。
+
+Tool、MCP、Skill 与 UI 已有 schema-v3 contract baseline。OKF 是最新目标架构中的一等认知表面，正式 manifest contract、fixture 和 host projection 尚待冻结；当前 parser 不接受尚未定义的 `okf` block。
+
+OKF 不是可执行 workload。它是一个可共享知识包：每个非保留概念是带 YAML frontmatter 的 UTF-8 Markdown，文件路径是概念身份，标准 Markdown links 形成知识图，`type` 是必需字段。第一次冻结以 OKF v0.2 为目标，并明确兼容 v0.1。原始 PDF、Office、图片或网页不直接作为 OKF 权威内容；独立 compiler 必须先生成合规 bundle。
+
+## ACL manifest
+
+包使用 `a3s-use-extension.acl`，由 [A3S ACL](https://github.com/A3S-Lab/ACL) 解析。ACL 是 A3S Agent Configuration Language，不是 HCL。
+
+```acl
+extension "acme/research" {
+  schema_version = 3
+  version        = "2.0.0"
+  route          = "research"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read", "execute"]
+
+  repository {
+    url      = "https://github.com/acme/research"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  tool "convert" {
+    workload    = "task"
+    interface   = "cli"
+    executable  = "tools/convert/bin/convert"
+    command     = "acme-research-convert"
+    json_output = true
+    interactive = false
+    timeout_ms  = 120000
+    activation  = "lazy"
+    optional    = false
+  }
+
+  mcp "library" {
+    transport  = "streamable-http"
+    release    = "releases/library-mcp-v1.json"
+    activation = "eager"
+    optional   = false
+  }
+
+  skill "review" {
+    path          = "skills/review/SKILL.md"
+    requires_tool = ["convert"]
+    requires_mcp  = ["library"]
+    optional      = false
+  }
+
+  ui "review" {
+    entry    = "ui/review/index.html"
+    skill    = "review"
+    bind_mcp = ["library"]
+    optional = false
+  }
+}
+```
+
+schema v1 和 v2 保持兼容。schema v3 增加可重复命名表面和无环 readiness graph。所有路径都相对包根目录；激活前会拒绝路径穿越、链接、归档歧义、route 冲突、超限包、provenance 漂移和宿主版本不兼容。
+
+仓库包含可执行 fixture：[`plugin-v3.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl)。
+
+## 依赖与 readiness
+
+表面不是独立安装的。Surface Reconciler 对一个包代际构建完整依赖闭包：
+
+1. Tool/MCP 必须有满足 workload、网络、资源和隔离要求的显式 Runtime provider。
+2. Skill 内容摘要必须匹配，并且所有 required Tool/MCP 已可用。
+3. UI 内容必须完整，并且所有声明的后端 binding 已授权。
+4. 目标 OKF 表面必须通过 frontmatter、路径、链接、大小和内容摘要检查；A3S Knowledge 只能索引宿主原子提升的 generation。
+5. 所有 required 表面就绪后，才原子发布一个 capability generation。
+6. optional 表面失败可形成 `degraded`，required 表面失败则不发布新代际。
+
+## 身份与所有权
+
+- **package ID**：稳定生命周期身份，例如 `acme/research`。
+- **generation**：一次不可变安装内容；升级产生新 generation。
+- **route**：展示与 dispatch 别名，不拥有包。
+- **receipt**：记录该 generation 拥有的文件、投影与资源。
+- **grant**：将主体、scope、权限和精确 generation 绑定。
+
+卸载只删除 receipt-owned 内容。默认保留插件数据；永久清除必须是独立、显式且仅用户可执行的操作。

@@ -1,0 +1,102 @@
+---
+title: OKF Knowledge Packages
+description: How Open Knowledge Format becomes a first-class, non-executable A3S Use cognitive surface with a safe A3S Knowledge boundary.
+---
+
+# OKF Knowledge Packages
+
+**[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)** is an open knowledge-package format for people and agents: just Markdown, just files, just YAML frontmatter. Current OKF v0.2 organizes shareable domain knowledge as a typed, cross-linked, incrementally indexable concept graph and defines a compatibility path for v0.1 content.
+
+In the A3S Use target architecture, OKF is a first-class cognitive surface alongside Tool, MCP, Skill, and UI, but it is not an executable workload.
+
+> Current status: OKF is accepted product scope. Its manifest contract, canonical fixtures, receipt/projection, and A3S Knowledge atomic-index protocol are not frozen yet. The current schema-v3 parser does not accept an undefined `okf` block.
+
+## Bundle structure
+
+An OKF bundle is a bounded directory. Each non-reserved Markdown file represents one concept; its bundle-relative path without `.md` is the concept ID. An optional `index.md` provides hierarchical navigation, and an optional `log.md` may record history at any level.
+
+```text
+okf/domain-knowledge/
+├── index.md
+├── concepts/
+│   ├── index.md
+│   ├── package-lifecycle.md
+│   └── runtime-boundary.md
+├── decisions/
+│   ├── index.md
+│   └── no-provider-fallback.md
+└── log.md
+```
+
+Concepts use standard Markdown links rather than a private wikilink syntax:
+
+```markdown
+See [Runtime boundary](/concepts/runtime-boundary.md).
+```
+
+## Concept contract
+
+Every non-reserved concept is UTF-8 Markdown beginning with a properly delimited YAML frontmatter block. OKF requires one field: a non-empty scalar `type`.
+
+```yaml
+---
+type: Architecture Decision
+title: No provider fallback
+description: Why plugin workloads require one explicit Runtime provider.
+resource: docs/adr-001-plugin-runtime-broker-boundary.md
+tags: [runtime, security, plugins]
+generated:
+  by: a3s-okf-compiler/1.0
+  at: 2026-07-31T00:00:00Z
+sources:
+  - id: runtime-boundary
+    resource: docs/adr-001-plugin-runtime-broker-boundary.md
+    title: Runtime Broker ADR
+---
+```
+
+`title`, `description`, `resource`, and `tags` are recommended fields. OKF v0.2 also defines optional provenance, trust, lifecycle, and attested-computation families. Producer extension keys and unknown concept types remain conformant and must be preserved; a v0.2 consumer may fall back to legacy v0.1 `timestamp` and `# Citations` data.
+
+`index.md` and `log.md` are reserved rather than concepts. Only the bundle-root `index.md` may contain frontmatter, and only to declare `okf_version`. Missing indexes and safe dangling links remain conformant and are reported as diagnostics rather than rejected.
+
+## Relationship to other surfaces
+
+| Surface     | Difference or relationship to OKF                                                                                                                                            |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Skill       | A Skill teaches an agent how to perform work; OKF supplies citable domain facts, decisions, and concepts. The target graph may let a Skill require one named OKF generation. |
+| Tool        | A Tool performs real work; OKF runs no process, shell, or HTTP workload.                                                                                                     |
+| MCP         | MCP is a protocol server; OKF is static content indexed and retrieved by a Knowledge host.                                                                                   |
+| UI          | UI may render knowledge, but OKF itself runs no JavaScript and receives no UI backend binding.                                                                               |
+| Personal KB | Personal `/kb` notes belong to the user; OKF is a publishable, deployable, versioned shared package asset.                                                                   |
+
+OKF v0.2 may describe an `Attested Computation`, executor, and attester. A3S Use treats all of that as inert metadata. It never turns those fields into execution authority; runnable behavior still requires a separately declared and authorized Tool or host binding.
+
+## Install and index boundary
+
+The target lifecycle reuses A3S Use package identity, plans, receipts, and capability generations:
+
+```text
+signed catalog
+  → review exact OKF digest, concept count, bytes, provenance
+  → verify package and bounded OKF conformance
+  → stage exact package generation
+  → A3S Knowledge builds/stages its deterministic index
+  → atomically promote the candidate OKF generation
+  → publish the shared capability snapshot
+```
+
+A3S Use owns package and bundle integrity. A3S Knowledge owns conformant promotion, indexing, and line-cited retrieval. If candidate validation or indexing fails, the last successful generation remains searchable.
+
+## Compilation is not installation
+
+PDF, Office, image, email, archive, and web content are compiler inputs—not OKF search authority. An independent knowledge compiler may normalize those sources into OKF, but the install plan reviews the final normalized bundle. Installation does not download or execute a compiler that changes reviewed content.
+
+## Security and uninstall
+
+- Concept text, frontmatter, links, and compiler provenance cannot change ACL policy or grants.
+- Paths, links, file count, expanded bytes, and parsed-node size are bounded. A safe dangling link is diagnostic; a reference that resolves outside the package boundary is rejected.
+- Search admits only a conformant generation atomically promoted by the host; it never infers success from a staging directory.
+- Disable only hides the OKF capability from new sessions.
+- Uninstall removes only package receipt-owned projection/index content, never personal notes, raw sources, or another package's index.
+
+See M0K in the [roadmap](./roadmap) and the repository's [OKF contribution workstream](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-development-plan.md#okf-contribution-workstream) for implementation order.

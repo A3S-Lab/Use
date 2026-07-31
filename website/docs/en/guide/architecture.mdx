@@ -1,0 +1,86 @@
+---
+title: Architecture
+description: Responsibility boundaries across A3S Use, the shared Plugin Manager, Runtime Broker, and A3S hosts.
+---
+
+# Architecture
+
+The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, Web, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
+
+```text
+     local package          release bundle          TUF registry
+           └──────────────────────┬──────────────────────┘
+                                  │
+                    shared host Plugin Manager
+         catalog · policy · confirmation · plan/apply · replay
+                                  │ reviewed package input
+                                  ▼
+                         a3s-use package engine
+       verify · stage · receipt · grant · bind · reconcile · drain
+                    ┌─────────────┴─────────────┐
+                    │                           │
+               native plane               cognitive plane
+          Runtime Task/Service       MCP · Skill · UI · OKF · context
+                    │                           │
+                    └─────────────┬─────────────┘
+                                  ▼
+                 A3S Code · Web · Knowledge · agents
+```
+
+## Ownership
+
+| Component              | Owns                                                                                                                         | Does not own                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Umbrella host          | Registry config, trust roots, ACL policy, confirmation, secrets, and Runtime provider composition                            | Package storage or a second lifecycle manager              |
+| Shared Plugin Manager  | Catalog, policy, plan/apply, operation replay, and parent saga                                                               | Package archive format or provider scheduling internals    |
+| A3S Use                | Package verification, immutable generations, receipts, grants, binding evidence, route leases, and capability reconciliation | Generic scheduling, UI rendering, or an agent RPC protocol |
+| A3S Runtime            | Task/Service workloads and provider capability                                                                               | Package parsing, trust roots, or user authorization        |
+| A3S Code/Web/Knowledge | Skill session registry, sandboxed UI, OKF registry/index, and product experience                                             | Package transactions or Runtime provider registration      |
+| Package process        | Its own CLI, HTTP, and MCP vocabulary                                                                                        | Host policy or ambient authority                           |
+
+## Single sources of truth
+
+The current implementation reuses these existing mechanisms:
+
+- `a3s-use-core`: canonical package/plugin, catalog, plan, permission, grant, and release contracts;
+- `a3s-use-extension`: ACL manifests, TUF catalog, package store, receipts, leases, and workspace grants;
+- `src/plugin_runtime`: Runtime selection, bindings, receipts, invocation, and observation;
+- `src/surface_reconciler` plus `src/capability_registry`: dependency readiness and capability publication;
+- the umbrella CLI shared Plugin Manager: the only lifecycle application service.
+
+Do not add another manager, grant store, Runtime selector, capability registry, or generic execution protocol.
+
+## Host-owned Runtime Broker
+
+A package may declare workload requirements but cannot select a provider. The host supplies an explicit `RuntimeClientRegistry` and assignment. Planning performs two deterministic selections:
+
+1. Before archive download, a signed planning target proves that a compatible provider exists.
+2. After the grant proposal is fixed, the same provider/build/capability evidence binds final semantics.
+
+If no provider satisfies the request at either stage, planning fails closed. It must not fall back to native execution or another provider. [ADR-001](https://github.com/A3S-Lab/Use/blob/main/docs/adr-001-plugin-runtime-broker-boundary.md) freezes this boundary.
+
+## Why a saga
+
+Package storage, workspace grants, Runtime, Gateway, projection, and capability publication do not share a database transaction. The complete apply is therefore a durable, idempotent parent saga:
+
+```text
+intent
+  → package checkpoint
+  → grant checkpoint
+  → Runtime checkpoint
+  → Gateway checkpoint
+  → projection checkpoint
+  → capability publication checkpoint
+  → old-generation drain checkpoint
+  → terminal result
+```
+
+Each checkpoint uses an operation ID and surface idempotency key. Crash recovery continues from durable intent and the last completed checkpoint. Repeated apply returns the same terminal result without duplicating side effects.
+
+## Runtime visibility
+
+The Surface Reconciler observes desired state, generation receipt, grants, bindings, Runtime/Gateway health, and Skill/UI/target OKF projection. The Capability Registry publishes a new snapshot only when complete evidence agrees on one generation. Resident hosts can watch generation plus revision and hot-refresh without restarting.
+
+OKF has a different host boundary from Runtime: it runs no process. Use verifies and records the exact package generation; A3S Knowledge owns conformant atomic promotion, indexing, and cited retrieval. A failed new OKF generation must not replace the last searchable generation.
+
+Read the full [Plugin Platform Architecture](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-architecture.md).

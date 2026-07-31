@@ -2,6 +2,7 @@
 
 - Status: implementation in progress
 - Planning baseline: 2026-07-30
+- Product amendment: first-class OKF knowledge contribution accepted 2026-07-31
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -38,11 +39,11 @@ The architecture document owns domain and runtime boundaries.
                  stage / verify / activate / receipt
                                   |
                        capability snapshot/watch
-          +-----------+-----------+-----------+-----------+
-          |           |           |           |           |
-        Skills   Tool Tasks  Tool Services  MCP servers  UI assets
-       guidance   Runtime      Runtime       standard    sandboxed
-                    Task       Service       protocol      view
+       +----------+----------+----------+----------+----------+
+       |          |          |          |          |          |
+     Skills   Tool Tasks Tool Services MCP servers UI assets OKF bundles
+    guidance   Runtime     Runtime      standard   sandboxed Knowledge
+                 Task      Service      protocol     view      index
 ```
 
 Ownership remains explicit:
@@ -52,7 +53,7 @@ Ownership remains explicit:
 - A3S Use owns package validation, immutable activation, receipts, leases,
   surface reconciliation, provider/runtime bindings, and owned-file removal;
 - each plugin repository owns its Tool CLI/HTTP and MCP vocabulary, Skill
-  guidance, UI assets, version, license, and reproducible package;
+  guidance, UI and OKF assets, version, license, and reproducible package;
 - A3S Code/Web adapts the shared manager and capability registry without
   becoming a second package manager.
 
@@ -69,6 +70,12 @@ One package may declare multiple named surfaces in any compatible combination:
 | Tool Service | A private HTTP API with health and optional content-bound OpenAPI | Long-lived A3S Runtime Service behind a scoped binding |
 | MCP | Standard stdio or Streamable HTTP server | Runtime Service for HTTP; supervised session for stdio |
 | UI | Declared HTML, CSS, and JavaScript assets | Sandboxed view with scoped declared backend bindings |
+| OKF | Conformant Open Knowledge Format Markdown concept bundle | Non-executable, exact-generation A3S Knowledge projection and local cited-search index |
+
+The checked-in schema-v3 baseline implements Tool, MCP, Skill, and UI only.
+OKF is an accepted target contribution and must not be added to production
+manifests until its additive schema, canonical fixtures, conformance limits,
+receipt/projection contract, and host observation are frozen.
 
 A Plugin Tool is not an MCP `tools/list` item. It is the real executable
 workload on which a Skill or UI may depend. A3S Use manages its lifecycle and
@@ -99,7 +106,8 @@ available
 
 `incompatible`, `broken`, `degraded`, and `disabled` are explicit diagnosable
 states. A Skill is ready only after its required Tool and MCP bindings are
-prepared or healthy.
+prepared or healthy and, in the target model, any required OKF generation is
+conformant and atomically promoted.
 
 This sequence is a user-facing phase view derived from separate desired and
 observed state. It is not persisted as one mutable linear enum.
@@ -114,6 +122,8 @@ closure, host ownership, desired/observed surface state, aggregate readiness,
 and publication eligibility. It does not claim deployment: missing Runtime,
 MCP, and UI adapters remain explicit `pending` evidence, while a Skill can be
 projected only when its required dependency closure is already usable.
+The target OKF adapter enters this same reconciler; it may not publish an
+independent knowledge generation outside the package operation.
 
 ### Searchable catalog metadata
 
@@ -124,6 +134,8 @@ downloading its archive:
 - semantic version, channel, host compatibility, and target;
 - declared surface IDs, Tool Task/Service kinds, and MCP tool count when
   publisher-generated;
+- declared OKF surface IDs, format version, concept/file counts, expanded
+  bytes, and content digest after the additive contract is implemented;
 - compressed bytes, expanded bytes, and file count;
 - package-level permission summary;
 - license and canonical source repository;
@@ -145,7 +157,7 @@ Install, upgrade, and uninstall plans include:
 - exact archive length and SHA-256;
 - expanded package digest when known;
 - surfaces added or removed;
-- Skill/UI dependency changes and selected Runtime provider evidence;
+- Skill/UI/OKF dependency changes and selected Runtime provider evidence;
 - permission and secret-grant diff;
 - download and installed-size estimates;
 - affected workspace grants;
@@ -252,14 +264,63 @@ following decisions:
 | Purge plugin user data | Deny | No; user only |
 
 Package permissions form a ceiling. Individual MCP annotations or HTTP route
-policy may be more restrictive but never more permissive. Skill text, UI
-messages, Tool output, MCP descriptions, API documentation, and remote content
-cannot modify policy or authorize an install.
+policy may be more restrictive but never more permissive. Skill text, UI or
+OKF content, Tool output, MCP descriptions, API documentation, and remote
+content cannot modify policy or authorize an install.
+
+The policy example above reflects the implemented v1 surface enum. The OKF
+workstream must add a canonical `okf` value through a versioned or explicitly
+compatible schema change before policy can authorize an OKF-bearing package.
+Unknown surface values continue to fail closed.
 
 Native process isolation is not equivalent to a sandbox. Until filesystem,
 environment, process, and network restrictions are enforced on a platform, a
 native executable package is reported as `native-unconfined` and cannot use
 the unattended `allow` path.
+
+## OKF Contribution Workstream
+
+OKF is a non-executable cognitive surface, not a Skill alias, MCP server,
+Runtime workload, or personal knowledge vault. The first delivery targets
+current Open Knowledge Format v0.2 with an explicit v0.1 compatibility path and
+reuses the same immutable package generation and parent saga as every other
+surface.
+
+The dependency-ordered slices are:
+
+1. **Contract and fixture:** freeze the manifest-local surface identity,
+   declared format version, v0.2/v0.1 compatibility behavior, bundle root,
+   canonical digest, size/file limits, optional dependencies, catalog fields,
+   plan impact, policy enum, receipt, projection, and observation schemas. Add
+   stable ACL/JSON digest fixtures.
+2. **Bounded conformance:** validate UTF-8 Markdown, properly delimited YAML
+   frontmatter, one non-empty scalar `type` on non-reserved concepts,
+   canonical concept IDs, reserved `index.md`/`log.md`, standard Markdown link
+   syntax, file/node limits, and expanded-package ownership. Preserve unknown
+   types and extension keys; report safe dangling links without rejecting the
+   bundle. Reject raw compiler inputs as active OKF authority.
+3. **Knowledge host adapter:** stage a candidate under an exact package
+   generation, call the A3S Knowledge promotion/index boundary idempotently,
+   record a non-secret observation digest, and retain the last good searchable
+   generation when validation or indexing fails.
+4. **Reconciliation and lifecycle:** include OKF in dependency closure,
+   capability snapshots, plan/apply replay, upgrade cutover, disable, drain-free
+   removal, and receipt-owned uninstall without touching personal notes or
+   another package's index.
+5. **Product E2E:** search a signed OKF-bearing package without archive
+   download; review provenance, concept count, bytes, and permission impact;
+   install and query cited concepts; upgrade atomically; disable/uninstall; and
+   recover each checkpoint after injected crashes.
+
+The workstream does not compile PDFs, Office files, images, archives, or web
+pages during install. Independent compilers produce normalized OKF before
+packaging. The package payload reviewed by the plan is the payload promoted by
+the Knowledge host.
+
+OKF v0.2 Attested Computation fields remain inert metadata at this boundary.
+They cannot implicitly select or invoke a Tool, executor, attester, Runtime
+provider, or secret. Any executable binding must be declared and authorized
+through the existing Tool and host contracts.
 
 ## User And Agent Surfaces
 
@@ -373,7 +434,9 @@ Every milestone adds focused tests at the owning layer.
 - permission ceiling and permission-diff fixtures;
 - MCP schemas and annotations;
 - UI asset paths, media types, sizes, and digests;
-- named surface dependency graphs and Tool release descriptors.
+- named surface dependency graphs and Tool release descriptors;
+- target OKF manifest, policy, catalog, receipt, projection, and observation
+  fixtures once their additive contracts are frozen.
 
 ### Registry and package tests
 
@@ -381,6 +444,9 @@ Every milestone adds focused tests at the owning layer.
 - deterministic search and pagination;
 - target length and SHA-256 mismatch;
 - archive traversal, links, devices, duplicate paths, and expansion limits;
+- malformed OKF frontmatter, unsafe out-of-root references, path collisions,
+  oversized concept graphs, nondeterministic digests, raw-source promotion,
+  and non-fatal diagnostics for safe dangling links;
 - incompatible host and unsupported surface declarations;
 - reproducible package digest and provenance.
 
@@ -394,6 +460,7 @@ Every milestone adds focused tests at the owning layer.
 - in-flight drain, timeout, retry, and crash reconciliation;
 - Runtime Task invocation and private Service health/binding behavior;
 - provider capability mismatch and no-fallback behavior;
+- OKF last-good-generation preservation across conformance and index failure;
 - uninstall ownership and retained user data.
 
 ### Agent safety tests
@@ -401,7 +468,7 @@ Every milestone adds focused tests at the owning layer.
 - search and plan without mutation;
 - default confirmation and explicit pre-authorization;
 - denial of trust-root, unsigned-package, secret, and purge operations;
-- prompt-injection text in catalog, Skill, Tool output/API documents, MCP
+- prompt-injection text in catalog, Skill, OKF, Tool output/API documents, MCP
   descriptions, and UI messages;
 - permission escalation during upgrade;
 - native-unconfined unattended-install rejection;
@@ -413,8 +480,8 @@ Every milestone adds focused tests at the owning layer.
 - one selected Science package and its exact dependency closure downloaded per
   install;
 - installed archive smoke through CLI, Web, and manager MCP;
-- Skills, CLI/HTTP Tools, MCP capabilities, and UI share one package identity
-  and generation;
+- Skills, CLI/HTTP Tools, MCP capabilities, UI, and OKF share one package
+  identity and generation;
 - macOS, Linux, and Windows evidence remains aligned with platform claims.
 
 ## Workstream Map
@@ -427,6 +494,7 @@ Every milestone adds focused tests at the owning layer.
 | Umbrella plan, policy, and lifecycle | A3S CLI `components/`, registry store, configuration |
 | Agent worker and manager MCP adapter | A3S CLI `use_registry.rs` and Code session adapters |
 | User Marketplace and sandboxed UI | A3S Web Plugins feature and Code Web plugin API |
+| OKF conformance, projection, and cited search | A3S Knowledge service, Code/Web OKF adapters, Use reconciler |
 | Science catalog and packages | A3S Science registry builder and package sources |
 | Release and compatibility evidence | Use, Browser, OCR, CLI, Web, and Science CI workflows |
 
@@ -436,11 +504,12 @@ Every milestone adds focused tests at the owning layer.
 | --- | --- |
 | Signed native code is treated as safe code | Require permission review and enforced sandbox for unattended install |
 | Registry changes after agent review | Digest-bound plan/apply with complete re-resolution |
-| Skill or UI attempts to authorize itself | Treat content as guidance/data; authorization remains host-owned |
+| Skill, UI, or OKF attempts to authorize itself | Treat content as guidance/data; authorization remains host-owned |
 | Search downloads or installs the catalog | Separate signed metadata from payload and active capabilities |
 | Multiple adapters diverge | One shared Plugin Manager application service |
 | Upgrade silently expands privilege | Signed permission metadata plus explicit permission diff |
 | Skill is published before its executable dependency | Dependency-gated surface reconciliation |
+| Candidate OKF indexing replaces valid knowledge before it is complete | Stage and validate, atomically promote, retain the last good generation |
 | Runtime provider cannot honor Service isolation | Capability negotiation in plan and no silent fallback |
 | Uninstall breaks active calls | Hide, acquire drain lease, then remove owned files |
 | Uninstall destroys user data | Separate executable package roots from retained data and purge |

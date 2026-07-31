@@ -1,0 +1,64 @@
+---
+title: Roadmap
+description: Dependency-ordered delivery from the stable A3S Use package foundation to a complete cognitive plugin platform.
+---
+
+# Roadmap
+
+This page is a product summary. The repository's [`ROADMAP.md`](https://github.com/A3S-Lab/Use/blob/main/ROADMAP.md) is the source of truth for priority and completion status.
+
+## Current baseline
+
+As of 2026-07-31, `main` contains:
+
+- named schema-v3 Tool Task/Service, MCP, Skill, and UI contracts;
+- signed catalog v1–v3, offline verification, metadata-only search, and planning targets;
+- immutable operation plan, permission ceiling, grant, and provider evidence contracts;
+- exact-generation workspace grant storage and a recoverable journal;
+- typed Runtime Task/Service binding, invocation, receipt, and observation adapters;
+- dependency-gated Surface Reconciler, planner evidence, and capability snapshots.
+
+The stable v0.2 package foundation remains independently usable. The plugin-platform baseline above is in development on `main` and is not a complete production plugin product.
+
+The latest product scope also adds **OKF (Open Knowledge Format)** as a first-class cognitive surface. The OKF contract is not part of the current schema-v3 baseline. Manifest, conformance, receipt, projection, and A3S Knowledge atomic-index protocols must be frozen before the feature can be described as implemented.
+
+## Milestones
+
+| Milestone                           | Status             | Outcome                                                                     |
+| ----------------------------------- | ------------------ | --------------------------------------------------------------------------- |
+| M0 — Contract freeze and fixtures   | Complete           | Identity, surface, permission, plan, grant, and release fixtures frozen     |
+| M1 — Signed searchable catalog      | Complete           | TUF-signed catalog, bounded search, planning bundle, and cache              |
+| M2 — Shared Plugin Manager          | In progress        | Unified CLI/Web/MCP lifecycle, durable plan/apply/replay, and parent saga   |
+| M3 — User plugin UX                 | Pending            | `a3s plugin` vocabulary, on-demand Science/OKF packages, and E2E            |
+| M4 — Agent read-only management     | Contracts complete | Search, inspect, list, status, and plan tools                               |
+| M5 — Permission/runtime enforcement | In progress        | Production grant, secret, egress, filesystem, process, and Gateway adapters |
+| M6 — Authorized agent lifecycle     | Pending            | Authorized apply, hot use, upgrade, disable, and uninstall                  |
+| M7 — Supply chain/platform gates    | Pending            | Registry operations, rollback/GC, Windows parity, and release gates         |
+
+## Current critical path
+
+1. Connect the host Runtime Broker and canonical grant changes to the shared Plugin Manager's final plan.
+2. Coordinate package, grant, Runtime, Gateway, projection, capability, and drain checkpoints in one recoverable parent saga.
+3. Complete CLI, Web, and agent install → use → upgrade → uninstall E2E with production providers.
+4. Add the general package dependency solver, deterministic lock graph, retained-generation rollback, and garbage collection.
+5. Freeze the OKF package contribution: current Open Knowledge Format v0.2 conformance, explicit v0.1 compatibility, content digest, receipts, host projection, atomic index generation, and uninstall semantics.
+6. Extend Agent, prompt, hook, memory, and context-provider contributions only after each host contract is frozen.
+7. Complete official registry operations and Windows platform gates.
+
+## Completion definition
+
+The cognitive plugin platform is production-ready only when all of these are true:
+
+- one package identity covers discovery, planning, authorization, install, enable, upgrade, disable, and uninstall;
+- required Tool/MCP/Skill/UI/OKF surfaces become visible atomically for one generation;
+- package, grant, Runtime, Gateway, and projection recover after crashes without duplicate side effects;
+- signed catalog, plan digest, permission, provider, and runtime observations are auditable end to end;
+- CLI, Web, and agent management MCP share one manager and receipt format;
+- Linux, macOS, and Windows support claims have automated release gates.
+
+## Development principles
+
+- Freeze contracts and fixtures before implementing adapters.
+- Complete the production lifecycle before adding new cognitive surface types.
+- Do not hide missing provider, authorization, or readiness evidence with fallback.
+- Do not duplicate an existing manager, store, selector, registry, or protocol.

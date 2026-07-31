@@ -1,0 +1,86 @@
+---
+title: 信任与安全
+description: A3S Use 如何验证包来源、冻结操作计划、限制权限并安全发布能力代际。
+---
+
+# 信任与安全
+
+A3S Use 的核心安全原则是：**包内容可以描述需求，但不能给自己授权。** Skill 文本、UI 消息、OKF 知识、Tool 输出、MCP 描述和远端内容始终是数据。
+
+## 三条信任路径
+
+| 来源           | 信任决定                                          | 适用场景       |
+| -------------- | ------------------------------------------------- | -------------- |
+| 本地目录或归档 | 人工审查并显式 `--allow-unsigned`                 | 开发与私有包   |
+| Release 内置包 | 经审查 component plan 中的精确摘要                | 第一方发布内容 |
+| 远端 Registry  | 固定 TUF root、签名元数据、回滚检查与 target 摘要 | 生产分发       |
+
+搜索只在已验证、受大小限制的目录元数据上运行，不下载 package archive。模型或浏览器不能创造目录中不存在的安装身份。
+
+## 不可变计划
+
+install、upgrade 与 uninstall 在变更前生成带过期时间的 canonical plan。它至少绑定：
+
+- package ID、版本、channel、target 与 source registry；
+- TUF root 身份和 metadata version；
+- archive length、SHA-256 与 expanded package digest；
+- 表面变化、依赖变化与 Runtime provider evidence；
+- permission ceiling、secret/grant diff 和 workspace 影响；
+- download/installed size、drain 影响与 canonical plan digest。
+
+Apply 接受已审查 digest，重新解析所有输入，并在目标、内容、权限、提供者或所有权漂移时拒绝执行。用户确认与每个 grant proposal 也绑定这个 digest。
+
+## 默认授权策略
+
+Agent lifecycle 操作默认是 `ask`，不是 `allow`。安全的 metadata search、inspect、list 和 plan 可以预授权；增加信任根、安装 unsigned package、授予 secret 和 purge data 只能由用户执行。
+
+包声明的权限是上限，不是授权。宿主 ACL policy 和 workspace grant 只能进一步收紧：
+
+```acl
+plugins {
+  schema = "a3s.plugin-policy.v1"
+
+  agent_install   = "allow"
+  agent_upgrade   = "ask"
+  agent_uninstall = "ask"
+
+  trusted_registries = ["a3s"]
+  trusted_publishers = ["a3s"]
+  allowed_surfaces   = ["mcp", "skill", "tool", "ui"]
+
+  permissions {
+    native_execution = false
+    private_service  = true
+    child_process    = false
+    secrets          = false
+
+    network "api.example.com" {
+      ports = [443]
+    }
+  }
+}
+```
+
+省略的 ceiling 等价于零、空或 `false`。重复项、未知字段、宽泛网络规则和无人值守 secret grant 都 fail closed。
+
+## 激活顺序
+
+```text
+resolve signed metadata
+    → build and review immutable plan
+    → verify archive, manifest, and permission evidence
+    → stage immutable generation
+    → prepare grants and Runtime bindings
+    → validate and stage static Skill, UI, and OKF projections
+    → publish one capability generation
+    → hide and drain superseded generation
+    → retire old grants, bindings, and owned files
+```
+
+新 generation 在所有 required dependency 就绪之前不可见。升级失败时保留旧 generation；disable/uninstall 先隐藏新调用，再排空精确 generation lease。
+
+## 平台隔离边界
+
+原生进程执行不自动等于 sandbox。在 filesystem、environment、process 与 network restriction 尚未被某个平台 provider 强制执行时，状态必须报告为 `native-unconfined`，且不能使用无人值守 `allow` 路径。
+
+完整的规范参见 [Plugin Lifecycle and Security](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-lifecycle-and-security.md)。

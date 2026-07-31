@@ -2,6 +2,7 @@
 
 - Status: accepted target architecture; implementation in progress
 - Planning baseline: 2026-07-30
+- Product amendment: first-class OKF knowledge contribution accepted 2026-07-31
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -9,8 +10,9 @@
 
 This document defines the target architecture for installing and operating an
 immutable plugin that may contribute Skills, executable Tools, standard MCP
-servers, and sandboxed UI. It refines the roadmap; the roadmap remains the
-source of truth for delivery status and priority.
+servers, sandboxed UI, and Open Knowledge Format (OKF) knowledge packages. It
+refines the roadmap; the roadmap remains the source of truth for delivery
+status and priority.
 
 ## Executive Decision
 
@@ -28,6 +30,13 @@ each declared surface into the host that owns its execution:
 | Tool Service | A private HTTP service used to perform real work | An A3S Runtime Service behind a scoped binding |
 | MCP | A standard MCP server, distinct from a Tool | Runtime Service for Streamable HTTP; supervised session for stdio |
 | UI | Integrity-bound static HTML, CSS, and JavaScript | A3S Code/Web sandbox with declared backend bindings |
+| OKF | A conformant Open Knowledge Format bundle of cross-linked Markdown concepts | A3S Knowledge service, host OKF registry, and local cited-search index |
+
+Tool, MCP, Skill, and UI have an implemented schema-v3 contract baseline. OKF
+is an accepted target surface whose manifest contract, canonical fixtures,
+receipt/projection semantics, and host binding remain to be implemented. The
+current parser must reject an undefined `okf` block rather than interpret this
+target architecture as a shipped schema.
 
 In this architecture, **Tool does not mean an MCP `tools/list` item**. A Tool
 is a workload on which a Skill or UI can depend. It keeps its native CLI or
@@ -36,6 +45,15 @@ universal action schema.
 
 Static UI is not a Runtime workload. Only a UI's declared Tool or MCP backend
 is deployed through Runtime.
+
+OKF is also not a Runtime workload. It is normalized, shareable knowledge:
+UTF-8 Markdown concepts with properly delimited YAML frontmatter, one required
+non-empty `type` for each non-reserved concept, bundle-relative path identity,
+and standard Markdown graph links. The first contract freeze targets current
+OKF v0.2 with explicit v0.1 compatibility. Raw source formats are compiler
+inputs, not searchable OKF authority. A3S Use owns package integrity and
+exact-generation evidence; A3S Knowledge owns conformant atomic promotion,
+indexing, and cited retrieval.
 
 ## Architectural Drivers
 
@@ -50,8 +68,8 @@ The design optimizes for:
 5. exact-generation routing and in-flight-call draining;
 6. provider-neutral execution with explicit capability negotiation;
 7. diagnosable partial failure and crash recovery;
-8. no ambient authority from Skill text, UI content, CLI arguments, or remote
-   service responses; and
+8. no ambient authority from Skill text, UI or OKF content, CLI arguments, or
+   remote service responses; and
 9. compatibility with existing extension schema v1/v2 packages.
 
 The design does not make Runtime a package manager, make A3S Use a scheduler,
@@ -74,13 +92,13 @@ or invent another agent RPC protocol.
                   Package Store + Operation Log
                                 |
                       Surface Reconciler
-             +----------+----------+-----------+
-             |          |          |           |
-         Skill host  Tool broker  MCP host   UI host
-             |          |          |           |
-             |       A3S Runtime --+       Code/Web sandbox
-             |       Task/Service
-             +----------+----------+-----------+
+        +----------+----------+-----------+---------+
+        |          |          |           |         |
+    Skill host  Tool broker  MCP host   UI host  OKF host
+        |          |          |           |         |
+        |       A3S Runtime --+       Code/Web   Knowledge
+        |       Task/Service           sandbox   index
+        +----------+----------+-----------+---------+
                                 |
                  atomic Capability Snapshot
                                 |
@@ -88,8 +106,9 @@ or invent another agent RPC protocol.
 ```
 
 The control plane resolves, authorizes, installs, and reconciles desired state.
-The data plane executes a Tool, serves MCP, renders UI, or supplies Skill
-instructions. A data-plane surface cannot mutate plugin lifecycle state.
+The data plane executes a Tool, serves MCP, renders UI, supplies Skill
+instructions, or retrieves cited OKF knowledge. A data-plane surface cannot
+mutate plugin lifecycle state.
 
 ### Ownership
 
@@ -97,9 +116,9 @@ instructions. A data-plane surface cannot mutate plugin lifecycle state.
 | --- | --- | --- |
 | Umbrella A3S host | Registries, trust roots, confirmation, ACL policy, workspace grant decisions | Package extraction, grant-record I/O, or surface execution |
 | A3S Use | Package validation, receipts, grant-record persistence, desired state, reconciliation, bindings, leases, capability publication | Policy authority, Runtime provider internals, or plugin API vocabulary |
-| A3S Runtime | Digest-bound Task/Service execution, observation, stop, remove, logs | Plugin resolution, provider selection, Skill/UI projection |
+| A3S Runtime | Digest-bound Task/Service execution, observation, stop, remove, logs | Plugin resolution, provider selection, Skill/UI/OKF projection |
 | A3S Gateway | Private endpoint routing and scoped access to Service bindings | Package lifecycle or permission grants |
-| A3S Code/Web | Session projection, managed Skill roots, sandboxed UI | A second package manager |
+| A3S Code/Web/Knowledge | Session projection, managed Skill roots, sandboxed UI, conformant OKF promotion/index | A second package manager |
 | Plugin publisher | Surface implementation, manifest, release descriptors, provenance | User policy or host authority |
 
 ## Domain Model
@@ -128,20 +147,24 @@ The aggregate contains:
 - zero or more named Tool Tasks or Tool Services;
 - zero or more named MCP servers;
 - zero or more named UI contributions;
+- zero or more named OKF knowledge contributions once the additive contract is
+  frozen;
 - an acyclic dependency graph among those surfaces;
 - package-level permission ceilings;
 - compatibility requirements and exact external release dependencies; and
 - one desired activation state per workspace scope.
 
-A Skill may require Tools and MCP surfaces. A UI may bind to Tool Services or
-MCP surfaces. Required dependencies must belong to the same immutable plugin
-generation unless the package resolver pins an external plugin release by
-version and digest.
+A Skill may require Tools and MCP surfaces; the target dependency model may
+also require a named OKF contribution for grounded knowledge. A UI may bind to
+Tool Services or MCP surfaces. Required dependencies must belong to the same
+immutable plugin generation unless the package resolver pins an external
+plugin release by version and digest.
 
 All declared surfaces are required by default. A publisher may explicitly mark
 a surface optional, but any optional surface referenced by a required Skill or
-UI becomes part of the required readiness closure. Failure outside that closure
-produces `degraded`; failure inside it blocks atomic activation.
+UI or OKF consumer becomes part of the required readiness closure. Failure
+outside that closure produces `degraded`; failure inside it blocks atomic
+activation.
 
 ### Desired and observed state
 
@@ -190,6 +213,7 @@ plugins/<publisher>/<name>/<version>-<digest>/
   tools/
   mcp/
   ui/
+  okf/
   releases/
   provenance/
 ```
@@ -203,6 +227,11 @@ The filename `a3s-use-extension.acl` and schema v1/v2 remain readable during
 migration. The target schema v3 adds named, repeatable surfaces. Internally the
 domain type is `PluginManifest`; changing the on-disk filename is unnecessary
 until a separately versioned migration provides material value.
+
+The `okf/` directory above is target layout only. A later additive manifest
+revision must bind each named OKF bundle root, conformance version, content
+digest, limits, optional dependencies, and activation target. No installer may
+discover or activate OKF merely because that directory exists.
 
 ### Illustrative schema v3
 
@@ -268,6 +297,53 @@ This example records deployment and binding facts, not the Tool's business
 operations. The CLI owns its arguments and exit codes. The HTTP service owns
 its routes and response schemas. An optional content-bound OpenAPI document is
 documentation and validation evidence, not a new A3S execution protocol.
+
+### Target OKF contribution contract
+
+The first-class OKF surface is an additive follow-up to the checked-in schema-v3
+fixture. Its contract must be frozen before parser or lifecycle implementation
+and must reuse the package identity, plan, receipt, grant, reconciliation, and
+capability-generation machinery already present.
+
+The contract must bind at least:
+
+- a manifest-local OKF surface ID and bundle-relative root;
+- the declared Open Knowledge Format version, initially current `0.2` plus
+  explicit `0.1` fallback behavior;
+- the canonical expanded content digest, file count, and byte limits;
+- required UTF-8 Markdown plus properly delimited YAML frontmatter for every
+  non-reserved concept;
+- exactly one non-empty scalar `type` per non-reserved concept, with optional
+  standard OKF fields and producer extensions preserved without executable
+  semantics;
+- canonical bundle-relative path identity, reserved `index.md`/`log.md`
+  handling, and bounded standard Markdown link validation;
+- optional same-generation consumer dependencies, such as a Skill requiring a
+  named OKF surface;
+- the host projection identity, last-good promoted generation, and index
+  observation digest; and
+- receipt-owned uninstall behavior that never removes personal notes, raw
+  compiler sources, or another package's index generation.
+
+OKF conformance is deliberately permissive. Unknown concept types and
+frontmatter keys remain valid, missing optional indexes remain valid, and safe
+dangling concept links produce diagnostics rather than rejection. Package
+admission separately rejects paths that resolve outside the bundle, unsafe
+resource acquisition, expansion-limit violations, and other package-boundary
+hazards. A v0.2 `Attested Computation` may describe an executor and attester,
+but those fields are inert content: execution requires separately declared,
+authorized Tool or host bindings and is never inferred from OKF text.
+
+Installation does not compile arbitrary PDF, Office, image, archive, or web
+content. Independent compilers may produce conformant OKF, but the package
+contains the exact normalized bundle reviewed by the plan. The host validates
+and stages it, then A3S Knowledge atomically promotes the generation. Search
+continues to serve the last good generation if conformance or indexing of the
+candidate fails.
+
+OKF content is guidance and evidence, not authority. Frontmatter, concept text,
+links, resources, or compiler provenance cannot grant filesystem, network,
+secret, Runtime, lifecycle, or cross-workspace access.
 
 ### Release descriptors
 
@@ -648,7 +724,9 @@ letting the planner infer state.
 The existing process-wide capability snapshot has no workspace identity and
 therefore does not select one implicitly. Automatic capability/session
 publication remains pending until the lifecycle caller supplies the explicit
-scope plus Runtime, compatibility-host, Skill, and UI observations.
+scope plus Runtime, compatibility-host, Skill, and UI observations. After the
+additive OKF contract is frozen, its separate Knowledge-host observation joins
+at the same boundary.
 
 Current provider evidence matters:
 
@@ -670,6 +748,7 @@ TaskBinding   -> provider + artifact + launcher reference
 HttpBinding   -> provider + private endpoint reference + gateway scope
 McpBinding    -> transport + endpoint/session factory + protocol version
 UiBinding     -> sandbox origin + declared backend binding IDs
+OkfBinding    -> bundle digest + Knowledge projection/index observation
 ```
 
 Bindings are workspace- and generation-scoped. A session receives an immutable
@@ -684,7 +763,9 @@ allow arbitrary package-path execution.
 Projection also checks the session's carrier capabilities. A CLI Tool requires
 the host's managed process runner, an HTTP Tool requires a scoped HTTP client,
 MCP requires a compatible MCP client, and UI requires the sandbox host. A Skill
-whose required carrier is absent is not projected into that session.
+whose required carrier is absent is not projected into that session. A target
+OKF binding requires a compatible Knowledge host and cited-retrieval carrier;
+it never resolves through Runtime.
 
 ## Operational Model
 
@@ -729,13 +810,16 @@ Migration is additive:
 2. interpret legacy `cli` as one Tool Task with user exposure and retain its
    existing direct launcher behavior;
 3. add schema v3 fixtures for multiple Skills, Tools, MCP servers, and UIs;
-4. introduce the Tool release descriptor and Runtime mapping behind typed
+4. freeze an additive OKF manifest, fixture, conformance, receipt, projection,
+   and A3S Knowledge index-observation contract without reinterpreting the
+   existing v3 fixture;
+5. introduce the Tool release descriptor and Runtime mapping behind typed
    interfaces;
-5. move Science to registry-only delivery and model its real executables or
+6. move Science to registry-only delivery and model its real executables or
    Services as Tool surfaces;
-6. project dependency-ready Skills and UI from the shared reconciler;
-7. make CLI, Web, and management MCP use the same Plugin Manager; and
-8. deprecate the native compatibility runner only after supported Runtime
+7. project dependency-ready Skills, UI, and OKF from the shared reconciler;
+8. make CLI, Web, and management MCP use the same Plugin Manager; and
+9. deprecate the native compatibility runner only after supported Runtime
    providers pass equivalent Task and stdio-session conformance.
 
 No migration converts a Tool into an MCP server. A publisher may expose both
@@ -750,24 +834,29 @@ Tool/MCP Runtime ownership and provider-selection boundary. Additional ADRs
 remain required for:
 
 1. manifest schema v3 and v1/v2 adapter rules;
-2. Skill dependency and managed-root projection;
+2. Skill and OKF dependency plus managed-root projection;
 3. private Service endpoint and UI reverse-proxy binding;
 4. operation saga, idempotency, and crash reconciliation;
 5. workspace grants and global package reference counting; and
-6. stdio MCP compatibility and future Runtime session boundary.
+6. stdio MCP compatibility and future Runtime session boundary; and
+7. OKF conformance, atomic Knowledge promotion/index observation, and
+   last-good-generation recovery.
 
 ## Architecture Acceptance Gates
 
 The architecture is implemented only when:
 
 - one plugin can contain multiple named Skills, Tool Tasks, Tool Services, MCP
-  servers, and UIs;
+  servers, UIs, and conformant OKF bundles;
 - a Skill is never visible before its required Tools and MCP bindings are
   usable;
 - a CLI Tool executes as an exact-generation Task and preserves native process
   semantics;
 - an HTTP Tool is private, health-gated, and accessible only through a scoped
   binding;
+- an OKF contribution becomes searchable only after exact-generation
+  conformance and atomic A3S Knowledge promotion, while a failed candidate
+  preserves the last good searchable generation;
 - Tool workloads are never conflated with MCP `tools/list`;
 - UI assets remain static and sandboxed while their backend workloads are
   independently supervised;

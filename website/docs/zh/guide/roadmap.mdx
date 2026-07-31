@@ -1,0 +1,64 @@
+---
+title: 路线图
+description: A3S Use 从稳定包管理基础走向完整认知插件平台的依赖顺序与完成标准。
+---
+
+# 路线图
+
+本页是产品化摘要；仓库根目录的 [`ROADMAP.md`](https://github.com/A3S-Lab/Use/blob/main/ROADMAP.md) 是优先级与完成状态的唯一事实来源。
+
+## 当前基线
+
+截至 2026-07-31，`main` 已包含：
+
+- schema-v3 命名 Tool Task/Service、MCP、Skill 与 UI contract；
+- signed catalog v1–v3、离线验证、metadata-only search 与 planning target；
+- immutable operation plan、permission ceiling、grant 与 provider evidence contract；
+- exact-generation workspace grant store 和 recoverable journal；
+- Runtime Task/Service binding、invocation、receipt 与 observation typed adapter；
+- dependency-gated Surface Reconciler、planner evidence 和 capability snapshot。
+
+稳定 v0.2 package foundation 仍可独立使用。上述 plugin-platform baseline 是 `main` 上的在建能力，不能被描述为完整 production plugin product。
+
+最新产品范围还把 **OKF（Open Knowledge Format）** 加入一等认知表面。OKF contract 尚未进入当前 schema-v3 baseline；必须先冻结 manifest、conformance、receipt、projection 与 A3S Knowledge 原子索引协议，不能用未定义字段冒充已实现能力。
+
+## 里程碑
+
+| 里程碑                              | 状态     | 结果                                                                 |
+| ----------------------------------- | -------- | -------------------------------------------------------------------- |
+| M0 — Contract freeze and fixtures   | 完成     | 冻结 identity、surface、permission、plan、grant 与 release fixture   |
+| M1 — Signed searchable catalog      | 完成     | TUF 签名目录、bounded search、planning bundle 与 cache               |
+| M2 — Shared Plugin Manager          | 进行中   | 统一 CLI/Web/MCP lifecycle、durable plan/apply/replay 与 parent saga |
+| M3 — User plugin UX                 | 待完成   | `a3s plugin` 用户词汇、on-demand Science/OKF 包与 E2E                |
+| M4 — Agent read-only management     | 合约完成 | search、inspect、list、status 与 plan 工具                           |
+| M5 — Permission/runtime enforcement | 进行中   | 生产 grant、secret、egress、filesystem、process 与 Gateway adapter   |
+| M6 — Authorized agent lifecycle     | 待完成   | 可授权 apply、hot use、upgrade、disable 与 uninstall                 |
+| M7 — Supply chain/platform gates    | 待完成   | Registry 运维、rollback/GC、Windows parity 与发布门禁                |
+
+## 当前关键路径
+
+1. 把 host Runtime Broker 与 canonical grant changes 接入共享 Plugin Manager 的最终 plan。
+2. 在一个 recoverable parent saga 中协调 package、grant、Runtime、Gateway、projection、capability 和 drain checkpoint。
+3. 用 production provider 完成 CLI、Web、Agent install → use → upgrade → uninstall E2E。
+4. 增加通用 package dependency solver、deterministic lock graph、retained-generation rollback 与 garbage collection。
+5. 冻结 OKF package contribution：当前 Open Knowledge Format v0.2 conformance、明确 v0.1 兼容、内容摘要、receipt、host projection、原子索引 generation 与卸载语义。
+6. 每个宿主合约冻结后，再扩展 Agent、prompt、hook、memory 与 context-provider contribution。
+7. 完成官方 Registry 运维与 Windows platform gate。
+
+## 完成标准
+
+认知插件平台只有在以下条件同时满足时才可宣称 production-ready：
+
+- 同一 package identity 覆盖发现、计划、授权、安装、启用、升级、禁用与卸载；
+- required Tool/MCP/Skill/UI/OKF 对同一 generation 原子可见；
+- package、grant、Runtime、Gateway 和 projection 崩溃后可恢复且不会重复副作用；
+- 签名目录、计划摘要、权限、provider 和 runtime observation 全链路可审计；
+- CLI、Web 与 agent management MCP 共享一个 manager 和 receipt format；
+- Linux、macOS 与 Windows 的声明支持级别都有自动化 release gate。
+
+## 开发原则
+
+- 先冻结 contract 和 fixture，再实现 adapter。
+- 先打通 production lifecycle，再增加新的 cognitive surface 类型。
+- 不通过 fallback 掩盖 provider、权限或 readiness evidence 缺失。
+- 不重复已有 manager、store、selector、registry 或 protocol。
