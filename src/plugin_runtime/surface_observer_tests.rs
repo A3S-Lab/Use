@@ -182,6 +182,20 @@ async fn unbound_surfaces_remain_pending_without_a_default_provider() {
         .surfaces()
         .iter()
         .all(|surface| surface.surface().id != "convert"));
+    let substitution = SurfaceObservations::from([(
+        surface(PluginSurfaceKind::Tool, "index"),
+        SurfaceObservedState::Healthy,
+    )]);
+    let substitution_error = reconcile_with_runtime(
+        &manifest,
+        PluginDesiredState::Enabled,
+        true,
+        &substitution,
+        Some(&snapshot),
+    )
+    .unwrap_err();
+    assert_eq!(substitution_error.code, "use.plugin.reconcile_invalid");
+
     let reconciled = reconcile_with_runtime(
         &manifest,
         PluginDesiredState::Enabled,

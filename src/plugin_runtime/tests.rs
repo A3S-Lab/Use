@@ -1,18 +1,21 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use a3s_runtime::contract::{NetworkMode, RuntimeLogStream, RuntimeUnitClass};
+use a3s_runtime::contract::{NetworkMode, RuntimeUnitClass};
 use a3s_runtime::{
     ProviderId, RuntimeClient, RuntimeClientRegistry, RuntimeProviderFactory, RuntimeResult,
 };
 use a3s_use_core::{
-    CatalogSurface, ExecutablePlanningSurface, NetworkEgressPermission, PlanActor,
-    PlanPolicyDecision, PlannedPackageState, PlannedPluginRelease, PlanningArtifactRef,
-    PlanningSurfaceActivation, PluginPermissionCeiling, PluginPlanningBundle, PluginReleaseChannel,
-    PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrantProposal, ResourcePermissionCeiling,
-    SurfacePermissionCeiling, ToolWorkloadClass, ToolWorkloadContract,
-    WorkspaceGrantProposalAuthority, PLUGIN_PERMISSION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
-    PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA,
+    CatalogSurface, ExecutablePlanningSurface, NetworkEgressPermission, PlanActor, PlanAuthority,
+    PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision, PlanScope, PlanScopeKind,
+    PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease, PlanningArtifactRef,
+    PlanningSurfaceActivation, PluginOperationPlanBinding, PluginPermissionCeiling,
+    PluginPlanSource, PluginPlanningBundle, PluginReleaseChannel, PluginSurfaceKind,
+    PluginSurfaceRef, PluginWorkspaceGrantPlan, PluginWorkspaceGrantProposal,
+    PluginWorkspaceGrantSnapshot, ResourcePermissionCeiling, SurfacePermissionCeiling,
+    ToolWorkloadClass, ToolWorkloadContract, WorkspaceGrantProposalAuthority,
+    PLUGIN_PERMISSION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 use async_trait::async_trait;
 
@@ -307,103 +310,6 @@ async fn explicit_provider_assignments_resolve_sorted_evidence_without_fallback(
 }
 
 #[tokio::test]
-async fn task_binding_invokes_native_argv_and_captures_separate_output_streams() {
-    let descriptor = task_descriptor();
-    let plan = plan_tool_task_release(
-        context(PluginSurfaceKind::Tool, "convert"),
-        &task_surface(),
-        &descriptor,
-        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
-        RuntimeTaskInvocation::new("invoke-01", vec!["--input".into(), "paper.pdf".into()])
-            .unwrap(),
-        policy(),
-        NetworkMode::None,
-    )
-    .unwrap();
-    let capabilities = capabilities(&plan);
-    let provider = evidence(&plan, &capabilities);
-    let runtime = Arc::new(FakeRuntime::new(capabilities, true).with_logs(vec![
-        log_chunk(RuntimeLogStream::Stdout, 1, "stdout-1", "{\"ok\":true}\n"),
-        log_chunk(RuntimeLogStream::Stderr, 1, "stderr-1", "diagnostic\n"),
-    ]));
-    let client = PluginRuntimeClient::new(runtime.clone());
-    let binding = client.prepare_task(&plan, &provider).await.unwrap();
-    let result = client
-        .invoke_task(&plan, &binding, "invoke-request-01", Some(9_999_999))
-        .await
-        .unwrap();
-
-    assert_eq!(runtime.apply_count.load(Ordering::SeqCst), 1);
-    assert_eq!(runtime.remove_count.load(Ordering::SeqCst), 1);
-    assert_eq!(result.exit_code, 0);
-    assert_eq!(result.stdout, "{\"ok\":true}\n");
-    assert_eq!(result.stderr, "diagnostic\n");
-    assert!(!result.truncated);
-    assert_eq!(
-        plan.spec().process.args,
-        vec!["--input".to_string(), "paper.pdf".to_string()]
-    );
-}
-
-#[tokio::test]
-async fn unsupported_in_memory_capture_is_rejected_before_task_apply() {
-    let mut descriptor = task_descriptor();
-    let ToolWorkloadContract::Task {
-        max_stdout_bytes, ..
-    } = &mut descriptor.workload
-    else {
-        panic!("fixture should be a Task");
-    };
-    *max_stdout_bytes = 16 * 1024 * 1024 + 1;
-    let plan = plan_tool_task_release(
-        context(PluginSurfaceKind::Tool, "convert"),
-        &task_surface(),
-        &descriptor,
-        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
-        RuntimeTaskInvocation::new("invoke-01", Vec::new()).unwrap(),
-        policy(),
-        NetworkMode::None,
-    )
-    .unwrap();
-    let capabilities = capabilities(&plan);
-    let provider = evidence(&plan, &capabilities);
-    let runtime = Arc::new(FakeRuntime::new(capabilities, true));
-    let client = PluginRuntimeClient::new(runtime.clone());
-
-    let error = client.prepare_task(&plan, &provider).await.unwrap_err();
-    assert_eq!(error.code, "use.plugin.runtime.capture_unsupported");
-    assert_eq!(runtime.apply_count.load(Ordering::SeqCst), 0);
-}
-
-#[tokio::test]
-async fn ambiguous_task_apply_failure_attempts_exact_cleanup() {
-    let descriptor = task_descriptor();
-    let plan = plan_tool_task_release(
-        context(PluginSurfaceKind::Tool, "convert"),
-        &task_surface(),
-        &descriptor,
-        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
-        RuntimeTaskInvocation::new("invoke-01", Vec::new()).unwrap(),
-        policy(),
-        NetworkMode::None,
-    )
-    .unwrap();
-    let capabilities = capabilities(&plan);
-    let provider = evidence(&plan, &capabilities);
-    let runtime = Arc::new(FakeRuntime::new(capabilities, true).with_apply_failure());
-    let client = PluginRuntimeClient::new(runtime.clone());
-    let binding = client.prepare_task(&plan, &provider).await.unwrap();
-
-    let error = client
-        .invoke_task(&plan, &binding, "invoke-01", Some(9_999_999))
-        .await
-        .unwrap_err();
-    assert_eq!(error.code, "use.plugin.runtime.operation_failed");
-    assert_eq!(runtime.stop_count.load(Ordering::SeqCst), 1);
-    assert_eq!(runtime.remove_count.load(Ordering::SeqCst), 1);
-}
-
-#[tokio::test]
 async fn healthy_service_activation_requires_an_opaque_endpoint_binding() {
     let descriptor = service_descriptor();
     let plan = plan_tool_service_release(
@@ -662,6 +568,102 @@ async fn planning_bundle_selects_only_the_explicit_capable_provider() {
     );
 }
 
+#[tokio::test]
+async fn runtime_broker_rebinds_authorized_semantics_to_the_preflight_provider() {
+    let (bundle, package, proposal) = runtime_bundle_inputs(false);
+    let expected_bundle = bundle.clone();
+    let expected_package = package.clone();
+    let grant_plan = runtime_grant_plan(&package, &proposal);
+    let authorized_plans = plan_runtime_bundle(&bundle, &package, &proposal, 8).unwrap();
+    let runtime = Arc::new(FakeRuntime::new(capabilities(&authorized_plans[0]), true));
+    let mut registry = RuntimeClientRegistry::new();
+    registry
+        .register(Arc::new(StaticRuntimeFactory {
+            provider_id: ProviderId::parse("test-runtime").unwrap(),
+            client: runtime,
+        }))
+        .unwrap();
+    let broker = PluginRuntimeBroker::new(&registry);
+    let preflight = broker
+        .preflight_bundle(
+            bundle,
+            package,
+            "workspace-01",
+            8,
+            vec![
+                RuntimeProviderAssignment::new(authorized_plans[0].surface(), "test-runtime")
+                    .unwrap(),
+            ],
+        )
+        .await
+        .unwrap();
+    let provisional = preflight.provisional_provider_evidence();
+
+    assert_eq!(preflight.bundle(), &expected_bundle);
+    assert_eq!(preflight.package(), &expected_package);
+    assert_eq!(preflight.scope_id(), "workspace-01");
+    assert_eq!(preflight.generation(), 8);
+
+    let selection = preflight.authorize_grant_plan(&grant_plan).await.unwrap();
+    let final_evidence = selection.provider_evidence();
+
+    assert_eq!(provisional.len(), 1);
+    assert_eq!(final_evidence.len(), 1);
+    assert_eq!(final_evidence[0].provider_id, "test-runtime");
+    assert_eq!(
+        final_evidence[0].semantics_profile_digest,
+        authorized_plans[0]
+            .spec()
+            .semantics_profile_digest
+            .clone()
+            .unwrap()
+    );
+    assert_ne!(
+        provisional[0].semantics_profile_digest,
+        final_evidence[0].semantics_profile_digest
+    );
+}
+
+#[test]
+fn runtime_broker_public_state_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    assert_send_sync::<PluginRuntimeBroker<'static>>();
+    assert_send_sync::<RuntimeBundlePreflight>();
+}
+
+#[tokio::test]
+async fn runtime_broker_rejects_provider_drift_between_preflight_and_authorization() {
+    let (bundle, package, proposal) = runtime_bundle_inputs(false);
+    let authorized_plans = plan_runtime_bundle(&bundle, &package, &proposal, 8).unwrap();
+    let runtime = Arc::new(FakeRuntime::new(capabilities(&authorized_plans[0]), true));
+    let mut registry = RuntimeClientRegistry::new();
+    registry
+        .register(Arc::new(StaticRuntimeFactory {
+            provider_id: ProviderId::parse("test-runtime").unwrap(),
+            client: runtime.clone(),
+        }))
+        .unwrap();
+    let preflight = PluginRuntimeBroker::new(&registry)
+        .preflight_bundle(
+            bundle,
+            package,
+            "workspace-01",
+            8,
+            vec![
+                RuntimeProviderAssignment::new(authorized_plans[0].surface(), "test-runtime")
+                    .unwrap(),
+            ],
+        )
+        .await
+        .unwrap();
+    runtime.set_provider_build("build-2");
+
+    let error = preflight.authorize(&proposal).await.unwrap_err();
+
+    assert_eq!(error.code, "use.plugin.runtime.provider_evidence_changed");
+}
+
 #[test]
 fn planning_bundle_fails_closed_on_unrepresentable_egress_authority() {
     let (bundle, package, proposal) = runtime_bundle_inputs(true);
@@ -670,7 +672,7 @@ fn planning_bundle_fails_closed_on_unrepresentable_egress_authority() {
     assert_eq!(error.code, "use.plugin.runtime.authorization_unsupported");
 }
 
-fn runtime_bundle_inputs(
+pub(super) fn runtime_bundle_inputs(
     with_egress: bool,
 ) -> (
     PluginPlanningBundle,
@@ -780,4 +782,48 @@ fn runtime_bundle_inputs(
         grant_expires_at_ms: None,
     };
     (bundle, package, proposal)
+}
+
+pub(super) fn runtime_grant_plan(
+    package: &PlannedPackageState,
+    proposal: &PluginWorkspaceGrantProposal,
+) -> PluginWorkspaceGrantPlan {
+    let transition = PlannedPackageTransition::resolved(
+        package.release.package_id.clone(),
+        PlanPackageRole::Root,
+        PlanPackageChangeKind::Add,
+        None,
+        Some(package.clone()),
+        Some(PluginPlanSource::ReleaseBundle {
+            bundle_digest:
+                "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                    .to_string(),
+            package_digest: package.release.package_sha256.clone(),
+        }),
+    )
+    .unwrap();
+    let binding = PluginOperationPlanBinding {
+        operation_id: proposal.operation_id.clone(),
+        created_at_ms: proposal.created_at_ms,
+        expires_at_ms: proposal.apply_expires_at_ms,
+        scope: PlanScope {
+            kind: PlanScopeKind::Workspace,
+            id: proposal.scope_id.clone(),
+        },
+        authority: PlanAuthority {
+            actor: proposal.authority.actor,
+            decision: proposal.authority.decision,
+            policy_digest: proposal.authority.policy_digest.clone(),
+            confirmation_required: proposal.authority.decision == PlanPolicyDecision::Ask,
+        },
+    };
+    let snapshot = PluginWorkspaceGrantSnapshot {
+        schema: PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA.to_string(),
+        scope_id: proposal.scope_id.clone(),
+        state_revision: 3,
+        grants: Vec::new(),
+    };
+    PluginWorkspaceGrantPlan::resolve(&binding, 3, &[transition], &snapshot, false, true)
+        .unwrap()
+        .unwrap()
 }

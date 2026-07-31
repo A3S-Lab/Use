@@ -15,9 +15,21 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 
 #[cfg(feature = "extensions")]
+use crate::plugin_runtime::RuntimeSurfaceObservationSnapshot;
+#[cfg(feature = "extensions")]
 use crate::surface_reconciler::{
-    reconcile_with_runtime, PluginDesiredState, PluginObservedState, SurfaceObservations,
-    SurfaceReconcileSnapshot,
+    reconcile_scoped_with_runtime, reconcile_with_runtime, PluginDesiredState, PluginObservedState,
+    SurfaceObservations, SurfaceReconcileSnapshot,
+};
+
+#[cfg(feature = "extensions")]
+#[path = "capability_session.rs"]
+mod session;
+#[cfg(feature = "extensions")]
+pub use session::{
+    CapabilityHostSurfaceObservation, CapabilityHostSurfaceOwner, CapabilitySessionObservations,
+    CapabilitySessionSnapshot, CapabilitySessionSnapshotBuilder, CapabilitySurfaceObservedState,
+    CAPABILITY_SESSION_SNAPSHOT_SCHEMA_VERSION,
 };
 
 const SCHEMA_VERSION: u32 = 1;
@@ -110,7 +122,11 @@ pub(crate) struct PluginPlannerEvidence {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CapabilityBinding {
+/// One serializable built-in or extension capability projection.
+///
+/// The stable identity/status getters are available to library callers; the
+/// complete versioned projection is carried by capability snapshot JSON.
+pub struct CapabilityBinding {
     id: String,
     route: String,
     version: String,
@@ -139,11 +155,7 @@ pub(crate) struct CapabilityBinding {
 
 pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
     let (generation, extensions) = stable_extensions().await?;
-    let mut capabilities = vec![
-        browser_capability().await?,
-        ocr_capability().await?,
-        box_capability(),
-    ];
+    let mut capabilities = built_in_capabilities().await?;
     capabilities.extend(extensions);
     capabilities.sort_by(|left, right| left.id.cmp(&right.id));
 
@@ -154,6 +166,42 @@ pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
         revision,
         capabilities,
     })
+}
+
+pub(crate) async fn built_in_capabilities() -> UseResult<Vec<CapabilityBinding>> {
+    Ok(vec![
+        browser_capability().await?,
+        ocr_capability().await?,
+        box_capability(),
+    ])
+}
+
+#[cfg(feature = "extensions")]
+impl CapabilityBinding {
+    /// Stable component identity.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// CLI route owned by this capability.
+    pub fn route(&self) -> &str {
+        &self.route
+    }
+
+    /// Projected component or package version.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// Whether the binding is currently callable.
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Current coarse-grained readiness.
+    pub fn readiness(&self) -> Readiness {
+        self.readiness
+    }
 }
 
 #[cfg(feature = "extensions")]
@@ -501,26 +549,35 @@ async fn project_extensions(
         let Some(extension) = crate::extension_host::get(&route.package_id).await? else {
             return Ok(None);
         };
-        let receipt = &extension.receipt;
         let surfaces = extension
             .surfaces()
             .into_iter()
             .map(str::to_string)
             .collect::<Vec<_>>();
-        if receipt.package_id != route.package_id
-            || receipt.component_id != route.component_id
-            || receipt.route != route.route
-            || receipt.version != route.version
-            || receipt.package_root != route.package_root
-            || receipt.manifest_sha256 != route.manifest_sha256
-            || receipt.enabled != route.enabled
-            || surfaces != route.surfaces
-        {
+        if !route_matches_extension(route, &extension, &surfaces) {
             return Ok(None);
         }
         capabilities.push(project_extension(&extension, surfaces).await?);
     }
     Ok(Some(capabilities))
+}
+
+#[cfg(feature = "extensions")]
+pub(crate) fn route_matches_extension(
+    route: &a3s_use_extension::ExtensionRouteBinding,
+    extension: &a3s_use_extension::InstalledExtension,
+    surfaces: &[String],
+) -> bool {
+    let receipt = &extension.receipt;
+    receipt.package_id == route.package_id
+        && receipt.component_id == route.component_id
+        && receipt.route == route.route
+        && receipt.version == route.version
+        && receipt.package_root == route.package_root
+        && receipt.manifest_sha256 == route.manifest_sha256
+        && receipt.package_sha256 == route.package_sha256
+        && receipt.enabled == route.enabled
+        && surfaces == route.surfaces
 }
 
 #[cfg(feature = "extensions")]
@@ -537,20 +594,70 @@ async fn project_extension_for_host(
     surfaces: Vec<String>,
     host_version: &str,
 ) -> UseResult<CapabilityBinding> {
+    project_extension_with_observations(
+        extension,
+        surfaces,
+        host_version,
+        &SurfaceObservations::new(),
+        None,
+        false,
+    )
+    .await
+}
+
+#[cfg(feature = "extensions")]
+pub(crate) async fn project_extension_for_session(
+    extension: &a3s_use_extension::InstalledExtension,
+    surfaces: Vec<String>,
+    host_version: &str,
+    observations: &SurfaceObservations,
+    runtime: Option<&RuntimeSurfaceObservationSnapshot>,
+) -> UseResult<CapabilityBinding> {
+    project_extension_with_observations(
+        extension,
+        surfaces,
+        host_version,
+        observations,
+        runtime,
+        true,
+    )
+    .await
+}
+
+#[cfg(feature = "extensions")]
+async fn project_extension_with_observations(
+    extension: &a3s_use_extension::InstalledExtension,
+    surfaces: Vec<String>,
+    host_version: &str,
+    observations: &SurfaceObservations,
+    runtime: Option<&RuntimeSurfaceObservationSnapshot>,
+    scoped: bool,
+) -> UseResult<CapabilityBinding> {
     let receipt = &extension.receipt;
     let compatible = extension.supports_use_version(host_version);
     let reconciliation = if extension.manifest.schema_version == 3 {
-        Some(reconcile_with_runtime(
-            &extension.manifest,
-            if receipt.enabled {
-                PluginDesiredState::Enabled
-            } else {
-                PluginDesiredState::InstalledDisabled
-            },
-            compatible,
-            &SurfaceObservations::new(),
-            None,
-        )?)
+        let desired = if receipt.enabled {
+            PluginDesiredState::Enabled
+        } else {
+            PluginDesiredState::InstalledDisabled
+        };
+        Some(if scoped {
+            reconcile_scoped_with_runtime(
+                &extension.manifest,
+                desired,
+                compatible,
+                observations,
+                runtime,
+            )?
+        } else {
+            reconcile_with_runtime(
+                &extension.manifest,
+                desired,
+                compatible,
+                observations,
+                runtime,
+            )?
+        })
     } else {
         None
     };
@@ -785,6 +892,10 @@ fn installed_plugin_plan_evidence_from_snapshot(
 #[cfg(all(test, feature = "extensions"))]
 #[path = "capability_registry_planner_tests.rs"]
 mod planner_tests;
+
+#[cfg(all(test, feature = "extensions"))]
+#[path = "capability_session_tests.rs"]
+mod session_tests;
 
 #[cfg(test)]
 mod tests {

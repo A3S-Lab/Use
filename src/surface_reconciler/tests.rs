@@ -32,6 +32,7 @@ fn named_surface_graph_has_deterministic_dependency_levels_and_required_closure(
         &SurfaceObservations::new(),
     )
     .unwrap();
+    assert_eq!(snapshot.schema_version, 2);
 
     for (kind, id) in [
         (PluginSurfaceKind::Tool, "convert"),
@@ -70,6 +71,58 @@ fn named_surface_graph_has_deterministic_dependency_levels_and_required_closure(
     assert_eq!(snapshot.observed, PluginObservedState::Reconciling);
     assert!(!snapshot.capability_ready);
     assert!(snapshot.surfaces.iter().all(|surface| !surface.published));
+    assert_eq!(
+        state(&snapshot, PluginSurfaceKind::Tool, "convert").owner,
+        SurfaceOwner::ToolHost
+    );
+    assert_eq!(
+        state(&snapshot, PluginSurfaceKind::Tool, "index").owner,
+        SurfaceOwner::Runtime
+    );
+    assert_eq!(
+        state(&snapshot, PluginSurfaceKind::Mcp, "local-library").owner,
+        SurfaceOwner::McpHost
+    );
+    assert_eq!(
+        state(&snapshot, PluginSurfaceKind::Mcp, "library").owner,
+        SurfaceOwner::Runtime
+    );
+}
+
+#[test]
+fn scoped_reconciliation_requires_explicit_skill_host_observation() {
+    let observations = SurfaceObservations::from([
+        (
+            reference(PluginSurfaceKind::Tool, "convert"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Tool, "index"),
+            SurfaceObservedState::Healthy,
+        ),
+        (
+            reference(PluginSurfaceKind::Mcp, "library"),
+            SurfaceObservedState::Healthy,
+        ),
+        (
+            reference(PluginSurfaceKind::Ui, "review"),
+            SurfaceObservedState::Prepared,
+        ),
+    ]);
+    let snapshot = reconcile_scoped(
+        &manifest(),
+        PluginDesiredState::Enabled,
+        true,
+        &observations,
+    )
+    .unwrap();
+
+    assert_eq!(snapshot.observed, PluginObservedState::Reconciling);
+    assert_eq!(
+        state(&snapshot, PluginSurfaceKind::Skill, "review").reason,
+        Some(SurfaceStateReason::SkillObservationMissing)
+    );
+    assert!(!snapshot.capability_ready);
 }
 
 #[test]

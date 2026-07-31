@@ -3,19 +3,20 @@ use std::path::PathBuf;
 
 use a3s_runtime::contract::{ArtifactRef, IsolationLevel, NetworkMode};
 use a3s_use_core::{
-    ExecutablePlanningSurface, PlannedPackageState, PluginPlanningBundle, PluginSurfaceKind,
-    PluginWorkspaceGrantProposal, SurfacePermissionCeiling, ToolWorkloadContract, UseError,
-    UseResult,
+    ExecutablePlanningSurface, PlanQualifiedSurfaceRef, PlannedPackageState, PluginPlanningBundle,
+    PluginSurfaceKind, PluginWorkspaceGrantProposal, SurfacePermissionCeiling,
+    ToolWorkloadContract, UseError, UseResult,
 };
 use a3s_use_extension::{
     PluginMcpLaunch, PluginMcpSurface, SurfaceActivation, ToolServiceSurface, ToolTaskSource,
     ToolTaskSurface,
 };
 
+use super::provider_selector::canonicalize_provider_assignments;
 use super::{
     plan_mcp_service_release, plan_tool_service_release, plan_tool_task_release,
-    RuntimeResourcePolicy, RuntimeSurfaceContext, RuntimeSurfacePlan, RuntimeTaskInvocation,
-    RuntimeWorkloadPolicy,
+    RuntimeAuthorityBindings, RuntimeProviderAssignment, RuntimeResourcePolicy,
+    RuntimeSurfaceContext, RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
 };
 
 const PLANNING_RELEASE_PATH: &str = "planning/release.json";
@@ -27,20 +28,39 @@ const PLANNING_RELEASE_PATH: &str = "planning/release.json";
 /// Binding a final grant here would create a digest cycle for `ask`: the final
 /// grant contains confirmation evidence that itself binds the operation plan.
 ///
-/// This first safe slice accepts only containerized releases whose authority
-/// is fully representable by Runtime 0.2: resources and private Service
-/// networking. Filesystem, egress allowlists, secrets, child processes, and
-/// native execution fail closed until typed host adapters can map them.
+/// This base path accepts only containerized releases whose authority is fully
+/// representable without host resource resolution: resources and private
+/// Service networking. Filesystem and secret authority use the provider-bound
+/// variant below. Exact egress allowlists, child processes, native execution,
+/// and UI HTTP authority remain fail-closed under Runtime 0.2.
 pub fn plan_runtime_bundle(
     bundle: &PluginPlanningBundle,
     package: &PlannedPackageState,
     proposal: &PluginWorkspaceGrantProposal,
     generation: u64,
 ) -> UseResult<Vec<RuntimeSurfacePlan>> {
-    bundle.validate()?;
+    plan_runtime_bundle_with_authority(
+        bundle,
+        package,
+        proposal,
+        &RuntimeAuthorityBindings::default(),
+        &[],
+        generation,
+    )
+}
+
+/// Convert a verified executable bundle with exact provider-bound,
+/// host-owned filesystem and secret bindings into Runtime templates.
+pub fn plan_runtime_bundle_with_authority(
+    bundle: &PluginPlanningBundle,
+    package: &PlannedPackageState,
+    proposal: &PluginWorkspaceGrantProposal,
+    authority: &RuntimeAuthorityBindings,
+    assignments: &[RuntimeProviderAssignment],
+    generation: u64,
+) -> UseResult<Vec<RuntimeSurfacePlan>> {
     proposal.validate_against(&package.permissions)?;
-    if generation == 0
-        || package.release.package_id != bundle.package_id
+    if package.release.package_id != bundle.package_id
         || package.release.version != bundle.version
         || package.release.channel != bundle.channel
         || package.release.target != bundle.target
@@ -56,26 +76,47 @@ pub fn plan_runtime_bundle(
             "The Runtime planning inputs do not describe one exact package and grant proposal.",
         ));
     }
+    plan_runtime_bundle_with_authorization(
+        bundle,
+        package,
+        &proposal.scope_id,
+        &proposal.descriptor_digest()?,
+        authority,
+        assignments,
+        generation,
+    )
+}
 
-    let selected = package
-        .release
-        .surfaces
-        .iter()
-        .filter(|surface| {
-            matches!(
-                surface.kind,
-                PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
-            )
-        })
-        .map(|surface| surface.reference())
-        .collect::<Vec<_>>();
+pub(super) fn plan_runtime_bundle_with_authorization(
+    bundle: &PluginPlanningBundle,
+    package: &PlannedPackageState,
+    scope_id: &str,
+    authorization_digest: &str,
+    authority: &RuntimeAuthorityBindings,
+    assignments: &[RuntimeProviderAssignment],
+    generation: u64,
+) -> UseResult<Vec<RuntimeSurfacePlan>> {
+    validate_runtime_bundle_package(bundle, package, generation)?;
+    authority.validate_against(&bundle.package_id, &package.permissions)?;
+    authority.validate_provider_assignments(assignments)?;
+
+    let selected = selected_runtime_surface_refs(package);
     if selected.is_empty() || selected.windows(2).any(|pair| pair[0] >= pair[1]) {
         return Err(bundle_plan_error(
             "Runtime bundle planning requires sorted selected executable surfaces.",
         ));
     }
+    if !authority.surfaces().is_empty() {
+        let expected = selected
+            .iter()
+            .map(|surface| PlanQualifiedSurfaceRef {
+                package_id: bundle.package_id.clone(),
+                surface: surface.clone(),
+            })
+            .collect::<Vec<_>>();
+        canonicalize_provider_assignments(&expected, assignments.to_vec())?;
+    }
 
-    let authorization_digest = proposal.descriptor_digest()?;
     let mut plans = Vec::with_capacity(selected.len());
     for surface_ref in selected {
         let surface = bundle
@@ -97,18 +138,88 @@ pub fn plan_runtime_bundle(
                     "A selected executable surface has no resolved authorization proposal.",
                 )
             })?;
-        let policy = representable_policy(surface, permission)?;
+        let qualified_surface = PlanQualifiedSurfaceRef {
+            package_id: bundle.package_id.clone(),
+            surface: surface_ref.clone(),
+        };
+        let (mounts, secrets) = authority.resources_for(&qualified_surface);
+        let policy = representable_policy(surface, permission, mounts, secrets)?;
         let context = RuntimeSurfaceContext::new(
             bundle.package_id.clone(),
             bundle.package_sha256.clone(),
-            proposal.scope_id.clone(),
-            authorization_digest.clone(),
+            scope_id,
+            authorization_digest,
             surface_ref,
             generation,
         )?;
         plans.push(plan_surface(context, surface, policy)?);
     }
     Ok(plans)
+}
+
+pub(super) fn validate_runtime_bundle_package(
+    bundle: &PluginPlanningBundle,
+    package: &PlannedPackageState,
+    generation: u64,
+) -> UseResult<()> {
+    bundle.validate()?;
+    package.permissions.validate()?;
+    let release_surfaces = selected_runtime_surface_refs(package);
+    let planning_surfaces = bundle
+        .surfaces
+        .iter()
+        .map(ExecutablePlanningSurface::reference)
+        .collect::<Vec<_>>();
+    let permission_surfaces = package
+        .permissions
+        .surfaces
+        .iter()
+        .filter(|permission| {
+            matches!(
+                permission.surface.kind,
+                PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
+            )
+        })
+        .map(|permission| permission.surface.clone())
+        .collect::<Vec<_>>();
+    if generation == 0
+        || package.release.package_id != bundle.package_id
+        || package.release.version != bundle.version
+        || package.release.channel != bundle.channel
+        || package.release.target != bundle.target
+        || package.release.package_sha256 != bundle.package_sha256
+        || package.release.manifest_sha256 != bundle.manifest_sha256
+        || package.release.permission_ceiling_digest != bundle.permission_ceiling_digest
+        || package.permissions.descriptor_digest()? != bundle.permission_ceiling_digest
+        || release_surfaces.is_empty()
+        || release_surfaces.windows(2).any(|pair| pair[0] >= pair[1])
+        || release_surfaces
+            .iter()
+            .any(|surface| planning_surfaces.binary_search(surface).is_err())
+        || release_surfaces != permission_surfaces
+    {
+        return Err(bundle_plan_error(
+            "The Runtime planning inputs do not describe one exact package authorization.",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn selected_runtime_surface_refs(
+    package: &PlannedPackageState,
+) -> Vec<a3s_use_core::PluginSurfaceRef> {
+    package
+        .release
+        .surfaces
+        .iter()
+        .filter(|surface| {
+            matches!(
+                surface.kind,
+                PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
+            )
+        })
+        .map(|surface| surface.reference())
+        .collect()
 }
 
 fn plan_surface(
@@ -185,13 +296,13 @@ fn plan_surface(
 fn representable_policy(
     surface: &ExecutablePlanningSurface,
     permission: &SurfacePermissionCeiling,
+    mounts: Vec<a3s_runtime::contract::RuntimeMount>,
+    secrets: Vec<a3s_runtime::contract::SecretReference>,
 ) -> UseResult<RuntimeWorkloadPolicy> {
     if permission.surface != surface.reference()
         || permission.native_execution
         || permission.child_process
-        || !permission.filesystem.is_empty()
         || !permission.network_egress.is_empty()
-        || !permission.secrets.is_empty()
         || !permission.ui_http.is_empty()
     {
         return Err(unsupported_authority());
@@ -236,8 +347,8 @@ fn representable_policy(
             pids: resources.pids,
             ephemeral_storage_bytes: Some(resources.ephemeral_storage_bytes),
         },
-        mounts: Vec::new(),
-        secrets: Vec::new(),
+        mounts,
+        secrets,
         non_secret_environment: BTreeMap::new(),
         working_directory: None,
     })

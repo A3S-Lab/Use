@@ -1,20 +1,20 @@
 use a3s_runtime::contract::{
-    RuntimeActionRequest, RuntimeApplyRequest, RuntimeInspection, RuntimeLogQuery,
-    RuntimeLogStream, RuntimeRemoval, RuntimeUnitState,
+    RuntimeActionRequest, RuntimeApplyRequest, RuntimeInspection, RuntimeLogStream, RuntimeRemoval,
+    RuntimeUnitState,
 };
-use a3s_use_core::{PlannedProviderEvidence, UseError, UseResult};
+use a3s_use_core::{PlannedProviderEvidence, UseError, UseResult, MAX_TASK_CAPTURE_BYTES};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use tokio::io::AsyncWrite;
 
 use super::client::{runtime_error, PluginRuntimeClient};
 use super::model::{
     runtime_contract_error, RuntimePreparedTaskBinding, RuntimeSurfaceContract, RuntimeSurfacePlan,
 };
 use super::receipt::RuntimeBindingReceipt;
-
-const MAX_IN_MEMORY_TASK_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
-const LOG_QUERY_CHUNKS: u32 = 64;
-const MAX_LOG_QUERY_ROUNDS: usize = 1_024;
+use super::task_output::{
+    flush_output, RuntimeTaskStreamingExecution, MAX_IN_MEMORY_TASK_OUTPUT_BYTES,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +27,11 @@ pub struct RuntimeTaskExecution {
 }
 
 impl PluginRuntimeClient {
+    /// Invoke a finite Runtime Task and collect UTF-8 output in memory.
+    ///
+    /// This compatibility path rejects capture contracts above
+    /// [`MAX_IN_MEMORY_TASK_OUTPUT_BYTES`] before applying the Task. Use
+    /// [`Self::invoke_task_streaming`] with host-owned sinks for larger output.
     pub async fn invoke_task(
         &self,
         plan: &RuntimeSurfacePlan,
@@ -34,6 +39,54 @@ impl PluginRuntimeClient {
         request_id: impl Into<String>,
         deadline_at_ms: Option<u64>,
     ) -> UseResult<RuntimeTaskExecution> {
+        validate_task_binding(plan, binding)?;
+        let (max_stdout_bytes, max_stderr_bytes) = validate_task_capture_contract(plan.contract())?;
+        validate_in_memory_capture(max_stdout_bytes, max_stderr_bytes)?;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let execution = self
+            .invoke_task_streaming(
+                plan,
+                binding,
+                request_id,
+                deadline_at_ms,
+                &mut stdout,
+                &mut stderr,
+            )
+            .await?;
+        let stdout = String::from_utf8(stdout).map_err(|_| {
+            runtime_contract_error("Runtime stdout ceased to be valid UTF-8 during capture.")
+        })?;
+        let stderr = String::from_utf8(stderr).map_err(|_| {
+            runtime_contract_error("Runtime stderr ceased to be valid UTF-8 during capture.")
+        })?;
+        Ok(RuntimeTaskExecution {
+            observation: execution.observation,
+            exit_code: execution.exit_code,
+            stdout,
+            stderr,
+            truncated: execution.stdout.truncated || execution.stderr.truncated,
+        })
+    }
+
+    /// Invoke a finite Runtime Task and stream its separately bounded UTF-8
+    /// stdout and stderr into caller-owned sinks.
+    ///
+    /// The caller owns sink creation, path policy, persistence, and cleanup.
+    /// A sink failure still triggers exact Runtime Task cleanup.
+    pub async fn invoke_task_streaming<Stdout, Stderr>(
+        &self,
+        plan: &RuntimeSurfacePlan,
+        binding: &RuntimePreparedTaskBinding,
+        request_id: impl Into<String>,
+        deadline_at_ms: Option<u64>,
+        stdout: &mut Stdout,
+        stderr: &mut Stderr,
+    ) -> UseResult<RuntimeTaskStreamingExecution>
+    where
+        Stdout: AsyncWrite + Unpin + Send + ?Sized,
+        Stderr: AsyncWrite + Unpin + Send + ?Sized,
+    {
         validate_task_binding(plan, binding)?;
         let (max_stdout_bytes, max_stderr_bytes) = validate_task_capture_contract(plan.contract())?;
         let provider = PlannedProviderEvidence {
@@ -115,13 +168,15 @@ impl PluginRuntimeClient {
             return Err(attach_cleanup_error(primary, cleanup));
         }
         let captured = async {
-            let stdout = self
-                .capture_log_stream(plan, RuntimeLogStream::Stdout, max_stdout_bytes)
+            let stdout_summary = self
+                .capture_log_stream(plan, RuntimeLogStream::Stdout, max_stdout_bytes, stdout)
                 .await?;
-            let stderr = self
-                .capture_log_stream(plan, RuntimeLogStream::Stderr, max_stderr_bytes)
+            flush_output(stdout, RuntimeLogStream::Stdout).await?;
+            let stderr_summary = self
+                .capture_log_stream(plan, RuntimeLogStream::Stderr, max_stderr_bytes, stderr)
                 .await?;
-            Ok::<_, UseError>((stdout, stderr))
+            flush_output(stderr, RuntimeLogStream::Stderr).await?;
+            Ok::<_, UseError>((stdout_summary, stderr_summary))
         }
         .await;
         let cleanup = self
@@ -134,12 +189,11 @@ impl PluginRuntimeClient {
             }
             Err(error) => return Err(attach_cleanup_error(error, cleanup)),
         };
-        Ok(RuntimeTaskExecution {
+        Ok(RuntimeTaskStreamingExecution {
             observation,
             exit_code: 0,
-            stdout: stdout.data,
-            stderr: stderr.data,
-            truncated: stdout.truncated || stderr.truncated,
+            stdout,
+            stderr,
         })
     }
 
@@ -208,80 +262,6 @@ impl PluginRuntimeClient {
         }
         Ok(removal)
     }
-
-    async fn capture_log_stream(
-        &self,
-        plan: &RuntimeSurfacePlan,
-        stream: RuntimeLogStream,
-        max_bytes: u64,
-    ) -> UseResult<CapturedLog> {
-        if max_bytes == 0 || max_bytes > MAX_IN_MEMORY_TASK_OUTPUT_BYTES {
-            return Err(UseError::new(
-                "use.plugin.runtime.capture_unsupported",
-                format!(
-                    "In-memory Runtime Task capture must be between 1 and {MAX_IN_MEMORY_TASK_OUTPUT_BYTES} bytes per stream."
-                ),
-            ));
-        }
-        let max_bytes = usize::try_from(max_bytes).map_err(|_| {
-            runtime_contract_error("Runtime Task capture bound does not fit this host.")
-        })?;
-        let mut cursor = None;
-        let mut last_sequence = None;
-        let mut data = String::new();
-        for _ in 0..MAX_LOG_QUERY_ROUNDS {
-            let query = RuntimeLogQuery {
-                schema: RuntimeLogQuery::SCHEMA.to_string(),
-                unit_id: plan.spec().unit_id.clone(),
-                generation: plan.spec().generation,
-                cursor: cursor.clone(),
-                limit: LOG_QUERY_CHUNKS,
-                stream: Some(stream),
-            };
-            query.validate().map_err(runtime_contract_error)?;
-            let chunks = self
-                .client
-                .logs(&query)
-                .await
-                .map_err(|error| runtime_error("read Runtime Task output", error))?;
-            if chunks.is_empty() {
-                return Ok(CapturedLog {
-                    data,
-                    truncated: false,
-                });
-            }
-            let previous_cursor = cursor.clone();
-            for chunk in chunks {
-                chunk.validate().map_err(runtime_contract_error)?;
-                if chunk.stream != stream
-                    || last_sequence.is_some_and(|sequence| chunk.sequence <= sequence)
-                {
-                    return Err(runtime_contract_error(
-                        "Runtime Task log chunks are out of order or crossed streams.",
-                    ));
-                }
-                last_sequence = Some(chunk.sequence);
-                cursor = Some(chunk.cursor);
-                let remaining = max_bytes.saturating_sub(data.len());
-                if chunk.data.len() > remaining {
-                    append_utf8_prefix(&mut data, &chunk.data, remaining);
-                    return Ok(CapturedLog {
-                        data,
-                        truncated: true,
-                    });
-                }
-                data.push_str(&chunk.data);
-            }
-            if cursor == previous_cursor {
-                return Err(runtime_contract_error(
-                    "Runtime Task log cursor did not advance.",
-                ));
-            }
-        }
-        Err(runtime_contract_error(
-            "Runtime Task log pagination exceeded its bounded round count.",
-        ))
-    }
 }
 
 fn derived_request_id(kind: &str, request_id: &str) -> String {
@@ -295,19 +275,6 @@ fn attach_cleanup_error(primary: UseError, cleanup: UseResult<RuntimeRemoval>) -
             .with_detail("cleanupCode", cleanup.code)
             .with_detail("cleanupMessage", cleanup.message),
     }
-}
-
-struct CapturedLog {
-    data: String,
-    truncated: bool,
-}
-
-fn append_utf8_prefix(target: &mut String, value: &str, max_bytes: usize) {
-    let mut end = max_bytes.min(value.len());
-    while !value.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
-    target.push_str(&value[..end]);
 }
 
 fn validate_task_binding(
@@ -354,15 +321,29 @@ pub(super) fn validate_task_capture_contract(
     };
     if *max_stdout_bytes == 0
         || *max_stderr_bytes == 0
-        || *max_stdout_bytes > MAX_IN_MEMORY_TASK_OUTPUT_BYTES
-        || *max_stderr_bytes > MAX_IN_MEMORY_TASK_OUTPUT_BYTES
+        || *max_stdout_bytes > MAX_TASK_CAPTURE_BYTES
+        || *max_stderr_bytes > MAX_TASK_CAPTURE_BYTES
     {
         return Err(UseError::new(
             "use.plugin.runtime.capture_unsupported",
             format!(
-                "This host supports at most {MAX_IN_MEMORY_TASK_OUTPUT_BYTES} captured bytes per Runtime Task output stream."
+                "Runtime Task output capture must be between 1 and {MAX_TASK_CAPTURE_BYTES} bytes per stream."
             ),
         ));
     }
     Ok((*max_stdout_bytes, *max_stderr_bytes))
+}
+
+fn validate_in_memory_capture(max_stdout_bytes: u64, max_stderr_bytes: u64) -> UseResult<()> {
+    if max_stdout_bytes > MAX_IN_MEMORY_TASK_OUTPUT_BYTES
+        || max_stderr_bytes > MAX_IN_MEMORY_TASK_OUTPUT_BYTES
+    {
+        return Err(UseError::new(
+            "use.plugin.runtime.capture_unsupported",
+            format!(
+                "In-memory Runtime Task capture supports at most {MAX_IN_MEMORY_TASK_OUTPUT_BYTES} bytes per stream; use invoke_task_streaming for a caller-owned sink."
+            ),
+        ));
+    }
+    Ok(())
 }

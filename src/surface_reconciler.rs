@@ -6,14 +6,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult};
-use a3s_use_extension::{ExtensionManifest, SurfaceActivation};
+use a3s_use_extension::{
+    ExtensionManifest, PluginMcpLaunch, SurfaceActivation, ToolTaskSource, ToolWorkload,
+};
 use serde::Serialize;
 
-const RECONCILE_SCHEMA_VERSION: u32 = 1;
+const RECONCILE_SCHEMA_VERSION: u32 = 2;
 const MAX_RECONCILE_SURFACES: usize = 256;
 
 mod runtime_observations;
-pub(crate) use runtime_observations::reconcile_with_runtime;
+pub(crate) use runtime_observations::{reconcile_scoped_with_runtime, reconcile_with_runtime};
 
 pub(crate) type SurfaceObservations = BTreeMap<PluginSurfaceRef, SurfaceObservedState>;
 
@@ -67,6 +69,7 @@ const TRANSITIONAL_SURFACE_STATES: [SurfaceObservedState; 2] = [
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SurfaceOwner {
     Runtime,
+    ToolHost,
     McpHost,
     SkillHost,
     UiHost,
@@ -77,7 +80,9 @@ pub(crate) enum SurfaceOwner {
 pub(crate) enum SurfaceStateReason {
     PackageNotEnabled,
     RuntimeObservationMissing,
+    ToolObservationMissing,
     McpObservationMissing,
+    SkillObservationMissing,
     UiObservationMissing,
     DependencyPending,
     DependencyFailed,
@@ -126,11 +131,48 @@ struct SurfaceNode {
     dependencies: Vec<PluginSurfaceRef>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MissingObservationPolicy {
+    ImplicitStaticSkills,
+    ExplicitHosts,
+}
+
 pub(crate) fn reconcile(
     manifest: &ExtensionManifest,
     desired: PluginDesiredState,
     compatible: bool,
     observations: &SurfaceObservations,
+) -> UseResult<SurfaceReconcileSnapshot> {
+    reconcile_with_policy(
+        manifest,
+        desired,
+        compatible,
+        observations,
+        MissingObservationPolicy::ImplicitStaticSkills,
+    )
+}
+
+pub(crate) fn reconcile_scoped(
+    manifest: &ExtensionManifest,
+    desired: PluginDesiredState,
+    compatible: bool,
+    observations: &SurfaceObservations,
+) -> UseResult<SurfaceReconcileSnapshot> {
+    reconcile_with_policy(
+        manifest,
+        desired,
+        compatible,
+        observations,
+        MissingObservationPolicy::ExplicitHosts,
+    )
+}
+
+fn reconcile_with_policy(
+    manifest: &ExtensionManifest,
+    desired: PluginDesiredState,
+    compatible: bool,
+    observations: &SurfaceObservations,
+    missing_observations: MissingObservationPolicy,
 ) -> UseResult<SurfaceReconcileSnapshot> {
     if manifest.schema_version != 3 {
         return Err(reconcile_error(
@@ -167,6 +209,7 @@ pub(crate) fn reconcile(
             compatible,
             observations.get(&reference).copied(),
             &evaluated,
+            missing_observations,
         );
         evaluated.insert(reference.clone(), (surface_desired, observed));
         surfaces.push(ReconciledSurface {
@@ -204,16 +247,35 @@ pub(crate) fn reconcile(
     })
 }
 
+pub(crate) fn surface_owners(
+    manifest: &ExtensionManifest,
+) -> UseResult<BTreeMap<PluginSurfaceRef, SurfaceOwner>> {
+    surface_nodes(manifest).map(|nodes| {
+        nodes
+            .into_iter()
+            .map(|(surface, node)| (surface, node.owner))
+            .collect()
+    })
+}
+
 fn surface_nodes(
     manifest: &ExtensionManifest,
 ) -> UseResult<BTreeMap<PluginSurfaceRef, SurfaceNode>> {
     let mut nodes = BTreeMap::new();
     for surface in &manifest.tools {
+        let owner = match &surface.workload {
+            ToolWorkload::Task(task)
+                if matches!(&task.source, ToolTaskSource::Executable { .. }) =>
+            {
+                SurfaceOwner::ToolHost
+            }
+            ToolWorkload::Task(_) | ToolWorkload::Service(_) => SurfaceOwner::Runtime,
+        };
         insert_node(
             &mut nodes,
             SurfaceNode {
                 surface: surface_ref(PluginSurfaceKind::Tool, &surface.id),
-                owner: SurfaceOwner::Runtime,
+                owner,
                 optional: surface.optional,
                 activation: surface.activation,
                 dependencies: Vec::new(),
@@ -221,11 +283,15 @@ fn surface_nodes(
         )?;
     }
     for surface in &manifest.mcp_servers {
+        let owner = match &surface.launch {
+            PluginMcpLaunch::Stdio { .. } => SurfaceOwner::McpHost,
+            PluginMcpLaunch::StreamableHttp { .. } => SurfaceOwner::Runtime,
+        };
         insert_node(
             &mut nodes,
             SurfaceNode {
                 surface: surface_ref(PluginSurfaceKind::Mcp, &surface.id),
-                owner: SurfaceOwner::McpHost,
+                owner,
                 optional: surface.optional,
                 activation: surface.activation,
                 dependencies: Vec::new(),
@@ -403,6 +469,7 @@ fn desired_surface_state(node: &SurfaceNode, desired: PluginDesiredState) -> Sur
             SurfaceDesiredState::Healthy
         }
         SurfaceOwner::Runtime
+        | SurfaceOwner::ToolHost
         | SurfaceOwner::McpHost
         | SurfaceOwner::SkillHost
         | SurfaceOwner::UiHost => SurfaceDesiredState::Prepared,
@@ -415,6 +482,7 @@ fn observed_surface_state(
     compatible: bool,
     explicit: Option<SurfaceObservedState>,
     evaluated: &BTreeMap<PluginSurfaceRef, (SurfaceDesiredState, SurfaceObservedState)>,
+    missing_observations: MissingObservationPolicy,
 ) -> (SurfaceObservedState, Option<SurfaceStateReason>) {
     if plugin_desired != PluginDesiredState::Enabled {
         return (
@@ -431,8 +499,10 @@ fn observed_surface_state(
         );
     }
 
-    let (base, base_reason) =
-        explicit.map_or_else(|| default_observation(node), |observed| (observed, None));
+    let (base, base_reason) = explicit.map_or_else(
+        || default_observation(node, missing_observations),
+        |observed| (observed, None),
+    );
     if base == SurfaceObservedState::Failed {
         return (base, base_reason);
     }
@@ -461,16 +531,31 @@ fn observed_surface_state(
     (base, base_reason)
 }
 
-fn default_observation(node: &SurfaceNode) -> (SurfaceObservedState, Option<SurfaceStateReason>) {
+fn default_observation(
+    node: &SurfaceNode,
+    missing_observations: MissingObservationPolicy,
+) -> (SurfaceObservedState, Option<SurfaceStateReason>) {
     match node.owner {
-        SurfaceOwner::SkillHost => (SurfaceObservedState::Prepared, None),
+        SurfaceOwner::SkillHost
+            if missing_observations == MissingObservationPolicy::ImplicitStaticSkills =>
+        {
+            (SurfaceObservedState::Prepared, None)
+        }
         SurfaceOwner::Runtime => (
             SurfaceObservedState::Pending,
             Some(SurfaceStateReason::RuntimeObservationMissing),
         ),
+        SurfaceOwner::ToolHost => (
+            SurfaceObservedState::Pending,
+            Some(SurfaceStateReason::ToolObservationMissing),
+        ),
         SurfaceOwner::McpHost => (
             SurfaceObservedState::Pending,
             Some(SurfaceStateReason::McpObservationMissing),
+        ),
+        SurfaceOwner::SkillHost => (
+            SurfaceObservedState::Pending,
+            Some(SurfaceStateReason::SkillObservationMissing),
         ),
         SurfaceOwner::UiHost => (
             SurfaceObservedState::Pending,

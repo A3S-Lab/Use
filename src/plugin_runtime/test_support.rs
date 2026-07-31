@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use a3s_runtime::contract::{
-    ArtifactRef, HealthCheckKind, IsolationLevel, MountKind, NetworkMode, ResourceControl,
+    ArtifactRef, HealthCheckKind, IsolationLevel, NetworkMode, ResourceControl,
     RuntimeActionRequest, RuntimeApplyRequest, RuntimeCapabilities, RuntimeExecRequest,
     RuntimeExecResult, RuntimeFeature, RuntimeHealthObservation, RuntimeHealthState,
     RuntimeInspection, RuntimeLogChunk, RuntimeLogQuery, RuntimeLogStream, RuntimeObservation,
@@ -42,7 +42,7 @@ pub(super) fn context(kind: PluginSurfaceKind, id: &str) -> RuntimeSurfaceContex
     .unwrap()
 }
 
-pub(super) fn policy() -> RuntimeWorkloadPolicy {
+pub(crate) fn policy() -> RuntimeWorkloadPolicy {
     RuntimeWorkloadPolicy {
         isolation: IsolationLevel::Container,
         resources: RuntimeResourcePolicy {
@@ -61,7 +61,7 @@ pub(super) fn policy() -> RuntimeWorkloadPolicy {
     }
 }
 
-pub(super) fn artifact(digest: &str, media_type: &str) -> ArtifactRef {
+pub(crate) fn artifact(digest: &str, media_type: &str) -> ArtifactRef {
     ArtifactRef {
         uri: format!("oci://registry.example/acme/research@{digest}"),
         digest: digest.to_string(),
@@ -69,7 +69,7 @@ pub(super) fn artifact(digest: &str, media_type: &str) -> ArtifactRef {
     }
 }
 
-pub(super) fn task_descriptor() -> ToolReleaseDescriptor {
+pub(crate) fn task_descriptor() -> ToolReleaseDescriptor {
     ToolReleaseDescriptor::from_json(include_bytes!(
         "../../crates/core/fixtures/releases/tool-task-release-v1.json"
     ))
@@ -121,7 +121,24 @@ pub(super) fn mcp_surface() -> PluginMcpSurface {
     }
 }
 
-pub(super) fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
+pub(crate) fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
+    let mount_kinds = plan
+        .spec()
+        .mounts
+        .iter()
+        .map(|mount| mount.source.kind())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let mut features = vec![
+        RuntimeFeature::DurableIdentity,
+        RuntimeFeature::Logs,
+        RuntimeFeature::Stop,
+        RuntimeFeature::Remove,
+    ];
+    if !plan.spec().secrets.is_empty() {
+        features.push(RuntimeFeature::SecretReferences);
+    }
     RuntimeCapabilities {
         schema: RuntimeCapabilities::SCHEMA.to_string(),
         provider_id: ProviderId::parse("test-runtime").unwrap(),
@@ -130,7 +147,7 @@ pub(super) fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
         artifact_media_types: vec![plan.spec().artifact.media_type.clone()],
         isolation_levels: vec![IsolationLevel::Container],
         network_modes: vec![NetworkMode::None, NetworkMode::Service],
-        mount_kinds: Vec::<MountKind>::new(),
+        mount_kinds,
         health_check_kinds: vec![HealthCheckKind::Http],
         resource_controls: vec![
             ResourceControl::Cpu,
@@ -139,16 +156,11 @@ pub(super) fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
             ResourceControl::EphemeralStorage,
             ResourceControl::ExecutionTimeout,
         ],
-        features: vec![
-            RuntimeFeature::DurableIdentity,
-            RuntimeFeature::Logs,
-            RuntimeFeature::Stop,
-            RuntimeFeature::Remove,
-        ],
+        features,
     }
 }
 
-pub(super) fn evidence(
+pub(crate) fn evidence(
     plan: &RuntimeSurfacePlan,
     capabilities: &RuntimeCapabilities,
 ) -> PlannedProviderEvidence {
@@ -162,8 +174,8 @@ pub(super) fn evidence(
     }
 }
 
-pub(super) struct FakeRuntime {
-    capabilities: RuntimeCapabilities,
+pub(crate) struct FakeRuntime {
+    capabilities: Mutex<RuntimeCapabilities>,
     converge: bool,
     fail_apply: bool,
     pub(super) apply_count: AtomicUsize,
@@ -175,9 +187,9 @@ pub(super) struct FakeRuntime {
 }
 
 impl FakeRuntime {
-    pub(super) fn new(capabilities: RuntimeCapabilities, converge: bool) -> Self {
+    pub(crate) fn new(capabilities: RuntimeCapabilities, converge: bool) -> Self {
         Self {
-            capabilities,
+            capabilities: Mutex::new(capabilities),
             converge,
             fail_apply: false,
             apply_count: AtomicUsize::new(0),
@@ -223,12 +235,16 @@ impl FakeRuntime {
             .expect("a test Service must have health")
             .checked_at_ms = checked_at_ms;
     }
+
+    pub(super) fn set_provider_build(&self, provider_build: impl Into<String>) {
+        self.capabilities.lock().unwrap().provider_build = provider_build.into();
+    }
 }
 
 #[async_trait]
 impl RuntimeClient for FakeRuntime {
     async fn capabilities(&self) -> RuntimeResult<RuntimeCapabilities> {
-        Ok(self.capabilities.clone())
+        Ok(self.capabilities.lock().unwrap().clone())
     }
 
     async fn apply(&self, request: &RuntimeApplyRequest) -> RuntimeResult<RuntimeObservation> {
@@ -254,7 +270,7 @@ impl RuntimeClient for FakeRuntime {
                 RuntimeUnitState::Starting
             },
             provider_resource_id: Some("resource-01".to_string()),
-            provider_build: Some(self.capabilities.provider_build.clone()),
+            provider_build: Some(self.capabilities.lock().unwrap().provider_build.clone()),
             observed_at_ms: 1_000,
             started_at_ms: Some(900),
             finished_at_ms: (task && running).then_some(1_000),

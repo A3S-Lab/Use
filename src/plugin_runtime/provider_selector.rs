@@ -9,7 +9,7 @@ use super::client::{
 };
 use super::model::{runtime_contract_error, RuntimeSurfacePlan};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeProviderAssignment {
     surface: PlanQualifiedSurfaceRef,
     provider_id: ProviderId,
@@ -59,6 +59,18 @@ impl std::fmt::Debug for SelectedRuntimeSurface {
 }
 
 impl SelectedRuntimeSurface {
+    pub(super) fn from_parts(
+        plan: RuntimeSurfacePlan,
+        provider: PlannedProviderEvidence,
+        client: PluginRuntimeClient,
+    ) -> Self {
+        Self {
+            plan,
+            provider,
+            client,
+        }
+    }
+
     pub fn plan(&self) -> &RuntimeSurfacePlan {
         &self.plan
     }
@@ -78,6 +90,10 @@ pub struct RuntimeProviderSelection {
 }
 
 impl RuntimeProviderSelection {
+    pub(super) fn from_surfaces(surfaces: Vec<SelectedRuntimeSurface>) -> Self {
+        Self { surfaces }
+    }
+
     pub fn surfaces(&self) -> &[SelectedRuntimeSurface] {
         &self.surfaces
     }
@@ -104,27 +120,14 @@ impl<'a> RuntimeProviderSelector<'a> {
     pub async fn select(
         &self,
         mut plans: Vec<RuntimeSurfacePlan>,
-        mut assignments: Vec<RuntimeProviderAssignment>,
+        assignments: Vec<RuntimeProviderAssignment>,
     ) -> UseResult<RuntimeProviderSelection> {
         plans.sort_by_key(RuntimeSurfacePlan::surface);
-        assignments.sort_by(|left, right| left.surface.cmp(&right.surface));
-        let duplicate_plan = plans
-            .windows(2)
-            .any(|pair| pair[0].surface() == pair[1].surface());
-        let duplicate_assignment = assignments
-            .windows(2)
-            .any(|pair| pair[0].surface == pair[1].surface);
-        let complete_assignment = plans.len() == assignments.len()
-            && plans
-                .iter()
-                .zip(&assignments)
-                .all(|(plan, assignment)| plan.surface() == assignment.surface);
-        if duplicate_plan || duplicate_assignment || !complete_assignment {
-            return Err(UseError::new(
-                "use.plugin.runtime.provider_assignment_invalid",
-                "Each executable plugin surface requires exactly one Runtime provider assignment.",
-            ));
-        }
+        let expected = plans
+            .iter()
+            .map(RuntimeSurfacePlan::surface)
+            .collect::<Vec<_>>();
+        let assignments = canonicalize_provider_assignments(&expected, assignments)?;
 
         let provider_ids = assignments
             .iter()
@@ -186,4 +189,27 @@ impl<'a> RuntimeProviderSelector<'a> {
         }
         Ok(RuntimeProviderSelection { surfaces })
     }
+}
+
+pub(super) fn canonicalize_provider_assignments(
+    expected: &[PlanQualifiedSurfaceRef],
+    mut assignments: Vec<RuntimeProviderAssignment>,
+) -> UseResult<Vec<RuntimeProviderAssignment>> {
+    assignments.sort_by(|left, right| left.surface.cmp(&right.surface));
+    let invalid_expected = expected.windows(2).any(|pair| pair[0] >= pair[1]);
+    let duplicate_assignment = assignments
+        .windows(2)
+        .any(|pair| pair[0].surface == pair[1].surface);
+    let complete_assignment = expected.len() == assignments.len()
+        && expected
+            .iter()
+            .zip(&assignments)
+            .all(|(surface, assignment)| surface == &assignment.surface);
+    if invalid_expected || duplicate_assignment || !complete_assignment {
+        return Err(UseError::new(
+            "use.plugin.runtime.provider_assignment_invalid",
+            "Each executable plugin surface requires exactly one Runtime provider assignment.",
+        ));
+    }
+    Ok(assignments)
 }

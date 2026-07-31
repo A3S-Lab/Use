@@ -39,9 +39,17 @@ impl RuntimeBindingStore {
         &self.root
     }
 
+    pub(super) fn state_root(&self) -> &Path {
+        &self.state_root
+    }
+
     pub async fn put(&self, receipt: &RuntimeBindingReceipt) -> UseResult<bool> {
         receipt.validate()?;
         let _lock = self.acquire_lock().await?;
+        self.put_locked(receipt).await
+    }
+
+    pub(super) async fn put_locked(&self, receipt: &RuntimeBindingReceipt) -> UseResult<bool> {
         let path = self.binding_path(receipt.scope_id(), receipt.surface())?;
         ensure_owned_directory(&self.root, path.parent()).await?;
         if let Some(current) = read_optional_receipt(&path).await? {
@@ -55,6 +63,14 @@ impl RuntimeBindingStore {
     }
 
     pub async fn get(
+        &self,
+        scope_id: &str,
+        surface: &PlanQualifiedSurfaceRef,
+    ) -> UseResult<Option<RuntimeBindingReceipt>> {
+        self.get_locked(scope_id, surface).await
+    }
+
+    pub(super) async fn get_locked(
         &self,
         scope_id: &str,
         surface: &PlanQualifiedSurfaceRef,
@@ -78,6 +94,10 @@ impl RuntimeBindingStore {
     pub async fn remove(&self, expected: &RuntimeBindingReceipt) -> UseResult<bool> {
         expected.validate()?;
         let _lock = self.acquire_lock().await?;
+        self.remove_locked(expected).await
+    }
+
+    pub(super) async fn remove_locked(&self, expected: &RuntimeBindingReceipt) -> UseResult<bool> {
         let path = self.binding_path(expected.scope_id(), expected.surface())?;
         if !validate_existing_directory_chain(&self.state_root, path.parent()).await? {
             return Ok(false);
@@ -98,7 +118,7 @@ impl RuntimeBindingStore {
         Ok(true)
     }
 
-    fn binding_path(
+    pub(super) fn binding_path(
         &self,
         scope_id: &str,
         surface: &PlanQualifiedSurfaceRef,
@@ -121,7 +141,7 @@ impl RuntimeBindingStore {
             .join(format!("{kind}-{}.json", surface.surface.id)))
     }
 
-    async fn acquire_lock(&self) -> UseResult<StdFile> {
+    pub(super) async fn acquire_lock(&self) -> UseResult<StdFile> {
         fs::create_dir_all(&self.state_root)
             .await
             .map_err(|error| {
@@ -172,7 +192,7 @@ impl RuntimeBindingStore {
     }
 }
 
-fn validate_replacement(
+pub(super) fn validate_replacement(
     current: &RuntimeBindingReceipt,
     next: &RuntimeBindingReceipt,
 ) -> UseResult<()> {
@@ -219,7 +239,7 @@ fn same_service_generation(
         && current.contract == next.contract
 }
 
-async fn ensure_owned_directory(root: &Path, parent: Option<&Path>) -> UseResult<()> {
+pub(super) async fn ensure_owned_directory(root: &Path, parent: Option<&Path>) -> UseResult<()> {
     let parent = parent.ok_or_else(|| {
         store_error(
             "use.plugin.runtime.binding_path_invalid",
@@ -268,7 +288,10 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
     Ok(())
 }
 
-async fn validate_existing_directory_chain(root: &Path, parent: Option<&Path>) -> UseResult<bool> {
+pub(super) async fn validate_existing_directory_chain(
+    root: &Path,
+    parent: Option<&Path>,
+) -> UseResult<bool> {
     let parent = parent.ok_or_else(invalid_path_identity)?;
     if !parent.starts_with(root) {
         return Err(invalid_path_identity());
@@ -391,7 +414,7 @@ async fn write_receipt(path: &Path, receipt: &RuntimeBindingReceipt) -> UseResul
     sync_parent(Some(parent)).await
 }
 
-async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
+pub(super) async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
     let error_target = target.clone();
     tokio::task::spawn_blocking(move || {
         let temporary = tempfile::TempPath::try_from_path(temporary)?;
@@ -411,7 +434,7 @@ async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()
 }
 
 #[cfg(unix)]
-async fn sync_parent(parent: Option<&Path>) -> UseResult<()> {
+pub(super) async fn sync_parent(parent: Option<&Path>) -> UseResult<()> {
     let parent = parent.ok_or_else(invalid_path_identity)?;
     fs::File::open(parent)
         .await
@@ -422,7 +445,7 @@ async fn sync_parent(parent: Option<&Path>) -> UseResult<()> {
 }
 
 #[cfg(not(unix))]
-async fn sync_parent(_parent: Option<&Path>) -> UseResult<()> {
+pub(super) async fn sync_parent(_parent: Option<&Path>) -> UseResult<()> {
     Ok(())
 }
 
@@ -445,7 +468,7 @@ fn validate_path_identity(scope_id: &str, surface: &PlanQualifiedSurfaceRef) -> 
     Ok(())
 }
 
-fn unique_suffix() -> String {
+pub(super) fn unique_suffix() -> String {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
@@ -460,13 +483,13 @@ fn invalid_path_identity() -> UseError {
     )
 }
 
-fn path_error(action: &str, path: &Path, error: io::Error) -> UseError {
+pub(super) fn path_error(action: &str, path: &Path, error: io::Error) -> UseError {
     store_error(
         "use.plugin.runtime.binding_io",
         format!("Failed to {action} '{}': {error}", path.display()),
     )
 }
 
-fn store_error(code: &'static str, message: impl Into<String>) -> UseError {
+pub(super) fn store_error(code: &'static str, message: impl Into<String>) -> UseError {
     UseError::new(code, message)
 }
