@@ -99,7 +99,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTarget: "目标",
     consoleTrust: "信任",
     consoleGeneration: "代际",
-    consoleReady: "能力投影已就绪",
+    consoleReady: "控制面已验证 · Knowledge 适配器待接入",
     modelEyebrow: "ONE PACKAGE · TWO PLANES",
     modelTitle: "一个不可变身份，同时承载原生程序与认知表面",
     modelBody:
@@ -131,7 +131,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         label: "Skill",
         kind: "CONTENT-BOUND",
         title: "指令依赖真实可用能力",
-        body: "Skill 与包内容摘要绑定，并声明所需 Tool 与 MCP；依赖未就绪时不会进入能力快照。",
+        body: "Skill 与包内容摘要绑定，并声明所需 Tool、MCP 与 OKF；依赖未就绪时不会进入能力快照。",
         evidence: [
           "content digest",
           "dependency closure",
@@ -147,13 +147,13 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       okf: {
         label: "OKF",
-        kind: "OPEN KNOWLEDGE FORMAT · CONTRACT",
+        kind: "OPEN KNOWLEDGE FORMAT · M0K-B",
         title: "可共享、可索引的知识包",
-        body: "OKF v0.2 用带 YAML frontmatter 的交叉链接 Markdown 表达概念，并兼容 v0.1。a3s-use-core 已冻结精确内容摘要与有界 conformance；manifest/lifecycle 仍 fail-closed，A3S Knowledge 原子索引待接入。",
+        body: "OKF v0.2 用带 YAML frontmatter 的交叉链接 Markdown 表达概念，并兼容 v0.1。M0K-B 已实现 manifest、包验证、catalog、plan、Knowledge observation 与依赖门禁；生产 A3S Knowledge 持久适配器仍待接入。",
         evidence: [
           "content digest",
           "bounded conformance",
-          "atomic index target",
+          "promoted observation",
         ],
       },
     },
@@ -264,7 +264,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTarget: "target",
     consoleTrust: "trust",
     consoleGeneration: "generation",
-    consoleReady: "capability projection ready",
+    consoleReady: "control plane verified · Knowledge adapter pending",
     modelEyebrow: "ONE PACKAGE · TWO PLANES",
     modelTitle: "One immutable identity for native programs and cognition",
     modelBody:
@@ -297,7 +297,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         label: "Skill",
         kind: "CONTENT-BOUND",
         title: "Instructions depend on real capabilities",
-        body: "A Skill is bound to package content and declares required Tools and MCP. It stays out of the capability snapshot until dependencies are ready.",
+        body: "A Skill is bound to package content and declares required Tools, MCP, and OKF. It stays out of the capability snapshot until dependencies are ready.",
         evidence: [
           "content digest",
           "dependency closure",
@@ -313,13 +313,13 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       okf: {
         label: "OKF",
-        kind: "OPEN KNOWLEDGE FORMAT · CONTRACT",
+        kind: "OPEN KNOWLEDGE FORMAT · M0K-B",
         title: "Shareable, indexable knowledge packages",
-        body: "OKF v0.2 represents concepts as cross-linked Markdown with YAML frontmatter and preserves v0.1 compatibility. a3s-use-core now freezes exact content identity and bounded conformance; manifest/lifecycle acceptance remains fail-closed while A3S Knowledge indexing is pending.",
+        body: "OKF v0.2 represents concepts as cross-linked Markdown with YAML frontmatter and preserves v0.1 compatibility. M0K-B implements manifest, package, catalog, plan, Knowledge observation, and dependency gates; the production persistent A3S Knowledge adapter is still pending.",
         evidence: [
           "content digest",
           "bounded conformance",
-          "atomic index target",
+          "promoted observation",
         ],
       },
     },

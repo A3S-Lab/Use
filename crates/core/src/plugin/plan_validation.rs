@@ -4,19 +4,25 @@ use crate::UseResult;
 
 use super::plan::{
     plan_error, PlanActor, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
-    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScopeKind, PlannedPackageState,
-    PlannedProviderEvidence, PlannedSecretChange, PlannedSecretChangeKind, PluginOperationAction,
-    PluginOperationPlan, PluginPlanSource, MAX_PLAN_LIFETIME_MS,
+    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScopeKind, PlannedOkfSurfaceChange,
+    PlannedPackageState, PlannedProviderEvidence, PlannedSecretChange, PlannedSecretChangeKind,
+    PluginOperationAction, PluginOperationPlan, PluginPlanSource, SurfaceChangeKind,
+    MAX_PLAN_LIFETIME_MS,
 };
 use super::validation::{
     strictly_sorted_unique, valid_machine_id, valid_package_id, valid_permission_name, valid_sha256,
 };
-use super::{PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA};
+use super::{
+    PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V2,
+};
 
 impl PluginOperationPlan {
     pub fn validate(&self) -> UseResult<()> {
-        if self.schema != PLUGIN_OPERATION_PLAN_SCHEMA
-            || Self::validate_operation_id(&self.operation_id).is_err()
+        if !matches!(
+            self.schema.as_str(),
+            PLUGIN_OPERATION_PLAN_SCHEMA | PLUGIN_OPERATION_PLAN_SCHEMA_V2
+        ) || Self::validate_operation_id(&self.operation_id).is_err()
             || !valid_package_id(&self.package_id)
             || !valid_machine_id(&self.component_id)
             || self.created_at_ms == 0
@@ -249,13 +255,90 @@ impl PluginOperationPlan {
                 PlanPackageChangeKind::Remove | PlanPackageChangeKind::Replace
             ) && package.before.as_ref().is_some_and(has_private_service)
         });
-        if !valid || self.impact.drain_required != drain_required {
+        let okf_changes = planned_okf_changes(&self.packages)?;
+        let schema_matches = if okf_changes.is_empty() {
+            self.schema == PLUGIN_OPERATION_PLAN_SCHEMA
+        } else {
+            self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V2
+        };
+        if !valid
+            || self.impact.drain_required != drain_required
+            || self.impact.okf_changes != okf_changes
+            || !schema_matches
+        {
             return Err(plan_error(
                 "The aggregate plugin operation impact is inconsistent with the package delta.",
             ));
         }
         Ok(())
     }
+}
+
+pub(super) fn planned_okf_changes(
+    packages: &[super::PlannedPackageTransition],
+) -> UseResult<Vec<PlannedOkfSurfaceChange>> {
+    let mut before = std::collections::BTreeMap::new();
+    let mut after = std::collections::BTreeMap::new();
+    for package in packages {
+        collect_okf_bundles(&package.package_id, package.before.as_ref(), &mut before)?;
+        collect_okf_bundles(&package.package_id, package.after.as_ref(), &mut after)?;
+    }
+    let references = before
+        .keys()
+        .chain(after.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut changes = Vec::with_capacity(references.len());
+    for surface in references {
+        let before = before.get(&surface).cloned();
+        let after = after.get(&surface).cloned();
+        let change = match (before.is_some(), after.is_some()) {
+            (false, true) => SurfaceChangeKind::Add,
+            (true, false) => SurfaceChangeKind::Remove,
+            (true, true) => SurfaceChangeKind::Replace,
+            (false, false) => {
+                return Err(plan_error(
+                    "A planned OKF impact has no before or after bundle contract.",
+                ))
+            }
+        };
+        changes.push(PlannedOkfSurfaceChange {
+            surface,
+            change,
+            before,
+            after,
+        });
+    }
+    Ok(changes)
+}
+
+fn collect_okf_bundles(
+    package_id: &str,
+    state: Option<&PlannedPackageState>,
+    output: &mut std::collections::BTreeMap<PlanQualifiedSurfaceRef, crate::OkfBundleContract>,
+) -> UseResult<()> {
+    let Some(state) = state else {
+        return Ok(());
+    };
+    for surface in &state.release.surfaces {
+        if surface.kind != PluginSurfaceKind::Okf {
+            continue;
+        }
+        let bundle = surface.okf_bundle.clone().ok_or_else(|| {
+            plan_error("A planned OKF surface omitted its exact bundle contract.")
+        })?;
+        bundle
+            .validate()
+            .map_err(|_| plan_error("A planned OKF bundle contract is invalid."))?;
+        output.insert(
+            PlanQualifiedSurfaceRef {
+                package_id: package_id.to_owned(),
+                surface: surface.reference(),
+            },
+            bundle,
+        );
+    }
+    Ok(())
 }
 
 pub(super) fn planned_secret_changes(

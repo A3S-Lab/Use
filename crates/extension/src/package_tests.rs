@@ -16,10 +16,15 @@ const TASK_RELEASE: &[u8] =
 const SERVICE_RELEASE: &[u8] =
     include_bytes!("../../core/fixtures/releases/tool-service-release-v1.json");
 const PLUGIN_V3_MANIFEST: &[u8] = include_bytes!("../fixtures/manifests/plugin-v3.acl");
+const PLUGIN_V3_OKF_MANIFEST: &str = include_str!("../fixtures/manifests/plugin-v3-okf.acl");
 const PLUGIN_V3_PACKAGE_SHA256: &str =
     include_str!("../fixtures/packages/plugin-v3/package.sha256").trim_ascii_end();
 const PLUGIN_V3_PACKAGE_STATS: &str =
     include_str!("../fixtures/packages/plugin-v3/package.stats.json").trim_ascii_end();
+const PLUGIN_V3_OKF_PACKAGE_SHA256: &str =
+    include_str!("../fixtures/packages/plugin-v3-okf/package.sha256").trim_ascii_end();
+const PLUGIN_V3_OKF_PACKAGE_STATS: &str =
+    include_str!("../fixtures/packages/plugin-v3-okf/package.stats.json").trim_ascii_end();
 const COMPLETE_PACKAGE_CATALOG: &[u8] =
     include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v1.json");
 const TUF_ROOT: &[u8] = include_bytes!("../fixtures/registry/plugin-v3/metadata/root.json");
@@ -31,6 +36,36 @@ const TUF_ROOT_SHA256: &str =
     include_str!("../fixtures/registry/plugin-v3/root.sha256").trim_ascii_end();
 const ARCHIVE_STATS: &str =
     include_str!("../fixtures/registry/plugin-v3/archive.stats.json").trim_ascii_end();
+const OKF_FILES: &[(&str, &[u8])] = &[
+    (
+        "computations/revenue.md",
+        include_bytes!("../../core/fixtures/okf/bundle-v02/computations/revenue.md"),
+    ),
+    (
+        "concepts/package-lifecycle.md",
+        include_bytes!("../../core/fixtures/okf/bundle-v02/concepts/package-lifecycle.md"),
+    ),
+    (
+        "concepts/runtime-boundary.md",
+        include_bytes!("../../core/fixtures/okf/bundle-v02/concepts/runtime-boundary.md"),
+    ),
+    (
+        "index.md",
+        include_bytes!("../../core/fixtures/okf/bundle-v02/index.md"),
+    ),
+    (
+        "log.md",
+        include_bytes!("../../core/fixtures/okf/bundle-v02/log.md"),
+    ),
+    (
+        "references/attesters/revenue.py",
+        include_bytes!("../../core/fixtures/okf/bundle-v02/references/attesters/revenue.py"),
+    ),
+    (
+        "references/run-revenue.md",
+        include_bytes!("../../core/fixtures/okf/bundle-v02/references/run-revenue.md"),
+    ),
+];
 
 fn canonical_fixture(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\n").unwrap_or(bytes)
@@ -101,6 +136,103 @@ async fn write_package() -> (tempfile::TempDir, ExtensionManifest, ToolReleaseDe
         ExtensionManifest::parse_acl(MANIFEST).unwrap(),
         service,
     )
+}
+
+async fn write_okf_package() -> (tempfile::TempDir, ExtensionManifest) {
+    let directory = tempdir().unwrap();
+    let bundle_root = directory.path().join("okf/domain-knowledge");
+    for (path, bytes) in OKF_FILES {
+        let target = bundle_root.join(path);
+        fs::create_dir_all(target.parent().unwrap()).await.unwrap();
+        fs::write(target, bytes).await.unwrap();
+    }
+    let skill = directory.path().join("skills/research/SKILL.md");
+    fs::create_dir_all(skill.parent().unwrap()).await.unwrap();
+    fs::write(
+        skill,
+        b"---\nname: research\ndescription: Retrieve cited package knowledge.\n---\n",
+    )
+    .await
+    .unwrap();
+    (
+        directory,
+        ExtensionManifest::parse_acl(PLUGIN_V3_OKF_MANIFEST).unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn okf_package_validation_rechecks_exact_bundle_bytes_and_bounds() {
+    let (directory, manifest) = write_okf_package().await;
+    let root = directory.path();
+    validate_surface_files(&manifest, root).await.unwrap();
+
+    let concept = root.join("okf/domain-knowledge/concepts/runtime-boundary.md");
+    let mut changed = fs::read(&concept).await.unwrap();
+    changed.extend_from_slice(b"\nUnreviewed drift.\n");
+    fs::write(&concept, changed).await.unwrap();
+    let error = validate_surface_files(&manifest, root).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.contract_mismatch");
+
+    fs::write(
+        &concept,
+        include_bytes!("../../core/fixtures/okf/bundle-v02/concepts/runtime-boundary.md"),
+    )
+    .await
+    .unwrap();
+    fs::write(
+        root.join("okf/domain-knowledge/references/extra.bin"),
+        [0_u8; 16],
+    )
+    .await
+    .unwrap();
+    let error = validate_surface_files(&manifest, root).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.contract_mismatch");
+}
+
+#[tokio::test]
+async fn complete_plugin_v3_okf_package_fixture_is_valid_and_content_addressed() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/packages/plugin-v3-okf/package");
+    let (manifest, manifest_bytes) = read_manifest(&root).await.unwrap();
+    assert_eq!(manifest_bytes, PLUGIN_V3_OKF_MANIFEST.as_bytes());
+    assert_eq!(manifest.package_id, "acme/knowledge");
+    assert_eq!(manifest.okf.len(), 1);
+    assert_eq!(manifest.skills.len(), 1);
+    assert_eq!(manifest.skills[0].requires_okf, ["domain-knowledge"]);
+    validate_surface_files(&manifest, &root).await.unwrap();
+
+    let fingerprint = package_fingerprint(&root).await.unwrap();
+    assert_eq!(
+        format!("sha256:{}", fingerprint.sha256),
+        PLUGIN_V3_OKF_PACKAGE_SHA256
+    );
+    assert_eq!(
+        serde_json::json!({
+            "byteCount": fingerprint.byte_count,
+            "fileCount": fingerprint.file_count,
+            "sha256": format!("sha256:{}", fingerprint.sha256),
+        }),
+        serde_json::from_str::<serde_json::Value>(PLUGIN_V3_OKF_PACKAGE_STATS).unwrap()
+    );
+
+    let archive = package_directory_archive(&root);
+    assert_eq!(archive.len(), 1_752);
+    assert_eq!(
+        format!("sha256:{:x}", Sha256::digest(&archive)),
+        "sha256:9a40836f13db96f958b3d10323cc118a1444db35bced972631c0adf3ad06c245"
+    );
+    let archive_temp = tempdir().unwrap();
+    let archive_path = archive_temp.path().join("plugin-v3-okf.tar.gz");
+    fs::write(&archive_path, &archive).await.unwrap();
+    let extracted = prepare_package_source(&archive_path).await.unwrap();
+    let (extracted_manifest, _) = read_manifest(extracted.root()).await.unwrap();
+    validate_surface_files(&extracted_manifest, extracted.root())
+        .await
+        .unwrap();
+    assert_eq!(
+        package_fingerprint(extracted.root()).await.unwrap(),
+        fingerprint
+    );
 }
 
 #[tokio::test]

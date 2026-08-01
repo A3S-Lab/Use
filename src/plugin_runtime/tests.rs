@@ -718,6 +718,7 @@ fn runtime_bundle_inputs(
         workload: Some(ToolWorkloadClass::Service),
         mcp_transport: None,
         mcp_tool_count: None,
+        okf_bundle: None,
         requires: Vec::new(),
     };
     let package = PlannedPackageState {

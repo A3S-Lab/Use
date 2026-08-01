@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 
-use crate::UseResult;
+use crate::{OkfBundleContract, UseResult};
 
 use super::validation::{
     strictly_sorted_unique, valid_catalog_text, valid_package_id, valid_repository_url,
@@ -68,6 +68,8 @@ pub struct CatalogSurface {
     pub mcp_transport: Option<CatalogMcpTransport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_tool_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub okf_bundle: Option<OkfBundleContract>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires: Vec<PluginSurfaceRef>,
 }
@@ -196,6 +198,16 @@ impl PluginCatalogRecord {
                 mcp_transports.insert(surface.id.as_str(), transport);
             }
         }
+        if !schema_v3
+            && self
+                .surfaces
+                .iter()
+                .any(|surface| surface.kind == PluginSurfaceKind::Okf)
+        {
+            return Err(catalog_error(
+                "OKF catalog surfaces require plugin catalog schema version 3.",
+            ));
+        }
         self.validate_surface_dependencies(&surface_refs, complete_package_schema)?;
 
         self.permission_ceiling
@@ -277,9 +289,9 @@ impl PluginCatalogRecord {
                     }
                 }
                 PluginSurfaceKind::Ui => {}
-                PluginSurfaceKind::Skill => {
+                PluginSurfaceKind::Okf | PluginSurfaceKind::Skill => {
                     return Err(catalog_error(
-                        "Skill surfaces cannot carry runtime permission ceilings.",
+                        "OKF and Skill surfaces cannot carry runtime permission ceilings.",
                     ));
                 }
             }
@@ -299,14 +311,20 @@ impl PluginCatalogRecord {
 
         self.archive
             .validate(&self.package_id, &self.version, self.channel, &self.target)?;
-        match (&self.planning, schema_v3) {
-            (Some(planning), true) => {
+        let has_executable = self.surfaces.iter().any(|surface| {
+            matches!(
+                surface.kind,
+                PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
+            )
+        });
+        match (&self.planning, schema_v3, has_executable) {
+            (Some(planning), true, true) => {
                 planning.validate(&self.package_id, &self.version, self.channel, &self.target)?
             }
-            (None, false) => {}
+            (None, false, _) | (None, true, false) => {}
             _ => {
                 return Err(catalog_error(
-                    "Only catalog-v3 records must carry one executable planning target.",
+                    "Catalog-v3 records must carry one planning target exactly when they contain executable surfaces.",
                 ))
             }
         }
@@ -357,21 +375,35 @@ impl CatalogSurface {
             PluginSurfaceKind::Tool
                 if self.workload.is_some()
                     && self.mcp_transport.is_none()
-                    && self.mcp_tool_count.is_none() =>
+                    && self.mcp_tool_count.is_none()
+                    && self.okf_bundle.is_none() =>
             {
                 Ok(())
             }
             PluginSurfaceKind::Mcp
                 if self.workload.is_none()
                     && self.mcp_transport.is_some()
-                    && self.mcp_tool_count.is_none_or(|count| count <= 10_000) =>
+                    && self.mcp_tool_count.is_none_or(|count| count <= 10_000)
+                    && self.okf_bundle.is_none() =>
             {
                 Ok(())
             }
             PluginSurfaceKind::Skill | PluginSurfaceKind::Ui
                 if self.workload.is_none()
                     && self.mcp_transport.is_none()
-                    && self.mcp_tool_count.is_none() =>
+                    && self.mcp_tool_count.is_none()
+                    && self.okf_bundle.is_none() =>
+            {
+                Ok(())
+            }
+            PluginSurfaceKind::Okf
+                if self.workload.is_none()
+                    && self.mcp_transport.is_none()
+                    && self.mcp_tool_count.is_none()
+                    && self
+                        .okf_bundle
+                        .as_ref()
+                        .is_some_and(|bundle| bundle.validate().is_ok()) =>
             {
                 Ok(())
             }

@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use a3s_acl::Block;
-use a3s_use_core::UseResult;
+use a3s_use_core::{
+    OkfBundleContract, OkfBundleLimits, OkfFormatVersion, UseResult, OKF_BUNDLE_CONTRACT_SCHEMA,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -118,6 +120,15 @@ pub struct PluginSkillSurface {
     pub path: PathBuf,
     pub requires_tools: Vec<String>,
     pub requires_mcp: Vec<String>,
+    pub requires_okf: Vec<String>,
+    pub optional: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginOkfSurface {
+    pub id: String,
+    pub bundle: OkfBundleContract,
     pub optional: bool,
 }
 
@@ -315,7 +326,13 @@ pub(crate) fn parse_skill(block: &Block) -> UseResult<PluginSkillSurface> {
     let id = named_surface_id(block, "Skill")?;
     require_known_attributes(
         block,
-        &["path", "requires_tool", "requires_mcp", "optional"],
+        &[
+            "path",
+            "requires_tool",
+            "requires_mcp",
+            "requires_okf",
+            "optional",
+        ],
     )?;
     let path = path_attribute(block, "path")?;
     if path.file_name().and_then(|value| value.to_str()) != Some("SKILL.md") {
@@ -330,6 +347,64 @@ pub(crate) fn parse_skill(block: &Block) -> UseResult<PluginSkillSurface> {
         path,
         requires_tools,
         requires_mcp,
+        requires_okf: dependency_ids(block, "requires_okf", "OKF")?,
+        optional: optional_bool_attribute(block, "optional")?.unwrap_or(false),
+    })
+}
+
+pub(crate) fn parse_okf(block: &Block) -> UseResult<PluginOkfSurface> {
+    let id = named_surface_id(block, "OKF")?;
+    require_known_attributes(
+        block,
+        &[
+            "format_version",
+            "root",
+            "content_digest",
+            "concept_count",
+            "file_count",
+            "expanded_bytes",
+            "max_files",
+            "max_concepts",
+            "max_expanded_bytes",
+            "max_document_bytes",
+            "max_links_per_document",
+            "optional",
+        ],
+    )?;
+    let format_version = match string_attribute(block, "format_version")?.as_str() {
+        "0.1" => OkfFormatVersion::V0_1,
+        "0.2" => OkfFormatVersion::V0_2,
+        value => {
+            return Err(manifest_error(format!(
+                "OKF surface '{id}' format_version '{value}' is unsupported."
+            )))
+        }
+    };
+    let bundle = OkfBundleContract {
+        schema: OKF_BUNDLE_CONTRACT_SCHEMA.to_owned(),
+        format_version,
+        root: string_attribute(block, "root")?,
+        content_digest: string_attribute(block, "content_digest")?,
+        concept_count: u64_attribute(block, "concept_count")?,
+        file_count: u64_attribute(block, "file_count")?,
+        expanded_bytes: u64_attribute(block, "expanded_bytes")?,
+        limits: OkfBundleLimits {
+            max_files: u64_attribute(block, "max_files")?,
+            max_concepts: u64_attribute(block, "max_concepts")?,
+            max_expanded_bytes: u64_attribute(block, "max_expanded_bytes")?,
+            max_document_bytes: u64_attribute(block, "max_document_bytes")?,
+            max_links_per_document: u64_attribute(block, "max_links_per_document")?,
+        },
+    };
+    bundle.validate().map_err(|error| {
+        manifest_error(format!(
+            "OKF surface '{id}' has an invalid bundle contract: {}",
+            error.message
+        ))
+    })?;
+    Ok(PluginOkfSurface {
+        id,
+        bundle,
         optional: optional_bool_attribute(block, "optional")?.unwrap_or(false),
     })
 }
@@ -386,16 +461,19 @@ pub(crate) fn parse_ui(block: &Block) -> UseResult<PluginUiSurface> {
 pub(crate) fn validate_dependencies(
     tools: &[ToolSurface],
     mcp: &[PluginMcpSurface],
+    okf: &[PluginOkfSurface],
     skills: &[PluginSkillSurface],
     ui: &[PluginUiSurface],
 ) -> UseResult<()> {
     validate_surface_count("Tool", tools.len())?;
     validate_surface_count("MCP", mcp.len())?;
+    validate_surface_count("OKF", okf.len())?;
     validate_surface_count("Skill", skills.len())?;
     validate_surface_count("UI", ui.len())?;
 
     let tool_ids = unique_ids("Tool", tools.iter().map(|surface| surface.id.as_str()))?;
     let mcp_ids = unique_ids("MCP", mcp.iter().map(|surface| surface.id.as_str()))?;
+    let okf_ids = unique_ids("OKF", okf.iter().map(|surface| surface.id.as_str()))?;
     let skill_ids = unique_ids("Skill", skills.iter().map(|surface| surface.id.as_str()))?;
     unique_ids("UI", ui.iter().map(|surface| surface.id.as_str()))?;
 
@@ -412,6 +490,14 @@ pub(crate) fn validate_dependencies(
             if !mcp_ids.contains(dependency.as_str()) {
                 return Err(manifest_error(format!(
                     "Skill '{}' requires unknown MCP surface '{dependency}'.",
+                    skill.id
+                )));
+            }
+        }
+        for dependency in &skill.requires_okf {
+            if !okf_ids.contains(dependency.as_str()) {
+                return Err(manifest_error(format!(
+                    "Skill '{}' requires unknown OKF surface '{dependency}'.",
                     skill.id
                 )));
             }
@@ -580,6 +666,15 @@ fn optional_u64_attribute(block: &Block, name: &str) -> UseResult<Option<u64>> {
         )));
     }
     Ok(Some(value as u64))
+}
+
+fn u64_attribute(block: &Block, name: &str) -> UseResult<u64> {
+    optional_u64_attribute(block, name)?.ok_or_else(|| {
+        manifest_error(format!(
+            "'{}' requires numeric attribute '{name}'.",
+            block.name
+        ))
+    })
 }
 
 fn reject_present_attributes(block: &Block, names: &[&str]) -> UseResult<()> {

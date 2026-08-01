@@ -1,8 +1,8 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
-    McpReleaseDescriptor, ToolReleaseDescriptor, ToolWorkloadContract as ToolReleaseWorkload,
-    UseError, UseResult, MAX_RELEASE_DESCRIPTOR_BYTES,
+    inspect_okf_bundle, McpReleaseDescriptor, OkfBundleFile, ToolReleaseDescriptor,
+    ToolWorkloadContract as ToolReleaseWorkload, UseError, UseResult, MAX_RELEASE_DESCRIPTOR_BYTES,
 };
 use sha2::{Digest, Sha256};
 use tokio::fs;
@@ -66,6 +66,9 @@ pub(super) async fn validate_named_surface_files(
         )
         .await?;
     }
+    for okf in &manifest.okf {
+        validate_okf_bundle(okf, canonical_root, package_root).await?;
+    }
     for ui in &manifest.ui {
         validate_ui_text_asset(
             "UI entry",
@@ -97,6 +100,113 @@ pub(super) async fn validate_named_surface_files(
         }
     }
     Ok(())
+}
+
+async fn validate_okf_bundle(
+    surface: &super::PluginOkfSurface,
+    canonical_root: &Path,
+    package_root: &Path,
+) -> UseResult<()> {
+    let root = package_root.join(&surface.bundle.root);
+    let metadata = fs::symlink_metadata(&root)
+        .await
+        .map_err(|error| io_error("inspect OKF bundle root", &root, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(okf_package_error(format!(
+            "OKF bundle root '{}' must be a real package directory.",
+            root.display()
+        )));
+    }
+    let resolved_root = fs::canonicalize(&root)
+        .await
+        .map_err(|error| io_error("resolve OKF bundle root", &root, error))?;
+    if !resolved_root.starts_with(canonical_root) {
+        return Err(UseError::new(
+            "use.extension.path_escape",
+            format!("OKF bundle root '{}' escapes the package.", root.display()),
+        ));
+    }
+
+    let mut pending = vec![(root, PathBuf::new())];
+    let mut files = Vec::new();
+    let mut file_count = 0_u64;
+    let mut expanded_bytes = 0_u64;
+    while let Some((directory, relative_directory)) = pending.pop() {
+        let mut entries = fs::read_dir(&directory)
+            .await
+            .map_err(|error| io_error("read OKF bundle directory", &directory, error))?;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|error| io_error("read OKF bundle entry", &directory, error))?
+        {
+            let name = entry.file_name();
+            let name = name.to_str().ok_or_else(|| {
+                okf_package_error("OKF bundle paths must be valid UTF-8 on every platform.")
+            })?;
+            let relative = relative_directory.join(name);
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path)
+                .await
+                .map_err(|error| io_error("inspect OKF bundle entry", &path, error))?;
+            if metadata.file_type().is_symlink() {
+                return Err(okf_package_error(format!(
+                    "OKF bundle entry '{}' cannot be a symbolic link.",
+                    path.display()
+                )));
+            }
+            if metadata.is_dir() {
+                pending.push((path, relative));
+                continue;
+            }
+            if !metadata.is_file() {
+                return Err(okf_package_error(format!(
+                    "OKF bundle entry '{}' must be a regular file or directory.",
+                    path.display()
+                )));
+            }
+            file_count = file_count.checked_add(1).ok_or_else(okf_limit_error)?;
+            expanded_bytes = expanded_bytes
+                .checked_add(metadata.len())
+                .ok_or_else(okf_limit_error)?;
+            if file_count > surface.bundle.limits.max_files
+                || expanded_bytes > surface.bundle.limits.max_expanded_bytes
+            {
+                return Err(okf_limit_error());
+            }
+            let relative = relative.to_str().ok_or_else(|| {
+                okf_package_error("OKF bundle paths must be valid UTF-8 on every platform.")
+            })?;
+            let relative = relative.replace(std::path::MAIN_SEPARATOR, "/");
+            let content = fs::read(&path)
+                .await
+                .map_err(|error| io_error("read OKF bundle file", &path, error))?;
+            if content.len() as u64 != metadata.len() {
+                return Err(UseError::new(
+                    "use.extension.package_changed",
+                    "An OKF bundle file changed while it was being inspected.",
+                ));
+            }
+            files.push(OkfBundleFile::new(relative, content));
+        }
+    }
+    let inspection = inspect_okf_bundle(
+        surface.bundle.format_version,
+        surface.bundle.limits.clone(),
+        files,
+    )?;
+    surface.bundle.verify_inspection(&inspection)
+}
+
+fn okf_package_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.extension.okf_bundle_invalid", message)
+}
+
+fn okf_limit_error() -> UseError {
+    UseError::new(
+        "use.okf.limit_exceeded",
+        "The OKF bundle exceeds its declared conformance limits.",
+    )
 }
 
 async fn validate_tool_task(

@@ -1,9 +1,9 @@
 # A3S Use Plugin Contract Reference
 
-- Status: M0 complete
+- Status: M0 complete; M0K-B OKF control-plane contracts complete
 - Baseline date: 2026-07-30
 - Product amendment: OKF bundle contract/conformance frozen 2026-07-31;
-  plugin-surface integration pending
+  plugin-surface control plane frozen 2026-08-01
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -18,7 +18,7 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 
 | Contract | Schema | Purpose |
 | --- | --- | --- |
-| Plugin manifest | `a3s.extension/v3` | Named Skill, MCP, Tool, and UI surfaces |
+| Plugin manifest | `a3s.extension/v3` | Named MCP, OKF, Skill, Tool, and UI surfaces |
 | OKF bundle | `a3s.use.okf-bundle.v1` | Exact non-executable OKF version, root, digest, counts, bytes, and conformance limits |
 | Tool release | `a3s.use.tool-release.v1` | Immutable CLI Task or HTTP Service workload |
 | Permission ceiling | `a3s.use.plugin-permissions.v1` | Maximum authority per executable/UI surface |
@@ -32,14 +32,20 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Compatible search and review metadata without package download |
 | Catalog record | `a3s.use.plugin-catalog.v2` | Plan-ready manifest evidence and surface dependency closure |
-| Catalog record | `a3s.use.plugin-catalog.v3` | Exact separately signed executable planning-target evidence |
+| Catalog record | `a3s.use.plugin-catalog.v3` | Exact OKF bundle evidence and, for executable surfaces, a separately signed planning target |
 | Planning bundle | `a3s.use.plugin-planning-bundle.v1` | Pre-archive Tool/MCP workload, release, and artifact evidence |
 | Installed plan evidence | `a3s.use.installed-plugin-plan-evidence.v1` | Package-specific receipt, catalog, surface, and capability join |
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |
+| Operation plan draft | `a3s.use.plugin-operation-plan-draft.v2` | Draft v1 plus an exact derived OKF bundle delta |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
+| Operation plan | `a3s.use.plugin-operation-plan.v2` | Plan v1 plus an exact derived OKF bundle delta |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
+| Manager toolset | `a3s.use.plugin-manager-tools.v2` | Manager v1 with canonical `okf` search and selection values |
+| OKF projection receipt | `a3s.use.okf-projection-receipt.v1` | Exact scope/package/surface generation staged for Knowledge |
+| OKF Knowledge observation | `a3s.use.okf-knowledge-observation.v1` | Staged, promoted, failed, or removed index evidence and last-good selection |
+| OKF capability projection | `a3s.use.okf-capability-projection.v1` | Exact promoted evidence safe to join to a scoped capability generation |
 
-### OKF bundle contract is frozen; the plugin surface is not
+### OKF control-plane contract is frozen
 
 Open Knowledge Format (OKF) is now an accepted first-class cognitive package
 surface. The shared `a3s.use.okf-bundle.v1` descriptor and inspector are now
@@ -50,17 +56,36 @@ bytes, tolerates unknown concept types and extension keys, reports safe
 dangling links as diagnostics, rejects unsafe path resolution, and treats
 Attested Computation executor/attester fields as inert data.
 
-This shared content contract does not add a second package lifecycle and does
-not yet add `okf` to `a3s.extension/v3`, `PluginSurfaceKind`, catalog,
-permission, plan, receipt, projection, capability snapshot, or Knowledge
-observation schemas. The completed M0 claim still applies to Tool, MCP, Skill,
-and UI. Current manifest and policy parsers must continue rejecting an unknown
-`okf` surface until the remaining additive control-plane and lifecycle slice
-is frozen and implemented.
+M0K-B adds `PluginSurfaceKind::Okf` and a bounded named `okf` block to schema
+v3. The manifest binds the full bundle contract and optionality; a Skill may
+declare `requires_okf`. Package admission recursively rejects links and
+special files, reads every bundle file within declared limits, reruns the
+shared inspector, and requires exact contract equality. Executor-like unknown
+manifest fields fail closed. Existing schema v1/v2 and the original schema-v3
+fixture remain byte-compatible.
 
-No document may encode illustrative OKF syntax and present it as accepted by
-the current parser. The target semantics are defined in
-[Plugin Platform Architecture](plugin-platform-architecture.md#target-okf-contribution-contract).
+Catalog v3 carries the same exact OKF bundle evidence. Skill-to-OKF edges join
+the existing transitive surface closure. An OKF-only catalog record omits an
+executable planning target; any record containing Tool or MCP still requires
+one. OKF and Skill surfaces cannot carry runtime permission ceilings, and the
+Runtime provider/binding contracts accept only Tool and MCP.
+
+The versioned plan/draft v2 contracts derive sorted `okfChanges` from exact
+package before/after states. Manager-toolset v2 adds `okf` to bounded search
+and surface selection without changing the v1 bytes. The projection receipt,
+Knowledge observation, and capability projection bind scope, package/surface
+identity, package generation, package/manifest/bundle digests, index
+schema/build identity, selected last-good generation, and observation digest.
+A staged or failed candidate cannot select itself; only exact promoted evidence
+can produce a capability projection.
+
+The shared Surface Reconciler treats Knowledge as a distinct host owner. A
+missing observation remains `pending`, `staged` remains prepared and
+unpublished, and only `promoted` is healthy. Dependent Skills remain hidden
+until that evidence is ready. The persistent A3S Knowledge
+stage/promote/remove adapter, scope-aware session publication, cited retrieval,
+and receipt-owned cleanup are M0K-C work; no second lifecycle or Runtime path is
+implied by these contracts.
 
 All JSON contracts:
 
@@ -189,7 +214,7 @@ grant.
 
 This ordering avoids a digest cycle: the plan can bind a proposal before a
 user decision exists, while the later confirmation binds both immutable
-objects. Untrusted package, Skill, Tool, MCP, UI, or target OKF content cannot
+objects. Untrusted package, Skill, Tool, MCP, UI, or OKF content cannot
 act as confirmation evidence.
 
 ### Snapshot and multi-package changes
@@ -293,17 +318,18 @@ cyclic edges fail closed. Catalog v1 remains readable and retains its exact
 canonical digest, but cannot carry these v2-only fields and is not sufficient
 by itself for complete-plan emission.
 
-The additive OKF contract may allow a Skill to require a named OKF surface, but
-that dependency kind is not present in the current v2/v3 schema and must not be
-encoded until M0K freezes canonical ordering and compatibility behavior.
+Catalog v3 adds OKF bundle evidence and allows a Skill to require a named OKF
+surface. Canonical surface-kind order is MCP, OKF, Skill, Tool, UI. The same
+dependency closure rules apply; OKF cannot depend on an executable surface or
+delegate authority.
 
-Catalog v3 preserves the v2 package evidence and adds one exact
-`planning-v1.json` target name, byte length, and SHA-256. The strict
-`a3s.use.plugin-planning-bundle.v1` target binds the package, archive,
+Catalog v3 also carries one exact `planning-v1.json` target name, byte length,
+and SHA-256 exactly when the record has executable Tool or MCP surfaces. The
+strict `a3s.use.plugin-planning-bundle.v1` target binds the package, archive,
 manifest, permission ceiling, and every executable surface to a complete
 release descriptor and digest-pinned artifact. It is fetched through TUF
-before archive download. Mutable OCI tags, missing executable surfaces, stdio
-MCP, or workload/catalog drift fail closed.
+before archive download. OKF-only records omit it. Mutable OCI tags, missing
+executable surfaces, stdio MCP, or workload/catalog drift fail closed.
 
 `VerifiedPluginCatalogRecord::install_transition` converts one plan-ready
 catalog-v2 or catalog-v3 record into the exact registry `add` transition
@@ -377,11 +403,14 @@ assembly.
 - the derived secret grant/revoke delta;
 - one compatible Runtime provider proof per resulting Tool or MCP surface;
 - workspace enablement and grant impact;
-- download, installed, reclaimed, drain, and retained-data impact; and
+- download, installed, reclaimed, drain, and retained-data impact;
+- for plan v2, the exact derived OKF before/after bundle changes; and
 - durable state revision, capability generation, and prior receipt digest.
 
 The plan validator derives surface and secret deltas from the embedded package
-states and rejects omissions or additions. It also rejects:
+states, and derives OKF impact for plan v2. OKF-bearing plans require v2 while
+plans without OKF remain byte-compatible v1. Runtime provider evidence remains
+required only for Tool and MCP. The validator also rejects:
 
 - a root transition that differs from the requested operation;
 - a permission ceiling that differs from the release digest;
@@ -443,6 +472,11 @@ provides common complete-plan evaluation and apply-time verification APIs to
 CLI, Web, and management MCP adapters. Web retains the default `ask` policy
 until it receives a trusted host policy source.
 
+Core surface selection and manager-toolset v2 now have a canonical `okf`
+value. The umbrella host must explicitly version or compatibly extend its ACL
+policy before it can authorize an OKF-bearing operation; omission never grants
+implicit authority.
+
 The delegated planner may return `pluginOperationPlan` only as a draft. The
 Manager replaces host identity, lifetime, actor, and authority; binds action,
 package, fixed scope, requested release, and verified capability generation;
@@ -451,15 +485,17 @@ is the reviewed Manager identity. The upstream component digest is stored
 separately and passed only to the existing mutation child.
 
 The planner boundary is
-`a3s.use.plugin-operation-plan-draft.v1`. Its strict JSON shape contains only
+`a3s.use.plugin-operation-plan-draft.v1` or, for an OKF delta,
+`a3s.use.plugin-operation-plan-draft.v2`. Its strict JSON shape contains only
 action, package and component identity, exact package transitions, Runtime
 provider evidence, workspace impacts, aggregate impact, and durable state
 evidence. Operation identity, timestamps, scope, actor, policy decision,
 policy digest, confirmation requirements, and derived secret changes are not
 accepted from the planner. The host supplies its fields through
 `PluginOperationPlanBinding`; binding derives the secret delta and validates
-the final `a3s.use.plugin-operation-plan.v1`. The typed transition constructor
-likewise derives surface changes from exact before/after package states.
+the matching `a3s.use.plugin-operation-plan.v1` or v2. The typed transition
+constructor likewise derives surface changes from exact before/after package
+states; v2 additionally derives exact OKF bundle impact.
 
 Before first intent, apply reproduces current policy authority and an `ask`
 decision requires a matching `a3s.use.plugin-operation-confirmation.v1` from a
@@ -528,6 +564,10 @@ provide a registry URL, package path, command, provider, executable, endpoint,
 or secret. There is no `plugin_execute`: activated Skills use separately
 authorized native Tool or MCP bindings in the data plane.
 
+Manager-toolset v1 remains frozen. V2 retains the same ten operations and
+annotations, adding only `okf` to the canonical surface-kind enums used by
+search, install planning, and upgrade planning.
+
 ## Golden Fixtures
 
 Canonical interoperability fixtures live under
@@ -536,8 +576,15 @@ Canonical interoperability fixtures live under
 - `permission-ceiling-v1.json`;
 - `catalog-record-v1.json`;
 - `complete-package-catalog-v1.json`;
-- `operation-plan-install-v1.json`; and
-- `manager-toolset-v1.json`.
+- `operation-plan-install-v1.json`;
+- `manager-toolset-v1.json`;
+- `catalog-record-okf-v3.json`;
+- `operation-plan-install-okf-v2.json`; and
+- `manager-toolset-v2.json`.
+
+Canonical OKF fixtures under `crates/core/fixtures/okf/` include the bundle
+contract plus `projection-receipt-v1.json`,
+`knowledge-observation-v1.json`, and `capability-projection-v1.json`.
 
 Each fixture has a sibling `.sha256` file. Tests require byte-for-byte
 canonical form, stable descriptor digests, fail-closed unknown fields, and
@@ -549,6 +596,11 @@ kinds and both Tool/MCP workload variants. Its expanded directory and
 deterministic `tar.gz` reconstruction have fixed file-count, byte-count, and
 SHA-256 evidence. Tests extract the archive through the real package source
 validator and revalidate every referenced surface file.
+
+The additive `plugin-v3-okf` fixture freezes a second ACL manifest and a
+complete OKF + dependent Skill package. Its nine-file, 3,258-byte expanded
+package and deterministic archive are content-addressed, and validation reads
+every OKF byte before comparing the declared bundle evidence.
 
 The matching deterministic TUF repository lives under
 `crates/extension/fixtures/registry/plugin-v3/`. Its signed targets metadata

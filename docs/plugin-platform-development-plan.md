@@ -2,8 +2,8 @@
 
 - Status: implementation in progress
 - Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted and M0K-A
-  bundle contract frozen 2026-07-31
+- Product amendment: first-class OKF knowledge contribution accepted; M0K-A
+  bundle contract frozen 2026-07-31 and M0K-B control plane frozen 2026-08-01
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -73,10 +73,11 @@ One package may declare multiple named surfaces in any compatible combination:
 | UI | Declared HTML, CSS, and JavaScript assets | Sandboxed view with scoped declared backend bindings |
 | OKF | Conformant Open Knowledge Format Markdown concept bundle | Non-executable, exact-generation A3S Knowledge projection and local cited-search index |
 
-The checked-in schema-v3 baseline implements Tool, MCP, Skill, and UI only.
-OKF is an accepted target contribution and must not be added to production
-manifests until its additive schema, canonical fixtures, conformance limits,
-receipt/projection contract, and host observation are frozen.
+The checked-in schema-v3 baseline implements Tool, MCP, OKF, Skill, and UI.
+M0K-B freezes the OKF manifest, package validation, catalog, plan,
+receipt/projection, and host-observation contracts. Production publication
+still requires the pending persistent A3S Knowledge adapter to supply exact
+promoted evidence.
 
 A Plugin Tool is not an MCP `tools/list` item. It is the real executable
 workload on which a Skill or UI may depend. A3S Use manages its lifecycle and
@@ -107,8 +108,8 @@ available
 
 `incompatible`, `broken`, `degraded`, and `disabled` are explicit diagnosable
 states. A Skill is ready only after its required Tool and MCP bindings are
-prepared or healthy and, in the target model, any required OKF generation is
-conformant and atomically promoted.
+prepared or healthy and every required OKF generation is conformant and
+atomically promoted.
 
 This sequence is a user-facing phase view derived from separate desired and
 observed state. It is not persisted as one mutable linear enum.
@@ -121,10 +122,11 @@ The M2 implementation projects this model into schema v3 capability bindings.
 Its deterministic Surface Reconciler calculates dependency levels, required
 closure, host ownership, desired/observed surface state, aggregate readiness,
 and publication eligibility. It does not claim deployment: missing Runtime,
-MCP, and UI adapters remain explicit `pending` evidence, while a Skill can be
-projected only when its required dependency closure is already usable.
-The target OKF adapter enters this same reconciler; it may not publish an
-independent knowledge generation outside the package operation.
+MCP, UI, and Knowledge adapters remain explicit `pending` evidence, while a
+Skill can be projected only when its required dependency closure is already
+usable. OKF already enters this same reconciler through exact
+receipt/observation evidence; it may not publish an independent knowledge
+generation outside the package operation.
 
 ### Searchable catalog metadata
 
@@ -136,7 +138,7 @@ downloading its archive:
 - declared surface IDs, Tool Task/Service kinds, and MCP tool count when
   publisher-generated;
 - declared OKF surface IDs, format version, concept/file counts, expanded
-  bytes, and content digest after the additive contract is implemented;
+  bytes, limits, and content digest in catalog v3;
 - compressed bytes, expanded bytes, and file count;
 - package-level permission summary;
 - license and canonical source repository;
@@ -269,10 +271,10 @@ policy may be more restrictive but never more permissive. Skill text, UI or
 OKF content, Tool output, MCP descriptions, API documentation, and remote
 content cannot modify policy or authorize an install.
 
-The policy example above reflects the implemented v1 surface enum. The OKF
-workstream must add a canonical `okf` value through a versioned or explicitly
-compatible schema change before policy can authorize an OKF-bearing package.
-Unknown surface values continue to fail closed.
+Core surface selection and manager-toolset v2 now define the canonical `okf`
+value. The umbrella host must adopt it through a versioned or explicitly
+compatible ACL policy change before policy can authorize an OKF-bearing
+package. Unknown surface values continue to fail closed.
 
 Native process isolation is not equivalent to a sandbox. Until filesystem,
 environment, process, and network restrictions are enforced on a platform, a
@@ -289,36 +291,39 @@ surface.
 
 The dependency-ordered slices are:
 
-1. **Contract and fixture:** freeze the manifest-local surface identity,
+1. **Contract and fixture (complete M0K-B):** freeze the manifest-local surface identity,
    declared format version, v0.2/v0.1 compatibility behavior, bundle root,
    canonical digest, size/file limits, optional dependencies, catalog fields,
    plan impact, policy enum, receipt, projection, and observation schemas. Add
    stable ACL/JSON digest fixtures.
-2. **Bounded conformance:** validate UTF-8 Markdown, properly delimited YAML
+2. **Bounded conformance (complete M0K-A/M0K-B):** validate UTF-8 Markdown, properly delimited YAML
    frontmatter, one non-empty scalar `type` on non-reserved concepts,
    canonical concept IDs, reserved `index.md`/`log.md`, standard Markdown link
    syntax, file/node limits, and expanded-package ownership. Preserve unknown
    types and extension keys; report safe dangling links without rejecting the
    bundle. Reject raw compiler inputs as active OKF authority.
-3. **Knowledge host adapter:** stage a candidate under an exact package
+3. **Knowledge host adapter (pending M0K-C):** stage a candidate under an exact package
    generation, call the A3S Knowledge promotion/index boundary idempotently,
    record a non-secret observation digest, and retain the last good searchable
    generation when validation or indexing fails.
-4. **Reconciliation and lifecycle:** include OKF in dependency closure,
+4. **Reconciliation and lifecycle (core gate complete; saga pending):** include OKF in dependency closure,
    capability snapshots, plan/apply replay, upgrade cutover, disable, drain-free
    removal, and receipt-owned uninstall without touching personal notes or
    another package's index.
-5. **Product E2E:** search a signed OKF-bearing package without archive
+5. **Product E2E (pending M0K-C/M6):** search a signed OKF-bearing package without archive
    download; review provenance, concept count, bytes, and permission impact;
    install and query cited concepts; upgrade atomically; disable/uninstall; and
    recover each checkpoint after injected crashes.
 
-Implementation status (2026-07-31): M0K-A has completed the shared
+Implementation status (2026-08-01): M0K-A completed the shared
 `a3s.use.okf-bundle.v1` descriptor, deterministic content identity, bounded
-v0.2/v0.1 inspector, and canonical/malicious fixtures in `a3s-use-core`. This
-is the single conformance implementation intended for slices 1–4. Production
-manifest acceptance remains fail-closed until the rest of slice 1 and the
-Knowledge observation/lifecycle schemas are implemented.
+v0.2/v0.1 inspector, and canonical/malicious fixtures. M0K-B completed schema
+v3 manifest and full-package admission, catalog-v3 bundle evidence,
+Skill-to-OKF closure, plan/draft v2 impact, manager-toolset v2, projection
+receipt, Knowledge observation, capability projection, and Knowledge-owned
+reconciliation. Golden ACL, JSON, and complete-package digests freeze the
+slice. M0K-C must now connect a real persistent Knowledge adapter and the
+scope-aware parent saga; absent promoted evidence remains unpublished.
 
 The workstream does not compile PDFs, Office files, images, archives, or web
 pages during install. Independent compilers produce normalized OKF before
@@ -443,8 +448,8 @@ Every milestone adds focused tests at the owning layer.
 - MCP schemas and annotations;
 - UI asset paths, media types, sizes, and digests;
 - named surface dependency graphs and Tool release descriptors;
-- target OKF manifest, policy, catalog, receipt, projection, and observation
-  fixtures once their additive contracts are frozen.
+- canonical OKF manifest, complete package, catalog-v3, plan-v2,
+  manager-toolset-v2, receipt, projection, and observation fixtures.
 
 ### Registry and package tests
 

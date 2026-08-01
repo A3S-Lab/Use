@@ -7,9 +7,9 @@ description: How Open Knowledge Format becomes a first-class, non-executable A3S
 
 **[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)** is an open knowledge-package format for people and agents: just Markdown, just files, just YAML frontmatter. Current OKF v0.2 organizes shareable domain knowledge as a typed, cross-linked, incrementally indexable concept graph and defines a compatibility path for v0.1 content.
 
-In the A3S Use target architecture, OKF is a first-class cognitive surface alongside Tool, MCP, Skill, and UI, but it is not an executable workload.
+In A3S Use, OKF is a first-class cognitive surface alongside Tool, MCP, Skill, and UI, but it is not an executable workload.
 
-> Current status: `a3s-use-core` now implements the frozen `a3s.use.okf-bundle.v1` descriptor, bounded v0.2/v0.1 conformance inspector, and canonical fixtures. Manifest, catalog, plan, receipt/projection, lifecycle, and A3S Knowledge atomic-index integration remain pending. The current schema-v3 parser rejects an undefined `okf` block.
+> Current status: M0K-B implements the frozen bundle descriptor, schema-v3 manifest, recursive package validation, catalog-v3 evidence, plan-v2 impact, projection receipt, Knowledge observation, capability projection, dependency closure, and reconciler gate. The persistent A3S Knowledge stage/promote/remove adapter and scoped cited-retrieval path remain pending; without promoted evidence, the surface is not published.
 
 ## Bundle structure
 
@@ -61,19 +61,19 @@ sources:
 
 ## Relationship to other surfaces
 
-| Surface     | Difference or relationship to OKF                                                                                                                                            |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Skill       | A Skill teaches an agent how to perform work; OKF supplies citable domain facts, decisions, and concepts. The target graph may let a Skill require one named OKF generation. |
-| Tool        | A Tool performs real work; OKF runs no process, shell, or HTTP workload.                                                                                                     |
-| MCP         | MCP is a protocol server; OKF is static content indexed and retrieved by a Knowledge host.                                                                                   |
-| UI          | UI may render knowledge, but OKF itself runs no JavaScript and receives no UI backend binding.                                                                               |
-| Personal KB | Personal `/kb` notes belong to the user; OKF is a publishable, deployable, versioned shared package asset.                                                                   |
+| Surface     | Difference or relationship to OKF                                                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Skill       | A Skill teaches an agent how to perform work; OKF supplies citable domain facts, decisions, and concepts. A Skill may require one named OKF generation. |
+| Tool        | A Tool performs real work; OKF runs no process, shell, or HTTP workload.                                                                                |
+| MCP         | MCP is a protocol server; OKF is static content indexed and retrieved by a Knowledge host.                                                              |
+| UI          | UI may render knowledge, but OKF itself runs no JavaScript and receives no UI backend binding.                                                          |
+| Personal KB | Personal `/kb` notes belong to the user; OKF is a publishable, deployable, versioned shared package asset.                                              |
 
 OKF v0.2 may describe an `Attested Computation`, executor, and attester. A3S Use treats all of that as inert metadata. It never turns those fields into execution authority; runnable behavior still requires a separately declared and authorized Tool or host binding.
 
 ## Install and index boundary
 
-The target lifecycle reuses A3S Use package identity, plans, receipts, and capability generations:
+The lifecycle reuses A3S Use package identity, plans, receipts, and capability generations:
 
 ```text
 signed catalog
@@ -86,6 +86,12 @@ signed catalog
 ```
 
 A3S Use owns package and bundle integrity. A3S Knowledge owns conformant promotion, indexing, and line-cited retrieval. If candidate validation or indexing fails, the last successful generation remains searchable.
+
+The frozen host boundary uses three canonical records:
+
+- `a3s.use.okf-projection-receipt.v1` for the exact staged candidate;
+- `a3s.use.okf-knowledge-observation.v1` for staged, promoted, failed, or removed state plus last-good selection; and
+- `a3s.use.okf-capability-projection.v1` for exact promoted evidence safe to publish.
 
 ## Compilation is not installation
 

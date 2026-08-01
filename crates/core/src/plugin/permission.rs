@@ -156,7 +156,10 @@ impl PluginPermissionCeiling {
 impl SurfacePermissionCeiling {
     fn validate(&self) -> UseResult<()> {
         if !valid_segment(&self.surface.id)
-            || self.surface.kind == PluginSurfaceKind::Skill
+            || matches!(
+                self.surface.kind,
+                PluginSurfaceKind::Okf | PluginSurfaceKind::Skill
+            )
             || self.filesystem.len() > MAX_ITEMS_PER_PERMISSION
             || self.network_egress.len() > MAX_ITEMS_PER_PERMISSION
             || self.secrets.len() > MAX_ITEMS_PER_PERMISSION
@@ -231,9 +234,9 @@ impl SurfacePermissionCeiling {
                     ));
                 }
             }
-            PluginSurfaceKind::Skill => {
+            PluginSurfaceKind::Okf | PluginSurfaceKind::Skill => {
                 return Err(permission_error(
-                    "Skill surfaces cannot carry runtime permission ceilings.",
+                    "OKF and Skill surfaces cannot carry runtime permission ceilings.",
                 ));
             }
         }

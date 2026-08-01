@@ -3,6 +3,9 @@ use a3s_use_core::PluginManagerToolset;
 const TOOLSET: &[u8] = include_bytes!("../fixtures/plugins/manager-toolset-v1.json");
 const TOOLSET_DIGEST: &str =
     include_str!("../fixtures/plugins/manager-toolset-v1.sha256").trim_ascii_end();
+const TOOLSET_V2: &[u8] = include_bytes!("../fixtures/plugins/manager-toolset-v2.json");
+const TOOLSET_V2_DIGEST: &str =
+    include_str!("../fixtures/plugins/manager-toolset-v2.sha256").trim_ascii_end();
 
 fn canonical_fixture(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\n").unwrap_or(bytes)
@@ -82,4 +85,29 @@ fn manager_toolset_fixture_is_canonical_and_frozen() {
     drift["tools"][7]["inputSchema"]["properties"]["url"] = serde_json::json!({"type":"string"});
     let error = PluginManagerToolset::from_json(&serde_json::to_vec(&drift).unwrap()).unwrap_err();
     assert_eq!(error.code, "use.plugin.manager_toolset_invalid");
+}
+
+#[test]
+fn manager_toolset_v2_adds_only_the_okf_policy_surface() {
+    let v1 = PluginManagerToolset::v1();
+    let v2 = PluginManagerToolset::v2();
+    v2.validate().unwrap();
+
+    assert_eq!(v2.schema, "a3s.use.plugin-manager-tools.v2");
+    assert_eq!(v2.tools.len(), v1.tools.len());
+    assert_eq!(
+        v2.tool("plugin_search").unwrap().input_schema["properties"]["kind"]["enum"],
+        serde_json::json!(["mcp", "okf", "skill", "tool", "ui"])
+    );
+    assert_eq!(
+        v2.tool("plugin_plan_install").unwrap().input_schema["properties"]["surfaces"]["items"]
+            ["properties"]["kind"]["enum"],
+        serde_json::json!(["mcp", "okf", "skill", "tool", "ui"])
+    );
+    assert_eq!(
+        PluginManagerToolset::from_json(&v2.canonical_bytes().unwrap()).unwrap(),
+        v2
+    );
+    assert_eq!(v2.canonical_bytes().unwrap(), canonical_fixture(TOOLSET_V2));
+    assert_eq!(v2.descriptor_digest().unwrap(), TOOLSET_V2_DIGEST);
 }

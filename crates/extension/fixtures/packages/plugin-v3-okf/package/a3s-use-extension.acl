@@ -1,0 +1,35 @@
+extension "acme/knowledge" {
+  schema_version = 3
+  version        = "1.0.0"
+  route          = "knowledge"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read"]
+
+  repository {
+    url      = "https://github.com/acme/knowledge"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  okf "domain-knowledge" {
+    format_version         = "0.2"
+    root                   = "okf/domain-knowledge"
+    content_digest         = "sha256:bd85b0b63adb32bdf616384a619286af4c32401542655dd09e00450902ab478d"
+    concept_count          = 4
+    file_count             = 7
+    expanded_bytes         = 2053
+    max_files              = 256
+    max_concepts           = 64
+    max_expanded_bytes     = 67108864
+    max_document_bytes     = 1048576
+    max_links_per_document = 2048
+    optional               = false
+  }
+
+  skill "research" {
+    path          = "skills/research/SKILL.md"
+    requires_tool = []
+    requires_mcp  = []
+    requires_okf  = ["domain-knowledge"]
+    optional      = false
+  }
+}

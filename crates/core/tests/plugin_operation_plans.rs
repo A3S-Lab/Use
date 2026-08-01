@@ -153,6 +153,7 @@ fn install_plan() -> PluginOperationPlan {
             reclaimed_bytes: 0,
             drain_required: false,
             retained_data: false,
+            okf_changes: Vec::new(),
         },
         authority: PlanAuthority {
             actor: PlanActor::User,

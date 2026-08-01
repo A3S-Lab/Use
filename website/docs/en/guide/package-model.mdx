@@ -13,7 +13,7 @@ A3S package
 └── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
 ```
 
-## Schema-v3 surfaces and target OKF surface
+## Schema-v3 surfaces
 
 | Surface      | Meaning                                                            | Activation target                                         |
 | ------------ | ------------------------------------------------------------------ | --------------------------------------------------------- |
@@ -26,7 +26,7 @@ A3S package
 
 In this model, a **Tool is not an MCP `tools/list` item**. A Tool keeps its own CLI or HTTP contract; Use does not translate every workload into a private universal protocol. Static UI is not a Runtime workload either. Only its declared Tool or MCP backend enters Runtime.
 
-Tool, MCP, Skill, and UI have a schema-v3 contract baseline. OKF is now a first-class cognitive surface in the target architecture; its shared bundle descriptor, bounded inspector, and canonical fixtures are frozen. Manifest, catalog, lifecycle, and host projection remain pending, so the current parser rejects an undefined `okf` block.
+Tool, MCP, OKF, Skill, and UI have a schema-v3 contract baseline. M0K-B implements the named OKF manifest, recursive package validation, catalog-v3 evidence, plan-v2 impact, Knowledge receipt/observation/projection contracts, and dependency-gated reconciliation. The persistent A3S Knowledge adapter and scope-aware host projection remain pending, so missing promoted evidence stays unpublished.
 
 OKF is not an executable workload. It is a shareable knowledge package: each non-reserved concept is UTF-8 Markdown with YAML frontmatter, the file path is concept identity, standard Markdown links form the knowledge graph, and `type` is required. The frozen content contract targets OKF v0.2 with explicit v0.1 compatibility. Raw PDF, Office, image, or web sources do not become OKF authority directly; an independent compiler must emit a conformant bundle first.
 
@@ -66,10 +66,26 @@ extension "acme/research" {
     optional   = false
   }
 
+  okf "domain-knowledge" {
+    format_version         = "0.2"
+    root                   = "okf/domain-knowledge"
+    content_digest         = "sha256:bd85b0b63adb32bdf616384a619286af4c32401542655dd09e00450902ab478d"
+    concept_count          = 4
+    file_count             = 7
+    expanded_bytes         = 2053
+    max_files              = 256
+    max_concepts           = 64
+    max_expanded_bytes     = 67108864
+    max_document_bytes     = 1048576
+    max_links_per_document = 2048
+    optional               = false
+  }
+
   skill "review" {
     path          = "skills/review/SKILL.md"
     requires_tool = ["convert"]
     requires_mcp  = ["library"]
+    requires_okf  = ["domain-knowledge"]
     optional      = false
   }
 
@@ -84,7 +100,7 @@ extension "acme/research" {
 
 Schema v1 and v2 remain compatible. Schema v3 adds repeatable named surfaces and an acyclic readiness graph. All paths are relative to the package root. Activation rejects path traversal, links, archive ambiguity, route collisions, oversized packages, provenance drift, and incompatible host ranges.
 
-The repository contains an executable [`plugin-v3.acl` fixture](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl).
+The repository contains executable [`plugin-v3.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl) and knowledge [`plugin-v3-okf.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3-okf.acl) fixtures.
 
 ## Dependencies and readiness
 
@@ -93,7 +109,7 @@ Surfaces are not installed independently. The Surface Reconciler builds a comple
 1. Tool and MCP require an explicit Runtime provider that satisfies workload, network, resource, and isolation requirements.
 2. Skill content must match its digest, and all required Tool/MCP dependencies must be usable.
 3. UI content must be intact, with every declared backend binding authorized.
-4. A target OKF surface must pass frontmatter, path, link, size, and content-digest checks; A3S Knowledge indexes only a generation atomically promoted by the host.
+4. An OKF surface must pass frontmatter, path, link, size, and content-digest checks; A3S Knowledge indexes only a generation atomically promoted by the host.
 5. One capability generation is published atomically only after every required surface is ready.
 6. Optional failure may produce `degraded`; required failure withholds the new generation.
 

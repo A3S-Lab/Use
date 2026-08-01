@@ -12,8 +12,15 @@ use sha2::{Digest, Sha256};
 
 use crate::{UseError, UseResult};
 
+mod control_plane;
 mod document;
 mod path;
+
+pub use control_plane::{
+    OkfCapabilityProjection, OkfKnowledgeObservation, OkfKnowledgeObservedState,
+    OkfProjectionReceipt, OkfSelectedGeneration, OKF_CAPABILITY_PROJECTION_SCHEMA,
+    OKF_KNOWLEDGE_OBSERVATION_SCHEMA, OKF_PROJECTION_RECEIPT_SCHEMA,
+};
 
 pub const OKF_BUNDLE_CONTRACT_SCHEMA: &str = "a3s.use.okf-bundle.v1";
 

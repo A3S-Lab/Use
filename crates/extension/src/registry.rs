@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{
-    PlanPackageRole, PlannedPackageState, PlannedPackageTransition, PluginSurfaceRef, UseError,
-    UseResult, VerifiedPluginCatalogRecord,
+    PlanPackageRole, PlannedPackageState, PlannedPackageTransition, PluginSurfaceKind,
+    PluginSurfaceRef, UseError, UseResult, VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -1270,6 +1270,67 @@ fn validate_catalog_binding(
         return Err(catalog_package_error(
             "The verified catalog does not match the installed package and manifest.",
         ));
+    }
+    validate_okf_catalog_binding(record, manifest)?;
+    Ok(())
+}
+
+fn validate_okf_catalog_binding(
+    record: &a3s_use_core::PluginCatalogRecord,
+    manifest: &ExtensionManifest,
+) -> UseResult<()> {
+    let catalog_okf = record
+        .surfaces
+        .iter()
+        .filter(|surface| surface.kind == PluginSurfaceKind::Okf)
+        .collect::<Vec<_>>();
+    if catalog_okf.len() != manifest.okf.len() {
+        return Err(catalog_package_error(
+            "The verified catalog OKF inventory does not match the installed manifest.",
+        ));
+    }
+    for surface in &manifest.okf {
+        let Some(catalog) = catalog_okf.iter().find(|catalog| catalog.id == surface.id) else {
+            return Err(catalog_package_error(
+                "The verified catalog omitted a manifest-declared OKF surface.",
+            ));
+        };
+        if catalog.optional != surface.optional
+            || catalog.okf_bundle.as_ref() != Some(&surface.bundle)
+        {
+            return Err(catalog_package_error(
+                "The verified catalog OKF contract does not match the installed manifest.",
+            ));
+        }
+    }
+    for skill in &manifest.skills {
+        let Some(catalog) = record
+            .surfaces
+            .iter()
+            .find(|surface| surface.kind == PluginSurfaceKind::Skill && surface.id == skill.id)
+        else {
+            continue;
+        };
+        let mut expected = skill
+            .requires_okf
+            .iter()
+            .map(|id| PluginSurfaceRef {
+                kind: PluginSurfaceKind::Okf,
+                id: id.clone(),
+            })
+            .collect::<Vec<_>>();
+        expected.sort();
+        let actual = catalog
+            .requires
+            .iter()
+            .filter(|surface| surface.kind == PluginSurfaceKind::Okf)
+            .cloned()
+            .collect::<Vec<_>>();
+        if actual != expected {
+            return Err(catalog_package_error(
+                "The verified catalog Skill-to-OKF dependency does not match the installed manifest.",
+            ));
+        }
     }
     Ok(())
 }
