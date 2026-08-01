@@ -7,9 +7,9 @@ description: Open Knowledge Format 如何作为 A3S Use 的一等、非执行型
 
 **[OKF（Open Knowledge Format）](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)** 是面向人和 Agent 的开放知识包格式：just Markdown, just files, just YAML frontmatter。当前 OKF v0.2 把可共享领域知识组织成带类型、可交叉链接、可增量索引的概念图，并定义了 v0.1 内容的兼容路径。
 
-在 A3S Use 目标架构中，OKF 是与 Tool、MCP、Skill、UI 并列的一等认知表面，但它不是可执行 workload。
+在 A3S Use 中，OKF 是与 Tool、MCP、Skill、UI 并列的一等认知表面，但它不是可执行 workload。
 
-> 当前状态：`a3s-use-core` 已实现冻结的 `a3s.use.okf-bundle.v1` descriptor、支持 v0.2/v0.1 的有界 conformance inspector 与 canonical fixtures。Manifest、catalog、plan、receipt/projection、lifecycle 和 A3S Knowledge 原子索引集成仍待完成；当前 schema-v3 parser 会拒绝未定义的 `okf` block。
+> 当前状态：M0K-B 已实现冻结的 bundle descriptor、schema-v3 manifest、递归包验证、catalog-v3 evidence、plan-v2 impact、projection receipt、Knowledge observation、capability projection、依赖闭包与 reconciler gate。A3S Knowledge 持久 stage/promote/remove 适配器和 scoped cited-retrieval 路径仍待完成；没有 promoted evidence 就不会发布该表面。
 
 ## Bundle 结构
 
@@ -61,19 +61,19 @@ sources:
 
 ## 与其他表面的关系
 
-| 表面        | 与 OKF 的区别或关系                                                                                                     |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Skill       | Skill 教 Agent 如何完成任务；OKF 提供可引用的领域事实、决策和概念。目标依赖图可允许 Skill 要求一个命名 OKF generation。 |
-| Tool        | Tool 执行真实工作；OKF 不执行进程、Shell 或 HTTP workload。                                                             |
-| MCP         | MCP 是协议 server；OKF 是静态内容，由 Knowledge host 索引和检索。                                                       |
-| UI          | UI 可以呈现知识，但 OKF 本身不运行 JavaScript，也不获得 UI backend binding。                                            |
-| Personal KB | `/kb` 的个人笔记属于用户；OKF 是可发布、可部署、可版本化的共享 package asset。                                          |
+| 表面        | 与 OKF 的区别或关系                                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------------------------- |
+| Skill       | Skill 教 Agent 如何完成任务；OKF 提供可引用的领域事实、决策和概念。Skill 可以要求一个命名 OKF generation。 |
+| Tool        | Tool 执行真实工作；OKF 不执行进程、Shell 或 HTTP workload。                                                |
+| MCP         | MCP 是协议 server；OKF 是静态内容，由 Knowledge host 索引和检索。                                          |
+| UI          | UI 可以呈现知识，但 OKF 本身不运行 JavaScript，也不获得 UI backend binding。                               |
+| Personal KB | `/kb` 的个人笔记属于用户；OKF 是可发布、可部署、可版本化的共享 package asset。                             |
 
 OKF v0.2 可以描述 `Attested Computation`、executor 与 attester。A3S Use 只把这些内容视为惰性 metadata，绝不会把它们转换成执行权限；可运行行为仍必须来自单独声明并授权的 Tool 或宿主 binding。
 
 ## 安装与索引边界
 
-目标生命周期复用 A3S Use 的 package identity、plan、receipt 和 capability generation：
+生命周期复用 A3S Use 的 package identity、plan、receipt 和 capability generation：
 
 ```text
 signed catalog
@@ -86,6 +86,12 @@ signed catalog
 ```
 
 A3S Use 负责包与 bundle 完整性；A3S Knowledge 负责合规后的 promotion、索引和带行号引用的检索。Candidate 验证或索引失败时，最后一个成功 generation 继续可搜索。
+
+冻结的宿主边界使用三种 canonical record：
+
+- `a3s.use.okf-projection-receipt.v1`：精确 staged candidate；
+- `a3s.use.okf-knowledge-observation.v1`：staged、promoted、failed、removed 状态与 last-good selection；
+- `a3s.use.okf-capability-projection.v1`：可安全发布的精确 promoted evidence。
 
 ## 编译不属于安装
 

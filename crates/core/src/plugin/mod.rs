@@ -21,7 +21,7 @@ mod plan_package_validation;
 mod plan_validation;
 mod planning_bundle;
 mod resolved_grant_changes;
-mod validation;
+pub(crate) mod validation;
 
 pub use catalog::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,
@@ -46,10 +46,10 @@ pub use permission::{
 };
 pub use plan::{
     PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
-    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOperationImpact,
-    PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease, PlannedProviderEvidence,
-    PlannedSecretChange, PlannedSecretChangeKind, PlannedStateEvidence, PlannedSurfaceChange,
-    PlannedWorkspaceImpact, PluginOperationAction, PluginOperationPlan,
+    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOkfSurfaceChange,
+    PlannedOperationImpact, PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease,
+    PlannedProviderEvidence, PlannedSecretChange, PlannedSecretChangeKind, PlannedStateEvidence,
+    PlannedSurfaceChange, PlannedWorkspaceImpact, PluginOperationAction, PluginOperationPlan,
     PluginOperationPlanEnvelope, PluginPlanSource, SurfaceChangeKind,
 };
 pub use plan_confirmation::PluginOperationConfirmation;
@@ -64,9 +64,12 @@ pub const PLUGIN_CATALOG_SCHEMA_V2: &str = "a3s.use.plugin-catalog.v2";
 pub const PLUGIN_CATALOG_SCHEMA_V3: &str = "a3s.use.plugin-catalog.v3";
 pub const INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA: &str = "a3s.use.installed-plugin-plan-evidence.v1";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";
+pub const PLUGIN_MANAGER_TOOLSET_SCHEMA_V2: &str = "a3s.use.plugin-manager-tools.v2";
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA: &str = "a3s.use.plugin-operation-plan-draft.v1";
+pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan-draft.v2";
 pub const PLUGIN_OPERATION_PLAN_SCHEMA: &str = "a3s.use.plugin-operation-plan.v1";
+pub const PLUGIN_OPERATION_PLAN_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan.v2";
 pub const PLUGIN_PLANNING_BUNDLE_SCHEMA: &str = "a3s.use.plugin-planning-bundle.v1";
 pub const PLUGIN_PERMISSION_SCHEMA: &str = "a3s.use.plugin-permissions.v1";
 pub const PLUGIN_GRANT_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-grant-confirmation.v1";
@@ -84,6 +87,7 @@ pub const MAX_PLUGIN_PLAN_ITEMS: usize = 512;
 #[serde(rename_all = "kebab-case")]
 pub enum PluginSurfaceKind {
     Mcp,
+    Okf,
     Skill,
     Tool,
     Ui,

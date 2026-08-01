@@ -2,8 +2,9 @@
 
 - Status: in progress
 - Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted and M0K-A
-  bundle contract frozen 2026-07-31
+- Product amendment: first-class OKF knowledge contribution accepted; M0K-A
+  bundle contract frozen 2026-07-31 and M0K-B control-plane contracts frozen
+  2026-08-01
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -78,8 +79,8 @@ The following foundations are implemented:
 
 - typed Browser, OCR, Box, component, and extension contracts;
 - native CLI, standard MCP, Skill, and content-bound Activity Bar surfaces;
-- schema v3 named Tool Task/Service, MCP, Skill, and UI surface contracts while
-  retaining schema v1/v2 parsing compatibility;
+- schema v3 named Tool Task/Service, MCP, OKF, Skill, and UI surface contracts
+  while retaining schema v1/v2 parsing compatibility;
 - canonical Tool Task/Service release descriptors with stable JSON fixtures
   and package-level manifest binding validation;
 - immutable package generations and receipt-owned installation roots;
@@ -93,14 +94,18 @@ The following foundations are implemented:
 - a Web Marketplace with catalog and installed views;
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
 - generation/revision capability snapshots consumed by A3S Code;
-- live MCP and Skill projection into a dedicated A3S Use worker.
+- live MCP and Skill projection into a dedicated A3S Use worker;
+- M0K-A OKF bundle identity and bounded v0.2/v0.1 conformance; and
+- M0K-B named OKF manifests, recursive package validation, catalog-v3 evidence,
+  Skill dependency closure, plan-v2 impact, projection receipts, scope-bound
+  Knowledge observations, capability projections, last-good selection, and
+  reconciliation gates.
 
-The first-class OKF product decision is newer than this implemented baseline.
-The shared bundle descriptor, conformance inspector, and fixtures are now
-implemented, but no current `a3s.extension/v3`, permission, catalog, receipt,
-projection, or Knowledge observation contract contains an OKF surface. The
-current parser must reject an undefined `okf` block until the remaining M0K
-control-plane slice is frozen and implemented.
+The OKF control plane is implemented without creating another package manager,
+Runtime route, lifecycle store, or reconciler. It intentionally publishes no
+OKF capability when promoted Knowledge evidence is absent. The production
+persistent A3S Knowledge adapter and scope-aware host/session projection remain
+the next implementation slice.
 
 The main gaps are:
 
@@ -113,18 +118,18 @@ The main gaps are:
   adapter plans release-backed Tasks and Services and can health-gate a
   directly invoked Service apply, but host-broker lifecycle apply is not
   connected yet;
-- persisted Tool Task/Service bindings, MCP protocol probes, dependency
-  readiness, and Runtime observations are not yet part of the package
-  reconciler;
+- persisted Tool Task/Service bindings and Runtime observations feed the shared
+  reconciler, but the Plugin Manager still lacks complete scope-aware
+  Runtime/MCP/UI apply and observation wiring;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
   its bounded read-only management MCP is connected, while Runtime/MCP/UI apply
   adapters remain to be connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
-- OKF manifest, catalog, plan, policy, receipt, projection, and A3S Knowledge
-  atomic-index contracts remain to be frozen and implemented around the
-  shared conformance core;
+- the versioned OKF manager/search/selection contract is frozen, but the
+  umbrella host ACL policy and persistent A3S Knowledge atomic-index adapter
+  remain to be wired to it;
 - official registry key operations and Windows Browser parity are not yet at
   the final production gate.
 
@@ -198,14 +203,14 @@ Exit criteria:
 - cross-SDK digest fixtures are deterministic;
 - no lifecycle mutation is implemented before its plan schema is fixed.
 
-### M0K — OKF contribution contract and fixtures (in progress 2026-07-31)
+### M0K — OKF contribution contract and fixtures (M0K-B complete 2026-08-01; M0K-C pending)
 
 Estimated effort: 2–3 weeks
 
 This is an additive product amendment. It does not reopen or mislabel the
 completed Tool/MCP/Skill/UI M0 fixture set.
 
-Implementation status (2026-07-31):
+Implementation status (2026-08-01):
 
 - completed M0K-A in `a3s-use-core`: the canonical
   `a3s.use.okf-bundle.v1` JSON descriptor binds format version, bundle root,
@@ -217,11 +222,29 @@ Implementation status (2026-07-31):
   deterministic summaries, and non-fatal safe dangling-link diagnostics;
 - completed M0K-A fixtures: canonical JSON and bundle digest goldens plus
   conformant, compatibility, drift, limit, malformed-content, and path-escape
-  tests; and
-- deliberately pending: `a3s.extension/v3`, catalog, permission, plan,
-  receipt, projection, capability snapshot, Knowledge observation, and
-  lifecycle wiring. The manifest parser continues to reject `okf` until that
-  complete control-plane slice is implemented.
+  tests;
+- completed M0K-B manifest/package integration: schema v3 accepts bounded named
+  OKF surfaces, rejects executor-like authority, recursively validates every
+  bundle byte, and lets a Skill require an OKF surface;
+- completed M0K-B catalog/plan integration: catalog v3 binds exact OKF bundle
+  evidence, OKF-only records omit executable planning targets, plan/draft v2
+  derives exact `okfChanges`, and Runtime provider evidence remains Tool/MCP
+  only;
+- completed M0K-B host evidence: versioned projection receipts, Knowledge
+  observations, capability projections, exact promoted-generation checks,
+  staged/failed candidate rejection, and last-good selection;
+- completed M0K-B reconciliation: OKF is owned by `KnowledgeHost`, remains
+  unpublished without promoted evidence, and gates dependent Skills through
+  the existing required closure; and
+- completed M0K-B canonical fixtures: OKF ACL and complete package digests,
+  catalog-v3, plan-v2, manager-toolset-v2, projection receipt, Knowledge
+  observation, and capability-projection JSON goldens. Existing v1/v2 and the
+  original schema-v3 fixture remain byte-compatible.
+
+M0K-C remains pending: inject the persistent A3S Knowledge
+stage/promote/remove adapter, bind it to the parent operation journal and
+scope-aware capability/session projection, and prove cited retrieval,
+last-good rollback, and receipt-owned cleanup end to end.
 
 Deliverables:
 
@@ -245,15 +268,16 @@ Deliverables:
 Exit criteria:
 
 - schema v1/v2 and the existing schema-v3 fixture remain byte-compatible;
-- the current parser continues to reject `okf` until the additive contract is
-  implemented as a complete slice;
+- the parser accepts `okf` only in schema v3 and validates the exact declared
+  bundle during package admission;
 - conformant v0.1/v0.2 and malicious OKF fixtures have deterministic cross-SDK
   results;
 - an OKF plan binds the exact normalized bundle that Knowledge would promote;
 - concept/frontmatter/link content cannot add authority;
 - v0.2 Attested Computation metadata cannot implicitly select or invoke a Tool,
   executor, attester, Runtime provider, or secret; and
-- no package receipt can remove personal notes or another package's index.
+- the ownership contract forbids removing personal notes or another package's
+  index; production cleanup and recovery proof remains part of M0K-C.
 
 ### M1 – Signed searchable catalog (complete 2026-07-30)
 
@@ -351,9 +375,9 @@ Implementation status (2026-07-30):
   desired/observed state, aggregate ready/degraded/broken state, and atomic
   publication eligibility without starting new Runtime workloads;
 - completed in A3S Use: capability snapshots expose the reconciliation
-  evidence and project named Skills only after every required Tool and MCP
-  dependency is prepared or healthy; missing Runtime, MCP, and UI adapters
-  remain explicit `pending` observations;
+  evidence and project named Skills only after every required Tool, MCP, and
+  OKF dependency is prepared or healthy; missing Runtime, MCP, UI, and
+  Knowledge observations remain explicit `pending` evidence;
 - covered: typed complete-catalog mapping, lifecycle argument and digest
   validation, Use-owned JSON output, operation ID uniqueness, expiry,
   append-only replay, corruption rejection, cross-process locking, Web adapter
@@ -725,8 +749,8 @@ Deliverables:
 - enforce available filesystem, network, and child-process restrictions;
 - classify unsupported native confinement as `native-unconfined`;
 - persist workspace grants separately from package receipts.
-- add the canonical `okf` policy surface and integrate the frozen bounded OKF
-  conformance validator;
+- adopt manager-toolset v2 and the canonical `okf` surface in the umbrella host
+  ACL policy; the shared bounded OKF validator and core selector are complete;
 - implement an injected A3S Knowledge stage/promote/remove adapter with
   exact-generation receipt and observation evidence, atomic index cutover, and
   last-good-generation preservation.

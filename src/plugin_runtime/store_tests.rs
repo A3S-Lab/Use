@@ -160,6 +160,16 @@ async fn binding_store_fails_closed_on_tampered_json() {
     assert_eq!(error.code, "use.plugin.runtime.binding_receipt_invalid");
 }
 
+#[tokio::test]
+async fn binding_store_rejects_okf_surfaces() {
+    let temporary = TempDir::new().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let okf = surface(PluginSurfaceKind::Okf, "domain-knowledge");
+
+    let error = store.get("workspace-01", &okf).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.runtime.binding_path_invalid");
+}
+
 #[test]
 fn binding_receipts_reject_cross_kind_readiness_claims() {
     let mut receipt = service_receipt(1_000);

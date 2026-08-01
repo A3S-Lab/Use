@@ -79,7 +79,7 @@ intent
 
 ## 运行时可见性
 
-Surface Reconciler 观察 desired state、generation receipt、grant、binding、Runtime/Gateway health，以及 Skill/UI/目标 OKF projection。只有完整 evidence 对同一 generation 一致时，Capability Registry 才发布新 snapshot。常驻宿主可通过 generation + revision long-poll watch 热更新，无需重启。
+Surface Reconciler 观察 desired state、generation receipt、grant、binding、Runtime/Gateway health，以及 Skill/UI/OKF projection。M0K-B 为 OKF 定义独立的 Knowledge-host owner：缺失为 pending，staged 不发布，只有精确 promoted evidence 才是 healthy。只有完整 evidence 对同一 generation 一致时，Capability Registry 才发布新 snapshot。常驻宿主可通过 generation + revision long-poll watch 热更新，无需重启。
 
 OKF 的宿主边界与 Runtime 不同：它不运行进程。Use 验证并记录精确 package generation；A3S Knowledge 负责合规检查后的原子 promotion、索引与带引用检索。失败的新 OKF generation 不得替换最后一个可搜索 generation。
 

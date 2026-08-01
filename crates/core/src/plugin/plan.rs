@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{UseError, UseResult};
+use crate::{OkfBundleContract, UseError, UseResult};
 
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, CatalogArchive,
@@ -214,6 +214,19 @@ pub struct PlannedOperationImpact {
     pub reclaimed_bytes: u64,
     pub drain_required: bool,
     pub retained_data: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub okf_changes: Vec<PlannedOkfSurfaceChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlannedOkfSurfaceChange {
+    pub surface: PlanQualifiedSurfaceRef,
+    pub change: SurfaceChangeKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<OkfBundleContract>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<OkfBundleContract>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

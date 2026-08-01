@@ -33,8 +33,9 @@ mod workspace_grant_tests;
 
 pub use paths::ExtensionPaths;
 pub use plugin_manifest::{
-    PluginMcpLaunch, PluginMcpSurface, PluginSkillSurface, PluginUiSurface, SurfaceActivation,
-    ToolServiceSurface, ToolSurface, ToolTaskSource, ToolTaskSurface, ToolWorkload,
+    PluginMcpLaunch, PluginMcpSurface, PluginOkfSurface, PluginSkillSurface, PluginUiSurface,
+    SurfaceActivation, ToolServiceSurface, ToolSurface, ToolTaskSource, ToolTaskSurface,
+    ToolWorkload,
 };
 pub use registry::{
     ActivationResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
@@ -100,6 +101,8 @@ pub struct ExtensionManifest {
     pub tools: Vec<ToolSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<PluginMcpSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub okf: Vec<PluginOkfSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<PluginSkillSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -227,6 +230,11 @@ impl ExtensionManifest {
         for mcp in &self.mcp_servers {
             paths.extend(mcp.package_paths());
         }
+        paths.extend(
+            self.okf
+                .iter()
+                .map(|surface| Path::new(surface.bundle.root.as_str())),
+        );
         paths.extend(self.skills.iter().map(|surface| surface.path.as_path()));
         for ui in &self.ui {
             paths.extend(ui.package_paths());
@@ -255,6 +263,9 @@ impl ExtensionManifest {
         }
         if self.mcp.is_some() || !self.mcp_servers.is_empty() {
             surfaces.push("mcp");
+        }
+        if !self.okf.is_empty() {
+            surfaces.push("okf");
         }
         if self.skill.is_some() || !self.skills.is_empty() {
             surfaces.push("skill");
@@ -350,6 +361,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     let mut contributes = ExtensionContributions::default();
     let mut tools = Vec::new();
     let mut mcp_servers = Vec::new();
+    let mut okf = Vec::new();
     let mut skills = Vec::new();
     let mut ui = Vec::new();
     for surface in &block.blocks {
@@ -376,6 +388,9 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
                 mcp_servers.push(plugin_manifest::parse_mcp(surface)?);
             }
             "mcp" => mcp = Some(parse_mcp(surface)?),
+            "okf" if schema_version == 3 => {
+                okf.push(plugin_manifest::parse_okf(surface)?);
+            }
             "skill" if schema_version == 3 => {
                 skills.push(plugin_manifest::parse_skill(surface)?);
             }
@@ -405,15 +420,16 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     if schema_version == 3
         && tools.is_empty()
         && mcp_servers.is_empty()
+        && okf.is_empty()
         && skills.is_empty()
         && ui.is_empty()
     {
         return Err(manifest_error(
-            "A schema version 3 extension must declare Tool, MCP, Skill, and/or UI.",
+            "A schema version 3 extension must declare Tool, MCP, OKF, Skill, and/or UI.",
         ));
     }
     if schema_version == 3 {
-        plugin_manifest::validate_dependencies(&tools, &mcp_servers, &skills, &ui)?;
+        plugin_manifest::validate_dependencies(&tools, &mcp_servers, &okf, &skills, &ui)?;
     }
     if !contributes.activity_bar.is_empty() && skill.is_none() {
         return Err(manifest_error(
@@ -473,6 +489,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         contributes,
         tools,
         mcp_servers,
+        okf,
         skills,
         ui,
     })

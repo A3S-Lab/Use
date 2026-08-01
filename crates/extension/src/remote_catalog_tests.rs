@@ -391,6 +391,7 @@ async fn catalog_page_stays_below_the_serialized_output_bound() {
                 workload: None,
                 mcp_transport: None,
                 mcp_tool_count: None,
+                okf_bundle: None,
                 requires: Vec::new(),
             });
         }

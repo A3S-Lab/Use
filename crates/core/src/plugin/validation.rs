@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use url::Url;
 
-pub(super) fn valid_segment(value: &str) -> bool {
+pub(crate) fn valid_segment(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 63
         && matches!(value.as_bytes().first(), Some(b'a'..=b'z'))
@@ -11,7 +11,7 @@ pub(super) fn valid_segment(value: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
-pub(super) fn valid_package_id(value: &str) -> bool {
+pub(crate) fn valid_package_id(value: &str) -> bool {
     let segments = value.split('/').collect::<Vec<_>>();
     value.len() <= 128 && segments.len() == 2 && segments.into_iter().all(valid_segment)
 }
@@ -46,7 +46,7 @@ pub(super) fn valid_permission_name(value: &str) -> bool {
             .any(|segment| matches!(segment, "" | "." | ".."))
 }
 
-pub(super) fn valid_machine_id(value: &str) -> bool {
+pub(crate) fn valid_machine_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 256
         && value
@@ -102,7 +102,7 @@ pub(super) fn valid_http_path(value: &str) -> bool {
             .any(|segment| matches!(segment, "." | ".."))
 }
 
-pub(super) fn valid_sha256(value: &str) -> bool {
+pub(crate) fn valid_sha256(value: &str) -> bool {
     value.strip_prefix("sha256:").is_some_and(|digest| {
         digest.len() == 64
             && digest

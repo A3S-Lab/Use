@@ -2,8 +2,8 @@
 
 - Status: accepted target architecture; implementation in progress
 - Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted and M0K-A
-  bundle contract frozen 2026-07-31
+- Product amendment: first-class OKF knowledge contribution accepted; M0K-A
+  bundle contract frozen 2026-07-31 and M0K-B control plane frozen 2026-08-01
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -33,12 +33,12 @@ each declared surface into the host that owns its execution:
 | UI | Integrity-bound static HTML, CSS, and JavaScript | A3S Code/Web sandbox with declared backend bindings |
 | OKF | A conformant Open Knowledge Format bundle of cross-linked Markdown concepts | A3S Knowledge service, host OKF registry, and local cited-search index |
 
-Tool, MCP, Skill, and UI have an implemented schema-v3 contract baseline. OKF
-has a shared bundle descriptor, bounded conformance inspector, and canonical
-fixtures, while its manifest, catalog, plan, receipt/projection, lifecycle,
-and host binding remain to be implemented. The current parser must reject an
-undefined `okf` block rather than interpret this target architecture as a
-shipped installable surface.
+Tool, MCP, OKF, Skill, and UI have an implemented schema-v3 contract baseline.
+M0K-B adds exact manifest/package validation, catalog and plan evidence,
+Knowledge receipt/observation/projection contracts, and dependency-gated
+reconciliation for OKF. The persistent A3S Knowledge adapter, scoped cited
+retrieval, and parent-saga lifecycle wiring remain to be implemented; missing
+promoted evidence therefore stays explicitly unpublished.
 
 In this architecture, **Tool does not mean an MCP `tools/list` item**. A Tool
 is a workload on which a Skill or UI can depend. It keeps its native CLI or
@@ -149,15 +149,14 @@ The aggregate contains:
 - zero or more named Tool Tasks or Tool Services;
 - zero or more named MCP servers;
 - zero or more named UI contributions;
-- zero or more named OKF knowledge contributions once the additive contract is
-  frozen;
+- zero or more named OKF knowledge contributions;
 - an acyclic dependency graph among those surfaces;
 - package-level permission ceilings;
 - compatibility requirements and exact external release dependencies; and
 - one desired activation state per workspace scope.
 
-A Skill may require Tools and MCP surfaces; the target dependency model may
-also require a named OKF contribution for grounded knowledge. A UI may bind to
+A Skill may require Tools, MCP surfaces, and named OKF contributions for
+grounded knowledge. A UI may bind to
 Tool Services or MCP surfaces. Required dependencies must belong to the same
 immutable plugin generation unless the package resolver pins an external
 plugin release by version and digest.
@@ -230,10 +229,11 @@ migration. The target schema v3 adds named, repeatable surfaces. Internally the
 domain type is `PluginManifest`; changing the on-disk filename is unnecessary
 until a separately versioned migration provides material value.
 
-The `okf/` directory above is target layout only. A later additive manifest
-revision must bind each named OKF bundle root, conformance version, content
-digest, limits, optional dependencies, and activation target. No installer may
-discover or activate OKF merely because that directory exists.
+The `okf/` directory is never discovered implicitly. Each schema-v3 `okf`
+block binds the named surface, bundle root, format version, exact content
+digest, counts, byte limits, and optionality. Package admission validates the
+entire directory against that contract; an undeclared directory has no
+capability meaning.
 
 ### Illustrative schema v3
 
@@ -275,10 +275,26 @@ extension "acme/research" {
     transport = "streamable-http"
   }
 
+  okf "domain-knowledge" {
+    format_version         = "0.2"
+    root                   = "okf/domain-knowledge"
+    content_digest         = "sha256:bd85b0b63adb32bdf616384a619286af4c32401542655dd09e00450902ab478d"
+    concept_count          = 4
+    file_count             = 7
+    expanded_bytes         = 2053
+    max_files              = 256
+    max_concepts           = 64
+    max_expanded_bytes     = 67108864
+    max_document_bytes     = 1048576
+    max_links_per_document = 2048
+    optional               = false
+  }
+
   skill "review" {
     path          = "skills/review/SKILL.md"
     requires_tool = ["convert", "index"]
     requires_mcp  = ["library"]
+    requires_okf  = ["domain-knowledge"]
   }
 
   ui "review" {
@@ -290,9 +306,10 @@ extension "acme/research" {
 ```
 
 The checked-in
-[`plugin-v3.acl`](../crates/extension/fixtures/manifests/plugin-v3.acl)
-fixture is the executable contract and carries an adjacent stable SHA-256
-golden. The fixture bytes use LF endings and include the final repository
+[`plugin-v3.acl`](../crates/extension/fixtures/manifests/plugin-v3.acl) and
+[`plugin-v3-okf.acl`](../crates/extension/fixtures/manifests/plugin-v3-okf.acl)
+fixtures freeze the executable and OKF contract shapes with adjacent stable
+SHA-256 goldens. Fixture bytes use LF endings and include the final repository
 newline in their digest.
 
 This example records deployment and binding facts, not the Tool's business
@@ -300,15 +317,15 @@ operations. The CLI owns its arguments and exit codes. The HTTP service owns
 its routes and response schemas. An optional content-bound OpenAPI document is
 documentation and validation evidence, not a new A3S execution protocol.
 
-### Target OKF contribution contract
+### OKF contribution contract
 
-The first-class OKF surface is an additive follow-up to the checked-in schema-v3
-fixture. Its shared content contract is frozen; the remaining manifest and
-control-plane contract must be frozen before parser or lifecycle implementation
-and must reuse the package identity, plan, receipt, grant, reconciliation, and
-capability-generation machinery already present.
+The first-class OKF surface is an additive schema-v3 contract. Its shared
+content and M0K-B control-plane contracts reuse the package identity, plan,
+receipt, grant, reconciliation, and capability-generation machinery already
+present. They do not add another manager, lifecycle store, Runtime route, or
+capability registry.
 
-The contract must bind at least:
+The contract binds:
 
 - a manifest-local OKF surface ID and bundle-relative root;
 - the declared Open Knowledge Format version, initially current `0.2` plus
@@ -327,6 +344,16 @@ The contract must bind at least:
   observation digest; and
 - receipt-owned uninstall behavior that never removes personal notes, raw
   compiler sources, or another package's index generation.
+
+The machine boundary is split deliberately:
+
+- `a3s.use.okf-bundle.v1` binds immutable content;
+- catalog v3 and operation-plan v2 bind package selection and impact;
+- `a3s.use.okf-projection-receipt.v1` records one staged candidate;
+- `a3s.use.okf-knowledge-observation.v1` reports host state and the selected
+  last-good generation; and
+- `a3s.use.okf-capability-projection.v1` contains only exact promoted evidence
+  safe for a scope-aware capability generation.
 
 OKF conformance is deliberately permissive. Unknown concept types and
 frontmatter keys remain valid, missing optional indexes remain valid, and safe
@@ -727,9 +754,10 @@ letting the planner infer state.
 The existing process-wide capability snapshot has no workspace identity and
 therefore does not select one implicitly. Automatic capability/session
 publication remains pending until the lifecycle caller supplies the explicit
-scope plus Runtime, compatibility-host, Skill, and UI observations. After the
-remaining additive OKF surface contract is frozen, its separate Knowledge-host
-observation joins at the same boundary.
+scope plus Runtime, compatibility-host, Skill, UI, and Knowledge observations.
+The OKF Knowledge-host observation contract already joins the shared
+reconciler: missing remains pending, staged remains unpublished, failed cannot
+replace last-good, and only exact promoted evidence is healthy.
 
 Current provider evidence matters:
 
@@ -813,9 +841,9 @@ Migration is additive:
 2. interpret legacy `cli` as one Tool Task with user exposure and retain its
    existing direct launcher behavior;
 3. add schema v3 fixtures for multiple Skills, Tools, MCP servers, and UIs;
-4. use the frozen shared OKF fixture/conformance core while freezing an
-   additive manifest, receipt, projection, and A3S Knowledge index-observation
-   contract without reinterpreting the existing v3 fixture;
+4. add the frozen OKF manifest/package fixture and versioned catalog, plan,
+   receipt, projection, and A3S Knowledge observation contracts without
+   reinterpreting the existing schema-v3 fixture;
 5. introduce the Tool release descriptor and Runtime mapping behind typed
    interfaces;
 6. move Science to registry-only delivery and model its real executables or

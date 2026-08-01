@@ -1,7 +1,7 @@
 <p align="center">
   <img
     src="assets/readme/hero.svg"
-    width="1200"
+    width="100%"
     alt="A3S Use — AI Native Package Manager for native tools and cognitive plugins"
   />
 </p>
@@ -25,7 +25,8 @@
 **A3S Use is the AI Native Package Manager for the A3S ecosystem.** It brings
 platform-native executables and agent-facing cognition into one versioned,
 verifiable package lifecycle, then projects installed capabilities through
-native CLI, standard MCP, content-bound Skills, and sandboxed host surfaces.
+native CLI, standard MCP, content-bound Skills, sandboxed host surfaces, and
+exact-generation knowledge evidence.
 
 It is an **A3S package manager**, not a replacement for `apt`, Homebrew, or
 WinGet. A3S Use manages packages that participate in the A3S capability and
@@ -37,9 +38,12 @@ system software.
 > current `main` branch also contains an in-development plugin-platform
 > baseline: named schema-v3 surfaces, signed searchable catalogs, immutable
 > plan and permission contracts, workspace grants, Runtime bindings, and
-> surface reconciliation. The parent apply saga and production host adapters
-> remain incomplete, so these contracts are not yet a finished plugin product.
-> [ROADMAP.md](ROADMAP.md) is the source of truth.
+> surface reconciliation. M0K-B now adds the first-class OKF manifest,
+> catalog-v3, plan-v2, receipt, Knowledge observation, capability projection,
+> and dependency-gated reconciliation contracts. The parent apply saga and
+> production Runtime, Gateway, and A3S Knowledge adapters remain incomplete,
+> so these contracts are not yet a finished plugin product. [ROADMAP.md](ROADMAP.md)
+> is the source of truth.
 
 The user-facing entry point is `a3s use`. The standalone `a3s-use` binary is
 the delegated package engine and remains available for automation and
@@ -67,7 +71,7 @@ A3S package
 | Plane | Implemented foundation | Product direction |
 | --- | --- | --- |
 | Native | Built-in providers, external CLI/MCP executables, immutable generations | Target-specific dependency graphs and transactional lock state |
-| Cognitive | Named Tool Task/Service, MCP, Skill, and UI contracts on `main` | First-class OKF knowledge packages, then Agents, prompts, hooks, and typed memory/context providers |
+| Cognitive | Named Tool Task/Service, MCP, OKF, Skill, and UI contracts on `main` | Production Knowledge indexing, then Agents, prompts, hooks, and typed memory/context providers |
 | Control | TUF provenance, plan digests, receipts, grants, route leases, and capability snapshots | Complete apply saga, rollback, garbage collection, and policy-aware activation |
 
 ## Quick start
@@ -108,7 +112,7 @@ Packages currently use one `a3s-use-extension.acl` manifest parsed by
 Language, not HCL.
 
 Schema v1 and v2 remain compatible. The schema-v3 baseline adds repeatable,
-named Tool, MCP, Skill, and UI surfaces with an acyclic readiness graph:
+named Tool, MCP, OKF, Skill, and UI surfaces with an acyclic readiness graph:
 
 ```acl
 extension "acme/research" {
@@ -142,10 +146,26 @@ extension "acme/research" {
     optional   = false
   }
 
+  okf "domain-knowledge" {
+    format_version         = "0.2"
+    root                   = "okf/domain-knowledge"
+    content_digest         = "sha256:bd85b0b63adb32bdf616384a619286af4c32401542655dd09e00450902ab478d"
+    concept_count          = 4
+    file_count             = 7
+    expanded_bytes         = 2053
+    max_files              = 256
+    max_concepts           = 64
+    max_expanded_bytes     = 67108864
+    max_document_bytes     = 1048576
+    max_links_per_document = 2048
+    optional               = false
+  }
+
   skill "review" {
     path          = "skills/review/SKILL.md"
     requires_tool = ["convert"]
     requires_mcp  = ["library"]
+    requires_okf  = ["domain-knowledge"]
     optional      = false
   }
 
@@ -158,25 +178,30 @@ extension "acme/research" {
 }
 ```
 
-The accepted target model also includes
+Schema v3 now accepts
 **[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)**
-as a first-class, non-executable cognitive surface. The frozen content
-contract targets current OKF v0.2 with an explicit v0.1 compatibility path.
-An OKF contribution is a shareable graph of UTF-8 Markdown concepts with YAML
-frontmatter; every non-reserved concept requires a non-empty `type`, its
-bundle-relative path is its identity, and standard Markdown links form the
-graph. The shared bundle descriptor, bounded conformance inspector, and
-canonical fixtures are implemented in `a3s-use-core`. The manifest, catalog,
-plan, receipt/projection, lifecycle, and A3S Knowledge atomic-index contracts
-remain planned follow-up work. The current schema-v3 parser rejects an
-undefined `okf` block, so OKF must not be advertised as installable yet.
+as a first-class, non-executable cognitive surface. The contract targets OKF
+v0.2 with an explicit v0.1 compatibility path. An OKF contribution is a
+shareable graph of UTF-8 Markdown concepts with YAML frontmatter; every
+non-reserved concept requires a non-empty `type`, its bundle-relative path is
+its identity, and standard Markdown links form the graph.
 
-The executable schema-v3 fixture is
-[`crates/extension/fixtures/manifests/plugin-v3.acl`](crates/extension/fixtures/manifests/plugin-v3.acl).
+M0K-B implements the named manifest block, recursive package validation,
+catalog-v3 bundle evidence, Skill → OKF dependency closure, plan-v2 impact,
+projection receipts, scope-bound Knowledge observations, capability
+projections, and last-good-aware reconciliation. OKF never enters Runtime and
+cannot carry a runtime permission ceiling. A package remains unpublished until
+a matching A3S Knowledge observation reports the exact generation as
+`promoted`; the production persistent Knowledge stage/promote/remove adapter
+is still pending.
+
+The executable and knowledge schema-v3 fixtures are
+[`plugin-v3.acl`](crates/extension/fixtures/manifests/plugin-v3.acl) and
+[`plugin-v3-okf.acl`](crates/extension/fixtures/manifests/plugin-v3-okf.acl).
 All paths are package-relative. Installation rejects missing or invalid
 surfaces, path traversal, links, archive ambiguity, route collisions,
-oversized packages, provenance drift, and incompatible host ranges before
-activation.
+oversized packages, provenance drift, incompatible host ranges, or OKF bytes
+that differ from the declared bundle contract before activation.
 
 ### Local package workflow
 
@@ -254,8 +279,10 @@ a3s --output json install use/acme/calendar \
 
 Catalog v1 adds bounded metadata-only search. Catalog v2 binds the manifest,
 expanded package, permission ceiling, and surface dependencies. Catalog v3
-adds a separately signed, bounded planning target for executable Tool and MCP
-surfaces so review does not require downloading the package archive.
+adds exact OKF bundle evidence and, when executable Tool or MCP surfaces are
+present, a separately signed bounded planning target so review does not require
+downloading the package archive. An OKF-only catalog-v3 record carries no
+invented executable target.
 
 ## Implementation status
 
@@ -275,13 +302,14 @@ surfaces so review does not require downloading the package archive.
 
 | Capability | Status |
 | --- | --- |
-| Schema-v3 named Tool Task/Service, MCP, Skill, and UI contracts | Implemented |
-| First-class OKF knowledge-package contribution | Shared bundle contract and bounded conformance core implemented; manifest/lifecycle integration pending |
+| Schema-v3 named Tool Task/Service, MCP, OKF, Skill, and UI contracts | Implemented |
+| First-class OKF knowledge-package control plane | M0K-B implemented: bundle validation, manifest/catalog/plan, receipt/observation/projection, dependency-gated reconciliation, and canonical fixtures |
 | Signed catalog v1–v3, offline verification, search, and planning target | Implemented |
 | Immutable operation-plan, permission-ceiling, and provider-evidence contracts | Implemented |
 | Exact-generation workspace grant store and recoverable grant journal | Implemented |
 | Runtime Task/Service binding receipts, invocation, and observation | Implemented as typed adapters |
 | Dependency-gated Surface Reconciler and planner evidence | Implemented |
+| Persistent A3S Knowledge stage/promote/remove adapter and scoped cited retrieval | In progress; no production OKF publication without promoted evidence |
 | Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | In progress |
 | Production secret, egress, filesystem, child-process, Gateway, and stdio-MCP adapters | In progress |
 | General package dependency solver and deterministic lock graph | Target architecture |
@@ -389,8 +417,9 @@ plugin platform. The current critical path is:
 3. complete CLI/Web/agent lifecycle E2E with production providers;
 4. add the general package dependency solver, deterministic lock graph,
    retained-generation rollback, and garbage collection;
-5. freeze the remaining OKF manifest, receipt, projection, atomic-index, and
-   uninstall contracts with A3S Knowledge around the shared conformance core;
+5. connect the frozen OKF contracts to the persistent A3S Knowledge
+   stage/promote/remove adapter, scoped capability projection, rollback, and
+   receipt-owned uninstall cleanup;
 6. extend the remaining cognitive contribution model only after each host
    contract is frozen; and
 7. complete official registry operations and Windows platform gates.
@@ -400,8 +429,8 @@ plugin platform. The current critical path is:
 | Crate | Responsibility |
 | --- | --- |
 | `a3s-use` | Facade, package engine, Runtime adapters, capability reconciliation, and MCP entry points |
-| `a3s-use-core` | Canonical package/plugin, catalog, plan, permission, grant, release, and OKF bundle contracts |
-| `a3s-use-extension` | ACL manifests, TUF catalog, package store, receipts, leases, and workspace grants |
+| `a3s-use-core` | Canonical package/plugin, catalog, plan, permission, grant, release, OKF bundle, and Knowledge projection contracts |
+| `a3s-use-extension` | ACL manifests, recursive OKF/package validation, TUF catalog, package store, receipts, leases, and workspace grants |
 | `a3s-use-science` | Reference external package implementation |
 
 Browser and OCR are maintained in independent repositories and pinned to exact

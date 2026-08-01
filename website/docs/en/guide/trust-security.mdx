@@ -63,6 +63,8 @@ plugins {
 
 An omitted ceiling means zero, empty, or `false`. Duplicates, unknown fields, broad network patterns, and unattended secret grants fail closed.
 
+The example is the current host policy v1 and intentionally omits `okf`. Core selection and manager-toolset v2 now define the canonical value, but the umbrella host must explicitly version or compatibly extend its ACL policy before it may authorize an OKF-bearing operation.
+
 ## Activation order
 
 ```text
@@ -78,6 +80,8 @@ resolve signed metadata
 ```
 
 A new generation stays invisible until every required dependency is usable. A failed upgrade preserves the previous generation. Disable and uninstall hide new calls before draining exact-generation leases.
+
+For OKF, the control-plane gate is implemented: missing Knowledge evidence is pending, staged is unpublished, and only an exact promoted observation is healthy. The persistent Knowledge adapter that produces and retires those records remains in development.
 
 ## Platform isolation boundary
 

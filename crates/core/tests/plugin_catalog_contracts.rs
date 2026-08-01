@@ -1,15 +1,19 @@
 use a3s_use_core::{
-    CatalogPlanningTarget, ExecutablePlanningSurface, InstalledPluginPlanEvidence,
-    McpReleaseDescriptor, PlanPackageRole, PlanningArtifactRef, PlanningSurfaceActivation,
-    PluginCatalogRecord, PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle,
-    PluginSurfaceKind, PluginSurfaceRef, ToolReleaseDescriptor, ToolWorkloadClass,
-    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
-    PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_PLANNING_BUNDLE_SCHEMA,
+    CatalogPlanningTarget, CatalogSurface, ExecutablePlanningSurface, InstalledPluginPlanEvidence,
+    McpReleaseDescriptor, OkfBundleContract, PlanPackageRole, PlanningArtifactRef,
+    PlanningSurfaceActivation, PluginCatalogRecord, PluginPermissionCeiling, PluginPlanSource,
+    PluginPlanningBundle, PluginSurfaceKind, PluginSurfaceRef, ToolReleaseDescriptor,
+    ToolWorkloadClass, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA, PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
+    PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
 use sha2::{Digest, Sha256};
 
 const PERMISSION_CEILING: &[u8] = include_bytes!("../fixtures/plugins/permission-ceiling-v1.json");
 const CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-v1.json");
+const OKF_CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
+const OKF_CATALOG_RECORD_DIGEST: &str =
+    include_str!("../fixtures/plugins/catalog-record-okf-v3.sha256").trim_ascii_end();
 const COMPLETE_PACKAGE_CATALOG: &[u8] =
     include_bytes!("../fixtures/plugins/complete-package-catalog-v1.json");
 const COMPLETE_PACKAGE_CATALOG_DIGEST: &str =
@@ -280,6 +284,110 @@ fn catalog_v3_binds_one_small_deterministic_planning_target() {
 
     value["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
     assert!(PluginCatalogRecord::from_json(&serde_json::to_vec(&value).unwrap()).is_err());
+}
+
+#[test]
+fn catalog_v3_binds_okf_and_skill_dependency_closure_without_runtime_authority() {
+    let bundle =
+        OkfBundleContract::from_json(include_bytes!("../fixtures/okf/bundle-contract-v1.json"))
+            .unwrap();
+    let mut record = plan_ready_catalog().record;
+    record.schema = PLUGIN_CATALOG_SCHEMA_V3.to_owned();
+    record.planning = Some(CatalogPlanningTarget {
+        target_name: "extensions/acme/research/2.0.0/stable/linux-x86_64/planning-v1.json"
+            .to_owned(),
+        length: 4096,
+        sha256: format!("sha256:{}", "d".repeat(64)),
+    });
+    record.surfaces.insert(
+        1,
+        CatalogSurface {
+            kind: PluginSurfaceKind::Okf,
+            id: "domain-knowledge".to_owned(),
+            optional: true,
+            workload: None,
+            mcp_transport: None,
+            mcp_tool_count: None,
+            okf_bundle: Some(bundle.clone()),
+            requires: Vec::new(),
+        },
+    );
+    record.surfaces[2].requires.insert(
+        0,
+        PluginSurfaceRef {
+            kind: PluginSurfaceKind::Okf,
+            id: "domain-knowledge".to_owned(),
+        },
+    );
+    record.validate().unwrap();
+
+    let selected = record
+        .resolve_surfaces(&[PluginSurfaceRef {
+            kind: PluginSurfaceKind::Skill,
+            id: "review".to_owned(),
+        }])
+        .unwrap();
+    assert!(selected.iter().any(|surface| {
+        surface.kind == PluginSurfaceKind::Okf
+            && surface.id == "domain-knowledge"
+            && surface.okf_bundle.as_ref() == Some(&bundle)
+    }));
+
+    let mut legacy = record.clone();
+    legacy.schema = PLUGIN_CATALOG_SCHEMA_V2.to_owned();
+    legacy.planning = None;
+    assert!(legacy.validate().is_err());
+
+    let mut permission = record.permission_ceiling.clone();
+    let mut unauthorized = permission.surfaces[0].clone();
+    unauthorized.surface = PluginSurfaceRef {
+        kind: PluginSurfaceKind::Okf,
+        id: "domain-knowledge".to_owned(),
+    };
+    permission.surfaces.insert(1, unauthorized);
+    assert!(permission.validate().is_err());
+}
+
+#[test]
+fn okf_only_catalog_v3_does_not_invent_an_executable_planning_target() {
+    let record = okf_only_catalog();
+    assert_eq!(
+        record.canonical_bytes().unwrap(),
+        canonical_fixture(OKF_CATALOG_RECORD)
+    );
+    assert_eq!(
+        record.descriptor_digest().unwrap(),
+        OKF_CATALOG_RECORD_DIGEST
+    );
+    assert_eq!(
+        PluginCatalogRecord::from_json(OKF_CATALOG_RECORD).unwrap(),
+        record
+    );
+    let state = VerifiedPluginCatalogRecord::new(
+        record.clone(),
+        VerifiedCatalogProvenance {
+            registry_name: "official".to_owned(),
+            registry_url: "https://plugins.a3s.dev/catalog".to_owned(),
+            root_sha256: format!("sha256:{}", "f".repeat(64)),
+            root_version: 7,
+            timestamp_version: 42,
+            snapshot_version: 41,
+            targets_version: 39,
+            catalog_record_digest: record.descriptor_digest().unwrap(),
+        },
+    )
+    .unwrap()
+    .selected_state(&[])
+    .unwrap();
+    assert!(state.permissions.surfaces.is_empty());
+    assert_eq!(
+        state.release.surfaces[0].okf_bundle.as_ref().unwrap().root,
+        "okf/domain-knowledge"
+    );
+    assert_eq!(
+        state.release.surfaces[1].requires[0].kind,
+        PluginSurfaceKind::Okf
+    );
 }
 
 #[test]
@@ -586,6 +694,66 @@ fn plan_ready_catalog() -> VerifiedPluginCatalogRecord {
         catalog_record_digest: record.descriptor_digest().unwrap(),
     };
     VerifiedPluginCatalogRecord::new(record, provenance).unwrap()
+}
+
+fn okf_only_catalog() -> PluginCatalogRecord {
+    let mut record = plan_ready_catalog().record;
+    record.schema = PLUGIN_CATALOG_SCHEMA_V3.to_owned();
+    record.package_id = "acme/knowledge".to_owned();
+    record.display_name = "A3S Knowledge Pack".to_owned();
+    record.description =
+        "Cited package knowledge with an exact promoted OKF generation.".to_owned();
+    record.keywords = vec!["knowledge".to_owned(), "okf".to_owned()];
+    record.categories = vec!["knowledge".to_owned()];
+    record.version = "1.0.0".to_owned();
+    record.planning = None;
+    record.surfaces = vec![
+        CatalogSurface {
+            kind: PluginSurfaceKind::Okf,
+            id: "domain-knowledge".to_owned(),
+            optional: false,
+            workload: None,
+            mcp_transport: None,
+            mcp_tool_count: None,
+            okf_bundle: Some(
+                OkfBundleContract::from_json(include_bytes!(
+                    "../fixtures/okf/bundle-contract-v1.json"
+                ))
+                .unwrap(),
+            ),
+            requires: Vec::new(),
+        },
+        CatalogSurface {
+            kind: PluginSurfaceKind::Skill,
+            id: "research".to_owned(),
+            optional: false,
+            workload: None,
+            mcp_transport: None,
+            mcp_tool_count: None,
+            okf_bundle: None,
+            requires: vec![PluginSurfaceRef {
+                kind: PluginSurfaceKind::Okf,
+                id: "domain-knowledge".to_owned(),
+            }],
+        },
+    ];
+    record.permission_ceiling.surfaces.clear();
+    record.permission_ceiling_digest = record.permission_ceiling.descriptor_digest().unwrap();
+    record.archive.target_name =
+        "extensions/acme/knowledge/1.0.0/stable/linux-x86_64/acme-knowledge-1.0.0-linux-x86_64.tar.gz"
+            .to_owned();
+    record.archive.length = 1_752;
+    record.archive.sha256 =
+        "sha256:9a40836f13db96f958b3d10323cc118a1444db35bced972631c0adf3ad06c245".to_owned();
+    record.package.expanded_bytes = 3_258;
+    record.package.file_count = 9;
+    record.package.sha256 =
+        Some("sha256:05076eb4c0184b5007c02563c5d0742997ee45e84b52ab42c805354d5a46817d".to_owned());
+    record.package.manifest_sha256 =
+        Some("sha256:16d065341edebaf45e0d633e46614155a60b853738290bbac8c5b62d9230bce2".to_owned());
+    record.repository = "https://github.com/acme/knowledge".to_owned();
+    record.validate().unwrap();
+    record
 }
 
 #[test]

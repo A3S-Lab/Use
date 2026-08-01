@@ -66,6 +66,7 @@ const TRANSITIONAL_SURFACE_STATES: [SurfaceObservedState; 2] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SurfaceOwner {
+    KnowledgeHost,
     Runtime,
     McpHost,
     SkillHost,
@@ -75,6 +76,7 @@ pub(crate) enum SurfaceOwner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SurfaceStateReason {
+    KnowledgeObservationMissing,
     PackageNotEnabled,
     RuntimeObservationMissing,
     McpObservationMissing,
@@ -232,6 +234,18 @@ fn surface_nodes(
             },
         )?;
     }
+    for surface in &manifest.okf {
+        insert_node(
+            &mut nodes,
+            SurfaceNode {
+                surface: surface_ref(PluginSurfaceKind::Okf, &surface.id),
+                owner: SurfaceOwner::KnowledgeHost,
+                optional: surface.optional,
+                activation: SurfaceActivation::Eager,
+                dependencies: Vec::new(),
+            },
+        )?;
+    }
     for surface in &manifest.skills {
         let mut dependencies = surface
             .requires_tools
@@ -242,6 +256,12 @@ fn surface_nodes(
                     .requires_mcp
                     .iter()
                     .map(|id| surface_ref(PluginSurfaceKind::Mcp, id)),
+            )
+            .chain(
+                surface
+                    .requires_okf
+                    .iter()
+                    .map(|id| surface_ref(PluginSurfaceKind::Okf, id)),
             )
             .collect::<Vec<_>>();
         dependencies.sort();
@@ -397,6 +417,7 @@ fn desired_surface_state(node: &SurfaceNode, desired: PluginDesiredState) -> Sur
         return SurfaceDesiredState::Stopped;
     }
     match node.owner {
+        SurfaceOwner::KnowledgeHost => SurfaceDesiredState::Healthy,
         SurfaceOwner::Runtime | SurfaceOwner::McpHost
             if node.activation == SurfaceActivation::Eager =>
         {
@@ -464,6 +485,10 @@ fn observed_surface_state(
 fn default_observation(node: &SurfaceNode) -> (SurfaceObservedState, Option<SurfaceStateReason>) {
     match node.owner {
         SurfaceOwner::SkillHost => (SurfaceObservedState::Prepared, None),
+        SurfaceOwner::KnowledgeHost => (
+            SurfaceObservedState::Pending,
+            Some(SurfaceStateReason::KnowledgeObservationMissing),
+        ),
         SurfaceOwner::Runtime => (
             SurfaceObservedState::Pending,
             Some(SurfaceStateReason::RuntimeObservationMissing),
@@ -562,6 +587,7 @@ fn surface_ref(kind: PluginSurfaceKind, id: &str) -> PluginSurfaceRef {
 fn surface_kind_name(kind: PluginSurfaceKind) -> &'static str {
     match kind {
         PluginSurfaceKind::Mcp => "mcp",
+        PluginSurfaceKind::Okf => "okf",
         PluginSurfaceKind::Skill => "skill",
         PluginSurfaceKind::Tool => "tool",
         PluginSurfaceKind::Ui => "ui",

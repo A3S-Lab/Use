@@ -2,8 +2,8 @@
 
 - Status: accepted M0 contract baseline; runtime implementation in progress
 - Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted and M0K-A
-  bundle contract frozen 2026-07-31
+- Product amendment: first-class OKF knowledge contribution accepted; M0K-A
+  bundle contract frozen 2026-07-31 and M0K-B control plane frozen 2026-08-01
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -12,11 +12,11 @@ This document is the operational companion to the plugin platform
 architecture. It defines lifecycle consistency, failure recovery, security,
 storage, public application contracts, and observability.
 
-The checked-in M0 contracts cover Tool, MCP, Skill, and UI. The shared OKF
-bundle descriptor and conformance inspector are implemented, but the OKF
-lifecycle text below is accepted target behavior, not a claim that the current
-schema-v3 parser, reconciler, or A3S Knowledge adapter implements an OKF
-surface.
+The checked-in M0/M0K-B contracts cover Tool, MCP, OKF, Skill, and UI. The
+shared OKF bundle inspector, schema-v3 parser, package validator, exact host
+evidence, and reconciler gate are implemented. The persistent A3S Knowledge
+adapter and parent-saga checkpoints described below remain target behavior;
+without their promoted observation, an OKF surface stays unpublished.
 
 ## Complete End-to-End Lifecycle Flow
 
@@ -338,18 +338,25 @@ The graph has nine important invariants:
   starting another child process or side effect;
 - package installation commits a disabled receipt before any capability is
   published;
-- a required Skill is invisible until its Tool, MCP, and target OKF dependency
+- a required Skill is invisible until its Tool, MCP, and OKF dependency
   closure is usable;
 - a stored grant alone never publishes a capability;
 - upgrade switches all required N+1 bindings in one capability generation or
   keeps N active; and
 - disable or uninstall hides new routes before waiting for existing leases.
 
-### Target OKF readiness and cutover
+### OKF readiness and cutover
 
 An OKF surface follows the static-content branch but has a distinct A3S
 Knowledge observation. It is not a Runtime Task or Service and it does not gain
 authority from concept text or YAML frontmatter.
+
+M0K-B freezes the machine evidence used by this flow:
+`a3s.use.okf-projection-receipt.v1` records the staged candidate,
+`a3s.use.okf-knowledge-observation.v1` records staged/promoted/failed/removed
+state and last-good selection, and `a3s.use.okf-capability-projection.v1`
+contains only exact promoted evidence. The production adapter that persists
+and supplies these records is still pending.
 
 Before publication, the candidate exact generation must provide evidence for:
 

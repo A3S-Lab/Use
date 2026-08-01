@@ -2,18 +2,31 @@ use std::path::PathBuf;
 
 use sha2::{Digest, Sha256};
 
+use a3s_use_core::OkfFormatVersion;
+
 use super::{ExtensionManifest, PluginMcpLaunch, SurfaceActivation, ToolTaskSource, ToolWorkload};
 
 const NAMED_SURFACE_MANIFEST_BYTES: &[u8] = include_bytes!("../fixtures/manifests/plugin-v3.acl");
 const NAMED_SURFACE_MANIFEST: &str = include_str!("../fixtures/manifests/plugin-v3.acl");
 const NAMED_SURFACE_MANIFEST_DIGEST: &str =
     include_str!("../fixtures/manifests/plugin-v3.sha256").trim_ascii_end();
+const OKF_MANIFEST_BYTES: &[u8] = include_bytes!("../fixtures/manifests/plugin-v3-okf.acl");
+const OKF_MANIFEST: &str = include_str!("../fixtures/manifests/plugin-v3-okf.acl");
+const OKF_MANIFEST_DIGEST: &str =
+    include_str!("../fixtures/manifests/plugin-v3-okf.sha256").trim_ascii_end();
 
 #[test]
 fn schema_v3_acl_fixture_has_a_stable_digest() {
     let digest = format!("sha256:{:x}", Sha256::digest(NAMED_SURFACE_MANIFEST_BYTES));
 
     assert_eq!(digest, NAMED_SURFACE_MANIFEST_DIGEST);
+}
+
+#[test]
+fn schema_v3_okf_acl_fixture_has_a_stable_digest() {
+    let digest = format!("sha256:{:x}", Sha256::digest(OKF_MANIFEST_BYTES));
+
+    assert_eq!(digest, OKF_MANIFEST_DIGEST);
 }
 
 #[test]
@@ -137,12 +150,39 @@ fn schema_v3_requires_an_explicit_v3_host_compatibility_gate() {
 }
 
 #[test]
-fn schema_v3_keeps_okf_fail_closed_until_the_full_m0k_contract_is_wired() {
+fn schema_v3_parses_an_exact_named_okf_surface_and_skill_dependency() {
+    let manifest = ExtensionManifest::parse_acl(OKF_MANIFEST).unwrap();
+    assert_eq!(manifest.surface_kinds(), ["okf", "skill"]);
+    assert_eq!(manifest.okf.len(), 1);
+    assert_eq!(manifest.okf[0].id, "domain-knowledge");
+    assert_eq!(
+        manifest.okf[0].bundle.format_version,
+        OkfFormatVersion::V0_2
+    );
+    assert_eq!(manifest.okf[0].bundle.root, "okf/domain-knowledge");
+    assert_eq!(
+        manifest.skills[0].requires_okf,
+        ["domain-knowledge".to_owned()]
+    );
+}
+
+#[test]
+fn schema_v3_okf_rejects_drift_unknown_authority_and_missing_dependencies() {
     let okf = r#"
 
   okf "domain-knowledge" {
-    format_version = "0.2"
-    root           = "okf/domain-knowledge"
+    format_version         = "0.2"
+    root                   = "okf/domain-knowledge"
+    content_digest         = "sha256:bd85b0b63adb32bdf616384a619286af4c32401542655dd09e00450902ab478d"
+    concept_count          = 4
+    file_count             = 7
+    expanded_bytes         = 2053
+    max_files              = 256
+    max_concepts           = 64
+    max_expanded_bytes     = 67108864
+    max_document_bytes     = 1048576
+    max_links_per_document = 2048
+    optional               = false
   }
 "#;
     let manifest = NAMED_SURFACE_MANIFEST.replace(
@@ -150,6 +190,22 @@ fn schema_v3_keeps_okf_fail_closed_until_the_full_m0k_contract_is_wired() {
         &format!("{okf}\n  tool \"convert\" {{"),
     );
 
-    let error = ExtensionManifest::parse_acl(&manifest).unwrap_err();
-    assert!(error.message.contains("Unknown extension surface 'okf'"));
+    let unknown_dependency = manifest.replace(
+        "requires_mcp  = [\"library\"]",
+        "requires_mcp  = [\"library\"]\n    requires_okf  = [\"missing\"]",
+    );
+    let error = ExtensionManifest::parse_acl(&unknown_dependency).unwrap_err();
+    assert!(error
+        .message
+        .contains("requires unknown OKF surface 'missing'"));
+
+    let executable_metadata = manifest.replace(
+        "optional               = false",
+        "optional               = false\n    executor               = \"tool:index\"",
+    );
+    let error = ExtensionManifest::parse_acl(&executable_metadata).unwrap_err();
+    assert!(error.message.contains("Unknown 'okf' attribute 'executor'"));
+
+    let escaping = manifest.replace("okf/domain-knowledge", "../personal-vault");
+    assert!(ExtensionManifest::parse_acl(&escaping).is_err());
 }

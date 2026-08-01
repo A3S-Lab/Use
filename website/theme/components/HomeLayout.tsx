@@ -189,7 +189,7 @@ export function HomeLayout() {
               <div>
                 <span>OKF</span>
                 <code>domain-knowledge</code>
-                <i>TARGET</i>
+                <i>PENDING</i>
               </div>
             </div>
             <footer>

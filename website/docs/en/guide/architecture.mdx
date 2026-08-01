@@ -79,7 +79,7 @@ Each checkpoint uses an operation ID and surface idempotency key. Crash recovery
 
 ## Runtime visibility
 
-The Surface Reconciler observes desired state, generation receipt, grants, bindings, Runtime/Gateway health, and Skill/UI/target OKF projection. The Capability Registry publishes a new snapshot only when complete evidence agrees on one generation. Resident hosts can watch generation plus revision and hot-refresh without restarting.
+The Surface Reconciler observes desired state, generation receipt, grants, bindings, Runtime/Gateway health, and Skill/UI/OKF projection. M0K-B gives OKF a distinct Knowledge-host owner: missing is pending, staged is unpublished, and only exact promoted evidence is healthy. The Capability Registry publishes a new snapshot only when complete evidence agrees on one generation. Resident hosts can watch generation plus revision and hot-refresh without restarting.
 
 OKF has a different host boundary from Runtime: it runs no process. Use verifies and records the exact package generation; A3S Knowledge owns conformant atomic promotion, indexing, and cited retrieval. A failed new OKF generation must not replace the last searchable generation.
 

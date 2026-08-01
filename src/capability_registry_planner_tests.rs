@@ -64,6 +64,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
             workload: None,
             mcp_transport: None,
             mcp_tool_count: None,
+            okf_bundle: None,
             requires: Vec::new(),
         }],
         permission_ceiling_digest: permissions.descriptor_digest().unwrap(),
