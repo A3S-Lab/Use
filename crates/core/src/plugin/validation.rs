@@ -12,8 +12,7 @@ pub(crate) fn valid_segment(value: &str) -> bool {
 }
 
 pub(crate) fn valid_package_id(value: &str) -> bool {
-    let segments = value.split('/').collect::<Vec<_>>();
-    value.len() <= 128 && segments.len() == 2 && segments.into_iter().all(valid_segment)
+    super::PluginPackageId::is_valid(value)
 }
 
 pub(super) fn valid_catalog_text(value: &str, max_bytes: usize) -> bool {

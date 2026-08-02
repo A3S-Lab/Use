@@ -81,6 +81,7 @@ dependencies = [
 name = "a3s-use-core"
 version = "0.2.1"
 dependencies = [
+ "async-trait",
  "olpc-cjson",
  "percent-encoding",
  "pulldown-cmark",
