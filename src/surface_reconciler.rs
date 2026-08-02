@@ -9,6 +9,8 @@ use a3s_use_core::{PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult};
 use a3s_use_extension::{ExtensionManifest, SurfaceActivation};
 use serde::Serialize;
 
+pub(crate) use a3s_use_core::{PluginDesiredState, PluginObservedState};
+
 const RECONCILE_SCHEMA_VERSION: u32 = 1;
 const MAX_RECONCILE_SURFACES: usize = 256;
 
@@ -16,27 +18,6 @@ mod runtime_observations;
 pub(crate) use runtime_observations::reconcile_with_runtime;
 
 pub(crate) type SurfaceObservations = BTreeMap<PluginSurfaceRef, SurfaceObservedState>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum PluginDesiredState {
-    Absent,
-    InstalledDisabled,
-    Enabled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum PluginObservedState {
-    Installed,
-    Reconciling,
-    Ready,
-    Degraded,
-    Broken,
-    Incompatible,
-    Draining,
-    Removed,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]

@@ -3,7 +3,8 @@
 - Status: M0 complete; M0K-B OKF control-plane contracts complete
 - Baseline date: 2026-07-30
 - Product amendment: OKF bundle contract/conformance frozen 2026-07-31;
-  plugin-surface control plane frozen 2026-08-01
+  plugin-surface control plane frozen 2026-08-01; managed-host protocol frozen
+  2026-08-02
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -41,6 +42,12 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Operation plan | `a3s.use.plugin-operation-plan.v2` | Plan v1 plus an exact derived OKF bundle delta |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
 | Manager toolset | `a3s.use.plugin-manager-tools.v2` | Manager v1 with canonical `okf` search and selection values |
+| Managed scope | `a3s.use.plugin-managed-scope.v1` | Host-derived workspace identity and exclusive mutation fence |
+| Host capabilities | `a3s.use.plugin-host-capabilities.v1` | Exact manager build, protocol level, and frozen supported schema inventory |
+| Host plan | `a3s.use.plugin-host-plan-request/result.v1` | Exact verified selection in and canonical reviewed A3S Use plan out |
+| Host apply | `a3s.use.plugin-host-apply-request/result.v1` | Digest-only apply with exact confirmation and idempotent operation evidence |
+| Host enablement | `a3s.use.plugin-host-enablement-request/result.v1` | Optimistic-generation enable or disable through the same manager |
+| Host observation | `a3s.use.plugin-host-observation-request/result.v1` | Exact Use-owned package/capability state or explicit unavailable evidence |
 | OKF projection receipt | `a3s.use.okf-projection-receipt.v1` | Exact scope/package/surface generation staged for Knowledge |
 | OKF Knowledge observation | `a3s.use.okf-knowledge-observation.v1` | Staged, promoted, failed, or removed index evidence and last-good selection |
 | OKF capability projection | `a3s.use.okf-capability-projection.v1` | Exact promoted evidence safe to join to a scoped capability generation |
@@ -98,6 +105,41 @@ Immutable review and receipt contracts use OLPC canonical JSON and expose a
 `sha256:` descriptor digest. The planner draft is deliberately neither
 authorized nor independently digest-authoritative; the host binds it into the
 canonical operation plan before review.
+
+## Managed Host Protocol
+
+`PluginHostManager` is the sole typed application port for a remote managed
+workspace. It is not another manager implementation. A host adapter delegates
+its four distinct operations—plan, apply, set enablement, and observe—to the
+same shared Plugin Manager used by local presentation adapters. Catalog/TUF
+verification, immutable generations, operation replay, Workspace Grants,
+Runtime Bindings, capability publication, drain, reference counting, and
+cleanup remain behind that one manager.
+
+Every request carries the descriptor digest of
+`a3s.use.plugin-host-capabilities.v1`, a positive assignment generation, and an
+exact `a3s.use.plugin-managed-scope.v1` value. The scope contains only opaque
+host, workspace, and authority identities plus a positive fence generation and
+digest. It contains no path or bearer token. The manager compares the complete
+value with its durable current fence; stale, future, standalone, or
+different-authority scopes fail closed.
+
+The host capability schema freezes its full v1 contract, catalog, plan, and
+surface inventory. A different inventory requires a new schema and protocol
+level instead of silently mixing versions. Plan input can select only one
+complete verified catalog record and bounded named surfaces. Policy authority,
+provider choice, operation identity, and confirmation are host-owned. Apply
+submits only the stored operation ID and plan digest plus exact canonical user
+confirmation when required. Enablement uses an expected installed generation.
+Observation returns either the shared Surface Reconciler state with exact
+receipt/package/capability evidence or a typed unavailable reason; absence and
+success are never inferred from missing evidence.
+
+Canonical capability, managed-scope, and observation JSON/SHA-256 fixtures are
+checked into `crates/core/fixtures/plugins/` for Cloud and other host adapters.
+Unknown fields, unbounded input, mixed schema versions, zero generations,
+noncanonical package IDs, stale fences, and substituted request/result
+identities are rejected.
 
 ## Catalog and Trust Provenance
 

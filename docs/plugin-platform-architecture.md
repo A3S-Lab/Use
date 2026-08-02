@@ -121,6 +121,7 @@ mutate plugin lifecycle state.
 | A3S Runtime | Digest-bound Task/Service execution, observation, stop, remove, logs | Plugin resolution, provider selection, Skill/UI/OKF projection |
 | A3S Gateway | Private endpoint routing and scoped access to Service bindings | Package lifecycle or permission grants |
 | A3S Code/Web/Knowledge | Session projection, managed Skill roots, sandboxed UI, conformant OKF promotion/index | A second package manager |
+| Cloud node host adapter | Authenticated delivery to one fenced managed workspace through `PluginHostManager` | Installer, lifecycle journal, grant/binding store, reconciler, scheduler, or plugin execution RPC |
 | Plugin publisher | Surface implementation, manifest, release descriptors, provenance | User policy or host authority |
 
 ## Domain Model
@@ -139,6 +140,15 @@ mutate plugin lifecycle state.
 
 A route, command alias, display name, endpoint, filesystem path, and Runtime
 unit ID are projections. None is an ownership identity.
+
+Remote management uses the same ownership model. A
+`PluginManagedScope` binds one opaque host/workspace/authority tuple to an
+exact positive fence generation and digest. The versioned `PluginHostManager`
+port accepts separate plan, digest-only apply, enablement, and observation
+contracts, all bound to the host's exact capability descriptor. It does not
+define an `execute(plugin, action, payload)` protocol. A Cloud node adapter is
+only a delivery adapter over this port; it cannot reproduce the Plugin Manager
+saga or allow local mutation adapters to compete inside the managed scope.
 
 ### Plugin aggregate
 

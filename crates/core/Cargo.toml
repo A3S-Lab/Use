@@ -9,6 +9,7 @@ rust-version.workspace = true
 description = "Shared typed contracts for A3S Use domains"
 
 [dependencies]
+async-trait.workspace = true
 olpc-cjson.workspace = true
 percent-encoding.workspace = true
 pulldown-cmark.workspace = true

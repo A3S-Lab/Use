@@ -398,7 +398,7 @@ The boundaries are intentional:
   roots, enabled state, ACL policy, confirmation, secrets, and explicit Runtime
   provider composition.
 - **The shared Plugin Manager** is the only lifecycle application service used
-  by CLI, Web, and management MCP adapters.
+  by CLI, Web, management MCP, and remote managed-host adapters.
 - **A3S Use** owns package validation, immutable generations, receipts, grants,
   Runtime binding evidence, route leases, and capability reconciliation.
 - **Package processes** own their CLI, HTTP, and MCP vocabulary. Use does not
@@ -406,6 +406,17 @@ The boundaries are intentional:
   `dlopen`.
 - **A3S hosts** own sandboxing, rendering, and OKF indexing. Skill, UI, OKF,
   Tool, and remote content are data and cannot grant authority.
+
+`a3s-use-core` publishes one versioned `PluginHostManager` port for remote
+managed workspaces. Its distinct plan, digest-only apply, enablement, and
+observation contracts reuse the canonical catalog, plan, confirmation, and
+Surface Reconciler state types. Every request binds the exact host capability
+digest and one host-derived `PluginManagedScope` fence. A managed scope has one
+mutation authority: local CLI, Web, or management MCP adapters cannot race a
+remote host adapter, while standalone scopes never become managed implicitly.
+The port carries no filesystem path, executable, provider, public endpoint,
+Secret value, generic action payload, package installer, or second lifecycle
+state.
 
 The host-owned Runtime Broker boundary and no-provider-fallback rule are
 frozen in

@@ -11,6 +11,11 @@ mod catalog_trust;
 mod grant;
 mod grant_changes;
 mod grant_resolution;
+mod host;
+mod host_observation;
+mod host_operation;
+mod host_plan;
+mod identity;
 mod installed_plan;
 mod manager;
 mod permission;
@@ -36,6 +41,26 @@ pub use grant_changes::{
 pub use grant_resolution::{
     PluginGrantConfirmation, PluginWorkspaceGrantProposal, WorkspaceGrantProposalAuthority,
 };
+pub use host::{
+    PluginHostCapabilities, PluginHostManager, PluginManagedScope, PLUGIN_HOST_CAPABILITIES_SCHEMA,
+    PLUGIN_HOST_PROTOCOL_LEVEL, PLUGIN_MANAGED_SCOPE_SCHEMA,
+};
+pub use host_observation::{
+    PluginDesiredState, PluginHostObservationRequest, PluginHostObservationResult,
+    PluginHostObservationStatus, PluginHostPackageState, PluginHostUnavailableReason,
+    PluginObservedState, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
+};
+pub use host_operation::{
+    PluginHostApplyRequest, PluginHostApplyResult, PluginHostEnablementRequest,
+    PluginHostEnablementResult, PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA,
+};
+pub use host_plan::{
+    PluginHostPlanRequest, PluginHostPlanResult, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
+    PLUGIN_HOST_PLAN_RESULT_SCHEMA,
+};
+pub use identity::PluginPackageId;
 pub use installed_plan::InstalledPluginPlanEvidence;
 pub use manager::{
     PluginManagerToolAnnotations, PluginManagerToolDefinition, PluginManagerToolset,

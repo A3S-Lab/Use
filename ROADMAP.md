@@ -323,12 +323,18 @@ Exit criteria:
 - offline search uses only the last verified snapshot and reports its age;
 - catalog search has deterministic fixtures and output-size bounds.
 
-### M2 — Shared Plugin Manager application service (in progress 2026-07-30)
+### M2 — Shared Plugin Manager application service (in progress 2026-08-02)
 
 Estimated effort: 2–3 weeks
 
-Implementation status (2026-07-30):
+Implementation status (2026-08-02):
 
+- completed in `a3s-use-core`: one object-safe `PluginHostManager` port and
+  canonical v1 managed-host capability, scope-fence, plan, digest-only apply,
+  enablement, and observation contracts. They reuse the existing catalog,
+  plan, confirmation, and Surface Reconciler states, reject mixed schemas and
+  stale fences, expose bounded unavailable evidence, and contain no path,
+  provider, endpoint, Secret value, or universal action payload;
 - completed in the umbrella CLI: a reusable typed `plugin_manager` application
   service with one operation lock and centralized plan, apply, enable, and
   disable process boundaries;
@@ -390,7 +396,9 @@ Implementation status (2026-07-30):
   plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
   smoke test;
 - pending: Runtime/MCP/UI observation and apply adapters, and the complete Unix
-  Marketplace lifecycle E2E through the shared service.
+  Marketplace lifecycle E2E through the shared service. The shared manager
+  must also implement the published managed-host port before a Cloud adapter
+  can enable mutation; hosts must not add a parallel implementation.
 
 Deliverables:
 
@@ -410,6 +418,9 @@ Exit criteria:
 - the existing Marketplace lifecycle E2E passes through the shared service;
 - a plan changed between review and apply is rejected;
 - simultaneous operations cannot publish conflicting package generations.
+- remote managed scopes use the same manager, plan store, operation journal,
+  package generations, grants, bindings, and capability publication as local
+  adapters, with exactly one active mutation fence.
 
 ### M3 — User plugin UX and on-demand Science/OKF delivery
 
