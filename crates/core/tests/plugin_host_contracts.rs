@@ -374,6 +374,7 @@ fn apply_binds_only_the_stored_plan_and_exact_confirmation() {
         PluginHostApplyRequest::from_json(&serde_json::to_vec(&request_with_unknown).unwrap())
             .is_err()
     );
+    request.validate_for_capabilities(&capabilities()).unwrap();
     request.validate_for_plan(&plan, &capabilities()).unwrap();
 
     let result = PluginHostApplyResult {
