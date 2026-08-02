@@ -138,9 +138,8 @@ impl PluginHostApplyRequest {
         plan: &PluginHostPlanResult,
         capabilities: &PluginHostCapabilities,
     ) -> UseResult<()> {
-        self.validate()?;
+        self.validate_for_capabilities(capabilities)?;
         plan.validate()?;
-        verify_capabilities(&self.capabilities_digest, &self.scope, capabilities)?;
         if self.assignment_generation != plan.assignment_generation
             || self.capabilities_digest != plan.capabilities_digest
             || self.scope != plan.scope
@@ -164,6 +163,16 @@ impl PluginHostApplyRequest {
                 "The apply request confirmation does not match the plan's policy decision.",
             )),
         }
+    }
+
+    /// Validate the request against the exact host contract selected by its
+    /// capability digest and managed-scope fence.
+    pub fn validate_for_capabilities(
+        &self,
+        capabilities: &PluginHostCapabilities,
+    ) -> UseResult<()> {
+        self.validate()?;
+        verify_capabilities(&self.capabilities_digest, &self.scope, capabilities)
     }
 
     /// Perform the canonical lifetime and confirmation check at the host clock.
