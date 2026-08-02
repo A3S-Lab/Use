@@ -263,19 +263,39 @@ authorization, Runtime binding, and surface readiness as separate evidence.
 
 ### TUF registry install
 
-Enroll a registry, review the immutable component plan, and apply its exact
-digest:
+Registry sources are named host configuration, not compiled endpoints. The
+official `a3s` source is only the default identity: an operator may bind it to a
+mirror or private service, disable it without deleting trust state, or remove
+the override and return to the unconfigured default hint. Release-bundled
+packages remain an independent source and do not require any remote registry.
+
+Add a source or replace a stable source name, then review the immutable
+component plan and apply its exact digest:
 
 ```bash
 a3s registry add https://packages.example.org/a3s/ \
+  --name packages \
   --trust-root ./root.json \
   --yes
 a3s registry refresh packages
+
+a3s registry replace a3s https://mirror.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --yes
+a3s registry disable a3s
+a3s registry enable a3s
 
 a3s --output json install use/acme/calendar --dry-run
 a3s --output json install use/acme/calendar \
   --plan-digest <reviewed-plan-sha256>
 ```
+
+Only enabled registries participate in catalog discovery and package
+selection. If two enabled registries contain the same package, resolution fails
+as ambiguous instead of choosing one silently. An installed receipt continues
+to bind its source name, URL, TUF root, channel, and target digest; replacing or
+disabling that source therefore blocks upgrades until the original identity is
+restored or the package is explicitly migrated or reinstalled.
 
 Catalog v1 adds bounded metadata-only search. Catalog v2 binds the manifest,
 expanded package, permission ceiling, and surface dependencies. Catalog v3
@@ -293,6 +313,7 @@ invented executable target.
 | Local directories and bounded archives | Available |
 | Digest-reviewed release bundles | Available |
 | TUF-verified registries and target selection | Available |
+| Named registry add, replace, enable, disable, remove, and refresh | Available in the umbrella host |
 | ACL identity, provenance, and SemVer host compatibility | Available |
 | Native CLI, standard MCP, and content-bound Skill surfaces | Available |
 | Atomic install, upgrade, enable, disable, drain, and uninstall | Available |
@@ -352,7 +373,7 @@ a3s-use capability watch \
 ## Architecture
 
 ```text
-     local package          release bundle          TUF registry
+     local package          release bundle     named TUF registry
            └──────────────────────┬──────────────────────┘
                                   │
                     shared host Plugin Manager
@@ -373,8 +394,9 @@ a3s-use capability watch \
 
 The boundaries are intentional:
 
-- **The umbrella host** owns registry configuration, trust roots, ACL policy,
-  confirmation, secrets, and explicit Runtime provider composition.
+- **The umbrella host** owns named, replaceable registry configuration, trust
+  roots, enabled state, ACL policy, confirmation, secrets, and explicit Runtime
+  provider composition.
 - **The shared Plugin Manager** is the only lifecycle application service used
   by CLI, Web, and management MCP adapters.
 - **A3S Use** owns package validation, immutable generations, receipts, grants,

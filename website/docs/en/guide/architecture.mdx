@@ -8,7 +8,7 @@ description: Responsibility boundaries across A3S Use, the shared Plugin Manager
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, Web, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
 ```text
-     local package          release bundle          TUF registry
+     local package          release bundle     named TUF registry
            └──────────────────────┬──────────────────────┘
                                   │
                     shared host Plugin Manager
@@ -31,7 +31,7 @@ The target architecture separates package management, workload scheduling, and h
 
 | Component              | Owns                                                                                                                         | Does not own                                               |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Umbrella host          | Registry config, trust roots, ACL policy, confirmation, secrets, and Runtime provider composition                            | Package storage or a second lifecycle manager              |
+| Umbrella host          | Named replaceable Registry config, trust roots, enabled state, ACL policy, confirmation, secrets, and Runtime providers      | Package storage or a second lifecycle manager              |
 | Shared Plugin Manager  | Catalog, policy, plan/apply, operation replay, and parent saga                                                               | Package archive format or provider scheduling internals    |
 | A3S Use                | Package verification, immutable generations, receipts, grants, binding evidence, route leases, and capability reconciliation | Generic scheduling, UI rendering, or an agent RPC protocol |
 | A3S Runtime            | Task/Service workloads and provider capability                                                                               | Package parsing, trust roots, or user authorization        |

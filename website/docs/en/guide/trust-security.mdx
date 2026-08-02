@@ -17,6 +17,26 @@ The central rule is: **package content may describe requirements, but it cannot 
 
 Search runs over verified, size-bounded catalog metadata without downloading package archives. A model or browser cannot invent an installable identity absent from the catalog.
 
+## Replaceable registry sources
+
+Remote registries are named, host-owned ACL configuration. The default `a3s` identity is not a compiled endpoint or mandatory service: operators can bind it to a mirror or private registry, disable it without deleting trust state, or remove the override. Release bundles remain available independently of remote registries.
+
+```bash
+a3s registry add https://packages.example.org/a3s/ \
+  --name packages \
+  --trust-root ./root.json \
+  --yes
+
+a3s registry replace a3s https://mirror.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --yes
+a3s registry disable a3s
+a3s registry enable a3s
+a3s registry refresh a3s
+```
+
+Only enabled sources participate in discovery and installation. Duplicate package identities across enabled registries fail as ambiguous. Replacement also never rewrites an installed receipt: upgrades remain bound to the recorded source name, URL, TUF root, channel, and target digest and fail closed after identity drift.
+
 ## Immutable plans
 
 Install, upgrade, and uninstall create an expiring canonical plan before mutation. It binds at least:

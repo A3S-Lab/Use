@@ -17,6 +17,26 @@ A3S Use 的核心安全原则是：**包内容可以描述需求，但不能给�
 
 搜索只在已验证、受大小限制的目录元数据上运行，不下载 package archive。模型或浏览器不能创造目录中不存在的安装身份。
 
+## 可替换的 Registry 来源
+
+远端 Registry 是具名、由宿主持有的 ACL 配置。默认 `a3s` 身份不是编译进程序的 endpoint，也不是必须依赖的服务：运维方可以把它绑定到镜像或私有 Registry，在不删除信任状态的情况下停用，也可以移除 override。Release bundle 始终是独立于远端 Registry 的并列来源。
+
+```bash
+a3s registry add https://packages.example.org/a3s/ \
+  --name packages \
+  --trust-root ./root.json \
+  --yes
+
+a3s registry replace a3s https://mirror.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --yes
+a3s registry disable a3s
+a3s registry enable a3s
+a3s registry refresh a3s
+```
+
+只有启用的来源参与发现和安装；同一个 package identity 同时出现在多个启用 Registry 时会以歧义失败。替换来源也不会改写已安装 receipt：升级继续绑定记录中的 source name、URL、TUF root、channel 与 target digest，身份漂移时 fail closed。
+
 ## 不可变计划
 
 install、upgrade 与 uninstall 在变更前生成带过期时间的 canonical plan。它至少绑定：
