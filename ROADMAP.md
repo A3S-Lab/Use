@@ -92,6 +92,8 @@ The following foundations are implemented:
   deterministic pagination and filesystem-only offline re-verification;
 - umbrella CLI dry-run/apply plans protected by a plan digest;
 - a Web Marketplace with catalog and installed views;
+- host-owned named Registry configuration with explicit replacement,
+  enable/disable, removal, refresh, and receipt-bound source identity;
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
 - generation/revision capability snapshots consumed by A3S Code;
 - live MCP and Skill projection into a dedicated A3S Use worker;
@@ -130,8 +132,9 @@ The main gaps are:
 - the versioned OKF manager/search/selection contract is frozen, but the
   umbrella host ACL policy and persistent A3S Knowledge atomic-index adapter
   remain to be wired to it;
-- official registry key operations and Windows Browser parity are not yet at
-  the final production gate.
+- official registry signing/key operations (distinct from replaceable source
+  configuration) and Windows Browser parity are not yet at the final
+  production gate.
 
 ## Development Plan
 

@@ -8,7 +8,7 @@ description: A3S Use、共享 Plugin Manager、Runtime Broker 与 A3S 宿主之�
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、Web 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
 ```text
-     local package          release bundle          TUF registry
+     local package          release bundle     named TUF registry
            └──────────────────────┬──────────────────────┘
                                   │
                     shared host Plugin Manager
@@ -31,7 +31,7 @@ description: A3S Use、共享 Plugin Manager、Runtime Broker 与 A3S 宿主之�
 
 | 组件                   | 拥有内容                                                                                              | 不拥有内容                                    |
 | ---------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Umbrella host          | Registry 配置、trust root、ACL policy、用户确认、secret、Runtime provider composition                 | 包存储与第二套 lifecycle manager              |
+| Umbrella host          | 具名可替换 Registry 配置、trust root、启停状态、ACL policy、用户确认、secret 与 Runtime provider      | 包存储与第二套 lifecycle manager              |
 | Shared Plugin Manager  | catalog、policy、plan/apply、operation replay 与父级 saga                                             | package archive 格式或 provider 内部调度      |
 | A3S Use                | 包验证、不可变 generation、receipt、grant、binding evidence、route lease 与 capability reconciliation | 通用 scheduler、UI renderer 或 agent RPC 协议 |
 | A3S Runtime            | Task/Service workload 与 provider capability                                                          | 包解析、信任根与用户授权                      |
