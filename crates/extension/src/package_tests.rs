@@ -9,7 +9,7 @@ use super::digest::package_fingerprint;
 use super::package::{read_manifest, validate_surface_files};
 use super::remote::test_support::{package_directory_archive, TestRepository, TestServer, FUTURE};
 use super::source::prepare_package_source;
-use super::ExtensionManifest;
+use super::{load_okf_bundle_files, ExtensionManifest};
 
 const TASK_RELEASE: &[u8] =
     include_bytes!("../../core/fixtures/releases/tool-task-release-v1.json");
@@ -165,6 +165,13 @@ async fn okf_package_validation_rechecks_exact_bundle_bytes_and_bounds() {
     let (directory, manifest) = write_okf_package().await;
     let root = directory.path();
     validate_surface_files(&manifest, root).await.unwrap();
+    let loaded = load_okf_bundle_files(&manifest.okf[0], root).await.unwrap();
+    assert_eq!(loaded.len(), OKF_FILES.len());
+    for (path, content) in OKF_FILES {
+        assert!(loaded
+            .iter()
+            .any(|file| file.path == *path && file.content == *content));
+    }
 
     let concept = root.join("okf/domain-knowledge/concepts/runtime-boundary.md");
     let mut changed = fs::read(&concept).await.unwrap();

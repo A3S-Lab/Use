@@ -3,7 +3,8 @@
 - Status: accepted M0 contract baseline; runtime implementation in progress
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
-  bundle contract frozen 2026-07-31 and M0K-B control plane frozen 2026-08-01
+  bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
+  and M0K-C-A adapter/store foundation frozen 2026-08-02
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -12,11 +13,13 @@ This document is the operational companion to the plugin platform
 architecture. It defines lifecycle consistency, failure recovery, security,
 storage, public application contracts, and observability.
 
-The checked-in M0/M0K-B contracts cover Tool, MCP, OKF, Skill, and UI. The
-shared OKF bundle inspector, schema-v3 parser, package validator, exact host
-evidence, and reconciler gate are implemented. The persistent A3S Knowledge
-adapter and parent-saga checkpoints described below remain target behavior;
-without their promoted observation, an OKF surface stays unpublished.
+The checked-in M0/M0K contracts cover Tool, MCP, OKF, Skill, and UI. The shared
+OKF bundle inspector, schema-v3 parser, package validator, exact host evidence,
+reconciler gate, injected Knowledge port, evidence-checking client, and
+persistent generation store are implemented. The production A3S Knowledge
+index backend and parent-saga checkpoints described below remain target
+behavior; without their promoted observation, an OKF surface stays
+unpublished.
 
 ## Complete End-to-End Lifecycle Flow
 
@@ -355,8 +358,10 @@ M0K-B freezes the machine evidence used by this flow:
 `a3s.use.okf-projection-receipt.v1` records the staged candidate,
 `a3s.use.okf-knowledge-observation.v1` records staged/promoted/failed/removed
 state and last-good selection, and `a3s.use.okf-capability-projection.v1`
-contains only exact promoted evidence. The production adapter that persists
-and supplies these records is still pending.
+contains only exact promoted evidence. M0K-C-A persists their combined
+`a3s.use.okf-knowledge-binding.v1` record and reconstructs selection only from
+retained exact promoted evidence. The production Knowledge index backend and
+parent-saga caller that supply these records are still pending.
 
 Before publication, the candidate exact generation must provide evidence for:
 
@@ -378,6 +383,14 @@ If conformance, staging, or indexing fails, the candidate is `broken` or
 generation remains selected. Crash replay uses the parent operation ID and OKF
 surface idempotency key; it must neither duplicate an index nor infer success
 from a staging directory.
+
+The binding store uses a SHA-256 scope directory, validated publisher/package
+and OKF surface segments, fixed-width generation filenames, bounded regular
+JSON files, atomic replacement, and a cross-process lock. Observation updates
+are monotonic. Failed or staged N+1 may keep exact promoted N selected;
+promoted N+1 switches selection; and removed N+1 cannot fall back to N. The
+store retains at most 32 generations and requires explicit receipt-owned
+cleanup instead of deleting evidence automatically.
 
 Disable hides the OKF capability from new sessions without deleting personal
 knowledge. Uninstall removes only the package receipt-owned projection and

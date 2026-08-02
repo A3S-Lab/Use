@@ -72,6 +72,7 @@ ocr = ["dep:a3s-use-ocr"]
 extensions = [
     "dep:a3s-use-extension",
     "dep:a3s-runtime",
+    "dep:async-trait",
     "dep:fs2",
     "dep:tempfile",
 ]
@@ -93,6 +94,7 @@ a3s-use-browser = { version = "=0.3.0", git = "https://github.com/A3S-Lab/Browse
 a3s-use-ocr = { version = "=0.3.0", git = "https://github.com/A3S-Lab/OCR", rev = "9f6a94c27251f183700120fbce628581eb236a5b", optional = true }
 a3s-use-extension = { version = "0.2.1", path = "crates/extension", optional = true }
 a3s-runtime = { version = "=0.2.0", git = "https://github.com/A3S-Lab/Runtime", rev = "cfaac63af6f76beebdc64a1ec228cedc42bb98ec", optional = true }
+async-trait = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 fs2 = { workspace = true, optional = true }
@@ -111,7 +113,6 @@ tokio-util = { workspace = true, optional = true }
 windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Console"], optional = true }
 
 [dev-dependencies]
-async-trait.workspace = true
 reqwest.workspace = true
 flate2.workspace = true
 olpc-cjson.workspace = true

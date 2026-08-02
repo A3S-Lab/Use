@@ -10,11 +10,12 @@ pub mod plugin;
 pub mod release;
 
 pub use okf::{
-    inspect_okf_bundle, OkfBundleContract, OkfBundleDiagnostic, OkfBundleFile, OkfBundleInspection,
-    OkfBundleLimits, OkfCapabilityProjection, OkfConceptSummary, OkfDiagnosticCode,
-    OkfFormatVersion, OkfKnowledgeObservation, OkfKnowledgeObservedState, OkfProjectionReceipt,
-    OkfSelectedGeneration, OKF_BUNDLE_CONTRACT_SCHEMA, OKF_CAPABILITY_PROJECTION_SCHEMA,
-    OKF_KNOWLEDGE_OBSERVATION_SCHEMA, OKF_PROJECTION_RECEIPT_SCHEMA,
+    inspect_okf_bundle, inspect_okf_bundle_files, OkfBundleContract, OkfBundleDiagnostic,
+    OkfBundleFile, OkfBundleInspection, OkfBundleLimits, OkfCapabilityProjection,
+    OkfConceptSummary, OkfDiagnosticCode, OkfFormatVersion, OkfKnowledgeObservation,
+    OkfKnowledgeObservedState, OkfProjectionReceipt, OkfSelectedGeneration,
+    OKF_BUNDLE_CONTRACT_SCHEMA, OKF_CAPABILITY_PROJECTION_SCHEMA, OKF_KNOWLEDGE_OBSERVATION_SCHEMA,
+    OKF_PROJECTION_RECEIPT_SCHEMA,
 };
 pub use plugin::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,

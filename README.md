@@ -38,12 +38,14 @@ system software.
 > current `main` branch also contains an in-development plugin-platform
 > baseline: named schema-v3 surfaces, signed searchable catalogs, immutable
 > plan and permission contracts, workspace grants, Runtime bindings, and
-> surface reconciliation. M0K-B now adds the first-class OKF manifest,
-> catalog-v3, plan-v2, receipt, Knowledge observation, capability projection,
-> and dependency-gated reconciliation contracts. The parent apply saga and
-> production Runtime, Gateway, and A3S Knowledge adapters remain incomplete,
-> so these contracts are not yet a finished plugin product. [ROADMAP.md](ROADMAP.md)
-> is the source of truth.
+> surface reconciliation. M0K-B adds the first-class OKF manifest, catalog-v3,
+> plan-v2, receipt, Knowledge observation, capability projection, and
+> dependency-gated reconciliation contracts. M0K-C-A adds the injected
+> Knowledge port, byte-exact stage request, evidence-checking client, and
+> durable last-good binding store. The parent apply saga and production
+> Runtime, Gateway, and A3S Knowledge backends remain incomplete, so these
+> contracts are not yet a finished plugin product. [ROADMAP.md](ROADMAP.md) is
+> the source of truth.
 
 The user-facing entry point is `a3s use`. The standalone `a3s-use` binary is
 the delegated package engine and remains available for automation and
@@ -189,11 +191,14 @@ its identity, and standard Markdown links form the graph.
 M0K-B implements the named manifest block, recursive package validation,
 catalog-v3 bundle evidence, Skill → OKF dependency closure, plan-v2 impact,
 projection receipts, scope-bound Knowledge observations, capability
-projections, and last-good-aware reconciliation. OKF never enters Runtime and
-cannot carry a runtime permission ceiling. A package remains unpublished until
-a matching A3S Knowledge observation reports the exact generation as
-`promoted`; the production persistent Knowledge stage/promote/remove adapter
-is still pending.
+projections, and last-good-aware reconciliation. M0K-C-A adds a public injected
+`OkfKnowledgeAdapter` for stage/promote/observe/remove, revalidates the exact
+in-memory OKF bytes at stage, checks all returned evidence, and persists
+bounded exact-generation records under `bindings/knowledge`. Failed candidates
+retain an exact promoted last-good generation; a latest removed generation
+suppresses fallback. OKF never enters Runtime and cannot carry a runtime
+permission ceiling. Production A3S Knowledge indexing, parent-saga wiring,
+session projection, cited retrieval, and receipt-owned cleanup remain pending.
 
 The executable and knowledge schema-v3 fixtures are
 [`plugin-v3.acl`](crates/extension/fixtures/manifests/plugin-v3.acl) and
@@ -331,7 +336,8 @@ invented executable target.
 | Exact-generation workspace grant store and recoverable grant journal | Implemented |
 | Runtime Task/Service binding receipts, invocation, and observation | Implemented as typed adapters |
 | Dependency-gated Surface Reconciler and planner evidence | Implemented |
-| Persistent A3S Knowledge stage/promote/remove adapter and scoped cited retrieval | In progress; no production OKF publication without promoted evidence |
+| Injected OKF Knowledge port and durable exact-generation binding store | M0K-C-A implemented with byte-exact stage validation, monotonic observations, and last-good projection |
+| Production A3S Knowledge backend, parent-saga binding, and scoped cited retrieval | In progress; no production OKF publication without promoted evidence |
 | Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | In progress |
 | Production secret, egress, filesystem, child-process, Gateway, and stdio-MCP adapters | In progress |
 | General package dependency solver and deterministic lock graph | Target architecture |
@@ -451,9 +457,9 @@ plugin platform. The current critical path is:
 3. complete CLI/Web/agent lifecycle E2E with production providers;
 4. add the general package dependency solver, deterministic lock graph,
    retained-generation rollback, and garbage collection;
-5. connect the frozen OKF contracts to the persistent A3S Knowledge
-   stage/promote/remove adapter, scoped capability projection, rollback, and
-   receipt-owned uninstall cleanup;
+5. connect the M0K-C-A Knowledge port and binding store to the production A3S
+   Knowledge backend, scoped capability/session projection, parent-saga
+   rollback, and receipt-owned uninstall cleanup;
 6. extend the remaining cognitive contribution model only after each host
    contract is frozen; and
 7. complete official registry operations and Windows platform gates.
