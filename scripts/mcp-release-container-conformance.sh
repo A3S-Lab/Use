@@ -32,12 +32,14 @@ cargo build \
   --bin a3s-use-mcp-release-fixture
 
 staging_root="$(mktemp -d /tmp/a3s-use-mcp-release.XXXXXX)"
+builder_name="a3s-use-mcp-builder-$$"
 registry_name="a3s-use-mcp-registry-$$"
 service_names=()
 cleanup() {
   for service_name in "${service_names[@]}"; do
     docker rm --force "${service_name}" >/dev/null 2>&1 || true
   done
+  docker buildx rm "${builder_name}" >/dev/null 2>&1 || true
   docker rm --force "${registry_name}" >/dev/null 2>&1 || true
   rm -rf "${staging_root}"
 }
@@ -67,8 +69,15 @@ for _ in {1..100}; do
 done
 curl --fail --silent --show-error "${registry_endpoint}/v2/" >/dev/null
 
+docker buildx create \
+  --name "${builder_name}" \
+  --driver docker-container \
+  --driver-opt network=host >/dev/null
+docker buildx inspect "${builder_name}" --bootstrap >/dev/null
+
 image_tag="127.0.0.1:${registry_port}/a3s/mcp-release-fixture:conformance"
 docker buildx build \
+  --builder "${builder_name}" \
   --file "${staging_root}/Containerfile" \
   --output "type=image,name=${image_tag},push=true,oci-mediatypes=true" \
   --platform linux/amd64 \
