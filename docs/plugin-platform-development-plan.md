@@ -75,9 +75,10 @@ One package may declare multiple named surfaces in any compatible combination:
 
 The checked-in schema-v3 baseline implements Tool, MCP, OKF, Skill, and UI.
 M0K-B freezes the OKF manifest, package validation, catalog, plan,
-receipt/projection, and host-observation contracts. Production publication
-still requires the pending persistent A3S Knowledge adapter to supply exact
-promoted evidence.
+receipt/projection, and host-observation contracts. M0K-C-A adds the injected
+Knowledge port, exact-byte stage request, checked adapter client, and durable
+generation store. Production publication still requires a real A3S Knowledge
+backend and parent-saga integration to supply exact promoted evidence.
 
 A Plugin Tool is not an MCP `tools/list` item. It is the real executable
 workload on which a Skill or UI may depend. A3S Use manages its lifecycle and
@@ -302,28 +303,31 @@ The dependency-ordered slices are:
    syntax, file/node limits, and expanded-package ownership. Preserve unknown
    types and extension keys; report safe dangling links without rejecting the
    bundle. Reject raw compiler inputs as active OKF authority.
-3. **Knowledge host adapter (pending M0K-C):** stage a candidate under an exact package
-   generation, call the A3S Knowledge promotion/index boundary idempotently,
-   record a non-secret observation digest, and retain the last good searchable
-   generation when validation or indexing fails.
-4. **Reconciliation and lifecycle (core gate complete; saga pending):** include OKF in dependency closure,
+3. **Knowledge adapter foundation (complete M0K-C-A):** validate the exact
+   borrowed OKF bytes in the stage request, expose an injected
+   stage/promote/observe/remove port, check returned receipt/observation
+   evidence, and durably retain bounded exact-generation records with
+   last-good projection.
+4. **Production Knowledge and lifecycle (pending M0K-C-B):** implement the real
+   A3S Knowledge index backend behind the port and include OKF in dependency closure,
    capability snapshots, plan/apply replay, upgrade cutover, disable, drain-free
    removal, and receipt-owned uninstall without touching personal notes or
    another package's index.
-5. **Product E2E (pending M0K-C/M6):** search a signed OKF-bearing package without archive
+5. **Product E2E (pending M0K-C-B/M6):** search a signed OKF-bearing package without archive
    download; review provenance, concept count, bytes, and permission impact;
    install and query cited concepts; upgrade atomically; disable/uninstall; and
    recover each checkpoint after injected crashes.
 
-Implementation status (2026-08-01): M0K-A completed the shared
+Implementation status (2026-08-02): M0K-A completed the shared
 `a3s.use.okf-bundle.v1` descriptor, deterministic content identity, bounded
 v0.2/v0.1 inspector, and canonical/malicious fixtures. M0K-B completed schema
 v3 manifest and full-package admission, catalog-v3 bundle evidence,
 Skill-to-OKF closure, plan/draft v2 impact, manager-toolset v2, projection
 receipt, Knowledge observation, capability projection, and Knowledge-owned
 reconciliation. Golden ACL, JSON, and complete-package digests freeze the
-slice. M0K-C must now connect a real persistent Knowledge adapter and the
-scope-aware parent saga; absent promoted evidence remains unpublished.
+slice. M0K-C-A completed the byte-exact injected adapter boundary and durable
+last-good binding store. M0K-C-B must now connect a real Knowledge backend and
+the scope-aware parent saga; absent promoted evidence remains unpublished.
 
 The workstream does not compile PDFs, Office files, images, archives, or web
 pages during install. Independent compilers produce normalized OKF before

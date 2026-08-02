@@ -36,9 +36,11 @@ each declared surface into the host that owns its execution:
 Tool, MCP, OKF, Skill, and UI have an implemented schema-v3 contract baseline.
 M0K-B adds exact manifest/package validation, catalog and plan evidence,
 Knowledge receipt/observation/projection contracts, and dependency-gated
-reconciliation for OKF. The persistent A3S Knowledge adapter, scoped cited
-retrieval, and parent-saga lifecycle wiring remain to be implemented; missing
-promoted evidence therefore stays explicitly unpublished.
+reconciliation for OKF. M0K-C-A adds the injected Knowledge port, exact-byte
+stage request, evidence-checking client, and durable bounded generation store.
+The production A3S Knowledge index backend, scoped cited retrieval, and
+parent-saga lifecycle wiring remain to be implemented; missing promoted
+evidence therefore stays explicitly unpublished.
 
 In this architecture, **Tool does not mean an MCP `tools/list` item**. A Tool
 is a workload on which a Skill or UI can depend. It keeps its native CLI or
@@ -380,6 +382,17 @@ contains the exact normalized bundle reviewed by the plan. The host validates
 and stages it, then A3S Knowledge atomically promotes the generation. Search
 continues to serve the last good generation if conformance or indexing of the
 candidate fails.
+
+The M0K-C-A stage request owns the validated `OkfBundleFile` snapshot and
+re-runs conformance over borrowed bytes immediately before calling the injected
+adapter. Adapter output is accepted only when its receipt and observation bind
+the reviewed operation, scope, surface, generation, package, manifest, bundle,
+and index evidence. Use persists the exact pair below
+`<state>/bindings/knowledge/<scope-sha256>/<publisher>/<package>/<surface>/`
+with atomic file replacement and a cross-process store lock. The highest
+candidate observation is authoritative: it may select a retained exact
+promoted record as last-good, while a highest `removed` record suppresses all
+fallback.
 
 OKF content is guidance and evidence, not authority. Frontmatter, concept text,
 links, resources, or compiler provenance cannot grant filesystem, network,
@@ -807,6 +820,12 @@ MCP requires a compatible MCP client, and UI requires the sandbox host. A Skill
 whose required carrier is absent is not projected into that session. A target
 OKF binding requires a compatible Knowledge host and cited-retrieval carrier;
 it never resolves through Runtime.
+
+The Use-owned OKF binding store retains at most 32 generations and refuses to
+discard ownership evidence implicitly. Reaching the bound requires explicit
+receipt-owned cleanup by the future parent saga. This prevents storage pressure
+from silently orphaning a Knowledge index or resurrecting an older promoted
+generation after removal.
 
 ## Operational Model
 

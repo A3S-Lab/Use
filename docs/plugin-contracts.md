@@ -53,6 +53,7 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | OKF projection receipt | `a3s.use.okf-projection-receipt.v1` | Exact scope/package/surface generation staged for Knowledge |
 | OKF Knowledge observation | `a3s.use.okf-knowledge-observation.v1` | Staged, promoted, failed, or removed index evidence and last-good selection |
 | OKF capability projection | `a3s.use.okf-capability-projection.v1` | Exact promoted evidence safe to join to a scoped capability generation |
+| OKF Knowledge binding | `a3s.use.okf-knowledge-binding.v1` | Durable exact receipt plus observation for one retained generation |
 
 ### OKF control-plane contract is frozen
 
@@ -91,10 +92,14 @@ can produce a capability projection.
 The shared Surface Reconciler treats Knowledge as a distinct host owner. A
 missing observation remains `pending`, `staged` remains prepared and
 unpublished, and only `promoted` is healthy. Dependent Skills remain hidden
-until that evidence is ready. The persistent A3S Knowledge
-stage/promote/remove adapter, scope-aware session publication, cited retrieval,
-and receipt-owned cleanup are M0K-C work; no second lifecycle or Runtime path is
-implied by these contracts.
+until that evidence is ready. M0K-C-A provides a public `Send + Sync`
+stage/promote/observe/remove port, an evidence-checking client, and a bounded
+durable binding store. The stage request revalidates the exact in-memory bundle
+bytes; the store accepts only monotonic observation updates and creates a
+capability projection only from an exact retained promoted record. Production
+Knowledge indexing, scope-aware session publication, cited retrieval,
+parent-saga recovery, and receipt-owned cleanup remain M0K-C-B work; no second
+lifecycle or Runtime path is implied by these contracts.
 
 All JSON contracts:
 

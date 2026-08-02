@@ -263,6 +263,19 @@ pub fn inspect_okf_bundle(
     limits: OkfBundleLimits,
     input_files: impl IntoIterator<Item = OkfBundleFile>,
 ) -> UseResult<OkfBundleInspection> {
+    let input_files = input_files.into_iter().collect::<Vec<_>>();
+    inspect_okf_bundle_files(format_version, limits, &input_files)
+}
+
+/// Inspect an immutable borrowed OKF file snapshot without copying its bytes.
+///
+/// This is the preferred boundary for host adapters that must validate the
+/// exact in-memory payload immediately before handing it to A3S Knowledge.
+pub fn inspect_okf_bundle_files(
+    format_version: OkfFormatVersion,
+    limits: OkfBundleLimits,
+    input_files: &[OkfBundleFile],
+) -> UseResult<OkfBundleInspection> {
     limits.validate()?;
     let mut files = BTreeMap::new();
     let mut expanded_bytes = 0_u64;
@@ -280,7 +293,7 @@ pub fn inspect_okf_bundle(
         if expanded_bytes > limits.max_expanded_bytes {
             return Err(limit_error());
         }
-        files.insert(path, file.content);
+        files.insert(path, file.content.as_slice());
         if files.len() as u64 > limits.max_files {
             return Err(limit_error());
         }
@@ -335,7 +348,7 @@ pub fn inspect_okf_bundle(
     })
 }
 
-fn content_digest(files: &BTreeMap<String, Vec<u8>>) -> String {
+fn content_digest(files: &BTreeMap<String, &[u8]>) -> String {
     let mut digest = Sha256::new();
     digest.update(b"a3s-use-okf-expanded-bundle-v1\0");
     for (path, content) in files {

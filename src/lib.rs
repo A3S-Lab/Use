@@ -27,6 +27,9 @@ mod mcp;
 #[cfg(feature = "extensions")]
 mod extension_host;
 
+#[cfg(feature = "extensions")]
+pub mod okf_knowledge;
+
 pub use a3s_use_core as core;
 
 #[cfg(feature = "browser")]

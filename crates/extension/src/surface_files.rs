@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
-    inspect_okf_bundle, McpReleaseDescriptor, OkfBundleFile, ToolReleaseDescriptor,
+    inspect_okf_bundle_files, McpReleaseDescriptor, OkfBundleFile, ToolReleaseDescriptor,
     ToolWorkloadContract as ToolReleaseWorkload, UseError, UseResult, MAX_RELEASE_DESCRIPTOR_BYTES,
 };
 use sha2::{Digest, Sha256};
@@ -102,11 +102,36 @@ pub(super) async fn validate_named_surface_files(
     Ok(())
 }
 
+/// Load and revalidate the exact OKF bytes declared by one installed surface.
+///
+/// The returned immutable file snapshot can be passed directly to
+/// `OkfKnowledgeStageRequest`, avoiding a second path-based reader at the
+/// Knowledge adapter boundary.
+pub async fn load_okf_bundle_files(
+    surface: &super::PluginOkfSurface,
+    package_root: &Path,
+) -> UseResult<Vec<OkfBundleFile>> {
+    surface.bundle.validate()?;
+    let metadata = fs::symlink_metadata(package_root)
+        .await
+        .map_err(|error| io_error("inspect OKF package root", package_root, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(okf_package_error(format!(
+            "OKF package root '{}' must be a real directory.",
+            package_root.display()
+        )));
+    }
+    let canonical_root = fs::canonicalize(package_root)
+        .await
+        .map_err(|error| io_error("resolve OKF package root", package_root, error))?;
+    validate_okf_bundle(surface, &canonical_root, &canonical_root).await
+}
+
 async fn validate_okf_bundle(
     surface: &super::PluginOkfSurface,
     canonical_root: &Path,
     package_root: &Path,
-) -> UseResult<()> {
+) -> UseResult<Vec<OkfBundleFile>> {
     let root = package_root.join(&surface.bundle.root);
     let metadata = fs::symlink_metadata(&root)
         .await
@@ -190,12 +215,13 @@ async fn validate_okf_bundle(
             files.push(OkfBundleFile::new(relative, content));
         }
     }
-    let inspection = inspect_okf_bundle(
+    let inspection = inspect_okf_bundle_files(
         surface.bundle.format_version,
         surface.bundle.limits.clone(),
-        files,
+        &files,
     )?;
-    surface.bundle.verify_inspection(&inspection)
+    surface.bundle.verify_inspection(&inspection)?;
+    Ok(files)
 }
 
 fn okf_package_error(message: impl Into<String>) -> UseError {

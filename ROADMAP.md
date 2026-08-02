@@ -105,12 +105,16 @@ The following foundations are implemented:
 - M0K-B named OKF manifests, recursive package validation, catalog-v3 evidence,
   Skill dependency closure, plan-v2 impact, projection receipts, scope-bound
   Knowledge observations, capability projections, last-good selection, and
-  reconciliation gates.
+  reconciliation gates; and
+- M0K-C-A injected Knowledge stage/promote/observe/remove contracts, byte-exact
+  stage revalidation, adapter evidence checks, and a durable bounded
+  exact-generation binding store with fail-closed last-good reconstruction.
 
 The OKF control plane is implemented without creating another package manager,
 Runtime route, lifecycle store, or reconciler. It intentionally publishes no
-OKF capability when promoted Knowledge evidence is absent. The production
-persistent A3S Knowledge adapter and scope-aware host/session projection remain
+OKF capability when promoted Knowledge evidence is absent. The injected port
+and Use-owned evidence store are now implemented; the production A3S Knowledge
+backend, parent-saga binding, and scope-aware host/session projection remain
 the next implementation slice.
 
 The main gaps are:
@@ -133,9 +137,9 @@ The main gaps are:
   adapters remain to be connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
-- the versioned OKF manager/search/selection contract is frozen, but the
-  umbrella host ACL policy and persistent A3S Knowledge atomic-index adapter
-  remain to be wired to it;
+- the versioned OKF manager/search/selection contract, injected Knowledge port,
+  and exact-generation binding store are frozen, but the umbrella host ACL
+  policy and production A3S Knowledge atomic-index backend remain to be wired;
 - official registry signing/key operations (distinct from replaceable source
   configuration) and Windows Browser parity are not yet at the final
   production gate.
@@ -213,14 +217,14 @@ Exit criteria:
 - cross-SDK digest fixtures are deterministic;
 - no lifecycle mutation is implemented before its plan schema is fixed.
 
-### M0K — OKF contribution contract and fixtures (M0K-B complete 2026-08-01; M0K-C pending)
+### M0K — OKF contribution contract and fixtures (M0K-C-A complete 2026-08-02; M0K-C-B pending)
 
 Estimated effort: 2–3 weeks
 
 This is an additive product amendment. It does not reopen or mislabel the
 completed Tool/MCP/Skill/UI M0 fixture set.
 
-Implementation status (2026-08-01):
+Implementation status (2026-08-02):
 
 - completed M0K-A in `a3s-use-core`: the canonical
   `a3s.use.okf-bundle.v1` JSON descriptor binds format version, bundle root,
@@ -249,12 +253,23 @@ Implementation status (2026-08-01):
 - completed M0K-B canonical fixtures: OKF ACL and complete package digests,
   catalog-v3, plan-v2, manager-toolset-v2, projection receipt, Knowledge
   observation, and capability-projection JSON goldens. Existing v1/v2 and the
-  original schema-v3 fixture remain byte-compatible.
+  original schema-v3 fixture remain byte-compatible;
+- completed M0K-C-A adapter boundary: a public `Send + Sync`
+  stage/promote/observe/remove port, an evidence-checking client, and a stage
+  request that revalidates the exact borrowed OKF file bytes without a
+  path-based time-of-check/time-of-use gap; and
+- completed M0K-C-A persistence: receipt plus observation records are stored
+  atomically under hashed scope and validated package/surface paths, protected
+  by a cross-process lock, bounded to 32 retained generations, and selected
+  only through exact retained promoted evidence. Stale/conflicting writes,
+  tampered JSON, symlinks, ownership drift, and removed-generation fallback
+  fail closed.
 
-M0K-C remains pending: inject the persistent A3S Knowledge
-stage/promote/remove adapter, bind it to the parent operation journal and
+M0K-C-B remains pending: implement the production A3S Knowledge backend behind
+the injected port, bind it and the store to the parent operation journal and
 scope-aware capability/session projection, and prove cited retrieval,
-last-good rollback, and receipt-owned cleanup end to end.
+last-good rollback, retained-generation cleanup, and receipt-owned removal end
+to end.
 
 Deliverables:
 
@@ -772,9 +787,9 @@ Deliverables:
 - persist workspace grants separately from package receipts.
 - adopt manager-toolset v2 and the canonical `okf` surface in the umbrella host
   ACL policy; the shared bounded OKF validator and core selector are complete;
-- implement an injected A3S Knowledge stage/promote/remove adapter with
-  exact-generation receipt and observation evidence, atomic index cutover, and
-  last-good-generation preservation.
+- connect the completed injected Knowledge port and exact-generation store to
+  the production A3S Knowledge backend, atomic index cutover, parent saga, and
+  receipt-owned cleanup.
 
 Exit criteria:
 
