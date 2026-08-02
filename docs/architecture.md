@@ -157,6 +157,14 @@ mutable tags and source branches never enter release identity. The complete
 contract and cross-SDK fixtures are in [release
 descriptors](release-descriptors.md).
 
+The non-published `a3s-use-mcp-release-fixture` workspace crate supplies the
+executable contract gate. Linux CI packages it as a non-root `scratch` image,
+pushes it to an ephemeral Registry, renders the MCP descriptor against the
+returned manifest digest, and executes that exact digest through health,
+standard MCP initialization and request, bounded SIGTERM shutdown, cleanup,
+and a second-generation restart. Native tests run the same two-generation
+protocol flow on supported developer platforms.
+
 ## Component-backed routes
 
 `box` is a reserved Use route backed by the independently managed A3S Box

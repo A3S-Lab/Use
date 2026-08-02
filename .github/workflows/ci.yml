@@ -20,6 +20,11 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo test --workspace --all-features --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Test digest-pinned MCP release container
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          ./scripts/mcp-release-container-conformance.sh
 
   platform-test:
     timeout-minutes: 60
@@ -40,6 +45,9 @@ jobs:
       - name: Run Core tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use-core --locked
+      - name: Run MCP release fixture tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use-mcp-release-fixture --locked
       # Windows remains a preview target: the compile gate above covers the
       # CLI/MCP/Skill and packaging contracts. Browser provider and driver
       # validation runs in the independent A3S Browser repository.

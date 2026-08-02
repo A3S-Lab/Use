@@ -28,6 +28,14 @@ fn canonical_release_fixtures_have_cross_sdk_digest_goldens() {
     );
     assert_eq!(mcp.descriptor_digest().unwrap(), MCP_DESCRIPTOR_DIGEST);
     assert_eq!(skill.descriptor_digest().unwrap(), SKILL_DESCRIPTOR_DIGEST);
+    assert_eq!(mcp.dependencies.len(), 1);
+    assert_eq!(mcp.dependencies[0].kind, ReleaseKind::Skill);
+    assert_eq!(mcp.dependencies[0].name, skill.name);
+    assert_eq!(mcp.dependencies[0].version, skill.version);
+    assert_eq!(
+        mcp.dependencies[0].descriptor_digest,
+        SKILL_DESCRIPTOR_DIGEST
+    );
 
     let reordered = serde_json::to_vec_pretty(
         &serde_json::from_slice::<serde_json::Value>(MCP_FIXTURE).unwrap(),
