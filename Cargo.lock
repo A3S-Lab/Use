@@ -118,6 +118,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "a3s-use-mcp-release-fixture"
+version = "0.2.1"
+dependencies = [
+ "a3s-use-core",
+ "anyhow",
+ "axum",
+ "reqwest 0.12.28",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "a3s-use-ocr"
 version = "0.3.0"
 source = "git+https://github.com/A3S-Lab/OCR?rev=9f6a94c27251f183700120fbce628581eb236a5b#9f6a94c27251f183700120fbce628581eb236a5b"
@@ -248,6 +265,12 @@ dependencies = [
  "once_cell_polyfill",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "approx"

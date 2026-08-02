@@ -81,8 +81,12 @@ The following foundations are implemented:
 - native CLI, standard MCP, Skill, and content-bound Activity Bar surfaces;
 - schema v3 named Tool Task/Service, MCP, OKF, Skill, and UI surface contracts
   while retaining schema v1/v2 parsing compatibility;
-- canonical Tool Task/Service release descriptors with stable JSON fixtures
-  and package-level manifest binding validation;
+- canonical MCP Service, Skill Agent-input, and Tool Task/Service release
+  descriptors with stable JSON fixtures and package-level manifest binding
+  validation;
+- a real headless MCP conformance fixture whose Linux gate binds an ephemeral
+  non-root OCI image by Registry manifest digest and proves health, standard
+  initialization/request, bounded SIGTERM shutdown, cleanup, and restart;
 - immutable package generations and receipt-owned installation roots;
 - install, upgrade, enable, disable, uninstall, watch, and route draining;
 - reviewed local packages, release bundles, and TUF-verified remote packages;
@@ -173,6 +177,9 @@ Implementation status (2026-07-30):
 - completed: architecture, lifecycle, security, and delivery-plan baselines;
 - completed: schema v3 named Tool, MCP, Skill, and UI surfaces with v1/v2
   parsing compatibility and a stable ACL fixture digest;
+- completed: `a3s.use.mcp-release.v1` and `a3s.use.skill-release.v1`, exact
+  cross-fixture dependency binding, canonical digest goldens, and a real
+  digest-pinned Linux MCP lifecycle/restart conformance gate;
 - completed: `a3s.use.tool-release.v1`, closed Task/CLI and Service/HTTP
   workload contracts, and canonical JSON digest fixtures;
 - completed: catalog, verified TUF provenance, permission-ceiling,

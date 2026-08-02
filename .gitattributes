@@ -7,3 +7,5 @@ crates/extension/fixtures/manifests/*.acl text eol=lf
 crates/extension/fixtures/manifests/*.sha256 text eol=lf
 crates/extension/fixtures/packages/plugin-v3/** text eol=lf
 crates/extension/fixtures/registry/plugin-v3/** text eol=lf
+crates/mcp-release-fixture/Containerfile text eol=lf
+scripts/*.sh text eol=lf

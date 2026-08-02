@@ -53,6 +53,11 @@ The repository publishes canonical cross-SDK fixtures and digest goldens:
 The text fixtures end with one repository newline. That newline is not part of
 the canonical JSON bytes and is not included in the adjacent digest.
 
+The MCP fixture's sole dependency points to the checked-in Skill fixture's
+actual descriptor digest. Core tests resolve the pair together, so placeholder
+or stale cross-fixture digests cannot pass while each file remains valid in
+isolation.
+
 ## Common fields
 
 All three descriptor kinds carry:
@@ -111,9 +116,34 @@ The v1 lifecycle is headless:
    service identity and does not create mutable release state.
 
 The descriptor supplies deterministic Runtime Service inputs; it does not
-replace real process conformance. Before an MCP release is certified, a
-digest-pinned fixture must still prove startup, health, initialize/request,
-shutdown, cleanup, and restart behavior on the target Linux environment.
+replace real process conformance. The non-published
+`a3s-use-mcp-release-fixture` workspace crate implements that gate. Its native
+test starts two separate headless generations with closed stdin and proves
+health, exact `2025-06-18` MCP initialization, `tools/list`, a typed request,
+graceful shutdown, readiness cleanup, and stable release identity across
+restart.
+
+Linux CI additionally compiles the same server as a static binary, installs it
+as a non-root process in a `scratch` OCI image, pushes the image to an
+ephemeral local Registry, and obtains the real manifest digest. The descriptor
+renderer verifies the OCI media type and Registry digest against the raw
+manifest bytes, binds their exact byte size, recomputes the canonical
+descriptor identity, and launches the exact `@sha256:` reference twice.
+Each generation receives SIGTERM and must return zero within five seconds; a
+forced kill fails the gate. The Registry tag used during upload is never
+accepted as release identity.
+
+Run the portable process gate with:
+
+```bash
+cargo test -p a3s-use-mcp-release-fixture --locked
+```
+
+On x86_64 Linux with Docker and `musl-tools`, run the OCI gate with:
+
+```bash
+./scripts/mcp-release-container-conformance.sh
+```
 
 Stdio MCP remains a local native extension surface. It is not a hosted MCP v1
 release transport and cannot be presented as a Runtime Service.

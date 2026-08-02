@@ -21,6 +21,8 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | --- | --- | --- |
 | Plugin manifest | `a3s.extension/v3` | Named MCP, OKF, Skill, Tool, and UI surfaces |
 | OKF bundle | `a3s.use.okf-bundle.v1` | Exact non-executable OKF version, root, digest, counts, bytes, and conformance limits |
+| MCP release | `a3s.use.mcp-release.v1` | Immutable Streamable HTTP Runtime Service and headless lifecycle contract |
+| Skill release | `a3s.use.skill-release.v1` | Immutable content-bound Agent input with no Runtime workload |
 | Tool release | `a3s.use.tool-release.v1` | Immutable CLI Task or HTTP Service workload |
 | Permission ceiling | `a3s.use.plugin-permissions.v1` | Maximum authority per executable/UI surface |
 | Workspace grant proposal | `a3s.use.plugin-workspace-grant-proposal.v1` | Reviewable pre-confirmation resolved authority |

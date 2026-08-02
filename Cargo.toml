@@ -2,6 +2,7 @@
 members = [
     "crates/core",
     "crates/extension",
+    "crates/mcp-release-fixture",
     "crates/science",
 ]
 resolver = "2"

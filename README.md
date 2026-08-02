@@ -315,6 +315,7 @@ invented executable target.
 | TUF-verified registries and target selection | Available |
 | Named registry add, replace, enable, disable, remove, and refresh | Available in the umbrella host |
 | ACL identity, provenance, and SemVer host compatibility | Available |
+| Digest-pinned MCP Runtime Service and immutable Skill Agent-input releases | Available with canonical cross-SDK fixtures and Linux OCI conformance |
 | Native CLI, standard MCP, and content-bound Skill surfaces | Available |
 | Atomic install, upgrade, enable, disable, drain, and uninstall | Available |
 | Capability snapshot and long-poll watch | Available |
@@ -464,6 +465,7 @@ plugin platform. The current critical path is:
 | `a3s-use` | Facade, package engine, Runtime adapters, capability reconciliation, and MCP entry points |
 | `a3s-use-core` | Canonical package/plugin, catalog, plan, permission, grant, release, OKF bundle, and Knowledge projection contracts |
 | `a3s-use-extension` | ACL manifests, recursive OKF/package validation, TUF catalog, package store, receipts, leases, and workspace grants |
+| `a3s-use-mcp-release-fixture` | Non-published headless MCP process and digest-pinned OCI lifecycle conformance gate |
 | `a3s-use-science` | Reference external package implementation |
 
 Browser and OCR are maintained in independent repositories and pinned to exact
@@ -485,8 +487,22 @@ Focused package and plugin validation:
 ```bash
 cargo test -p a3s-use-core --locked
 cargo test -p a3s-use-extension --locked
+cargo test -p a3s-use-mcp-release-fixture --locked
 cargo test -p a3s-use --lib --bin a3s-use --locked
 ```
+
+On x86_64 Linux with Docker and `musl-tools`, run the real release gate:
+
+```bash
+./scripts/mcp-release-container-conformance.sh
+```
+
+It builds a static non-root `scratch` image, pushes it to an ephemeral local
+Registry, verifies the returned OCI manifest bytes, and renders
+`a3s.use.mcp-release.v1` against their media type, digest, and exact size. It
+runs that exact digest through health, MCP initialization,
+`tools/list`, request, bounded SIGTERM shutdown, cleanup, and restart twice. No
+image tag is used as release identity.
 
 ## Documentation
 
@@ -495,6 +511,7 @@ cargo test -p a3s-use --lib --bin a3s-use --locked
 - [Plugin Platform Architecture](docs/plugin-platform-architecture.md)
 - [Plugin Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md)
 - [Plugin Contract Reference](docs/plugin-contracts.md)
+- [Immutable MCP, Skill, and Tool Releases](docs/release-descriptors.md)
 - [Runtime Broker ADR](docs/adr-001-plugin-runtime-broker-boundary.md)
 - [Current Architecture](docs/architecture.md)
 - [External Repository Capabilities](docs/external-repositories.md)
