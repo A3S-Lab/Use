@@ -26,7 +26,18 @@ use std::sync::Arc;
 use crate::plugin_lifecycle::PluginLifecycleCoordinator;
 use store::{InstalledPackageGraphStore, PendingPackageGraphStore};
 
+pub use hosts::StandaloneCognitivePackageLifecycleFactory;
+
 const DEFAULT_SCOPE_ID: &str = "user/current";
+
+/// Version of the A3S Use package engine enforcing cognitive-package host
+/// compatibility.
+pub const COGNITIVE_PACKAGE_HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Canonical target name used by signed cognitive-package catalogs and locks.
+pub fn cognitive_package_host_target() -> UseResult<String> {
+    current_host_target()
+}
 
 /// Shared package manager used by the standalone CLI and embedding A3S hosts.
 /// Registry selection remains host configuration and is passed per operation.

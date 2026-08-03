@@ -20,8 +20,13 @@ use crate::plugin_runtime::{
 
 use super::CognitivePackageLifecycleFactory;
 
+/// Narrow lifecycle composition used by the standalone package engine.
+///
+/// Embedding hosts may wrap this factory for executable Tool Tasks, stdio MCP,
+/// Skill, and UI packages. It deliberately rejects Runtime Service, HTTP MCP,
+/// and OKF surfaces until the host supplies their real lifecycle adapters.
 #[derive(Debug, Default)]
-pub(super) struct StandaloneCognitivePackageLifecycleFactory;
+pub struct StandaloneCognitivePackageLifecycleFactory;
 
 impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFactory {
     fn name(&self) -> &'static str {
