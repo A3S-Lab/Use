@@ -9,6 +9,7 @@ mod coordinator;
 mod journal;
 mod model;
 mod okf;
+mod registry_hosts;
 mod runtime;
 mod schedule;
 mod static_surfaces;
@@ -31,6 +32,7 @@ pub use model::{
     PLUGIN_LIFECYCLE_INTENT_SCHEMA,
 };
 pub use okf::OkfKnowledgeLifecycleHost;
+pub use registry_hosts::{ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost};
 pub use runtime::{
     PluginMcpServiceReadiness, PluginRuntimeServiceReadinessHost, RuntimePluginSurfaceLifecycleHost,
 };

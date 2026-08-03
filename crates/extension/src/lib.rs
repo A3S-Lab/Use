@@ -38,7 +38,8 @@ pub use plugin_manifest::{
     ToolWorkload,
 };
 pub use registry::{
-    ActivationResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
+    ActivationResult, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
+    ExtensionLifecycleResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
     ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult,
     InstalledExtension, UninstallResult,
 };

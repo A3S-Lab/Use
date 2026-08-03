@@ -81,11 +81,11 @@ The checked-in schema-v3 baseline implements Tool, MCP, OKF, Skill, and UI.
 M0K-B freezes the OKF manifest, package validation, catalog, plan,
 receipt/projection, and host-observation contracts. M0K-C-A adds the injected
 Knowledge port, exact-byte stage request, checked adapter client, and durable
-generation store. A package-level intent/journal/coordinator and typed Runtime,
-Skill/UI, and OKF adapters now provide the in-crate lifecycle foundation.
-Production publication still requires package/capability hosts, umbrella
-Plugin Manager wiring, and a real A3S Knowledge backend to supply exact
-promoted evidence.
+generation store. A package-level intent/journal/coordinator, typed Runtime,
+Skill/UI, and OKF adapters, and P0 package/capability hosts now provide the
+in-crate lifecycle foundation. Production publication still requires umbrella
+Plugin Manager host composition and a real A3S Knowledge backend to supply
+exact promoted evidence.
 
 A Plugin Tool is not an MCP `tools/list` item. It is the real executable
 workload on which a Skill or UI may depend. A3S Use manages its lifecycle and
@@ -200,9 +200,8 @@ Remaining on the critical path:
 
 - inject the host Runtime Broker into the shared Plugin Manager;
 - assemble workspace grant proposals/change sets before final draft binding;
-- implement production package commit/removal and atomic capability
-  publish/hide/drain hosts and inject every typed surface host into the
-  package-level coordinator;
+- inject the implemented package/capability and typed surface hosts into the
+  package-level coordinator through one umbrella Plugin Manager composition;
 - coordinate the existing grant sub-saga and new package journal through the
   umbrella Plugin Manager without a parallel lifecycle path;
 - implement prior Runtime generation retirement after blue/green cutover; and
@@ -216,14 +215,14 @@ earlier ownership or durability gate.
 
 | Slice | Scope | Required proof |
 | --- | --- | --- |
-| P0 — Package/capability hosts | Add installed-disabled generation commit/removal and atomic publish/hide/drain implementations over existing receipts, snapshots, and route leases | Crash injection before and after every checkpoint; legacy v1/v2 behavior remains compatible |
+| P0 — Package/capability hosts (complete 2026-08-03) | Installed-disabled generation commit/removal and atomic publish/hide/drain over receipt schema v3, snapshots, and route leases | Root/receipt/snapshot replay, exact removal, drain timeout, tamper rejection, and unchanged v1/v2 suites pass |
 | P1 — Host composition | Have the umbrella Plugin Manager inject explicit Runtime selections, Gateway readiness, stdio MCP, Skill/UI, and A3S Knowledge adapters into one coordinator | CLI and Web produce the same intent and host set; unavailable hosts fail before publication |
 | P2 — Grant composition | Join the existing grant sub-saga to package checkpoints and capability cutover | Candidate grant survives restart; old grant cannot retire before exact cutover evidence |
 | P3 — Blue/green retirement | Retain N and N+1 Runtime/Gateway/projection receipts through cutover, then hide, drain, and remove N | Failed N+1 leaves N callable; successful N+1 leaks no old Runtime unit or route |
 | P4 — Product adapters | Route CLI, Web Marketplace, management MCP, and managed-host mutations through the same operation journal and expose snapshot/watch updates to A3S Code | Install/enable/disable/uninstall hot-plugs Tool, MCP, Skill, UI, and OKF without host restart |
 | P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all five surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
 
-P0 through P3 are release blockers for calling schema-v3 cognitive-package
+P1 through P3 remain release blockers for calling schema-v3 cognitive-package
 lifecycle production-ready. P4 is the hot-plug product gate. P5 is the release
 promotion gate.
 
@@ -241,7 +240,7 @@ plugins {
 
   trusted_registries = ["a3s"]
   trusted_publishers = ["a3s"]
-  allowed_surfaces   = ["mcp", "skill", "tool", "ui"]
+  allowed_surfaces   = ["mcp", "okf", "skill", "tool", "ui"]
 
   max_download_bytes  = 52428800
   max_installed_bytes = 268435456
@@ -465,8 +464,8 @@ grants fail closed. The grant lifecycle adapter now records immutable intent,
 applies candidate receipts idempotently, checkpoints exact capability cutover,
 and retires prior receipts with crash-safe replay. The remaining integration is
 for the Plugin Manager to compose this sub-saga with the implemented package
-journal and production package, Runtime, Gateway, capability, route-switch, and
-lease-drain hosts.
+journal, package/capability hosts, Runtime, Gateway, route switch, and lease
+drain.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still

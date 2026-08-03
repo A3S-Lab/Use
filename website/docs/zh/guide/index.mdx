@@ -9,17 +9,18 @@ A3S Use 是 A3S 生态的 **AI Native Package Manager**。它不替代 `apt`、H
 
 ## 当前可用范围
 
-| 能力                                            | 状态                                 |
-| ----------------------------------------------- | ------------------------------------ |
-| 本地目录与有界归档安装                          | v0.2 可用                            |
-| Release 摘要审查与 TUF Registry                 | v0.2 可用                            |
-| 具名 Registry 替换、启用、停用、移除与刷新      | 由 umbrella host 提供                |
-| 原生 CLI、标准 MCP、内容绑定 Skill              | v0.2 可用                            |
-| schema-v3 Tool、MCP、OKF、Skill、UI 合约        | `main` 已实现控制面基线              |
-| OKF（Open Knowledge Format）知识表面            | M0K-B 合约完成，Knowledge 适配待接入 |
-| 完整 Plugin Manager apply saga 与生产宿主适配器 | 开发中                               |
+| 能力                                                         | 状态                                             |
+| ------------------------------------------------------------ | ------------------------------------------------ |
+| 本地目录与有界归档安装                                       | v0.2 可用                                        |
+| Release 摘要审查与 TUF Registry                              | v0.2 可用                                        |
+| 具名 Registry 替换、启用、停用、移除与刷新                   | 由 umbrella host 提供                            |
+| 原生 CLI、标准 MCP、内容绑定 Skill                           | v0.2 可用                                        |
+| schema-v3 Tool、MCP、OKF、Skill、UI 合约                     | `main` 已实现控制面基线                          |
+| schema-v3 package commit/remove 与 capability 发布/隐藏/排空 | P0 generation-bound host 已实现                  |
+| OKF（Open Knowledge Format）知识表面                         | M0K-C-A lifecycle adapter 已就绪，生产后端待接入 |
+| 完整 Plugin Manager apply saga 与生产产品集成                | 开发中                                           |
 
-认知插件合约已经进入 `main`，但完整的父级 apply saga 与 A3S Knowledge 持久适配器仍在收口。没有精确的 promoted Knowledge evidence，OKF 表面不会发布。生产部署前请以 [路线图](./roadmap) 为准。
+认知插件合约与 P0 package/capability host 已进入 `main`，但 umbrella 与 grant 组合、旧 generation 退休和真实 A3S Knowledge 后端仍在收口。没有精确的 promoted Knowledge evidence，OKF 表面不会发布。生产部署前请以 [路线图](./roadmap) 为准。
 
 ## 安装发布版
 

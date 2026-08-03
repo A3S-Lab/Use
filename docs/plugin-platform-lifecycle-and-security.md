@@ -5,7 +5,7 @@
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
   M0K-C-A adapter/store foundation frozen 2026-08-02, and package-level
-  five-surface saga foundation frozen 2026-08-03
+  five-surface saga plus P0 package/capability hosts frozen 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -20,8 +20,9 @@ reconciler gate, injected Knowledge port, evidence-checking client, and
 persistent generation store are implemented. The production A3S Knowledge
 index backend remains target behavior. A package-level checkpoint journal and
 typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
-foundation, but the production package/capability hosts and umbrella-manager
-wiring remain pending; without promoted observation, an OKF surface stays
+foundation. P0 package/capability hosts add generation-bound commit,
+publish/hide, lease drain, and exact removal; umbrella-manager composition
+remains pending. Without promoted observation, an OKF surface stays
 unpublished.
 
 ## Complete End-to-End Lifecycle Flow
@@ -440,6 +441,15 @@ The implemented package checkpoint schedules are:
 
 Tool, MCP, OKF, Skill, and UI are contributions inside this sequence. No
 surface receives an independent install or uninstall record.
+
+The package store persists lifecycle-managed state as receipt schema v3. The
+receipt and derived route binding carry the exact positive lifecycle
+generation; the deterministic immutable root also binds that generation and
+package digest. Commit is installed-disabled, publish and hide replace one
+complete route snapshot, accepted calls hold shared leases, and drain obtains
+the exclusive lease before exact removal. Legacy v1/v2 receipts remain
+readable and mutable through their existing flow, while legacy toggles reject
+schema-v3 ownership.
 
 ### Install and enable
 

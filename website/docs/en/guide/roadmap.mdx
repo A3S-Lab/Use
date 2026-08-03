@@ -9,7 +9,7 @@ This page is a product summary. The repository's [`ROADMAP.md`](https://github.c
 
 ## Current baseline
 
-As of 2026-08-01, `main` contains:
+As of 2026-08-03, `main` contains:
 
 - named schema-v3 Tool Task/Service, MCP, OKF, Skill, and UI contracts;
 - signed catalog v1–v3, offline verification, metadata-only search, and planning targets;
@@ -17,36 +17,40 @@ As of 2026-08-01, `main` contains:
 - exact-generation workspace grant storage and a recoverable journal;
 - typed Runtime Task/Service binding, invocation, receipt, and observation adapters;
 - dependency-gated Surface Reconciler, planner evidence, and capability snapshots;
-- the M0K-A `a3s.use.okf-bundle.v1` descriptor and bounded v0.2/v0.1 inspector; and
-- M0K-B manifest/package validation, catalog-v3, plan-v2, manager-v2, Knowledge evidence, reconciliation, and canonical fixtures.
+- the M0K-A `a3s.use.okf-bundle.v1` descriptor and bounded v0.2/v0.1 inspector;
+- M0K-B manifest/package validation, catalog-v3, plan-v2, manager-v2, Knowledge evidence, reconciliation, and canonical fixtures;
+- M0K-C-A injected Knowledge lifecycle contracts, exact-byte validation, durable last-good bindings, and package adapter; and
+- P0 schema-v3 package/capability hosts with generation-bound receipts, deterministic roots, atomic snapshots, route-lease drain, and exact removal.
 
 The stable v0.2 package foundation remains independently usable. The plugin-platform baseline above is in development on `main` and is not a complete production plugin product.
 
-**OKF (Open Knowledge Format)** is now part of the schema-v3 control-plane baseline. The production persistent A3S Knowledge adapter, scope-aware capability/session projection, parent-saga cutover, cited retrieval, and receipt-owned cleanup must still be completed before claiming a production OKF lifecycle.
+**OKF (Open Knowledge Format)** is now part of the schema-v3 control-plane and package-lifecycle baseline. The real A3S Knowledge index backend, scope-aware capability/session projection, parent-saga cutover, and cited retrieval must still be completed before claiming a production OKF lifecycle.
 
 ## Milestones
 
-| Milestone                           | Status             | Outcome                                                                     |
-| ----------------------------------- | ------------------ | --------------------------------------------------------------------------- |
-| M0 — Contract freeze and fixtures   | Complete           | Identity, surface, permission, plan, grant, and release fixtures frozen     |
-| M0K-A — OKF bundle contract         | Complete           | Exact content identity, bounded conformance, and canonical fixtures         |
-| M0K-B — OKF control plane           | Complete           | Manifest, package, catalog, plan, Knowledge evidence, and reconciler gates  |
-| M0K-C — OKF Knowledge adapter       | Pending            | Persistent promotion, cited retrieval, rollback, and owned cleanup          |
-| M1 — Signed searchable catalog      | Complete           | TUF-signed catalog, bounded search, planning bundle, and cache              |
-| M2 — Shared Plugin Manager          | In progress        | Unified CLI/Web/MCP lifecycle, durable plan/apply/replay, and parent saga   |
-| M3 — User plugin UX                 | Pending            | `a3s plugin` vocabulary, on-demand Science/OKF packages, and E2E            |
-| M4 — Agent read-only management     | Contracts complete | Search, inspect, list, status, and plan tools                               |
-| M5 — Permission/runtime enforcement | In progress        | Production grant, secret, egress, filesystem, process, and Gateway adapters |
-| M6 — Authorized agent lifecycle     | Pending            | Authorized apply, hot use, upgrade, disable, and uninstall                  |
-| M7 — Supply chain/platform gates    | Pending            | Registry operations, rollback/GC, Windows parity, and release gates         |
+| Milestone                            | Status             | Outcome                                                                     |
+| ------------------------------------ | ------------------ | --------------------------------------------------------------------------- |
+| M0 — Contract freeze and fixtures    | Complete           | Identity, surface, permission, plan, grant, and release fixtures frozen     |
+| M0K-A — OKF bundle contract          | Complete           | Exact content identity, bounded conformance, and canonical fixtures         |
+| M0K-B — OKF control plane            | Complete           | Manifest, package, catalog, plan, Knowledge evidence, and reconciler gates  |
+| M0K-C-A — OKF lifecycle foundation   | Complete           | Injected port, exact-byte validation, durable bindings, and owned cleanup   |
+| M0K-C-B — Production OKF integration | In progress        | Real Knowledge indexing, scoped projection, cited retrieval, and rollback   |
+| M1 — Signed searchable catalog       | Complete           | TUF-signed catalog, bounded search, planning bundle, and cache              |
+| M2 — Shared Plugin Manager           | In progress        | Unified CLI/Web/MCP lifecycle, durable plan/apply/replay, and parent saga   |
+| P0 — Package/capability hosts        | Complete           | Generation commit/remove, snapshot publish/hide, lease drain, and replay    |
+| M3 — User plugin UX                  | Pending            | `a3s plugin` vocabulary, on-demand Science/OKF packages, and E2E            |
+| M4 — Agent read-only management      | Contracts complete | Search, inspect, list, status, and plan tools                               |
+| M5 — Permission/runtime enforcement  | In progress        | Production grant, secret, egress, filesystem, process, and Gateway adapters |
+| M6 — Authorized agent lifecycle      | Pending            | Authorized apply, hot use, upgrade, disable, and uninstall                  |
+| M7 — Supply chain/platform gates     | Pending            | Registry operations, rollback/GC, Windows parity, and release gates         |
 
 ## Current critical path
 
-1. Connect the host Runtime Broker and canonical grant changes to the shared Plugin Manager's final plan.
-2. Coordinate package, grant, Runtime, Gateway, projection, capability, and drain checkpoints in one recoverable parent saga.
-3. Complete CLI, Web, and agent install → use → upgrade → uninstall E2E with production providers.
+1. Have the umbrella Plugin Manager compose the implemented package, capability, Runtime, Gateway, static-surface, and Knowledge hosts into one coordinator.
+2. Join the workspace-grant sub-saga to package checkpoints and capability cutover, then route CLI, Web, management MCP, and managed-host mutations through that journal.
+3. Add prior-generation retirement after blue/green capability cutover, then complete CLI/Web/agent lifecycle and crash-recovery E2E.
 4. Add the general package dependency solver, deterministic lock graph, retained-generation rollback, and garbage collection.
-5. Connect the frozen OKF contracts to persistent Knowledge promotion, scoped projection, atomic index rollback, cited retrieval, and receipt-owned uninstall cleanup.
+5. Connect the M0K-C-A Knowledge port and lifecycle adapter to the real A3S Knowledge backend and scoped capability/session projection.
 6. Extend Agent, prompt, hook, memory, and context-provider contributions only after each host contract is frozen.
 7. Complete official registry operations and Windows platform gates.
 

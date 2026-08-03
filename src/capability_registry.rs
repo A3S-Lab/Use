@@ -125,6 +125,8 @@ pub(crate) struct CapabilityBinding {
     #[serde(skip_serializing_if = "Option::is_none")]
     package_root: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    lifecycle_generation: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     requires_use: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     repository: Option<RepositoryBinding>,
@@ -234,6 +236,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             reconciliation: None,
             planner_evidence: None,
             package_root,
+            lifecycle_generation: None,
             requires_use: None,
             repository: None,
             surfaces: vec!["cli".to_string(), "mcp".to_string(), "skill".to_string()],
@@ -258,6 +261,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             reconciliation: None,
             planner_evidence: None,
             package_root: None,
+            lifecycle_generation: None,
             requires_use: None,
             repository: None,
             surfaces: Vec::new(),
@@ -294,6 +298,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             reconciliation: None,
             planner_evidence: None,
             package_root,
+            lifecycle_generation: None,
             requires_use: None,
             repository: None,
             surfaces,
@@ -321,6 +326,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             reconciliation: None,
             planner_evidence: None,
             package_root: None,
+            lifecycle_generation: None,
             requires_use: None,
             repository: None,
             surfaces: Vec::new(),
@@ -344,6 +350,7 @@ fn box_capability() -> CapabilityBinding {
         reconciliation: None,
         planner_evidence: None,
         package_root: None,
+        lifecycle_generation: None,
         requires_use: None,
         repository: None,
         surfaces: vec!["cli".to_string()],
@@ -513,6 +520,7 @@ async fn project_extensions(
             || receipt.version != route.version
             || receipt.package_root != route.package_root
             || receipt.manifest_sha256 != route.manifest_sha256
+            || receipt.lifecycle_generation != route.lifecycle_generation
             || receipt.enabled != route.enabled
             || surfaces != route.surfaces
         {
@@ -641,6 +649,7 @@ async fn project_extension_for_host(
         reconciliation,
         planner_evidence,
         package_root: Some(receipt.package_root.clone()),
+        lifecycle_generation: receipt.lifecycle_generation,
         requires_use: extension.manifest.requires_use.clone(),
         repository: extension
             .manifest
@@ -853,6 +862,7 @@ extension "acme/slack" {
             verified_catalog: None,
             installed_at_unix: 0,
             enabled,
+            lifecycle_generation: None,
         };
         a3s_use_extension::InstalledExtension { receipt, manifest }
     }
@@ -977,7 +987,10 @@ extension "acme/slack" {
             .unwrap();
         tokio::fs::write(&path, b"# Guide\n").await.unwrap();
         let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_ONLY_PLUGIN).unwrap();
-        let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        let mut extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        extension.receipt.schema_version = 3;
+        extension.receipt.package_sha256 = Some("a".repeat(64));
+        extension.receipt.lifecycle_generation = Some(7);
         let surfaces = extension
             .surfaces()
             .into_iter()
@@ -994,12 +1007,14 @@ extension "acme/slack" {
         assert_eq!(binding.skills.len(), 1);
         assert_eq!(binding.skills[0].path, path);
         assert_eq!(binding.skills[0].sha256.len(), 64);
+        assert_eq!(binding.lifecycle_generation, Some(7));
         assert_eq!(reconciliation.observed, PluginObservedState::Ready);
         assert!(reconciliation.publishes(PluginSurfaceKind::Skill, "guide"));
 
         let json = serde_json::to_value(&binding).unwrap();
         assert_eq!(json["reconciliation"]["desired"], "enabled");
         assert_eq!(json["reconciliation"]["observed"], "ready");
+        assert_eq!(json["lifecycleGeneration"], 7);
         assert_eq!(
             json["reconciliation"]["surfaces"][0]["surface"]["id"],
             "guide"

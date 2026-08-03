@@ -69,6 +69,25 @@ fn registry(root: &Path) -> ExtensionRegistry {
     ExtensionRegistry::new(ExtensionPaths::new(root.join("data"), root.join("state")))
 }
 
+async fn compatible_cognitive_package(root: &Path) {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/packages/plugin-v3-cognitive/package");
+    crate::package::copy_package(&fixture, root).await.unwrap();
+}
+
+fn lifecycle_identity(
+    candidate: &ExtensionLifecyclePackage,
+    generation: u64,
+) -> ExtensionLifecycleIdentity {
+    ExtensionLifecycleIdentity::new(
+        candidate.package_id(),
+        candidate.package_digest(),
+        candidate.manifest_digest(),
+        generation,
+    )
+    .unwrap()
+}
+
 fn tar_package(source: &Path, archive: &Path) {
     let file = File::create(archive).unwrap();
     let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
@@ -1056,4 +1075,314 @@ async fn uninstall_retry_cleans_packages_after_receipt_removal_was_already_commi
 
     let unchanged = registry.uninstall("acme/slack").await.unwrap();
     assert!(!unchanged.changed);
+}
+
+#[tokio::test]
+async fn lifecycle_commit_keeps_all_five_surfaces_installed_disabled_until_atomic_publish() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 7);
+    let registry = registry(temp.path());
+
+    let committed = registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap();
+    assert!(committed.changed);
+    assert_eq!(committed.extension.receipt.schema_version, 3);
+    assert_eq!(committed.extension.receipt.lifecycle_generation, Some(7));
+    assert!(!committed.extension.receipt.enabled);
+    assert_eq!(
+        committed.extension.surfaces(),
+        ["tool", "mcp", "okf", "skill", "ui"]
+    );
+    assert_eq!(
+        committed.extension.receipt.package_root,
+        registry.lifecycle_package_root(&identity)
+    );
+
+    let installed_disabled = registry.snapshot().await.unwrap();
+    assert_eq!(installed_disabled.routes.len(), 1);
+    assert_eq!(installed_disabled.routes[0].lifecycle_generation, Some(7));
+    assert!(!installed_disabled.routes[0].enabled);
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .await
+        .unwrap()
+        .is_none());
+
+    let commit_replay = registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap();
+    assert!(!commit_replay.changed);
+    assert_eq!(
+        commit_replay.extension.receipt.descriptor_digest().unwrap(),
+        committed.extension.receipt.descriptor_digest().unwrap()
+    );
+
+    for error in [
+        registry.enable("acme/cognitive").await.unwrap_err(),
+        registry.disable("acme/cognitive").await.unwrap_err(),
+        registry.uninstall("acme/cognitive").await.unwrap_err(),
+    ] {
+        assert_eq!(error.code, "use.extension.lifecycle_managed");
+    }
+
+    let published = registry
+        .publish_lifecycle_package_for_host_version(&identity, "0.3.0")
+        .await
+        .unwrap();
+    assert!(published.changed);
+    assert!(published.extension.receipt.enabled);
+    assert_eq!(published.extension.receipt.lifecycle_generation, Some(7));
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .await
+        .unwrap()
+        .is_some());
+
+    let replay = registry
+        .publish_lifecycle_package_for_host_version(&identity, "0.3.0")
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+    assert_eq!(
+        replay.extension.receipt.descriptor_digest().unwrap(),
+        published.extension.receipt.descriptor_digest().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn lifecycle_hide_drains_accepted_calls_before_exact_idempotent_removal() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 11);
+    let registry = registry(temp.path());
+    registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap();
+    registry
+        .publish_lifecycle_package_for_host_version(&identity, "0.3.0")
+        .await
+        .unwrap();
+    let lease = registry
+        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .await
+        .unwrap()
+        .unwrap();
+
+    let hidden = registry.hide_lifecycle_package(&identity).await.unwrap();
+    assert!(hidden.changed);
+    assert!(!hidden.extension.receipt.enabled);
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .await
+        .unwrap()
+        .is_none());
+    let hide_replay = registry.hide_lifecycle_package(&identity).await.unwrap();
+    assert!(!hide_replay.changed);
+
+    let error = registry
+        .drain_lifecycle_package(&identity, Duration::from_millis(50))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.drain_timeout");
+    drop(lease);
+
+    let drained = registry
+        .drain_lifecycle_package(&identity, Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert!(!drained.extension.receipt.enabled);
+    let drain_replay = registry
+        .drain_lifecycle_package(&identity, Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert_eq!(
+        drain_replay.extension.receipt.descriptor_digest().unwrap(),
+        drained.extension.receipt.descriptor_digest().unwrap()
+    );
+    let package_root = drained.extension.receipt.package_root.clone();
+
+    let removed = registry
+        .remove_lifecycle_package(&identity, Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert!(removed.changed);
+    assert!(!package_root.exists());
+    assert!(registry.get("acme/cognitive").await.unwrap().is_none());
+    assert!(registry.snapshot().await.unwrap().routes.is_empty());
+
+    let replay = registry
+        .remove_lifecycle_package(&identity, Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+}
+
+#[tokio::test]
+async fn lifecycle_generation_binding_fails_closed_and_snapshot_repairs_tampered_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 13);
+    let registry = registry(temp.path());
+    registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap();
+
+    let snapshot_path = registry.paths().registry_snapshot_path();
+    let mut snapshot: serde_json::Value =
+        serde_json::from_slice(&fs::read(&snapshot_path).await.unwrap()).unwrap();
+    snapshot["routes"][0]["lifecycleGeneration"] = serde_json::json!(99);
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec_pretty(&snapshot).unwrap(),
+    )
+    .await
+    .unwrap();
+    let repaired = registry.snapshot().await.unwrap();
+    assert_eq!(repaired.routes[0].lifecycle_generation, Some(13));
+
+    let receipt_path = registry.paths().receipt_path("acme/cognitive");
+    let mut receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt_path).await.unwrap()).unwrap();
+    receipt["lifecycleGeneration"] = serde_json::json!(14);
+    fs::write(&receipt_path, serde_json::to_vec_pretty(&receipt).unwrap())
+        .await
+        .unwrap();
+    let error = registry.get("acme/cognitive").await.unwrap_err();
+    assert!(matches!(
+        error.code.as_str(),
+        "use.extension.lifecycle_receipt_invalid" | "use.extension.ownership_invalid"
+    ));
+}
+
+#[tokio::test]
+async fn lifecycle_commit_repairs_crashes_after_root_or_receipt_commit() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 15);
+    let registry = registry(temp.path());
+    let target = registry.lifecycle_package_root(&identity);
+
+    // Model a crash after the deterministic immutable root was committed but
+    // before the authoritative receipt was written.
+    crate::package::copy_package(&source, &target)
+        .await
+        .unwrap();
+    let committed = registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap();
+    assert!(committed.changed);
+    assert_eq!(committed.extension.receipt.package_root, target);
+
+    // Model a second crash after receipt replacement but before snapshot
+    // publication. Replaying the same checkpoint repairs only the projection.
+    let snapshot_path = registry.paths().registry_snapshot_path();
+    let mut snapshot: serde_json::Value =
+        serde_json::from_slice(&fs::read(&snapshot_path).await.unwrap()).unwrap();
+    snapshot["routes"] = serde_json::json!([]);
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec_pretty(&snapshot).unwrap(),
+    )
+    .await
+    .unwrap();
+    let replay = registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+    assert_eq!(registry.snapshot().await.unwrap().routes.len(), 1);
+}
+
+#[tokio::test]
+async fn lifecycle_commit_refuses_to_replace_a_retained_generation() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let first = lifecycle_identity(&candidate, 17);
+    let next = lifecycle_identity(&candidate, 18);
+    let registry = registry(temp.path());
+    registry
+        .commit_lifecycle_package(&first, &candidate)
+        .await
+        .unwrap();
+
+    let error = registry
+        .commit_lifecycle_package(&next, &candidate)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.extension.lifecycle_generation_retirement_required"
+    );
+    assert_eq!(
+        registry
+            .get("acme/cognitive")
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt
+            .lifecycle_generation,
+        Some(17)
+    );
+}
+
+#[tokio::test]
+async fn public_lifecycle_candidate_uses_the_real_host_version() {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/packages/plugin-v3-cognitive/package");
+    let error = ExtensionLifecyclePackage::prepare_local("acme/cognitive", &fixture, true)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.host_incompatible");
 }

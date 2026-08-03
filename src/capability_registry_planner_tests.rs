@@ -115,6 +115,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
         verified_catalog: Some(verified),
         installed_at_unix: 7,
         enabled: true,
+        lifecycle_generation: None,
     };
     let extension = a3s_use_extension::InstalledExtension { receipt, manifest };
     let surfaces = extension

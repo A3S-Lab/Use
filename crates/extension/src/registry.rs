@@ -23,8 +23,15 @@ use super::route_lock::{acquire_drain_lock, deadline_after, open_route_lock};
 use super::source::prepare_package_source;
 use super::{ExtensionManifest, ExtensionPaths, McpTransport};
 
+mod lifecycle;
+
+pub use lifecycle::{
+    ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionLifecycleResult,
+};
+
 const RECEIPT_SCHEMA_VERSION_V1: u32 = 1;
 const RECEIPT_SCHEMA_VERSION_V2: u32 = 2;
+const RECEIPT_SCHEMA_VERSION_V3: u32 = 3;
 pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 1;
 const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 const WATCH_INTERVAL: Duration = Duration::from_millis(50);
@@ -57,6 +64,8 @@ pub struct ExtensionReceipt {
     pub installed_at_unix: u64,
     #[serde(default = "enabled_by_default")]
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_generation: Option<u64>,
 }
 
 impl ExtensionReceipt {
@@ -132,16 +141,18 @@ impl InstalledExtension {
         self.manifest.supports_use_version(version).unwrap_or(false)
     }
 
-    /// Return the verified catalog-v2 evidence retained by this installed
-    /// package after checking its internal receipt bindings.
+    /// Return the verified package-planning evidence retained by this
+    /// installed package after checking its internal receipt bindings.
     pub fn plan_ready_catalog(&self) -> UseResult<&VerifiedPluginCatalogRecord> {
         let catalog = self.receipt.verified_catalog.as_ref().ok_or_else(|| {
             plan_evidence_error(
-                "The installed extension does not retain catalog-v2 planning evidence.",
+                "The installed extension does not retain verified package-planning evidence.",
             )
         })?;
-        if self.receipt.schema_version != RECEIPT_SCHEMA_VERSION_V2
-            || self.receipt.trust != ExtensionTrust::RegistryTuf
+        if !matches!(
+            self.receipt.schema_version,
+            RECEIPT_SCHEMA_VERSION_V2 | RECEIPT_SCHEMA_VERSION_V3
+        ) || self.receipt.trust != ExtensionTrust::RegistryTuf
         {
             return Err(plan_evidence_error(
                 "The installed extension receipt is not plan-ready registry state.",
@@ -206,6 +217,8 @@ pub struct ExtensionRouteBinding {
     pub manifest_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_generation: Option<u64>,
     pub enabled: bool,
     pub surfaces: Vec<String>,
 }
@@ -416,10 +429,19 @@ impl ExtensionRegistry {
     }
 
     pub async fn find_route(&self, route: &str) -> UseResult<Option<InstalledExtension>> {
+        self.find_route_for_host_version(route, env!("CARGO_PKG_VERSION"))
+            .await
+    }
+
+    async fn find_route_for_host_version(
+        &self,
+        route: &str,
+        host_version: &str,
+    ) -> UseResult<Option<InstalledExtension>> {
         Ok(self.list().await?.into_iter().find(|extension| {
             extension.receipt.enabled
                 && extension.receipt.route == route
-                && extension.supports_use_version(env!("CARGO_PKG_VERSION"))
+                && extension.supports_use_version(host_version)
         }))
     }
 
@@ -630,6 +652,15 @@ impl ExtensionRegistry {
                 ),
             ));
         }
+        if manifest.schema_version == 3 {
+            return Err(UseError::new(
+                "use.extension.lifecycle_required",
+                "Schema-v3 cognitive packages must be installed through the package lifecycle coordinator.",
+            )
+            .with_suggestion(
+                "Use the cognitive-package install or apply flow so every declared surface is committed atomically.",
+            ));
+        }
         if !manifest.supports_use_version(env!("CARGO_PKG_VERSION"))? {
             return Err(UseError::new(
                 "use.extension.host_incompatible",
@@ -781,6 +812,7 @@ impl ExtensionRegistry {
             verified_catalog,
             installed_at_unix: unix_timestamp(),
             enabled,
+            lifecycle_generation: None,
         };
         let receipt_path = self.paths.receipt_path(expected_package_id);
         if let Err(error) = write_receipt(&receipt_path, &receipt).await {
@@ -809,6 +841,7 @@ impl ExtensionRegistry {
                 format!("Extension '{package_id}' is not installed."),
             )
         })?;
+        reject_lifecycle_managed(&extension.receipt)?;
         let changed = !extension.receipt.enabled;
         if changed {
             let mut receipt = extension.receipt;
@@ -844,6 +877,7 @@ impl ExtensionRegistry {
                 format!("Extension '{package_id}' is not installed."),
             )
         })?;
+        reject_lifecycle_managed(&extension.receipt)?;
         let changed = extension.receipt.enabled;
         if changed {
             let mut receipt = extension.receipt;
@@ -876,13 +910,15 @@ impl ExtensionRegistry {
             // projection and finish the owned cleanup on retry.
             let installed = self.list().await?;
             self.publish_snapshot_locked(&installed).await?;
-            let changed =
-                remove_package_parent_if_present(&self.paths.package_parent(&package_id)).await?;
+            let package_parent = self.paths.package_parent(&package_id);
+            reject_lifecycle_orphan_cleanup(&package_parent).await?;
+            let changed = remove_package_parent_if_present(&package_parent).await?;
             return Ok(UninstallResult {
                 package_id,
                 changed,
             });
         };
+        reject_lifecycle_managed(&extension.receipt)?;
         if extension.receipt.enabled {
             let mut receipt = extension.receipt.clone();
             receipt.enabled = false;
@@ -928,6 +964,20 @@ impl ExtensionRegistry {
         candidate: InstalledExtension,
         expected_route: Option<&str>,
     ) -> UseResult<Option<ExtensionRouteLease>> {
+        self.acquire_extension_lease_for_host_version(
+            candidate,
+            expected_route,
+            env!("CARGO_PKG_VERSION"),
+        )
+        .await
+    }
+
+    async fn acquire_extension_lease_for_host_version(
+        &self,
+        candidate: InstalledExtension,
+        expected_route: Option<&str>,
+        host_version: &str,
+    ) -> UseResult<Option<ExtensionRouteLease>> {
         let path = self.paths.package_lock_path(&candidate.receipt.package_id);
         let file = open_route_lock(&path)?;
         match FileExt::try_lock_shared(&file) {
@@ -943,7 +993,7 @@ impl ExtensionRegistry {
             return Ok(None);
         };
         if !extension.receipt.enabled
-            || !extension.supports_use_version(env!("CARGO_PKG_VERSION"))
+            || !extension.supports_use_version(host_version)
             || expected_route.is_some_and(|route| extension.receipt.route != route)
         {
             let _ = FileExt::unlock(&file);
@@ -992,7 +1042,7 @@ impl ExtensionRegistry {
         })?;
         if !matches!(
             receipt.schema_version,
-            RECEIPT_SCHEMA_VERSION_V1 | RECEIPT_SCHEMA_VERSION_V2
+            RECEIPT_SCHEMA_VERSION_V1 | RECEIPT_SCHEMA_VERSION_V2 | RECEIPT_SCHEMA_VERSION_V3
         ) {
             return Err(UseError::new(
                 "use.extension.receipt_incompatible",
@@ -1008,12 +1058,26 @@ impl ExtensionRegistry {
             receipt.package_sha256.as_ref(),
         ) {
             (RECEIPT_SCHEMA_VERSION_V1, None, _)
-            | (RECEIPT_SCHEMA_VERSION_V2, Some(_), Some(_)) => {}
+            | (RECEIPT_SCHEMA_VERSION_V2, Some(_), Some(_))
+            | (RECEIPT_SCHEMA_VERSION_V3, _, Some(_)) => {}
             _ => {
                 return Err(UseError::new(
                     "use.extension.receipt_invalid",
                     format!(
                         "Extension receipt for '{}' has inconsistent catalog evidence.",
+                        receipt.package_id
+                    ),
+                ))
+            }
+        }
+        match (receipt.schema_version, receipt.lifecycle_generation) {
+            (RECEIPT_SCHEMA_VERSION_V1 | RECEIPT_SCHEMA_VERSION_V2, None)
+            | (RECEIPT_SCHEMA_VERSION_V3, Some(1..)) => {}
+            _ => {
+                return Err(UseError::new(
+                    "use.extension.lifecycle_receipt_invalid",
+                    format!(
+                        "Extension receipt for '{}' has an invalid lifecycle generation.",
                         receipt.package_id
                     ),
                 ))
@@ -1094,6 +1158,35 @@ impl ExtensionRegistry {
                 ),
             ));
         }
+        if receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 {
+            let generation = receipt.lifecycle_generation.ok_or_else(|| {
+                UseError::new(
+                    "use.extension.lifecycle_receipt_invalid",
+                    "A lifecycle receipt omitted its exact package generation.",
+                )
+            })?;
+            let package_sha256 = receipt.package_sha256.as_deref().ok_or_else(|| {
+                UseError::new(
+                    "use.extension.lifecycle_receipt_invalid",
+                    "A lifecycle receipt omitted its exact package digest.",
+                )
+            })?;
+            if manifest.schema_version != 3
+                || package_sha256.bytes().any(|byte| byte.is_ascii_uppercase())
+                || receipt.package_root
+                    != self
+                        .paths
+                        .lifecycle_package_root(&package_id, generation, package_sha256)
+            {
+                return Err(UseError::new(
+                    "use.extension.lifecycle_receipt_invalid",
+                    format!(
+                        "Lifecycle receipt for '{}' does not bind its immutable generation.",
+                        package_id
+                    ),
+                ));
+            }
+        }
         validate_surface_files(&manifest, &receipt.package_root).await?;
         if let Some(catalog) = receipt.verified_catalog.as_ref() {
             let package_digest = package_sha256(&receipt.package_root).await?;
@@ -1148,6 +1241,7 @@ fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding
             package_root: extension.receipt.package_root.clone(),
             manifest_sha256: extension.receipt.manifest_sha256.clone(),
             package_sha256: extension.receipt.package_sha256.clone(),
+            lifecycle_generation: extension.receipt.lifecycle_generation,
             enabled: extension.receipt.enabled,
             surfaces: extension
                 .surfaces()
@@ -1156,6 +1250,48 @@ fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding
                 .collect(),
         })
         .collect()
+}
+
+fn reject_lifecycle_managed(receipt: &ExtensionReceipt) -> UseResult<()> {
+    if receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 || receipt.lifecycle_generation.is_some()
+    {
+        return Err(UseError::new(
+            "use.extension.lifecycle_managed",
+            format!(
+                "Cognitive package '{}' is owned by the package lifecycle coordinator.",
+                receipt.package_id
+            ),
+        )
+        .with_suggestion(
+            "Use the cognitive-package lifecycle operation instead of the legacy extension toggle.",
+        ));
+    }
+    Ok(())
+}
+
+async fn reject_lifecycle_orphan_cleanup(path: &Path) -> UseResult<()> {
+    let mut entries = match fs::read_dir(path).await {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(io_error("inspect extension package", path, error)),
+    };
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| io_error("inspect extension package", path, error))?
+    {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with("lifecycle-"))
+        {
+            return Err(UseError::new(
+                "use.extension.lifecycle_managed",
+                "A lifecycle-managed package generation requires exact coordinator-owned cleanup.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 async fn remove_package_parent_if_present(path: &Path) -> UseResult<bool> {

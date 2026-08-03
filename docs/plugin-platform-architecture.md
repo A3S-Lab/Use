@@ -4,7 +4,7 @@
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
-  and package-level five-surface lifecycle foundation accepted 2026-08-03
+  and package-level five-surface lifecycle plus P0 hosts accepted 2026-08-03
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -40,12 +40,13 @@ M0K-B adds exact manifest/package validation, catalog and plan evidence,
 Knowledge receipt/observation/projection contracts, and dependency-gated
 reconciliation for OKF. M0K-C-A adds the injected Knowledge port, exact-byte
 stage request, evidence-checking client, durable bounded generation store, and
-a package-saga OKF adapter. The package-level intent, journal, coordinator, and
-typed Runtime/static adapters are also implemented foundations. The production
-package/capability hosts, umbrella-manager wiring, prior Runtime generation
-retirement, A3S Knowledge index backend, and scoped cited retrieval remain to
-be implemented; missing promoted evidence therefore stays explicitly
-unpublished.
+a package-saga OKF adapter. The package-level intent, journal, coordinator,
+typed Runtime/static adapters, and P0 package/capability hosts are implemented.
+Schema-v3 receipt generation binding, deterministic immutable roots, atomic
+publish/hide, and route-lease drain now enforce the package boundary. Umbrella
+manager composition, prior Runtime generation retirement, the A3S Knowledge
+index backend, and scoped cited retrieval remain to be implemented; missing
+promoted evidence therefore stays explicitly unpublished.
 
 In this architecture, **Tool does not mean an MCP `tools/list` item**. A Tool
 is a workload on which a Skill or UI can depend. It keeps its native CLI or
@@ -448,13 +449,21 @@ native and stdio launchers, immutable Skill/UI evidence, and receipt-owned OKF
 stage/promote/remove. The coordinator is not an invocation protocol and cannot
 install a contribution independently from its package.
 
+The production package adapter commits a deterministic immutable root and a
+schema-v3 receipt bound to the exact package digest, manifest digest, and
+lifecycle generation. It remains `installed-disabled` until the capability
+adapter atomically publishes the complete route binding. Hide precedes the
+exclusive lease drain; removal deletes only that exact root. Legacy schema-v1
+and schema-v2 operations remain compatible, but their toggles reject a
+lifecycle-managed receipt instead of bypassing the package journal.
+
 The durable journal is bounded, atomically replaced, cross-process locked, and
 validates path ownership and every prior receipt before replay. Its detailed
 decision is [ADR-002](adr-002-cognitive-package-lifecycle-saga.md).
 
-Production package and capability hosts and umbrella-manager injection remain
-pending. Candidate preparation also refuses to overwrite an older Runtime
-binding until blue/green prior-generation retirement is implemented.
+Umbrella-manager host composition remains pending. The production package host
+also rejects upgrade before mutation until blue/green dual-generation
+retirement is implemented; it never overwrites the only retained generation.
 
 ## Surface Reconciliation
 
@@ -910,10 +919,12 @@ permission-bearing drafts still fail closed until the host Runtime Broker,
 two-pass provider selection, and workspace grant saga are connected.
 
 The in-crate package lifecycle foundation is separately implemented: canonical
-surface scheduling, durable checkpoint replay, typed Runtime/Skill/UI/OKF
-adapters, and an all-five-surface package fixture. It is not yet called by the
-umbrella Plugin Manager or the legacy `ExtensionRegistry` mutation path, so it
-does not expand the current product readiness claim.
+surface scheduling, durable checkpoint replay, production package/capability
+hosts, typed Runtime/Skill/UI/OKF adapters, and an all-five-surface package
+fixture. Schema-v3 operations use dedicated exact-generation
+`ExtensionRegistry` methods and reject legacy mutation bypass. The umbrella
+Plugin Manager does not yet compose these hosts, so P0 alone does not expand
+the current product readiness claim.
 
 ## Compatibility and Migration
 
@@ -963,7 +974,7 @@ The architecture is implemented only when:
 
 - one plugin can contain multiple named Skills, Tool Tasks, Tool Services, MCP
   servers, UIs, and conformant OKF bundles;
-- a Skill is never visible before its required Tools and MCP bindings are
+- a Skill is never visible before its required Tool, MCP, and OKF bindings are
   usable;
 - a CLI Tool executes as an exact-generation Task and preserves native process
   semantics;

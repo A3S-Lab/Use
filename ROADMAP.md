@@ -140,13 +140,14 @@ The main gaps are:
   implemented, but the host Runtime Broker is not injected into the shared
   Plugin Manager yet;
 - persisted Tool Task/Service bindings and Runtime observations feed the shared
-  reconciler, and package-level Runtime/MCP/Skill/UI/OKF adapters exist, but the
-  Plugin Manager still lacks production package/capability hosts and complete
-  scope-aware apply/observation wiring;
+  reconciler, and package-level package/capability plus
+  Runtime/MCP/Skill/UI/OKF adapters exist, but the Plugin Manager still lacks
+  complete host composition and scope-aware apply/observation wiring;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
-  its bounded read-only management MCP is connected, while production
-  package/capability and surface-host composition remains to be connected;
+  its bounded read-only management MCP is connected, while production host
+  composition across package/capability and surface adapters remains to be
+  connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - the versioned OKF manager/search/selection contract, injected Knowledge port,
@@ -433,6 +434,12 @@ Implementation status (2026-08-03):
   checkpoint schedule, durable atomic journal, and typed host coordinator
   prepare dependencies forward, publish once, and hide/drain/remove in reverse
   order with restart-safe idempotency evidence;
+- completed in A3S Use: P0 production package/capability hosts commit one
+  deterministic immutable generation as receipt-schema-v3
+  `installed-disabled`, atomically publish or hide its complete route binding,
+  drain shared route leases, and remove only that exact generation; legacy
+  schema-v1/v2 behavior remains compatible and cannot bypass lifecycle-managed
+  ownership;
 - completed in A3S Use: concrete Runtime Tool/MCP, immutable Skill/UI, and OKF
   Knowledge adapters validate exact package bytes and retain receipt-owned
   cleanup boundaries; an all-five-surface package fixture freezes the contract;
@@ -444,13 +451,12 @@ Implementation status (2026-08-03):
   contracts, offline child-policy propagation, a signed-registry CLI
   plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
   smoke test;
-- pending: production package commit/removal and atomic capability
-  publish/hide/drain hosts, umbrella-manager injection of the typed Runtime,
-  Gateway, stdio MCP, Skill/UI, and Knowledge adapters, prior Runtime generation
-  retirement, and complete Unix Marketplace lifecycle E2E through the shared
-  service. The shared manager must also implement the published managed-host
-  port before a Cloud adapter can enable mutation; hosts must not add a parallel
-  implementation.
+- pending: umbrella-manager injection of the implemented package/capability,
+  typed Runtime, Gateway, stdio MCP, Skill/UI, and Knowledge adapters; grant
+  sub-saga composition; prior Runtime generation retirement; and complete Unix
+  Marketplace lifecycle E2E through the shared service. The shared manager
+  must also implement the published managed-host port before a Cloud adapter
+  can enable mutation; hosts must not add a parallel implementation.
 
 Deliverables:
 

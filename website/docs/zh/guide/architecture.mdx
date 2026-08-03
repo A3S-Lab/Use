@@ -86,7 +86,7 @@ disable：          hide → drain → 反向停止依赖
 uninstall：        hide → drain → 反向移除依赖 → 移除 package
 ```
 
-Runtime Tool/MCP、immutable Skill/UI 与 OKF Knowledge adapter 已实现。生产 package commit/removal、原子 capability publication、umbrella Plugin Manager 注入和旧 Runtime generation 退休仍在进行，因此 legacy registry path 尚不宣称完整 schema-v3 saga 已交付。
+Runtime Tool/MCP、immutable Skill/UI 与 OKF Knowledge adapter 已实现。P0 schema-v3 package/capability host 现可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 route lease，并只移除 receipt-owned root。Umbrella Plugin Manager 与 grant 组合、真实 A3S Knowledge 后端、Gateway 集成和旧 Runtime generation 退休仍在进行。Schema-v3 package 会拒绝 legacy mutation bypass，且在 P3 支持双 generation 退休前 upgrade 保持 fail-closed，因此 P0 尚不代表完整 production saga 已交付。
 
 [ADR-002](https://github.com/A3S-Lab/Use/blob/main/docs/adr-002-cognitive-package-lifecycle-saga.md) 冻结了该生命周期边界。
 

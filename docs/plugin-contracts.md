@@ -410,9 +410,13 @@ does not change archive download length or expanded package size. Avoiding
 unrelated downloads requires separate package archives, not merely optional
 surface flags.
 
-For a TUF installation selected from catalog v2 or v3,
-`a3s-use-extension` persists the complete `VerifiedPluginCatalogRecord` in
-extension receipt schema 2. Loading that receipt:
+For a legacy schema-v1/v2 package selected through complete catalog evidence,
+`a3s-use-extension` persists the `VerifiedPluginCatalogRecord` in extension
+receipt schema 2. A schema-v3 cognitive package instead enters through the
+package lifecycle coordinator and uses receipt schema 3; it retains the same
+verified catalog evidence when installed from TUF and additionally binds the
+exact positive `lifecycleGeneration` and deterministic immutable root. Loading
+either plan-ready receipt:
 
 1. validates the canonical catalog record and its TUF role provenance;
 2. reconstructs `ResolvedRemotePackage` and requires exact equality with the
@@ -425,6 +429,10 @@ This receipt is durable plan-ready before-state for later upgrade and
 uninstall resolution. Receipt schema 1 remains readable for catalog-v1,
 explicit-local, and release-bundle installs, but its absence of signed
 plan-ready catalog evidence must not be silently upgraded into a complete plan.
+Receipt schema 3 is committed disabled, projected with the same lifecycle
+generation in the route snapshot, and can be published, hidden, drained, or
+removed only through exact lifecycle operations. Legacy extension toggles
+reject it rather than creating a second mutation path.
 
 `PreparedRemotePackage::load_planning_bundle` performs a target-only read for
 catalog v3. It requires the exact target in signed TUF metadata, compares TUF
