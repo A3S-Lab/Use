@@ -99,7 +99,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTarget: "目标",
     consoleTrust: "信任",
     consoleGeneration: "代际",
-    consoleReady: "五表面生命周期基础已就绪 · 生产宿主待接入",
+    consoleReady: "P0 包/能力宿主已就绪 · umbrella 组合待完成",
     modelEyebrow: "ONE PACKAGE · FIVE CONTRIBUTIONS",
     modelTitle: "一个不可变身份，一套安装与移除边界",
     modelBody:
@@ -265,7 +265,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTrust: "trust",
     consoleGeneration: "generation",
     consoleReady:
-      "five-surface lifecycle foundation · production hosts pending",
+      "P0 package/capability hosts ready · umbrella composition pending",
     modelEyebrow: "ONE PACKAGE · FIVE CONTRIBUTIONS",
     modelTitle: "One immutable identity. One install and removal boundary.",
     modelBody:

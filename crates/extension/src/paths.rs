@@ -74,6 +74,16 @@ impl ExtensionPaths {
             .join(format!("{version}-{activation}"))
     }
 
+    pub(crate) fn lifecycle_package_root(
+        &self,
+        package_id: &str,
+        generation: u64,
+        package_sha256: &str,
+    ) -> PathBuf {
+        self.package_parent(package_id)
+            .join(format!("lifecycle-{generation}-{package_sha256}"))
+    }
+
     pub(crate) fn receipt_path(&self, package_id: &str) -> PathBuf {
         let mut path = append_package_id(self.receipts_root(), package_id);
         path.set_extension("json");
@@ -156,6 +166,13 @@ mod tests {
         assert_eq!(
             paths.package_root("acme/slack", "1.2.0", "generation"),
             PathBuf::from("/data/use/extensions/acme/slack/1.2.0-generation")
+        );
+        assert_eq!(
+            paths.lifecycle_package_root("acme/slack", 7, &"a".repeat(64)),
+            PathBuf::from(format!(
+                "/data/use/extensions/acme/slack/lifecycle-7-{}",
+                "a".repeat(64)
+            ))
         );
         assert_eq!(
             paths.receipt_path("acme/slack"),

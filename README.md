@@ -45,8 +45,10 @@ system software.
 > durable last-good binding store. The package-level lifecycle foundation now
 > adds one canonical Tool/MCP/OKF/Skill/UI graph, a durable idempotent parent
 > journal, dependency-forward preparation, reverse removal, and typed Runtime,
-> static-surface, and OKF adapters. Production package/capability hosts,
-> umbrella CLI/Web wiring, old-Runtime-generation retirement, Gateway, and the
+> static-surface, and OKF adapters. P0 now adds production package/capability
+> hosts over schema-v3 generation-bound receipts, deterministic immutable
+> roots, atomic snapshots, and route-lease draining. Umbrella CLI/Web host
+> composition, grant composition, old-generation retirement, Gateway, and the
 > real A3S Knowledge backend remain incomplete, so this is not yet a finished
 > plugin product. [ROADMAP.md](ROADMAP.md) is the source of truth.
 
@@ -341,7 +343,7 @@ invented executable target.
 | ACL identity, provenance, and SemVer host compatibility | Available |
 | Digest-pinned MCP Runtime Service and immutable Skill Agent-input releases | Available with canonical cross-SDK fixtures and Linux OCI conformance |
 | Native CLI, standard MCP, and content-bound Skill surfaces | Available |
-| Atomic install, upgrade, enable, disable, drain, and uninstall | Available |
+| Schema-v1/v2 atomic install, upgrade, enable, disable, drain, and uninstall | Available |
 | Capability snapshot and long-poll watch | Available |
 
 ### Plugin-platform baseline on `main`
@@ -350,6 +352,7 @@ invented executable target.
 | --- | --- |
 | Schema-v3 named Tool Task/Service, MCP, OKF, Skill, and UI contracts | Implemented |
 | Canonical package-level graph, lifecycle intent, checkpoint journal, and crash replay | Implemented foundation; all five contribution kinds share one operation |
+| Schema-v3 package commit/removal and capability publish/hide/drain hosts | P0 implemented with generation-bound receipt schema v3, deterministic roots, atomic snapshot replacement, route leases, and legacy-bypass rejection |
 | First-class OKF knowledge-package control plane | M0K-B implemented: bundle validation, manifest/catalog/plan, receipt/observation/projection, dependency-gated reconciliation, and canonical fixtures |
 | Signed catalog v1–v3, offline verification, search, and planning target | Implemented |
 | Immutable operation-plan, permission-ceiling, and provider-evidence contracts | Implemented |
@@ -359,15 +362,17 @@ invented executable target.
 | Dependency-gated Surface Reconciler and planner evidence | Implemented |
 | Injected OKF Knowledge port, durable binding store, and package lifecycle adapter | M0K-C-A foundation implemented with byte-exact stage validation, monotonic observations, last-good projection, and receipt-owned removal |
 | Production A3S Knowledge backend and scoped cited retrieval | In progress; no production OKF publication without promoted evidence |
-| Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | Use intent/journal/coordinator foundation implemented; production package/capability hosts and umbrella wiring remain in progress |
+| Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | Use intent/journal/coordinator plus package/capability hosts implemented; umbrella host and grant composition remain in progress |
 | Production secret, egress, filesystem, child-process, Gateway, and stdio-MCP adapters | In progress |
 | General package dependency solver and deterministic lock graph | Target architecture |
 | Automatic generation rollback and garbage collection | Target architecture |
 | Agent, prompt, hook, memory, and context-provider contributions | Target architecture after OKF lifecycle integration |
 
 The baseline intentionally fails closed while host-owned Runtime, permission,
-and apply evidence is incomplete. It does not silently fall back to native
-execution or a different provider.
+and apply evidence is incomplete. Schema-v3 packages cannot use legacy
+extension toggles, and upgrade remains rejected until two retained generations
+can be retired safely. It does not silently fall back to native execution or a
+different provider.
 
 ### Built-in and external domains
 
@@ -452,8 +457,9 @@ frozen in
 multi-resource mutation is a durable, idempotent saga because package storage,
 grants, Runtime, Gateway, and capability publication do not share a database
 transaction. [ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md)
-defines the package-owned Tool/MCP/OKF/Skill/UI checkpoint schedule and its
-current production-wiring boundary.
+defines the package-owned Tool/MCP/OKF/Skill/UI checkpoint schedule. Its P0
+package/capability hosts are implemented; host composition remains the next
+production-wiring boundary.
 
 ## Platform support
 
@@ -473,10 +479,12 @@ lifecycle evidence plus the remaining persistent and advanced Browser gates.
 [ROADMAP.md](ROADMAP.md) is the dependency-ordered source of truth for the
 plugin platform. The current critical path is:
 
-1. inject production package, capability, Runtime, Gateway, static-surface, and
-   Knowledge hosts into the implemented package-level coordinator;
-2. wire the umbrella Plugin Manager, CLI, Web, management MCP, and managed-host
-   adapters to that single journaled mutation path;
+1. have the umbrella Plugin Manager compose the implemented package,
+   capability, Runtime, Gateway, static-surface, and Knowledge hosts into one
+   coordinator;
+2. join the workspace-grant sub-saga to package checkpoints and capability
+   cutover, then wire CLI, Web, management MCP, and managed-host adapters to
+   that single journaled mutation path;
 3. add prior-generation retirement after blue/green capability cutover, then
    complete CLI/Web/agent lifecycle and crash-recovery E2E;
 4. add the general package dependency solver, deterministic lock graph,

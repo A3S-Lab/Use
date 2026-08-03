@@ -1,6 +1,6 @@
 # ADR-002: Cognitive Package Lifecycle Saga
 
-- Status: accepted architecture; foundation implemented, product wiring in progress
+- Status: accepted architecture; P0 package/capability hosts implemented, product wiring in progress
 - Decision date: 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -115,14 +115,16 @@ reviewed for that package generation.
 
 ## Upgrade Boundary
 
-The implemented version-1 coordinator covers candidate commit, preparation,
-and publication. Production blue/green upgrade still requires explicit
-retirement of the prior Runtime, Gateway, grant, projection, and package
-generation after capability cutover and drain.
+The version-1 coordinator models candidate commit, preparation, and
+publication. Production blue/green upgrade still requires explicit retirement
+of the prior Runtime, Gateway, grant, projection, and package generation after
+capability cutover and drain.
 
 Until that retirement protocol preserves both old and candidate receipts, the
-Runtime lifecycle adapter rejects a different retained generation with
-`use.plugin.runtime_generation_retirement_required`. It must not overwrite the
+production package host rejects upgrade before mutation with
+`use.plugin.package_generation_retirement_required`; the Runtime lifecycle
+adapter independently rejects a different retained binding generation with
+`use.plugin.runtime_generation_retirement_required`. Neither may overwrite the
 only receipt for a live old-generation resource.
 
 ## Implementation State
@@ -133,18 +135,20 @@ Implemented:
 - package-level intent and deterministic dependency schedule;
 - durable checkpoint and failure journal with crash-safe replay;
 - typed package, capability, Tool, MCP, OKF, Skill, and UI ports;
+- production package commit/removal and atomic capability publish/hide/drain
+  adapters over generation-bound receipt schema v3, immutable snapshots, and
+  route leases;
 - concrete Runtime, immutable Skill/UI, and OKF Knowledge adapters;
 - stable replay evidence for Runtime preparation and removal;
 - a content-addressed package fixture containing all five contribution kinds;
   and
 - unit and integration coverage for forward preparation, reverse removal,
-  optional failure, required failure, restart, tamper rejection, and
-  receipt-owned cleanup.
+  optional failure, required failure, root/receipt/snapshot crash replay,
+  drain timeout, tamper rejection, legacy compatibility, and receipt-owned
+  cleanup.
 
 Remaining before the product can claim complete cognitive-package lifecycle:
 
-- production package commit/removal and atomic capability publish/hide/drain
-  hosts;
 - injection of Runtime, Gateway, stdio MCP, Skill/UI, and A3S Knowledge hosts
   by the umbrella Plugin Manager;
 - CLI, Web, management MCP, and managed-host wiring into this coordinator;
