@@ -305,8 +305,9 @@ impl PreparedRemotePackage {
 
     /// Download and verify only the small executable planning target.
     ///
-    /// Legacy catalog records have no planning target and return `None`. A
-    /// catalog-v3 record must resolve to one exact separately signed TUF target.
+    /// Legacy records and schema-v3 packages containing only static surfaces
+    /// have no planning target and return `None`. A schema-v3 package with
+    /// executable surfaces resolves one exact separately signed TUF target.
     pub async fn load_planning_bundle(&self) -> UseResult<Option<PluginPlanningBundle>> {
         let Some(catalog) = self.verified_catalog.as_ref() else {
             return Ok(None);
@@ -314,9 +315,9 @@ impl PreparedRemotePackage {
         if catalog.record.schema != PLUGIN_CATALOG_SCHEMA_V3 {
             return Ok(None);
         }
-        let expected = catalog.record.planning.as_ref().ok_or_else(|| {
-            planning_target_error("The catalog-v3 record omitted its planning target.")
-        })?;
+        let Some(expected) = catalog.record.planning.as_ref() else {
+            return Ok(None);
+        };
         let target_name = TargetName::new(expected.target_name.clone()).map_err(|_| {
             planning_target_error("The catalog-v3 planning target name is invalid.")
         })?;
