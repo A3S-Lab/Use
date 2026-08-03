@@ -1,17 +1,32 @@
 ---
 title: Package Model
-description: Learn how one immutable A3S package identity delivers native programs and Tool, MCP, Skill, UI, and OKF cognitive surfaces.
+description: Learn how a versioned A3S cognitive package declares SemVer dependencies and delivers Tool, MCP, Skill, UI, and OKF surfaces as one lifecycle unit.
 ---
 
 # Package Model
 
-An A3S package may contain native capabilities, declarative cognitive content, or both. Every surface shares one signed identity, generation, and uninstall boundary.
+An A3S cognitive package is an npm-like versioned distribution unit. It may contain native capabilities, declarative cognitive content, or both, and may depend on other cognitive packages by package ID and SemVer range. Every surface shares one signed identity, generation, and uninstall boundary.
 
 ```text
 A3S package
 ├── native plane       executable · runtime assets · target · provenance
 └── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
 ```
+
+A typical schema-v3 package has this shape:
+
+```text
+acme-research/
+├── a3s-use-extension.acl   identity · version · dependencies · surfaces
+├── README.md               required package documentation
+├── tools/                  native Task or Service artifacts
+├── releases/               content-bound Tool/MCP descriptors
+├── skills/                 SKILL.md files and supporting content
+├── ui/                     integrity-bound static assets
+└── okf/                    conformant knowledge bundles
+```
+
+Only the manifest and `README.md` names are fixed. Contribution paths are declared by the manifest.
 
 ## Schema-v3 surfaces
 
@@ -26,7 +41,7 @@ A3S package
 
 In this model, a **Tool is not an MCP `tools/list` item**. A Tool keeps its own CLI or HTTP contract; Use does not translate every workload into a private universal protocol. Static UI is not a Runtime workload either. Only its declared Tool or MCP backend enters Runtime.
 
-Tool, MCP, OKF, Skill, and UI have a schema-v3 contract baseline. P0 adds generation-bound package commit/removal, atomic capability publish/hide, route-lease drain, and legacy-bypass rejection. M0K-B implements the named OKF manifest, recursive package validation, catalog-v3 evidence, plan-v2 impact, Knowledge receipt/observation/projection contracts, and dependency-gated reconciliation. M0K-C-A implements the injected Knowledge lifecycle port, exact-byte validation, durable binding records, and receipt-owned package adapter. The real A3S Knowledge backend and scope-aware host/session projection remain pending, so missing promoted evidence stays unpublished.
+Tool, MCP, OKF, Skill, and UI have a schema-v3 contract baseline. P0 adds generation-bound package commit/removal, atomic capability publish/hide, route-lease drain, and legacy-bypass rejection. The package dependency foundation adds bounded SemVer resolution, an exact Registry/TUF-bound lock, dependency-forward download and preparation, retained shared dependencies, one graph cutover, and reverse uninstall. M0K-B implements the named OKF manifest, recursive package validation, catalog-v3 evidence, plan-v2 impact, Knowledge receipt/observation/projection contracts, and dependency-gated reconciliation. M0K-C-A implements the injected Knowledge lifecycle port, exact-byte validation, durable binding records, and receipt-owned package adapter. The umbrella product path and real A3S Knowledge backend remain pending, so the legacy CLI does not yet expose schema-v3 graph install and missing promoted OKF evidence stays unpublished.
 
 OKF is not an executable workload. It is a shareable knowledge package: each non-reserved concept is UTF-8 Markdown with YAML frontmatter, the file path is concept identity, standard Markdown links form the knowledge graph, and `type` is required. The frozen content contract targets OKF v0.2 with explicit v0.1 compatibility. Raw PDF, Office, image, or web sources do not become OKF authority directly; an independent compiler must emit a conformant bundle first.
 
@@ -41,6 +56,14 @@ extension "acme/research" {
   route          = "research"
   requires_use   = ">=0.3.0, <0.4.0"
   actions        = ["read", "execute"]
+
+  dependency "acme/base" {
+    version = "^1.4.0"
+  }
+
+  dependency "acme/vector-store" {
+    version = ">=2.1.0, <3.0.0"
+  }
 
   repository {
     url      = "https://github.com/acme/research"
@@ -98,11 +121,25 @@ extension "acme/research" {
 }
 ```
 
-Schema v1 and v2 remain compatible. Schema v3 adds repeatable named surfaces and an acyclic readiness graph. All paths are relative to the package root. Activation rejects path traversal, links, archive ambiguity, route collisions, oversized packages, provenance drift, and incompatible host ranges.
+Schema v1 and v2 remain compatible. Schema v3 adds repeatable named surfaces, package dependencies, a required bounded UTF-8 `README.md`, and an acyclic readiness graph. All paths are relative to the package root. Activation rejects path traversal, links, archive ambiguity, route collisions, oversized packages, provenance drift, and incompatible host ranges.
 
 The repository contains executable [`plugin-v3.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl) and knowledge [`plugin-v3-okf.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3-okf.acl) fixtures.
 
-## Dependencies and readiness
+## Package dependencies and exact lock
+
+A dependency block may contain only a canonical package ID and canonical SemVer requirement. The package cannot select its download URL, Registry, trust root, channel, target, or a mutable tag. The host resolves the complete transitive closure from enabled named Registries and fails closed on a missing release, incompatible constraints, a cycle, a resolution bound, or the same dependency identity appearing in multiple Registries.
+
+The canonical `a3s.use.plugin-package-lock.v1` freezes each selected version and dependency edge, archive/package/manifest digests, host target and Use version, Registry name and URL, channel and target, TUF root identity, and TUF role versions. The operation plan binds the lock digest. Apply revalidates the complete lock before downloading the first archive.
+
+```text
+resolve signed catalogs → freeze exact lock → revalidate all metadata
+  → download/install dependencies forward → verify retained generations
+  → publish changed packages once → remove unneeded packages in reverse
+```
+
+Shared dependencies are not recommitted. A `Retain` node is reusable only when the exact Registry-backed generation is installed, enabled, and visible in the current capability snapshot. Direct uninstall is rejected while another installed package depends on the target.
+
+## Surface dependencies and readiness
 
 Surfaces are not installed independently. The Surface Reconciler builds a complete dependency closure for one package generation:
 

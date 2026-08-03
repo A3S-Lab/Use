@@ -42,6 +42,7 @@ a3s registry refresh a3s
 install、upgrade 与 uninstall 在变更前生成带过期时间的 canonical plan。它至少绑定：
 
 - package ID、版本、channel、target 与 source registry；
+- 完整 canonical dependency lock 及其 digest；
 - TUF root 身份和 metadata version；
 - archive length、SHA-256 与 expanded package digest；
 - 表面变化、依赖变化与 Runtime provider evidence；
@@ -49,6 +50,8 @@ install、upgrade 与 uninstall 在变更前生成带过期时间的 canonical p
 - download/installed size、drain 影响与 canonical plan digest。
 
 Apply 接受已审查 digest，重新解析所有输入，并在目标、内容、权限、提供者或所有权漂移时拒绝执行。用户确认与每个 grant proposal 也绑定这个 digest。
+
+对于 schema-v3 dependency，lock 绑定每个选定版本、依赖边、archive/package/manifest digest、宿主 target/version、Registry URL/trust root 和 TUF role version。Apply 在下载任何 archive 前重验完整闭包；同一依赖同时出现在多个已启用 Registry 时属于歧义并 fail closed。
 
 ## 默认授权策略
 
@@ -88,18 +91,21 @@ plugins {
 ## 激活顺序
 
 ```text
-resolve signed metadata
+resolve signed dependency graph
+    → freeze exact package lock
     → build and review immutable plan
-    → verify archive, manifest, and permission evidence
-    → stage immutable generation
+    → revalidate every Registry before payload download
+    → verify and stage dependencies before dependents
     → prepare grants and Runtime bindings
     → validate and stage static Skill, UI, and OKF projections
-    → publish one capability generation
+    → publish changed packages in one capability generation
     → hide and drain superseded generation
     → retire old grants, bindings, and owned files
 ```
 
 新 generation 在所有 required dependency 就绪之前不可见。升级失败时保留旧 generation；disable/uninstall 先隐藏新调用，再排空精确 generation lease。
+
+精确且已发布的依赖可以 retained 而不重复 commit。卸载按 package 反向顺序执行；另一个已安装包仍需要该依赖时会拒绝移除。部分 enabled receipt 写入在完整 immutable snapshot 发布前保持不可见。
 
 OKF 控制面门禁与 package-lifecycle adapter 已经实现：缺失 Knowledge evidence 为 pending，staged 不发布，只有精确 promoted observation 才是 healthy。产生和清理这些 record 的真实 A3S Knowledge index 后端与 scoped 产品接线仍在开发中。
 

@@ -56,6 +56,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
         version: "1.0.0".to_owned(),
         channel: PluginReleaseChannel::Stable,
         requires_use: ">=0.3.0, <0.4.0".to_owned(),
+        dependencies: Vec::new(),
         target: "any".to_owned(),
         surfaces: vec![CatalogSurface {
             kind: PluginSurfaceKind::Skill,

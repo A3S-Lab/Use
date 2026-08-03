@@ -18,6 +18,9 @@ mod host_plan;
 mod identity;
 mod installed_plan;
 mod manager;
+mod package_dependency;
+mod package_lock;
+mod package_resolution;
 mod permission;
 mod plan;
 mod plan_confirmation;
@@ -65,6 +68,12 @@ pub use installed_plan::InstalledPluginPlanEvidence;
 pub use manager::{
     PluginManagerToolAnnotations, PluginManagerToolDefinition, PluginManagerToolset,
 };
+pub use package_dependency::{PluginPackageDependency, MAX_PLUGIN_PACKAGE_DEPENDENCIES};
+pub use package_lock::{
+    LockedPluginPackage, LockedPluginPackageDependency, PluginPackageLock, PluginPackageLockHost,
+    PLUGIN_PACKAGE_LOCK_SCHEMA,
+};
+pub use package_resolution::{PluginPackageResolver, MAX_PLUGIN_RESOLUTION_CANDIDATES};
 pub use permission::{
     FilesystemAccess, FilesystemPermission, FilesystemScope, HttpMethod, NetworkEgressPermission,
     PluginPermissionCeiling, ResourcePermissionCeiling, SurfacePermissionCeiling, UiHttpPermission,

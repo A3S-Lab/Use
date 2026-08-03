@@ -9,8 +9,9 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
 use super::{
-    PluginCapabilityLifecycleHost, PluginLifecycleAction, PluginLifecycleEvidence,
-    PluginLifecycleIntent, PluginPackageLifecycleHost,
+    PluginCapabilityLifecycleHost, PluginGraphCapabilityLifecycleHost, PluginLifecycleAction,
+    PluginLifecycleEvidence, PluginLifecycleIntent, PluginPackageLifecycleHost,
+    PluginPackagePublicationEvidence,
 };
 
 const DEFAULT_LIFECYCLE_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -117,6 +118,61 @@ impl PluginPackageLifecycleHost for ExtensionPackageLifecycleHost {
 pub struct ExtensionCapabilityLifecycleHost {
     registry: ExtensionRegistry,
     drain_timeout: Duration,
+}
+
+/// Atomic dependency-closure publication adapter backed by one immutable
+/// Registry snapshot cutover.
+#[derive(Debug, Clone)]
+pub struct ExtensionGraphCapabilityLifecycleHost {
+    registry: ExtensionRegistry,
+}
+
+impl ExtensionGraphCapabilityLifecycleHost {
+    pub fn new(registry: ExtensionRegistry) -> Self {
+        Self { registry }
+    }
+
+    pub fn registry(&self) -> &ExtensionRegistry {
+        &self.registry
+    }
+}
+
+#[async_trait]
+impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHost {
+    async fn publish_capabilities(
+        &self,
+        package_lock: &a3s_use_core::PluginPackageLock,
+        intents: &[PluginLifecycleIntent],
+        idempotency_key: &str,
+    ) -> UseResult<Vec<PluginPackagePublicationEvidence>> {
+        let identities = intents
+            .iter()
+            .map(lifecycle_identity)
+            .collect::<UseResult<Vec<_>>>()?;
+        let results = self
+            .registry
+            .publish_lifecycle_package_graph(package_lock, &identities)
+            .await?;
+        if results.len() != intents.len() {
+            return Err(UseError::new(
+                "use.plugin.package_graph_publication_invalid",
+                "The Registry omitted a package from dependency-closure publication.",
+            ));
+        }
+        intents
+            .iter()
+            .zip(results)
+            .map(|(intent, result)| {
+                let evidence = checkpoint_evidence(
+                    "package-graph-capability-published",
+                    intent,
+                    idempotency_key,
+                    &result.extension.receipt.descriptor_digest()?,
+                )?;
+                PluginPackagePublicationEvidence::new(&intent.package_id, evidence)
+            })
+            .collect()
+    }
 }
 
 impl ExtensionCapabilityLifecycleHost {
@@ -273,6 +329,7 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<ExtensionPackageLifecycleHost>();
         assert_send_sync::<ExtensionCapabilityLifecycleHost>();
+        assert_send_sync::<ExtensionGraphCapabilityLifecycleHost>();
     }
 
     #[test]

@@ -42,6 +42,7 @@ Only enabled sources participate in discovery and installation. Duplicate packag
 Install, upgrade, and uninstall create an expiring canonical plan before mutation. It binds at least:
 
 - package ID, version, channel, target, and source registry;
+- the complete canonical dependency lock and its digest;
 - TUF root identity and metadata versions;
 - archive length, SHA-256, and expanded package digest;
 - surface and dependency changes plus Runtime provider evidence;
@@ -49,6 +50,8 @@ Install, upgrade, and uninstall create an expiring canonical plan before mutatio
 - download/installed size, drain impact, and canonical plan digest.
 
 Apply accepts the reviewed digest, resolves every input again, and rejects target, content, permission, provider, or ownership drift. User confirmation and each grant proposal bind to the same digest.
+
+For schema-v3 dependencies, the lock binds every selected version, dependency edge, archive/package/manifest digest, host target/version, Registry URL/trust root, and TUF role version. Apply revalidates the complete closure before downloading any archive. The same dependency in multiple enabled Registries is ambiguous and fails closed.
 
 ## Default authorization policy
 
@@ -88,18 +91,21 @@ The example is the current host policy v1 and intentionally omits `okf`. Core se
 ## Activation order
 
 ```text
-resolve signed metadata
+resolve signed dependency graph
+    → freeze exact package lock
     → build and review immutable plan
-    → verify archive, manifest, and permission evidence
-    → stage immutable generation
+    → revalidate every Registry before payload download
+    → verify and stage dependencies before dependents
     → prepare grants and Runtime bindings
     → validate and stage static Skill, UI, and OKF projections
-    → publish one capability generation
+    → publish changed packages in one capability generation
     → hide and drain superseded generation
     → retire old grants, bindings, and owned files
 ```
 
 A new generation stays invisible until every required dependency is usable. A failed upgrade preserves the previous generation. Disable and uninstall hide new calls before draining exact-generation leases.
+
+An exact already-published dependency may be retained without recommit. Uninstall runs in reverse package order and refuses to remove a dependency while another installed package still requires it. Partial enabled-receipt writes stay invisible until the complete immutable snapshot is published.
 
 For OKF, the control-plane gate and package-lifecycle adapter are implemented: missing Knowledge evidence is pending, staged is unpublished, and only an exact promoted observation is healthy. The real A3S Knowledge index backend and scoped product wiring that produce and retire those records remain in development.
 

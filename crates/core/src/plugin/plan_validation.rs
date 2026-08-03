@@ -25,6 +25,10 @@ impl PluginOperationPlan {
         ) || Self::validate_operation_id(&self.operation_id).is_err()
             || !valid_package_id(&self.package_id)
             || !valid_machine_id(&self.component_id)
+            || self
+                .package_lock_digest
+                .as_deref()
+                .is_some_and(|value| !valid_sha256(value))
             || self.created_at_ms == 0
             || self.expires_at_ms <= self.created_at_ms
             || self.expires_at_ms - self.created_at_ms > MAX_PLAN_LIFETIME_MS

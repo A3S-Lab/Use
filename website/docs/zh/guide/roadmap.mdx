@@ -21,6 +21,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 - M0K-B manifest/package validation、catalog-v3、plan-v2、manager-v2、Knowledge evidence、reconciliation 与 canonical fixtures；
 - M0K-C-A 注入式 Knowledge lifecycle contract、精确字节验证、持久 last-good binding 与 package adapter；
 - P0 schema-v3 package/capability host，包括 generation-bound receipt、确定性 root、原子 snapshot、route-lease drain 与精确移除。
+- P0-D schema-v3 SemVer package dependency、有界解析、精确 Registry/TUF lock、前向闭包下载/安装、retained dependency 校验、原子图发布与反向移除。
 
 稳定 v0.2 package foundation 仍可独立使用。上述 plugin-platform baseline 是 `main` 上的在建能力，不能被描述为完整 production plugin product。
 
@@ -38,6 +39,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 | M1 — Signed searchable catalog       | 完成     | TUF 签名目录、bounded search、planning bundle 与 cache                  |
 | M2 — Shared Plugin Manager           | 进行中   | 统一 CLI/Web/MCP lifecycle、durable plan/apply/replay 与 parent saga    |
 | P0 — Package/capability hosts        | 完成     | Generation commit/remove、snapshot publish/hide、lease drain 与 replay  |
+| P0-D — Package dependency graph      | 完成     | SemVer resolver、精确 lock、retained node、前向安装、一次切换与反向移除 |
 | M3 — User plugin UX                  | 待完成   | `a3s plugin` 用户词汇、on-demand Science/OKF 包与 E2E                   |
 | M4 — Agent read-only management      | 合约完成 | search、inspect、list、status 与 plan 工具                              |
 | M5 — Permission/runtime enforcement  | 进行中   | 生产 grant、secret、egress、filesystem、process 与 Gateway adapter      |
@@ -49,7 +51,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 1. 让 umbrella Plugin Manager 把已实现的 package、capability、Runtime、Gateway、static-surface 与 Knowledge host 组合到同一 coordinator。
 2. 把 workspace-grant sub-saga 接入 package checkpoint 与 capability cutover，再让 CLI、Web、management MCP 和 managed-host mutation 统一通过该 journal。
 3. 在 blue/green capability cutover 后增加旧 generation 退休，再完成 CLI/Web/Agent lifecycle 与 crash-recovery E2E。
-4. 增加通用 package dependency solver、deterministic lock graph、retained-generation rollback 与 garbage collection。
+4. 把已实现的 dependency lock 与 graph coordinator 接入 CLI/Web/management-MCP apply，再增加 retained-generation rollback 与 garbage collection。
 5. 把 M0K-C-A Knowledge port 与 lifecycle adapter 接入真实 A3S Knowledge 后端和 scoped capability/session projection。
 6. 每个宿主合约冻结后，再扩展 Agent、prompt、hook、memory 与 context-provider contribution。
 7. 完成官方 Registry 运维与 Windows platform gate。
@@ -63,6 +65,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 - package、grant、Runtime、Gateway 和 projection 崩溃后可恢复且不会重复副作用；
 - 签名目录、计划摘要、权限、provider 和 runtime observation 全链路可审计；
 - CLI、Web 与 agent management MCP 共享一个 manager 和 receipt format；
+- 含依赖安装在这些 adapter 间共享一个精确 lock、前向/反向生命周期与原子 capability cutover；
 - Linux、macOS 与 Windows 的声明支持级别都有自动化 release gate。
 
 ## 开发原则

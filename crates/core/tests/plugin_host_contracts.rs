@@ -86,6 +86,7 @@ fn plan_request() -> PluginHostPlanRequest {
         action: PluginOperationAction::Install,
         package_id: PluginPackageId::parse("acme/knowledge").unwrap(),
         candidate: Some(candidate()),
+        package_lock: None,
         selected_surfaces: Vec::new(),
     }
 }

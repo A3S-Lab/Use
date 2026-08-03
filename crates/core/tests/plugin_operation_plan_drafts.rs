@@ -29,7 +29,7 @@ fn okf_install_plan() -> PluginOperationPlan {
     after.release.package_id = "acme/knowledge".to_owned();
     after.release.version = "1.0.0".to_owned();
     after.release.package_sha256 =
-        "sha256:05076eb4c0184b5007c02563c5d0742997ee45e84b52ab42c805354d5a46817d".to_owned();
+        "sha256:e030e6e8c3afa6383536b4973395e12b05257d2b7b10bf042f3bfaf71b420fe2".to_owned();
     after.release.manifest_sha256 =
         "sha256:16d065341edebaf45e0d633e46614155a60b853738290bbac8c5b62d9230bce2".to_owned();
     after.release.surfaces = vec![CatalogSurface {
@@ -64,8 +64,8 @@ fn okf_install_plan() -> PluginOperationPlan {
         )
         .unwrap();
     let mut impact = expected.impact;
-    impact.download_bytes = 3_258;
-    impact.installed_bytes_after = 3_258;
+    impact.download_bytes = 3_366;
+    impact.installed_bytes_after = 3_366;
     let draft = PluginOperationPlanDraft::new(
         expected.action,
         "acme/knowledge",

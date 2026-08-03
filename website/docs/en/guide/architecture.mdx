@@ -8,15 +8,15 @@ description: Responsibility boundaries across A3S Use, the shared Plugin Manager
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, Web, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
 ```text
-     local package          release bundle     named TUF registry
-           └──────────────────────┬──────────────────────┘
+     local package          release bundle     named TUF registries
+           └──────────────────────┬───────────────────────┘
                                   │
                     shared host Plugin Manager
-         catalog · policy · confirmation · plan/apply · replay
-                                  │ reviewed package input
+       catalog · resolve · lock · policy · plan/apply · replay
+                                  │ exact reviewed closure
                                   ▼
                          a3s-use package engine
-       verify · stage · receipt · grant · bind · reconcile · drain
+    verify · install forward · bind · publish once · remove reverse
                     ┌─────────────┴─────────────┐
                     │                           │
                native plane               cognitive plane
@@ -42,14 +42,20 @@ The target architecture separates package management, workload scheduling, and h
 
 The current implementation reuses these existing mechanisms:
 
-- `a3s-use-core`: canonical package/plugin, catalog, plan, permission, grant, release, and OKF bundle contracts;
-- `a3s-use-extension`: ACL manifests, TUF catalog, package store, receipts, leases, and workspace grants;
-- `src/plugin_lifecycle`: canonical package intent, dependency schedule, durable journal, coordinator, and typed Tool/MCP/OKF/Skill/UI hosts;
+- `a3s-use-core`: canonical package/plugin, dependency resolver/lock, catalog, plan, permission, grant, release, and OKF bundle contracts;
+- `a3s-use-extension`: ACL manifests, package-graph Registry resolution/download, TUF catalog, package store, receipts, leases, and workspace grants;
+- `src/plugin_lifecycle`: canonical package and package-graph intent, dependency schedule, durable journal, coordinator, and typed Tool/MCP/OKF/Skill/UI hosts;
 - `src/plugin_runtime`: Runtime selection, bindings, receipts, invocation, and observation;
 - `src/surface_reconciler` plus `src/capability_registry`: dependency readiness and capability publication;
 - the umbrella CLI shared Plugin Manager: the only lifecycle application service.
 
 Do not add another manager, grant store, Runtime selector, capability registry, or generic execution protocol.
+
+## Package dependency boundary
+
+A schema-v3 package declares only package IDs and SemVer ranges. The host owns the enabled named Registry set. Resolution is bounded and deterministic, rejects cross-Registry ambiguity, and emits one canonical lock containing exact versions, content digests, host compatibility, Registry URLs/trust roots, and TUF role versions.
+
+The operation plan binds that lock. Apply revalidates the entire closure before payload download, then prepares dependencies before dependents. Existing dependencies are retained only when their exact locked generation is already visible. All changed packages publish through one immutable snapshot cutover; uninstall runs in reverse and refuses to remove a package with installed dependents.
 
 ## Host-owned Runtime Broker
 
@@ -78,15 +84,16 @@ intent
 
 Each checkpoint uses an operation ID and surface idempotency key. Crash recovery continues from durable intent and the last completed checkpoint. Repeated apply returns the same terminal result without duplicating side effects.
 
-The in-crate foundation now implements one package-owned graph and these exact orders:
+The in-crate foundation now implements a package-lock graph above each package-owned surface graph:
 
 ```text
-install / enable: prepare dependencies forward → publish once
-disable:          hide → drain → stop dependencies in reverse
-uninstall:        hide → drain → remove dependencies in reverse → remove package
+package install:  revalidate lock → download/prepare packages forward → publish changed closure once
+package uninstall: hide/drain/remove changed packages in reverse → preserve retained dependencies
+surface enable:   prepare surfaces forward → publish once
+surface disable:  hide → drain → stop surfaces in reverse
 ```
 
-Runtime Tool/MCP, immutable Skill/UI, and OKF Knowledge adapters are implemented. The P0 schema-v3 package/capability hosts now commit a verified generation as installed-disabled, publish or hide exact-generation snapshots, drain route leases, and remove only receipt-owned roots. Umbrella Plugin Manager and grant composition, the real A3S Knowledge backend, Gateway integration, and prior Runtime generation retirement remain in progress. Schema-v3 packages reject legacy mutation bypass, and upgrade stays fail-closed until P3 supports dual-generation retirement, so P0 does not yet claim a complete production saga.
+Runtime Tool/MCP, immutable Skill/UI, and OKF Knowledge adapters are implemented. The P0 schema-v3 package/capability hosts commit a verified generation as installed-disabled, publish or hide exact-generation snapshots, drain route leases, and remove only receipt-owned roots. The dependency foundation adds exact retained-node verification and crash-safe atomic graph publication. Umbrella Plugin Manager and grant composition, the real A3S Knowledge backend, Gateway integration, and prior Runtime generation retirement remain in progress. The legacy CLI does not yet expose graph installation, so this foundation does not claim a complete production saga.
 
 [ADR-002](https://github.com/A3S-Lab/Use/blob/main/docs/adr-002-cognitive-package-lifecycle-saga.md) freezes this lifecycle boundary.
 

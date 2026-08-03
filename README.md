@@ -35,22 +35,15 @@ system software.
 
 > [!IMPORTANT]
 > The `v0.2` release line is the stable package-management foundation. The
-> current `main` branch also contains an in-development plugin-platform
-> baseline: named schema-v3 surfaces, signed searchable catalogs, immutable
-> plan and permission contracts, workspace grants, Runtime bindings, and
-> surface reconciliation. M0K-B adds the first-class OKF manifest, catalog-v3,
-> plan-v2, receipt, Knowledge observation, capability projection, and
-> dependency-gated reconciliation contracts. M0K-C-A adds the injected
-> Knowledge port, byte-exact stage request, evidence-checking client, and
-> durable last-good binding store. The package-level lifecycle foundation now
-> adds one canonical Tool/MCP/OKF/Skill/UI graph, a durable idempotent parent
-> journal, dependency-forward preparation, reverse removal, and typed Runtime,
-> static-surface, and OKF adapters. P0 now adds production package/capability
-> hosts over schema-v3 generation-bound receipts, deterministic immutable
-> roots, atomic snapshots, and route-lease draining. Umbrella CLI/Web host
-> composition, grant composition, old-generation retirement, Gateway, and the
-> real A3S Knowledge backend remain incomplete, so this is not yet a finished
-> plugin product. [ROADMAP.md](ROADMAP.md) is the source of truth.
+> current `main` branch also implements the dependency foundation for npm-like
+> cognitive packages: schema-v3 ACL dependencies, bounded deterministic SemVer
+> resolution, an exact signed package lock, dependency-forward download and
+> preparation, retained shared dependencies, reverse removal, and one atomic
+> capability cutover for the changed closure. Tool, MCP, Skill, UI, and OKF
+> remain package-owned surfaces. Umbrella CLI/Web host composition, grant
+> composition, old-generation retirement, Gateway, and the real A3S Knowledge
+> backend remain incomplete, so schema-v3 graph installation is not yet a GA
+> CLI workflow. [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 The user-facing entry point is `a3s use`. The standalone `a3s-use` binary is
 the delegated package engine and remains available for automation and
@@ -82,9 +75,9 @@ owning package generation.
 
 | Plane | Implemented foundation | Product direction |
 | --- | --- | --- |
-| Native | Built-in providers, external CLI/MCP executables, immutable generations | Target-specific dependency graphs and transactional lock state |
+| Native | Built-in providers, external CLI/MCP executables, immutable generations | Production provider isolation and cross-platform release parity |
 | Cognitive | Named Tool Task/Service, MCP, OKF, Skill, and UI contracts on `main` | Production Knowledge indexing, then Agents, prompts, hooks, and typed memory/context providers |
-| Control | TUF provenance, plan digests, receipts, grants, route leases, and capability snapshots | Complete apply saga, rollback, garbage collection, and policy-aware activation |
+| Control | TUF provenance, SemVer dependency resolution, exact lock graphs, plan digests, receipts, grants, route leases, and atomic capability snapshots | Complete umbrella apply saga, rollback, garbage collection, and policy-aware activation |
 
 ## Quick start
 
@@ -119,9 +112,26 @@ together; the facade binary alone is not the complete product surface.
 
 ## Package model
 
-Packages currently use one `a3s-use-extension.acl` manifest parsed by
-[A3S ACL](https://github.com/A3S-Lab/ACL). ACL is the A3S Agent Configuration
-Language, not HCL.
+A cognitive package is an npm-like, versioned distribution unit. It has one
+stable `<publisher>/<name>` identity, one ACL manifest, one required `README.md`,
+zero or more Tool, MCP, Skill, UI, and OKF contributions, and optional SemVer
+dependencies on other cognitive packages. A typical package is:
+
+```text
+acme-research/
+├── a3s-use-extension.acl   identity · version · dependencies · surfaces
+├── README.md               required schema-v3 package documentation
+├── tools/                  native Task or Service artifacts
+├── releases/               content-bound Tool/MCP descriptors
+├── skills/                 SKILL.md files and supporting content
+├── ui/                     integrity-bound static assets
+└── okf/                    conformant knowledge bundles
+```
+
+Only the manifest and `README.md` names are fixed; contribution paths are
+manifest-owned. The manifest is parsed by
+[A3S ACL](https://github.com/A3S-Lab/ACL), the A3S Agent Configuration Language,
+not HCL.
 
 Schema v1 and v2 remain compatible. The schema-v3 baseline adds repeatable,
 named Tool, MCP, OKF, Skill, and UI surfaces with an acyclic readiness graph:
@@ -133,6 +143,14 @@ extension "acme/research" {
   route          = "research"
   requires_use   = ">=0.3.0, <0.4.0"
   actions        = ["read", "execute"]
+
+  dependency "acme/base" {
+    version = "^1.4.0"
+  }
+
+  dependency "acme/vector-store" {
+    version = ">=2.1.0, <3.0.0"
+  }
 
   repository {
     url      = "https://github.com/acme/research"
@@ -189,6 +207,30 @@ extension "acme/research" {
   }
 }
 ```
+
+### Package dependencies and lock graph
+
+Dependency declarations contain only a canonical package ID and SemVer
+requirement. They cannot select a URL, Registry, trust root, target, or mutable
+tag. The host resolves the complete transitive closure from its enabled named
+Registries and fails closed on missing releases, incompatible constraints,
+cycles, search bounds, or the same dependency appearing in more than one
+Registry.
+
+The canonical `a3s.use.plugin-package-lock.v1` result freezes, for every node:
+
+- the selected version and every satisfied dependency edge;
+- archive, expanded-package, and manifest digests;
+- host target and A3S Use compatibility;
+- Registry name and URL, channel and target; and
+- TUF root identity plus timestamp, snapshot, and targets versions.
+
+The operation plan and apply request bind the exact lock digest. Apply
+revalidates every Registry before downloading any archive, installs and
+prepares dependencies before dependents, reuses only exact already-published
+retained dependencies, and publishes all changed packages through one snapshot
+cutover. Uninstall proceeds in reverse order and refuses to remove a package
+while an installed dependent still requires it.
 
 Schema v3 now accepts
 **[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)**
@@ -271,14 +313,15 @@ Every install enters through an explicit trust path:
 The activation path keeps untrusted bytes away from live routes:
 
 ```text
-resolve signed metadata
+resolve signed dependency graph
+    → freeze exact package lock
     → build and review immutable plan
-    → verify archive, manifest, and permission evidence
-    → stage immutable generation
-    → prepare grants and Runtime bindings
-    → publish one capability generation
+    → revalidate every Registry before payload download
+    → verify and stage dependencies before dependents
+    → prepare grants, Runtime, static surfaces, and OKF
+    → publish the changed closure in one capability generation
     → hide and drain superseded generation
-    → retire old grants, bindings, and owned files
+    → remove unneeded packages in reverse dependency order
 ```
 
 Available guarantees include bounded extraction, content-bound packages,
@@ -325,10 +368,10 @@ restored or the package is explicitly migrated or reinstalled.
 
 Catalog v1 adds bounded metadata-only search. Catalog v2 binds the manifest,
 expanded package, permission ceiling, and surface dependencies. Catalog v3
-adds exact OKF bundle evidence and, when executable Tool or MCP surfaces are
-present, a separately signed bounded planning target so review does not require
-downloading the package archive. An OKF-only catalog-v3 record carries no
-invented executable target.
+adds the signed package dependency inventory, exact OKF bundle evidence and,
+when executable Tool or MCP surfaces are present, a separately signed bounded
+planning target so review does not require downloading the package archive. A
+catalog dependency inventory must exactly match the admitted ACL manifest.
 
 ## Implementation status
 
@@ -351,6 +394,9 @@ invented executable target.
 | Capability | Status |
 | --- | --- |
 | Schema-v3 named Tool Task/Service, MCP, OKF, Skill, and UI contracts | Implemented |
+| Schema-v3 ACL package dependencies and required package README | Implemented with canonical SemVer requirements and bounded validation |
+| Deterministic transitive resolver and `a3s.use.plugin-package-lock.v1` | Implemented with bounded backtracking, exact Registry/TUF provenance, host binding, cycle/conflict rejection, and canonical digest |
+| Dependency-closure download and package graph lifecycle | Implemented foundation: revalidate before download, install forward, retain exact published dependencies, publish changed nodes once, uninstall reverse |
 | Canonical package-level graph, lifecycle intent, checkpoint journal, and crash replay | Implemented foundation; all five contribution kinds share one operation |
 | Schema-v3 package commit/removal and capability publish/hide/drain hosts | P0 implemented with generation-bound receipt schema v3, deterministic roots, atomic snapshot replacement, route leases, and legacy-bypass rejection |
 | First-class OKF knowledge-package control plane | M0K-B implemented: bundle validation, manifest/catalog/plan, receipt/observation/projection, dependency-gated reconciliation, and canonical fixtures |
@@ -364,15 +410,16 @@ invented executable target.
 | Production A3S Knowledge backend and scoped cited retrieval | In progress; no production OKF publication without promoted evidence |
 | Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | Use intent/journal/coordinator plus package/capability hosts implemented; umbrella host and grant composition remain in progress |
 | Production secret, egress, filesystem, child-process, Gateway, and stdio-MCP adapters | In progress |
-| General package dependency solver and deterministic lock graph | Target architecture |
 | Automatic generation rollback and garbage collection | Target architecture |
 | Agent, prompt, hook, memory, and context-provider contributions | Target architecture after OKF lifecycle integration |
 
 The baseline intentionally fails closed while host-owned Runtime, permission,
-and apply evidence is incomplete. Schema-v3 packages cannot use legacy
+and apply evidence is incomplete. The compatible `component install` command
+still uses the legacy installer; it does not yet expose schema-v3 dependency
+resolution or the graph coordinator. Schema-v3 packages cannot use legacy
 extension toggles, and upgrade remains rejected until two retained generations
-can be retired safely. It does not silently fall back to native execution or a
-different provider.
+can be retired safely. No path silently falls back to native execution, a
+different provider, or a different Registry.
 
 ### Built-in and external domains
 
@@ -406,15 +453,15 @@ a3s-use capability watch \
 ## Architecture
 
 ```text
-     local package          release bundle     named TUF registry
-           └──────────────────────┬──────────────────────┘
+     local package          release bundle     named TUF registries
+           └──────────────────────┬───────────────────────┘
                                   │
                     shared host Plugin Manager
-         catalog · policy · confirmation · plan/apply · replay
-                                  │ reviewed package input
+       catalog · resolve · lock · policy · plan/apply · replay
+                                  │ exact reviewed closure
                                   ▼
                          a3s-use package engine
-       verify · stage · receipt · grant · bind · reconcile · drain
+    verify · install forward · bind · publish once · remove reverse
                     ┌─────────────┴─────────────┐
                     │                           │
                native plane               cognitive plane
@@ -487,8 +534,9 @@ plugin platform. The current critical path is:
    that single journaled mutation path;
 3. add prior-generation retirement after blue/green capability cutover, then
    complete CLI/Web/agent lifecycle and crash-recovery E2E;
-4. add the general package dependency solver, deterministic lock graph,
-   retained-generation rollback, and garbage collection;
+4. wire the implemented dependency lock and graph coordinator into the shared
+   CLI/Web/management-MCP apply path, then add retained-generation rollback and
+   garbage collection;
 5. connect the M0K-C-A Knowledge port and lifecycle adapter to the production
    A3S Knowledge backend and scoped capability/session projection;
 6. extend the remaining cognitive contribution model only after each host

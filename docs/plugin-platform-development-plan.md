@@ -4,7 +4,8 @@
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
-  and package-level five-surface lifecycle foundation accepted 2026-08-03
+  package-level five-surface lifecycle foundation accepted 2026-08-03, and the
+  cognitive-package dependency/lock foundation accepted 2026-08-03
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -22,7 +23,7 @@ The architecture document owns domain and runtime boundaries.
                      metadata first; payload on demand
                                   |
                          Plugin Catalog Service
-                          search / inspect / list
+                    search / inspect / resolve / lock
                                   |
                   +---------------+---------------+
                   |                               |
@@ -37,8 +38,8 @@ The architecture document owns domain and runtime boundaries.
                       host Plugin Runtime Broker
               signed templates / explicit provider evidence
                                   |
-                         A3S Use package store
-                 stage / verify / activate / receipt
+                      A3S Use package store
+          revalidate / install forward / retain / remove reverse
                                   |
                  package lifecycle intent + journal
                  ordered typed hosts / idempotent replay
@@ -86,6 +87,13 @@ Skill/UI, and OKF adapters, and P0 package/capability hosts now provide the
 in-crate lifecycle foundation. Production publication still requires umbrella
 Plugin Manager host composition and a real A3S Knowledge backend to supply
 exact promoted evidence.
+
+The dependency foundation is also implemented: schema-v3 ACL package
+dependencies, a required bounded `README.md`, bounded deterministic SemVer
+resolution, canonical `a3s.use.plugin-package-lock.v1`, lock-bound plans and
+host requests, dependency-forward remote download, retained-generation checks,
+reverse removal, and one Registry snapshot cutover for changed packages. This
+is an in-crate foundation until P1/P4 route the umbrella CLI and Web through it.
 
 A Plugin Tool is not an MCP `tools/list` item. It is the real executable
 workload on which a Skill or UI may depend. A3S Use manages its lifecycle and
@@ -145,6 +153,7 @@ downloading its archive:
 
 - package ID, display name, description, publisher, keywords, and categories;
 - semantic version, channel, host compatibility, and target;
+- normalized schema-v3 package dependencies with canonical SemVer ranges;
 - declared surface IDs, Tool Task/Service kinds, and MCP tool count when
   publisher-generated;
 - declared OKF surface IDs, format version, concept/file counts, expanded
@@ -167,6 +176,8 @@ Install, upgrade, and uninstall plans include:
 
 - action, package ID, component ID, selected version, channel, and target;
 - source registry and trust-root identity;
+- the exact transitive package lock and its canonical digest when dependencies
+  are present;
 - exact archive length and SHA-256;
 - expanded package digest when known;
 - surfaces added or removed;
@@ -179,6 +190,13 @@ Install, upgrade, and uninstall plans include:
 
 Apply accepts the digest, repeats resolution, and rejects any changed target,
 metadata version, permission set, package content, or ownership state.
+
+Implemented dependency-plan guarantees include deterministic bounded
+backtracking, highest-compatible selection, distinct missing/conflict/cycle/
+ambiguity errors, exact host target/version binding, package-ID-sorted canonical
+lock bytes, and plan reconstruction from every locked catalog record. Remote
+apply revalidates all locked Registry/TUF/catalog evidence before downloading
+the first archive.
 
 The executable planning boundary is
 [ADR-001](adr-001-plugin-runtime-broker-boundary.md). Catalog-v3 resolution
@@ -202,6 +220,8 @@ Remaining on the critical path:
 - assemble workspace grant proposals/change sets before final draft binding;
 - inject the implemented package/capability and typed surface hosts into the
   package-level coordinator through one umbrella Plugin Manager composition;
+- transport and apply the implemented dependency lock through CLI, Web,
+  management MCP, and managed-host adapters instead of the legacy installer;
 - coordinate the existing grant sub-saga and new package journal through the
   umbrella Plugin Manager without a parallel lifecycle path;
 - implement prior Runtime generation retirement after blue/green cutover; and
@@ -216,6 +236,7 @@ earlier ownership or durability gate.
 | Slice | Scope | Required proof |
 | --- | --- | --- |
 | P0 — Package/capability hosts (complete 2026-08-03) | Installed-disabled generation commit/removal and atomic publish/hide/drain over receipt schema v3, snapshots, and route leases | Root/receipt/snapshot replay, exact removal, drain timeout, tamper rejection, and unchanged v1/v2 suites pass |
+| P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, retained dependency verification, forward install, atomic graph publication, and reverse uninstall | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection, two-package TUF closure, retained-node checks, reverse-dependent guard, and partial-receipt recovery pass |
 | P1 — Host composition | Have the umbrella Plugin Manager inject explicit Runtime selections, Gateway readiness, stdio MCP, Skill/UI, and A3S Knowledge adapters into one coordinator | CLI and Web produce the same intent and host set; unavailable hosts fail before publication |
 | P2 — Grant composition | Join the existing grant sub-saga to package checkpoints and capability cutover | Candidate grant survives restart; old grant cannot retire before exact cutover evidence |
 | P3 — Blue/green retirement | Retain N and N+1 Runtime/Gateway/projection receipts through cutover, then hide, drain, and remove N | Failed N+1 leaves N callable; successful N+1 leaks no old Runtime unit or route |
@@ -223,7 +244,8 @@ earlier ownership or durability gate.
 | P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all five surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
 
 P1 through P3 remain release blockers for calling schema-v3 cognitive-package
-lifecycle production-ready. P4 is the hot-plug product gate. P5 is the release
+lifecycle production-ready. P4 must include dependency-bearing graph operations
+through CLI and Web and is the hot-plug product gate. P5 is the release
 promotion gate.
 
 ## Authorization Model
@@ -483,6 +505,8 @@ Every milestone adds focused tests at the owning layer.
 - MCP schemas and annotations;
 - UI asset paths, media types, sizes, and digests;
 - named surface dependency graphs and Tool release descriptors;
+- canonical package dependency ranges, bounded resolver behavior, exact lock
+  bytes/digest, and plan/host-request lock binding;
 - canonical OKF manifest, complete package, catalog-v3, plan-v2,
   manager-toolset-v2, receipt, projection, and observation fixtures.
 
@@ -496,12 +520,17 @@ Every milestone adds focused tests at the owning layer.
   oversized concept graphs, nondeterministic digests, raw-source promotion,
   and non-fatal diagnostics for safe dangling links;
 - incompatible host and unsupported surface declarations;
+- Catalog/manifest package-dependency mismatch, Registry ambiguity, Registry
+  identity drift, and dependency-forward multi-target download;
 - reproducible package digest and provenance.
 
 ### Lifecycle tests
 
 - plan/apply mismatch;
 - canonical all-five-surface forward preparation and reverse removal;
+- retained shared-dependency reuse, exact published-generation verification,
+  reverse-dependent uninstall protection, atomic graph cutover, and recovery
+  from partial receipt writes;
 - journal restart, concurrent same-key replay, optional failure, required
   failure, tampered records, and symlinked paths;
 - install and upgrade atomicity;

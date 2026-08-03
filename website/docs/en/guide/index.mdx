@@ -16,11 +16,12 @@ A3S Use is the **AI Native Package Manager** for the A3S ecosystem. It does not 
 | Named registry replace, enable, disable, remove, and refresh          | Available through the umbrella host                         |
 | Native CLI, standard MCP, and content-bound Skills                    | Available in v0.2                                           |
 | Schema-v3 Tool, MCP, OKF, Skill, and UI contracts                     | Control-plane baseline implemented on `main`                |
+| Schema-v3 SemVer dependency resolver, exact lock, and graph lifecycle | In-crate foundation implemented on `main`                   |
 | Schema-v3 package commit/remove and capability publish/hide/drain     | P0 generation-bound hosts implemented                       |
 | OKF (Open Knowledge Format) knowledge surface                         | M0K-C-A lifecycle adapter ready; production backend pending |
 | Complete Plugin Manager apply saga and production product integration | In development                                              |
 
-The cognitive plugin contracts and P0 package/capability hosts are on `main`, but umbrella and grant composition, prior-generation retirement, and the real A3S Knowledge backend are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
+The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`, but the compatible `component install` CLI still uses the legacy installer. Umbrella and grant composition, prior-generation retirement, and the real A3S Knowledge backend are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
 
 ## Install a release
 

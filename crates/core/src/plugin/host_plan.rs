@@ -7,8 +7,8 @@ use super::validation::strictly_sorted_unique;
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPackageRole,
     PluginHostCapabilities, PluginManagedScope, PluginOperationAction, PluginOperationPlanEnvelope,
-    PluginPackageId, PluginPlanSource, PluginSurfaceRef, VerifiedPluginCatalogRecord,
-    MAX_PLUGIN_PLAN_ITEMS,
+    PluginPackageId, PluginPackageLock, PluginPlanSource, PluginSurfaceRef,
+    VerifiedPluginCatalogRecord, MAX_PLUGIN_PLAN_ITEMS,
 };
 
 pub const PLUGIN_HOST_PLAN_REQUEST_SCHEMA: &str = "a3s.use.plugin-host-plan-request.v1";
@@ -34,6 +34,8 @@ pub struct PluginHostPlanRequest {
     pub package_id: PluginPackageId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub candidate: Option<VerifiedPluginCatalogRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_lock: Option<PluginPackageLock>,
     pub selected_surfaces: Vec<PluginSurfaceRef>,
 }
 
@@ -100,8 +102,39 @@ impl PluginHostPlanRequest {
                         "The selected catalog record or surface set cannot plan this package.",
                     ));
                 }
+                if !candidate.record.dependencies.is_empty() && self.package_lock.is_none() {
+                    return Err(plan_request_error(
+                        "A package with dependencies requires one exact resolved package lock.",
+                    ));
+                }
+                if let Some(package_lock) = &self.package_lock {
+                    package_lock.validate().map_err(|_| {
+                        plan_request_error("The selected cognitive-package lock is invalid.")
+                    })?;
+                    if package_lock.root_package_id != self.package_id.as_str()
+                        || package_lock
+                            .package(self.package_id.as_str())
+                            .map(|package| &package.catalog)
+                            != Some(candidate)
+                    {
+                        return Err(plan_request_error(
+                            "The selected root catalog record does not match its package lock.",
+                        ));
+                    }
+                }
             }
-            (PluginOperationAction::Uninstall, None) if self.selected_surfaces.is_empty() => {}
+            (PluginOperationAction::Uninstall, None) if self.selected_surfaces.is_empty() => {
+                if let Some(package_lock) = &self.package_lock {
+                    package_lock.validate().map_err(|_| {
+                        plan_request_error("The uninstall package lock is invalid.")
+                    })?;
+                    if package_lock.root_package_id != self.package_id.as_str() {
+                        return Err(plan_request_error(
+                            "The uninstall package lock does not match the requested root.",
+                        ));
+                    }
+                }
+            }
             _ => {
                 return Err(plan_request_error(
                     "Install and upgrade require one exact catalog candidate; uninstall does not.",
@@ -204,6 +237,12 @@ fn verify_plan_selection(
     request: &PluginHostPlanRequest,
     result: &PluginHostPlanResult,
 ) -> UseResult<()> {
+    if request.package_lock != result.plan.package_lock {
+        return Err(UseError::new(
+            "use.plugin.host_plan_result_mismatch",
+            "The canonical plan substituted or omitted the requested package lock.",
+        ));
+    }
     let root = result
         .plan
         .plan

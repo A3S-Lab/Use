@@ -112,6 +112,9 @@ extension "acme/tools" {
 async fn write_package() -> (tempfile::TempDir, ExtensionManifest, ToolReleaseDescriptor) {
     let directory = tempdir().unwrap();
     let root = directory.path();
+    fs::write(root.join("README.md"), b"# Test cognitive package\n")
+        .await
+        .unwrap();
     fs::create_dir_all(root.join("releases")).await.unwrap();
     fs::create_dir_all(root.join("contracts")).await.unwrap();
     fs::write(root.join("releases/task.json"), TASK_RELEASE)
@@ -147,6 +150,12 @@ async fn write_package() -> (tempfile::TempDir, ExtensionManifest, ToolReleaseDe
 
 async fn write_okf_package() -> (tempfile::TempDir, ExtensionManifest) {
     let directory = tempdir().unwrap();
+    fs::write(
+        directory.path().join("README.md"),
+        b"# Test OKF cognitive package\n",
+    )
+    .await
+    .unwrap();
     let bundle_root = directory.path().join("okf/domain-knowledge");
     for (path, bytes) in OKF_FILES {
         let target = bundle_root.join(path);
@@ -165,6 +174,26 @@ async fn write_okf_package() -> (tempfile::TempDir, ExtensionManifest) {
         directory,
         ExtensionManifest::parse_acl(PLUGIN_V3_OKF_MANIFEST).unwrap(),
     )
+}
+
+#[tokio::test]
+async fn schema_v3_packages_require_a_bounded_utf8_readme() {
+    let (directory, manifest, _) = write_package().await;
+    fs::remove_file(directory.path().join("README.md"))
+        .await
+        .unwrap();
+    let error = validate_surface_files(&manifest, directory.path())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.readme_invalid");
+
+    fs::write(directory.path().join("README.md"), [])
+        .await
+        .unwrap();
+    let error = validate_surface_files(&manifest, directory.path())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.readme_invalid");
 }
 
 #[tokio::test]
@@ -236,10 +265,10 @@ async fn complete_plugin_v3_okf_package_fixture_is_valid_and_content_addressed()
     );
 
     let archive = package_directory_archive(&root);
-    assert_eq!(archive.len(), 1_752);
+    assert_eq!(archive.len(), 1_838);
     assert_eq!(
         format!("sha256:{:x}", Sha256::digest(&archive)),
-        "sha256:9a40836f13db96f958b3d10323cc118a1444db35bced972631c0adf3ad06c245"
+        "sha256:b9bd4d35c77237ad6408ba09716fa1392ed71f34d6776f438bcb26c77e9fa0ac"
     );
     let archive_temp = tempdir().unwrap();
     let archive_path = archive_temp.path().join("plugin-v3-okf.tar.gz");
