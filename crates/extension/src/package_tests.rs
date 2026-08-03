@@ -9,7 +9,10 @@ use super::digest::package_fingerprint;
 use super::package::{read_manifest, validate_surface_files};
 use super::remote::test_support::{package_directory_archive, TestRepository, TestServer, FUTURE};
 use super::source::prepare_package_source;
-use super::{load_okf_bundle_files, ExtensionManifest};
+use super::{
+    inspect_skill_surface_file, inspect_tool_surface_files, inspect_ui_surface_files,
+    load_okf_bundle_files, ExtensionManifest,
+};
 
 const TASK_RELEASE: &[u8] =
     include_bytes!("../../core/fixtures/releases/tool-task-release-v1.json");
@@ -25,6 +28,10 @@ const PLUGIN_V3_OKF_PACKAGE_SHA256: &str =
     include_str!("../fixtures/packages/plugin-v3-okf/package.sha256").trim_ascii_end();
 const PLUGIN_V3_OKF_PACKAGE_STATS: &str =
     include_str!("../fixtures/packages/plugin-v3-okf/package.stats.json").trim_ascii_end();
+const PLUGIN_V3_COGNITIVE_PACKAGE_SHA256: &str =
+    include_str!("../fixtures/packages/plugin-v3-cognitive/package.sha256").trim_ascii_end();
+const PLUGIN_V3_COGNITIVE_PACKAGE_STATS: &str =
+    include_str!("../fixtures/packages/plugin-v3-cognitive/package.stats.json").trim_ascii_end();
 const COMPLETE_PACKAGE_CATALOG: &[u8] =
     include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v1.json");
 const TUF_ROOT: &[u8] = include_bytes!("../fixtures/registry/plugin-v3/metadata/root.json");
@@ -207,6 +214,12 @@ async fn complete_plugin_v3_okf_package_fixture_is_valid_and_content_addressed()
     assert_eq!(manifest.skills.len(), 1);
     assert_eq!(manifest.skills[0].requires_okf, ["domain-knowledge"]);
     validate_surface_files(&manifest, &root).await.unwrap();
+    let skill = inspect_skill_surface_file(&manifest.skills[0], &root)
+        .await
+        .unwrap();
+    assert_eq!(skill.file_count(), 1);
+    assert!(skill.expanded_bytes() > 0);
+    assert!(skill.digest().starts_with("sha256:"));
 
     let fingerprint = package_fingerprint(&root).await.unwrap();
     assert_eq!(
@@ -239,6 +252,37 @@ async fn complete_plugin_v3_okf_package_fixture_is_valid_and_content_addressed()
     assert_eq!(
         package_fingerprint(extracted.root()).await.unwrap(),
         fingerprint
+    );
+}
+
+#[tokio::test]
+async fn admitted_cognitive_package_fixture_contains_all_five_surface_kinds() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/packages/plugin-v3-cognitive/package");
+    let (manifest, _) = read_manifest(&root).await.unwrap();
+    assert_eq!(manifest.package_id, "acme/cognitive");
+    assert_eq!(manifest.tools.len(), 1);
+    assert_eq!(manifest.mcp_servers.len(), 1);
+    assert_eq!(manifest.okf.len(), 1);
+    assert_eq!(manifest.skills.len(), 1);
+    assert_eq!(manifest.ui.len(), 1);
+    assert_eq!(manifest.skills[0].requires_tools, ["echo"]);
+    assert_eq!(manifest.skills[0].requires_mcp, ["context"]);
+    assert_eq!(manifest.skills[0].requires_okf, ["domain"]);
+    validate_surface_files(&manifest, &root).await.unwrap();
+
+    let fingerprint = package_fingerprint(&root).await.unwrap();
+    assert_eq!(
+        format!("sha256:{}", fingerprint.sha256),
+        PLUGIN_V3_COGNITIVE_PACKAGE_SHA256
+    );
+    assert_eq!(
+        serde_json::json!({
+            "byteCount": fingerprint.byte_count,
+            "fileCount": fingerprint.file_count,
+            "sha256": format!("sha256:{}", fingerprint.sha256),
+        }),
+        serde_json::from_str::<serde_json::Value>(PLUGIN_V3_COGNITIVE_PACKAGE_STATS).unwrap()
     );
 }
 
@@ -321,6 +365,15 @@ async fn complete_plugin_v3_package_fixture_is_valid_and_content_addressed() {
     assert_eq!(manifest.skills.len(), 2);
     assert_eq!(manifest.ui.len(), 2);
     validate_surface_files(&manifest, &root).await.unwrap();
+    let tool = inspect_tool_surface_files(&manifest.tools[0], &root)
+        .await
+        .unwrap();
+    let ui = inspect_ui_surface_files(&manifest.ui[0], &root)
+        .await
+        .unwrap();
+    assert!(tool.file_count() >= 1);
+    assert!(ui.file_count() >= 1);
+    assert_ne!(tool.digest(), ui.digest());
 
     let fingerprint = package_fingerprint(&root).await.unwrap();
     assert_eq!(

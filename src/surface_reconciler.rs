@@ -191,99 +191,22 @@ fn surface_nodes(
     manifest: &ExtensionManifest,
 ) -> UseResult<BTreeMap<PluginSurfaceRef, SurfaceNode>> {
     let mut nodes = BTreeMap::new();
-    for surface in &manifest.tools {
+    for surface in manifest.plugin_surfaces()? {
+        let owner = match surface.surface.kind {
+            PluginSurfaceKind::Tool => SurfaceOwner::Runtime,
+            PluginSurfaceKind::Mcp => SurfaceOwner::McpHost,
+            PluginSurfaceKind::Okf => SurfaceOwner::KnowledgeHost,
+            PluginSurfaceKind::Skill => SurfaceOwner::SkillHost,
+            PluginSurfaceKind::Ui => SurfaceOwner::UiHost,
+        };
         insert_node(
             &mut nodes,
             SurfaceNode {
-                surface: surface_ref(PluginSurfaceKind::Tool, &surface.id),
-                owner: SurfaceOwner::Runtime,
+                surface: surface.surface,
+                owner,
                 optional: surface.optional,
                 activation: surface.activation,
-                dependencies: Vec::new(),
-            },
-        )?;
-    }
-    for surface in &manifest.mcp_servers {
-        insert_node(
-            &mut nodes,
-            SurfaceNode {
-                surface: surface_ref(PluginSurfaceKind::Mcp, &surface.id),
-                owner: SurfaceOwner::McpHost,
-                optional: surface.optional,
-                activation: surface.activation,
-                dependencies: Vec::new(),
-            },
-        )?;
-    }
-    for surface in &manifest.okf {
-        insert_node(
-            &mut nodes,
-            SurfaceNode {
-                surface: surface_ref(PluginSurfaceKind::Okf, &surface.id),
-                owner: SurfaceOwner::KnowledgeHost,
-                optional: surface.optional,
-                activation: SurfaceActivation::Eager,
-                dependencies: Vec::new(),
-            },
-        )?;
-    }
-    for surface in &manifest.skills {
-        let mut dependencies = surface
-            .requires_tools
-            .iter()
-            .map(|id| surface_ref(PluginSurfaceKind::Tool, id))
-            .chain(
-                surface
-                    .requires_mcp
-                    .iter()
-                    .map(|id| surface_ref(PluginSurfaceKind::Mcp, id)),
-            )
-            .chain(
-                surface
-                    .requires_okf
-                    .iter()
-                    .map(|id| surface_ref(PluginSurfaceKind::Okf, id)),
-            )
-            .collect::<Vec<_>>();
-        dependencies.sort();
-        insert_node(
-            &mut nodes,
-            SurfaceNode {
-                surface: surface_ref(PluginSurfaceKind::Skill, &surface.id),
-                owner: SurfaceOwner::SkillHost,
-                optional: surface.optional,
-                activation: SurfaceActivation::Lazy,
-                dependencies,
-            },
-        )?;
-    }
-    for surface in &manifest.ui {
-        let mut dependencies = surface
-            .skill
-            .iter()
-            .map(|id| surface_ref(PluginSurfaceKind::Skill, id))
-            .chain(
-                surface
-                    .bind_tools
-                    .iter()
-                    .map(|id| surface_ref(PluginSurfaceKind::Tool, id)),
-            )
-            .chain(
-                surface
-                    .bind_mcp
-                    .iter()
-                    .map(|id| surface_ref(PluginSurfaceKind::Mcp, id)),
-            )
-            .collect::<Vec<_>>();
-        dependencies.sort();
-        insert_node(
-            &mut nodes,
-            SurfaceNode {
-                surface: surface_ref(PluginSurfaceKind::Ui, &surface.id),
-                owner: SurfaceOwner::UiHost,
-                optional: surface.optional,
-                activation: SurfaceActivation::Lazy,
-                dependencies,
+                dependencies: surface.dependencies,
             },
         )?;
     }
@@ -558,6 +481,7 @@ fn surface_state_satisfied(desired: SurfaceDesiredState, observed: SurfaceObserv
     }
 }
 
+#[cfg(test)]
 fn surface_ref(kind: PluginSurfaceKind, id: &str) -> PluginSurfaceRef {
     PluginSurfaceRef {
         kind,

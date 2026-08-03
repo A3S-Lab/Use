@@ -1,0 +1,41 @@
+//! Durable package-level lifecycle planning for cognitive plugins.
+//!
+//! A schema-v3 package is the unit of identity, trust, generation,
+//! installation, enablement, upgrade, and removal. Tool, MCP, OKF, Skill, and
+//! UI contributions participate in one ordered operation; they are not
+//! independently installable packages.
+
+mod coordinator;
+mod journal;
+mod model;
+mod okf;
+mod runtime;
+mod schedule;
+mod static_surfaces;
+mod store;
+
+pub use coordinator::{
+    PluginCapabilityLifecycleHost, PluginLifecycleCoordinator, PluginLifecycleEvidence,
+    PluginLifecycleHosts, PluginMcpLifecycleHost, PluginOkfLifecycleHost,
+    PluginPackageLifecycleHost, PluginSkillLifecycleHost, PluginToolLifecycleHost,
+    PluginUiLifecycleHost,
+};
+pub use journal::{
+    PluginLifecycleCheckpointOutcome, PluginLifecycleCheckpointReceipt, PluginLifecycleFailure,
+    PluginLifecycleOperationRecord, PluginLifecycleOperationStatus,
+    PLUGIN_LIFECYCLE_OPERATION_SCHEMA,
+};
+pub use model::{
+    PluginLifecycleAction, PluginLifecycleCheckpoint, PluginLifecycleCheckpointKind,
+    PluginLifecycleIntent, PluginLifecycleIntentSpec, PluginLifecycleSurface, PluginSurfaceHost,
+    PLUGIN_LIFECYCLE_INTENT_SCHEMA,
+};
+pub use okf::OkfKnowledgeLifecycleHost;
+pub use runtime::{
+    PluginMcpServiceReadiness, PluginRuntimeServiceReadinessHost, RuntimePluginSurfaceLifecycleHost,
+};
+pub use static_surfaces::StaticPluginSurfaceLifecycleHost;
+pub use store::PluginLifecycleJournalStore;
+
+#[cfg(test)]
+mod test_support;

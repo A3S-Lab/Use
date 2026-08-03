@@ -3,7 +3,8 @@
 - Status: implementation in progress
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
-  bundle contract frozen 2026-07-31 and M0K-B control plane frozen 2026-08-01
+  bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
+  and package-level five-surface lifecycle foundation accepted 2026-08-03
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -38,6 +39,9 @@ The architecture document owns domain and runtime boundaries.
                                   |
                          A3S Use package store
                  stage / verify / activate / receipt
+                                  |
+                 package lifecycle intent + journal
+                 ordered typed hosts / idempotent replay
                                   |
                        capability snapshot/watch
        +----------+----------+----------+----------+----------+
@@ -77,8 +81,11 @@ The checked-in schema-v3 baseline implements Tool, MCP, OKF, Skill, and UI.
 M0K-B freezes the OKF manifest, package validation, catalog, plan,
 receipt/projection, and host-observation contracts. M0K-C-A adds the injected
 Knowledge port, exact-byte stage request, checked adapter client, and durable
-generation store. Production publication still requires a real A3S Knowledge
-backend and parent-saga integration to supply exact promoted evidence.
+generation store. A package-level intent/journal/coordinator and typed Runtime,
+Skill/UI, and OKF adapters now provide the in-crate lifecycle foundation.
+Production publication still requires package/capability hosts, umbrella
+Plugin Manager wiring, and a real A3S Knowledge backend to supply exact
+promoted evidence.
 
 A Plugin Tool is not an MCP `tools/list` item. It is the real executable
 workload on which a Skill or UI may depend. A3S Use manages its lifecycle and
@@ -122,12 +129,14 @@ lease. Existing calls retain the exact generation they accepted.
 The M2 implementation projects this model into schema v3 capability bindings.
 Its deterministic Surface Reconciler calculates dependency levels, required
 closure, host ownership, desired/observed surface state, aggregate readiness,
-and publication eligibility. It does not claim deployment: missing Runtime,
-MCP, UI, and Knowledge adapters remain explicit `pending` evidence, while a
-Skill can be projected only when its required dependency closure is already
-usable. OKF already enters this same reconciler through exact
-receipt/observation evidence; it may not publish an independent knowledge
-generation outside the package operation.
+and publication eligibility. The package coordinator consumes the same graph,
+persists deterministic checkpoints, prepares surfaces forward, and removes
+them in reverse. Concrete Runtime, immutable Skill/UI, and OKF adapters exist,
+but production host injection is not connected: missing observations remain
+explicit `pending` evidence, while a Skill can be projected only when its
+required dependency closure is already usable. OKF enters this same operation
+through exact receipt/observation evidence; it may not publish an independent
+knowledge generation outside the package operation.
 
 ### Searchable catalog metadata
 
@@ -191,10 +200,32 @@ Remaining on the critical path:
 
 - inject the host Runtime Broker into the shared Plugin Manager;
 - assemble workspace grant proposals/change sets before final draft binding;
-- coordinate package, grant, Runtime, Gateway, projection, capability, and
-  drain checkpoints in the parent saga; and
+- implement production package commit/removal and atomic capability
+  publish/hide/drain hosts and inject every typed surface host into the
+  package-level coordinator;
+- coordinate the existing grant sub-saga and new package journal through the
+  umbrella Plugin Manager without a parallel lifecycle path;
+- implement prior Runtime generation retirement after blue/green cutover; and
 - pass CLI/Web/agent install-use-upgrade-uninstall E2E with production
   providers.
+
+### Next implementation slices
+
+The remaining work is dependency ordered. A later slice must not bypass an
+earlier ownership or durability gate.
+
+| Slice | Scope | Required proof |
+| --- | --- | --- |
+| P0 — Package/capability hosts | Add installed-disabled generation commit/removal and atomic publish/hide/drain implementations over existing receipts, snapshots, and route leases | Crash injection before and after every checkpoint; legacy v1/v2 behavior remains compatible |
+| P1 — Host composition | Have the umbrella Plugin Manager inject explicit Runtime selections, Gateway readiness, stdio MCP, Skill/UI, and A3S Knowledge adapters into one coordinator | CLI and Web produce the same intent and host set; unavailable hosts fail before publication |
+| P2 — Grant composition | Join the existing grant sub-saga to package checkpoints and capability cutover | Candidate grant survives restart; old grant cannot retire before exact cutover evidence |
+| P3 — Blue/green retirement | Retain N and N+1 Runtime/Gateway/projection receipts through cutover, then hide, drain, and remove N | Failed N+1 leaves N callable; successful N+1 leaks no old Runtime unit or route |
+| P4 — Product adapters | Route CLI, Web Marketplace, management MCP, and managed-host mutations through the same operation journal and expose snapshot/watch updates to A3S Code | Install/enable/disable/uninstall hot-plugs Tool, MCP, Skill, UI, and OKF without host restart |
+| P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all five surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
+
+P0 through P3 are release blockers for calling schema-v3 cognitive-package
+lifecycle production-ready. P4 is the hot-plug product gate. P5 is the release
+promotion gate.
 
 ## Authorization Model
 
@@ -308,11 +339,11 @@ The dependency-ordered slices are:
    stage/promote/observe/remove port, check returned receipt/observation
    evidence, and durably retain bounded exact-generation records with
    last-good projection.
-4. **Production Knowledge and lifecycle (pending M0K-C-B):** implement the real
-   A3S Knowledge index backend behind the port and include OKF in dependency closure,
-   capability snapshots, plan/apply replay, upgrade cutover, disable, drain-free
-   removal, and receipt-owned uninstall without touching personal notes or
-   another package's index.
+4. **Production Knowledge and lifecycle (in progress M0K-C-B):** the package
+   adapter now supplies idempotent stage/promote/hide/receipt-remove behavior.
+   Implement the real A3S Knowledge index backend behind the port and wire it
+   into capability snapshots, plan/apply replay, upgrade cutover, and scoped
+   sessions without touching personal notes or another package's index.
 5. **Product E2E (pending M0K-C-B/M6):** search a signed OKF-bearing package without archive
    download; review provenance, concept count, bytes, and permission impact;
    install and query cited concepts; upgrade atomically; disable/uninstall; and
@@ -325,9 +356,10 @@ v3 manifest and full-package admission, catalog-v3 bundle evidence,
 Skill-to-OKF closure, plan/draft v2 impact, manager-toolset v2, projection
 receipt, Knowledge observation, capability projection, and Knowledge-owned
 reconciliation. Golden ACL, JSON, and complete-package digests freeze the
-slice. M0K-C-A completed the byte-exact injected adapter boundary and durable
-last-good binding store. M0K-C-B must now connect a real Knowledge backend and
-the scope-aware parent saga; absent promoted evidence remains unpublished.
+slice. M0K-C-A completed the byte-exact injected adapter boundary, durable
+last-good binding store, and package-lifecycle adapter foundation. M0K-C-B must
+now connect a real Knowledge backend and the scope-aware production hosts;
+absent promoted evidence remains unpublished.
 
 The workstream does not compile PDFs, Office files, images, archives, or web
 pages during install. Independent compilers produce normalized OKF before
@@ -432,9 +464,9 @@ grant generations; stale tombstone/grant revisions and ambiguous parallel
 grants fail closed. The grant lifecycle adapter now records immutable intent,
 applies candidate receipts idempotently, checkpoints exact capability cutover,
 and retires prior receipts with crash-safe replay. The remaining integration is
-for the Plugin Manager's parent saga to coordinate these checkpoints with
-package commit, Runtime health, capability publication, route switching, and
-lease drain.
+for the Plugin Manager to compose this sub-saga with the implemented package
+journal and production package, Runtime, Gateway, capability, route-switch, and
+lease-drain hosts.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still
@@ -470,6 +502,9 @@ Every milestone adds focused tests at the owning layer.
 ### Lifecycle tests
 
 - plan/apply mismatch;
+- canonical all-five-surface forward preparation and reverse removal;
+- journal restart, concurrent same-key replay, optional failure, required
+  failure, tampered records, and symlinked paths;
 - install and upgrade atomicity;
 - enable, disable, and watch generation changes;
 - concurrent install convergence;
@@ -506,6 +541,7 @@ Every milestone adds focused tests at the owning layer.
 | Workstream | Primary locations |
 | --- | --- |
 | Package, catalog, TUF, receipts, grants, leases | `crates/extension/`, `src/release_bundles.rs` |
+| Package-level lifecycle intent, journal, and typed hosts | `src/plugin_lifecycle/` |
 | Surface reconciliation and bindings | `src/capability_registry.rs`, `src/extension_host.rs` |
 | Tool/MCP Runtime deployment | A3S Runtime adapters, `src/mcp/`, release descriptors |
 | Umbrella plan, policy, and lifecycle | A3S CLI `components/`, registry store, configuration |

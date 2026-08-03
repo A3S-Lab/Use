@@ -1,0 +1,169 @@
+# ADR-002: Cognitive Package Lifecycle Saga
+
+- Status: accepted architecture; foundation implemented, product wiring in progress
+- Decision date: 2026-08-03
+- Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
+- Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
+- Runtime boundary: [ADR-001: Host-Owned Plugin Runtime Broker](adr-001-plugin-runtime-broker-boundary.md)
+- Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
+
+## Context
+
+An A3S cognitive package may contain Tool, Skill, MCP, UI, and OKF
+contributions. Those contributions cross several hosts and persistence systems:
+the immutable package store, A3S Runtime, Gateway, Skill and UI projections,
+A3S Knowledge, route leases, and the capability registry.
+
+Treating each contribution as an independently installable package would split
+identity, trust, version, permission review, upgrade, and uninstall ownership.
+Treating the operation as one filesystem transaction would also be false:
+these hosts do not share an ACID database.
+
+## Decision
+
+The signed package is the only lifecycle aggregate. Tool, MCP, OKF, Skill, and
+UI are named package-owned contributions, never independently installed
+packages.
+
+One lifecycle intent binds all authority needed to replay the operation:
+
+```text
+operation ID + reviewed plan digest + scope
++ package ID, package digest, and manifest digest
++ exact package generation + lifecycle action
++ canonical surface graph + checkpoint schedule
+```
+
+The surface graph comes from the admitted schema-v3 manifest. Dependencies are
+prepared in forward topological order and stopped or removed in reverse order.
+An optional surface becomes required when it is in the dependency closure of a
+required Skill or UI.
+
+The version-1 schedules are:
+
+```text
+install / candidate upgrade
+  package committed installed-disabled
+  -> prepare Tool | MCP | OKF | Skill | UI in dependency order
+  -> atomically publish one package capability generation
+
+enable
+  prepare all selected surfaces in dependency order
+  -> atomically publish one package capability generation
+
+disable
+  hide the complete package generation
+  -> drain accepted calls
+  -> stop surfaces in reverse dependency order
+
+uninstall
+  hide the complete package generation
+  -> drain accepted calls
+  -> remove receipt-owned surfaces in reverse dependency order
+  -> remove the package generation
+```
+
+Every checkpoint has a deterministic SHA-256 idempotency key derived from the
+operation, action, generation, sequence, and optional surface identity. The
+journal stores only validated non-secret evidence digests and typed error codes;
+it never stores credentials, endpoint tokens, Secret values, or
+package-authored error text.
+
+## Typed Host Boundaries
+
+The coordinator is orchestration, not a generic plugin protocol. It dispatches
+to separate `Send + Sync` host ports for:
+
+- immutable package commit and removal;
+- atomic capability publish, hide, and call drain;
+- Tool lifecycle;
+- MCP lifecycle;
+- OKF Knowledge lifecycle;
+- Skill projection lifecycle; and
+- UI projection lifecycle.
+
+The concrete foundation keeps surface semantics distinct:
+
+- a native Tool executable and stdio MCP executable remain static launchers;
+- a release-backed Tool Task uses an explicit Runtime Task selection;
+- an HTTP Tool and Streamable HTTP MCP use explicit Runtime Services;
+- an HTTP MCP Service additionally requires standard initialize evidence;
+- Skill and UI preparation revalidates immutable content evidence;
+- OKF uses stage, persist, promote, and persist, while disable only hides its
+  capability and uninstall removes only the retained projection receipt.
+
+No host may translate a Tool into a universal action RPC, treat OKF as an
+executable workload, or delete mutable user data as part of normal uninstall.
+
+## Durability and Ownership
+
+The lifecycle journal is bounded, atomically replaced, cross-process locked,
+and path-ownership checked. A retry of the same intent resumes the exact next
+checkpoint. A different operation for the same scope and package is rejected
+until the active record is terminal. Tampered JSON, unknown fields, symlinked
+paths, reordered checkpoints, and substituted evidence fail closed.
+
+Detailed Runtime, Knowledge, grant, package, and projection receipts remain the
+source of truth for their owned resources. The parent journal records their
+validated checkpoint evidence; it does not copy provider credentials or infer
+ownership from a running process.
+
+Registry selection is orthogonal to lifecycle ownership. Registry sources are
+named and replaceable host configuration, while an installed receipt retains
+the immutable source name, URL, TUF root, channel, target, and digest that were
+reviewed for that package generation.
+
+## Upgrade Boundary
+
+The implemented version-1 coordinator covers candidate commit, preparation,
+and publication. Production blue/green upgrade still requires explicit
+retirement of the prior Runtime, Gateway, grant, projection, and package
+generation after capability cutover and drain.
+
+Until that retirement protocol preserves both old and candidate receipts, the
+Runtime lifecycle adapter rejects a different retained generation with
+`use.plugin.runtime_generation_retirement_required`. It must not overwrite the
+only receipt for a live old-generation resource.
+
+## Implementation State
+
+Implemented:
+
+- canonical manifest surface inventory shared with reconciliation;
+- package-level intent and deterministic dependency schedule;
+- durable checkpoint and failure journal with crash-safe replay;
+- typed package, capability, Tool, MCP, OKF, Skill, and UI ports;
+- concrete Runtime, immutable Skill/UI, and OKF Knowledge adapters;
+- stable replay evidence for Runtime preparation and removal;
+- a content-addressed package fixture containing all five contribution kinds;
+  and
+- unit and integration coverage for forward preparation, reverse removal,
+  optional failure, required failure, restart, tamper rejection, and
+  receipt-owned cleanup.
+
+Remaining before the product can claim complete cognitive-package lifecycle:
+
+- production package commit/removal and atomic capability publish/hide/drain
+  hosts;
+- injection of Runtime, Gateway, stdio MCP, Skill/UI, and A3S Knowledge hosts
+  by the umbrella Plugin Manager;
+- CLI, Web, management MCP, and managed-host wiring into this coordinator;
+- prior-generation retirement during blue/green upgrade; and
+- cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
+
+## Consequences
+
+Benefits:
+
+- one install, permission review, version, capability cutover, and uninstall
+  boundary covers every contribution in the package;
+- dependency order and cleanup order cannot drift between hosts;
+- restart and concurrent replay converge on deterministic checkpoints; and
+- uninstall ownership is explicit enough to preserve user and unrelated data.
+
+Costs:
+
+- every product host must provide typed lifecycle adapters;
+- capability publication requires a multi-resource saga; and
+- Runtime-backed upgrades remain unavailable until dual-generation retirement
+  evidence is implemented.

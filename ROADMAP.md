@@ -4,7 +4,8 @@
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31 and M0K-B control-plane contracts frozen
-  2026-08-01
+  2026-08-01; package-level five-surface lifecycle foundation accepted
+  2026-08-03
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -72,6 +73,10 @@ These decisions are part of the target contract:
     compatibility path. A3S Use owns package-generation integrity; A3S
     Knowledge owns conformant atomic promotion, indexing, cited retrieval, and
     last-good-generation preservation.
+13. Registry sources are named, replaceable host configuration. Installed
+    receipts retain the exact source URL, trust root, channel, target, and
+    digest reviewed for their generation; source replacement never rewrites
+    package provenance silently.
 
 ## Current Baseline
 
@@ -101,21 +106,28 @@ The following foundations are implemented:
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
 - generation/revision capability snapshots consumed by A3S Code;
 - live MCP and Skill projection into a dedicated A3S Use worker;
-- M0K-A OKF bundle identity and bounded v0.2/v0.1 conformance; and
+- M0K-A OKF bundle identity and bounded v0.2/v0.1 conformance;
 - M0K-B named OKF manifests, recursive package validation, catalog-v3 evidence,
   Skill dependency closure, plan-v2 impact, projection receipts, scope-bound
   Knowledge observations, capability projections, last-good selection, and
-  reconciliation gates; and
+  reconciliation gates;
 - M0K-C-A injected Knowledge stage/promote/observe/remove contracts, byte-exact
   stage revalidation, adapter evidence checks, and a durable bounded
-  exact-generation binding store with fail-closed last-good reconstruction.
+  exact-generation binding store with fail-closed last-good reconstruction;
+- one canonical manifest surface graph shared by reconciliation and lifecycle;
+- a package-level install/upgrade/enable/disable/uninstall intent with
+  deterministic dependency-forward and reverse-removal checkpoints;
+- a bounded atomic cross-process lifecycle journal with idempotent restart,
+  optional-surface failure evidence, and tamper rejection; and
+- typed Runtime Tool/MCP, immutable Skill/UI, and OKF Knowledge lifecycle
+  adapters, proven by one content-addressed package containing all five kinds.
 
 The OKF control plane is implemented without creating another package manager,
-Runtime route, lifecycle store, or reconciler. It intentionally publishes no
-OKF capability when promoted Knowledge evidence is absent. The injected port
-and Use-owned evidence store are now implemented; the production A3S Knowledge
-backend, parent-saga binding, and scope-aware host/session projection remain
-the next implementation slice.
+Runtime route, or reconciler. It intentionally publishes no OKF capability
+when promoted Knowledge evidence is absent. The injected port, Use-owned
+evidence store, and package-lifecycle adapter are implemented; the production
+A3S Knowledge backend and scope-aware host/session projection remain the next
+implementation slice.
 
 The main gaps are:
 
@@ -124,17 +136,17 @@ The main gaps are:
 - package-level permission declarations are not precise enough to authorize
   native executable plugins without human review;
 - schema v3 named surfaces, Tool release contracts, catalog-v3 executable
-  planning targets, and planning bundles are implemented; the typed Runtime
-  adapter plans release-backed Tasks and Services and can health-gate a
-  directly invoked Service apply, but host-broker lifecycle apply is not
-  connected yet;
+  planning targets, planning bundles, and typed Runtime lifecycle adapters are
+  implemented, but the host Runtime Broker is not injected into the shared
+  Plugin Manager yet;
 - persisted Tool Task/Service bindings and Runtime observations feed the shared
-  reconciler, but the Plugin Manager still lacks complete scope-aware
-  Runtime/MCP/UI apply and observation wiring;
+  reconciler, and package-level Runtime/MCP/Skill/UI/OKF adapters exist, but the
+  Plugin Manager still lacks production package/capability hosts and complete
+  scope-aware apply/observation wiring;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
-  its bounded read-only management MCP is connected, while Runtime/MCP/UI apply
-  adapters remain to be connected;
+  its bounded read-only management MCP is connected, while production
+  package/capability and surface-host composition remains to be connected;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - the versioned OKF manager/search/selection contract, injected Knowledge port,
@@ -217,14 +229,14 @@ Exit criteria:
 - cross-SDK digest fixtures are deterministic;
 - no lifecycle mutation is implemented before its plan schema is fixed.
 
-### M0K — OKF contribution contract and fixtures (M0K-C-A complete 2026-08-02; M0K-C-B pending)
+### M0K — OKF contribution contract and fixtures (M0K-C-A lifecycle foundation complete 2026-08-03; M0K-C-B pending)
 
 Estimated effort: 2–3 weeks
 
 This is an additive product amendment. It does not reopen or mislabel the
 completed Tool/MCP/Skill/UI M0 fixture set.
 
-Implementation status (2026-08-02):
+Implementation status (2026-08-03):
 
 - completed M0K-A in `a3s-use-core`: the canonical
   `a3s.use.okf-bundle.v1` JSON descriptor binds format version, bundle root,
@@ -249,7 +261,7 @@ Implementation status (2026-08-02):
   staged/failed candidate rejection, and last-good selection;
 - completed M0K-B reconciliation: OKF is owned by `KnowledgeHost`, remains
   unpublished without promoted evidence, and gates dependent Skills through
-  the existing required closure; and
+  the existing required closure;
 - completed M0K-B canonical fixtures: OKF ACL and complete package digests,
   catalog-v3, plan-v2, manager-toolset-v2, projection receipt, Knowledge
   observation, and capability-projection JSON goldens. Existing v1/v2 and the
@@ -257,13 +269,17 @@ Implementation status (2026-08-02):
 - completed M0K-C-A adapter boundary: a public `Send + Sync`
   stage/promote/observe/remove port, an evidence-checking client, and a stage
   request that revalidates the exact borrowed OKF file bytes without a
-  path-based time-of-check/time-of-use gap; and
+  path-based time-of-check/time-of-use gap;
 - completed M0K-C-A persistence: receipt plus observation records are stored
   atomically under hashed scope and validated package/surface paths, protected
   by a cross-process lock, bounded to 32 retained generations, and selected
   only through exact retained promoted evidence. Stale/conflicting writes,
   tampered JSON, symlinks, ownership drift, and removed-generation fallback
-  fail closed.
+  fail closed; and
+- completed M0K-C-A lifecycle foundation: the typed OKF host performs
+  stage-store-promote-store, reuses exact promoted evidence after restart,
+  hides capability without deleting Knowledge data on disable, and removes
+  only receipt-owned projection evidence on uninstall.
 
 M0K-C-B remains pending: implement the production A3S Knowledge backend behind
 the injected port, bind it and the store to the parent operation journal and
@@ -345,11 +361,11 @@ Exit criteria:
 - offline search uses only the last verified snapshot and reports its age;
 - catalog search has deterministic fixtures and output-size bounds.
 
-### M2 — Shared Plugin Manager application service (in progress 2026-08-02)
+### M2 — Shared Plugin Manager application service (in progress 2026-08-03)
 
 Estimated effort: 2–3 weeks
 
-Implementation status (2026-08-02):
+Implementation status (2026-08-03):
 
 - completed in `a3s-use-core`: one object-safe `PluginHostManager` port and
   canonical v1 managed-host capability, scope-fence, plan, digest-only apply,
@@ -396,8 +412,9 @@ Implementation status (2026-08-02):
   expired or capability-drifted plans before first mutation, and resumes an
   existing intent through the umbrella component journal;
 - completed: a cross-process manager mutation lock prevents two adapters from
-  racing result publication, while the existing component journal remains the
-  sole per-side-effect checkpoint journal;
+  racing result publication. The component journal remains the cross-component
+  boundary, while the A3S Use package journal owns canonical per-surface
+  checkpoint ordering;
 - completed: plans and results carry explicit A3S Use capability
   generation/revision evidence, including a bounded unavailable state that
   cannot turn a successful mutation into a false failure;
@@ -409,6 +426,16 @@ Implementation status (2026-08-02):
   evidence and project named Skills only after every required Tool, MCP, and
   OKF dependency is prepared or healthy; missing Runtime, MCP, UI, and
   Knowledge observations remain explicit `pending` evidence;
+- completed in A3S Use: one canonical package-owned Tool/MCP/OKF/Skill/UI graph
+  now drives both reconciliation and lifecycle, preventing independently
+  installed surface state or divergent dependency order;
+- completed in A3S Use: a versioned package-level intent, deterministic
+  checkpoint schedule, durable atomic journal, and typed host coordinator
+  prepare dependencies forward, publish once, and hide/drain/remove in reverse
+  order with restart-safe idempotency evidence;
+- completed in A3S Use: concrete Runtime Tool/MCP, immutable Skill/UI, and OKF
+  Knowledge adapters validate exact package bytes and retain receipt-owned
+  cleanup boundaries; an all-five-surface package fixture freezes the contract;
 - covered: typed complete-catalog mapping, lifecycle argument and digest
   validation, Use-owned JSON output, operation ID uniqueness, expiry,
   append-only replay, corruption rejection, cross-process locking, Web adapter
@@ -417,10 +444,13 @@ Implementation status (2026-08-02):
   contracts, offline child-policy propagation, a signed-registry CLI
   plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
   smoke test;
-- pending: Runtime/MCP/UI observation and apply adapters, and the complete Unix
-  Marketplace lifecycle E2E through the shared service. The shared manager
-  must also implement the published managed-host port before a Cloud adapter
-  can enable mutation; hosts must not add a parallel implementation.
+- pending: production package commit/removal and atomic capability
+  publish/hide/drain hosts, umbrella-manager injection of the typed Runtime,
+  Gateway, stdio MCP, Skill/UI, and Knowledge adapters, prior Runtime generation
+  retirement, and complete Unix Marketplace lifecycle E2E through the shared
+  service. The shared manager must also implement the published managed-host
+  port before a Cloud adapter can enable mutation; hosts must not add a parallel
+  implementation.
 
 Deliverables:
 
@@ -757,16 +787,21 @@ Implementation status (in progress 2026-07-30):
   Runtime Broker boundary in
   `docs/adr-001-plugin-runtime-broker-boundary.md`; packages cannot register
   providers and a provider failure has no fallback;
+- completed in `a3s-use`: a typed lifecycle adapter now distinguishes native
+  Tool launchers, Runtime Tasks, Runtime Tool Services, stdio MCP launchers,
+  and Streamable HTTP MCP Services; it requires explicit provider selections,
+  Gateway endpoint evidence, MCP initialize evidence, durable bindings, and
+  idempotent stop/removal. It fails closed instead of overwriting an older
+  Runtime-generation receipt during upgrade;
 - pending: inject that Runtime Broker into the shared Plugin Manager, assemble
   canonical workspace grant changes and explicit provider assignments for Tool
   and MCP drafts, then complete
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,
-  filesystem/network/child-process enforcement, durable binding
-  orchestration, streaming/file-backed large Task output, the actual MCP
-  initialize client adapter, stdio supervision, Gateway route revocation,
-  binding-store cleanup orchestration, and scope-aware capability/session
-  snapshot wiring.
+  filesystem/network/child-process enforcement, prior-generation Runtime
+  retirement, streaming/file-backed large Task output, the production MCP
+  initialize client adapter, stdio supervision, Gateway route revocation, and
+  scope-aware capability/session snapshot wiring.
 
 Deliverables:
 

@@ -42,10 +42,13 @@ system software.
 > plan-v2, receipt, Knowledge observation, capability projection, and
 > dependency-gated reconciliation contracts. M0K-C-A adds the injected
 > Knowledge port, byte-exact stage request, evidence-checking client, and
-> durable last-good binding store. The parent apply saga and production
-> Runtime, Gateway, and A3S Knowledge backends remain incomplete, so these
-> contracts are not yet a finished plugin product. [ROADMAP.md](ROADMAP.md) is
-> the source of truth.
+> durable last-good binding store. The package-level lifecycle foundation now
+> adds one canonical Tool/MCP/OKF/Skill/UI graph, a durable idempotent parent
+> journal, dependency-forward preparation, reverse removal, and typed Runtime,
+> static-surface, and OKF adapters. Production package/capability hosts,
+> umbrella CLI/Web wiring, old-Runtime-generation retirement, Gateway, and the
+> real A3S Knowledge backend remain incomplete, so this is not yet a finished
+> plugin product. [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 The user-facing entry point is `a3s use`. The standalone `a3s-use` binary is
 the delegated package engine and remains available for automation and
@@ -69,6 +72,11 @@ A3S package
 ├── native plane       executable · runtime assets · target · provenance
 └── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
 ```
+
+The package is the only lifecycle unit. A Tool, Skill, MCP server, UI, or OKF
+bundle can be selected and projected as a named contribution, but it cannot be
+installed, upgraded, enabled, disabled, or uninstalled independently from its
+owning package generation.
 
 | Plane | Implemented foundation | Product direction |
 | --- | --- | --- |
@@ -197,12 +205,18 @@ in-memory OKF bytes at stage, checks all returned evidence, and persists
 bounded exact-generation records under `bindings/knowledge`. Failed candidates
 retain an exact promoted last-good generation; a latest removed generation
 suppresses fallback. OKF never enters Runtime and cannot carry a runtime
-permission ceiling. Production A3S Knowledge indexing, parent-saga wiring,
-session projection, cited retrieval, and receipt-owned cleanup remain pending.
+permission ceiling. `OkfKnowledgeLifecycleHost` now supplies package-saga
+stage/promote/hide/remove behavior and receipt-owned cleanup semantics.
+Production A3S Knowledge indexing, umbrella-manager wiring, session projection,
+and cited retrieval remain pending.
 
 The executable and knowledge schema-v3 fixtures are
 [`plugin-v3.acl`](crates/extension/fixtures/manifests/plugin-v3.acl) and
 [`plugin-v3-okf.acl`](crates/extension/fixtures/manifests/plugin-v3-okf.acl).
+The content-addressed
+[`plugin-v3-cognitive`](crates/extension/fixtures/packages/plugin-v3-cognitive/)
+package proves that one admitted generation can contain Tool, MCP, OKF, Skill,
+and UI contributions with dependency-bound lifecycle ordering.
 All paths are package-relative. Installation rejects missing or invalid
 surfaces, path traversal, links, archive ambiguity, route collisions,
 oversized packages, provenance drift, incompatible host ranges, or OKF bytes
@@ -227,6 +241,11 @@ a3s-use extension disable acme/calendar --json
 a3s-use extension enable acme/calendar --json
 a3s-use component uninstall calendar --json
 ```
+
+These commands remain the compatible package-engine entry points. Production
+schema-v3 activation through the new multi-host parent saga is still being
+wired; until then the new lifecycle adapters fail closed when their required
+host evidence is unavailable.
 
 The package ID is the stable lifecycle identity. A route is a presentation and
 dispatch alias. A3S Use preserves native `argv`, stdin, stdout, stderr, process
@@ -330,15 +349,17 @@ invented executable target.
 | Capability | Status |
 | --- | --- |
 | Schema-v3 named Tool Task/Service, MCP, OKF, Skill, and UI contracts | Implemented |
+| Canonical package-level graph, lifecycle intent, checkpoint journal, and crash replay | Implemented foundation; all five contribution kinds share one operation |
 | First-class OKF knowledge-package control plane | M0K-B implemented: bundle validation, manifest/catalog/plan, receipt/observation/projection, dependency-gated reconciliation, and canonical fixtures |
 | Signed catalog v1–v3, offline verification, search, and planning target | Implemented |
 | Immutable operation-plan, permission-ceiling, and provider-evidence contracts | Implemented |
 | Exact-generation workspace grant store and recoverable grant journal | Implemented |
-| Runtime Task/Service binding receipts, invocation, and observation | Implemented as typed adapters |
+| Runtime Tool/MCP preparation, readiness, stop, and receipt-owned removal | Implemented as typed lifecycle adapters; prior-generation retirement remains pending |
+| Immutable Skill/UI validation and projection lifecycle | Implemented as typed static-surface adapters |
 | Dependency-gated Surface Reconciler and planner evidence | Implemented |
-| Injected OKF Knowledge port and durable exact-generation binding store | M0K-C-A implemented with byte-exact stage validation, monotonic observations, and last-good projection |
-| Production A3S Knowledge backend, parent-saga binding, and scoped cited retrieval | In progress; no production OKF publication without promoted evidence |
-| Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | In progress |
+| Injected OKF Knowledge port, durable binding store, and package lifecycle adapter | M0K-C-A foundation implemented with byte-exact stage validation, monotonic observations, last-good projection, and receipt-owned removal |
+| Production A3S Knowledge backend and scoped cited retrieval | In progress; no production OKF publication without promoted evidence |
+| Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | Use intent/journal/coordinator foundation implemented; production package/capability hosts and umbrella wiring remain in progress |
 | Production secret, egress, filesystem, child-process, Gateway, and stdio-MCP adapters | In progress |
 | General package dependency solver and deterministic lock graph | Target architecture |
 | Automatic generation rollback and garbage collection | Target architecture |
@@ -430,7 +451,9 @@ frozen in
 [ADR-001](docs/adr-001-plugin-runtime-broker-boundary.md). The complete
 multi-resource mutation is a durable, idempotent saga because package storage,
 grants, Runtime, Gateway, and capability publication do not share a database
-transaction.
+transaction. [ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md)
+defines the package-owned Tool/MCP/OKF/Skill/UI checkpoint schedule and its
+current production-wiring boundary.
 
 ## Platform support
 
@@ -450,16 +473,16 @@ lifecycle evidence plus the remaining persistent and advanced Browser gates.
 [ROADMAP.md](ROADMAP.md) is the dependency-ordered source of truth for the
 plugin platform. The current critical path is:
 
-1. connect the host Runtime Broker and canonical grant changes to the shared
-   Plugin Manager's final plan;
-2. coordinate package, grant, Runtime, Gateway, projection, capability, and
-   drain checkpoints in one recoverable parent saga;
-3. complete CLI/Web/agent lifecycle E2E with production providers;
+1. inject production package, capability, Runtime, Gateway, static-surface, and
+   Knowledge hosts into the implemented package-level coordinator;
+2. wire the umbrella Plugin Manager, CLI, Web, management MCP, and managed-host
+   adapters to that single journaled mutation path;
+3. add prior-generation retirement after blue/green capability cutover, then
+   complete CLI/Web/agent lifecycle and crash-recovery E2E;
 4. add the general package dependency solver, deterministic lock graph,
    retained-generation rollback, and garbage collection;
-5. connect the M0K-C-A Knowledge port and binding store to the production A3S
-   Knowledge backend, scoped capability/session projection, parent-saga
-   rollback, and receipt-owned uninstall cleanup;
+5. connect the M0K-C-A Knowledge port and lifecycle adapter to the production
+   A3S Knowledge backend and scoped capability/session projection;
 6. extend the remaining cognitive contribution model only after each host
    contract is frozen; and
 7. complete official registry operations and Windows platform gates.
@@ -519,6 +542,7 @@ image tag is used as release identity.
 - [Plugin Contract Reference](docs/plugin-contracts.md)
 - [Immutable MCP, Skill, and Tool Releases](docs/release-descriptors.md)
 - [Runtime Broker ADR](docs/adr-001-plugin-runtime-broker-boundary.md)
+- [Cognitive Package Lifecycle Saga ADR](docs/adr-002-cognitive-package-lifecycle-saga.md)
 - [Current Architecture](docs/architecture.md)
 - [External Repository Capabilities](docs/external-repositories.md)
 - [Immutable Release Descriptors](docs/release-descriptors.md)

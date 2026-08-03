@@ -1,0 +1,65 @@
+extension "acme/cognitive" {
+  schema_version = 3
+  version        = "1.0.0"
+  route          = "cognitive"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read", "execute"]
+
+  repository {
+    url      = "https://github.com/acme/cognitive"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  tool "echo" {
+    workload    = "task"
+    interface   = "cli"
+    executable  = "tools/echo"
+    command     = "acme-cognitive-echo"
+    json_output = true
+    interactive = false
+    timeout_ms  = 30000
+    activation  = "lazy"
+    optional    = false
+  }
+
+  mcp "context" {
+    transport  = "stdio"
+    executable = "mcp/context"
+    args       = ["--stdio"]
+    activation = "lazy"
+    optional   = false
+  }
+
+  okf "domain" {
+    format_version         = "0.2"
+    root                   = "okf/domain"
+    content_digest         = "sha256:1993e98beb211464d263715b242934987ce654211040560aea648e35dc7e0ba6"
+    concept_count          = 1
+    file_count             = 2
+    expanded_bytes         = 421
+    max_files              = 64
+    max_concepts           = 32
+    max_expanded_bytes     = 1048576
+    max_document_bytes     = 262144
+    max_links_per_document = 128
+    optional               = false
+  }
+
+  skill "reason" {
+    path          = "skills/reason/SKILL.md"
+    requires_tool = ["echo"]
+    requires_mcp  = ["context"]
+    requires_okf  = ["domain"]
+    optional      = false
+  }
+
+  ui "reason" {
+    entry     = "ui/reason/index.html"
+    styles    = ["ui/reason/index.css"]
+    scripts   = ["ui/reason/index.js"]
+    skill     = "reason"
+    bind_tool = ["echo"]
+    bind_mcp  = ["context"]
+    optional  = false
+  }
+}

@@ -240,7 +240,11 @@ Implemented:
   Services, and Streamable HTTP MCP Services;
 - explicit `RuntimeClientRegistry` selection and immutable provider evidence;
 - CLI component-plan transport of the verified planning bundle without package
-  archive download; and
+  archive download;
+- a package-lifecycle Tool/MCP adapter that revalidates immutable files, uses
+  explicit selected clients, health-gates Tool Services, requires Gateway plus
+  standard initialize evidence for HTTP MCP, persists bindings, and performs
+  idempotent receipt-owned stop/removal; and
 - fail-closed rejection while complete provider/grant lifecycle evidence is
   unavailable.
 
@@ -248,7 +252,8 @@ Remaining:
 
 - host broker integration into the shared Plugin Manager's final draft;
 - two-pass preflight/authorization/final selection;
-- workspace-aware grant-change and Runtime binding saga coordination;
+- workspace-aware grant-change and package-journal coordination;
+- prior Runtime generation retirement after capability cutover;
 - production provider injection for every CLI/Web/Cloud host;
 - secret, filesystem, egress, and child-process enforcement adapters;
 - Gateway route and MCP initialization orchestration;

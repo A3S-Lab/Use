@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
 use a3s_acl::{Block, Value};
-use a3s_use_core::{RiskClass, UseError, UseResult};
+use a3s_use_core::{PluginSurfaceKind, PluginSurfaceRef, RiskClass, UseError, UseResult};
 use serde::{Deserialize, Serialize};
 
 mod digest;
@@ -53,7 +53,10 @@ pub use remote::{
     ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog, VerifiedRegistryMetadata,
     MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
-pub use surface_files::load_okf_bundle_files;
+pub use surface_files::{
+    inspect_mcp_surface_files, inspect_skill_surface_file, inspect_tool_surface_files,
+    inspect_ui_surface_files, load_okf_bundle_files, PluginSurfaceFileEvidence,
+};
 pub use workspace_grant::{
     StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,
     WORKSPACE_GRANT_RECEIPT_SCHEMA, WORKSPACE_GRANT_REVOCATION_SCHEMA,
@@ -108,6 +111,23 @@ pub struct ExtensionManifest {
     pub skills: Vec<PluginSkillSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ui: Vec<PluginUiSurface>,
+}
+
+/// One named cognitive-package contribution and its manifest-local
+/// dependencies.
+///
+/// The package remains the lifecycle unit. Hosts use this inventory to stage
+/// Tool, MCP, OKF, Skill, and UI contributions in dependency order and to
+/// remove them in reverse order; a surface is never installed independently
+/// from its owning package generation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManifestPluginSurface {
+    pub surface: PluginSurfaceRef,
+    pub activation: SurfaceActivation,
+    pub optional: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<PluginSurfaceRef>,
 }
 
 /// Source repository identity carried by a versioned external capability
@@ -277,6 +297,121 @@ impl ExtensionManifest {
         surfaces
     }
 
+    /// Return the complete schema-v3 surface graph in canonical identity
+    /// order.
+    ///
+    /// Dependency validation happens while parsing the manifest. This method
+    /// deliberately exposes one shared graph to reconciliation and lifecycle
+    /// orchestration so their activation and removal rules cannot drift.
+    pub fn plugin_surfaces(&self) -> UseResult<Vec<ManifestPluginSurface>> {
+        if self.schema_version != 3 {
+            return Err(manifest_error(
+                "Only schema version 3 packages expose named plugin surfaces.",
+            ));
+        }
+
+        let mut surfaces = Vec::with_capacity(
+            self.tools.len()
+                + self.mcp_servers.len()
+                + self.okf.len()
+                + self.skills.len()
+                + self.ui.len(),
+        );
+        surfaces.extend(self.tools.iter().map(|surface| ManifestPluginSurface {
+            surface: plugin_surface_ref(PluginSurfaceKind::Tool, &surface.id),
+            activation: surface.activation,
+            optional: surface.optional,
+            dependencies: Vec::new(),
+        }));
+        surfaces.extend(
+            self.mcp_servers
+                .iter()
+                .map(|surface| ManifestPluginSurface {
+                    surface: plugin_surface_ref(PluginSurfaceKind::Mcp, &surface.id),
+                    activation: surface.activation,
+                    optional: surface.optional,
+                    dependencies: Vec::new(),
+                }),
+        );
+        surfaces.extend(self.okf.iter().map(|surface| ManifestPluginSurface {
+            surface: plugin_surface_ref(PluginSurfaceKind::Okf, &surface.id),
+            activation: SurfaceActivation::Eager,
+            optional: surface.optional,
+            dependencies: Vec::new(),
+        }));
+        surfaces.extend(self.skills.iter().map(|surface| {
+            let mut dependencies = surface
+                .requires_tools
+                .iter()
+                .map(|id| plugin_surface_ref(PluginSurfaceKind::Tool, id))
+                .chain(
+                    surface
+                        .requires_mcp
+                        .iter()
+                        .map(|id| plugin_surface_ref(PluginSurfaceKind::Mcp, id)),
+                )
+                .chain(
+                    surface
+                        .requires_okf
+                        .iter()
+                        .map(|id| plugin_surface_ref(PluginSurfaceKind::Okf, id)),
+                )
+                .collect::<Vec<_>>();
+            dependencies.sort();
+            ManifestPluginSurface {
+                surface: plugin_surface_ref(PluginSurfaceKind::Skill, &surface.id),
+                activation: SurfaceActivation::Lazy,
+                optional: surface.optional,
+                dependencies,
+            }
+        }));
+        surfaces.extend(self.ui.iter().map(|surface| {
+            let mut dependencies = surface
+                .skill
+                .iter()
+                .map(|id| plugin_surface_ref(PluginSurfaceKind::Skill, id))
+                .chain(
+                    surface
+                        .bind_tools
+                        .iter()
+                        .map(|id| plugin_surface_ref(PluginSurfaceKind::Tool, id)),
+                )
+                .chain(
+                    surface
+                        .bind_mcp
+                        .iter()
+                        .map(|id| plugin_surface_ref(PluginSurfaceKind::Mcp, id)),
+                )
+                .collect::<Vec<_>>();
+            dependencies.sort();
+            ManifestPluginSurface {
+                surface: plugin_surface_ref(PluginSurfaceKind::Ui, &surface.id),
+                activation: SurfaceActivation::Lazy,
+                optional: surface.optional,
+                dependencies,
+            }
+        }));
+        surfaces.sort_by(|left, right| left.surface.cmp(&right.surface));
+
+        let known = surfaces
+            .iter()
+            .map(|surface| surface.surface.clone())
+            .collect::<BTreeSet<_>>();
+        if known.len() != surfaces.len()
+            || surfaces.iter().any(|surface| {
+                surface
+                    .dependencies
+                    .iter()
+                    .any(|dependency| !known.contains(dependency))
+            })
+        {
+            return Err(manifest_error(
+                "The named plugin surface graph is internally inconsistent.",
+            ));
+        }
+        Ok(surfaces)
+    }
+
     pub fn has_mcp(&self) -> bool {
         self.mcp.is_some() || !self.mcp_servers.is_empty()
     }
@@ -298,6 +433,13 @@ impl ExtensionManifest {
             ))
         })?;
         Ok(requirement.matches(&version))
+    }
+}
+
+fn plugin_surface_ref(kind: PluginSurfaceKind, id: &str) -> PluginSurfaceRef {
+    PluginSurfaceRef {
+        kind,
+        id: id.to_string(),
     }
 }
 

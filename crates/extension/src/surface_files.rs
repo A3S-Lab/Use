@@ -6,6 +6,7 @@ use a3s_use_core::{
 };
 use sha2::{Digest, Sha256};
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 
 use super::package::{
     io_error, validate_surface_file, validate_text_asset, MAX_ACTIVITY_HTML_BYTES,
@@ -14,6 +15,35 @@ use super::package::{
 use super::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 
 const MAX_TOOL_API_CONTRACT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_SKILL_BYTES: u64 = 2 * 1024 * 1024;
+const SURFACE_FILE_EVIDENCE_SCHEMA: &[u8] = b"a3s.use.plugin-surface-files.v1\0";
+
+/// Content-addressed evidence for the immutable package files owned by one
+/// named plugin surface.
+///
+/// Paths are hashed in portable sorted order together with their exact bytes.
+/// The evidence contains no package path and can therefore be retained in a
+/// lifecycle journal without disclosing local installation layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginSurfaceFileEvidence {
+    digest: String,
+    file_count: u64,
+    expanded_bytes: u64,
+}
+
+impl PluginSurfaceFileEvidence {
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+
+    pub fn file_count(&self) -> u64 {
+        self.file_count
+    }
+
+    pub fn expanded_bytes(&self) -> u64 {
+        self.expanded_bytes
+    }
+}
 
 pub(super) async fn validate_named_surface_files(
     manifest: &ExtensionManifest,
@@ -58,11 +88,13 @@ pub(super) async fn validate_named_surface_files(
         }
     }
     for skill in &manifest.skills {
-        validate_surface_file(
+        validate_text_asset(
+            "use.extension.skill_invalid",
             "Skill file",
+            "UTF-8 Markdown",
             canonical_root,
             &package_root.join(&skill.path),
-            false,
+            MAX_SKILL_BYTES,
         )
         .await?;
     }
@@ -125,6 +157,242 @@ pub async fn load_okf_bundle_files(
         .await
         .map_err(|error| io_error("resolve OKF package root", package_root, error))?;
     validate_okf_bundle(surface, &canonical_root, &canonical_root).await
+}
+
+/// Revalidate and digest the exact immutable files backing one Tool surface.
+pub async fn inspect_tool_surface_files(
+    surface: &super::ToolSurface,
+    package_root: &Path,
+) -> UseResult<PluginSurfaceFileEvidence> {
+    let canonical_root = canonical_package_root(package_root, "Tool").await?;
+    match &surface.workload {
+        ToolWorkload::Task(task) => validate_tool_task(task, &canonical_root, package_root).await?,
+        ToolWorkload::Service(service) => {
+            validate_tool_service(service, &canonical_root, package_root).await?
+        }
+    }
+    let paths = match &surface.workload {
+        ToolWorkload::Task(task) => match &task.source {
+            ToolTaskSource::Executable { executable } => vec![executable.clone()],
+            ToolTaskSource::Release { release } => vec![release.clone()],
+        },
+        ToolWorkload::Service(service) => std::iter::once(service.release.clone())
+            .chain(service.contract.iter().cloned())
+            .collect(),
+    };
+    digest_surface_files(package_root, &canonical_root, paths).await
+}
+
+/// Revalidate and digest the exact immutable files backing one MCP surface.
+///
+/// A stdio executable remains a per-connection MCP launcher. A Streamable HTTP
+/// release descriptor is only static package evidence; its process lifecycle
+/// remains owned by the typed Runtime adapter.
+pub async fn inspect_mcp_surface_files(
+    surface: &super::PluginMcpSurface,
+    package_root: &Path,
+) -> UseResult<PluginSurfaceFileEvidence> {
+    let canonical_root = canonical_package_root(package_root, "MCP").await?;
+    let path = match &surface.launch {
+        PluginMcpLaunch::Stdio { executable, .. } => {
+            validate_surface_file(
+                "MCP stdio executable",
+                &canonical_root,
+                &package_root.join(executable),
+                true,
+            )
+            .await?;
+            executable.clone()
+        }
+        PluginMcpLaunch::StreamableHttp { release } => {
+            let path = package_root.join(release);
+            validate_surface_file("MCP release descriptor", &canonical_root, &path, false).await?;
+            let bytes = read_bounded_file(
+                "MCP release descriptor",
+                &path,
+                MAX_RELEASE_DESCRIPTOR_BYTES as u64,
+                "use.extension.release_descriptor_invalid",
+            )
+            .await?;
+            McpReleaseDescriptor::from_json(&bytes)
+                .map_err(|error| release_descriptor_error("MCP", &path, error))?;
+            release.clone()
+        }
+    };
+    digest_surface_files(package_root, &canonical_root, vec![path]).await
+}
+
+/// Revalidate and digest one immutable `SKILL.md` contribution.
+pub async fn inspect_skill_surface_file(
+    surface: &super::PluginSkillSurface,
+    package_root: &Path,
+) -> UseResult<PluginSurfaceFileEvidence> {
+    let canonical_root = canonical_package_root(package_root, "Skill").await?;
+    validate_text_asset(
+        "use.extension.skill_invalid",
+        "Skill file",
+        "UTF-8 Markdown",
+        &canonical_root,
+        &package_root.join(&surface.path),
+        MAX_SKILL_BYTES,
+    )
+    .await?;
+    digest_surface_files(package_root, &canonical_root, vec![surface.path.clone()]).await
+}
+
+/// Revalidate and digest one immutable UI contribution and all declared
+/// resources as a single surface snapshot.
+pub async fn inspect_ui_surface_files(
+    surface: &super::PluginUiSurface,
+    package_root: &Path,
+) -> UseResult<PluginSurfaceFileEvidence> {
+    let canonical_root = canonical_package_root(package_root, "UI").await?;
+    validate_ui_text_asset(
+        "UI entry",
+        "HTML",
+        &canonical_root,
+        &package_root.join(&surface.entry),
+        MAX_ACTIVITY_HTML_BYTES,
+    )
+    .await?;
+    for style in &surface.styles {
+        validate_ui_text_asset(
+            "UI style",
+            "CSS",
+            &canonical_root,
+            &package_root.join(style),
+            MAX_ACTIVITY_RESOURCE_BYTES,
+        )
+        .await?;
+    }
+    for script in &surface.scripts {
+        validate_ui_text_asset(
+            "UI script",
+            "JavaScript",
+            &canonical_root,
+            &package_root.join(script),
+            MAX_ACTIVITY_RESOURCE_BYTES,
+        )
+        .await?;
+    }
+    let paths = std::iter::once(surface.entry.clone())
+        .chain(surface.styles.iter().cloned())
+        .chain(surface.scripts.iter().cloned())
+        .collect();
+    digest_surface_files(package_root, &canonical_root, paths).await
+}
+
+async fn canonical_package_root(package_root: &Path, label: &str) -> UseResult<PathBuf> {
+    let metadata = fs::symlink_metadata(package_root).await.map_err(|error| {
+        io_error(
+            &format!("inspect {label} package root"),
+            package_root,
+            error,
+        )
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(UseError::new(
+            "use.extension.surface_invalid",
+            format!(
+                "{label} package root '{}' must be a real directory.",
+                package_root.display()
+            ),
+        ));
+    }
+    fs::canonicalize(package_root).await.map_err(|error| {
+        io_error(
+            &format!("resolve {label} package root"),
+            package_root,
+            error,
+        )
+    })
+}
+
+async fn digest_surface_files(
+    package_root: &Path,
+    canonical_root: &Path,
+    mut relative_paths: Vec<PathBuf>,
+) -> UseResult<PluginSurfaceFileEvidence> {
+    relative_paths.sort();
+    if relative_paths.is_empty() || relative_paths.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(UseError::new(
+            "use.extension.surface_invalid",
+            "A plugin surface must own a non-empty, unique package file set.",
+        ));
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(SURFACE_FILE_EVIDENCE_SCHEMA);
+    let mut file_count = 0_u64;
+    let mut expanded_bytes = 0_u64;
+    for relative_path in relative_paths {
+        let portable_path = relative_path
+            .to_str()
+            .ok_or_else(|| {
+                UseError::new(
+                    "use.extension.surface_invalid",
+                    "Plugin surface paths must be valid UTF-8 on every platform.",
+                )
+            })?
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        let path = package_root.join(&relative_path);
+        validate_surface_file("Plugin surface file", canonical_root, &path, false).await?;
+        let metadata = fs::symlink_metadata(&path)
+            .await
+            .map_err(|error| io_error("inspect plugin surface file", &path, error))?;
+        file_count = file_count
+            .checked_add(1)
+            .ok_or_else(surface_evidence_limit)?;
+        expanded_bytes = expanded_bytes
+            .checked_add(metadata.len())
+            .ok_or_else(surface_evidence_limit)?;
+
+        let path_bytes = portable_path.as_bytes();
+        let path_len = u64::try_from(path_bytes.len()).map_err(|_| surface_evidence_limit())?;
+        hasher.update(path_len.to_be_bytes());
+        hasher.update(path_bytes);
+        hasher.update(metadata.len().to_be_bytes());
+
+        let mut file = fs::File::open(&path)
+            .await
+            .map_err(|error| io_error("open plugin surface file", &path, error))?;
+        let mut read_bytes = 0_u64;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let count = file
+                .read(&mut buffer)
+                .await
+                .map_err(|error| io_error("read plugin surface file", &path, error))?;
+            if count == 0 {
+                break;
+            }
+            read_bytes = read_bytes
+                .checked_add(u64::try_from(count).map_err(|_| surface_evidence_limit())?)
+                .ok_or_else(surface_evidence_limit)?;
+            hasher.update(&buffer[..count]);
+        }
+        if read_bytes != metadata.len() {
+            return Err(UseError::new(
+                "use.extension.package_changed",
+                format!(
+                    "Plugin surface file '{}' changed while it was inspected.",
+                    path.display()
+                ),
+            ));
+        }
+    }
+    Ok(PluginSurfaceFileEvidence {
+        digest: format!("sha256:{:x}", hasher.finalize()),
+        file_count,
+        expanded_bytes,
+    })
+}
+
+fn surface_evidence_limit() -> UseError {
+    UseError::new(
+        "use.extension.surface_invalid",
+        "The plugin surface file evidence exceeds host numeric bounds.",
+    )
 }
 
 async fn validate_okf_bundle(
