@@ -742,13 +742,13 @@ fn okf_only_catalog() -> PluginCatalogRecord {
     record.archive.target_name =
         "extensions/acme/knowledge/1.0.0/stable/linux-x86_64/acme-knowledge-1.0.0-linux-x86_64.tar.gz"
             .to_owned();
-    record.archive.length = 1_752;
+    record.archive.length = 1_838;
     record.archive.sha256 =
-        "sha256:9a40836f13db96f958b3d10323cc118a1444db35bced972631c0adf3ad06c245".to_owned();
-    record.package.expanded_bytes = 3_258;
-    record.package.file_count = 9;
+        "sha256:b9bd4d35c77237ad6408ba09716fa1392ed71f34d6776f438bcb26c77e9fa0ac".to_owned();
+    record.package.expanded_bytes = 3_366;
+    record.package.file_count = 10;
     record.package.sha256 =
-        Some("sha256:05076eb4c0184b5007c02563c5d0742997ee45e84b52ab42c805354d5a46817d".to_owned());
+        Some("sha256:e030e6e8c3afa6383536b4973395e12b05257d2b7b10bf042f3bfaf71b420fe2".to_owned());
     record.package.manifest_sha256 =
         Some("sha256:16d065341edebaf45e0d633e46614155a60b853738290bbac8c5b62d9230bce2".to_owned());
     record.repository = "https://github.com/acme/knowledge".to_owned();

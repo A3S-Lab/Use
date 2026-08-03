@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -335,6 +336,19 @@ impl ExtensionRegistry {
             Err(error) => return Err(error),
         };
         let installed = self.list().await?;
+        let published = read_registry_snapshot(&path).await?;
+        let routes = route_bindings(&installed);
+        if published.routes == routes {
+            return Ok(published);
+        }
+        // Receipt writes belonging to a schema-v3 graph publication are not a
+        // multi-file transaction. The immutable snapshot is therefore the
+        // visibility commit point. Never infer a new active generation from
+        // partially written receipts after a crash; the durable lifecycle
+        // journal must replay the exact reviewed batch instead.
+        if active_lifecycle_bindings(&published.routes) != active_lifecycle_bindings(&routes) {
+            return Ok(published);
+        }
         self.publish_snapshot_locked(&installed).await
     }
 
@@ -428,6 +442,15 @@ impl ExtensionRegistry {
         }
     }
 
+    /// Return installed packages whose admitted manifests directly require
+    /// `package_id`. The sorted result is suitable for uninstall review and
+    /// is recomputed from authoritative receipts instead of a mutable index.
+    pub async fn dependent_packages(&self, package_id: &str) -> UseResult<Vec<String>> {
+        let package_id = normalize_package_id(package_id)?;
+        let installed = self.list().await?;
+        Ok(installed_dependents(&installed, &package_id))
+    }
+
     pub async fn find_route(&self, route: &str) -> UseResult<Option<InstalledExtension>> {
         self.find_route_for_host_version(route, env!("CARGO_PKG_VERSION"))
             .await
@@ -438,11 +461,21 @@ impl ExtensionRegistry {
         route: &str,
         host_version: &str,
     ) -> UseResult<Option<InstalledExtension>> {
-        Ok(self.list().await?.into_iter().find(|extension| {
-            extension.receipt.enabled
-                && extension.receipt.route == route
-                && extension.supports_use_version(host_version)
-        }))
+        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let Some(binding) = published
+            .routes
+            .iter()
+            .find(|binding| binding.enabled && binding.route == route)
+        else {
+            return Ok(None);
+        };
+        let Some(extension) = self.get(&binding.package_id).await? else {
+            return Ok(None);
+        };
+        Ok((extension.receipt.enabled
+            && extension.supports_use_version(host_version)
+            && published_binding_matches_extension(binding, &extension))
+        .then_some(extension))
     }
 
     /// Pin an active route generation for the lifetime of one delegated call.
@@ -463,7 +496,13 @@ impl ExtensionRegistry {
         let Some(candidate) = self.get(package_id).await? else {
             return Ok(None);
         };
-        if !candidate.receipt.enabled || !candidate.supports_use_version(env!("CARGO_PKG_VERSION"))
+        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let published = published.routes.iter().any(|binding| {
+            binding.enabled && published_binding_matches_extension(binding, &candidate)
+        });
+        if !published
+            || !candidate.receipt.enabled
+            || !candidate.supports_use_version(env!("CARGO_PKG_VERSION"))
         {
             return Ok(None);
         }
@@ -919,6 +958,8 @@ impl ExtensionRegistry {
             });
         };
         reject_lifecycle_managed(&extension.receipt)?;
+        let installed = self.list().await?;
+        ensure_no_installed_dependents(&installed, &package_id)?;
         if extension.receipt.enabled {
             let mut receipt = extension.receipt.clone();
             receipt.enabled = false;
@@ -992,7 +1033,12 @@ impl ExtensionRegistry {
             let _ = FileExt::unlock(&file);
             return Ok(None);
         };
-        if !extension.receipt.enabled
+        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let published = published.routes.iter().any(|binding| {
+            binding.enabled && published_binding_matches_extension(binding, &extension)
+        });
+        if !published
+            || !extension.receipt.enabled
             || !extension.supports_use_version(host_version)
             || expected_route.is_some_and(|route| extension.receipt.route != route)
         {
@@ -1252,6 +1298,34 @@ fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding
         .collect()
 }
 
+fn active_lifecycle_bindings(
+    routes: &[ExtensionRouteBinding],
+) -> BTreeMap<&str, (u64, &str, Option<&str>, &str, &str)> {
+    routes
+        .iter()
+        .filter_map(|binding| {
+            let generation = binding.lifecycle_generation?;
+            binding.enabled.then_some((
+                binding.package_id.as_str(),
+                (
+                    generation,
+                    binding.manifest_sha256.as_str(),
+                    binding.package_sha256.as_deref(),
+                    binding.version.as_str(),
+                    binding.route.as_str(),
+                ),
+            ))
+        })
+        .collect()
+}
+
+fn published_binding_matches_extension(
+    binding: &ExtensionRouteBinding,
+    extension: &InstalledExtension,
+) -> bool {
+    binding == &route_bindings(std::slice::from_ref(extension))[0]
+}
+
 fn reject_lifecycle_managed(receipt: &ExtensionReceipt) -> UseResult<()> {
     if receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 || receipt.lifecycle_generation.is_some()
     {
@@ -1267,6 +1341,40 @@ fn reject_lifecycle_managed(receipt: &ExtensionReceipt) -> UseResult<()> {
         ));
     }
     Ok(())
+}
+
+fn installed_dependents(installed: &[InstalledExtension], package_id: &str) -> Vec<String> {
+    installed
+        .iter()
+        .filter(|extension| {
+            extension.receipt.package_id != package_id
+                && extension
+                    .manifest
+                    .dependencies
+                    .iter()
+                    .any(|dependency| dependency.package_id == package_id)
+        })
+        .map(|extension| extension.receipt.package_id.clone())
+        .collect()
+}
+
+fn ensure_no_installed_dependents(
+    installed: &[InstalledExtension],
+    package_id: &str,
+) -> UseResult<()> {
+    let required_by = installed_dependents(installed, package_id);
+    if required_by.is_empty() {
+        return Ok(());
+    }
+    Err(UseError::new(
+        "use.extension.package_required",
+        format!("Cognitive package '{package_id}' is still required by another installed package."),
+    )
+    .with_detail("packageId", package_id.to_string())
+    .with_detail("requiredBy", required_by)
+    .with_suggestion(
+        "Review and apply a cascade uninstall plan that removes dependents before dependencies.",
+    ))
 }
 
 async fn reject_lifecycle_orphan_cleanup(path: &Path) -> UseResult<()> {
@@ -1400,11 +1508,12 @@ fn validate_catalog_binding(
         .and_then(|digest| digest.strip_prefix("sha256:"));
     if record.package_id != manifest.package_id
         || record.version != manifest.version
+        || record.dependencies != manifest.dependencies
         || expected_package_digest != Some(package_digest)
         || expected_manifest_digest != Some(manifest_digest)
     {
         return Err(catalog_package_error(
-            "The verified catalog does not match the installed package and manifest.",
+            "The verified catalog does not match the installed package, manifest, or dependency graph.",
         ));
     }
     validate_okf_catalog_binding(record, manifest)?;

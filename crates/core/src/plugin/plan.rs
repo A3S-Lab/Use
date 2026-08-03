@@ -4,8 +4,8 @@ use crate::{OkfBundleContract, UseError, UseResult};
 
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, CatalogArchive,
-    CatalogSurface, PluginPermissionCeiling, PluginReleaseChannel, PluginSurfaceRef,
-    VerifiedCatalogProvenance,
+    CatalogSurface, PluginPackageLock, PluginPermissionCeiling, PluginReleaseChannel,
+    PluginSurfaceRef, VerifiedCatalogProvenance,
 };
 
 pub(super) const PLAN_ERROR: &str = "use.plugin.plan_invalid";
@@ -22,6 +22,8 @@ pub struct PluginOperationPlan {
     pub package_id: String,
     pub component_id: String,
     pub scope: PlanScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_lock_digest: Option<String>,
     pub packages: Vec<PlannedPackageTransition>,
     pub secret_changes: Vec<PlannedSecretChange>,
     pub providers: Vec<PlannedProviderEvidence>,
@@ -36,6 +38,8 @@ pub struct PluginOperationPlan {
 pub struct PluginOperationPlanEnvelope {
     pub plan: PluginOperationPlan,
     pub plan_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_lock: Option<PluginPackageLock>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -286,8 +290,37 @@ impl PluginOperationPlan {
 
 impl PluginOperationPlanEnvelope {
     pub fn new(plan: PluginOperationPlan) -> UseResult<Self> {
+        if plan.package_lock_digest.is_some() {
+            return Err(plan_error(
+                "A package-lock-bound plan requires its complete lock in the operation envelope.",
+            ));
+        }
         let plan_digest = plan.descriptor_digest()?;
-        Ok(Self { plan, plan_digest })
+        let envelope = Self {
+            plan,
+            plan_digest,
+            package_lock: None,
+        };
+        envelope.validate()?;
+        Ok(envelope)
+    }
+
+    /// Bind an exact resolved dependency closure into the immutable plan and
+    /// carry the canonical lock beside it for review and apply.
+    pub fn new_with_package_lock(
+        mut plan: PluginOperationPlan,
+        package_lock: PluginPackageLock,
+    ) -> UseResult<Self> {
+        let package_lock_digest = package_lock.descriptor_digest()?;
+        plan.package_lock_digest = Some(package_lock_digest);
+        let plan_digest = plan.descriptor_digest()?;
+        let envelope = Self {
+            plan,
+            plan_digest,
+            package_lock: Some(package_lock),
+        };
+        envelope.validate()?;
+        Ok(envelope)
     }
 
     pub fn validate(&self) -> UseResult<()> {
@@ -296,6 +329,22 @@ impl PluginOperationPlanEnvelope {
             return Err(plan_error(
                 "The plugin plan digest does not match its canonical content.",
             ));
+        }
+        match (&self.plan.package_lock_digest, &self.package_lock) {
+            (None, None) => {}
+            (Some(expected), Some(package_lock)) => {
+                if package_lock.descriptor_digest()? != *expected {
+                    return Err(plan_error(
+                        "The cognitive-package lock digest does not match the plan binding.",
+                    ));
+                }
+                package_lock.validate_for_plan(&self.plan)?;
+            }
+            _ => {
+                return Err(plan_error(
+                    "The operation plan and envelope must carry package-lock evidence together.",
+                ))
+            }
         }
         Ok(())
     }

@@ -4,7 +4,8 @@
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
-  and package-level five-surface lifecycle plus P0 hosts accepted 2026-08-03
+  package-level five-surface lifecycle plus P0 hosts accepted 2026-08-03, and
+  the cognitive-package dependency/lock foundation accepted 2026-08-03
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -47,6 +48,15 @@ publish/hide, and route-lease drain now enforce the package boundary. Umbrella
 manager composition, prior Runtime generation retirement, the A3S Knowledge
 index backend, and scoped cited retrieval remain to be implemented; missing
 promoted evidence therefore stays explicitly unpublished.
+
+Schema v3 also implements npm-like package dependencies without importing npm's
+execution or registry model. A manifest names only `<publisher>/<name>` and a
+canonical SemVer requirement. A bounded deterministic resolver selects a
+transitive closure from host-owned named Registries, and
+`a3s.use.plugin-package-lock.v1` freezes every selected version, digest,
+Registry/TUF identity, target, channel, and host compatibility boundary. The
+compatible legacy installer does not yet expose this graph through the product
+CLI; umbrella host composition remains the release boundary.
 
 In this architecture, **Tool does not mean an MCP `tools/list` item**. A Tool
 is a workload on which a Skill or UI can depend. It keeps its native CLI or
@@ -172,6 +182,7 @@ The aggregate contains:
 - zero or more named UI contributions;
 - zero or more named OKF knowledge contributions;
 - an acyclic dependency graph among those surfaces;
+- zero or more versioned dependencies on other cognitive packages;
 - package-level permission ceilings;
 - compatibility requirements and exact external release dependencies; and
 - one desired activation state per workspace scope.
@@ -231,6 +242,7 @@ The canonical package remains under a content-addressed A3S Use root:
 ```text
 plugins/<publisher>/<name>/<version>-<digest>/
   a3s-use-extension.acl
+  README.md
   skills/
   tools/
   mcp/
@@ -246,9 +258,10 @@ files, traversal, duplicate archive paths, and case-folding collisions fail
 closed.
 
 The filename `a3s-use-extension.acl` and schema v1/v2 remain readable during
-migration. The target schema v3 adds named, repeatable surfaces. Internally the
-domain type is `PluginManifest`; changing the on-disk filename is unnecessary
-until a separately versioned migration provides material value.
+migration. Schema v3 adds named, repeatable surfaces, package dependencies, and
+a required bounded UTF-8 `README.md`. Internally the domain type is
+`PluginManifest`; changing the on-disk manifest filename is unnecessary until a
+separately versioned migration provides material value.
 
 The `okf/` directory is never discovered implicitly. Each schema-v3 `okf`
 block binds the named surface, bundle root, format version, exact content
@@ -265,6 +278,14 @@ extension "acme/research" {
   route          = "research"
   requires_use   = ">=0.3.0, <0.4.0"
   actions        = ["read", "mutate"]
+
+  dependency "acme/base" {
+    version = "^1.4.0"
+  }
+
+  dependency "acme/vector-store" {
+    version = ">=2.1.0, <3.0.0"
+  }
 
   repository {
     url      = "https://github.com/acme/research"
@@ -337,6 +358,43 @@ This example records deployment and binding facts, not the Tool's business
 operations. The CLI owns its arguments and exit codes. The HTTP service owns
 its routes and response schemas. An optional content-bound OpenAPI document is
 documentation and validation evidence, not a new A3S execution protocol.
+
+### Package dependency resolution and lock
+
+Package dependency declarations are deliberately smaller than source
+configuration. They contain only a canonical package ID and canonical SemVer
+requirement; manifest-controlled Registry URLs, trust roots, channels, targets,
+or mutable aliases are invalid. Catalog v3 repeats the normalized dependency
+inventory, and package admission requires it to equal the ACL manifest exactly.
+
+The host supplies one selected root Registry plus a bounded set of enabled
+dependency Registries. Resolution:
+
+1. validates complete verified catalog-v3 candidates and host compatibility;
+2. rejects a dependency identity that appears in multiple Registry trust
+   identities rather than selecting one silently;
+3. deterministically prefers the highest compatible target-specific release,
+   with bounded backtracking when later constraints conflict;
+4. rejects missing, incompatible, conflicting, cyclic, unreachable, or
+   over-bound graphs; and
+5. emits one canonical `a3s.use.plugin-package-lock.v1` closure.
+
+Each locked node contains its complete verified catalog record and exact
+dependency edges. The lock therefore binds version, archive/manifest/package
+digests, target, channel, Registry name/URL, TUF root, TUF role versions, and
+the selected A3S Use host version/target. The immutable operation-plan envelope
+binds both the lock and its digest; plan transitions must cover the same root
+and dependency nodes with exact selected state and source provenance.
+
+Apply revalidates every locked Registry snapshot and candidate before any
+archive download, then downloads in topological dependency-first order. The
+graph coordinator prepares only changed generations, permits `Retain` only for
+an exact Registry/TUF-backed generation already visible in the current
+capability snapshot, and publishes changed nodes through one immutable snapshot
+cutover. Uninstall uses the reverse topological order, while direct removal is
+rejected when another installed manifest still depends on the package. A
+partially written enabled receipt is not visibility evidence; the immutable
+snapshot is the commit point and exact replay completes or repairs the cutover.
 
 ### OKF contribution contract
 
@@ -431,8 +489,9 @@ descriptor.
 ## Package Lifecycle Coordination
 
 The package lifecycle coordinator and the Surface Reconciler consume the same
-canonical schema-v3 graph. This prevents orchestration from inventing a second
-surface inventory or dependency order.
+canonical schema-v3 surface graph. Above it, the package-graph coordinator
+consumes the exact package lock. This prevents orchestration from inventing a
+second package/surface inventory or dependency order.
 
 The coordinator persists one versioned intent binding operation, reviewed plan,
 scope, package/manifest digests, generation, action, surfaces, and deterministic
@@ -448,6 +507,13 @@ explicit Runtime selections for release-backed Tool/MCP workloads, static
 native and stdio launchers, immutable Skill/UI evidence, and receipt-owned OKF
 stage/promote/remove. The coordinator is not an invocation protocol and cannot
 install a contribution independently from its package.
+
+For a dependency closure, package generations are committed and prepared in
+lock topological order. `Retain` transitions have no lifecycle unit and no
+recommit side effect. One graph publication host receives the exact lock plus
+all changed intents and returns package-keyed evidence from a single Registry
+snapshot cutover. Cascade uninstall skips retained nodes and removes changed
+nodes in exact reverse order.
 
 The production package adapter commits a deterministic immutable root and a
 schema-v3 receipt bound to the exact package digest, manifest digest, and
@@ -920,8 +986,9 @@ two-pass provider selection, and workspace grant saga are connected.
 
 The in-crate package lifecycle foundation is separately implemented: canonical
 surface scheduling, durable checkpoint replay, production package/capability
-hosts, typed Runtime/Skill/UI/OKF adapters, and an all-five-surface package
-fixture. Schema-v3 operations use dedicated exact-generation
+hosts, typed Runtime/Skill/UI/OKF adapters, a bounded package resolver and lock,
+dependency-ordered remote closure download, atomic graph publication, and an
+all-five-surface package fixture. Schema-v3 operations use dedicated exact-generation
 `ExtensionRegistry` methods and reject legacy mutation bypass. The umbrella
 Plugin Manager does not yet compose these hosts, so P0 alone does not expand
 the current product readiness claim.

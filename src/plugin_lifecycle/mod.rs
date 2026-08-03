@@ -6,6 +6,7 @@
 //! independently installable packages.
 
 mod coordinator;
+mod graph;
 mod journal;
 mod model;
 mod okf;
@@ -21,6 +22,10 @@ pub use coordinator::{
     PluginPackageLifecycleHost, PluginSkillLifecycleHost, PluginToolLifecycleHost,
     PluginUiLifecycleHost,
 };
+pub use graph::{
+    PluginGraphCapabilityLifecycleHost, PluginPackageGraphLifecycleCoordinator,
+    PluginPackageLifecycleUnit, PluginPackagePublicationEvidence,
+};
 pub use journal::{
     PluginLifecycleCheckpointOutcome, PluginLifecycleCheckpointReceipt, PluginLifecycleFailure,
     PluginLifecycleOperationRecord, PluginLifecycleOperationStatus,
@@ -32,7 +37,10 @@ pub use model::{
     PLUGIN_LIFECYCLE_INTENT_SCHEMA,
 };
 pub use okf::OkfKnowledgeLifecycleHost;
-pub use registry_hosts::{ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost};
+pub use registry_hosts::{
+    ExtensionCapabilityLifecycleHost, ExtensionGraphCapabilityLifecycleHost,
+    ExtensionPackageLifecycleHost,
+};
 pub use runtime::{
     PluginMcpServiceReadiness, PluginRuntimeServiceReadinessHost, RuntimePluginSurfaceLifecycleHost,
 };

@@ -2,16 +2,20 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use a3s_use_core::{
-    CatalogAvailability, CatalogSurface, PluginCatalogRecord, PluginReleaseChannel,
-    PluginSurfaceKind,
+    CatalogAvailability, CatalogSurface, PluginCatalogRecord, PluginPackageLockHost,
+    PluginReleaseChannel, PluginSurfaceKind,
 };
 use sha2::{Digest, Sha256};
 
-use super::test_support::{TestRepository, TestServer, TestTarget, EXPIRED, FUTURE};
+use super::test_support::{
+    package_directory_archive, TestRepository, TestServer, TestTarget, EXPIRED, FUTURE,
+};
 use super::*;
 
 const COMPLETE_CATALOG: &[u8] =
     include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v1.json");
+const OKF_CATALOG_V3: &[u8] =
+    include_bytes!("../../core/fixtures/plugins/catalog-record-okf-v3.json");
 const FIXTURE_ROOT: &[u8] = include_bytes!("../fixtures/registry/plugin-v3/metadata/root.json");
 const FIXTURE_TARGETS: &[u8] =
     include_bytes!("../fixtures/registry/plugin-v3/metadata/targets.json");
@@ -91,6 +95,154 @@ async fn complete_signed_fixture_is_searchable_and_inspectable_without_archive_d
         .requests()
         .iter()
         .all(|request| !request.starts_with("/targets/")));
+}
+
+#[tokio::test]
+async fn package_graph_resolution_and_download_replay_the_exact_verified_lock() {
+    let package_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3-okf/package");
+    let archive = package_directory_archive(&package_root);
+    let mut catalog: serde_json::Value = serde_json::from_slice(OKF_CATALOG_V3).unwrap();
+    let target = host_target().unwrap();
+    catalog["target"] = serde_json::json!(target);
+    catalog["requiresUse"] = serde_json::json!(">=0.2.0, <0.3.0");
+    let original_target_name = catalog["archive"]["targetName"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    catalog["archive"]["targetName"] =
+        serde_json::json!(original_target_name.replace("linux-x86_64", &target));
+    let target_name = catalog["archive"]["targetName"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let repository = TestRepository::with_target_metadata(archive, target_name, catalog, 7, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+    let lock = resolve_remote_package_lock(
+        &trusted,
+        &[],
+        "acme/knowledge",
+        Some("1.0.0"),
+        PluginReleaseChannel::Stable,
+        PluginPackageLockHost::new(target, env!("CARGO_PKG_VERSION")).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(lock.root_package_id, "acme/knowledge");
+    assert_eq!(lock.packages.len(), 1);
+    assert!(server
+        .requests()
+        .iter()
+        .all(|request| !request.starts_with("/targets/")));
+
+    server.clear_requests();
+    let downloads = download_locked_remote_packages(&lock, &[trusted])
+        .await
+        .unwrap();
+    assert_eq!(downloads.len(), 1);
+    assert_eq!(downloads[0].resolved().package_id, "acme/knowledge");
+    assert!(downloads[0].path().is_file());
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .filter(|request| request.starts_with("/targets/"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn package_graph_downloads_the_complete_dependency_closure_in_install_order() {
+    let package_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3-okf/package");
+    let archive = package_directory_archive(&package_root);
+    let target = host_target().unwrap();
+    let mut base: serde_json::Value = serde_json::from_slice(OKF_CATALOG_V3).unwrap();
+    base["packageId"] = serde_json::json!("acme/base");
+    base["displayName"] = serde_json::json!("Base Knowledge");
+    base["description"] = serde_json::json!("Dependency closure base fixture.");
+    base["repository"] = serde_json::json!("https://github.com/acme/base");
+    base["target"] = serde_json::json!(&target);
+    base["requiresUse"] = serde_json::json!(">=0.2.0, <0.3.0");
+    base["archive"]["targetName"] = serde_json::json!(format!(
+        "extensions/acme/base/1.0.0/stable/{target}/acme-base-1.0.0-{target}.tar.gz"
+    ));
+
+    let mut root = base.clone();
+    root["packageId"] = serde_json::json!("acme/root");
+    root["displayName"] = serde_json::json!("Root Knowledge");
+    root["description"] = serde_json::json!("Dependency closure root fixture.");
+    root["repository"] = serde_json::json!("https://github.com/acme/root");
+    root["dependencies"] = serde_json::json!([{
+        "packageId": "acme/base",
+        "versionRequirement": "^1.0.0"
+    }]);
+    root["archive"]["targetName"] = serde_json::json!(format!(
+        "extensions/acme/root/1.0.0/stable/{target}/acme-root-1.0.0-{target}.tar.gz"
+    ));
+    let base_target = base["archive"]["targetName"].as_str().unwrap().to_string();
+    let root_target = root["archive"]["targetName"].as_str().unwrap().to_string();
+    let repository = TestRepository::with_targets(
+        vec![
+            TestTarget {
+                archive: archive.clone(),
+                target_name: root_target,
+                custom: Some(root),
+            },
+            TestTarget {
+                archive,
+                target_name: base_target,
+                custom: Some(base),
+            },
+        ],
+        9,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+
+    let lock = resolve_remote_package_lock(
+        &trusted,
+        &[],
+        "acme/root",
+        Some("1.0.0"),
+        PluginReleaseChannel::Stable,
+        PluginPackageLockHost::new(target, env!("CARGO_PKG_VERSION")).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        lock.install_order()
+            .unwrap()
+            .into_iter()
+            .map(|package| package.package_id())
+            .collect::<Vec<_>>(),
+        ["acme/base", "acme/root"]
+    );
+
+    server.clear_requests();
+    let downloads = download_locked_remote_packages(&lock, &[trusted])
+        .await
+        .unwrap();
+    assert_eq!(
+        downloads
+            .iter()
+            .map(|package| package.resolved().package_id.as_str())
+            .collect::<Vec<_>>(),
+        ["acme/base", "acme/root"]
+    );
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .filter(|request| request.starts_with("/targets/"))
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]

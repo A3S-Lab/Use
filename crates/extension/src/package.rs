@@ -17,6 +17,7 @@ pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
 pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
 pub(super) const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
 pub(super) const MAX_ACTIVITY_RESOURCE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_PACKAGE_README_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) async fn read_manifest(package_root: &Path) -> UseResult<(ExtensionManifest, Vec<u8>)> {
     let path = package_root.join(MANIFEST_NAME);
@@ -40,6 +41,26 @@ pub(crate) async fn validate_surface_files(
     let canonical_root = fs::canonicalize(package_root)
         .await
         .map_err(|error| io_error("resolve extension package root", package_root, error))?;
+    if manifest.schema_version == 3 {
+        validate_text_asset(
+            "use.extension.readme_invalid",
+            "Cognitive package README",
+            "UTF-8 Markdown",
+            &canonical_root,
+            &package_root.join("README.md"),
+            MAX_PACKAGE_README_BYTES,
+        )
+        .await
+        .map_err(|error| {
+            UseError::new(
+                "use.extension.readme_invalid",
+                format!(
+                    "Schema-v3 cognitive packages require a bounded UTF-8 README.md: {}",
+                    error.message
+                ),
+            )
+        })?;
+    }
     if let Some(cli) = &manifest.cli {
         validate_surface_file(
             "CLI executable",

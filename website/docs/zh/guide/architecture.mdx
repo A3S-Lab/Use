@@ -8,15 +8,15 @@ description: A3S Use、共享 Plugin Manager、Runtime Broker 与 A3S 宿主之�
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、Web 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
 ```text
-     local package          release bundle     named TUF registry
-           └──────────────────────┬──────────────────────┘
+     local package          release bundle     named TUF registries
+           └──────────────────────┬───────────────────────┘
                                   │
                     shared host Plugin Manager
-         catalog · policy · confirmation · plan/apply · replay
-                                  │ reviewed package input
+       catalog · resolve · lock · policy · plan/apply · replay
+                                  │ exact reviewed closure
                                   ▼
                          a3s-use package engine
-       verify · stage · receipt · grant · bind · reconcile · drain
+    verify · install forward · bind · publish once · remove reverse
                     ┌─────────────┴─────────────┐
                     │                           │
                native plane               cognitive plane
@@ -42,14 +42,20 @@ description: A3S Use、共享 Plugin Manager、Runtime Broker 与 A3S 宿主之�
 
 当前实现应复用下列现有模块：
 
-- `a3s-use-core`：canonical package/plugin、catalog、plan、permission、grant、release 和 OKF bundle contract；
-- `a3s-use-extension`：ACL manifest、TUF catalog、package store、receipt、lease 和 workspace grant；
-- `src/plugin_lifecycle`：canonical package intent、依赖顺序、durable journal、coordinator，以及类型化 Tool/MCP/OKF/Skill/UI host；
+- `a3s-use-core`：canonical package/plugin、dependency resolver/lock、catalog、plan、permission、grant、release 和 OKF bundle contract；
+- `a3s-use-extension`：ACL manifest、package-graph Registry resolution/download、TUF catalog、package store、receipt、lease 和 workspace grant；
+- `src/plugin_lifecycle`：canonical package 与 package-graph intent、依赖顺序、durable journal、coordinator，以及类型化 Tool/MCP/OKF/Skill/UI host；
 - `src/plugin_runtime`：Runtime selection、binding、receipt、invocation 与 observation；
 - `src/surface_reconciler` + `src/capability_registry`：依赖 readiness 和 capability publication；
 - umbrella CLI 共享 Plugin Manager：唯一 lifecycle application service。
 
 不得新增第二个 manager、grant store、Runtime selector、capability registry 或 generic execution protocol。
+
+## 包依赖边界
+
+Schema-v3 package 只声明 package ID 与 SemVer range；已启用的具名 Registry 集合归宿主持有。解析过程有界且确定，遇到跨 Registry 歧义会拒绝，并生成一个 canonical lock，绑定精确版本、内容摘要、宿主兼容性、Registry URL/trust root 与 TUF role version。
+
+Operation plan 绑定该 lock。Apply 在下载 payload 前重验完整闭包，然后先准备依赖、后准备依赖者。只有已在当前 snapshot 可见的精确 locked generation 才能作为 retained dependency 复用。所有变更包通过一个 immutable snapshot 一次切换；卸载按反向顺序执行，并拒绝移除仍有已安装依赖者的包。
 
 ## Host-owned Runtime Broker
 
@@ -78,15 +84,16 @@ intent
 
 每个 checkpoint 使用 operation ID 和 surface idempotency key。崩溃恢复从 durable intent 和最后成功 checkpoint 继续；重复 apply 返回同一 terminal result，不重复副作用。
 
-当前 crate 内基础已实现一个 package-owned graph 和以下固定顺序：
+当前 crate 内基础已在每个 package-owned surface graph 之上实现 package-lock graph：
 
 ```text
-install / enable：正向准备依赖 → 一次发布
-disable：          hide → drain → 反向停止依赖
-uninstall：        hide → drain → 反向移除依赖 → 移除 package
+package install：  重验 lock → 前向下载/准备 package → 一次发布变更闭包
+package uninstall：反向 hide/drain/remove 变更 package → 保留 retained dependency
+surface enable：   前向准备 surface → 一次发布
+surface disable：  hide → drain → 反向停止 surface
 ```
 
-Runtime Tool/MCP、immutable Skill/UI 与 OKF Knowledge adapter 已实现。P0 schema-v3 package/capability host 现可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 route lease，并只移除 receipt-owned root。Umbrella Plugin Manager 与 grant 组合、真实 A3S Knowledge 后端、Gateway 集成和旧 Runtime generation 退休仍在进行。Schema-v3 package 会拒绝 legacy mutation bypass，且在 P3 支持双 generation 退休前 upgrade 保持 fail-closed，因此 P0 尚不代表完整 production saga 已交付。
+Runtime Tool/MCP、immutable Skill/UI 与 OKF Knowledge adapter 已实现。P0 schema-v3 package/capability host 可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 route lease，并只移除 receipt-owned root。依赖基础又增加了精确 retained-node 校验和 crash-safe 原子图发布。Umbrella Plugin Manager 与 grant 组合、真实 A3S Knowledge 后端、Gateway 集成和旧 Runtime generation 退休仍在进行；旧 CLI 尚未暴露图安装，因此该基础不代表完整 production saga 已交付。
 
 [ADR-002](https://github.com/A3S-Lab/Use/blob/main/docs/adr-002-cognitive-package-lifecycle-saga.md) 冻结了该生命周期边界。
 

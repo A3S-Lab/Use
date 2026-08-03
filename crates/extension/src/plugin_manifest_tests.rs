@@ -209,3 +209,71 @@ fn schema_v3_okf_rejects_drift_unknown_authority_and_missing_dependencies() {
     let escaping = manifest.replace("okf/domain-knowledge", "../personal-vault");
     assert!(ExtensionManifest::parse_acl(&escaping).is_err());
 }
+
+#[test]
+fn schema_v3_parses_sorted_versioned_package_dependencies() {
+    let dependencies = r#"
+
+  dependency "acme/vector-store" {
+    version = "^2.1.0"
+  }
+
+  dependency "acme/base" {
+    version = ">=1.0.0, <2.0.0"
+  }
+"#;
+    let manifest = NAMED_SURFACE_MANIFEST.replace(
+        "\n  repository {",
+        &format!("{dependencies}\n  repository {{"),
+    );
+    let parsed = ExtensionManifest::parse_acl(&manifest).unwrap();
+    assert_eq!(parsed.dependencies.len(), 2);
+    assert_eq!(parsed.dependencies[0].package_id, "acme/base");
+    assert_eq!(
+        parsed.dependencies[0].version_requirement,
+        ">=1.0.0, <2.0.0"
+    );
+    assert_eq!(parsed.dependencies[1].package_id, "acme/vector-store");
+    assert_eq!(parsed.dependencies[1].version_requirement, "^2.1.0");
+}
+
+#[test]
+fn schema_v3_rejects_unsafe_package_dependency_declarations() {
+    let dependency = r#"
+
+  dependency "acme/base" {
+    version = "^1.0.0"
+  }
+"#;
+    let manifest = NAMED_SURFACE_MANIFEST.replace(
+        "\n  repository {",
+        &format!("{dependency}\n  repository {{"),
+    );
+
+    let duplicate = manifest.replace(dependency, &format!("{dependency}{dependency}"));
+    assert!(ExtensionManifest::parse_acl(&duplicate)
+        .unwrap_err()
+        .message
+        .contains("sorted and unique"));
+
+    let self_dependency = manifest.replace("acme/base", "acme/research");
+    assert!(ExtensionManifest::parse_acl(&self_dependency)
+        .unwrap_err()
+        .message
+        .contains("cannot depend on itself"));
+
+    let noncanonical = manifest.replace("^1.0.0", "1.0.0");
+    assert!(ExtensionManifest::parse_acl(&noncanonical)
+        .unwrap_err()
+        .message
+        .contains("canonical semantic-version"));
+
+    let endpoint = manifest.replace(
+        "version = \"^1.0.0\"",
+        "version = \"^1.0.0\"\n    registry = \"https://untrusted.example\"",
+    );
+    assert!(ExtensionManifest::parse_acl(&endpoint)
+        .unwrap_err()
+        .message
+        .contains("Unknown 'dependency' attribute 'registry'"));
+}

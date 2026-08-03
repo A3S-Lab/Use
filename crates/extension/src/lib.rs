@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
 use a3s_acl::{Block, Value};
-use a3s_use_core::{PluginSurfaceKind, PluginSurfaceRef, RiskClass, UseError, UseResult};
+use a3s_use_core::{
+    PluginPackageDependency, PluginSurfaceKind, PluginSurfaceRef, RiskClass, UseError, UseResult,
+};
 use serde::{Deserialize, Serialize};
 
 mod digest;
@@ -47,12 +49,13 @@ pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
 };
 pub use remote::{
-    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, prepare_remote_package,
-    refresh_remote_registry, search_cached_plugins, search_remote_plugins, DownloadedRemotePackage,
-    PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection, PluginCatalogPage,
-    PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource, PreparedRemotePackage,
-    ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog, VerifiedRegistryMetadata,
-    MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
+    download_locked_remote_packages, inspect_cached_plugin, inspect_remote_plugin,
+    list_remote_packages, prepare_remote_package, refresh_remote_registry,
+    resolve_remote_package_lock, search_cached_plugins, search_remote_plugins,
+    DownloadedRemotePackage, PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection,
+    PluginCatalogPage, PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource,
+    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog,
+    VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
 pub use surface_files::{
     inspect_mcp_surface_files, inspect_skill_surface_file, inspect_tool_surface_files,
@@ -91,6 +94,8 @@ pub struct ExtensionManifest {
     pub route: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_use: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<PluginPackageDependency>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository: Option<ExtensionRepository>,
     pub actions: Vec<RiskClass>,
@@ -502,6 +507,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     let mut mcp = None;
     let mut skill = None;
     let mut repository = None;
+    let mut dependencies = Vec::new();
     let mut contributes = ExtensionContributions::default();
     let mut tools = Vec::new();
     let mut mcp_servers = Vec::new();
@@ -542,6 +548,9 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             "ui" if schema_version == 3 => {
                 ui.push(plugin_manifest::parse_ui(surface)?);
             }
+            "dependency" if schema_version == 3 => {
+                dependencies.push(parse_package_dependency(surface)?);
+            }
             "repository" => repository = Some(parse_repository(surface)?),
             "contributes" if schema_version == 3 => {
                 return Err(manifest_error(
@@ -574,6 +583,26 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     }
     if schema_version == 3 {
         plugin_manifest::validate_dependencies(&tools, &mcp_servers, &okf, &skills, &ui)?;
+        dependencies.sort_by(|left, right| left.package_id.cmp(&right.package_id));
+        if dependencies
+            .windows(2)
+            .any(|pair| pair[0].package_id == pair[1].package_id)
+        {
+            return Err(manifest_error(
+                "Package dependencies must be sorted and unique by package ID.",
+            ));
+        }
+        if dependencies
+            .iter()
+            .any(|dependency| dependency.package_id == package_id)
+        {
+            return Err(manifest_error(
+                "A cognitive package cannot depend on itself.",
+            ));
+        }
+        PluginPackageDependency::validate_set(&package_id, &dependencies).map_err(|error| {
+            manifest_error(format!("Invalid package dependency set: {}", error.message))
+        })?;
     }
     if !contributes.activity_bar.is_empty() && skill.is_none() {
         return Err(manifest_error(
@@ -625,6 +654,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         version,
         route,
         requires_use,
+        dependencies,
         repository,
         actions,
         cli,
@@ -637,6 +667,22 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         skills,
         ui,
     })
+}
+
+fn parse_package_dependency(block: &Block) -> UseResult<PluginPackageDependency> {
+    if block.labels.len() != 1 || !block.blocks.is_empty() {
+        return Err(manifest_error(
+            "A dependency block requires exactly one package ID label and no nested blocks.",
+        ));
+    }
+    require_known_attributes(block, &["version"])?;
+    PluginPackageDependency::new(block.labels[0].clone(), string_attribute(block, "version")?)
+        .map_err(|error| {
+            manifest_error(format!(
+                "Package dependency '{}' must use a canonical semantic-version requirement: {}",
+                block.labels[0], error.message
+            ))
+        })
 }
 
 fn parse_repository(block: &Block) -> UseResult<ExtensionRepository> {

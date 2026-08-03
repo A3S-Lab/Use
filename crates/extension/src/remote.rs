@@ -27,6 +27,7 @@ use url::Url;
 use super::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
 
 mod catalog;
+mod package_graph;
 mod target;
 
 pub use catalog::{
@@ -36,6 +37,7 @@ pub use catalog::{
     VerifiedRegistryCatalog, VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES,
     MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
+pub use package_graph::{download_locked_remote_packages, resolve_remote_package_lock};
 use target::{
     decode_registry_target_metadata, resolved_remote_package, target_metadata_from_receipt,
     validate_target_metadata, validate_target_name, RegistryTargetMetadata,

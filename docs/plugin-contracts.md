@@ -4,7 +4,8 @@
 - Baseline date: 2026-07-30
 - Product amendment: OKF bundle contract/conformance frozen 2026-07-31;
   plugin-surface control plane frozen 2026-08-01; managed-host protocol frozen
-  2026-08-02; package lifecycle intent/journal frozen 2026-08-03
+  2026-08-02; package lifecycle intent/journal and cognitive-package
+  dependency/lock contracts frozen 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -13,8 +14,9 @@ This document records the machine-readable plugin contracts implemented in
 `a3s-use-core`, plus the signed catalog reader and durable workspace-grant
 store implemented in `a3s-use-extension`, plus the package lifecycle contracts
 implemented in `a3s-use`. It does not claim that production Plugin Manager
-wiring, package/capability hosts, Knowledge, Gateway, or Runtime generation
-retirement are complete.
+wiring, Knowledge, Gateway, or Runtime generation retirement are complete. The
+package/capability and dependency-graph hosts are implemented foundations, but
+the compatible product CLI still enters the legacy installer.
 
 ## Contract Set
 
@@ -37,6 +39,7 @@ retirement are complete.
 | Catalog record | `a3s.use.plugin-catalog.v1` | Compatible search and review metadata without package download |
 | Catalog record | `a3s.use.plugin-catalog.v2` | Plan-ready manifest evidence and surface dependency closure |
 | Catalog record | `a3s.use.plugin-catalog.v3` | Exact OKF bundle evidence and, for executable surfaces, a separately signed planning target |
+| Package lock | `a3s.use.plugin-package-lock.v1` | Exact transitive versions, dependency edges, content digests, host target/version, and Registry/TUF provenance |
 | Planning bundle | `a3s.use.plugin-planning-bundle.v1` | Pre-archive Tool/MCP workload, release, and artifact evidence |
 | Installed plan evidence | `a3s.use.installed-plugin-plan-evidence.v1` | Package-specific receipt, catalog, surface, and capability join |
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |
@@ -121,6 +124,15 @@ bounded, strict, atomic, cross-process locked, and rejects reordered,
 substituted, or tampered receipts. Production host injection and blue/green
 prior-generation retirement remain outside the completed contract foundation.
 
+Package ownership also applies above one manifest. A schema-v3 package may
+declare canonical package ID plus SemVer dependency blocks. The package lock
+binds the complete transitive closure; the plan classifies each locked node as
+root or dependency and as Add, Remove, Replace, or Retain. The graph coordinator
+requires lifecycle units only for changed nodes, installs them in dependency
+order, verifies exact already-published retained nodes, publishes changed nodes
+in one snapshot cutover, and removes changed nodes in reverse order. Direct
+removal is rejected while an installed manifest still depends on the package.
+
 All JSON contracts:
 
 - reject unknown fields;
@@ -173,6 +185,7 @@ identities are rejected.
 `PluginCatalogRecord` contains the searchable signed target content:
 
 - package identity, version, channel, target, compatibility, and availability;
+- for schema v3, the normalized package ID and SemVer dependency inventory;
 - named surface metadata, including Tool workload and MCP transport;
 - the complete permission ceiling and its digest;
 - archive target, compressed length, archive digest, expanded size, file
@@ -226,6 +239,53 @@ compatibility and does not download the archive.
 Legacy `custom.a3s` schema v1 targets remain readable by installation and
 `list_remote_packages`, but they are not promoted into verified plugin search
 results because they lack the review metadata required by this contract.
+
+## Cognitive Package Dependencies and Lock
+
+`PluginPackageDependency` is a versioned edge to another cognitive package. It
+contains only `packageId` and `versionRequirement`. Package IDs are canonical,
+requirements use canonical SemVer syntax, self-dependencies are rejected, and
+the normalized set is sorted uniquely with a bound of 128 entries. Dependency
+blocks are accepted only by schema-v3 manifests and catalog-v3 records. A
+verified catalog dependency inventory must exactly equal the admitted manifest
+inventory.
+
+`PluginPackageResolver` consumes one exact verified root, a concrete host target
+and A3S Use version, and at most 4,096 complete verified catalog-v3 candidates.
+It performs deterministic highest-compatible selection with at most 65,536
+search attempts and backtracks when a later constraint conflicts. Missing,
+incompatible, conflicting, cyclic, over-bound, or Registry-ambiguous closures
+return distinct typed errors. Registry ambiguity is identity-based: the same
+required package in more than one Registry trust identity is never resolved by
+priority or iteration order.
+
+`a3s.use.plugin-package-lock.v1` contains:
+
+- `rootPackageId`;
+- `host.target` and canonical `host.useVersion`;
+- a package-ID-sorted, root-reachable set of complete
+  `VerifiedPluginCatalogRecord` nodes; and
+- for each node, sorted edges carrying the signed requirement and exact
+  selected version.
+
+Validation reconstructs reachability and topological order, rejects cycles or
+unreachable extras, rechecks target/host compatibility, and proves every edge
+equals the signed catalog dependency inventory. The descriptor uses canonical
+JSON and a `sha256:` digest.
+
+`PluginOperationPlanEnvelope::new_with_package_lock` stores the complete lock
+beside the plan and adds `packageLockDigest` to the plan before calculating its
+own digest. Validation requires both or neither, checks root/dependency roles,
+and reconstructs exact planned states and Registry sources from every locked
+catalog record. Host plan requests/results transport the same lock and reject
+substitution.
+
+`resolve_remote_package_lock` reads candidates only from the host-selected set
+of named `TrustedRegistry` values. `download_locked_remote_packages` first
+revalidates every Registry name, URL, trust root, TUF snapshot, catalog record,
+target, and digest in dependency-forward order without downloading archives;
+only then does it download the prepared closure. This gives apply a no-partial-
+download boundary for Registry drift.
 
 ## Permission Ceiling
 

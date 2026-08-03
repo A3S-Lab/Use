@@ -1,20 +1,25 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use a3s_use_core::{UseError, UseResult, VerifiedPluginCatalogRecord};
+use a3s_use_core::{
+    LockedPluginPackage, PluginPackageLock, UseError, UseResult, VerifiedPluginCatalogRecord,
+};
 use olpc_cjson::CanonicalFormatter;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::fs;
 
 use super::{
-    normalize_package_id, verify_package_integrity, ExtensionReceipt, ExtensionRegistry,
-    ExtensionTrust, InstalledExtension, UninstallResult, RECEIPT_SCHEMA_VERSION_V3,
+    ensure_no_installed_dependents, normalize_package_id, published_binding_matches_extension,
+    verify_package_integrity, ExtensionReceipt, ExtensionRegistry, ExtensionTrust,
+    InstalledExtension, UninstallResult, RECEIPT_SCHEMA_VERSION_V3,
 };
 use crate::package::{
     copy_package, io_error, read_manifest, sha256, unix_timestamp, validate_surface_files,
     write_receipt, RegistryLock,
 };
+use crate::registry_io::read_registry_snapshot;
 use crate::remote::{DownloadedRemotePackage, ResolvedRemotePackage};
 use crate::source::{prepare_package_source, PreparedPackageSource};
 use crate::{ExtensionManifest, ExtensionPaths};
@@ -443,6 +448,37 @@ impl ExtensionRegistry {
             .await
     }
 
+    /// Publish a fully prepared dependency closure through one Registry
+    /// snapshot cutover. Receipt updates remain invisible to route admission
+    /// until the complete enabled set is durably projected.
+    pub async fn publish_lifecycle_packages(
+        &self,
+        identities: &[ExtensionLifecycleIdentity],
+    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+        self.publish_lifecycle_packages_for_host_version(
+            identities,
+            env!("CARGO_PKG_VERSION"),
+            None,
+        )
+        .await
+    }
+
+    /// Publish changed nodes from one reviewed dependency graph while proving
+    /// that every omitted lock node is the exact already-published generation
+    /// selected as retained by the operation plan.
+    pub async fn publish_lifecycle_package_graph(
+        &self,
+        package_lock: &PluginPackageLock,
+        identities: &[ExtensionLifecycleIdentity],
+    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+        self.publish_lifecycle_packages_for_host_version(
+            identities,
+            env!("CARGO_PKG_VERSION"),
+            Some(package_lock),
+        )
+        .await
+    }
+
     pub async fn hide_lifecycle_package(
         &self,
         identity: &ExtensionLifecycleIdentity,
@@ -502,6 +538,8 @@ impl ExtensionRegistry {
         };
         exact_receipt(identity, &extension.receipt)?;
         verify_package_integrity(&extension).await?;
+        let installed = self.list().await?;
+        ensure_no_installed_dependents(&installed, identity.package_id())?;
         if extension.receipt.enabled {
             return Err(lifecycle_state_error(
                 "The cognitive package must be hidden before its immutable generation is removed.",
@@ -560,6 +598,147 @@ impl ExtensionRegistry {
         })
     }
 
+    async fn publish_lifecycle_packages_for_host_version(
+        &self,
+        identities: &[ExtensionLifecycleIdentity],
+        host_version: &str,
+        package_lock: Option<&PluginPackageLock>,
+    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+        if identities.is_empty() || identities.len() > a3s_use_core::MAX_PLUGIN_PLAN_ITEMS {
+            return Err(lifecycle_state_error(
+                "A package-graph publication must contain a bounded non-empty closure.",
+            ));
+        }
+        let mut package_ids = BTreeSet::new();
+        for identity in identities {
+            if !package_ids.insert(identity.package_id()) {
+                return Err(lifecycle_state_error(
+                    "A package-graph publication contains a duplicate package identity.",
+                ));
+            }
+        }
+
+        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        if let Some(package_lock) = package_lock {
+            package_lock.validate()?;
+            if package_lock.host.use_version != host_version {
+                return Err(lifecycle_graph_error(
+                    "The reviewed package lock belongs to a different A3S Use host version.",
+                ));
+            }
+            for identity in identities {
+                if package_lock.package(identity.package_id()).is_none() {
+                    return Err(lifecycle_graph_error(
+                        "A changed lifecycle package is absent from the reviewed package lock.",
+                    ));
+                }
+            }
+            let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+            for locked in &package_lock.packages {
+                if package_ids.contains(locked.package_id()) {
+                    continue;
+                }
+                let retained = self.get(locked.package_id()).await?.ok_or_else(|| {
+                    lifecycle_graph_error(
+                        "A retained cognitive-package dependency is not installed.",
+                    )
+                })?;
+                validate_locked_extension(locked, &retained, host_version)?;
+                if !retained.receipt.enabled
+                    || !published.routes.iter().any(|binding| {
+                        binding.enabled && published_binding_matches_extension(binding, &retained)
+                    })
+                {
+                    return Err(lifecycle_graph_error(
+                        "A retained cognitive-package dependency is not in the published capability generation.",
+                    ));
+                }
+            }
+        }
+        let mut extensions = Vec::with_capacity(identities.len());
+        for identity in identities {
+            let extension = self.exact_lifecycle_extension(identity).await?;
+            if !extension.supports_use_version(host_version) {
+                return Err(UseError::new(
+                    "use.extension.host_incompatible",
+                    format!(
+                        "Cognitive package '{}' is not compatible with this A3S Use host.",
+                        identity.package_id()
+                    ),
+                ));
+            }
+            if let Some(package_lock) = package_lock {
+                let locked = package_lock.package(identity.package_id()).ok_or_else(|| {
+                    lifecycle_graph_error(
+                        "A changed lifecycle package disappeared from its reviewed lock.",
+                    )
+                })?;
+                validate_locked_extension(locked, &extension, host_version)?;
+            }
+            extensions.push(extension);
+        }
+
+        let originals = extensions
+            .iter()
+            .map(|extension| extension.receipt.clone())
+            .collect::<Vec<_>>();
+        let changed = extensions
+            .iter()
+            .map(|extension| !extension.receipt.enabled)
+            .collect::<Vec<_>>();
+        let mut written_receipts = Vec::new();
+        for (extension, original) in extensions.iter_mut().zip(&originals) {
+            if extension.receipt.enabled {
+                continue;
+            }
+            extension.receipt.enabled = true;
+            if let Err(error) = write_receipt(
+                &self.paths.receipt_path(&extension.receipt.package_id),
+                &extension.receipt,
+            )
+            .await
+            {
+                self.restore_lifecycle_receipts(&written_receipts).await?;
+                return Err(error);
+            }
+            written_receipts.push(original.clone());
+        }
+
+        let installed = match self.list().await {
+            Ok(installed) => installed,
+            Err(error) => {
+                self.restore_lifecycle_receipts(&written_receipts).await?;
+                return Err(error);
+            }
+        };
+        let snapshot = match self.publish_snapshot_locked(&installed).await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                self.restore_lifecycle_receipts(&originals).await?;
+                if let Ok(installed) = self.list().await {
+                    let _ = self.publish_snapshot_locked(&installed).await;
+                }
+                return Err(error);
+            }
+        };
+        Ok(extensions
+            .into_iter()
+            .zip(changed)
+            .map(|(extension, changed)| ExtensionLifecycleResult {
+                changed,
+                extension,
+                registry_generation: snapshot.generation,
+            })
+            .collect())
+    }
+
+    async fn restore_lifecycle_receipts(&self, receipts: &[ExtensionReceipt]) -> UseResult<()> {
+        for receipt in receipts {
+            write_receipt(&self.paths.receipt_path(&receipt.package_id), receipt).await?;
+        }
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(crate) async fn publish_lifecycle_package_for_host_version(
         &self,
@@ -568,6 +747,31 @@ impl ExtensionRegistry {
     ) -> UseResult<ExtensionLifecycleResult> {
         self.set_lifecycle_visibility(identity, true, host_version)
             .await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn publish_lifecycle_packages_for_test_host_version(
+        &self,
+        identities: &[ExtensionLifecycleIdentity],
+        host_version: &str,
+    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+        self.publish_lifecycle_packages_for_host_version(identities, host_version, None)
+            .await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn publish_lifecycle_package_graph_for_test_host_version(
+        &self,
+        package_lock: &PluginPackageLock,
+        identities: &[ExtensionLifecycleIdentity],
+        host_version: &str,
+    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+        self.publish_lifecycle_packages_for_host_version(
+            identities,
+            host_version,
+            Some(package_lock),
+        )
+        .await
     }
 
     #[cfg(test)]
@@ -755,6 +959,38 @@ fn validate_provenance(
     }
 }
 
+fn validate_locked_extension(
+    locked: &LockedPluginPackage,
+    extension: &InstalledExtension,
+    host_version: &str,
+) -> UseResult<()> {
+    let record = &locked.catalog.record;
+    let package_sha256 = record
+        .package
+        .sha256
+        .as_deref()
+        .and_then(|digest| digest.strip_prefix("sha256:"));
+    let manifest_sha256 = record
+        .package
+        .manifest_sha256
+        .as_deref()
+        .and_then(|digest| digest.strip_prefix("sha256:"));
+    if extension.receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3
+        || extension.receipt.trust != ExtensionTrust::RegistryTuf
+        || extension.receipt.package_id != record.package_id
+        || extension.receipt.version != record.version
+        || extension.receipt.package_sha256.as_deref() != package_sha256
+        || Some(extension.receipt.manifest_sha256.as_str()) != manifest_sha256
+        || extension.plan_ready_catalog()? != &locked.catalog
+        || !extension.supports_use_version(host_version)
+    {
+        return Err(lifecycle_graph_error(
+            "An installed cognitive package does not match its reviewed dependency-lock node.",
+        ));
+    }
+    Ok(())
+}
+
 fn canonical_sha256(value: String, label: &str) -> UseResult<String> {
     let valid = value.strip_prefix("sha256:").is_some_and(|digest| {
         digest.len() == 64
@@ -776,4 +1012,8 @@ fn lifecycle_identity_error(message: impl Into<String>) -> UseError {
 
 fn lifecycle_state_error(message: impl Into<String>) -> UseError {
     UseError::new("use.extension.lifecycle_state_invalid", message)
+}
+
+fn lifecycle_graph_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.extension.lifecycle_package_graph_invalid", message)
 }

@@ -5,7 +5,8 @@
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
   M0K-C-A adapter/store foundation frozen 2026-08-02, and package-level
-  five-surface saga plus P0 package/capability hosts frozen 2026-08-03
+  five-surface saga, P0 package/capability hosts, and cognitive-package
+  dependency/lock foundation frozen 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -25,6 +26,13 @@ publish/hide, lease drain, and exact removal; umbrella-manager composition
 remains pending. Without promoted observation, an OKF surface stays
 unpublished.
 
+The dependency foundation adds canonical schema-v3 SemVer edges, a bounded
+deterministic transitive resolver, exact Registry/TUF-bound package locks,
+dependency-forward download and preparation, exact retained-node verification,
+single-snapshot graph publication, reverse uninstall, and crash-safe partial
+receipt recovery. The legacy `component install` product path does not yet call
+this graph coordinator.
+
 ## Complete End-to-End Lifecycle Flow
 
 The following is the normative full lifecycle flow, from metadata-only search
@@ -41,7 +49,7 @@ flowchart TD
     catalog["Refresh and search verified metadata<br/>No package payload download"]
     inspect["Inspect provenance, surfaces, permissions,<br/>sizes, compatibility, and withdrawal state"]
     installChoice{"Install selected release?"}
-    resolveInstall["Resolve exact package and dependency digests<br/>Action: install"]
+    resolveInstall["Resolve exact package versions and dependency graph<br/>Freeze Registry/TUF-bound package lock<br/>Action: install"]
     resolveUpgrade["Resolve N+1, permission diff, dependencies,<br/>and provider requirements<br/>Action: upgrade"]
     resolveUninstall["Resolve owned resources, workspace impact,<br/>leases, and retained data<br/>Action: uninstall"]
     hostContext["Allocate operationId and host context<br/>Bind actor, scope, policy identity, lifetime,<br/>capability generation, and state revision"]
@@ -52,7 +60,7 @@ flowchart TD
     rejectPlanning["Reject as unplannable<br/>No archive download and no mutation"]
     grantProposal["Resolve canonical pre-confirmation grant proposal<br/>Bind operation, actor, scope, policy, package,<br/>permission ceiling, lifetime, and state revision"]
     runtimePlan["Build provider-neutral Runtime templates<br/>Bind the grant-proposal digest, then select again<br/>against the same provider/build/capability evidence"]
-    buildPlan["Persist canonical expiring plan<br/>Bind registry root, metadata versions, digests,<br/>scope, grant proposals, provider evidence, and impact"]
+    buildPlan["Persist canonical expiring plan<br/>Bind package lock/digest, Registry/TUF evidence,<br/>scope, grant proposals, provider evidence, and impact"]
   end
 
   command -- "Search / inspect / install" --> catalog
@@ -113,7 +121,7 @@ flowchart TD
   intent --> plannedAction
 
   subgraph packageInstall["3. Package installation or upgrade staging"]
-    stage["Download selected package and exact dependency closure<br/>to a bounded staging root"]
+    stage["Revalidate the complete lock before payload download<br/>then fetch dependencies before dependents<br/>to bounded staging roots"]
     verify["Verify TUF metadata, archive length/digest,<br/>manifest, paths, descriptors, artifacts,<br/>compatibility, and permission ceiling"]
     valid{"All verification gates pass?"}
     rejectPackage["Delete or quarantine staging data<br/>Record typed failure; preserve N on upgrade"]
@@ -422,6 +430,12 @@ The durability boundary has three non-overlapping layers:
   non-secret checkpoint evidence, while the package, grant, Runtime, Gateway,
   Skill/UI, and Knowledge stores retain detailed resource receipts.
 
+For dependency-bearing operations, the reviewed package lock is the immutable
+package-graph sequence. Each changed package keeps its existing surface journal;
+the graph coordinator invokes those journals in topological order and owns the
+single closure publication boundary. Retained packages have no new lifecycle
+unit or side effect.
+
 The manager record never duplicates per-surface checkpoints. After a crash, it
 re-enters the exact umbrella apply command, which resumes the matching A3S Use
 intent. That intent validates every completed receipt and executes only its
@@ -442,6 +456,20 @@ The implemented package checkpoint schedules are:
 Tool, MCP, OKF, Skill, and UI are contributions inside this sequence. No
 surface receives an independent install or uninstall record.
 
+The package-graph schedules are:
+
+| Action | Canonical order |
+| --- | --- |
+| Install | revalidate all locked metadata → download dependencies forward → commit/prepare changed packages forward → verify retained nodes → publish changed closure once |
+| Uninstall | hide/drain each changed package in reverse lock order → remove dependent before dependency → preserve every Retain node |
+
+Every retained node must still match the lock's version, catalog, package and
+manifest digests, Registry/TUF provenance, host compatibility, enabled receipt,
+and current published snapshot. Receipt state alone is not visibility evidence.
+The immutable Registry snapshot is the graph commit point, so a crash after
+writing only some enabled receipts leaves the new graph invisible until exact
+replay publishes the complete closure.
+
 The package store persists lifecycle-managed state as receipt schema v3. The
 receipt and derived route binding carry the exact positive lifecycle
 generation; the deterministic immutable root also binds that generation and
@@ -453,18 +481,20 @@ schema-v3 ownership.
 
 ### Install and enable
 
-1. Resolve verified metadata, dependencies, provider requirements, and grants.
+1. Resolve verified metadata and SemVer constraints into an exact package lock.
 2. Snapshot active grant evidence, derive the sorted root/dependency change
    set, and bind both digests into the canonical expiring plan.
 3. Re-resolve on apply and persist an operation intent before side effects.
-4. Download to a bounded staging root and verify archive and surface digests.
-5. Atomically commit the immutable package and a disabled receipt.
+4. Revalidate every locked Registry/TUF/catalog input before any payload
+   download, then download and verify dependencies before dependents.
+5. Atomically commit each changed immutable package and a disabled receipt in
+   dependency order; exact published `Retain` generations are reused.
 6. Persist any planned exact-generation grant without replacing another
    package generation's authorization.
 7. Record desired `enabled` state and reconcile Tool, MCP, Skill, UI, and OKF
    bindings in dependency order.
 8. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
-9. Atomically publish one capability generation.
+9. Atomically publish all changed packages in one capability generation.
 10. Mark the operation complete and garbage-collect safe staging data.
 
 If activation fails, the package remains installed but disabled or broken with
@@ -500,6 +530,10 @@ Uninstall:
 7. removes receipts and unreferenced package generations; and
 8. retains plugin data and secrets unless a separate purge is authorized.
 
+For a cascade graph uninstall, these steps run in reverse topological order.
+A package cannot be removed before its installed dependents, and shared
+dependencies selected as `Retain` remain installed and published.
+
 Global uninstall is rejected while another protected workspace grant depends
 on the release unless the reviewed plan includes that impact.
 
@@ -517,6 +551,7 @@ observations.
 | Candidate grant committed, bindings absent | Revalidate the exact plan and resume or tombstone the candidate |
 | Runtime unit applied, binding absent | Inspect exact unit and reconstruct binding |
 | Binding ready, snapshot absent | Revalidate grants and publish atomically |
+| Some graph receipts enabled, closure snapshot absent | Keep the partial receipts invisible and replay the exact lock-bound batch publication |
 | Desired absent, grant still active | Persist the planned exact-generation tombstone before cleanup |
 | Snapshot removed, workload running | Continue drain and stop |
 | Old generation still referenced | Preserve it and retry garbage collection |

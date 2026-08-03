@@ -94,6 +94,7 @@ fn install_plan() -> PluginOperationPlan {
             kind: PlanScopeKind::Workspace,
             id: "workspace:research".to_owned(),
         },
+        package_lock_digest: None,
         packages: vec![PlannedPackageTransition {
             package_id: catalog.package_id,
             role: PlanPackageRole::Root,

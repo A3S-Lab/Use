@@ -4,8 +4,8 @@
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31 and M0K-B control-plane contracts frozen
-  2026-08-01; package-level five-surface lifecycle foundation accepted
-  2026-08-03
+  2026-08-01; package-level five-surface lifecycle and cognitive-package
+  dependency/lock foundations accepted 2026-08-03
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -25,8 +25,8 @@ A complete user flow is:
 ```text
 search catalog
   -> inspect signed metadata, permissions, provenance, and size
-  -> review an immutable install plan
-  -> install and enable one selected package
+  -> resolve and review an immutable dependency lock plus install plan
+  -> install and enable the selected package and required dependency closure
   -> use its Skill, CLI/HTTP Tool, MCP capabilities, UI, or cited OKF knowledge
   -> disable or uninstall it without restarting the host
 ```
@@ -77,6 +77,11 @@ These decisions are part of the target contract:
     receipts retain the exact source URL, trust root, channel, target, and
     digest reviewed for their generation; source replacement never rewrites
     package provenance silently.
+14. A schema-v3 cognitive package may depend on other cognitive packages by
+    canonical package ID and SemVer range. The host selects Registries, freezes
+    exact versions and Registry/TUF provenance in a package lock, installs
+    dependencies before dependents, and removes them in reverse without
+    deleting shared retained dependencies.
 
 ## Current Baseline
 
@@ -103,6 +108,13 @@ The following foundations are implemented:
 - a Web Marketplace with catalog and installed views;
 - host-owned named Registry configuration with explicit replacement,
   enable/disable, removal, refresh, and receipt-bound source identity;
+- schema-v3 ACL package dependencies and required package README validation;
+- deterministic bounded SemVer resolution with backtracking, conflict/cycle/
+  Registry-ambiguity rejection, and canonical
+  `a3s.use.plugin-package-lock.v1` host and provenance binding;
+- complete dependency-forward Registry revalidation/download, exact retained
+  dependency checks, reverse-dependent uninstall protection, and one atomic
+  capability snapshot cutover for changed package graphs;
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
 - generation/revision capability snapshots consumed by A3S Code;
 - live MCP and Skill projection into a dedicated A3S Use worker;
@@ -148,6 +160,10 @@ The main gaps are:
   its bounded read-only management MCP is connected, while production host
   composition across package/capability and surface adapters remains to be
   connected;
+- the dependency resolver, lock, remote closure downloader, and graph lifecycle
+  coordinator are implemented in A3S Use, but the compatible `component
+  install` CLI and current Code/Web Marketplace E2E still enter the legacy
+  single-package installer;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - the versioned OKF manager/search/selection contract, injected Knowledge port,
@@ -443,6 +459,14 @@ Implementation status (2026-08-03):
 - completed in A3S Use: concrete Runtime Tool/MCP, immutable Skill/UI, and OKF
   Knowledge adapters validate exact package bytes and retain receipt-owned
   cleanup boundaries; an all-five-surface package fixture freezes the contract;
+- completed in A3S Use: schema-v3 package dependency declarations, required
+  README validation, bounded deterministic SemVer resolution, exact canonical
+  lock/plan/host binding, and dependency-forward Registry closure download;
+- completed in A3S Use: package graph install skips exact `Retain` generations,
+  prepares changed nodes forward, verifies retained nodes against the current
+  published snapshot, publishes the changed closure once, removes in reverse,
+  rejects installed dependents, and recovers partial receipt writes without
+  exposing a partial graph;
 - covered: typed complete-catalog mapping, lifecycle argument and digest
   validation, Use-owned JSON output, operation ID uniqueness, expiry,
   append-only replay, corruption rejection, cross-process locking, Web adapter
@@ -451,7 +475,8 @@ Implementation status (2026-08-03):
   contracts, offline child-policy propagation, a signed-registry CLI
   plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
   smoke test;
-- pending: umbrella-manager injection of the implemented package/capability,
+- pending: umbrella-manager injection of the implemented package graph,
+  package/capability,
   typed Runtime, Gateway, stdio MCP, Skill/UI, and Knowledge adapters; grant
   sub-saga composition; prior Runtime generation retirement; and complete Unix
   Marketplace lifecycle E2E through the shared service. The shared manager

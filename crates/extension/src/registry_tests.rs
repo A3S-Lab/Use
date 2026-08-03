@@ -75,6 +75,131 @@ async fn compatible_cognitive_package(root: &Path) {
     crate::package::copy_package(&fixture, root).await.unwrap();
 }
 
+async fn cognitive_package_with_dependencies(
+    root: &Path,
+    package_id: &str,
+    route: &str,
+    dependencies: &[(&str, &str)],
+) {
+    compatible_cognitive_package(root).await;
+    let path = root.join(MANIFEST_NAME);
+    let mut manifest = fs::read_to_string(&path).await.unwrap();
+    manifest = manifest
+        .replace(
+            "extension \"acme/cognitive\"",
+            &format!("extension \"{package_id}\""),
+        )
+        .replace(
+            "route          = \"cognitive\"",
+            &format!("route          = \"{route}\""),
+        );
+    let dependency_blocks = dependencies
+        .iter()
+        .map(|(dependency, requirement)| {
+            format!("  dependency \"{dependency}\" {{\n    version = \"{requirement}\"\n  }}\n\n")
+        })
+        .collect::<String>();
+    manifest = manifest.replace(
+        "  repository {",
+        &format!("{dependency_blocks}  repository {{"),
+    );
+    fs::write(path, manifest).await.unwrap();
+}
+
+async fn knowledge_package_with_dependencies(
+    root: &Path,
+    package_id: &str,
+    route: &str,
+    dependencies: &[(&str, &str)],
+) {
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3-okf/package");
+    crate::package::copy_package(&fixture, root).await.unwrap();
+    let path = root.join(MANIFEST_NAME);
+    let mut manifest = fs::read_to_string(&path).await.unwrap();
+    manifest = manifest
+        .replace(
+            "extension \"acme/knowledge\"",
+            &format!("extension \"{package_id}\""),
+        )
+        .replace(
+            "route          = \"knowledge\"",
+            &format!("route          = \"{route}\""),
+        );
+    let dependency_blocks = dependencies
+        .iter()
+        .map(|(dependency, requirement)| {
+            format!("  dependency \"{dependency}\" {{\n    version = \"{requirement}\"\n  }}\n\n")
+        })
+        .collect::<String>();
+    manifest = manifest.replace(
+        "  repository {",
+        &format!("{dependency_blocks}  repository {{"),
+    );
+    fs::write(path, manifest).await.unwrap();
+}
+
+async fn verified_knowledge_catalog(
+    root: &Path,
+    package_id: &str,
+    dependencies: &[(&str, &str)],
+    seed: char,
+) -> VerifiedPluginCatalogRecord {
+    let (_, manifest_bytes) = read_manifest(root).await.unwrap();
+    let fingerprint = crate::digest::package_fingerprint(root).await.unwrap();
+    let mut catalog = a3s_use_core::PluginCatalogRecord::from_json(include_bytes!(
+        "../../core/fixtures/plugins/catalog-record-okf-v3.json"
+    ))
+    .unwrap();
+    let (publisher, name) = package_id.split_once('/').unwrap();
+    catalog.package_id = package_id.to_string();
+    catalog.publisher = publisher.to_string();
+    catalog.display_name = format!("{publisher} {name}");
+    catalog.description = format!("Lifecycle graph fixture for {package_id}.");
+    catalog.repository = format!("https://github.com/{publisher}/{name}");
+    catalog.target = "any".to_string();
+    catalog.dependencies = dependencies
+        .iter()
+        .map(|(dependency, requirement)| {
+            a3s_use_core::PluginPackageDependency::new(*dependency, *requirement).unwrap()
+        })
+        .collect();
+    catalog.archive.target_name =
+        format!("extensions/{package_id}/1.0.0/stable/any/{publisher}-{name}-1.0.0-any.tar.gz");
+    catalog.archive.length = 1;
+    catalog.archive.sha256 = format!("sha256:{}", seed.to_string().repeat(64));
+    catalog.package.expanded_bytes = fingerprint.byte_count;
+    catalog.package.file_count = fingerprint.file_count;
+    catalog.package.sha256 = Some(format!("sha256:{}", fingerprint.sha256));
+    catalog.package.manifest_sha256 = Some(format!("sha256:{}", sha256(&manifest_bytes)));
+    catalog.validate().unwrap();
+    let provenance = a3s_use_core::VerifiedCatalogProvenance {
+        registry_name: "fixture".to_string(),
+        registry_url: "https://packages.example.test/catalog/".to_string(),
+        root_sha256: format!("sha256:{}", "f".repeat(64)),
+        root_version: 1,
+        timestamp_version: 1,
+        snapshot_version: 1,
+        targets_version: 1,
+        catalog_record_digest: catalog.descriptor_digest().unwrap(),
+    };
+    VerifiedPluginCatalogRecord::new(catalog, provenance).unwrap()
+}
+
+async fn bind_remote_catalog_receipt(
+    registry: &ExtensionRegistry,
+    package_id: &str,
+    catalog: &VerifiedPluginCatalogRecord,
+) {
+    let mut receipt = registry.get(package_id).await.unwrap().unwrap().receipt;
+    receipt.trust = ExtensionTrust::RegistryTuf;
+    receipt.registry = Some(ResolvedRemotePackage::from_verified_catalog(catalog).unwrap());
+    receipt.verified_catalog = Some(catalog.clone());
+    write_receipt(&registry.paths().receipt_path(package_id), &receipt)
+        .await
+        .unwrap();
+}
+
 fn lifecycle_identity(
     candidate: &ExtensionLifecyclePackage,
     generation: u64,
@@ -1163,6 +1288,199 @@ async fn lifecycle_commit_keeps_all_five_surfaces_installed_disabled_until_atomi
 }
 
 #[tokio::test]
+async fn lifecycle_graph_publication_is_one_cutover_and_recovers_partial_receipts() {
+    let temp = tempfile::tempdir().unwrap();
+    let base_source = temp.path().join("base");
+    let root_source = temp.path().join("root");
+    cognitive_package_with_dependencies(&base_source, "acme/base", "base", &[]).await;
+    cognitive_package_with_dependencies(
+        &root_source,
+        "acme/root",
+        "root",
+        &[("acme/base", "^1.0.0")],
+    )
+    .await;
+    let base = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/base",
+        &base_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let root = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/root",
+        &root_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let base_identity = lifecycle_identity(&base, 31);
+    let root_identity = lifecycle_identity(&root, 32);
+    let identities = [base_identity.clone(), root_identity.clone()];
+    let registry = registry(temp.path());
+    for (identity, candidate) in [(&base_identity, &base), (&root_identity, &root)] {
+        registry
+            .commit_lifecycle_package(identity, candidate)
+            .await
+            .unwrap();
+    }
+    let before = registry.snapshot().await.unwrap();
+    assert!(before.routes.iter().all(|route| !route.enabled));
+
+    // Model a process crash after one receipt was enabled but before the
+    // complete dependency closure reached the snapshot commit point.
+    let mut partial = registry.get("acme/base").await.unwrap().unwrap().receipt;
+    partial.enabled = true;
+    write_receipt(&registry.paths().receipt_path("acme/base"), &partial)
+        .await
+        .unwrap();
+    let guarded = registry.snapshot().await.unwrap();
+    assert_eq!(guarded, before);
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("base", "0.3.0")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("root", "0.3.0")
+        .await
+        .unwrap()
+        .is_none());
+
+    let published = registry
+        .publish_lifecycle_packages_for_test_host_version(&identities, "0.3.0")
+        .await
+        .unwrap();
+    assert_eq!(published.len(), 2);
+    assert!(published.iter().all(|result| result.extension.enabled()));
+    assert!(published
+        .iter()
+        .all(|result| result.registry_generation == before.generation + 1));
+    let after = registry.snapshot().await.unwrap();
+    assert_eq!(after.generation, before.generation + 1);
+    assert!(after.routes.iter().all(|route| route.enabled));
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("base", "0.3.0")
+        .await
+        .unwrap()
+        .is_some());
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("root", "0.3.0")
+        .await
+        .unwrap()
+        .is_some());
+
+    let replay = registry
+        .publish_lifecycle_packages_for_test_host_version(&identities, "0.3.0")
+        .await
+        .unwrap();
+    assert!(replay.iter().all(|result| !result.changed));
+    assert!(replay
+        .iter()
+        .all(|result| result.registry_generation == after.generation));
+}
+
+#[tokio::test]
+async fn lifecycle_graph_requires_the_exact_published_retained_dependency() {
+    let temp = tempfile::tempdir().unwrap();
+    let base_source = temp.path().join("base");
+    let root_source = temp.path().join("root");
+    knowledge_package_with_dependencies(&base_source, "acme/base", "base", &[]).await;
+    knowledge_package_with_dependencies(
+        &root_source,
+        "acme/root",
+        "root",
+        &[("acme/base", "^1.0.0")],
+    )
+    .await;
+    let base_catalog = verified_knowledge_catalog(&base_source, "acme/base", &[], 'a').await;
+    let root_catalog =
+        verified_knowledge_catalog(&root_source, "acme/root", &[("acme/base", "^1.0.0")], 'b')
+            .await;
+    let package_lock = a3s_use_core::PluginPackageResolver::new(
+        a3s_use_core::PluginPackageLockHost::new("linux-x86_64", "0.3.0").unwrap(),
+    )
+    .resolve(root_catalog.clone(), vec![base_catalog.clone()])
+    .unwrap();
+    let base = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/base",
+        &base_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let root = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/root",
+        &root_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let base_identity = lifecycle_identity(&base, 41);
+    let root_identity = lifecycle_identity(&root, 42);
+    let registry = registry(temp.path());
+
+    registry
+        .commit_lifecycle_package(&base_identity, &base)
+        .await
+        .unwrap();
+    bind_remote_catalog_receipt(&registry, "acme/base", &base_catalog).await;
+    registry
+        .publish_lifecycle_package_for_host_version(&base_identity, "0.3.0")
+        .await
+        .unwrap();
+    registry
+        .commit_lifecycle_package(&root_identity, &root)
+        .await
+        .unwrap();
+    bind_remote_catalog_receipt(&registry, "acme/root", &root_catalog).await;
+
+    registry
+        .hide_lifecycle_package(&base_identity)
+        .await
+        .unwrap();
+    let error = registry
+        .publish_lifecycle_package_graph_for_test_host_version(
+            &package_lock,
+            std::slice::from_ref(&root_identity),
+            "0.3.0",
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.lifecycle_package_graph_invalid");
+    assert!(!registry.get("acme/root").await.unwrap().unwrap().enabled());
+
+    registry
+        .publish_lifecycle_package_for_host_version(&base_identity, "0.3.0")
+        .await
+        .unwrap();
+    let published = registry
+        .publish_lifecycle_package_graph_for_test_host_version(
+            &package_lock,
+            std::slice::from_ref(&root_identity),
+            "0.3.0",
+        )
+        .await
+        .unwrap();
+    assert_eq!(published.len(), 1);
+    assert!(published[0].extension.enabled());
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("base", "0.3.0")
+        .await
+        .unwrap()
+        .is_some());
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("root", "0.3.0")
+        .await
+        .unwrap()
+        .is_some());
+}
+
+#[tokio::test]
 async fn lifecycle_hide_drains_accepted_calls_before_exact_idempotent_removal() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");
@@ -1238,6 +1556,140 @@ async fn lifecycle_hide_drains_accepted_calls_before_exact_idempotent_removal() 
         .await
         .unwrap();
     assert!(!replay.changed);
+}
+
+#[tokio::test]
+async fn lifecycle_uninstall_rejects_a_dependency_until_dependents_are_removed() {
+    let temp = tempfile::tempdir().unwrap();
+    let base_source = temp.path().join("base");
+    let root_source = temp.path().join("root");
+    cognitive_package_with_dependencies(&base_source, "acme/base", "base", &[]).await;
+    cognitive_package_with_dependencies(
+        &root_source,
+        "acme/root",
+        "root",
+        &[("acme/base", "^1.0.0")],
+    )
+    .await;
+    let base = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/base",
+        &base_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let root = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/root",
+        &root_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let base_identity = lifecycle_identity(&base, 21);
+    let root_identity = lifecycle_identity(&root, 22);
+    let registry = registry(temp.path());
+    for (identity, candidate) in [(&base_identity, &base), (&root_identity, &root)] {
+        registry
+            .commit_lifecycle_package(identity, candidate)
+            .await
+            .unwrap();
+        registry
+            .publish_lifecycle_package_for_host_version(identity, "0.3.0")
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(
+        registry.dependent_packages("acme/base").await.unwrap(),
+        ["acme/root"]
+    );
+    registry
+        .hide_lifecycle_package(&base_identity)
+        .await
+        .unwrap();
+    let error = registry
+        .remove_lifecycle_package(&base_identity, Duration::from_secs(1))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.package_required");
+    assert_eq!(
+        error.details["requiredBy"],
+        serde_json::json!(["acme/root"])
+    );
+    assert!(registry.get("acme/base").await.unwrap().is_some());
+
+    registry
+        .hide_lifecycle_package(&root_identity)
+        .await
+        .unwrap();
+    registry
+        .remove_lifecycle_package(&root_identity, Duration::from_secs(1))
+        .await
+        .unwrap();
+    registry
+        .remove_lifecycle_package(&base_identity, Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert!(registry.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn verified_catalog_dependencies_must_match_the_admitted_manifest() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("knowledge");
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3-okf/package");
+    crate::package::copy_package(&fixture, &source)
+        .await
+        .unwrap();
+    let manifest_path = source.join(MANIFEST_NAME);
+    let manifest = fs::read_to_string(&manifest_path).await.unwrap();
+    let manifest = manifest.replace(
+        "  repository {",
+        "  dependency \"acme/base\" {\n    version = \"^1.0.0\"\n  }\n\n  repository {",
+    );
+    fs::write(&manifest_path, manifest).await.unwrap();
+
+    let (manifest, manifest_bytes) = read_manifest(&source).await.unwrap();
+    let package_digest = package_sha256(&source).await.unwrap();
+    let manifest_digest = sha256(&manifest_bytes);
+    let mut catalog = a3s_use_core::PluginCatalogRecord::from_json(include_bytes!(
+        "../../core/fixtures/plugins/catalog-record-okf-v3.json"
+    ))
+    .unwrap();
+    catalog.target = "any".to_string();
+    catalog.archive.target_name = catalog.archive.target_name.replace("linux-x86_64", "any");
+    catalog.package.sha256 = Some(format!("sha256:{package_digest}"));
+    catalog.package.manifest_sha256 = Some(format!("sha256:{manifest_digest}"));
+    catalog.validate().unwrap();
+    let verified = VerifiedPluginCatalogRecord::new(
+        catalog.clone(),
+        a3s_use_core::VerifiedCatalogProvenance {
+            registry_name: "fixture".to_string(),
+            registry_url: "https://packages.example.test/catalog/".to_string(),
+            root_sha256: format!("sha256:{}", "a".repeat(64)),
+            root_version: 1,
+            timestamp_version: 1,
+            snapshot_version: 1,
+            targets_version: 1,
+            catalog_record_digest: catalog.descriptor_digest().unwrap(),
+        },
+    )
+    .unwrap();
+    let resolved = ResolvedRemotePackage::from_verified_catalog(&verified).unwrap();
+
+    let error = validate_catalog_binding(
+        &verified,
+        Some(&resolved),
+        &manifest,
+        &manifest_digest,
+        &package_digest,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "use.extension.catalog_package_mismatch");
+    assert!(error.message.contains("dependency graph"));
 }
 
 #[tokio::test]

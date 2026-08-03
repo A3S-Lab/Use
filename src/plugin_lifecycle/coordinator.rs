@@ -12,7 +12,7 @@ use super::model::valid_sha256;
 use super::{
     PluginLifecycleCheckpoint, PluginLifecycleCheckpointKind, PluginLifecycleCheckpointOutcome,
     PluginLifecycleIntent, PluginLifecycleIntentSpec, PluginLifecycleJournalStore,
-    PluginLifecycleOperationRecord,
+    PluginLifecycleOperationRecord, PluginLifecycleOperationStatus,
 };
 
 /// Digest of host-validated, non-secret evidence for one lifecycle checkpoint.
@@ -253,50 +253,127 @@ impl PluginLifecycleCoordinator {
             let Some(checkpoint) = record.next_checkpoint().cloned() else {
                 return self.journal.complete(intent, completed_at_ms()).await;
             };
-            match self.execute_checkpoint(intent, manifest, &checkpoint).await {
-                Ok(evidence) => {
-                    record = self
-                        .journal
-                        .record_checkpoint(
-                            intent,
-                            &checkpoint.idempotency_key,
-                            PluginLifecycleCheckpointOutcome::Applied,
-                            evidence.digest,
-                            None,
-                            completed_at_ms(),
-                        )
-                        .await?;
-                }
+            record = self
+                .execute_and_record(intent, manifest, &checkpoint, &completed_at_ms)
+                .await?;
+        }
+    }
+
+    pub(super) async fn prepare_for_graph(
+        &self,
+        intent: &PluginLifecycleIntent,
+        manifest: &ExtensionManifest,
+        completed_at_ms: &impl Fn() -> u64,
+    ) -> UseResult<PluginLifecycleOperationRecord> {
+        validate_manifest_binding(intent, manifest)?;
+        if intent.action != super::PluginLifecycleAction::Install {
+            return Err(coordinator_error(
+                "Only install operations can use dependency-closure staged publication.",
+            ));
+        }
+        let mut record = self.journal.begin(intent).await?;
+        if record.status == PluginLifecycleOperationStatus::Completed {
+            return Ok(record);
+        }
+        loop {
+            let Some(checkpoint) = record.next_checkpoint().cloned() else {
+                return self.journal.complete(intent, completed_at_ms()).await;
+            };
+            if checkpoint.kind == PluginLifecycleCheckpointKind::CapabilityPublished {
+                return Ok(record);
+            }
+            record = self
+                .execute_and_record(intent, manifest, &checkpoint, completed_at_ms)
+                .await?;
+        }
+    }
+
+    pub(super) async fn complete_graph_publication(
+        &self,
+        intent: &PluginLifecycleIntent,
+        manifest: &ExtensionManifest,
+        evidence: &PluginLifecycleEvidence,
+        completed_at_ms: &impl Fn() -> u64,
+    ) -> UseResult<PluginLifecycleOperationRecord> {
+        validate_manifest_binding(intent, manifest)?;
+        let mut record = self.journal.begin(intent).await?;
+        if record.status == PluginLifecycleOperationStatus::Completed {
+            return Ok(record);
+        }
+        if let Some(checkpoint) = record.next_checkpoint().cloned() {
+            if checkpoint.kind != PluginLifecycleCheckpointKind::CapabilityPublished {
+                return Err(coordinator_error(
+                    "A package graph attempted publication before all surfaces were prepared.",
+                ));
+            }
+            record = self
+                .journal
+                .record_checkpoint(
+                    intent,
+                    &checkpoint.idempotency_key,
+                    PluginLifecycleCheckpointOutcome::Applied,
+                    evidence.digest.clone(),
+                    None,
+                    completed_at_ms(),
+                )
+                .await?;
+        }
+        if record.next_checkpoint().is_some() {
+            return Err(coordinator_error(
+                "A graph publication did not complete the install checkpoint sequence.",
+            ));
+        }
+        self.journal.complete(intent, completed_at_ms()).await
+    }
+
+    async fn execute_and_record(
+        &self,
+        intent: &PluginLifecycleIntent,
+        manifest: &ExtensionManifest,
+        checkpoint: &PluginLifecycleCheckpoint,
+        completed_at_ms: &impl Fn() -> u64,
+    ) -> UseResult<PluginLifecycleOperationRecord> {
+        match self.execute_checkpoint(intent, manifest, checkpoint).await {
+            Ok(evidence) => {
+                self.journal
+                    .record_checkpoint(
+                        intent,
+                        &checkpoint.idempotency_key,
+                        PluginLifecycleCheckpointOutcome::Applied,
+                        evidence.digest,
+                        None,
+                        completed_at_ms(),
+                    )
+                    .await
+            }
+            Err(error)
+                if !checkpoint.required
+                    && checkpoint.kind == PluginLifecycleCheckpointKind::SurfacePrepared =>
+            {
+                let evidence_digest = failure_evidence_digest(checkpoint, &error.code);
+                self.journal
+                    .record_checkpoint(
+                        intent,
+                        &checkpoint.idempotency_key,
+                        PluginLifecycleCheckpointOutcome::OptionalFailed,
+                        evidence_digest,
+                        Some(error.code.to_string()),
+                        completed_at_ms(),
+                    )
+                    .await
+            }
+            Err(error) => {
+                let evidence_digest = failure_evidence_digest(checkpoint, &error.code);
+                self.journal
+                    .record_failure(
+                        intent,
+                        &checkpoint.idempotency_key,
+                        error.code.clone(),
+                        evidence_digest,
+                        completed_at_ms(),
+                    )
+                    .await?;
                 Err(error)
-                    if !checkpoint.required
-                        && checkpoint.kind == PluginLifecycleCheckpointKind::SurfacePrepared =>
-                {
-                    let evidence_digest = failure_evidence_digest(&checkpoint, &error.code);
-                    record = self
-                        .journal
-                        .record_checkpoint(
-                            intent,
-                            &checkpoint.idempotency_key,
-                            PluginLifecycleCheckpointOutcome::OptionalFailed,
-                            evidence_digest,
-                            Some(error.code.to_string()),
-                            completed_at_ms(),
-                        )
-                        .await?;
-                }
-                Err(error) => {
-                    let evidence_digest = failure_evidence_digest(&checkpoint, &error.code);
-                    self.journal
-                        .record_failure(
-                            intent,
-                            &checkpoint.idempotency_key,
-                            error.code.clone(),
-                            evidence_digest,
-                            completed_at_ms(),
-                        )
-                        .await?;
-                    return Err(error);
-                }
             }
         }
     }

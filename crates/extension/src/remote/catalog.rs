@@ -346,6 +346,16 @@ async fn load_refreshed_catalog(
     )
 }
 
+pub(super) async fn load_refreshed_plugin_candidates(
+    registry: &TrustedRegistry,
+) -> UseResult<Vec<VerifiedPluginCatalogRecord>> {
+    let repository = load_repository(registry).await?;
+    let metadata = verified_registry_metadata(registry, &repository)?;
+    let entries = collect_catalog_entries(registry, &repository)?;
+    persist_catalog_refresh(registry, &repository, &metadata).await?;
+    Ok(entries.into_iter().map(|entry| entry.plugin).collect())
+}
+
 async fn load_cached_catalog(
     registry: &TrustedRegistry,
     host: &PluginCatalogHost,

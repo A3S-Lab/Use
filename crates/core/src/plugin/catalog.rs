@@ -10,9 +10,9 @@ use super::validation::{
     valid_sha256, valid_spdx_expression, valid_tag, valid_target, valid_target_name,
 };
 use super::{
-    canonical_digest, canonical_json, contract_error, parse_contract, PluginPermissionCeiling,
-    PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass, PLUGIN_CATALOG_SCHEMA,
-    PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
+    canonical_digest, canonical_json, contract_error, parse_contract, PluginPackageDependency,
+    PluginPermissionCeiling, PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass,
+    PLUGIN_CATALOG_SCHEMA, PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
 };
 
 pub(super) const CATALOG_ERROR: &str = "use.plugin.catalog_invalid";
@@ -35,6 +35,8 @@ pub struct PluginCatalogRecord {
     pub version: String,
     pub channel: PluginReleaseChannel,
     pub requires_use: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<PluginPackageDependency>,
     pub target: String,
     pub surfaces: Vec<CatalogSurface>,
     pub permission_ceiling: PluginPermissionCeiling,
@@ -170,6 +172,13 @@ impl PluginCatalogRecord {
         {
             return Err(catalog_error(
                 "The plugin catalog identity, search metadata, compatibility, or target is invalid.",
+            ));
+        }
+        if (!schema_v3 && !self.dependencies.is_empty())
+            || PluginPackageDependency::validate_set(&self.package_id, &self.dependencies).is_err()
+        {
+            return Err(catalog_error(
+                "Package dependencies require catalog schema version 3 and a canonical sorted dependency set.",
             ));
         }
 
