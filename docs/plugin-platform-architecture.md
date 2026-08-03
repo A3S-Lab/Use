@@ -3,11 +3,13 @@
 - Status: accepted target architecture; implementation in progress
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
-  bundle contract frozen 2026-07-31 and M0K-B control plane frozen 2026-08-01
+  bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
+  and package-level five-surface lifecycle foundation accepted 2026-08-03
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Runtime decision: [ADR-001: Host-Owned Plugin Runtime Broker](adr-001-plugin-runtime-broker-boundary.md)
+- Lifecycle decision: [ADR-002: Cognitive Package Lifecycle Saga](adr-002-cognitive-package-lifecycle-saga.md)
 
 This document defines the target architecture for installing and operating an
 immutable plugin that may contribute Skills, executable Tools, standard MCP
@@ -37,10 +39,13 @@ Tool, MCP, OKF, Skill, and UI have an implemented schema-v3 contract baseline.
 M0K-B adds exact manifest/package validation, catalog and plan evidence,
 Knowledge receipt/observation/projection contracts, and dependency-gated
 reconciliation for OKF. M0K-C-A adds the injected Knowledge port, exact-byte
-stage request, evidence-checking client, and durable bounded generation store.
-The production A3S Knowledge index backend, scoped cited retrieval, and
-parent-saga lifecycle wiring remain to be implemented; missing promoted
-evidence therefore stays explicitly unpublished.
+stage request, evidence-checking client, durable bounded generation store, and
+a package-saga OKF adapter. The package-level intent, journal, coordinator, and
+typed Runtime/static adapters are also implemented foundations. The production
+package/capability hosts, umbrella-manager wiring, prior Runtime generation
+retirement, A3S Knowledge index backend, and scoped cited retrieval remain to
+be implemented; missing promoted evidence therefore stays explicitly
+unpublished.
 
 In this architecture, **Tool does not mean an MCP `tools/list` item**. A Tool
 is a workload on which a Skill or UI can depend. It keeps its native CLI or
@@ -94,6 +99,9 @@ or invent another agent RPC protocol.
                     Policy and Grant Broker
                                 |
                   Package Store + Operation Log
+                                |
+                  Package Lifecycle Coordinator
+               one intent / ordered hosts / crash replay
                                 |
                       Surface Reconciler
         +----------+----------+-----------+---------+
@@ -418,6 +426,35 @@ The Tool descriptor adds exactly one workload contract:
 Secrets, mutable tags, provider configuration, endpoint URLs, and plaintext
 environment values are deployment policy and must not enter a release
 descriptor.
+
+## Package Lifecycle Coordination
+
+The package lifecycle coordinator and the Surface Reconciler consume the same
+canonical schema-v3 graph. This prevents orchestration from inventing a second
+surface inventory or dependency order.
+
+The coordinator persists one versioned intent binding operation, reviewed plan,
+scope, package/manifest digests, generation, action, surfaces, and deterministic
+idempotency keys. It prepares dependencies in forward level order, publishes
+one capability generation only after every required checkpoint succeeds, and
+hides, drains, then stops or removes contributions in reverse level order.
+Optional preparation failures are recorded as degraded evidence only when they
+are outside the required dependency closure.
+
+Typed host ports keep semantics explicit: package commit/removal, capability
+publish/hide/drain, Tool, MCP, OKF, Skill, and UI. Concrete foundations cover
+explicit Runtime selections for release-backed Tool/MCP workloads, static
+native and stdio launchers, immutable Skill/UI evidence, and receipt-owned OKF
+stage/promote/remove. The coordinator is not an invocation protocol and cannot
+install a contribution independently from its package.
+
+The durable journal is bounded, atomically replaced, cross-process locked, and
+validates path ownership and every prior receipt before replay. Its detailed
+decision is [ADR-002](adr-002-cognitive-package-lifecycle-saga.md).
+
+Production package and capability hosts and umbrella-manager injection remain
+pending. Candidate preparation also refuses to overwrite an older Runtime
+binding until blue/green prior-generation retirement is implemented.
 
 ## Surface Reconciliation
 
@@ -767,6 +804,16 @@ not a last-writer-wins decision. Package-executable Tool Tasks and stdio MCP
 are intentionally absent from the Runtime snapshot and remain owned by their
 supervised compatibility hosts.
 
+The package lifecycle Runtime adapter now applies these boundaries to parent
+checkpoints. It revalidates immutable Tool/MCP files, requires the exact
+selected Task or Service plan, obtains a typed Gateway endpoint for Services,
+requires standard initialize evidence for HTTP MCP, persists the resulting
+binding, and idempotently stops and removes only that receipt-owned resource.
+Native Tool executables and stdio MCP remain static launchers. A retained
+binding from another generation fails with
+`use.plugin.runtime_generation_retirement_required` until dual-generation
+retirement is available.
+
 For planner consumption, a plan-ready schema-v3 capability binding also
 projects `plannerEvidence` schema 1. It binds the canonical extension receipt,
 verified catalog record, signed manifest, expanded package, desired enabled
@@ -823,7 +870,8 @@ it never resolves through Runtime.
 
 The Use-owned OKF binding store retains at most 32 generations and refuses to
 discard ownership evidence implicitly. Reaching the bound requires explicit
-receipt-owned cleanup by the future parent saga. This prevents storage pressure
+receipt-owned cleanup by the package lifecycle adapter and, once wired, its
+production parent saga. This prevents storage pressure
 from silently orphaning a Knowledge index or resurrecting an older promoted
 generation after removal.
 
@@ -861,6 +909,12 @@ the typed bundle matches the exact catalog evidence. Executable or
 permission-bearing drafts still fail closed until the host Runtime Broker,
 two-pass provider selection, and workspace grant saga are connected.
 
+The in-crate package lifecycle foundation is separately implemented: canonical
+surface scheduling, durable checkpoint replay, typed Runtime/Skill/UI/OKF
+adapters, and an all-five-surface package fixture. It is not yet called by the
+umbrella Plugin Manager or the legacy `ExtensionRegistry` mutation path, so it
+does not expand the current product readiness claim.
+
 ## Compatibility and Migration
 
 Migration is additive:
@@ -890,16 +944,17 @@ package generation.
 
 Implementation records focused ADRs for decisions that cross repository
 boundaries. [ADR-001](adr-001-plugin-runtime-broker-boundary.md) freezes the
-Tool/MCP Runtime ownership and provider-selection boundary. Additional ADRs
-remain required for:
+Tool/MCP Runtime ownership and provider-selection boundary, and
+[ADR-002](adr-002-cognitive-package-lifecycle-saga.md) freezes package-level
+surface ordering, idempotency, and crash replay. Additional ADRs remain
+required for:
 
 1. manifest schema v3 and v1/v2 adapter rules;
 2. Skill and OKF dependency plus managed-root projection;
 3. private Service endpoint and UI reverse-proxy binding;
-4. operation saga, idempotency, and crash reconciliation;
-5. workspace grants and global package reference counting; and
-6. stdio MCP compatibility and future Runtime session boundary; and
-7. OKF conformance, atomic Knowledge promotion/index observation, and
+4. workspace grants and global package reference counting;
+5. stdio MCP compatibility and future Runtime session boundary; and
+6. OKF conformance, atomic Knowledge promotion/index observation, and
    last-good-generation recovery.
 
 ## Architecture Acceptance Gates

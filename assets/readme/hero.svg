@@ -1,144 +1,97 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
   <title id="title">A3S Use — AI Native Package Manager</title>
-  <desc id="description">A trusted package lifecycle for native tools and cognitive plugins across Linux, macOS, and Windows.</desc>
+  <desc id="desc">One verified cognitive package owns Tool, MCP, OKF, Skill, and UI contributions and activates or removes them through one recoverable lifecycle.</desc>
 
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0c0f15"/>
-      <stop offset="0.55" stop-color="#07090d"/>
-      <stop offset="1" stop-color="#0b0e13"/>
+      <stop offset="0" stop-color="#0d1118"/>
+      <stop offset="1" stop-color="#07090d"/>
     </linearGradient>
-    <linearGradient id="amberLine" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#f0b65b" stop-opacity="0.15"/>
-      <stop offset="0.5" stop-color="#f0b65b"/>
-      <stop offset="1" stop-color="#f0b65b" stop-opacity="0.15"/>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f0b65b"/>
+      <stop offset="1" stop-color="#f0b65b" stop-opacity="0.12"/>
     </linearGradient>
-    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
-    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="#7d8796" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
   </defs>
 
-  <rect width="1200" height="560" rx="24" fill="url(#background)"/>
-  <rect x="1" y="1" width="1198" height="558" rx="23" fill="none" stroke="#202630"/>
-  <rect width="1200" height="560" rx="24" fill="url(#grid)"/>
+  <rect width="1200" height="520" rx="26" fill="url(#background)"/>
+  <rect x="1" y="1" width="1198" height="518" rx="25" fill="none" stroke="#252c37"/>
 
-  <g transform="translate(56 44)">
-    <g aria-label="A3S Use symbol">
-      <rect width="42" height="42" rx="9" fill="#f0b65b"/>
-      <path d="M11 29 20.8 12h3.1L34 29h-5.7l-1.6-3H18l-1.6 3Zm9.4-7.4h3.9l-2-4Z" fill="#07090d"/>
-    </g>
-    <text x="58" y="17" fill="#f4f7fb" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="700" letter-spacing="2.8">A3S USE</text>
-    <text x="58" y="39" fill="#919baa" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="13" letter-spacing="1.2">PACKAGE ENGINE / v0.2 FOUNDATION</text>
+  <g transform="translate(54 42)">
+    <rect width="46" height="46" rx="10" fill="#f0b65b"/>
+    <path d="m11 33 11-20h3.6L37 33h-6.2l-1.9-3.7H18.2L16.3 33Zm10-9.3h5.2l-2.6-5Z" fill="#080b10"/>
+    <text x="64" y="22" fill="#f4f7fb" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="22" font-weight="750" letter-spacing="3">A3S USE</text>
+    <text x="64" y="45" fill="#929dad" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" letter-spacing="1.3">AI NATIVE PACKAGE MANAGER</text>
   </g>
 
-  <g transform="translate(825 44)" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="12" letter-spacing="0.7">
-    <g>
-      <circle cx="8" cy="9" r="4" fill="#54dda1"/>
-      <text x="20" y="13" fill="#d8dee8">LINUX</text>
-      <text x="79" y="13" fill="#54dda1">SUPPORTED</text>
-    </g>
-    <g transform="translate(0 25)">
-      <circle cx="8" cy="9" r="4" fill="#54dda1"/>
-      <text x="20" y="13" fill="#d8dee8">MACOS</text>
-      <text x="79" y="13" fill="#54dda1">SUPPORTED</text>
-    </g>
-    <g transform="translate(173 0)">
-      <circle cx="8" cy="9" r="4" fill="#f0b65b"/>
-      <text x="20" y="13" fill="#d8dee8">WINDOWS</text>
-      <text x="20" y="38" fill="#f0b65b">PREVIEW</text>
-    </g>
+  <g transform="translate(805 44)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">
+    <circle cx="8" cy="8" r="5" fill="#55dda2"/>
+    <text x="24" y="14" fill="#c7cfda">LINUX + MACOS</text>
+    <circle cx="214" cy="8" r="5" fill="#f0b65b"/>
+    <text x="230" y="14" fill="#c7cfda">WINDOWS PREVIEW</text>
   </g>
 
-  <g transform="translate(56 130)">
-    <text fill="#f4f7fb" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="62" font-weight="760" letter-spacing="-2.4">AI NATIVE</text>
-    <text y="67" fill="#f4f7fb" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="62" font-weight="760" letter-spacing="-2.4">PACKAGE MANAGER</text>
-    <rect y="91" width="446" height="2" fill="url(#amberLine)"/>
-    <text y="124" fill="#b7c0cc" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20">
-      Native tools <tspan fill="#f0b65b">+</tspan> cognitive plugins. One trusted lifecycle.
+  <g transform="translate(54 150)">
+    <text fill="#f4f7fb" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="58" font-weight="780" letter-spacing="-2">ONE PACKAGE.</text>
+    <text x="414" fill="#f0b65b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="58" font-weight="780" letter-spacing="-2">FIVE SURFACES.</text>
+    <text y="62" fill="#f4f7fb" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="58" font-weight="780" letter-spacing="-2">ONE RECOVERABLE LIFECYCLE.</text>
+    <rect y="85" width="1092" height="2" fill="url(#rule)"/>
+    <text y="118" fill="#aeb7c4" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20">
+      Install, activate, hot-unplug, and uninstall every package-owned contribution together.
     </text>
   </g>
 
-  <g transform="translate(56 310)">
-    <g>
-      <rect width="230" height="160" rx="14" fill="#0c0f15" stroke="#2b313b"/>
-      <rect width="230" height="4" rx="2" fill="#5794ff"/>
-      <text x="18" y="32" fill="#5794ff" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" letter-spacing="1.5">01 / PACKAGE</text>
-      <text x="18" y="70" fill="#f4f7fb" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="18" font-weight="700">acme/research</text>
-      <text x="18" y="96" fill="#919baa" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="14">@1.4.0 · darwin-arm64</text>
-      <rect x="18" y="119" width="74" height="24" rx="12" fill="#5794ff" fill-opacity="0.12" stroke="#5794ff" stroke-opacity="0.55"/>
-      <text x="34" y="136" fill="#8eb8ff" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="12">ACL</text>
-      <rect x="100" y="119" width="104" height="24" rx="12" fill="#ffffff" fill-opacity="0.035" stroke="#343b46"/>
-      <text x="114" y="136" fill="#b7c0cc" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="12">IMMUTABLE</text>
+  <g id="package-proof" transform="translate(54 294)">
+    <rect width="1092" height="152" rx="18" fill="#0c1016" stroke="#3a424f" stroke-width="1.5"/>
+    <rect width="252" height="152" rx="18" fill="#111721"/>
+    <path d="M252 0v152" stroke="#3a424f" stroke-width="1.5"/>
+    <text x="24" y="34" fill="#f0b65b" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700" letter-spacing="1.5">COGNITIVE PACKAGE</text>
+    <text x="24" y="72" fill="#f4f7fb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24" font-weight="700">acme/cognitive</text>
+    <text x="24" y="101" fill="#929dad" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">generation 0042</text>
+    <text x="24" y="129" fill="#55dda2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">SHA-256 VERIFIED</text>
+
+    <g id="dependency-rails" fill="none" stroke="#7d8796" stroke-width="1.7" marker-end="url(#arrow)">
+      <path d="M416 42 C520 42 560 76 674 76"/>
+      <path d="M416 110 C520 110 560 76 674 76"/>
+      <path d="M582 110 C620 110 634 92 674 82"/>
+      <path d="M838 76 H932"/>
     </g>
 
-    <g transform="translate(248 0)">
-      <path d="M0 80H30" stroke="#596271" stroke-width="1.5"/>
-      <path d="m24 74 6 6-6 6" fill="none" stroke="#596271" stroke-width="1.5"/>
+    <g id="tool" transform="translate(286 16)">
+      <rect width="130" height="52" rx="10" fill="#5794ff" fill-opacity="0.12" stroke="#5794ff"/>
+      <text x="65" y="34" text-anchor="middle" fill="#9bc1ff" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700">TOOL</text>
     </g>
-
-    <g transform="translate(296 0)">
-      <rect width="230" height="160" rx="14" fill="#0c0f15" stroke="#2b313b"/>
-      <rect width="230" height="4" rx="2" fill="#54dda1"/>
-      <text x="18" y="32" fill="#54dda1" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" letter-spacing="1.5">02 / VERIFY</text>
-      <text x="18" y="70" fill="#f4f7fb" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="18" font-weight="700">TUF + SHA-256</text>
-      <text x="18" y="96" fill="#919baa" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="14">source · target · digest</text>
-      <path d="m19 125 8 8 17-19" fill="none" stroke="#54dda1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="54" y="135" fill="#b7c0cc" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="12">TRUST BOUND</text>
+    <g id="mcp" transform="translate(286 84)">
+      <rect width="130" height="52" rx="10" fill="#55dda2" fill-opacity="0.1" stroke="#55dda2"/>
+      <text x="65" y="34" text-anchor="middle" fill="#8ce9bd" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700">MCP</text>
     </g>
-
-    <g transform="translate(544 0)">
-      <path d="M0 80H30" stroke="#596271" stroke-width="1.5"/>
-      <path d="m24 74 6 6-6 6" fill="none" stroke="#596271" stroke-width="1.5"/>
+    <g id="okf" transform="translate(452 84)">
+      <rect width="130" height="52" rx="10" fill="#f0b65b" fill-opacity="0.1" stroke="#f0b65b"/>
+      <text x="65" y="34" text-anchor="middle" fill="#f1cd91" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700">OKF</text>
     </g>
-
-    <g transform="translate(592 0)">
-      <rect width="230" height="160" rx="14" fill="#0c0f15" stroke="#2b313b"/>
-      <rect width="230" height="4" rx="2" fill="#f0b65b"/>
-      <text x="18" y="32" fill="#f0b65b" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" letter-spacing="1.5">03 / ACTIVATE</text>
-      <text x="18" y="70" fill="#f4f7fb" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="18" font-weight="700">generation 0042</text>
-      <text x="18" y="96" fill="#919baa" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="14">stage → receipt → switch</text>
-      <rect x="18" y="119" width="186" height="24" rx="5" fill="#f0b65b" fill-opacity="0.1"/>
-      <text x="31" y="136" fill="#e9c98f" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="12">ATOMIC / DRAINABLE</text>
+    <g id="skill" transform="translate(674 50)">
+      <rect width="164" height="52" rx="10" fill="#f0b65b" fill-opacity="0.12" stroke="#f0b65b" stroke-width="1.5"/>
+      <text x="82" y="34" text-anchor="middle" fill="#f5d49d" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700">SKILL</text>
     </g>
-
-    <g transform="translate(840 0)">
-      <path d="M0 80H30" stroke="#596271" stroke-width="1.5"/>
-      <path d="m24 74 6 6-6 6" fill="none" stroke="#596271" stroke-width="1.5"/>
-    </g>
-
-    <g transform="translate(888 0)">
-      <rect width="200" height="160" rx="14" fill="#0c0f15" stroke="#2b313b"/>
-      <rect width="200" height="4" rx="2" fill="#f4f7fb"/>
-      <text x="18" y="32" fill="#d8dee8" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" letter-spacing="1.5">04 / PROJECT</text>
-      <text x="18" y="66" fill="#f4f7fb" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" font-weight="650">Agent-ready surfaces</text>
-      <g transform="translate(18 88)" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="700">
-        <rect width="52" height="28" rx="6" fill="#5794ff" fill-opacity="0.14" stroke="#5794ff" stroke-opacity="0.6"/>
-        <text x="9" y="19" fill="#8eb8ff">TOOL</text>
-        <rect x="60" width="51" height="28" rx="6" fill="#54dda1" fill-opacity="0.12" stroke="#54dda1" stroke-opacity="0.6"/>
-        <text x="70" y="19" fill="#82e8b9">MCP</text>
-        <rect x="119" width="63" height="28" rx="6" fill="#f0b65b" fill-opacity="0.12" stroke="#f0b65b" stroke-opacity="0.6"/>
-        <text x="125" y="19" fill="#e9c98f">SKILL</text>
-      </g>
-      <g transform="translate(18 124)" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="12" font-weight="700">
-        <rect width="42" height="24" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#596271" stroke-opacity="0.8"/>
-        <text x="13" y="17" fill="#d8dee8">UI</text>
-        <rect x="50" width="50" height="24" rx="6" fill="#f0b65b" fill-opacity="0.1" stroke="#f0b65b" stroke-opacity="0.6"/>
-        <text x="60" y="17" fill="#e9c98f">OKF</text>
-        <text x="108" y="17" fill="#f0b65b" font-size="10">M0K-B</text>
-      </g>
+    <g id="ui" transform="translate(932 50)">
+      <rect width="126" height="52" rx="10" fill="#f4f7fb" fill-opacity="0.06" stroke="#aab4c2"/>
+      <text x="63" y="34" text-anchor="middle" fill="#e4e9f0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700">UI</text>
     </g>
   </g>
 
-  <g transform="translate(56 514)" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="12" letter-spacing="0.7">
-    <text fill="#919baa">PACKAGE ID</text>
-    <text x="88" fill="#d8dee8">·</text>
-    <text x="106" fill="#919baa">PROVENANCE</text>
-    <text x="207" fill="#d8dee8">·</text>
-    <text x="225" fill="#919baa">TARGET</text>
-    <text x="285" fill="#d8dee8">·</text>
-    <text x="303" fill="#919baa">CAPABILITIES</text>
-    <text x="405" fill="#d8dee8">·</text>
-    <text x="423" fill="#919baa">LIFECYCLE</text>
-    <text x="1088" text-anchor="end" fill="#f0b65b">GITHUB.COM/A3S-LAB/USE</text>
+  <g transform="translate(54 484)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="650">
+    <text fill="#55dda2">INSTALL</text>
+    <text x="91" fill="#677181">→</text>
+    <text x="122" fill="#cbd3de">PREPARE FORWARD</text>
+    <text x="306" fill="#677181">→</text>
+    <text x="337" fill="#f0b65b">PUBLISH ONCE</text>
+    <text x="560" fill="#4c5665">|</text>
+    <text x="594" fill="#f0b65b">HIDE</text>
+    <text x="659" fill="#677181">→</text>
+    <text x="690" fill="#cbd3de">DRAIN</text>
+    <text x="764" fill="#677181">→</text>
+    <text x="795" fill="#cbd3de">REMOVE REVERSE</text>
   </g>
 </svg>

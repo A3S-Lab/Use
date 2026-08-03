@@ -99,11 +99,11 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTarget: "目标",
     consoleTrust: "信任",
     consoleGeneration: "代际",
-    consoleReady: "控制面已验证 · Knowledge 适配器待接入",
-    modelEyebrow: "ONE PACKAGE · TWO PLANES",
-    modelTitle: "一个不可变身份，同时承载原生程序与认知表面",
+    consoleReady: "五表面生命周期基础已就绪 · 生产宿主待接入",
+    modelEyebrow: "ONE PACKAGE · FIVE CONTRIBUTIONS",
+    modelTitle: "一个不可变身份，一套安装与移除边界",
     modelBody:
-      "传统包管理器在文件落盘后结束。目标平台还会验证包声明的 Tool、MCP、Skill、UI 与 OKF 知识，并将可用证据投影给宿主。",
+      "Tool、MCP、Skill、UI 与 OKF 是包拥有的贡献，不是可独立安装的包。A3S Use 验证它们共享的代际，只向宿主投影依赖已就绪的证据。",
     nativePlane: "NATIVE PLANE",
     nativeTitle: "平台原生执行",
     nativeBody: "目标相关的可执行文件、运行时资产、原生 argv 与标准进程状态。",
@@ -147,9 +147,9 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       okf: {
         label: "OKF",
-        kind: "OPEN KNOWLEDGE FORMAT · M0K-B",
+        kind: "OPEN KNOWLEDGE FORMAT · NON-EXECUTABLE",
         title: "可共享、可索引的知识包",
-        body: "OKF v0.2 用带 YAML frontmatter 的交叉链接 Markdown 表达概念，并兼容 v0.1。M0K-B 已实现 manifest、包验证、catalog、plan、Knowledge observation 与依赖门禁；生产 A3S Knowledge 持久适配器仍待接入。",
+        body: "OKF v0.2 用带 YAML frontmatter 的交叉链接 Markdown 表达概念。生命周期适配器已支持精确代际的 stage、promote、hide 与 receipt-owned remove；生产 A3S Knowledge 后端仍待接入。",
         evidence: [
           "content digest",
           "bounded conformance",
@@ -158,9 +158,9 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
     },
     lifecycleEyebrow: "TRUSTED LIFECYCLE",
-    lifecycleTitle: "先证明，再发布能力",
+    lifecycleTitle: "正向准备，一次发布，反向移除",
     lifecycleBody:
-      "搜索只读取已签名元数据；真正变更之前，目标、权限、提供者和影响都被绑定进不可变计划。",
+      "在跨宿主变更前，一个持久包日志会绑定已审查计划、精确代际、五表面依赖图和幂等检查点。",
     lifecycle: [
       {
         number: "01",
@@ -184,13 +184,13 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       {
         number: "05",
-        title: "协调",
-        body: "准备授权、Runtime 绑定、投影与依赖闭包。",
+        title: "准备",
+        body: "按依赖顺序准备 Runtime、Knowledge、Skill 与 UI 宿主。",
       },
       {
         number: "06",
-        title: "发布",
-        body: "原子切换能力代际，并排空旧代际调用。",
+        title: "发布 / 移除",
+        body: "一次发布；或先隐藏、排空，再反向移除 receipt-owned 资源。",
       },
     ],
     architectureEyebrow: "CLEAR OWNERSHIP",
@@ -201,7 +201,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     manager: "共享 Plugin Manager",
     managerBody: "目录 · 策略 · 确认 · plan/apply · replay",
     engine: "A3S Use 包引擎",
-    engineBody: "verify · stage · receipt · grant · reconcile",
+    engineBody: "verify · journal · prepare · publish · drain",
     planes: "原生 + 认知表面",
     planesBody: "Tool · MCP · Skill · UI · OKF",
     hosts: "A3S 宿主",
@@ -264,11 +264,12 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTarget: "target",
     consoleTrust: "trust",
     consoleGeneration: "generation",
-    consoleReady: "control plane verified · Knowledge adapter pending",
-    modelEyebrow: "ONE PACKAGE · TWO PLANES",
-    modelTitle: "One immutable identity for native programs and cognition",
+    consoleReady:
+      "five-surface lifecycle foundation · production hosts pending",
+    modelEyebrow: "ONE PACKAGE · FIVE CONTRIBUTIONS",
+    modelTitle: "One immutable identity. One install and removal boundary.",
     modelBody:
-      "Traditional package managers stop after placing files. The target platform also verifies declared Tool, MCP, Skill, UI, and OKF knowledge surfaces, then projects readiness evidence to hosts.",
+      "Tool, MCP, Skill, UI, and OKF are package-owned contributions—not independently installed packages. A3S Use verifies their shared generation and projects only dependency-ready evidence to hosts.",
     nativePlane: "NATIVE PLANE",
     nativeTitle: "Platform-native execution",
     nativeBody:
@@ -313,9 +314,9 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       okf: {
         label: "OKF",
-        kind: "OPEN KNOWLEDGE FORMAT · M0K-B",
+        kind: "OPEN KNOWLEDGE FORMAT · NON-EXECUTABLE",
         title: "Shareable, indexable knowledge packages",
-        body: "OKF v0.2 represents concepts as cross-linked Markdown with YAML frontmatter and preserves v0.1 compatibility. M0K-B implements manifest, package, catalog, plan, Knowledge observation, and dependency gates; the production persistent A3S Knowledge adapter is still pending.",
+        body: "OKF v0.2 represents concepts as cross-linked Markdown with YAML frontmatter. The lifecycle adapter stages, promotes, hides, and receipt-removes exact generations; the production A3S Knowledge backend remains pending.",
         evidence: [
           "content digest",
           "bounded conformance",
@@ -324,9 +325,9 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
     },
     lifecycleEyebrow: "TRUSTED LIFECYCLE",
-    lifecycleTitle: "Prove readiness before publishing capability",
+    lifecycleTitle: "Prepare forward. Publish once. Remove in reverse.",
     lifecycleBody:
-      "Search reads signed metadata only. Before mutation, target, permissions, provider, and impact are bound into one immutable plan.",
+      "One durable package journal binds the reviewed plan, exact generation, five-surface dependency graph, and idempotent checkpoints before multi-host mutation.",
     lifecycle: [
       {
         number: "01",
@@ -350,13 +351,13 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       {
         number: "05",
-        title: "Reconcile",
-        body: "Prepare grants, Runtime bindings, projections, and dependency closure.",
+        title: "Prepare",
+        body: "Prepare Runtime, Knowledge, Skill, and UI hosts in dependency order.",
       },
       {
         number: "06",
-        title: "Publish",
-        body: "Switch capability generation atomically, then drain the old one.",
+        title: "Publish / remove",
+        body: "Publish once, or hide and drain before reverse receipt-owned removal.",
       },
     ],
     architectureEyebrow: "CLEAR OWNERSHIP",
@@ -367,7 +368,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     manager: "Shared Plugin Manager",
     managerBody: "catalog · policy · confirmation · plan/apply · replay",
     engine: "A3S Use package engine",
-    engineBody: "verify · stage · receipt · grant · reconcile",
+    engineBody: "verify · journal · prepare · publish · drain",
     planes: "Native + cognitive surfaces",
     planesBody: "Tool · MCP · Skill · UI · OKF",
     hosts: "A3S hosts",

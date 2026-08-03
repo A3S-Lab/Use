@@ -1,19 +1,20 @@
 # A3S Use Plugin Contract Reference
 
-- Status: M0 complete; M0K-B OKF control-plane contracts complete
+- Status: M0 complete; M0K-B OKF control-plane and package lifecycle foundation complete
 - Baseline date: 2026-07-30
 - Product amendment: OKF bundle contract/conformance frozen 2026-07-31;
   plugin-surface control plane frozen 2026-08-01; managed-host protocol frozen
-  2026-08-02
+  2026-08-02; package lifecycle intent/journal frozen 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 
 This document records the machine-readable plugin contracts implemented in
 `a3s-use-core`, plus the signed catalog reader and durable workspace-grant
-store implemented in `a3s-use-extension`. It freezes the control-plane
-vocabulary before shared lifecycle mutation is implemented. It does not claim
-that the Plugin Manager, surface reconciler, or Runtime providers are complete.
+store implemented in `a3s-use-extension`, plus the package lifecycle contracts
+implemented in `a3s-use`. It does not claim that production Plugin Manager
+wiring, package/capability hosts, Knowledge, Gateway, or Runtime generation
+retirement are complete.
 
 ## Contract Set
 
@@ -50,6 +51,8 @@ that the Plugin Manager, surface reconciler, or Runtime providers are complete.
 | Host apply | `a3s.use.plugin-host-apply-request/result.v1` | Digest-only apply with exact confirmation and idempotent operation evidence |
 | Host enablement | `a3s.use.plugin-host-enablement-request/result.v1` | Optimistic-generation enable or disable through the same manager |
 | Host observation | `a3s.use.plugin-host-observation-request/result.v1` | Exact Use-owned package/capability state or explicit unavailable evidence |
+| Package lifecycle intent | `a3s.use.plugin-lifecycle-intent.v1` | Exact package generation, five-surface graph, action, and deterministic checkpoint schedule |
+| Package lifecycle operation | `a3s.use.plugin-lifecycle-operation.v1` | Durable checkpoint receipts, optional failures, required failure evidence, and terminal status |
 | OKF projection receipt | `a3s.use.okf-projection-receipt.v1` | Exact scope/package/surface generation staged for Knowledge |
 | OKF Knowledge observation | `a3s.use.okf-knowledge-observation.v1` | Staged, promoted, failed, or removed index evidence and last-good selection |
 | OKF capability projection | `a3s.use.okf-capability-projection.v1` | Exact promoted evidence safe to join to a scoped capability generation |
@@ -96,10 +99,27 @@ until that evidence is ready. M0K-C-A provides a public `Send + Sync`
 stage/promote/observe/remove port, an evidence-checking client, and a bounded
 durable binding store. The stage request revalidates the exact in-memory bundle
 bytes; the store accepts only monotonic observation updates and creates a
-capability projection only from an exact retained promoted record. Production
-Knowledge indexing, scope-aware session publication, cited retrieval,
-parent-saga recovery, and receipt-owned cleanup remain M0K-C-B work; no second
-lifecycle or Runtime path is implied by these contracts.
+capability projection only from an exact retained promoted record. The package
+lifecycle adapter implements receipt-owned OKF
+stage/promote/hide/remove semantics and durable replay. Production Knowledge
+indexing, scope-aware session publication, cited retrieval, and end-to-end
+parent-saga recovery remain M0K-C-B work; no second lifecycle or Runtime path
+is implied by these contracts.
+
+### Package lifecycle operation is package-owned
+
+The schema-v3 manifest is the only surface inventory for both reconciliation
+and lifecycle. Tool, MCP, OKF, Skill, and UI contributions are not independent
+installation records. The intent binds the reviewed plan, scope, package and
+manifest digests, generation, action, canonical dependency levels, required
+closure, and per-checkpoint idempotency keys.
+
+Install/enable prepares forward and publishes once. Disable hides, drains, and
+stops in reverse. Uninstall hides, drains, removes receipt-owned contributions
+in reverse, and only then removes the package. The operation journal is
+bounded, strict, atomic, cross-process locked, and rejects reordered,
+substituted, or tampered receipts. Production host injection and blue/green
+prior-generation retirement remain outside the completed contract foundation.
 
 All JSON contracts:
 

@@ -58,6 +58,20 @@ impl PluginRuntimeClient {
         remove_request_id: impl Into<String>,
         deadline_at_ms: Option<u64>,
     ) -> UseResult<RuntimeRemoval> {
+        self.stop_service(receipt, stop_request_id, deadline_at_ms)
+            .await?;
+        self.remove_service(receipt, remove_request_id, deadline_at_ms)
+            .await
+    }
+
+    /// Idempotently stop one exact Runtime Service generation without removing
+    /// its provider resource or durable binding receipt.
+    pub async fn stop_service(
+        &self,
+        receipt: &RuntimeServiceBindingReceipt,
+        request_id: impl Into<String>,
+        deadline_at_ms: Option<u64>,
+    ) -> UseResult<RuntimeInspection> {
         RuntimeBindingReceipt::Service(receipt.clone()).validate()?;
         self.verify_receipt_provider(&RuntimeBindingReceipt::Service(receipt.clone()), false)
             .await?;
@@ -73,7 +87,7 @@ impl PluginRuntimeClient {
                 if !observation.state.is_terminal() {
                     let stop = RuntimeActionRequest {
                         schema: RuntimeActionRequest::SCHEMA.to_string(),
-                        request_id: stop_request_id.into(),
+                        request_id: request_id.into(),
                         unit_id: receipt.unit_id.clone(),
                         generation: receipt.generation,
                         deadline_at_ms,
@@ -86,18 +100,44 @@ impl PluginRuntimeClient {
                         .map_err(|error| runtime_error("drain Runtime Service", error))?;
                     stopped.validate().map_err(runtime_contract_error)?;
                     validate_stopped_inspection(receipt, &stopped)?;
+                    return Ok(stopped);
                 }
+                Ok(RuntimeInspection::Found {
+                    schema: RuntimeInspection::SCHEMA.to_string(),
+                    observation,
+                })
             }
-            RuntimeInspection::NotFound { unit_id, .. } if unit_id == receipt.unit_id => {}
-            RuntimeInspection::NotFound { .. } => {
-                return Err(runtime_contract_error(
-                    "Runtime inspection returned a different missing unit identity.",
-                ))
-            }
+            RuntimeInspection::NotFound {
+                schema,
+                unit_id,
+                last_generation,
+            } if unit_id == receipt.unit_id => Ok(RuntimeInspection::NotFound {
+                schema,
+                unit_id,
+                last_generation,
+            }),
+            RuntimeInspection::NotFound { .. } => Err(runtime_contract_error(
+                "Runtime inspection returned a different missing unit identity.",
+            )),
         }
+    }
+
+    /// Idempotently remove one exact stopped Runtime Service generation.
+    ///
+    /// Callers keep the durable binding receipt until this returns matching
+    /// provider evidence, so a crash can safely replay the same request.
+    pub async fn remove_service(
+        &self,
+        receipt: &RuntimeServiceBindingReceipt,
+        request_id: impl Into<String>,
+        deadline_at_ms: Option<u64>,
+    ) -> UseResult<RuntimeRemoval> {
+        RuntimeBindingReceipt::Service(receipt.clone()).validate()?;
+        self.verify_receipt_provider(&RuntimeBindingReceipt::Service(receipt.clone()), false)
+            .await?;
         let remove = RuntimeActionRequest {
             schema: RuntimeActionRequest::SCHEMA.to_string(),
-            request_id: remove_request_id.into(),
+            request_id: request_id.into(),
             unit_id: receipt.unit_id.clone(),
             generation: receipt.generation,
             deadline_at_ms,

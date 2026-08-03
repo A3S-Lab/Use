@@ -4,7 +4,8 @@
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
-  and M0K-C-A adapter/store foundation frozen 2026-08-02
+  M0K-C-A adapter/store foundation frozen 2026-08-02, and package-level
+  five-surface saga foundation frozen 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -17,8 +18,10 @@ The checked-in M0/M0K contracts cover Tool, MCP, OKF, Skill, and UI. The shared
 OKF bundle inspector, schema-v3 parser, package validator, exact host evidence,
 reconciler gate, injected Knowledge port, evidence-checking client, and
 persistent generation store are implemented. The production A3S Knowledge
-index backend and parent-saga checkpoints described below remain target
-behavior; without their promoted observation, an OKF surface stays
+index backend remains target behavior. A package-level checkpoint journal and
+typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
+foundation, but the production package/capability hosts and umbrella-manager
+wiring remain pending; without promoted observation, an OKF surface stays
 unpublished.
 
 ## Complete End-to-End Lifecycle Flow
@@ -361,7 +364,10 @@ state and last-good selection, and `a3s.use.okf-capability-projection.v1`
 contains only exact promoted evidence. M0K-C-A persists their combined
 `a3s.use.okf-knowledge-binding.v1` record and reconstructs selection only from
 retained exact promoted evidence. The production Knowledge index backend and
-parent-saga caller that supply these records are still pending.
+scope-aware capability/session caller remain pending. The package lifecycle
+adapter already performs stage-store-promote-store, reuses a retained promoted
+generation after restart, hides without deleting on disable, and delegates
+only the exact receipt to Knowledge on uninstall.
 
 Before publication, the candidate exact generation must provide evidence for:
 
@@ -404,19 +410,36 @@ Package storage, Runtime providers, Gateway, and Code/Web cannot participate in
 one ACID transaction. Lifecycle therefore uses a durable, idempotent saga with
 an operation record and compensating actions.
 
-The durability boundary has two non-overlapping layers:
+The durability boundary has three non-overlapping layers:
 
 - the shared Plugin Manager stores immutable reviewed plans, apply intent, and
   terminal results keyed by `operationId`; it owns expiry, replay, adapter
   equivalence, and capability generation/revision evidence;
-- the umbrella component lifecycle and A3S Use retain the only side-effect
-  checkpoint journals; they own downloads, package commits, receipts, Runtime,
-  Gateway, projections, and crash recovery.
+- the umbrella component lifecycle owns cross-component download and component
+  mutation checkpoints; and
+- the A3S Use package journal owns the canonical package/surface sequence and
+  non-secret checkpoint evidence, while the package, grant, Runtime, Gateway,
+  Skill/UI, and Knowledge stores retain detailed resource receipts.
 
 The manager record never duplicates per-surface checkpoints. After a crash, it
-re-enters the exact umbrella apply command, whose existing component journal
-verifies observed state and resumes the saga. This separation keeps one source
-of truth for mutations while still making adapter retries idempotent.
+re-enters the exact umbrella apply command, which resumes the matching A3S Use
+intent. That intent validates every completed receipt and executes only its
+next deterministic checkpoint. This separation keeps one package journal as
+the sequencing source of truth while each typed host remains the ownership
+source of truth for its resources.
+
+The implemented package checkpoint schedules are:
+
+| Action | Canonical order |
+| --- | --- |
+| Install | commit installed-disabled package → prepare surfaces in dependency order → publish one capability generation |
+| Upgrade candidate | commit candidate → prepare candidate surfaces → publish candidate; prior-generation retirement is still pending |
+| Enable | prepare surfaces in dependency order → publish one capability generation |
+| Disable | hide package capability → drain accepted calls → stop surfaces in reverse dependency order |
+| Uninstall | hide package capability → drain accepted calls → remove receipt-owned surfaces in reverse dependency order → remove package |
+
+Tool, MCP, OKF, Skill, and UI are contributions inside this sequence. No
+surface receives an independent install or uninstall record.
 
 ### Install and enable
 
@@ -491,6 +514,14 @@ observations.
 Every external mutation carries an idempotency key derived from operation,
 surface, and generation. Recovery never guesses that an unknown provider unit
 belongs to the plugin.
+
+The A3S Use journal stores bounded canonical JSON under a SHA-256 scope path and
+validated package segments. Writes use a cross-process lock, atomic replacement,
+file and parent sync, symlink rejection, strict schemas, and monotonic
+checkpoint times. Replaying a completed checkpoint with different outcome or
+evidence is a conflict. Runtime preparation and cleanup evidence is derived
+from stable reviewed plan identity rather than volatile observation timestamps,
+so same-key concurrent replay converges.
 
 ## Security Architecture
 
