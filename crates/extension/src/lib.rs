@@ -633,15 +633,8 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         }
         if schema_version == 3 {
             let v3_host = semver::Version::new(0, 3, 0);
-            let current_host =
-                semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|error| {
-                    manifest_error(format!(
-                        "The A3S Use package version is invalid during schema validation: {error}"
-                    ))
-                })?;
-            if !requirement.matches(&v3_host)
-                || (current_host < v3_host && requirement.matches(&current_host))
-            {
+            let pre_v3_host = semver::Version::new(0, 2, 1);
+            if !requirement.matches(&v3_host) || requirement.matches(&pre_v3_host) {
                 return Err(manifest_error(
                     "Schema version 3 must require A3S Use 0.3 and exclude pre-0.3 hosts.",
                 ));

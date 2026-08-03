@@ -115,6 +115,15 @@ The following foundations are implemented:
 - complete dependency-forward Registry revalidation/download, exact retained
   dependency checks, reverse-dependent uninstall protection, and one atomic
   capability snapshot cutover for changed package graphs;
+- standalone `a3s-use install` / `uninstall` graph commands plus compatible
+  remote `component install` / `uninstall` dispatch for signed schema-v3
+  records, with optional reviewed package-lock digests;
+- durable installed-root locks and admitted pending graph operations carrying
+  exact manifests and generations, including published-install journal repair
+  and pending-only reverse-uninstall recovery;
+- a public lifecycle factory that lets Code/Web hosts inject Runtime, Gateway,
+  Knowledge, Skill, and UI ownership while the standalone composition fails
+  closed for unavailable Runtime Service, HTTP MCP, or OKF hosts;
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
 - generation/revision capability snapshots consumed by A3S Code;
 - live MCP and Skill projection into a dedicated A3S Use worker;
@@ -160,10 +169,10 @@ The main gaps are:
   its bounded read-only management MCP is connected, while production host
   composition across package/capability and surface adapters remains to be
   connected;
-- the dependency resolver, lock, remote closure downloader, and graph lifecycle
-  coordinator are implemented in A3S Use, but the compatible `component
-  install` CLI and current Code/Web Marketplace E2E still enter the legacy
-  single-package installer;
+- the dependency resolver, lock, remote closure downloader, graph lifecycle
+  coordinator, and signed remote standalone CLI path are implemented in A3S
+  Use, but Code TUI/Web and management MCP have not yet injected their complete
+  host set through the public lifecycle factory;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - the versioned OKF manager/search/selection contract, injected Knowledge port,
@@ -467,6 +476,16 @@ Implementation status (2026-08-03):
   published snapshot, publishes the changed closure once, removes in reverse,
   rejects installed dependents, and recovers partial receipt writes without
   exposing a partial graph;
+- completed in A3S Use: top-level `install`/`uninstall` and compatible remote
+  `component` commands dispatch signed schema-v3 records through the graph
+  manager; package-lock mismatches fail before archive download;
+- completed in A3S Use: root dependency locks, admitted pending plans,
+  per-package manifest/generation evidence, and symlink-safe stores survive
+  restart; a published install completes unfinished journals, and uninstall
+  can resume after both the root receipt and installed-root graph are gone;
+- completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
+  embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
+  Knowledge adapters; the standalone factory does not invent fallback hosts;
 - covered: typed complete-catalog mapping, lifecycle argument and digest
   validation, Use-owned JSON output, operation ID uniqueness, expiry,
   append-only replay, corruption rejection, cross-process locking, Web adapter
@@ -475,9 +494,9 @@ Implementation status (2026-08-03):
   contracts, offline child-policy propagation, a signed-registry CLI
   plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
   smoke test;
-- pending: umbrella-manager injection of the implemented package graph,
-  package/capability,
-  typed Runtime, Gateway, stdio MCP, Skill/UI, and Knowledge adapters; grant
+- pending: umbrella-manager use of the public lifecycle factory to inject the
+  implemented package/capability, typed Runtime, Gateway, stdio MCP, Skill/UI,
+  and Knowledge adapters; grant
   sub-saga composition; prior Runtime generation retirement; and complete Unix
   Marketplace lifecycle E2E through the shared service. The shared manager
   must also implement the published managed-host port before a Cloud adapter

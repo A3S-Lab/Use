@@ -53,6 +53,8 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "capabilities" => capabilities().await,
         "capability" => capability(&args[1..]).await,
         "doctor" => doctor(args.get(1).map(String::as_str)).await,
+        "install" => package_command_alias("install", &args[1..]).await,
+        "uninstall" => package_command_alias("uninstall", &args[1..]).await,
         "component" => component(&args[1..]).await,
         "browser" => browser(&args[1..]).await,
         "ocr" => ocr(&args[1..]).await,
@@ -114,6 +116,8 @@ fn help() -> CommandOutput {
             "  a3s-use capability snapshot [--json]\n",
             "  a3s-use capability watch [--after-generation <n>] [--after-revision <sha256>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use doctor [browser|box|ocr] [--json]\n",
+            "  a3s-use install <publisher/name> [registry options] [--json]\n",
+            "  a3s-use uninstall <publisher/name> [--json]\n",
             "  a3s-use component list|status|install|uninstall [args] [--json]\n",
             "  a3s-use browser doctor [--json]\n",
             "  a3s-use browser render <url> [--output <path>] [--screenshot <path>] [--json]\n",
@@ -136,6 +140,8 @@ fn help() -> CommandOutput {
                 "capabilities",
                 "capability",
                 "doctor",
+                "install",
+                "uninstall",
                 "component",
                 "browser",
                 "box",
@@ -145,6 +151,13 @@ fn help() -> CommandOutput {
             ]
         }),
     )
+}
+
+async fn package_command_alias(command: &str, args: &[String]) -> UseResult<CommandOutput> {
+    let mut delegated = Vec::with_capacity(args.len() + 1);
+    delegated.push(command.to_string());
+    delegated.extend_from_slice(args);
+    component(&delegated).await
 }
 
 async fn capabilities() -> UseResult<CommandOutput> {
@@ -469,6 +482,12 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
     let version = option_argument(args, "--version")?;
     let channel = option_argument(args, "--channel")?.unwrap_or("stable");
     let expected_plan = option_argument(args, "--registry-plan-digest")?;
+    let expected_package_lock = option_argument(args, "--package-lock-digest")?;
+    if expected_plan.is_some() && expected_package_lock.is_some() {
+        return Err(usage_error(
+            "--registry-plan-digest and --package-lock-digest are mutually exclusive",
+        ));
+    }
     let release_bundle_sha256 = option_argument(args, "--release-bundle-sha256")?;
     let force = args.iter().any(|argument| argument == "--force");
     let allow_unsigned = args.iter().any(|argument| argument == "--allow-unsigned");
@@ -478,6 +497,7 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
         || trusted_root.is_some()
         || version.is_some()
         || expected_plan.is_some()
+        || expected_package_lock.is_some()
         || option_argument(args, "--channel")?.is_some();
     let result = if let Some(source) = source {
         if remote_requested || release_bundle_sha256.is_some() {
@@ -537,6 +557,7 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
             version,
             channel,
             expected_plan,
+            expected_package_lock,
             force,
         )
         .await?
@@ -552,7 +573,8 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
         },
         serde_json::json!({
             "component": external_component_value(&result.extension, id.starts_with("use/")),
-            "changed": result.changed
+            "changed": result.changed,
+            "packageGraph": result.package_graph
         }),
     ))
 }
@@ -615,7 +637,8 @@ async fn component_uninstall(id: &str) -> UseResult<CommandOutput> {
             serde_json::json!({
                 "component": format!("use/{}", result.package_id),
                 "route": extension.route,
-                "changed": result.changed
+                "changed": result.changed,
+                "packageGraph": result.package_graph
             }),
         ));
     }
@@ -629,7 +652,8 @@ async fn component_uninstall(id: &str) -> UseResult<CommandOutput> {
             },
             serde_json::json!({
                 "component": format!("use/{}", result.package_id),
-                "changed": result.changed
+                "changed": result.changed,
+                "packageGraph": result.package_graph
             }),
         ));
     }
@@ -1085,6 +1109,7 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
             | "--version"
             | "--channel"
             | "--registry-plan-digest"
+            | "--package-lock-digest"
             | "--release-bundle-sha256" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));

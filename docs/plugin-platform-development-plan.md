@@ -220,8 +220,9 @@ Remaining on the critical path:
 - assemble workspace grant proposals/change sets before final draft binding;
 - inject the implemented package/capability and typed surface hosts into the
   package-level coordinator through one umbrella Plugin Manager composition;
-- transport and apply the implemented dependency lock through CLI, Web,
-  management MCP, and managed-host adapters instead of the legacy installer;
+- transport and apply the implemented dependency lock from the standalone CLI
+  through Code Web, TUI, management MCP, and managed-host adapters using the
+  public lifecycle factory and the same durable graph records;
 - coordinate the existing grant sub-saga and new package journal through the
   umbrella Plugin Manager without a parallel lifecycle path;
 - implement prior Runtime generation retirement after blue/green cutover; and
@@ -236,8 +237,8 @@ earlier ownership or durability gate.
 | Slice | Scope | Required proof |
 | --- | --- | --- |
 | P0 — Package/capability hosts (complete 2026-08-03) | Installed-disabled generation commit/removal and atomic publish/hide/drain over receipt schema v3, snapshots, and route leases | Root/receipt/snapshot replay, exact removal, drain timeout, tamper rejection, and unchanged v1/v2 suites pass |
-| P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, retained dependency verification, forward install, atomic graph publication, and reverse uninstall | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection, two-package TUF closure, retained-node checks, reverse-dependent guard, and partial-receipt recovery pass |
-| P1 — Host composition | Have the umbrella Plugin Manager inject explicit Runtime selections, Gateway readiness, stdio MCP, Skill/UI, and A3S Knowledge adapters into one coordinator | CLI and Web produce the same intent and host set; unavailable hosts fail before publication |
+| P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, standalone CLI dispatch, retained dependency verification, forward install, atomic graph publication, reverse uninstall, and durable graph replay | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection before download, cross-Registry TUF closure, retained-node checks, reverse-dependent guard, published-install repair, pending-only uninstall recovery, and symlink ownership tests pass |
+| P1 — Host composition | Have the umbrella Plugin Manager implement `CognitivePackageLifecycleFactory` with explicit Runtime selections, Gateway readiness, stdio MCP, Skill/UI, and A3S Knowledge adapters | CLI and Web produce the same intent and host set; unavailable hosts fail before publication |
 | P2 — Grant composition | Join the existing grant sub-saga to package checkpoints and capability cutover | Candidate grant survives restart; old grant cannot retire before exact cutover evidence |
 | P3 — Blue/green retirement | Retain N and N+1 Runtime/Gateway/projection receipts through cutover, then hide, drain, and remove N | Failed N+1 leaves N callable; successful N+1 leaks no old Runtime unit or route |
 | P4 — Product adapters | Route CLI, Web Marketplace, management MCP, and managed-host mutations through the same operation journal and expose snapshot/watch updates to A3S Code | Install/enable/disable/uninstall hot-plugs Tool, MCP, Skill, UI, and OKF without host restart |

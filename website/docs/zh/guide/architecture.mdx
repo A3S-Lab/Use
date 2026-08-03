@@ -93,7 +93,9 @@ surface enable：   前向准备 surface → 一次发布
 surface disable：  hide → drain → 反向停止 surface
 ```
 
-Runtime Tool/MCP、immutable Skill/UI 与 OKF Knowledge adapter 已实现。P0 schema-v3 package/capability host 可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 route lease，并只移除 receipt-owned root。依赖基础又增加了精确 retained-node 校验和 crash-safe 原子图发布。Umbrella Plugin Manager 与 grant 组合、真实 A3S Knowledge 后端、Gateway 集成和旧 Runtime generation 退休仍在进行；旧 CLI 尚未暴露图安装，因此该基础不代表完整 production saga 已交付。
+Runtime Tool/MCP、immutable Skill/UI 与 OKF Knowledge adapter 已实现。P0 schema-v3 package/capability host 可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 route lease，并只移除 receipt-owned root。依赖基础又增加了精确 retained-node 校验、crash-safe 原子图发布、durable admission/lock record，以及 partial install/uninstall 后的 journal recovery；signed remote standalone CLI 已使用该图。Umbrella Plugin Manager 与 grant 组合、真实 A3S Knowledge 后端、Gateway 集成和旧 Runtime generation 退休仍在进行，因此该基础不代表完整 production saga 已交付。
+
+Embedding host 实现 `CognitivePackageLifecycleFactory`，提供精确的 Runtime、Gateway、Skill/UI 与 A3S Knowledge adapter，并复用 Use 的 resolver、graph journal 和 capability cutover，而不是创建另一个 package manager。standalone factory 支持 executable Task、stdio MCP 和 immutable Skill/UI projection；必需的 Service、HTTP MCP 或 OKF owner 未注入时，会在发布前失败。
 
 [ADR-002](https://github.com/A3S-Lab/Use/blob/main/docs/adr-002-cognitive-package-lifecycle-saga.md) 冻结了该生命周期边界。
 

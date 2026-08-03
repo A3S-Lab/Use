@@ -15,8 +15,10 @@ This document records the machine-readable plugin contracts implemented in
 store implemented in `a3s-use-extension`, plus the package lifecycle contracts
 implemented in `a3s-use`. It does not claim that production Plugin Manager
 wiring, Knowledge, Gateway, or Runtime generation retirement are complete. The
-package/capability and dependency-graph hosts are implemented foundations, but
-the compatible product CLI still enters the legacy installer.
+package/capability and dependency-graph hosts are implemented foundations.
+Signed remote schema-v3 records enter that graph from `a3s-use install` and
+the compatible `component install` command; Code/Web host composition remains
+in progress.
 
 ## Contract Set
 
@@ -40,6 +42,8 @@ the compatible product CLI still enters the legacy installer.
 | Catalog record | `a3s.use.plugin-catalog.v2` | Plan-ready manifest evidence and surface dependency closure |
 | Catalog record | `a3s.use.plugin-catalog.v3` | Exact OKF bundle evidence and, for executable surfaces, a separately signed planning target |
 | Package lock | `a3s.use.plugin-package-lock.v1` | Exact transitive versions, dependency edges, content digests, host target/version, and Registry/TUF provenance |
+| Installed package graph | `a3s.use.installed-package-graph.v1` | Root-owned exact dependency lock retained for shared-node reference and reverse uninstall |
+| Pending package graph operation | `a3s.use.pending-package-graph-operation.v1` | Durable admitted plan, exact changed manifests/generations, and crash-replay ownership |
 | Planning bundle | `a3s.use.plugin-planning-bundle.v1` | Pre-archive Tool/MCP workload, release, and artifact evidence |
 | Installed plan evidence | `a3s.use.installed-plugin-plan-evidence.v1` | Package-specific receipt, catalog, surface, and capability join |
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |

@@ -8,6 +8,8 @@ mod browser_driver;
 mod browser_session_cli;
 mod capability_registry;
 pub mod cli;
+#[cfg(feature = "extensions")]
+pub mod cognitive_package;
 mod component_route;
 mod extension_cli;
 mod first_use;

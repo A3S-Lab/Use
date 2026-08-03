@@ -203,7 +203,7 @@ async fn tuf_catalog_v2_install_persists_and_revalidates_plan_ready_evidence() {
     catalog.description = "Scientific research capabilities for A3S agents.".to_owned();
     catalog.publisher = "a3s".to_owned();
     catalog.version = PACKAGE_VERSION.to_owned();
-    catalog.requires_use = ">=0.2.0, <0.3.0".to_owned();
+    catalog.requires_use = ">=0.2.0, <0.4.0".to_owned();
     catalog.target = target;
     catalog.archive.target_name = target_name.clone();
     catalog.archive.length = archive.len() as u64;
@@ -419,7 +419,7 @@ fn planning_test_repository(
     catalog.description = "Scientific research capabilities for A3S agents.".to_owned();
     catalog.publisher = "a3s".to_owned();
     catalog.version = PACKAGE_VERSION.to_owned();
-    catalog.requires_use = ">=0.2.0, <0.3.0".to_owned();
+    catalog.requires_use = ">=0.3.0, <0.4.0".to_owned();
     catalog.target = target;
     catalog.archive.target_name = archive_target.clone();
     catalog.archive.length = archive.len() as u64;

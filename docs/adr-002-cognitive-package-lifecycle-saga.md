@@ -139,19 +139,24 @@ Implemented:
   adapters over generation-bound receipt schema v3, immutable snapshots, and
   route leases;
 - concrete Runtime, immutable Skill/UI, and OKF Knowledge adapters;
+- a public lifecycle factory for embedding host composition;
+- standalone signed-Registry graph install/uninstall with durable lock,
+  admission, manifest, and generation evidence;
 - stable replay evidence for Runtime preparation and removal;
 - a content-addressed package fixture containing all five contribution kinds;
   and
 - unit and integration coverage for forward preparation, reverse removal,
   optional failure, required failure, root/receipt/snapshot crash replay,
-  drain timeout, tamper rejection, legacy compatibility, and receipt-owned
-  cleanup.
+  published-install journal repair, pending-only reverse-uninstall recovery,
+  drain timeout, symlink/tamper rejection, legacy compatibility, and
+  receipt-owned cleanup.
 
 Remaining before the product can claim complete cognitive-package lifecycle:
 
 - injection of Runtime, Gateway, stdio MCP, Skill/UI, and A3S Knowledge hosts
   by the umbrella Plugin Manager;
-- CLI, Web, management MCP, and managed-host wiring into this coordinator;
+- Code TUI/Web, management MCP, and managed-host lifecycle-factory wiring into
+  this coordinator;
 - prior-generation retirement during blue/green upgrade; and
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
 

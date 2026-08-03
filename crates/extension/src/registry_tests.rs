@@ -1830,11 +1830,11 @@ async fn lifecycle_commit_refuses_to_replace_a_retained_generation() {
 }
 
 #[tokio::test]
-async fn public_lifecycle_candidate_uses_the_real_host_version() {
+async fn public_lifecycle_candidate_accepts_the_real_v3_host_version() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("fixtures/packages/plugin-v3-cognitive/package");
-    let error = ExtensionLifecyclePackage::prepare_local("acme/cognitive", &fixture, true)
+    let candidate = ExtensionLifecyclePackage::prepare_local("acme/cognitive", &fixture, true)
         .await
-        .unwrap_err();
-    assert_eq!(error.code, "use.extension.host_incompatible");
+        .unwrap();
+    assert_eq!(candidate.package_id(), "acme/cognitive");
 }

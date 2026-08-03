@@ -21,7 +21,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 - M0K-B manifest/package validation、catalog-v3、plan-v2、manager-v2、Knowledge evidence、reconciliation 与 canonical fixtures；
 - M0K-C-A 注入式 Knowledge lifecycle contract、精确字节验证、持久 last-good binding 与 package adapter；
 - P0 schema-v3 package/capability host，包括 generation-bound receipt、确定性 root、原子 snapshot、route-lease drain 与精确移除。
-- P0-D schema-v3 SemVer package dependency、有界解析、精确 Registry/TUF lock、前向闭包下载/安装、retained dependency 校验、原子图发布与反向移除。
+- P0-D schema-v3 SemVer package dependency、有界解析、精确 Registry/TUF lock、signed remote CLI install/uninstall、前向闭包下载/安装、retained dependency 校验、原子图发布、durable crash replay 与反向移除。
 
 稳定 v0.2 package foundation 仍可独立使用。上述 plugin-platform baseline 是 `main` 上的在建能力，不能被描述为完整 production plugin product。
 
@@ -51,7 +51,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 1. 让 umbrella Plugin Manager 把已实现的 package、capability、Runtime、Gateway、static-surface 与 Knowledge host 组合到同一 coordinator。
 2. 把 workspace-grant sub-saga 接入 package checkpoint 与 capability cutover，再让 CLI、Web、management MCP 和 managed-host mutation 统一通过该 journal。
 3. 在 blue/green capability cutover 后增加旧 generation 退休，再完成 CLI/Web/Agent lifecycle 与 crash-recovery E2E。
-4. 把已实现的 dependency lock 与 graph coordinator 接入 CLI/Web/management-MCP apply，再增加 retained-generation rollback 与 garbage collection。
+4. 让 Code Web、TUI、management MCP 与 managed-host apply 通过 public lifecycle factory 和同一 package graph，再增加 retained-generation rollback 与 garbage collection。
 5. 把 M0K-C-A Knowledge port 与 lifecycle adapter 接入真实 A3S Knowledge 后端和 scoped capability/session projection。
 6. 每个宿主合约冻结后，再扩展 Agent、prompt、hook、memory 与 context-provider contribution。
 7. 完成官方 Registry 运维与 Windows platform gate。

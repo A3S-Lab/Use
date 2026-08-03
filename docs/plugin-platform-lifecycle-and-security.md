@@ -30,8 +30,9 @@ The dependency foundation adds canonical schema-v3 SemVer edges, a bounded
 deterministic transitive resolver, exact Registry/TUF-bound package locks,
 dependency-forward download and preparation, exact retained-node verification,
 single-snapshot graph publication, reverse uninstall, and crash-safe partial
-receipt recovery. The legacy `component install` product path does not yet call
-this graph coordinator.
+receipt recovery. Signed remote schema-v3 `install`/`uninstall` and compatible
+remote `component` commands call this graph coordinator. Code/Web still need to
+inject their complete host set through the public lifecycle factory.
 
 ## Complete End-to-End Lifecycle Flow
 
@@ -552,6 +553,8 @@ observations.
 | Runtime unit applied, binding absent | Inspect exact unit and reconstruct binding |
 | Binding ready, snapshot absent | Revalidate grants and publish atomically |
 | Some graph receipts enabled, closure snapshot absent | Keep the partial receipts invisible and replay the exact lock-bound batch publication |
+| Closure published, package journals incomplete | Re-publish the exact idempotent lock batch, complete each journal, then commit graph metadata |
+| Root receipt and installed-root graph removed, uninstall pending | Recover the exact lock, manifests, generations, and admission from pending evidence and continue reverse removal |
 | Desired absent, grant still active | Persist the planned exact-generation tombstone before cleanup |
 | Snapshot removed, workload running | Continue drain and stop |
 | Old generation still referenced | Preserve it and retry garbage collection |

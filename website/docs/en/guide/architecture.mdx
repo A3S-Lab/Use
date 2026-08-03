@@ -93,7 +93,9 @@ surface enable:   prepare surfaces forward → publish once
 surface disable:  hide → drain → stop surfaces in reverse
 ```
 
-Runtime Tool/MCP, immutable Skill/UI, and OKF Knowledge adapters are implemented. The P0 schema-v3 package/capability hosts commit a verified generation as installed-disabled, publish or hide exact-generation snapshots, drain route leases, and remove only receipt-owned roots. The dependency foundation adds exact retained-node verification and crash-safe atomic graph publication. Umbrella Plugin Manager and grant composition, the real A3S Knowledge backend, Gateway integration, and prior Runtime generation retirement remain in progress. The legacy CLI does not yet expose graph installation, so this foundation does not claim a complete production saga.
+Runtime Tool/MCP, immutable Skill/UI, and OKF Knowledge adapters are implemented. The P0 schema-v3 package/capability hosts commit a verified generation as installed-disabled, publish or hide exact-generation snapshots, drain route leases, and remove only receipt-owned roots. The dependency foundation adds exact retained-node verification, crash-safe atomic graph publication, durable admission/lock records, and journal recovery after partial install or uninstall. Signed remote standalone CLI installs use this graph. Umbrella Plugin Manager and grant composition, the real A3S Knowledge backend, Gateway integration, and prior Runtime generation retirement remain in progress, so this foundation does not claim a complete production saga.
+
+Embedding hosts implement `CognitivePackageLifecycleFactory` to supply their exact Runtime, Gateway, Skill/UI, and A3S Knowledge adapters. They reuse Use's resolver, graph journal, and capability cutover rather than creating another package manager. The standalone factory supports executable Tasks, stdio MCP, and immutable Skill/UI projection; it fails before publication for required Service, HTTP MCP, or OKF owners that were not injected.
 
 [ADR-002](https://github.com/A3S-Lab/Use/blob/main/docs/adr-002-cognitive-package-lifecycle-saga.md) freezes this lifecycle boundary.
 

@@ -16,12 +16,12 @@ A3S Use 是 A3S 生态的 **AI Native Package Manager**。它不替代 `apt`、H
 | 具名 Registry 替换、启用、停用、移除与刷新                   | 由 umbrella host 提供                            |
 | 原生 CLI、标准 MCP、内容绑定 Skill                           | v0.2 可用                                        |
 | schema-v3 Tool、MCP、OKF、Skill、UI 合约                     | `main` 已实现控制面基线                          |
-| schema-v3 SemVer 依赖解析、精确 lock 与图生命周期            | `main` 已实现 crate 内基础                       |
+| schema-v3 SemVer 依赖解析、精确 lock 与图生命周期            | signed remote standalone CLI 已可用              |
 | schema-v3 package commit/remove 与 capability 发布/隐藏/排空 | P0 generation-bound host 已实现                  |
 | OKF（Open Knowledge Format）知识表面                         | M0K-C-A lifecycle adapter 已就绪，生产后端待接入 |
 | 完整 Plugin Manager apply saga 与生产产品集成                | 开发中                                           |
 
-认知插件合约、dependency resolver/lock/graph coordinator 与 P0 package/capability host 已进入 `main`，但兼容的 `component install` CLI 仍使用 legacy installer。Umbrella 与 grant 组合、旧 generation 退休和真实 A3S Knowledge 后端仍在收口。没有精确的 promoted Knowledge evidence，OKF 表面不会发布。生产部署前请以 [路线图](./roadmap) 为准。
+认知插件合约、dependency resolver/lock/graph coordinator 与 P0 package/capability host 已进入 `main`。signed remote schema-v3 record 现会从 `a3s-use install` 和兼容的 remote `component install` 进入同一图生命周期。Umbrella host/grant 组合、旧 generation 退休和真实 A3S Knowledge 后端仍在收口。没有精确的 promoted Knowledge evidence，OKF 表面不会发布。生产部署前请以 [路线图](./roadmap) 为准。
 
 ## 安装发布版
 
@@ -54,6 +54,23 @@ a3s use ocr extract ./scan.png --json
 ```bash
 a3s-use capability snapshot --json
 ```
+
+## 安装认知包
+
+从宿主选择、可替换的 Registry 一次安装 signed package 及其完整 SemVer 依赖闭包：
+
+```bash
+a3s-use install acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --version 2.0.0 \
+  --json
+
+a3s-use uninstall acme/research --json
+```
+
+应用单独审查过的解析结果时，增加 `--package-lock-digest sha256:<64-hex-digits>`。lock 漂移会在下载任何 archive 之前失败。Runtime Service、HTTP MCP 与 OKF package 需要 embedding host 显式提供 Runtime/Gateway 或 A3S Knowledge lifecycle factory。
 
 ## 从源码构建
 

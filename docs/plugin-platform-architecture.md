@@ -55,8 +55,9 @@ canonical SemVer requirement. A bounded deterministic resolver selects a
 transitive closure from host-owned named Registries, and
 `a3s.use.plugin-package-lock.v1` freezes every selected version, digest,
 Registry/TUF identity, target, channel, and host compatibility boundary. The
-compatible legacy installer does not yet expose this graph through the product
-CLI; umbrella host composition remains the release boundary.
+standalone signed-Registry CLI exposes this graph through `install`/`uninstall`
+and compatible remote `component` dispatch. Umbrella Code/Web lifecycle-factory
+composition remains the release boundary.
 
 In this architecture, **Tool does not mean an MCP `tools/list` item**. A Tool
 is a workload on which a Skill or UI can depend. It keeps its native CLI or
@@ -526,6 +527,22 @@ lifecycle-managed receipt instead of bypassing the package journal.
 The durable journal is bounded, atomically replaced, cross-process locked, and
 validates path ownership and every prior receipt before replay. Its detailed
 decision is [ADR-002](adr-002-cognitive-package-lifecycle-saga.md).
+
+`CognitivePackageManager` persists a root-owned exact package lock and a
+separate pending graph operation. Pending records bind the reviewed envelope,
+the in-window admission time, and every changed package's exact manifest and
+generation. This lets restart complete lifecycle journals after publication,
+or resume reverse removal after the root receipt and installed-root graph have
+already disappeared. Both stores reject symlinked ownership paths and sync
+their parent directory after atomic creation or removal.
+
+Embedding hosts implement `CognitivePackageLifecycleFactory` to compose their
+typed Runtime, Gateway, Knowledge, Skill, and UI adapters. Registry resolution
+and graph orchestration remain single-source Use logic; a host may not fork the
+resolver or create per-surface installation units. The standalone factory
+supports native executable Tasks, stdio MCP, and immutable Skill/UI projection,
+and fails before publication when a required Runtime Service, HTTP MCP, or OKF
+owner is absent.
 
 Umbrella-manager host composition remains pending. The production package host
 also rejects upgrade before mutation until blue/green dual-generation
