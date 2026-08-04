@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">A3S Use package and capability lifecycle architecture</title>
+  <desc id="desc">Replaceable local, release, and TUF registry sources enter one host plugin manager. A3S Use resolves and verifies an exact package graph, prepares Tool and MCP through Runtime, Flow through a3s-flow, OKF through Knowledge, and Skill and UI as static surfaces, then atomically publishes one exact capability generation to Code, Web, agents, and MCP consumers.</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1118"/>
+      <stop offset="1" stop-color="#07090d"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="#7d8796" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="650" rx="26" fill="url(#background)"/>
+  <rect x="1" y="1" width="1198" height="648" rx="25" fill="none" stroke="#252c37"/>
+
+  <g transform="translate(54 42)">
+    <text fill="#f0b65b" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700" letter-spacing="1.4">PACKAGE LIFECYCLE / EXACT-GENERATION PROJECTION</text>
+    <text y="54" fill="#f4f7fb" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="44" font-weight="760" letter-spacing="-1.2">One trusted graph becomes one live capability generation.</text>
+  </g>
+
+  <g id="sources" transform="translate(54 130)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text y="-12" fill="#929dad" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700" letter-spacing="1">TRUSTED SOURCE SET</text>
+    <g>
+      <rect width="220" height="70" rx="14" fill="#111721" stroke="#3a424f"/>
+      <text x="110" y="31" text-anchor="middle" fill="#f4f7fb" font-size="20" font-weight="700">Local package</text>
+      <text x="110" y="54" text-anchor="middle" fill="#929dad" font-size="18">explicit review</text>
+    </g>
+    <g transform="translate(244)">
+      <rect width="220" height="70" rx="14" fill="#111721" stroke="#3a424f"/>
+      <text x="110" y="31" text-anchor="middle" fill="#f4f7fb" font-size="20" font-weight="700">Release bundle</text>
+      <text x="110" y="54" text-anchor="middle" fill="#929dad" font-size="18">exact digest</text>
+    </g>
+    <g transform="translate(488)">
+      <rect width="260" height="70" rx="14" fill="#111721" stroke="#55dda2"/>
+      <text x="130" y="31" text-anchor="middle" fill="#dff9ed" font-size="20" font-weight="700">Named TUF registries</text>
+      <text x="130" y="54" text-anchor="middle" fill="#8ce9bd" font-size="18">replaceable host input</text>
+    </g>
+    <path d="M748 35 H790" fill="none" stroke="#7d8796" stroke-width="1.8" marker-end="url(#arrow)"/>
+    <g transform="translate(806)">
+      <rect width="340" height="70" rx="14" fill="#18150f" stroke="#f0b65b" stroke-width="1.5"/>
+      <text x="170" y="31" text-anchor="middle" fill="#f5d49d" font-size="20" font-weight="700">Host Plugin Manager</text>
+      <text x="170" y="54" text-anchor="middle" fill="#c5ad84" font-size="18">policy · source set · confirmation</text>
+    </g>
+  </g>
+
+  <path d="M976 200 V232" fill="none" stroke="#7d8796" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <g id="engine" transform="translate(54 246)">
+    <rect width="1092" height="214" rx="18" fill="#0c1016" stroke="#3a424f" stroke-width="1.5"/>
+    <g transform="translate(24 24)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+      <text fill="#f4f7fb" font-size="24" font-weight="750">A3S Use package engine</text>
+      <text y="30" fill="#929dad" font-size="18">resolve SemVer graph → freeze TUF-bound lock → install forward → replay the saga</text>
+    </g>
+
+    <g transform="translate(24 94)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+      <g>
+        <rect width="240" height="88" rx="13" fill="#111721" stroke="#5794ff"/>
+        <text x="120" y="32" text-anchor="middle" fill="#9bc1ff" font-size="20" font-weight="700">Runtime</text>
+        <text x="120" y="59" text-anchor="middle" fill="#c7cfda" font-size="18">Tool · MCP</text>
+      </g>
+      <g transform="translate(264)">
+        <rect width="240" height="88" rx="13" fill="#171221" stroke="#b982ff" stroke-width="1.5"/>
+        <text x="120" y="32" text-anchor="middle" fill="#d5b5ff" font-size="20" font-weight="700">A3S Flow</text>
+        <text x="120" y="59" text-anchor="middle" fill="#cab9dc" font-size="18">preflight · binding</text>
+      </g>
+      <g transform="translate(528)">
+        <rect width="240" height="88" rx="13" fill="#18150f" stroke="#f0b65b"/>
+        <text x="120" y="32" text-anchor="middle" fill="#f5d49d" font-size="20" font-weight="700">Knowledge</text>
+        <text x="120" y="59" text-anchor="middle" fill="#d7c29e" font-size="18">OKF evidence</text>
+      </g>
+      <g transform="translate(792)">
+        <rect width="252" height="88" rx="13" fill="#10171a" stroke="#55dda2"/>
+        <text x="126" y="32" text-anchor="middle" fill="#8ce9bd" font-size="20" font-weight="700">Static projection</text>
+        <text x="126" y="59" text-anchor="middle" fill="#c7cfda" font-size="18">Skill · UI</text>
+      </g>
+    </g>
+  </g>
+
+  <path d="M600 460 V491" fill="none" stroke="#7d8796" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <g id="cutover" transform="translate(264 504)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect width="672" height="64" rx="14" fill="#132019" stroke="#55dda2" stroke-width="1.5"/>
+    <circle cx="32" cy="32" r="8" fill="#55dda2"/>
+    <text x="54" y="28" fill="#dff9ed" font-size="21" font-weight="750">Atomic capability snapshot</text>
+    <text x="54" y="50" fill="#8ce9bd" font-size="18">scope + package + surface + generation + evidence</text>
+    <text x="630" y="39" text-anchor="end" fill="#55dda2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700">GEN N</text>
+  </g>
+
+  <g id="consumers" transform="translate(54 592)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">
+    <text fill="#cbd3de">A3S CODE TUI + WEB</text>
+    <text x="330" fill="#677181">·</text>
+    <text x="366" fill="#cbd3de">AGENTS + MCP</text>
+    <text x="624" fill="#677181">·</text>
+    <text x="660" fill="#cbd3de">A3S OS + MANAGED HOSTS</text>
+    <text x="1092" text-anchor="end" fill="#55dda2">HOT-PLUG</text>
+  </g>
+</svg>
