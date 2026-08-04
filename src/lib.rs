@@ -14,6 +14,8 @@ mod component_route;
 mod extension_cli;
 mod first_use;
 #[cfg(feature = "extensions")]
+pub mod flow_runtime;
+#[cfg(feature = "extensions")]
 pub mod plugin_lifecycle;
 #[cfg(feature = "extensions")]
 pub mod plugin_runtime;

@@ -28,7 +28,9 @@ use store::{InstalledPackageGraphStore, PendingPackageGraphStore};
 
 pub use hosts::StandaloneCognitivePackageLifecycleFactory;
 
-const DEFAULT_SCOPE_ID: &str = "user/current";
+/// Stable user-level scope shared by the standalone facade and embedding A3S
+/// hosts for globally installed cognitive packages.
+pub const COGNITIVE_PACKAGE_DEFAULT_SCOPE: &str = "user/current";
 
 /// Version of the A3S Use package engine enforcing cognitive-package host
 /// compatibility.
@@ -132,7 +134,7 @@ impl CognitivePackageManager {
     }
 
     pub fn new(registry: ExtensionRegistry) -> UseResult<Self> {
-        Self::with_scope(registry, DEFAULT_SCOPE_ID)
+        Self::with_scope(registry, COGNITIVE_PACKAGE_DEFAULT_SCOPE)
     }
 
     pub fn with_scope(registry: ExtensionRegistry, scope_id: impl Into<String>) -> UseResult<Self> {
@@ -147,7 +149,7 @@ impl CognitivePackageManager {
         registry: ExtensionRegistry,
         lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
     ) -> UseResult<Self> {
-        Self::with_scope_and_lifecycle(registry, DEFAULT_SCOPE_ID, lifecycle)
+        Self::with_scope_and_lifecycle(registry, COGNITIVE_PACKAGE_DEFAULT_SCOPE, lifecycle)
     }
 
     pub fn with_scope_and_lifecycle(

@@ -6,7 +6,8 @@
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
   package-level six-surface lifecycle plus P0 hosts accepted 2026-08-03, the
   cognitive-package dependency/lock foundation accepted 2026-08-03, and A3S
-  Flow accepted as the single workflow engine on 2026-08-04
+  Flow accepted as the single workflow engine and the exact-generation
+  preflight binding foundation accepted on 2026-08-04
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -920,12 +921,16 @@ retirement is available.
 
 Flow sits above its Tool/MCP/OKF dependencies and below Skill/UI consumers.
 The package adapter revalidates and digests its bounded UTF-8 TypeScript source;
-the injected A3S Flow host must additionally preflight the exact source,
-export, package version, and generation before reporting it prepared. Flow
+the concrete Use `A3sFlowLifecycleHost` delegates that preflight to
+`a3s_flow::NativeTsRuntime`, then retains scope/package/surface/generation-bound
+source and compiled-artifact evidence. Capability observation reinspects both
+files before reporting the Flow prepared; a missing binding remains pending
+and substitution fails closed. Flow
 does not carry an ambient permission ceiling: every executable or knowledge
 capability is an explicit dependency with its own host-owned authority. Stop
-and remove execute in reverse dependency order. The standalone host rejects a
-required Flow before mutation when no `a3s-flow` adapter is injected.
+preserves the retained binding for drain, and remove deletes only the exact
+receipt-owned generation in reverse dependency order. The standalone host
+rejects a required Flow before mutation when no `a3s-flow` adapter is injected.
 
 For planner consumption, a plan-ready schema-v3 capability binding also
 projects `plannerEvidence` schema 1. It binds the canonical extension receipt,
