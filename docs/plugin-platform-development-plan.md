@@ -6,7 +6,8 @@
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
   package-level six-surface lifecycle foundation accepted 2026-08-03, the
   cognitive-package dependency/lock foundation accepted 2026-08-03, and the
-  unified A3S Flow surface accepted 2026-08-04
+  unified A3S Flow surface and exact-generation preflight binding foundation
+  accepted 2026-08-04
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -247,7 +248,7 @@ earlier ownership or durability gate.
 | --- | --- | --- |
 | P0 — Package/capability hosts (complete 2026-08-03) | Installed-disabled generation commit/removal and atomic publish/hide/drain over receipt schema v3, snapshots, and route leases | Root/receipt/snapshot replay, exact removal, drain timeout, tamper rejection, and unchanged v1/v2 suites pass |
 | P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, standalone CLI dispatch, retained dependency verification, forward install, atomic graph publication, reverse uninstall, and durable graph replay | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection before download, cross-Registry TUF closure, retained-node checks, reverse-dependent guard, published-install repair, pending-only uninstall recovery, and symlink ownership tests pass |
-| P0-F — Unified Flow contract (complete 2026-08-04) | First-class Flow inventory, `a3s-flow` engine identity, Native TypeScript source integrity, Tool/MCP/OKF edges, lifecycle, reconciliation, host capabilities v2, and typed catalog | Manifest/catalog drift fails closed; Flow prepares after dependencies and stops before them; no host adapter means no publication |
+| P0-F — Unified Flow contract and Use preflight binding (complete 2026-08-04) | First-class Flow inventory, `a3s-flow` engine identity, Native TypeScript source integrity, Tool/MCP/OKF edges, lifecycle, reconciliation, host capabilities v2, typed catalog, real compiler preflight, and exact-generation binding evidence | Manifest/catalog drift fails closed; Flow prepares after dependencies and stops before them; source/artifact substitution fails observation; retained generations coexist; no injected host means no publication |
 | P1 — Host composition | Have the umbrella Plugin Manager implement `CognitivePackageLifecycleFactory` with explicit Runtime selections, Gateway readiness, stdio MCP, A3S Flow, Skill/UI, and A3S Knowledge adapters | CLI and Web produce the same intent and host set; unavailable hosts fail before publication |
 | P2 — Grant composition | Join the existing grant sub-saga to package checkpoints and capability cutover | Candidate grant survives restart; old grant cannot retire before exact cutover evidence |
 | P3 — Blue/green retirement | Retain N and N+1 Runtime/Gateway/projection receipts through cutover, then hide, drain, and remove N | Failed N+1 leaves N callable; successful N+1 leaks no old Runtime unit or route |

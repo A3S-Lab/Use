@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use a3s_use_core::{InstalledPluginPlanEvidence, PluginSurfaceRef, Readiness, UseError, UseResult};
 #[cfg(feature = "extensions")]
-use a3s_use_core::{PluginSurfaceKind, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA};
+use a3s_use_core::{
+    PlanQualifiedSurfaceRef, PluginSurfaceKind, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
@@ -18,6 +20,10 @@ use tokio::io::AsyncReadExt;
 use crate::surface_reconciler::{
     reconcile_with_runtime, PluginDesiredState, PluginObservedState, SurfaceObservations,
     SurfaceObservedState, SurfaceReconcileSnapshot,
+};
+#[cfg(feature = "extensions")]
+use crate::{
+    cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE, flow_runtime::FlowRuntimeBindingStore,
 };
 
 const SCHEMA_VERSION: u32 = 1;
@@ -624,10 +630,24 @@ async fn project_extension(
     extension: &a3s_use_extension::InstalledExtension,
     surfaces: Vec<String>,
 ) -> UseResult<CapabilityBinding> {
-    project_extension_for_host(extension, surfaces, env!("CARGO_PKG_VERSION")).await
+    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let flow_observations = flow_observations_from_store(
+        extension,
+        &FlowRuntimeBindingStore::from_extension_paths(&paths),
+        COGNITIVE_PACKAGE_DEFAULT_SCOPE,
+    )
+    .await?;
+    project_extension_for_host_with_flow_observations(
+        extension,
+        surfaces,
+        env!("CARGO_PKG_VERSION"),
+        &flow_observations,
+    )
+    .await
 }
 
 #[cfg(feature = "extensions")]
+#[cfg(test)]
 async fn project_extension_for_host(
     extension: &a3s_use_extension::InstalledExtension,
     surfaces: Vec<String>,
@@ -880,6 +900,49 @@ async fn surface_observations(
             },
             observed,
         );
+    }
+    Ok(observations)
+}
+
+#[cfg(feature = "extensions")]
+async fn flow_observations_from_store(
+    extension: &a3s_use_extension::InstalledExtension,
+    store: &FlowRuntimeBindingStore,
+    scope_id: &str,
+) -> UseResult<SurfaceObservations> {
+    let mut observations = SurfaceObservations::new();
+    let Some(generation) = extension.receipt.lifecycle_generation else {
+        return Ok(observations);
+    };
+    let Some(package_sha256) = extension.receipt.package_sha256.as_deref() else {
+        return Ok(observations);
+    };
+    let package_digest = format!("sha256:{package_sha256}");
+    let manifest_digest = format!("sha256:{}", extension.receipt.manifest_sha256);
+    for surface in &extension.manifest.flows {
+        let reference = PluginSurfaceRef {
+            kind: PluginSurfaceKind::Flow,
+            id: surface.id.clone(),
+        };
+        let qualified = PlanQualifiedSurfaceRef {
+            package_id: extension.receipt.package_id.clone(),
+            surface: reference.clone(),
+        };
+        let Some(binding) = store.get(scope_id, &qualified, generation).await? else {
+            continue;
+        };
+        let state = if binding.package_digest() == package_digest
+            && binding.manifest_digest() == manifest_digest
+            && binding
+                .inspect(surface, &extension.receipt.package_root)
+                .await
+                .is_ok()
+        {
+            SurfaceObservedState::Prepared
+        } else {
+            SurfaceObservedState::Failed
+        };
+        observations.insert(reference, state);
     }
     Ok(observations)
 }
@@ -1466,6 +1529,123 @@ extension "acme/slack" {
         assert_eq!(json["flows"][0]["runtime"], "native-ts");
         assert_eq!(json["flows"][0]["exportName"], "run");
         assert_eq!(json["flows"][0]["source"]["mediaType"], "text/typescript");
+    }
+
+    #[cfg(all(feature = "extensions", unix))]
+    #[tokio::test]
+    async fn exact_generation_flow_binding_drives_production_observation() {
+        use std::os::unix::fs::PermissionsExt;
+
+        use crate::flow_runtime::{A3sFlowLifecycleHost, FlowRuntimeBindingStore};
+        use crate::plugin_lifecycle::{
+            PluginFlowLifecycleHost, PluginLifecycleAction, PluginLifecycleIntent,
+            PluginLifecycleIntentSpec,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let package_root = temp.path().join("package");
+        let source = package_root.join("flows/review.ts");
+        tokio::fs::create_dir_all(source.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(
+            &source,
+            b"export async function run() { return { type: 'complete', output: null }; }\n",
+        )
+        .await
+        .unwrap();
+        let compiler = temp.path().join("a3s-flow-native-compiler");
+        tokio::fs::write(
+            &compiler,
+            b"#!/bin/sh\nset -eu\nwhile [ \"$1\" != \"-o\" ]; do shift; done\nshift\nprintf '#!/bin/sh\\nexit 0\\n' > \"$1\"\nchmod +x \"$1\"\n",
+        )
+        .await
+        .unwrap();
+        let mut permissions = std::fs::metadata(&compiler).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&compiler, permissions).unwrap();
+
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(FLOW_PLUGIN).unwrap();
+        let mut extension = installed_extension(manifest, package_root.clone(), true);
+        extension.receipt.schema_version = 3;
+        extension.receipt.package_sha256 = Some("a".repeat(64));
+        extension.receipt.lifecycle_generation = Some(12);
+        let intent = PluginLifecycleIntent::from_manifest(
+            PluginLifecycleIntentSpec {
+                operation_id: "flow-observation-install".to_string(),
+                plan_digest: format!("sha256:{}", "1".repeat(64)),
+                scope_id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_string(),
+                package_id: extension.receipt.package_id.clone(),
+                package_digest: format!("sha256:{}", "a".repeat(64)),
+                manifest_digest: format!("sha256:{}", extension.receipt.manifest_sha256),
+                generation: 12,
+                action: PluginLifecycleAction::Install,
+            },
+            &extension.manifest,
+        )
+        .unwrap();
+        let key = &intent
+            .checkpoints
+            .iter()
+            .find(|checkpoint| {
+                checkpoint
+                    .surface
+                    .as_ref()
+                    .is_some_and(|surface| surface.kind == PluginSurfaceKind::Flow)
+            })
+            .unwrap()
+            .idempotency_key;
+        let store = FlowRuntimeBindingStore::new(temp.path().join("state"));
+        let host = A3sFlowLifecycleHost::new(
+            &package_root,
+            &compiler,
+            temp.path().join("cache"),
+            store.clone(),
+        );
+        host.prepare_flow(&intent, &extension.manifest.flows[0], key)
+            .await
+            .unwrap();
+
+        let observations =
+            flow_observations_from_store(&extension, &store, COGNITIVE_PACKAGE_DEFAULT_SCOPE)
+                .await
+                .unwrap();
+        assert_eq!(
+            observations.get(&PluginSurfaceRef {
+                kind: PluginSurfaceKind::Flow,
+                id: "review".to_string(),
+            }),
+            Some(&SurfaceObservedState::Prepared)
+        );
+        let binding = store
+            .get(
+                COGNITIVE_PACKAGE_DEFAULT_SCOPE,
+                &PlanQualifiedSurfaceRef {
+                    package_id: extension.receipt.package_id.clone(),
+                    surface: PluginSurfaceRef {
+                        kind: PluginSurfaceKind::Flow,
+                        id: "review".to_string(),
+                    },
+                },
+                12,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::fs::write(binding.artifact(), b"substituted")
+            .await
+            .unwrap();
+        let failed =
+            flow_observations_from_store(&extension, &store, COGNITIVE_PACKAGE_DEFAULT_SCOPE)
+                .await
+                .unwrap();
+        assert_eq!(
+            failed.get(&PluginSurfaceRef {
+                kind: PluginSurfaceKind::Flow,
+                id: "review".to_string(),
+            }),
+            Some(&SurfaceObservedState::Failed)
+        );
     }
 
     #[cfg(feature = "extensions")]

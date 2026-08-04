@@ -18,6 +18,7 @@ rust-version = "1.82"
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
+a3s-flow = "=0.4.3"
 axum = "0.8"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
@@ -70,6 +71,7 @@ default = ["browser", "ocr", "extensions", "mcp"]
 browser = ["dep:a3s-use-browser"]
 ocr = ["dep:a3s-use-ocr"]
 extensions = [
+    "dep:a3s-flow",
     "dep:a3s-use-extension",
     "dep:a3s-runtime",
     "dep:async-trait",
@@ -94,6 +96,7 @@ a3s-use-browser = { version = "=0.3.0", git = "https://github.com/A3S-Lab/Browse
 a3s-use-ocr = { version = "=0.3.0", git = "https://github.com/A3S-Lab/OCR", rev = "9f6a94c27251f183700120fbce628581eb236a5b", optional = true }
 a3s-use-extension = { version = "0.3.0", path = "crates/extension", optional = true }
 a3s-runtime = { version = "=0.2.0", git = "https://github.com/A3S-Lab/Runtime", rev = "cfaac63af6f76beebdc64a1ec228cedc42bb98ec", optional = true }
+a3s-flow = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }

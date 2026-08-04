@@ -5,8 +5,8 @@
 - Product amendment: OKF bundle contract/conformance frozen 2026-07-31;
   plugin-surface control plane frozen 2026-08-01; managed-host protocol frozen
   2026-08-02; package lifecycle intent/journal and cognitive-package
-  dependency/lock contracts frozen 2026-08-03; unified A3S Flow contracts
-  frozen 2026-08-04
+  dependency/lock contracts frozen 2026-08-03; unified A3S Flow contracts and
+  exact-generation preflight binding foundation frozen 2026-08-04
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -134,6 +134,14 @@ capability catalog binds engine, runtime, source path/digest/media type, export,
 and capability edges. A corrupted required source withholds the generation;
 valid source bytes without typed A3S Flow host preflight remain pending and are
 not published.
+
+`A3sFlowLifecycleHost` is the concrete Use adapter for that preflight boundary.
+It delegates to `a3s_flow::NativeTsRuntime::preflight` and persists
+`a3s.use.flow-runtime-binding.v1` by scope, package, Flow surface, and lifecycle
+generation. Capability observation revalidates the admitted source and exact
+compiled artifact before reporting `Prepared`; missing evidence remains
+pending and substitution reports failure. Stop preserves retained evidence for
+drain, while removal deletes only the exact receipt-owned generation.
 
 Host-capabilities v1 remains frozen without Flow. V2 uses protocol level 2 and
 advertises it explicitly. Manager-toolset v1/v2 also remain frozen; v3 adds the

@@ -6,7 +6,7 @@
   bundle contract frozen 2026-07-31 and M0K-B control-plane contracts frozen
   2026-08-01; package-level six-surface lifecycle and cognitive-package
   dependency/lock foundations accepted 2026-08-03; unified A3S Flow surface
-  accepted 2026-08-04
+  and exact-generation preflight binding foundation accepted 2026-08-04
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -127,8 +127,9 @@ The following foundations are implemented:
   exact manifests and generations, including published-install journal repair
   and pending-only reverse-uninstall recovery;
 - a public lifecycle factory that lets Code/Web hosts inject Runtime, Gateway,
-  Knowledge, Skill, and UI ownership while the standalone composition fails
-  closed for unavailable Runtime Service, HTTP MCP, or OKF hosts;
+  A3S Flow, Knowledge, Skill, and UI ownership while the standalone
+  composition fails closed for unavailable Runtime Service, HTTP MCP, Flow,
+  or OKF hosts;
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
 - generation/revision capability snapshots consumed by A3S Code;
 - live MCP and Skill projection into a dedicated A3S Use worker;
@@ -151,6 +152,9 @@ The following foundations are implemented:
 - first-class A3S Flow manifest, source integrity, Tool/MCP/OKF dependency
   edges, lifecycle ordering, reconciler ownership, and typed capability
   projection;
+- a concrete `A3sFlowLifecycleHost` backed by the real `a3s-flow`
+  `NativeTsRuntime::preflight`, plus symlink-safe exact-generation bindings,
+  source/artifact reinspection, and production capability observation;
 - additive host-capabilities v2 and manager-toolset v3 contracts that advertise
   Flow without rewriting frozen older schemas; and
 - standalone-host rejection before mutation when a required Flow lacks an
@@ -186,9 +190,10 @@ The main gaps are:
   coordinator, and signed remote standalone CLI path are implemented in A3S
   Use, but Code TUI/Web and management MCP have not yet injected their complete
   host set through the public lifecycle factory;
-- A3S Use freezes and projects Flow identity, but A3S Code still needs the
-  production `a3s-flow` preflight/execution host and a typed `flow.json`
-  import/deployment adapter before local and OS workflow UX are one path;
+- A3S Use now supplies the production `a3s-flow` preflight host and retained
+  binding evidence, but A3S Code still needs to inject it, expose the typed
+  live Flow catalog, attach durable execution/observation, and map `flow.json`
+  import/deployment before local and OS workflow UX are one path;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - the versioned OKF manager/search/selection contract, injected Knowledge port,
@@ -362,7 +367,7 @@ Exit criteria:
 - the ownership contract forbids removing personal notes or another package's
   index; production cleanup and recovery proof remains part of M0K-C.
 
-### M0F — Unified A3S Flow contribution (control plane complete 2026-08-04; production host pending)
+### M0F — Unified A3S Flow contribution (Use preflight binding complete 2026-08-04; product wiring pending)
 
 Implementation status:
 
@@ -375,12 +380,14 @@ Implementation status:
   withholds source-only readiness until host preflight evidence exists;
 - completed: additive host-capabilities v2/protocol level 2 and manager-toolset
   v3, while v1/v2 canonical contracts remain frozen;
+- completed: concrete `a3s-flow` Native TypeScript preflight, symlink-safe
+  exact-generation binding storage, source/artifact substitution rejection,
+  blue/green retention, and production capability observation;
 - completed: one six-surface content-addressed fixture and regression coverage
   for source corruption, missing dependencies, unavailable hosts, publication,
   and reverse teardown; and
-- pending: A3S Code production compiler/runtime injection, durable run
-  observation, unified TUI/Web discovery, and typed `flow.json`
-  import/deployment.
+- pending: standalone/A3S Code host composition, durable run observation,
+  unified TUI/Web discovery, and typed `flow.json` import/deployment.
 
 Exit criteria:
 

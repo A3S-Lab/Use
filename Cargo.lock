@@ -9,6 +9,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2dc4eb3b0dd1b11efa0ad9bf397c97fd1d16e3eb4f9ca43872df069560d0b69"
 
 [[package]]
+name = "a3s-flow"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b677f241a52dad96e636d8ca88bd0e303428a11c02b4f0acfe646349b7a4852c"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "a3s-runtime"
 version = "0.2.0"
 source = "git+https://github.com/A3S-Lab/Runtime?rev=cfaac63af6f76beebdc64a1ec228cedc42bb98ec#cfaac63af6f76beebdc64a1ec228cedc42bb98ec"
@@ -28,6 +45,7 @@ dependencies = [
 name = "a3s-use"
 version = "0.3.0"
 dependencies = [
+ "a3s-flow",
  "a3s-runtime",
  "a3s-use-browser",
  "a3s-use-core",
@@ -3307,7 +3325,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -3721,6 +3739,7 @@ checksum = "bf3923a6f5c4c6382e0b653c4117f48d631ea17f38ed86e2a828e6f7412f5239"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 
