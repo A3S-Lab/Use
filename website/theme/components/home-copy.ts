@@ -219,7 +219,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     preview: "预览",
     ctaTitle: "一次安装认知包及其完整依赖",
     ctaBody:
-      "通过 a3s plugin 安装后，Code TUI 与 Web 会热插拔已验证的 Tool、MCP、Flow、Skill 与 UI。生产 Runtime Service、HTTP MCP、OKF 和 flow.json run 映射仍是发布门禁。",
+      "用 a3s plugin 安装后，Code CLI/TUI/Web 会热插拔已验证的 Tool、MCP、Flow、Skill 与 UI，并共用精确 flow.json 身份和本地持久运行历史。生产 Runtime Service、HTTP MCP、OKF 与分布式 Flow 调度仍是发布门禁。",
     ctaSecondary: "查看路线图",
     footer: "MIT 开源，Rust 构建，支持 Linux / macOS / Windows",
   },
@@ -379,7 +379,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     preview: "Preview",
     ctaTitle: "Install a cognitive package and its complete dependency graph.",
     ctaBody:
-      "Install with a3s plugin and Code TUI or Web hot-plugs verified Tool, MCP, Flow, Skill, and UI surfaces. Production Runtime Service, HTTP MCP, OKF, and flow.json run mapping remain release gates.",
+      "Install with a3s plugin and Code CLI/TUI/Web hot-plugs verified Tool, MCP, Flow, Skill, and UI surfaces with one exact flow.json identity and durable local history. Production Runtime Service, HTTP MCP, OKF, and distributed Flow scheduling remain release gates.",
     ctaSecondary: "View roadmap",
     footer: "MIT licensed, built in Rust, available on Linux / macOS / Windows",
   },

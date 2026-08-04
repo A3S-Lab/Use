@@ -41,11 +41,12 @@ available for automation, embedding, and diagnostics.
 > dependency-forward installation, atomic capability publication, reverse
 > uninstall, and crash replay. A3S Code now composes executable Tool Tasks,
 > stdio MCP, immutable Skill/UI projection, and the real `a3s-flow` Native
-> TypeScript preflight host; TUI and Web consume the same exact-generation
-> watcher, and Web verifies install, upgrade, and uninstall without restart.
-> Production Knowledge, Service/HTTP hosts, durable Flow execution,
-> `flow.json` identity mapping, prior-generation retirement/rollback/GC, and
-> complete real-process cross-platform E2E remain release gates.
+> TypeScript host. CLI, TUI, and Web resolve the same strict `flow.json`
+> identity and share workspace-local durable execution/history; Web verifies
+> install, run, exact-generation upgrade, uninstall, and process-restart
+> recovery. Production Knowledge, Service/HTTP hosts, distributed Flow
+> scheduling/resumption, prior-generation retirement/rollback/GC, and complete
+> real-process cross-platform E2E remain release gates.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 ## Proof in the codebase
@@ -71,8 +72,9 @@ The package model is exercised as code, not only described in prose:
   both TUI and Web.
 - The detached
   [Web hot-plug gate](https://github.com/A3S-Lab/CLI/blob/main/tests/web_plugin_marketplace.rs)
-  proves `install → upgrade → uninstall` at one daemon address, including
-  Activity, Skill, and Flow replacement.
+  proves `install → run → upgrade → run → uninstall → restart`, including
+  source-drift rejection before compiler/event mutation and path-free history
+  retention for both Flow generations.
 
 ## Quick start
 
@@ -153,7 +155,7 @@ Language. ACL is not HCL and must be parsed with `a3s-acl`.
 | **Tool** | Native Task or long-lived Service | Selected Runtime provider, exact executable evidence, and health |
 | **MCP** | stdio, HTTP, or immutable release descriptor | Runtime/Gateway adapter and standard MCP readiness |
 | **OKF** | Open Knowledge Format concept graph | A3S Knowledge stage, promotion, observation, and scoped projection |
-| **A3S Flow** | `flows/*.ts` source and explicit Tool/MCP/OKF edges | `a3s-flow` preflight plus exact-generation compiled binding |
+| **A3S Flow** | `flows/*.ts` source and explicit Tool/MCP/OKF edges | `a3s-flow` preflight plus exact-generation compiled binding; A3S Code adds workspace-local durable runs and path-free observation |
 | **Skill** | Content-bound `SKILL.md` and supporting files | Static validation; projected only after declared dependencies are ready |
 | **UI** | Integrity-bound static entry point | Sandboxed host rendering and bound Skill/MCP/Flow readiness |
 
@@ -338,11 +340,32 @@ generation. A missing binding remains pending.
 The concrete Use adapter is implemented. A3S Code injects it through the shared
 lifecycle factory, resolves its compiler from host configuration, and exposes
 the typed live catalog through `GET /api/v1/plugins/flows`. TUI and Web consume
-the same generation/revision watcher, and the detached-Web gate verifies Flow
-install, exact-generation upgrade, and uninstall without restarting Code. The
-standalone factory still fails closed when no adapter is injected; durable run
-execution/observation and `flow.json` import/deployment mapping to the same
-installed identity remain release gates.
+the same generation/revision watcher. Code's strict, path-free `installedFlow`
+reference binds package, Flow, version, lifecycle generation, and source digest.
+Before each new run, Code revalidates the current regular source file and
+package containment, stages verified bytes under `.a3s/flow-runtime/`,
+preflights the compiler, and only then creates a run binding and append-only
+`a3s-flow` events. CLI/TUI `run`, `status`, and `logs` plus Web run/list/detail/
+events APIs use that same store without OS login. Histories remain readable
+after upgrade, disable, uninstall, and Code Web restart. The standalone Use
+factory still fails closed when no lifecycle adapter is injected; distributed
+workers, automatic scheduling/resumption, and production retention remain
+release gates.
+
+```text
+GET  /api/v1/plugins/flows
+POST /api/v1/plugins/flows/resolve
+POST /api/v1/plugins/flows/run
+GET  /api/v1/plugins/flows/runs
+GET  /api/v1/plugins/flows/runs/{runId}
+GET  /api/v1/plugins/flows/runs/{runId}/events
+```
+
+The current Code runtime is single-node and guards the local event store with
+one cross-process workspace lock. It is durable across process restart; it does
+not claim distributed worker placement. These routes are integrated at the Web
+API layer; the current Marketplace frontend has no Flow run/history controls,
+so CLI/TUI remain the interactive local execution surfaces.
 
 ## Trust and lifecycle
 
@@ -434,11 +457,11 @@ do not share one database transaction. The boundaries are frozen in
 | Umbrella Registry management | Available: add/list/show/refresh, stable-name replace, enable/disable, and remove; disabled sources stay visible but are excluded from browsing and resolution |
 | Tool/MCP runtime lifecycle | Typed adapters implemented; standalone supports executable Tool Tasks and stdio MCP, while Services/HTTP require injected providers |
 | A3S Flow lifecycle | Concrete `a3s-flow` preflight adapter, exact-generation binding store, artifact/source reinspection, lifecycle evidence, and capability observation implemented |
-| A3S Flow product wiring | Code TUI/Web injection, exact-generation watcher, typed live catalog, and hot-plug E2E implemented; durable execution/observation and `flow.json` deployment mapping remain pending |
+| A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
-| Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-upgrade-uninstall replacement E2E implemented; production-provider and complete cross-platform real-process gates remain |
+| Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
 | Upgrade/rollback | Prior-generation retirement, automatic rollback, and garbage collection remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,

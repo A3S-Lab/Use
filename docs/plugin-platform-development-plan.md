@@ -7,7 +7,8 @@
   package-level six-surface lifecycle foundation accepted 2026-08-03, the
   cognitive-package dependency/lock foundation accepted 2026-08-03, and the
   unified A3S Flow surface and exact-generation preflight binding foundation
-  accepted 2026-08-04
+  accepted 2026-08-04; exact `flow.json` identity plus shared Code
+  CLI/TUI/Web local durable execution and observation accepted 2026-08-04
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -62,8 +63,9 @@ Ownership remains explicit:
   surface reconciliation, provider/runtime bindings, and owned-file removal;
 - each plugin repository owns its Tool CLI/HTTP and MCP vocabulary, A3S Flow
   source, Skill guidance, UI and OKF assets, version, license, and reproducible package;
-- A3S Code/Web adapts the shared manager and capability registry without
-  becoming a second package manager.
+- A3S Code/Web adapts the shared manager and capability registry, and composes
+  the sole A3S Flow engine for workspace-local execution, without becoming a
+  second package manager or workflow engine.
 
 ## Core Contracts
 
@@ -94,9 +96,15 @@ exact promoted evidence.
 Flow uses one product model. `engine = "a3s-flow"` is fixed; `native-ts` is the
 first admitted execution adapter. Use owns package integrity, dependency
 ordering, and catalog projection. Code/Web or another embedding host owns
-compiler preflight and durable execution. Existing `flow.json` documents are
-imported or deployed through a typed adapter to that same Flow identity rather
-than retained as a parallel runtime.
+compiler preflight and durable execution. Code now resolves one strict,
+path-free installed identity from `flow.json`, revalidates and stages the exact
+source before mutation, and shares one workspace-local event store across CLI,
+TUI, and Web. Existing `flow.json` documents are therefore executed or deployed
+through a typed adapter to that same Flow identity rather than retained as a
+parallel runtime. Distributed workers and automatic suspended-work resumption
+remain a later host concern. Web currently exposes the run/history API without
+a Marketplace Flow control surface; CLI and TUI provide the interactive local
+execution UX.
 
 The dependency foundation is also implemented: schema-v3 ACL package
 dependencies, a required bounded `README.md`, bounded deterministic SemVer
@@ -248,11 +256,11 @@ earlier ownership or durability gate.
 | --- | --- | --- |
 | P0 — Package/capability hosts (complete 2026-08-03) | Installed-disabled generation commit/removal and atomic publish/hide/drain over receipt schema v3, snapshots, and route leases | Root/receipt/snapshot replay, exact removal, drain timeout, tamper rejection, and unchanged v1/v2 suites pass |
 | P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, standalone CLI dispatch, retained dependency verification, forward install, atomic graph publication, reverse uninstall, and durable graph replay | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection before download, cross-Registry TUF closure, retained-node checks, reverse-dependent guard, published-install repair, pending-only uninstall recovery, and symlink ownership tests pass |
-| P0-F — Unified Flow contract and Code host/catalog baseline (complete 2026-08-04) | First-class Flow inventory, `a3s-flow` engine identity, Native TypeScript source integrity, Tool/MCP/OKF edges, lifecycle, reconciliation, host capabilities v2, real compiler preflight, exact-generation binding evidence, and Code TUI/Web catalog projection | Manifest/catalog drift fails closed; Flow prepares after dependencies and stops before them; source/artifact substitution fails observation; retained generations coexist; Code hot-plugs exact generations; no injected host means no publication |
+| P0-F — Unified Flow contract and Code local runtime (complete 2026-08-04) | First-class Flow inventory, `a3s-flow` identity, Native TypeScript integrity, Tool/MCP/OKF edges, lifecycle/reconciliation, exact `flow.json` resolution, immutable source staging, and one Code CLI/TUI/Web durable local store | Manifest/catalog/source drift fails before mutation; fixed run IDs are idempotent; histories survive host recreation and package upgrade/uninstall; public responses leak no managed path; no injected host means no publication |
 | P1 — Host composition (Code baseline complete; production providers pending) | Keep Code's public lifecycle-factory composition for executable Tool Tasks, stdio MCP, A3S Flow, and Skill/UI; add explicit Runtime Service, Gateway/HTTP MCP, and A3S Knowledge adapters | TUI and Web produce the same intent and supported host set today; unavailable production hosts continue to fail before publication |
 | P2 — Grant composition | Join the existing grant sub-saga to package checkpoints and capability cutover | Candidate grant survives restart; old grant cannot retire before exact cutover evidence |
 | P3 — Blue/green retirement | Retain N and N+1 Runtime/Gateway/projection receipts through cutover, then hide, drain, and remove N | Failed N+1 leaves N callable; successful N+1 leaks no old Runtime unit or route |
-| P4 — Product adapters (Code baseline complete; MCP/managed hosts pending) | Preserve the shared CLI/Web Marketplace journal and Code snapshot watcher; route management MCP and managed-host mutations through the same path | Detached Web covers install/upgrade/uninstall Activity, Skill, and Flow replacement and TUI covers watcher readiness; production hosts must extend the same no-restart proof |
+| P4 — Product adapters (Code baseline complete; MCP/managed hosts pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, and local Flow runtime; add visible Web Flow controls and route management MCP/managed-host mutations through the same path | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history and TUI covers local routing plus watcher readiness; visible Web UX and production hosts must extend the same no-restart proof |
 | P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all six surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
 
 P1 through P3 remain release blockers for calling schema-v3 cognitive-package
@@ -591,7 +599,7 @@ Every milestone adds focused tests at the owning layer.
 | Package-level lifecycle intent, journal, and typed hosts | `src/plugin_lifecycle/` |
 | Surface reconciliation and bindings | `src/capability_registry.rs`, `src/extension_host.rs` |
 | Tool/MCP Runtime deployment | A3S Runtime adapters, `src/mcp/`, release descriptors |
-| A3S Flow preflight, execution, replay, and Code/OS adapter | A3S Flow, A3S Code `/flow`, Use lifecycle host |
+| A3S Flow preflight, local execution/history, distributed replay, and Code/OS adapter | A3S Flow, A3S Code `/flow` plus Web Flow API, Use lifecycle host |
 | Umbrella plan, policy, and lifecycle | A3S CLI `components/`, registry store, configuration |
 | Agent worker and manager MCP adapter | A3S CLI `use_registry.rs` and Code session adapters |
 | User Marketplace and sandboxed UI | A3S Web Plugins feature and Code Web plugin API |
@@ -610,7 +618,7 @@ Every milestone adds focused tests at the owning layer.
 | Multiple adapters diverge | One shared Plugin Manager application service |
 | Upgrade silently expands privilege | Signed permission metadata plus explicit permission diff |
 | Skill is published before its executable dependency | Dependency-gated surface reconciliation |
-| `flow.json` and package Flow become divergent runtimes | One A3S Flow identity; `flow.json` is handled only by a typed design/deployment adapter |
+| `flow.json` and package Flow become divergent runtimes | One exact installed identity and one A3S Flow engine; the typed adapter is shared by CLI, TUI, Web, and OS deployment metadata |
 | Candidate OKF indexing replaces valid knowledge before it is complete | Stage and validate, atomically promote, retain the last good generation |
 | Runtime provider cannot honor Service isolation | Capability negotiation in plan and no silent fallback |
 | Uninstall breaks active calls | Hide, acquire drain lease, then remove owned files |

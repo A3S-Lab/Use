@@ -69,7 +69,7 @@ Tool / MCP / OKF
 
 ## `flow.json` 的含义
 
-A3S Code 历史上把 `flow.json` 作为 Workflow-as-a-Service 的可见设计文档。它不是第二种包格式或执行引擎。产品方向是通过类型化 import/deployment adapter 把该文档映射到同一个已安装 Flow 身份：
+A3S Code 把 `flow.json` 作为 Workflow-as-a-Service 的可见设计文档。它不是第二种包格式或执行引擎。可执行设计携带严格、无路径的 `installedFlow` 引用，将其映射到一个精确的已安装包 generation：
 
 - Native TypeScript 是 A3S Flow 执行适配器。
 - `flow.json` 是可视化设计/部署文档。
@@ -84,6 +84,6 @@ A3S Use 已实现 manifest 准入、精确源码证据、签名 catalog 闭包�
 
 有效源码只是必要条件，不是 readiness 充分证据。只有类型化 A3S Flow host 对同一准入 generation 返回成功 preflight 后，Flow 才能离开 pending 并进入已发布 catalog；源码损坏会覆盖过期的正向 host observation。
 
-A3S Code 通过共享 package lifecycle factory 注入该具体 host。TUI 与 Web 共用同一个 exact-generation watcher，Web 在 `GET /api/v1/plugins/flows` 暴露类型化实时 catalog。Detached-Web 门禁已验证无需重启 daemon 的 Flow 安装、精确 generation 升级与卸载。
+A3S Code 通过共享 package lifecycle factory 注入该具体 host。CLI、TUI 与 Web 解析同一个严格 `flow.json` 身份。每次新 run 前，Code 都重新检查当前包源码的 regular-file 属性、包内包含关系、大小、UTF-8 与 SHA-256，只暂存已验证字节，并在创建 binding 或 event 前完成 Native TypeScript preflight。三个入口无需 OS 登录，共用由跨进程锁保护的 `.a3s/flow-runtime/` event store。
 
-持久 run 执行/observation、将 `flow.json` import/deployment 映射到已安装身份，以及完整 real-process 跨平台覆盖仍是 release gate。[路线图](./roadmap) 会明确跟踪这些门禁。
+Web 在 `/api/v1/plugins/flows` 下暴露实时 catalog 与本地 run API。Detached-Web 门禁已验证 `安装 → 运行 → 升级 → 运行 → 卸载 → 重启`、compiler/event mutation 前的源码漂移拒绝、精确 generation 历史保留，以及不会由宿主加入 managed/workspace path 的公开响应。当前 Marketplace frontend 尚未提供 Flow run/history 控件，因此 CLI/TUI 是交互式本地执行表面。当前承诺是单节点 crash/restart durability；可见 Web 控制面、分布式 worker placement、suspended wait/retry/hook 自动恢复、生产 retention/garbage collection 与完整 real-process 跨平台覆盖仍是 release gate。[路线图](./roadmap) 会明确跟踪这些门禁。
