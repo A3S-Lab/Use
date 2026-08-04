@@ -1,3 +1,5 @@
+import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/manrope";
 import "./styles-core.css";
 import "./styles-sections.css";
 
