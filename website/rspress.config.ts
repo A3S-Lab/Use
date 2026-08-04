@@ -38,7 +38,22 @@ export default defineConfig({
     },
   ],
   head: [
-    ["meta", { name: "theme-color", content: "#07090d" }],
+    [
+      "meta",
+      {
+        name: "theme-color",
+        content: "#f2f4f6",
+        media: "(prefers-color-scheme: light)",
+      },
+    ],
+    [
+      "meta",
+      {
+        name: "theme-color",
+        content: "#080a0e",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:site_name", content: "A3S Use" }],
     [
@@ -58,7 +73,7 @@ export default defineConfig({
     ],
   ],
   themeConfig: {
-    darkMode: "force-dark",
+    darkMode: "auto",
     search: true,
     localeRedirect: "never",
     enableContentAnimation: true,
