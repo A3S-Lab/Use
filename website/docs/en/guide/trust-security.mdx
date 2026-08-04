@@ -19,23 +19,22 @@ Search runs over verified, size-bounded catalog metadata without downloading pac
 
 ## Replaceable registry sources
 
-Remote registries are named, host-owned ACL configuration. The default `a3s` identity is not a compiled endpoint or mandatory service: operators can bind it to a mirror or private registry, disable it without deleting trust state, or remove the override. Release bundles remain available independently of remote registries.
+Remote registries are named, host-owned ACL configuration. Operators can add a mirror or private registry, replace its URL and trust root under the same stable name, disable it without deleting trust state, and enable or remove it later. The reserved built-in `a3s` identity cannot be replaced, toggled, or removed. Release bundles remain available independently of remote registries.
 
 ```bash
 a3s registry add https://packages.example.org/a3s/ \
-  --name packages \
   --trust-root ./root.json \
   --yes
 
-a3s registry replace a3s https://mirror.example.org/a3s/ \
+a3s registry disable packages --yes
+a3s registry replace packages https://mirror.example.org/a3s/ \
   --trust-root sha256:<64-hex-digits> \
   --yes
-a3s registry disable a3s
-a3s registry enable a3s
-a3s registry refresh a3s
+a3s registry enable packages --yes
+a3s registry refresh packages
 ```
 
-Only enabled sources participate in discovery and installation. Duplicate package identities across enabled registries fail as ambiguous. Replacement also never rewrites an installed receipt: upgrades remain bound to the recorded source name, URL, TUF root, channel, and target digest and fail closed after identity drift.
+Only enabled sources participate in Marketplace browsing, package lookup, dependency resolution, refresh, and upgrades. Disabled sources remain visible in source status. File-backed replacement roots are copied to a content-addressed, symlink-safe managed path before the ACL cutover, and replacement preserves the source's enabled state. Duplicate package identities across enabled registries fail as ambiguous. Source administration never rewrites an installed receipt: upgrades remain bound to the recorded source name, URL, TUF root, channel, and target digest and fail closed after identity drift.
 
 ## Immutable plans
 

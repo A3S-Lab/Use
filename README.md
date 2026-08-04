@@ -30,7 +30,8 @@ that are ready for the admitted package generation.
 
 A3S Use is the package manager for the A3S capability and security model. It
 does not replace `apt`, Homebrew, or WinGet for arbitrary system software. The
-user-facing command is `a3s use`; the standalone `a3s-use` engine remains
+umbrella CLI exposes built-in domains through `a3s use …` and cognitive-package
+lifecycle through `a3s plugin …`; the standalone `a3s-use` engine remains
 available for automation, embedding, and diagnostics.
 
 > [!IMPORTANT]
@@ -38,13 +39,16 @@ available for automation, embedding, and diagnostics.
 > branch is the `v0.3` cognitive-package line. Signed schema-v3 packages have
 > deterministic dependency resolution, Registry/TUF-bound locks,
 > dependency-forward installation, atomic capability publication, reverse
-> uninstall, and crash replay. The library now includes a concrete
-> `a3s-flow` Native TypeScript preflight host with exact-generation runtime
-> bindings; standalone and A3S Code/Web host composition, prior-generation
-> retirement, production Knowledge projection, and complete cross-process E2E
-> remain release gates. [ROADMAP.md](ROADMAP.md) is the source of truth.
+> uninstall, and crash replay. A3S Code now composes executable Tool Tasks,
+> stdio MCP, immutable Skill/UI projection, and the real `a3s-flow` Native
+> TypeScript preflight host; TUI and Web consume the same exact-generation
+> watcher, and Web verifies install, upgrade, and uninstall without restart.
+> Production Knowledge, Service/HTTP hosts, durable Flow execution,
+> `flow.json` identity mapping, prior-generation retirement/rollback/GC, and
+> complete real-process cross-platform E2E remain release gates.
+> [ROADMAP.md](ROADMAP.md) is the source of truth.
 
-## Proof in the repository
+## Proof in the codebase
 
 The package model is exercised as code, not only described in prose:
 
@@ -61,6 +65,14 @@ The package model is exercised as code, not only described in prose:
   unused packages in reverse dependency order.
 - [`capability watch`](src/capability_registry.rs) lets resident hosts observe
   package and projection changes without restarting.
+- A3S Code's
+  [`CodeCognitivePackageLifecycleFactory`](https://github.com/A3S-Lab/CLI/blob/main/src/components/cognitive_lifecycle.rs)
+  injects the real Flow host and publishes a typed exact-generation catalog to
+  both TUI and Web.
+- The detached
+  [Web hot-plug gate](https://github.com/A3S-Lab/CLI/blob/main/tests/web_plugin_marketplace.rs)
+  proves `install → upgrade → uninstall` at one daemon address, including
+  Activity, Skill, and Flow replacement.
 
 ## Quick start
 
@@ -262,24 +274,40 @@ The canonical `a3s.use.plugin-package-lock.v1` freezes for every package:
 - TUF root identity plus timestamp, snapshot, and targets versions.
 
 The standalone command accepts an explicit replaceable root Registry. The
-umbrella host currently supports named source add, remove, and refresh;
-stable-name replace plus enable/disable is still an integration item and is
-not presented as a shipped command.
+umbrella host supports named add, list, show, refresh, stable-name replace,
+enable/disable, and remove:
 
 ```bash
 a3s registry add https://packages.example.org/a3s/ \
   --trust-root ./root.json \
   --yes
 a3s registry refresh packages
+a3s registry disable packages --yes
+a3s registry replace packages https://mirror.example.org/a3s/ \
+  --trust-root ./mirror-root.json \
+  --yes
+a3s registry enable packages --yes
 
-a3s --output json install use/acme/research --dry-run
-a3s --output json install use/acme/research \
-  --plan-digest <reviewed-plan-sha256>
+a3s plugin search research
+a3s plugin inspect acme/research
+a3s --output json plugin install acme/research --dry-run
+a3s --output json plugin apply <operation-id> \
+  --plan-digest <reviewed-plan-sha256> \
+  --yes
 ```
 
+Disabling a source removes it from Marketplace browsing, package lookup,
+dependency resolution, refresh, and upgrade selection without deleting its ACL
+or trust material. Replacement preserves the stable name and enabled state,
+copies a file-backed TUF root into a content-addressed, symlink-safe managed
+directory, and atomically switches the ACL only after the new trust material is
+durable. The built-in official source cannot be replaced or toggled.
+
 An installed receipt remains bound to its source name, URL, TUF root, channel,
-and target digest. Removing or changing that identity blocks upgrades until it
-is restored or the package is explicitly migrated or reinstalled.
+and target digest. Removing, disabling, or changing that identity blocks
+upgrades until the exact source is restored and enabled or the package is
+explicitly migrated or reinstalled. Source administration never rewrites
+receipt provenance.
 
 ## One A3S Flow model
 
@@ -307,10 +335,14 @@ compiled artifact, and reports `Failed` on substitution. `stop` preserves the
 binding for blue/green drain; `remove` deletes only the receipt-owned
 generation. A missing binding remains pending.
 
-The concrete Use adapter is implemented. The standalone lifecycle factory and
-A3S Code/Web still need to inject it with their compiler/runtime configuration,
-expose the typed live Flow catalog, and route `flow.json` import/deployment to
-the same installed identity before the end-to-end product path is complete.
+The concrete Use adapter is implemented. A3S Code injects it through the shared
+lifecycle factory, resolves its compiler from host configuration, and exposes
+the typed live catalog through `GET /api/v1/plugins/flows`. TUI and Web consume
+the same generation/revision watcher, and the detached-Web gate verifies Flow
+install, exact-generation upgrade, and uninstall without restarting Code. The
+standalone factory still fails closed when no adapter is injected; durable run
+execution/observation and `flow.json` import/deployment mapping to the same
+installed identity remain release gates.
 
 ## Trust and lifecycle
 
@@ -350,11 +382,11 @@ a3s-use extension enable acme/calendar --json
 a3s-use component uninstall calendar --json
 ```
 
-Schema-v3 local-package admission and multi-host parent-saga composition are
-still being wired. Required surfaces fail closed when their owning adapter is
-absent: Runtime Service and HTTP MCP need Runtime/Gateway, OKF needs Knowledge,
-and Flow needs the `a3s-flow` lifecycle host. No path silently falls back to a
-different provider, execution model, or Registry.
+Production grant/Knowledge/Service/Gateway composition and prior-generation
+retirement are still being wired. Required surfaces fail closed when their
+owning adapter is absent: Runtime Service and HTTP MCP need Runtime/Gateway,
+OKF needs Knowledge, and Flow needs the `a3s-flow` lifecycle host. No path
+silently falls back to a different provider, execution model, or Registry.
 
 ## Architecture
 
@@ -399,14 +431,14 @@ do not share one database transaction. The boundaries are frozen in
 | Schema-v3 package format | Implemented: Tool, MCP, OKF, A3S Flow, Skill, UI, required README, typed dependencies, and readiness graph |
 | Dependency graph install | Available for signed remote packages: deterministic resolve, exact lock, forward install, shared retention, one publication, reverse uninstall, and replay |
 | Replaceable Registry input | Available in the package engine; host-selected URL/trust root and bounded dependency source set, with no compiled endpoint |
-| Umbrella Registry management | Add, remove, and refresh available; stable-name replace and enable/disable remain integration work |
+| Umbrella Registry management | Available: add/list/show/refresh, stable-name replace, enable/disable, and remove; disabled sources stay visible but are excluded from browsing and resolution |
 | Tool/MCP runtime lifecycle | Typed adapters implemented; standalone supports executable Tool Tasks and stdio MCP, while Services/HTTP require injected providers |
 | A3S Flow lifecycle | Concrete `a3s-flow` preflight adapter, exact-generation binding store, artifact/source reinspection, lifecycle evidence, and capability observation implemented |
-| A3S Flow product wiring | Pending: standalone/Code/Web injection, live catalog, durable execution, `flow.json` deployment mapping, and cross-process E2E |
+| A3S Flow product wiring | Code TUI/Web injection, exact-generation watcher, typed live catalog, and hot-plug E2E implemented; durable execution/observation and `flow.json` deployment mapping remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
-| Hot-plug projection | Capability snapshot and long-poll watch available; complete Code TUI/Web install-upgrade-uninstall E2E remains pending |
+| Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-upgrade-uninstall replacement E2E implemented; production-provider and complete cross-platform real-process gates remain |
 | Upgrade/rollback | Prior-generation retirement, automatic rollback, and garbage collection remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,

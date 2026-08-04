@@ -6,7 +6,9 @@
   bundle contract frozen 2026-07-31 and M0K-B control-plane contracts frozen
   2026-08-01; package-level six-surface lifecycle and cognitive-package
   dependency/lock foundations accepted 2026-08-03; unified A3S Flow surface
-  and exact-generation preflight binding foundation accepted 2026-08-04
+  and exact-generation preflight binding foundation accepted 2026-08-04;
+  stable-name Registry controls plus A3S Code TUI/Web Flow and hot-plug host
+  integration accepted 2026-08-04
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -156,9 +158,15 @@ The following foundations are implemented:
   `NativeTsRuntime::preflight`, plus symlink-safe exact-generation bindings,
   source/artifact reinspection, and production capability observation;
 - additive host-capabilities v2 and manager-toolset v3 contracts that advertise
-  Flow without rewriting frozen older schemas; and
+  Flow without rewriting frozen older schemas;
 - standalone-host rejection before mutation when a required Flow lacks an
-  injected compiler/runtime adapter.
+  injected compiler/runtime adapter;
+- A3S Code lifecycle composition for executable Tool Tasks, stdio MCP,
+  immutable Skill/UI, and real `a3s-flow` Native TypeScript preflight;
+- one exact-generation watcher feeding Code TUI/Web plus the typed
+  `GET /api/v1/plugins/flows` catalog; and
+- detached-Web `install -> upgrade -> uninstall` hot-plug coverage for
+  Activity, Skill, and Flow replacement without daemon restart.
 
 The OKF control plane is implemented without creating another package manager,
 Runtime route, or reconciler. It intentionally publishes no OKF capability
@@ -188,12 +196,14 @@ The main gaps are:
   connected;
 - the dependency resolver, lock, remote closure downloader, graph lifecycle
   coordinator, and signed remote standalone CLI path are implemented in A3S
-  Use, but Code TUI/Web and management MCP have not yet injected their complete
-  host set through the public lifecycle factory;
-- A3S Use now supplies the production `a3s-flow` preflight host and retained
-  binding evidence, but A3S Code still needs to inject it, expose the typed
-  live Flow catalog, attach durable execution/observation, and map `flow.json`
-  import/deployment before local and OS workflow UX are one path;
+  Use; Code TUI/Web now inject their supported host set through the public
+  lifecycle factory, while management MCP and managed-host mutation still need
+  the same composition;
+- A3S Use supplies the production `a3s-flow` preflight host and retained
+  binding evidence, and A3S Code injects it and exposes the typed live Flow
+  catalog; durable execution/observation and `flow.json` import/deployment must
+  still map to that installed identity before local and OS workflow UX are one
+  path;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - the versioned OKF manager/search/selection contract, injected Knowledge port,
@@ -367,7 +377,7 @@ Exit criteria:
 - the ownership contract forbids removing personal notes or another package's
   index; production cleanup and recovery proof remains part of M0K-C.
 
-### M0F — Unified A3S Flow contribution (Use preflight binding complete 2026-08-04; product wiring pending)
+### M0F — Unified A3S Flow contribution (Code host/catalog complete 2026-08-04; execution mapping pending)
 
 Implementation status:
 
@@ -385,9 +395,12 @@ Implementation status:
   blue/green retention, and production capability observation;
 - completed: one six-surface content-addressed fixture and regression coverage
   for source corruption, missing dependencies, unavailable hosts, publication,
-  and reverse teardown; and
-- pending: standalone/A3S Code host composition, durable run observation,
-  unified TUI/Web discovery, and typed `flow.json` import/deployment.
+  and reverse teardown;
+- completed: A3S Code lifecycle-factory injection, exact-generation TUI/Web
+  watcher projection, typed live Flow catalog, and install/upgrade/uninstall
+  hot-plug coverage; and
+- pending: durable run execution/observation and typed `flow.json`
+  import/deployment mapping to the installed Flow identity.
 
 Exit criteria:
 
@@ -550,13 +563,15 @@ Implementation status (2026-08-03):
   contracts, offline child-policy propagation, a signed-registry CLI
   plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
   smoke test;
-- pending: umbrella-manager use of the public lifecycle factory to inject the
-  implemented package/capability, typed Runtime, Gateway, stdio MCP, Skill/UI,
-  and Knowledge adapters; grant
-  sub-saga composition; prior Runtime generation retirement; and complete Unix
-  Marketplace lifecycle E2E through the shared service. The shared manager
-  must also implement the published managed-host port before a Cloud adapter
-  can enable mutation; hosts must not add a parallel implementation.
+- completed in A3S Code: the umbrella manager uses the public lifecycle factory
+  for package/capability, executable Tool Task, stdio MCP, A3S Flow, and
+  Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
+  cover live generation replacement;
+- pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
+  injection; grant sub-saga composition; prior Runtime generation retirement;
+  real signed cross-platform lifecycle E2E; and the published managed-host port
+  required before a Cloud adapter can enable mutation. Hosts must not add a
+  parallel implementation.
 
 Deliverables:
 

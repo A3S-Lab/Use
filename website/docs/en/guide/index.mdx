@@ -19,10 +19,10 @@ A3S Use is the **AI Native Package Manager** for the A3S ecosystem. It does not 
 | Schema-v3 SemVer dependency resolver, exact lock, and graph lifecycle | Available for signed remote standalone CLI installs          |
 | Schema-v3 package commit/remove and capability publish/hide/drain     | P0 generation-bound hosts implemented                        |
 | OKF (Open Knowledge Format) knowledge surface                         | M0K-C-A lifecycle adapter ready; production backend pending  |
-| A3S Flow workflow surface                                             | Source/lifecycle/catalog ready; production Code host pending |
+| A3S Flow workflow surface                                             | Code TUI/Web preflight, live catalog, and hot-plug E2E ready |
 | Complete Plugin Manager apply saga and production product integration | In development                                               |
 
-The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`. Signed remote schema-v3 records now enter that graph from both `a3s-use install` and compatible remote `component install`. Umbrella host/grant composition, prior-generation retirement, and the real A3S Knowledge backend are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
+The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`. Signed remote schema-v3 records enter that graph from both `a3s-use install` and compatible remote `component install`. The umbrella host provides stable-name Registry replace and enable/disable, while A3S Code composes the real Flow preflight host and projects exact-generation changes into TUI/Web without restart. Production grant/Knowledge/Service/Gateway composition, durable Flow execution, and prior-generation retirement are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
 
 ## Install a release
 
@@ -58,8 +58,18 @@ a3s-use capability snapshot --json
 
 ## Install a cognitive package
 
-Install one signed package and its complete SemVer dependency closure from a
-host-selected, replaceable Registry:
+Use the umbrella Plugin Manager for the reviewed user lifecycle:
+
+```bash
+a3s plugin search research
+a3s plugin inspect acme/research
+a3s plugin install acme/research --channel stable
+a3s plugin upgrade acme/research
+a3s plugin uninstall acme/research
+```
+
+The standalone engine can also install one signed package and its complete
+SemVer dependency closure from an explicit host-selected Registry:
 
 ```bash
 a3s-use install acme/research \
