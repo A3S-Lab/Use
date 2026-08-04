@@ -31,6 +31,12 @@ const requiredFiles = [
   "en/llms.txt",
   "en/llms-full.txt",
   "a3s-use-mark.svg",
+  "package-system-hero.avif",
+  "package-system-hero.jpg",
+  "package-system-hero-mobile.avif",
+  "package-system-hero-mobile.jpg",
+  "package-trust-detail.avif",
+  "package-trust-detail.jpg",
   "social-card.svg",
   "social-card.png",
 ];
