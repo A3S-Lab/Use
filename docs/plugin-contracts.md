@@ -5,7 +5,8 @@
 - Product amendment: OKF bundle contract/conformance frozen 2026-07-31;
   plugin-surface control plane frozen 2026-08-01; managed-host protocol frozen
   2026-08-02; package lifecycle intent/journal and cognitive-package
-  dependency/lock contracts frozen 2026-08-03
+  dependency/lock contracts frozen 2026-08-03; unified A3S Flow contracts
+  frozen 2026-08-04
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -15,14 +16,17 @@ This document records the machine-readable plugin contracts implemented in
 store implemented in `a3s-use-extension`, plus the package lifecycle contracts
 implemented in `a3s-use`. It does not claim that production Plugin Manager
 wiring, Knowledge, Gateway, or Runtime generation retirement are complete. The
-package/capability and dependency-graph hosts are implemented foundations, but
-the compatible product CLI still enters the legacy installer.
+package/capability and dependency-graph hosts are implemented foundations.
+Signed remote schema-v3 records enter that graph from `a3s-use install` and
+the compatible `component install` command; Code/Web host composition remains
+in progress.
 
 ## Contract Set
 
 | Contract | Schema | Purpose |
 | --- | --- | --- |
-| Plugin manifest | `a3s.extension/v3` | Named MCP, OKF, Skill, Tool, and UI surfaces |
+| Plugin manifest | `a3s.extension/v3` | Named Tool, MCP, OKF, Flow, Skill, and UI surfaces |
+| Flow surface | schema-v3 `flow` block | Fixed `a3s-flow` engine, typed runtime/source/export, capability dependencies, and optionality |
 | OKF bundle | `a3s.use.okf-bundle.v1` | Exact non-executable OKF version, root, digest, counts, bytes, and conformance limits |
 | MCP release | `a3s.use.mcp-release.v1` | Immutable Streamable HTTP Runtime Service and headless lifecycle contract |
 | Skill release | `a3s.use.skill-release.v1` | Immutable content-bound Agent input with no Runtime workload |
@@ -38,8 +42,10 @@ the compatible product CLI still enters the legacy installer.
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Compatible search and review metadata without package download |
 | Catalog record | `a3s.use.plugin-catalog.v2` | Plan-ready manifest evidence and surface dependency closure |
-| Catalog record | `a3s.use.plugin-catalog.v3` | Exact OKF bundle evidence and, for executable surfaces, a separately signed planning target |
+| Catalog record | `a3s.use.plugin-catalog.v3` | Exact OKF evidence, complete Flow graph, and a planning target when Tool/MCP surfaces require it |
 | Package lock | `a3s.use.plugin-package-lock.v1` | Exact transitive versions, dependency edges, content digests, host target/version, and Registry/TUF provenance |
+| Installed package graph | `a3s.use.installed-package-graph.v1` | Root-owned exact dependency lock retained for shared-node reference and reverse uninstall |
+| Pending package graph operation | `a3s.use.pending-package-graph-operation.v1` | Durable admitted plan, exact changed manifests/generations, and crash-replay ownership |
 | Planning bundle | `a3s.use.plugin-planning-bundle.v1` | Pre-archive Tool/MCP workload, release, and artifact evidence |
 | Installed plan evidence | `a3s.use.installed-plugin-plan-evidence.v1` | Package-specific receipt, catalog, surface, and capability join |
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |
@@ -48,13 +54,15 @@ the compatible product CLI still enters the legacy installer.
 | Operation plan | `a3s.use.plugin-operation-plan.v2` | Plan v1 plus an exact derived OKF bundle delta |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
 | Manager toolset | `a3s.use.plugin-manager-tools.v2` | Manager v1 with canonical `okf` search and selection values |
+| Manager toolset | `a3s.use.plugin-manager-tools.v3` | Manager v2 with canonical `flow` search and selection values |
 | Managed scope | `a3s.use.plugin-managed-scope.v1` | Host-derived workspace identity and exclusive mutation fence |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v1` | Exact manager build, protocol level, and frozen supported schema inventory |
+| Host capabilities | `a3s.use.plugin-host-capabilities.v2` | Protocol level 2 with explicit first-class Flow support; v1 remains byte-frozen |
 | Host plan | `a3s.use.plugin-host-plan-request/result.v1` | Exact verified selection in and canonical reviewed A3S Use plan out |
 | Host apply | `a3s.use.plugin-host-apply-request/result.v1` | Digest-only apply with exact confirmation and idempotent operation evidence |
 | Host enablement | `a3s.use.plugin-host-enablement-request/result.v1` | Optimistic-generation enable or disable through the same manager |
 | Host observation | `a3s.use.plugin-host-observation-request/result.v1` | Exact Use-owned package/capability state or explicit unavailable evidence |
-| Package lifecycle intent | `a3s.use.plugin-lifecycle-intent.v1` | Exact package generation, five-surface graph, action, and deterministic checkpoint schedule |
+| Package lifecycle intent | `a3s.use.plugin-lifecycle-intent.v1` | Exact package generation, six-surface graph, action, and deterministic checkpoint schedule |
 | Package lifecycle operation | `a3s.use.plugin-lifecycle-operation.v1` | Durable checkpoint receipts, optional failures, required failure evidence, and terminal status |
 | OKF projection receipt | `a3s.use.okf-projection-receipt.v1` | Exact scope/package/surface generation staged for Knowledge |
 | OKF Knowledge observation | `a3s.use.okf-knowledge-observation.v1` | Staged, promoted, failed, or removed index evidence and last-good selection |
@@ -109,10 +117,35 @@ indexing, scope-aware session publication, cited retrieval, and end-to-end
 parent-saga recovery remain M0K-C-B work; no second lifecycle or Runtime path
 is implied by these contracts.
 
+### A3S Flow surface contract is additive and unified
+
+`PluginSurfaceKind::Flow` is the sixth schema-v3 contribution kind. Its
+manifest block requires `engine = "a3s-flow"`, the currently supported
+`runtime = "native-ts"`, one bounded package-relative `.ts` source, one
+portable export identifier, optionality, and sorted named Tool/MCP/OKF
+dependencies. Flow itself cannot carry a runtime permission ceiling; authority
+remains attached to those explicitly declared capabilities.
+
+The complete catalog graph must exactly match the admitted manifest inventory,
+optionality, and dependency edges. Package validation checks bounded UTF-8
+source and content-addresses it. Lifecycle prepares Flow after Tool/MCP/OKF,
+then prepares dependent Skill/UI; stop and removal reverse that order. The
+capability catalog binds engine, runtime, source path/digest/media type, export,
+and capability edges. A corrupted required source withholds the generation;
+valid source bytes without typed A3S Flow host preflight remain pending and are
+not published.
+
+Host-capabilities v1 remains frozen without Flow. V2 uses protocol level 2 and
+advertises it explicitly. Manager-toolset v1/v2 also remain frozen; v3 adds the
+canonical `flow` selection value. Compilation, preflight, durable execution,
+replay, and storage belong to the typed `a3s-flow` host adapter. `flow.json` is
+a design/deployment document that must map to the same Flow identity; it does
+not create a second engine or package lifecycle.
+
 ### Package lifecycle operation is package-owned
 
 The schema-v3 manifest is the only surface inventory for both reconciliation
-and lifecycle. Tool, MCP, OKF, Skill, and UI contributions are not independent
+and lifecycle. Tool, MCP, OKF, Flow, Skill, and UI contributions are not independent
 installation records. The intent binds the reviewed plan, scope, package and
 manifest digests, generation, action, canonical dependency levels, required
 closure, and per-checkpoint idempotency keys.
@@ -343,7 +376,7 @@ grant.
 
 This ordering avoids a digest cycle: the plan can bind a proposal before a
 user decision exists, while the later confirmation binds both immutable
-objects. Untrusted package, Skill, Tool, MCP, UI, or OKF content cannot
+objects. Untrusted package, Tool, MCP, OKF, Flow, Skill, or UI content cannot
 act as confirmation evidence.
 
 ### Snapshot and multi-package changes
@@ -703,7 +736,8 @@ authorized native Tool or MCP bindings in the data plane.
 
 Manager-toolset v1 remains frozen. V2 retains the same ten operations and
 annotations, adding only `okf` to the canonical surface-kind enums used by
-search, install planning, and upgrade planning.
+search, install planning, and upgrade planning. V3 retains the same inventory
+and adds only `flow`, so older hosts never silently claim support.
 
 ## Golden Fixtures
 
@@ -715,9 +749,12 @@ Canonical interoperability fixtures live under
 - `complete-package-catalog-v1.json`;
 - `operation-plan-install-v1.json`;
 - `manager-toolset-v1.json`;
+- `host-capabilities-v1.json`;
 - `catalog-record-okf-v3.json`;
 - `operation-plan-install-okf-v2.json`; and
-- `manager-toolset-v2.json`.
+- `manager-toolset-v2.json`;
+- `host-capabilities-v2.json`; and
+- `manager-toolset-v3.json`.
 
 Canonical OKF fixtures under `crates/core/fixtures/okf/` include the bundle
 contract plus `projection-receipt-v1.json`,
@@ -738,6 +775,11 @@ The additive `plugin-v3-okf` fixture freezes a second ACL manifest and a
 complete OKF + dependent Skill package. Its nine-file, 3,258-byte expanded
 package and deterministic archive are content-addressed, and validation reads
 every OKF byte before comparing the declared bundle evidence.
+
+The additive `plugin-v3-cognitive` fixture contains all six contribution kinds
+and freezes Flow → Skill → UI dependency ordering on top of Tool/MCP/OKF. Its
+manifest, Flow source, package byte count, file count, and digest are checked
+through the real package validator and lifecycle tests.
 
 The matching deterministic TUF repository lives under
 `crates/extension/fixtures/registry/plugin-v3/`. Its signed targets metadata

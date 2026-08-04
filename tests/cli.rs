@@ -688,7 +688,7 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
   schema_version = 2
   version = "1.0.0"
   route = "slack"
-  requires_use = ">=0.2.0, <0.3.0"
+  requires_use = ">=0.2.0, <0.4.0"
   actions = ["read"]
 
   repository {
@@ -743,7 +743,7 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
     assert_eq!(status_by_route["component"]["compatible"], true);
     assert_eq!(
         status_by_route["component"]["requiresUse"],
-        ">=0.2.0, <0.3.0"
+        ">=0.2.0, <0.4.0"
     );
     assert_eq!(
         status_by_route["component"]["repository"]["url"],
@@ -776,7 +776,7 @@ fn explicit_extension_install_delegates_native_cli_and_preserves_status() {
         .iter()
         .find(|capability| capability["route"] == "slack")
         .unwrap();
-    assert_eq!(slack["requiresUse"], ">=0.2.0, <0.3.0");
+    assert_eq!(slack["requiresUse"], ">=0.2.0, <0.4.0");
     assert_eq!(slack["repository"]["url"], "https://github.com/acme/slack");
 
     let delegated = Command::new(binary())

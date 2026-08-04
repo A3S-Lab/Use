@@ -174,5 +174,5 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
     let error = project_extension_for_host(&mismatched, surfaces, "0.3.0")
         .await
         .unwrap_err();
-    assert_eq!(error.code, "use.capability.planner_evidence_invalid");
+    assert_eq!(error.code, "use.extension.catalog_package_mismatch");
 }

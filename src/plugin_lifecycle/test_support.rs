@@ -44,11 +44,23 @@ extension "acme/research" {
     optional               = true
   }
 
+  flow "review" {
+    engine        = "a3s-flow"
+    runtime       = "native-ts"
+    source        = "flows/review.ts"
+    export        = "run"
+    requires_tool = ["query"]
+    requires_mcp  = ["catalog"]
+    requires_okf  = ["papers"]
+    optional      = false
+  }
+
   skill "review" {
     path          = "skills/review/SKILL.md"
     requires_tool = ["query"]
     requires_mcp  = ["catalog"]
     requires_okf  = ["papers"]
+    requires_flow = ["review"]
     optional      = false
   }
 
@@ -59,6 +71,7 @@ extension "acme/research" {
     skill     = "review"
     bind_tool = ["query"]
     bind_mcp  = ["catalog"]
+    bind_flow = ["review"]
     optional  = false
   }
 }

@@ -46,7 +46,8 @@ pub use grant_resolution::{
 };
 pub use host::{
     PluginHostCapabilities, PluginHostManager, PluginManagedScope, PLUGIN_HOST_CAPABILITIES_SCHEMA,
-    PLUGIN_HOST_PROTOCOL_LEVEL, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_PROTOCOL_LEVEL, PLUGIN_HOST_PROTOCOL_LEVEL_V2,
+    PLUGIN_MANAGED_SCOPE_SCHEMA,
 };
 pub use host_observation::{
     PluginDesiredState, PluginHostObservationRequest, PluginHostObservationResult,
@@ -99,6 +100,7 @@ pub const PLUGIN_CATALOG_SCHEMA_V3: &str = "a3s.use.plugin-catalog.v3";
 pub const INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA: &str = "a3s.use.installed-plugin-plan-evidence.v1";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA_V2: &str = "a3s.use.plugin-manager-tools.v2";
+pub const PLUGIN_MANAGER_TOOLSET_SCHEMA_V3: &str = "a3s.use.plugin-manager-tools.v3";
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA: &str = "a3s.use.plugin-operation-plan-draft.v1";
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan-draft.v2";
@@ -120,6 +122,7 @@ pub const MAX_PLUGIN_PLAN_ITEMS: usize = 512;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PluginSurfaceKind {
+    Flow,
     Mcp,
     Okf,
     Skill,

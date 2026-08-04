@@ -111,9 +111,10 @@ impl RuntimeBindingStore {
         let kind = match surface.surface.kind {
             PluginSurfaceKind::Tool => "tool",
             PluginSurfaceKind::Mcp => "mcp",
-            PluginSurfaceKind::Okf | PluginSurfaceKind::Skill | PluginSurfaceKind::Ui => {
-                return Err(invalid_path_identity())
-            }
+            PluginSurfaceKind::Flow
+            | PluginSurfaceKind::Okf
+            | PluginSurfaceKind::Skill
+            | PluginSurfaceKind::Ui => return Err(invalid_path_identity()),
         };
         Ok(self
             .root

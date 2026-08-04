@@ -9,19 +9,20 @@ A3S Use is the **AI Native Package Manager** for the A3S ecosystem. It does not 
 
 ## What is available now
 
-| Capability                                                            | Status                                                      |
-| --------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Local directories and bounded archives                                | Available in v0.2                                           |
-| Digest-reviewed releases and TUF registries                           | Available in v0.2                                           |
-| Named registry replace, enable, disable, remove, and refresh          | Available through the umbrella host                         |
-| Native CLI, standard MCP, and content-bound Skills                    | Available in v0.2                                           |
-| Schema-v3 Tool, MCP, OKF, Skill, and UI contracts                     | Control-plane baseline implemented on `main`                |
-| Schema-v3 SemVer dependency resolver, exact lock, and graph lifecycle | In-crate foundation implemented on `main`                   |
-| Schema-v3 package commit/remove and capability publish/hide/drain     | P0 generation-bound hosts implemented                       |
-| OKF (Open Knowledge Format) knowledge surface                         | M0K-C-A lifecycle adapter ready; production backend pending |
-| Complete Plugin Manager apply saga and production product integration | In development                                              |
+| Capability                                                            | Status                                                       |
+| --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Local directories and bounded archives                                | Available in v0.2                                            |
+| Digest-reviewed releases and TUF registries                           | Available in v0.2                                            |
+| Named registry replace, enable, disable, remove, and refresh          | Available through the umbrella host                          |
+| Native CLI, standard MCP, and content-bound Skills                    | Available in v0.2                                            |
+| Schema-v3 Tool, MCP, OKF, Flow, Skill, and UI contracts               | Control-plane baseline implemented on `main`                 |
+| Schema-v3 SemVer dependency resolver, exact lock, and graph lifecycle | Available for signed remote standalone CLI installs          |
+| Schema-v3 package commit/remove and capability publish/hide/drain     | P0 generation-bound hosts implemented                        |
+| OKF (Open Knowledge Format) knowledge surface                         | M0K-C-A lifecycle adapter ready; production backend pending  |
+| A3S Flow workflow surface                                             | Source/lifecycle/catalog ready; production Code host pending |
+| Complete Plugin Manager apply saga and production product integration | In development                                               |
 
-The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`, but the compatible `component install` CLI still uses the legacy installer. Umbrella and grant composition, prior-generation retirement, and the real A3S Knowledge backend are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
+The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`. Signed remote schema-v3 records now enter that graph from both `a3s-use install` and compatible remote `component install`. Umbrella host/grant composition, prior-generation retirement, and the real A3S Knowledge backend are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
 
 ## Install a release
 
@@ -54,6 +55,27 @@ Inspect the immutable capability snapshot:
 ```bash
 a3s-use capability snapshot --json
 ```
+
+## Install a cognitive package
+
+Install one signed package and its complete SemVer dependency closure from a
+host-selected, replaceable Registry:
+
+```bash
+a3s-use install acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --version 2.0.0 \
+  --json
+
+a3s-use uninstall acme/research --json
+```
+
+Add `--package-lock-digest sha256:<64-hex-digits>` when applying a separately
+reviewed resolution. Lock drift fails before any archive download. Runtime
+Service, HTTP MCP, Flow, and OKF packages require their embedding host's explicit
+Runtime/Gateway, A3S Flow, or A3S Knowledge lifecycle factory.
 
 ## Build from source
 
@@ -95,6 +117,7 @@ The package ID is the stable lifecycle identity; a route is only a presentation 
 ## Next steps
 
 - [Understand the native + cognitive package model](./package-model)
+- [Package durable workflows with A3S Flow](./flow)
 - [Design shareable OKF knowledge packages](./okf)
 - [Configure supply-chain trust and authorization boundaries](./trust-security)
 - [Inspect ownership across Plugin Manager, Use, and Runtime](./architecture)

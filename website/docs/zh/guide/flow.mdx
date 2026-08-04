@@ -1,0 +1,87 @@
+---
+title: A3S Flow 工作流
+description: 将带有显式 Tool、MCP 与 OKF 依赖的持久 A3S Flow 工作流纳入同一个版本化认知包生命周期。
+---
+
+# A3S Flow 工作流
+
+认知包 Flow 是由 [A3S Flow](https://github.com/A3S-Lab/Flow) 驱动的一等工作流贡献。它与包共享版本、Registry provenance、依赖 lock、generation 和原子安装/卸载边界。
+
+系统只有一个工作流引擎：
+
+```text
+包内源码 / Code flow.json 设计文档
+                 ↓ 类型化适配器
+              A3S Flow
+                 ↓
+        本地 Code 宿主 / 远程 OS 目标
+```
+
+`a3s-flow` 负责持久执行、事件历史、重放、调度、存储与 observation。A3S Use 负责分发、完整性、SemVer 依赖解析、能力依赖和包生命周期。A3S Code/Web 提供产品发现与注入式 runtime host。
+
+## Manifest 合约
+
+schema v3 在 `a3s-use-extension.acl` 中声明命名 Flow：
+
+```acl
+flow "review" {
+  engine         = "a3s-flow"
+  runtime        = "native-ts"
+  source         = "flows/review.ts"
+  export         = "run"
+  requires_tool  = ["convert"]
+  requires_mcp   = ["library"]
+  requires_okf   = ["domain-knowledge"]
+  optional       = false
+}
+
+skill "review" {
+  path          = "skills/review/SKILL.md"
+  requires_flow = ["review"]
+  optional      = false
+}
+
+ui "review" {
+  entry     = "ui/review/index.html"
+  skill     = "review"
+  bind_flow = ["review"]
+  optional  = false
+}
+```
+
+`engine = "a3s-flow"` 是固定值。`native-ts` 是首个已准入的 runtime adapter，不是另一个工作流引擎。源码必须是有界 UTF-8 TypeScript 文件，`export` 必须是可移植的 TypeScript identifier。
+
+## 依赖与生命周期顺序
+
+Flow 不拥有 ambient permission ceiling。它只能使用显式声明的 Tool、MCP 与 OKF 能力；每种能力都由其 owner host 授权和观察。
+
+```text
+Tool / MCP / OKF
+        ↓
+      Flow
+        ↓
+      Skill
+        ↓
+        UI
+```
+
+安装按正向顺序准备依赖图，并一次发布一个包 generation。Disable 先隐藏 generation，再停止它。Uninstall 排空已接受工作后反向移除表面。必需 Flow 缺失或损坏时，它依赖的 Skill/UI 与新包 generation 都不会发布。
+
+## `flow.json` 的含义
+
+A3S Code 历史上把 `flow.json` 作为 Workflow-as-a-Service 的可见设计文档。它不是第二种包格式或执行引擎。产品方向是通过类型化 import/deployment adapter 把该文档映射到同一个已安装 Flow 身份：
+
+- Native TypeScript 是 A3S Flow 执行适配器。
+- `flow.json` 是可视化设计/部署文档。
+- A3S Code 是本地编辑器与宿主。
+- A3S OS 是远程部署目标。
+
+任何 adapter 都不能创建并行的 package receipt、dependency graph 或 lifecycle journal。
+
+## 当前实现边界
+
+A3S Use 已实现 manifest 准入、精确源码证据、签名 catalog 闭包、包生命周期顺序、reconciler owner、host-capabilities v2、manager-toolset v3 与类型化 capability projection。未注入 `a3s-flow` host adapter 时，standalone engine 会在变更前拒绝包含必需 Flow 的包。
+
+有效源码只是必要条件，不是 readiness 充分证据。只有类型化 A3S Flow host 对同一准入 generation 返回成功 preflight 后，Flow 才能离开 pending 并进入已发布 catalog；源码损坏会覆盖过期的正向 host observation。
+
+生产 compiler preflight、持久执行、run observation、Code TUI/Web 集成和 `flow.json` import/deployment adapter 仍是 release gate。[路线图](./roadmap) 会明确跟踪这些门禁。

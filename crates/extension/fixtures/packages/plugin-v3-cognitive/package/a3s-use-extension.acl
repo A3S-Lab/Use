@@ -33,10 +33,10 @@ extension "acme/cognitive" {
   okf "domain" {
     format_version         = "0.2"
     root                   = "okf/domain"
-    content_digest         = "sha256:1993e98beb211464d263715b242934987ce654211040560aea648e35dc7e0ba6"
+    content_digest         = "sha256:355b6f00153630b082e60a0f7e0b67fbbb74b2a29067bca481f7eefecbb86c7a"
     concept_count          = 1
     file_count             = 2
-    expanded_bytes         = 421
+    expanded_bytes         = 427
     max_files              = 64
     max_concepts           = 32
     max_expanded_bytes     = 1048576
@@ -45,11 +45,23 @@ extension "acme/cognitive" {
     optional               = false
   }
 
+  flow "reason" {
+    engine        = "a3s-flow"
+    runtime       = "native-ts"
+    source        = "flows/reason.ts"
+    export        = "run"
+    requires_tool = ["echo"]
+    requires_mcp  = ["context"]
+    requires_okf  = ["domain"]
+    optional      = false
+  }
+
   skill "reason" {
     path          = "skills/reason/SKILL.md"
     requires_tool = ["echo"]
     requires_mcp  = ["context"]
     requires_okf  = ["domain"]
+    requires_flow = ["reason"]
     optional      = false
   }
 
@@ -60,6 +72,7 @@ extension "acme/cognitive" {
     skill     = "reason"
     bind_tool = ["echo"]
     bind_mcp  = ["context"]
+    bind_flow = ["reason"]
     optional  = false
   }
 }

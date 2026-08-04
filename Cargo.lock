@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "a3s-runtime",
  "a3s-use-browser",
@@ -96,7 +96,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-extension"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "a3s-acl",
  "a3s-use-core",

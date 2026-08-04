@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use a3s_use_core::{PluginSurfaceKind, UseError, UseResult};
 use a3s_use_extension::{
-    ExtensionManifest, PluginMcpSurface, PluginOkfSurface, PluginSkillSurface, PluginUiSurface,
-    ToolSurface,
+    ExtensionManifest, PluginFlowSurface, PluginMcpSurface, PluginOkfSurface, PluginSkillSurface,
+    PluginUiSurface, ToolSurface,
 };
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
@@ -149,6 +149,30 @@ pub trait PluginOkfLifecycleHost: Send + Sync {
 }
 
 #[async_trait]
+pub trait PluginFlowLifecycleHost: Send + Sync {
+    async fn prepare_flow(
+        &self,
+        intent: &PluginLifecycleIntent,
+        surface: &PluginFlowSurface,
+        idempotency_key: &str,
+    ) -> UseResult<PluginLifecycleEvidence>;
+
+    async fn stop_flow(
+        &self,
+        intent: &PluginLifecycleIntent,
+        surface: &PluginFlowSurface,
+        idempotency_key: &str,
+    ) -> UseResult<PluginLifecycleEvidence>;
+
+    async fn remove_flow(
+        &self,
+        intent: &PluginLifecycleIntent,
+        surface: &PluginFlowSurface,
+        idempotency_key: &str,
+    ) -> UseResult<PluginLifecycleEvidence>;
+}
+
+#[async_trait]
 pub trait PluginSkillLifecycleHost: Send + Sync {
     async fn prepare_skill(
         &self,
@@ -203,6 +227,7 @@ pub struct PluginLifecycleHosts {
     tool: Arc<dyn PluginToolLifecycleHost>,
     mcp: Arc<dyn PluginMcpLifecycleHost>,
     okf: Arc<dyn PluginOkfLifecycleHost>,
+    flow: Arc<dyn PluginFlowLifecycleHost>,
     skill: Arc<dyn PluginSkillLifecycleHost>,
     ui: Arc<dyn PluginUiLifecycleHost>,
 }
@@ -215,6 +240,7 @@ impl PluginLifecycleHosts {
         tool: Arc<dyn PluginToolLifecycleHost>,
         mcp: Arc<dyn PluginMcpLifecycleHost>,
         okf: Arc<dyn PluginOkfLifecycleHost>,
+        flow: Arc<dyn PluginFlowLifecycleHost>,
         skill: Arc<dyn PluginSkillLifecycleHost>,
         ui: Arc<dyn PluginUiLifecycleHost>,
     ) -> Self {
@@ -224,6 +250,7 @@ impl PluginLifecycleHosts {
             tool,
             mcp,
             okf,
+            flow,
             skill,
             ui,
         }
@@ -433,6 +460,25 @@ impl PluginLifecycleCoordinator {
         key: &str,
     ) -> UseResult<PluginLifecycleEvidence> {
         match surface_kind {
+            PluginSurfaceKind::Flow => {
+                let surface = manifest
+                    .flows
+                    .iter()
+                    .find(|surface| surface.id == surface_id)
+                    .ok_or_else(surface_missing)?;
+                match kind {
+                    PluginLifecycleCheckpointKind::SurfacePrepared => {
+                        self.hosts.flow.prepare_flow(intent, surface, key).await
+                    }
+                    PluginLifecycleCheckpointKind::SurfaceStopped => {
+                        self.hosts.flow.stop_flow(intent, surface, key).await
+                    }
+                    PluginLifecycleCheckpointKind::SurfaceRemoved => {
+                        self.hosts.flow.remove_flow(intent, surface, key).await
+                    }
+                    _ => Err(surface_missing()),
+                }
+            }
             PluginSurfaceKind::Tool => {
                 let surface = manifest
                     .tools

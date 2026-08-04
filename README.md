@@ -25,8 +25,8 @@
 **A3S Use is the AI Native Package Manager for the A3S ecosystem.** It brings
 platform-native executables and agent-facing cognition into one versioned,
 verifiable package lifecycle, then projects installed capabilities through
-native CLI, standard MCP, content-bound Skills, sandboxed host surfaces, and
-exact-generation knowledge evidence.
+native CLI, standard MCP, durable A3S Flow workflows, content-bound Skills,
+sandboxed host surfaces, and exact-generation knowledge evidence.
 
 It is an **A3S package manager**, not a replacement for `apt`, Homebrew, or
 WinGet. A3S Use manages packages that participate in the A3S capability and
@@ -35,15 +35,19 @@ system software.
 
 > [!IMPORTANT]
 > The `v0.2` release line is the stable package-management foundation. The
-> current `main` branch also implements the dependency foundation for npm-like
-> cognitive packages: schema-v3 ACL dependencies, bounded deterministic SemVer
-> resolution, an exact signed package lock, dependency-forward download and
-> preparation, retained shared dependencies, reverse removal, and one atomic
-> capability cutover for the changed closure. Tool, MCP, Skill, UI, and OKF
-> remain package-owned surfaces. Umbrella CLI/Web host composition, grant
-> composition, old-generation retirement, Gateway, and the real A3S Knowledge
-> backend remain incomplete, so schema-v3 graph installation is not yet a GA
-> CLI workflow. [ROADMAP.md](ROADMAP.md) is the source of truth.
+> current `main` branch is the `v0.3` cognitive-package line. Signed remote
+> schema-v3 packages now use the dependency graph from both `a3s-use install`
+> and the compatible `component install` entry point: deterministic SemVer
+> resolution, an exact Registry/TUF-bound lock, dependency-forward install,
+> shared dependency retention, atomic publication, reverse uninstall, and
+> crash replay are implemented. The standalone host supports executable Tool
+> Tasks, stdio MCP, Skill, and UI; Runtime Service, HTTP MCP, and OKF packages
+> require explicit Runtime/Gateway or A3S Knowledge adapters from an embedding
+> host. A3S Flow is now a first-class package surface with typed lifecycle and
+> catalog evidence; production compilation and execution require an injected
+> `a3s-flow` host adapter. Grant composition, prior-generation retirement, and
+> the complete Code/Web production E2E remain release gates.
+> [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 The user-facing entry point is `a3s use`. The standalone `a3s-use` binary is
 the delegated package engine and remains available for automation and
@@ -65,18 +69,18 @@ They may ship separately or under one immutable package identity:
 ```text
 A3S package
 ├── native plane       executable · runtime assets · target · provenance
-└── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
+└── cognitive plane    Tool · MCP · OKF · Flow · Skill · UI · agent context
 ```
 
-The package is the only lifecycle unit. A Tool, Skill, MCP server, UI, or OKF
-bundle can be selected and projected as a named contribution, but it cannot be
-installed, upgraded, enabled, disabled, or uninstalled independently from its
-owning package generation.
+The package is the only lifecycle unit. A Tool, MCP server, OKF bundle, Flow,
+Skill, or UI can be selected and projected as a named contribution, but it
+cannot be installed, upgraded, enabled, disabled, or uninstalled independently
+from its owning package generation.
 
 | Plane | Implemented foundation | Product direction |
 | --- | --- | --- |
 | Native | Built-in providers, external CLI/MCP executables, immutable generations | Production provider isolation and cross-platform release parity |
-| Cognitive | Named Tool Task/Service, MCP, OKF, Skill, and UI contracts on `main` | Production Knowledge indexing, then Agents, prompts, hooks, and typed memory/context providers |
+| Cognitive | Named Tool Task/Service, MCP, OKF, A3S Flow, Skill, and UI contracts on `main` | Production Flow/Knowledge adapters, then Agents, prompts, hooks, and typed memory/context providers |
 | Control | TUF provenance, SemVer dependency resolution, exact lock graphs, plan digests, receipts, grants, route leases, and atomic capability snapshots | Complete umbrella apply saga, rollback, garbage collection, and policy-aware activation |
 
 ## Quick start
@@ -105,6 +109,24 @@ cargo build --workspace --bins --locked
 ./target/debug/a3s-use doctor --json
 ```
 
+Install one signed cognitive package and its complete dependency closure from
+a host-selected Registry:
+
+```bash
+a3s-use install acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --version 2.0.0 \
+  --json
+
+a3s-use uninstall acme/research --json
+```
+
+For a separately reviewed resolution, add
+`--package-lock-digest sha256:<64-hex-digits>`. A mismatch fails before any
+package archive is downloaded.
+
 Prebuilt archives are published on
 [GitHub Releases](https://github.com/A3S-Lab/Use/releases). Keep each archive's
 binary, Skills, Dashboard, model assets, licenses, and provenance files
@@ -114,7 +136,7 @@ together; the facade binary alone is not the complete product surface.
 
 A cognitive package is an npm-like, versioned distribution unit. It has one
 stable `<publisher>/<name>` identity, one ACL manifest, one required `README.md`,
-zero or more Tool, MCP, Skill, UI, and OKF contributions, and optional SemVer
+zero or more Tool, MCP, OKF, Flow, Skill, and UI contributions, and optional SemVer
 dependencies on other cognitive packages. A typical package is:
 
 ```text
@@ -123,6 +145,7 @@ acme-research/
 ├── README.md               required schema-v3 package documentation
 ├── tools/                  native Task or Service artifacts
 ├── releases/               content-bound Tool/MCP descriptors
+├── flows/                  A3S Flow TypeScript workflow sources
 ├── skills/                 SKILL.md files and supporting content
 ├── ui/                     integrity-bound static assets
 └── okf/                    conformant knowledge bundles
@@ -134,7 +157,8 @@ manifest-owned. The manifest is parsed by
 not HCL.
 
 Schema v1 and v2 remain compatible. The schema-v3 baseline adds repeatable,
-named Tool, MCP, OKF, Skill, and UI surfaces with an acyclic readiness graph:
+named Tool, MCP, OKF, Flow, Skill, and UI surfaces with an acyclic readiness
+graph:
 
 ```acl
 extension "acme/research" {
@@ -191,11 +215,23 @@ extension "acme/research" {
     optional               = false
   }
 
+  flow "review" {
+    engine         = "a3s-flow"
+    runtime        = "native-ts"
+    source         = "flows/review.ts"
+    export         = "run"
+    requires_tool  = ["convert"]
+    requires_mcp   = ["library"]
+    requires_okf   = ["domain-knowledge"]
+    optional       = false
+  }
+
   skill "review" {
     path          = "skills/review/SKILL.md"
     requires_tool = ["convert"]
     requires_mcp  = ["library"]
     requires_okf  = ["domain-knowledge"]
+    requires_flow = ["review"]
     optional      = false
   }
 
@@ -203,10 +239,37 @@ extension "acme/research" {
     entry     = "ui/review/index.html"
     skill     = "review"
     bind_mcp  = ["library"]
+    bind_flow = ["review"]
     optional  = false
   }
 }
 ```
+
+### One A3S Flow model
+
+A cognitive-package Flow is an `a3s-flow` workflow, not a second workflow
+engine. The names below describe layers of one model rather than competing
+mechanisms:
+
+- **`a3s-use-extension.acl`** declares the packaged Flow identity, source,
+  capability edges, and lifecycle metadata.
+- **`flow.json`** stores A3S Code's visual design/deployment document for that
+  same Flow identity.
+- **`flows/*.ts`** supplies code-authored workflow and step handlers.
+- **`native-ts`** adapts that TypeScript source to the A3S Flow runtime
+  protocol.
+- **`a3s-flow`** remains the only workflow engine: preflight, durable
+  execution, event history, replay, scheduling, and observation.
+- **A3S Code, Web, and OS** host or deploy the admitted Flow; they do not create
+  another package journal or engine.
+
+`engine = "a3s-flow"` is therefore fixed by the schema. Use validates and
+content-binds the source, freezes its Tool/MCP/OKF capability edges, and
+coordinates atomic prepare/publish/hide/remove. Source integrity alone never
+marks a Flow ready: publication remains pending until the typed A3S Flow host
+supplies successful preflight evidence for the same admitted package
+generation. A typed import/deployment adapter must map `flow.json` to that
+identity rather than creating another lifecycle.
 
 ### Package dependencies and lock graph
 
@@ -231,6 +294,13 @@ prepares dependencies before dependents, reuses only exact already-published
 retained dependencies, and publishes all changed packages through one snapshot
 cutover. Uninstall proceeds in reverse order and refuses to remove a package
 while an installed dependent still requires it.
+
+Registry selection is injected by the host. The public
+`CognitivePackageManager` accepts one root Registry plus a bounded set of
+dependency Registries; every resolved node records its own exact source and
+TUF provenance. The standalone command accepts an explicit replaceable root
+Registry, while umbrella Code/Web hosts can inject their enabled named source
+set and lifecycle adapters without forking the resolver or package journal.
 
 Schema v3 now accepts
 **[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)**
@@ -259,8 +329,8 @@ The executable and knowledge schema-v3 fixtures are
 [`plugin-v3-okf.acl`](crates/extension/fixtures/manifests/plugin-v3-okf.acl).
 The content-addressed
 [`plugin-v3-cognitive`](crates/extension/fixtures/packages/plugin-v3-cognitive/)
-package proves that one admitted generation can contain Tool, MCP, OKF, Skill,
-and UI contributions with dependency-bound lifecycle ordering.
+package proves that one admitted generation can contain Tool, MCP, OKF, Flow,
+Skill, and UI contributions with dependency-bound lifecycle ordering.
 All paths are package-relative. Installation rejects missing or invalid
 surfaces, path traversal, links, archive ambiguity, route collisions,
 oversized packages, provenance drift, incompatible host ranges, or OKF bytes
@@ -287,9 +357,11 @@ a3s-use component uninstall calendar --json
 ```
 
 These commands remain the compatible package-engine entry points. Production
-schema-v3 activation through the new multi-host parent saga is still being
-wired; until then the new lifecycle adapters fail closed when their required
-host evidence is unavailable.
+schema-v3 local-package admission and multi-host parent-saga composition are
+still being wired. Signed remote schema-v3 packages use the graph manager;
+required Runtime Service, HTTP MCP, or OKF surfaces fail before publication
+when their owning host adapter is unavailable. Required Flow surfaces likewise
+fail before mutation unless the embedding host injects an `a3s-flow` adapter.
 
 The package ID is the stable lifecycle identity. A route is a presentation and
 dispatch alias. A3S Use preserves native `argv`, stdin, stdout, stderr, process
@@ -318,7 +390,7 @@ resolve signed dependency graph
     → build and review immutable plan
     → revalidate every Registry before payload download
     → verify and stage dependencies before dependents
-    → prepare grants, Runtime, static surfaces, and OKF
+    → prepare grants, Runtime, A3S Flow, static surfaces, and OKF
     → publish the changed closure in one capability generation
     → hide and drain superseded generation
     → remove unneeded packages in reverse dependency order
@@ -332,46 +404,46 @@ authorization, Runtime binding, and surface readiness as separate evidence.
 
 ### TUF registry install
 
-Registry sources are named host configuration, not compiled endpoints. The
-official `a3s` source is only the default identity: an operator may bind it to a
-mirror or private service, disable it without deleting trust state, or remove
-the override and return to the unconfigured default hint. Release-bundled
-packages remain an independent source and do not require any remote registry.
+Registry endpoints and trust roots are host-injected, not compiled into the
+package engine. `CognitivePackageManager` can therefore resolve the same
+package format from a mirror, a private service, or another explicitly trusted
+TUF Registry without changing the resolver or lifecycle journal.
 
-Add a source or replace a stable source name, then review the immutable
-component plan and apply its exact digest:
+The current umbrella CLI supports adding, removing, and refreshing additional
+trusted sources. Stable-name replacement plus enable/disable controls,
+including a production override for the unconfigured official `a3s` hint, are
+still an integration item and are not presented here as shipped commands.
+Release-bundled packages remain an independent source and do not require a
+remote Registry.
+
+Add and verify a source, then review the immutable component plan and apply its
+exact digest:
 
 ```bash
 a3s registry add https://packages.example.org/a3s/ \
-  --name packages \
   --trust-root ./root.json \
   --yes
 a3s registry refresh packages
-
-a3s registry replace a3s https://mirror.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
-  --yes
-a3s registry disable a3s
-a3s registry enable a3s
 
 a3s --output json install use/acme/calendar --dry-run
 a3s --output json install use/acme/calendar \
   --plan-digest <reviewed-plan-sha256>
 ```
 
-Only enabled registries participate in catalog discovery and package
-selection. If two enabled registries contain the same package, resolution fails
-as ambiguous instead of choosing one silently. An installed receipt continues
-to bind its source name, URL, TUF root, channel, and target digest; replacing or
-disabling that source therefore blocks upgrades until the original identity is
-restored or the package is explicitly migrated or reinstalled.
+Only configured registries participate in catalog discovery and package
+selection. If two configured registries contain the same package, resolution
+fails as ambiguous instead of choosing one silently. An installed receipt
+continues to bind its source name, URL, TUF root, channel, and target digest;
+changing or removing that source therefore blocks upgrades until the original
+identity is restored or the package is explicitly migrated or reinstalled.
 
 Catalog v1 adds bounded metadata-only search. Catalog v2 binds the manifest,
 expanded package, permission ceiling, and surface dependencies. Catalog v3
-adds the signed package dependency inventory, exact OKF bundle evidence and,
-when executable Tool or MCP surfaces are present, a separately signed bounded
-planning target so review does not require downloading the package archive. A
-catalog dependency inventory must exactly match the admitted ACL manifest.
+adds the signed package dependency inventory, exact OKF bundle evidence, and
+the complete Flow inventory/dependency graph. When executable Tool or MCP
+surfaces are present, it also carries a separately signed bounded planning
+target so review does not require downloading the package archive. Catalog
+package and surface graphs must exactly match the admitted ACL manifest.
 
 ## Implementation status
 
@@ -382,7 +454,9 @@ catalog dependency inventory must exactly match the admitted ACL manifest.
 | Local directories and bounded archives | Available |
 | Digest-reviewed release bundles | Available |
 | TUF-verified registries and target selection | Available |
-| Named registry add, replace, enable, disable, remove, and refresh | Available in the umbrella host |
+| Host-injected Registry URL and trust root | Available in the package engine; no Registry endpoint is compiled in |
+| Named registry add, remove, and refresh | Available in the umbrella host |
+| Stable-name Registry replace, enable, and disable | Planned umbrella CLI integration |
 | ACL identity, provenance, and SemVer host compatibility | Available |
 | Digest-pinned MCP Runtime Service and immutable Skill Agent-input releases | Available with canonical cross-SDK fixtures and Linux OCI conformance |
 | Native CLI, standard MCP, and content-bound Skill surfaces | Available |
@@ -393,33 +467,35 @@ catalog dependency inventory must exactly match the admitted ACL manifest.
 
 | Capability | Status |
 | --- | --- |
-| Schema-v3 named Tool Task/Service, MCP, OKF, Skill, and UI contracts | Implemented |
+| Schema-v3 named Tool Task/Service, MCP, OKF, A3S Flow, Skill, and UI contracts | Implemented |
 | Schema-v3 ACL package dependencies and required package README | Implemented with canonical SemVer requirements and bounded validation |
 | Deterministic transitive resolver and `a3s.use.plugin-package-lock.v1` | Implemented with bounded backtracking, exact Registry/TUF provenance, host binding, cycle/conflict rejection, and canonical digest |
-| Dependency-closure download and package graph lifecycle | Implemented foundation: revalidate before download, install forward, retain exact published dependencies, publish changed nodes once, uninstall reverse |
-| Canonical package-level graph, lifecycle intent, checkpoint journal, and crash replay | Implemented foundation; all five contribution kinds share one operation |
+| Dependency-closure download and package graph lifecycle | Available for signed remote schema-v3 CLI installs: revalidate before download, install forward, retain exact published dependencies, publish changed nodes once, uninstall reverse |
+| Canonical package-level graph, lifecycle intent, checkpoint journal, and crash replay | Implemented with durable plan-admission evidence, published-install convergence, and pending-only reverse-uninstall recovery |
 | Schema-v3 package commit/removal and capability publish/hide/drain hosts | P0 implemented with generation-bound receipt schema v3, deterministic roots, atomic snapshot replacement, route leases, and legacy-bypass rejection |
 | First-class OKF knowledge-package control plane | M0K-B implemented: bundle validation, manifest/catalog/plan, receipt/observation/projection, dependency-gated reconciliation, and canonical fixtures |
 | Signed catalog v1–v3, offline verification, search, and planning target | Implemented |
 | Immutable operation-plan, permission-ceiling, and provider-evidence contracts | Implemented |
 | Exact-generation workspace grant store and recoverable grant journal | Implemented |
 | Runtime Tool/MCP preparation, readiness, stop, and receipt-owned removal | Implemented as typed lifecycle adapters; prior-generation retirement remains pending |
+| A3S Flow package surface, source integrity, lifecycle, and typed capability catalog | Control-plane contract implemented with the fixed `a3s-flow` engine and `native-ts` adapter; source-only readiness is withheld and the production compiler/execution host remains pending |
 | Immutable Skill/UI validation and projection lifecycle | Implemented as typed static-surface adapters |
 | Dependency-gated Surface Reconciler and planner evidence | Implemented |
 | Injected OKF Knowledge port, durable binding store, and package lifecycle adapter | M0K-C-A foundation implemented with byte-exact stage validation, monotonic observations, last-good projection, and receipt-owned removal |
 | Production A3S Knowledge backend and scoped cited retrieval | In progress; no production OKF publication without promoted evidence |
-| Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | Use intent/journal/coordinator plus package/capability hosts implemented; umbrella host and grant composition remain in progress |
+| Shared Manager parent saga across package, grants, Runtime, Gateway, and projection | Public `CognitivePackageLifecycleFactory` injection plus Use intent/journal/coordinator and package/capability hosts implemented; umbrella host and grant composition remain in progress |
 | Production secret, egress, filesystem, child-process, Gateway, and stdio-MCP adapters | In progress |
 | Automatic generation rollback and garbage collection | Target architecture |
 | Agent, prompt, hook, memory, and context-provider contributions | Target architecture after OKF lifecycle integration |
 
-The baseline intentionally fails closed while host-owned Runtime, permission,
-and apply evidence is incomplete. The compatible `component install` command
-still uses the legacy installer; it does not yet expose schema-v3 dependency
-resolution or the graph coordinator. Schema-v3 packages cannot use legacy
-extension toggles, and upgrade remains rejected until two retained generations
-can be retired safely. No path silently falls back to native execution, a
-different provider, or a different Registry.
+The baseline intentionally fails closed while required host-owned Runtime,
+Gateway, Knowledge, permission, or apply evidence is incomplete. Both
+`a3s-use install` and compatible remote `component install` dispatch signed
+schema-v3 records to the same graph manager; schema-v1/v2 and local package
+paths remain compatible. Schema-v3 packages cannot use legacy extension
+toggles, and upgrade remains rejected until two retained generations can be
+retired safely. No path silently falls back to native execution, a different
+provider, or a different Registry.
 
 ### Built-in and external domains
 
@@ -430,6 +506,7 @@ different provider, or a different Registry.
 | Box | Component-backed route | Native CLI | Umbrella A3S CLI |
 | Office | External `a3s/office` package | Package-declared CLI, MCP, Skill | [A3S Office](https://github.com/A3S-Lab/Office) |
 | Science | External reference packages | Tool, MCP, Skill, and UI combinations | Use + [A3S Science](https://github.com/A3S-Lab/Science) |
+| Cognitive fixture | Content-addressed schema-v3 package | Tool, MCP, OKF, Flow, Skill, and UI in one generation | Use contract and lifecycle tests |
 | Any external domain | Installed package | Declared package surfaces | Package repository + Use lifecycle |
 
 Inspect runtime readiness and immutable projection evidence with:
@@ -465,7 +542,7 @@ a3s-use capability watch \
                     ┌─────────────┴─────────────┐
                     │                           │
                native plane               cognitive plane
-          Runtime Task/Service       MCP · Skill · UI · OKF · context
+          Runtime Task/Service       MCP · OKF · Flow · Skill · UI · context
                     │                           │
                     └─────────────┬─────────────┘
                                   ▼
@@ -484,8 +561,9 @@ The boundaries are intentional:
 - **Package processes** own their CLI, HTTP, and MCP vocabulary. Use does not
   translate them into `execute(plugin, action, payload)` or load them through
   `dlopen`.
-- **A3S hosts** own sandboxing, rendering, and OKF indexing. Skill, UI, OKF,
-  Tool, and remote content are data and cannot grant authority.
+- **A3S hosts** own sandboxing, rendering, A3S Flow execution, and OKF
+  indexing. Skill, UI, OKF, Flow source, Tool output, and remote content are
+  data and cannot grant authority.
 
 `a3s-use-core` publishes one versioned `PluginHostManager` port for remote
 managed workspaces. Its distinct plan, digest-only apply, enablement, and
@@ -504,7 +582,7 @@ frozen in
 multi-resource mutation is a durable, idempotent saga because package storage,
 grants, Runtime, Gateway, and capability publication do not share a database
 transaction. [ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md)
-defines the package-owned Tool/MCP/OKF/Skill/UI checkpoint schedule. Its P0
+defines the package-owned Tool/MCP/OKF/Flow/Skill/UI checkpoint schedule. Its P0
 package/capability hosts are implemented; host composition remains the next
 production-wiring boundary.
 
@@ -534,22 +612,25 @@ plugin platform. The current critical path is:
    that single journaled mutation path;
 3. add prior-generation retirement after blue/green capability cutover, then
    complete CLI/Web/agent lifecycle and crash-recovery E2E;
-4. wire the implemented dependency lock and graph coordinator into the shared
-   CLI/Web/management-MCP apply path, then add retained-generation rollback and
-   garbage collection;
+4. route Code Web, TUI, management MCP, and managed-host apply through the
+   public lifecycle factory and the same persisted package graph, then add
+   retained-generation rollback and garbage collection;
 5. connect the M0K-C-A Knowledge port and lifecycle adapter to the production
    A3S Knowledge backend and scoped capability/session projection;
-6. extend the remaining cognitive contribution model only after each host
+6. inject the production `a3s-flow` compiler/runtime adapter and make Code's
+   `flow.json` import/deployment path resolve to the same installed Flow
+   identity;
+7. extend the remaining cognitive contribution model only after each host
    contract is frozen; and
-7. complete official registry operations and Windows platform gates.
+8. complete official registry operations and Windows platform gates.
 
 ## Workspace
 
 | Crate | Responsibility |
 | --- | --- |
 | `a3s-use` | Facade, package engine, Runtime adapters, capability reconciliation, and MCP entry points |
-| `a3s-use-core` | Canonical package/plugin, catalog, plan, permission, grant, release, OKF bundle, and Knowledge projection contracts |
-| `a3s-use-extension` | ACL manifests, recursive OKF/package validation, TUF catalog, package store, receipts, leases, and workspace grants |
+| `a3s-use-core` | Canonical package/plugin, catalog, Flow graph, plan, permission, grant, release, OKF bundle, and Knowledge projection contracts |
+| `a3s-use-extension` | ACL manifests, Flow source and recursive OKF/package validation, TUF catalog, package store, receipts, leases, and workspace grants |
 | `a3s-use-mcp-release-fixture` | Non-published headless MCP process and digest-pinned OCI lifecycle conformance gate |
 | `a3s-use-science` | Reference external package implementation |
 

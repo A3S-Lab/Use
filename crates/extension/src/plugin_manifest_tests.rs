@@ -4,7 +4,10 @@ use sha2::{Digest, Sha256};
 
 use a3s_use_core::OkfFormatVersion;
 
-use super::{ExtensionManifest, PluginMcpLaunch, SurfaceActivation, ToolTaskSource, ToolWorkload};
+use super::{
+    ExtensionManifest, PluginFlowEngine, PluginFlowRuntime, PluginMcpLaunch, SurfaceActivation,
+    ToolTaskSource, ToolWorkload,
+};
 
 const NAMED_SURFACE_MANIFEST_BYTES: &[u8] = include_bytes!("../fixtures/manifests/plugin-v3.acl");
 const NAMED_SURFACE_MANIFEST: &str = include_str!("../fixtures/manifests/plugin-v3.acl");
@@ -14,6 +17,8 @@ const OKF_MANIFEST_BYTES: &[u8] = include_bytes!("../fixtures/manifests/plugin-v
 const OKF_MANIFEST: &str = include_str!("../fixtures/manifests/plugin-v3-okf.acl");
 const OKF_MANIFEST_DIGEST: &str =
     include_str!("../fixtures/manifests/plugin-v3-okf.sha256").trim_ascii_end();
+const COGNITIVE_MANIFEST: &str =
+    include_str!("../fixtures/packages/plugin-v3-cognitive/package/a3s-use-extension.acl");
 
 #[test]
 fn schema_v3_acl_fixture_has_a_stable_digest() {
@@ -39,6 +44,7 @@ fn parses_schema_v3_named_multi_surfaces() {
     assert!(manifest.skill.is_none());
     assert_eq!(manifest.tools.len(), 2);
     assert_eq!(manifest.mcp_servers.len(), 2);
+    assert!(manifest.flows.is_empty());
     assert_eq!(manifest.skills.len(), 2);
     assert_eq!(manifest.ui.len(), 2);
     assert_eq!(manifest.surface_kinds(), ["tool", "mcp", "skill", "ui"]);
@@ -88,8 +94,105 @@ fn parses_schema_v3_named_multi_surfaces() {
     assert_eq!(manifest.skills[0].requires_tools, ["convert", "index"]);
     assert_eq!(manifest.skills[0].requires_mcp, ["library"]);
     assert_eq!(manifest.ui[0].skill.as_deref(), Some("review"));
+    assert_eq!(manifest.ui[0].title, "review");
+    assert_eq!(manifest.ui[0].description, "");
+    assert_eq!(manifest.ui[0].icon, "package");
+    assert_eq!(manifest.ui[0].order, 100);
     assert_eq!(manifest.ui[0].bind_tools, ["index"]);
     assert_eq!(manifest.ui[0].bind_mcp, ["library"]);
+}
+
+#[test]
+fn schema_v3_parses_a3s_flow_surfaces_and_typed_consumers() {
+    let manifest = ExtensionManifest::parse_acl(COGNITIVE_MANIFEST).unwrap();
+    assert_eq!(
+        manifest.surface_kinds(),
+        ["tool", "mcp", "okf", "flow", "skill", "ui"]
+    );
+    let flow = &manifest.flows[0];
+    assert_eq!(flow.id, "reason");
+    assert_eq!(flow.engine, PluginFlowEngine::A3sFlow);
+    assert_eq!(flow.runtime, PluginFlowRuntime::NativeTs);
+    assert_eq!(flow.source, PathBuf::from("flows/reason.ts"));
+    assert_eq!(flow.export_name, "run");
+    assert_eq!(flow.requires_tools, ["echo"]);
+    assert_eq!(flow.requires_mcp, ["context"]);
+    assert_eq!(flow.requires_okf, ["domain"]);
+    assert_eq!(manifest.skills[0].requires_flows, ["reason"]);
+    assert_eq!(manifest.ui[0].bind_flows, ["reason"]);
+
+    let graph = manifest.plugin_surfaces().unwrap();
+    let flow_ref = a3s_use_core::PluginSurfaceRef {
+        kind: a3s_use_core::PluginSurfaceKind::Flow,
+        id: "reason".to_string(),
+    };
+    assert!(graph.iter().any(|surface| surface.surface == flow_ref));
+    assert!(graph
+        .iter()
+        .find(|surface| surface.surface.kind == a3s_use_core::PluginSurfaceKind::Skill)
+        .unwrap()
+        .dependencies
+        .contains(&flow_ref));
+}
+
+#[test]
+fn schema_v3_rejects_invalid_flow_runtime_source_export_and_dependencies() {
+    let unsupported_engine = COGNITIVE_MANIFEST.replace("a3s-flow", "other-flow");
+    assert!(ExtensionManifest::parse_acl(&unsupported_engine)
+        .unwrap_err()
+        .message
+        .contains("engine 'other-flow' is unsupported"));
+
+    let unsupported = COGNITIVE_MANIFEST.replace("native-ts", "javascript");
+    assert!(ExtensionManifest::parse_acl(&unsupported)
+        .unwrap_err()
+        .message
+        .contains("runtime 'javascript' is unsupported"));
+
+    let wrong_source = COGNITIVE_MANIFEST.replace("flows/reason.ts", "flows/reason.js");
+    assert!(ExtensionManifest::parse_acl(&wrong_source)
+        .unwrap_err()
+        .message
+        .contains("TypeScript .ts file"));
+
+    let invalid_export =
+        COGNITIVE_MANIFEST.replace("export        = \"run\"", "export = \"run-flow\"");
+    assert!(ExtensionManifest::parse_acl(&invalid_export)
+        .unwrap_err()
+        .message
+        .contains("portable TypeScript identifier"));
+
+    let missing = COGNITIVE_MANIFEST.replace(
+        "requires_tool = [\"echo\"]",
+        "requires_tool = [\"missing\"]",
+    );
+    assert!(ExtensionManifest::parse_acl(&missing)
+        .unwrap_err()
+        .message
+        .contains("Flow 'reason' requires unknown Tool 'missing'"));
+}
+
+#[test]
+fn schema_v3_ui_parses_bounded_workbench_metadata() {
+    let manifest = NAMED_SURFACE_MANIFEST.replace(
+        "ui \"review\" {",
+        "ui \"review\" {\n    title       = \"Research Review\"\n    description = \"Inspect evidence from the installed cognitive package.\"\n    icon        = \"flask-conical\"\n    order       = 80",
+    );
+    let manifest = ExtensionManifest::parse_acl(&manifest).unwrap();
+    let ui = &manifest.ui[0];
+    assert_eq!(ui.title, "Research Review");
+    assert_eq!(
+        ui.description,
+        "Inspect evidence from the installed cognitive package."
+    );
+    assert_eq!(ui.icon, "flask-conical");
+    assert_eq!(ui.order, 80);
+
+    let invalid = NAMED_SURFACE_MANIFEST.replace(
+        "ui \"review\" {",
+        "ui \"review\" {\n    icon = \"Flask Icon\"",
+    );
+    assert!(ExtensionManifest::parse_acl(&invalid).is_err());
 }
 
 #[test]

@@ -158,6 +158,56 @@ async fn catalog_v3_loads_only_the_exact_signed_planning_target() {
 }
 
 #[tokio::test]
+async fn catalog_v3_static_package_has_no_planning_target_download() {
+    let archive = extension_archive(PACKAGE_VERSION);
+    let target = host_target().unwrap();
+    let archive_target = format!(
+        "extensions/a3s/science/{PACKAGE_VERSION}/stable/{target}/a3s-use-science-{PACKAGE_VERSION}-{target}.tar.gz"
+    );
+    let mut catalog = PluginCatalogRecord::from_json(COMPLETE_CATALOG).unwrap();
+    catalog.schema = PLUGIN_CATALOG_SCHEMA_V3.to_owned();
+    catalog.package_id = "a3s/science".to_owned();
+    catalog.display_name = "A3S Science".to_owned();
+    catalog.description = "Static scientific guidance for A3S agents.".to_owned();
+    catalog.publisher = "a3s".to_owned();
+    catalog.version = PACKAGE_VERSION.to_owned();
+    catalog.requires_use = ">=0.3.0, <0.4.0".to_owned();
+    catalog.target = target;
+    catalog
+        .surfaces
+        .retain(|surface| surface.kind == PluginSurfaceKind::Skill && surface.id == "review");
+    catalog.permission_ceiling.surfaces.clear();
+    catalog.permission_ceiling_digest = catalog.permission_ceiling.descriptor_digest().unwrap();
+    catalog.planning = None;
+    catalog.archive.target_name = archive_target.clone();
+    catalog.archive.length = archive.len() as u64;
+    catalog.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&archive));
+    catalog.package.manifest_sha256 = Some(format!("sha256:{}", "c".repeat(64)));
+    catalog.repository = "https://github.com/A3S-Lab/Science".to_owned();
+    catalog.validate().unwrap();
+    let repository = TestRepository::with_target_metadata(
+        archive,
+        archive_target,
+        serde_json::to_value(catalog).unwrap(),
+        13,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+
+    let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    server.clear_requests();
+    assert!(prepared.load_planning_bundle().await.unwrap().is_none());
+    assert!(server
+        .requests()
+        .iter()
+        .all(|request| !request.starts_with("/targets/")));
+}
+
+#[tokio::test]
 async fn catalog_v3_rejects_planning_target_metadata_drift_before_download() {
     let (repository, _, archive_target, planning_target) = planning_test_repository(true);
     let server = TestServer::start(repository.routes.clone());
@@ -203,7 +253,7 @@ async fn tuf_catalog_v2_install_persists_and_revalidates_plan_ready_evidence() {
     catalog.description = "Scientific research capabilities for A3S agents.".to_owned();
     catalog.publisher = "a3s".to_owned();
     catalog.version = PACKAGE_VERSION.to_owned();
-    catalog.requires_use = ">=0.2.0, <0.3.0".to_owned();
+    catalog.requires_use = ">=0.2.0, <0.4.0".to_owned();
     catalog.target = target;
     catalog.archive.target_name = target_name.clone();
     catalog.archive.length = archive.len() as u64;
@@ -419,7 +469,7 @@ fn planning_test_repository(
     catalog.description = "Scientific research capabilities for A3S agents.".to_owned();
     catalog.publisher = "a3s".to_owned();
     catalog.version = PACKAGE_VERSION.to_owned();
-    catalog.requires_use = ">=0.2.0, <0.3.0".to_owned();
+    catalog.requires_use = ">=0.3.0, <0.4.0".to_owned();
     catalog.target = target;
     catalog.archive.target_name = archive_target.clone();
     catalog.archive.length = archive.len() as u64;

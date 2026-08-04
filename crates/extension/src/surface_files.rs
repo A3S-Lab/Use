@@ -15,6 +15,7 @@ use super::package::{
 use super::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 
 const MAX_TOOL_API_CONTRACT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_FLOW_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_SKILL_BYTES: u64 = 2 * 1024 * 1024;
 const SURFACE_FILE_EVIDENCE_SCHEMA: &[u8] = b"a3s.use.plugin-surface-files.v1\0";
 
@@ -86,6 +87,17 @@ pub(super) async fn validate_named_surface_files(
                     .map_err(|error| release_descriptor_error("MCP", &path, error))?;
             }
         }
+    }
+    for flow in &manifest.flows {
+        validate_text_asset(
+            "use.extension.flow_source_invalid",
+            "A3S Flow source",
+            "UTF-8 TypeScript",
+            canonical_root,
+            &package_root.join(&flow.source),
+            MAX_FLOW_SOURCE_BYTES,
+        )
+        .await?;
     }
     for skill in &manifest.skills {
         validate_text_asset(
@@ -238,6 +250,27 @@ pub async fn inspect_skill_surface_file(
     )
     .await?;
     digest_surface_files(package_root, &canonical_root, vec![surface.path.clone()]).await
+}
+
+/// Revalidate and digest one immutable A3S Flow TypeScript source.
+///
+/// This verifies package evidence only. Compilation, preflight, and execution
+/// remain owned by a typed `a3s-flow` host adapter.
+pub async fn inspect_flow_surface_file(
+    surface: &super::PluginFlowSurface,
+    package_root: &Path,
+) -> UseResult<PluginSurfaceFileEvidence> {
+    let canonical_root = canonical_package_root(package_root, "Flow").await?;
+    validate_text_asset(
+        "use.extension.flow_source_invalid",
+        "A3S Flow source",
+        "UTF-8 TypeScript",
+        &canonical_root,
+        &package_root.join(&surface.source),
+        MAX_FLOW_SOURCE_BYTES,
+    )
+    .await?;
+    digest_surface_files(package_root, &canonical_root, vec![surface.source.clone()]).await
 }
 
 /// Revalidate and digest one immutable UI contribution and all declared

@@ -149,7 +149,28 @@ impl PluginHostPlanRequest {
         capabilities: &PluginHostCapabilities,
     ) -> UseResult<()> {
         self.validate()?;
-        verify_capabilities(&self.capabilities_digest, &self.scope, capabilities)
+        verify_capabilities(&self.capabilities_digest, &self.scope, capabilities)?;
+
+        if let Some(candidate) = &self.candidate {
+            let selected = candidate.record.resolve_surfaces(&self.selected_surfaces)?;
+            validate_supported_surface_kinds(
+                selected.iter().map(|surface| surface.kind),
+                capabilities,
+            )?;
+        }
+        if let Some(package_lock) = &self.package_lock {
+            for package in &package_lock.packages {
+                if package.package_id() == self.package_id.as_str() {
+                    continue;
+                }
+                let selected = package.catalog.record.resolve_surfaces(&[])?;
+                validate_supported_surface_kinds(
+                    selected.iter().map(|surface| surface.kind),
+                    capabilities,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
@@ -220,6 +241,16 @@ impl PluginHostPlanResult {
                 "The plugin host plan result does not bind the exact request.",
             ));
         }
+        validate_supported_surface_kinds(
+            self.plan
+                .plan
+                .packages
+                .iter()
+                .flat_map(|package| [package.before.as_ref(), package.after.as_ref()])
+                .flatten()
+                .flat_map(|state| state.release.surfaces.iter().map(|surface| surface.kind)),
+            capabilities,
+        )?;
         verify_plan_selection(request, self)
     }
 
@@ -231,6 +262,22 @@ impl PluginHostPlanResult {
     pub fn descriptor_digest(&self) -> UseResult<String> {
         Ok(canonical_digest(&self.canonical_bytes()?))
     }
+}
+
+fn validate_supported_surface_kinds(
+    surface_kinds: impl IntoIterator<Item = super::PluginSurfaceKind>,
+    capabilities: &PluginHostCapabilities,
+) -> UseResult<()> {
+    if surface_kinds
+        .into_iter()
+        .any(|kind| !capabilities.surface_kinds.contains(&kind))
+    {
+        return Err(UseError::new(
+            "use.plugin.host_surface_unsupported",
+            "The plugin plan contains a surface kind that the selected host protocol does not support.",
+        ));
+    }
+    Ok(())
 }
 
 fn verify_plan_selection(

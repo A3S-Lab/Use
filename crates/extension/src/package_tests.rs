@@ -10,8 +10,8 @@ use super::package::{read_manifest, validate_surface_files};
 use super::remote::test_support::{package_directory_archive, TestRepository, TestServer, FUTURE};
 use super::source::prepare_package_source;
 use super::{
-    inspect_skill_surface_file, inspect_tool_surface_files, inspect_ui_surface_files,
-    load_okf_bundle_files, ExtensionManifest,
+    inspect_flow_surface_file, inspect_skill_surface_file, inspect_tool_surface_files,
+    inspect_ui_surface_files, load_okf_bundle_files, ExtensionManifest,
 };
 
 const TASK_RELEASE: &[u8] =
@@ -285,7 +285,7 @@ async fn complete_plugin_v3_okf_package_fixture_is_valid_and_content_addressed()
 }
 
 #[tokio::test]
-async fn admitted_cognitive_package_fixture_contains_all_five_surface_kinds() {
+async fn admitted_cognitive_package_fixture_contains_all_six_surface_kinds() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("fixtures/packages/plugin-v3-cognitive/package");
     let (manifest, _) = read_manifest(&root).await.unwrap();
@@ -293,12 +293,21 @@ async fn admitted_cognitive_package_fixture_contains_all_five_surface_kinds() {
     assert_eq!(manifest.tools.len(), 1);
     assert_eq!(manifest.mcp_servers.len(), 1);
     assert_eq!(manifest.okf.len(), 1);
+    assert_eq!(manifest.flows.len(), 1);
     assert_eq!(manifest.skills.len(), 1);
     assert_eq!(manifest.ui.len(), 1);
     assert_eq!(manifest.skills[0].requires_tools, ["echo"]);
     assert_eq!(manifest.skills[0].requires_mcp, ["context"]);
     assert_eq!(manifest.skills[0].requires_okf, ["domain"]);
+    assert_eq!(manifest.skills[0].requires_flows, ["reason"]);
+    assert_eq!(manifest.ui[0].bind_flows, ["reason"]);
     validate_surface_files(&manifest, &root).await.unwrap();
+    let flow = inspect_flow_surface_file(&manifest.flows[0], &root)
+        .await
+        .unwrap();
+    assert_eq!(flow.file_count(), 1);
+    assert!(flow.expanded_bytes() > 0);
+    assert!(flow.digest().starts_with("sha256:"));
 
     let fingerprint = package_fingerprint(&root).await.unwrap();
     assert_eq!(

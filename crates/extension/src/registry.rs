@@ -1516,64 +1516,51 @@ fn validate_catalog_binding(
             "The verified catalog does not match the installed package, manifest, or dependency graph.",
         ));
     }
-    validate_okf_catalog_binding(record, manifest)?;
+    if manifest.schema_version == 3 {
+        validate_surface_catalog_binding(record, manifest)?;
+    }
     Ok(())
 }
 
-fn validate_okf_catalog_binding(
+fn validate_surface_catalog_binding(
     record: &a3s_use_core::PluginCatalogRecord,
     manifest: &ExtensionManifest,
 ) -> UseResult<()> {
-    let catalog_okf = record
-        .surfaces
-        .iter()
-        .filter(|surface| surface.kind == PluginSurfaceKind::Okf)
-        .collect::<Vec<_>>();
-    if catalog_okf.len() != manifest.okf.len() {
+    let manifest_surfaces = manifest.plugin_surfaces()?;
+    if record.surfaces.len() != manifest_surfaces.len() {
         return Err(catalog_package_error(
-            "The verified catalog OKF inventory does not match the installed manifest.",
+            "The verified catalog surface inventory does not match the installed manifest.",
         ));
     }
+    for surface in &manifest_surfaces {
+        let Some(catalog) = record
+            .surfaces
+            .iter()
+            .find(|catalog| catalog.reference() == surface.surface)
+        else {
+            return Err(catalog_package_error(
+                "The verified catalog omitted a manifest-declared surface.",
+            ));
+        };
+        if catalog.optional != surface.optional || catalog.requires != surface.dependencies {
+            return Err(catalog_package_error(
+                "The verified catalog surface dependency graph does not match the installed manifest.",
+            ));
+        }
+    }
     for surface in &manifest.okf {
-        let Some(catalog) = catalog_okf.iter().find(|catalog| catalog.id == surface.id) else {
+        let Some(catalog) = record
+            .surfaces
+            .iter()
+            .find(|catalog| catalog.kind == PluginSurfaceKind::Okf && catalog.id == surface.id)
+        else {
             return Err(catalog_package_error(
                 "The verified catalog omitted a manifest-declared OKF surface.",
             ));
         };
-        if catalog.optional != surface.optional
-            || catalog.okf_bundle.as_ref() != Some(&surface.bundle)
-        {
+        if catalog.okf_bundle.as_ref() != Some(&surface.bundle) {
             return Err(catalog_package_error(
                 "The verified catalog OKF contract does not match the installed manifest.",
-            ));
-        }
-    }
-    for skill in &manifest.skills {
-        let Some(catalog) = record
-            .surfaces
-            .iter()
-            .find(|surface| surface.kind == PluginSurfaceKind::Skill && surface.id == skill.id)
-        else {
-            continue;
-        };
-        let mut expected = skill
-            .requires_okf
-            .iter()
-            .map(|id| PluginSurfaceRef {
-                kind: PluginSurfaceKind::Okf,
-                id: id.clone(),
-            })
-            .collect::<Vec<_>>();
-        expected.sort();
-        let actual = catalog
-            .requires
-            .iter()
-            .filter(|surface| surface.kind == PluginSurfaceKind::Okf)
-            .cloned()
-            .collect::<Vec<_>>();
-        if actual != expected {
-            return Err(catalog_package_error(
-                "The verified catalog Skill-to-OKF dependency does not match the installed manifest.",
             ));
         }
     }

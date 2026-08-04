@@ -10,6 +10,9 @@ const NAMED_SURFACE_MANIFEST: &str =
     include_str!("../../crates/extension/fixtures/manifests/plugin-v3.acl");
 const OKF_MANIFEST: &str =
     include_str!("../../crates/extension/fixtures/manifests/plugin-v3-okf.acl");
+const COGNITIVE_MANIFEST: &str = include_str!(
+    "../../crates/extension/fixtures/packages/plugin-v3-cognitive/package/a3s-use-extension.acl"
+);
 
 fn manifest() -> ExtensionManifest {
     ExtensionManifest::parse_acl(NAMED_SURFACE_MANIFEST).unwrap()
@@ -78,6 +81,54 @@ fn named_surface_graph_has_deterministic_dependency_levels_and_required_closure(
     assert_eq!(snapshot.observed, PluginObservedState::Reconciling);
     assert!(!snapshot.capability_ready);
     assert!(snapshot.surfaces.iter().all(|surface| !surface.published));
+}
+
+#[test]
+fn a3s_flow_sits_between_base_capabilities_and_skill_ui_consumers() {
+    let manifest = ExtensionManifest::parse_acl(COGNITIVE_MANIFEST).unwrap();
+    let mut observations = SurfaceObservations::from([
+        (
+            reference(PluginSurfaceKind::Tool, "echo"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Mcp, "context"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Okf, "domain"),
+            SurfaceObservedState::Healthy,
+        ),
+        (
+            reference(PluginSurfaceKind::Flow, "reason"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Ui, "reason"),
+            SurfaceObservedState::Prepared,
+        ),
+    ]);
+    let ready = reconcile(&manifest, PluginDesiredState::Enabled, true, &observations).unwrap();
+
+    assert_eq!(state(&ready, PluginSurfaceKind::Flow, "reason").level, 1);
+    assert_eq!(state(&ready, PluginSurfaceKind::Skill, "reason").level, 2);
+    assert_eq!(state(&ready, PluginSurfaceKind::Ui, "reason").level, 3);
+    assert_eq!(ready.observed, PluginObservedState::Ready);
+    assert!(ready.publishes(PluginSurfaceKind::Flow, "reason"));
+    assert!(ready.publishes(PluginSurfaceKind::Skill, "reason"));
+    assert!(ready.publishes(PluginSurfaceKind::Ui, "reason"));
+
+    observations.remove(&reference(PluginSurfaceKind::Flow, "reason"));
+    let pending = reconcile(&manifest, PluginDesiredState::Enabled, true, &observations).unwrap();
+    assert_eq!(
+        state(&pending, PluginSurfaceKind::Flow, "reason").reason,
+        Some(SurfaceStateReason::FlowObservationMissing)
+    );
+    assert_eq!(
+        state(&pending, PluginSurfaceKind::Skill, "reason").reason,
+        Some(SurfaceStateReason::DependencyPending)
+    );
+    assert!(!pending.capability_ready);
 }
 
 #[test]

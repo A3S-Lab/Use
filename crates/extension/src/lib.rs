@@ -35,9 +35,9 @@ mod workspace_grant_tests;
 
 pub use paths::ExtensionPaths;
 pub use plugin_manifest::{
-    PluginMcpLaunch, PluginMcpSurface, PluginOkfSurface, PluginSkillSurface, PluginUiSurface,
-    SurfaceActivation, ToolServiceSurface, ToolSurface, ToolTaskSource, ToolTaskSurface,
-    ToolWorkload,
+    PluginFlowEngine, PluginFlowRuntime, PluginFlowSurface, PluginMcpLaunch, PluginMcpSurface,
+    PluginOkfSurface, PluginSkillSurface, PluginUiSurface, SurfaceActivation, ToolServiceSurface,
+    ToolSurface, ToolTaskSource, ToolTaskSurface, ToolWorkload,
 };
 pub use registry::{
     ActivationResult, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
@@ -58,8 +58,9 @@ pub use remote::{
     VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
 pub use surface_files::{
-    inspect_mcp_surface_files, inspect_skill_surface_file, inspect_tool_surface_files,
-    inspect_ui_surface_files, load_okf_bundle_files, PluginSurfaceFileEvidence,
+    inspect_flow_surface_file, inspect_mcp_surface_files, inspect_skill_surface_file,
+    inspect_tool_surface_files, inspect_ui_surface_files, load_okf_bundle_files,
+    PluginSurfaceFileEvidence,
 };
 pub use workspace_grant::{
     StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,
@@ -114,6 +115,8 @@ pub struct ExtensionManifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub okf: Vec<PluginOkfSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flows: Vec<PluginFlowSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<PluginSkillSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ui: Vec<PluginUiSurface>,
@@ -123,7 +126,7 @@ pub struct ExtensionManifest {
 /// dependencies.
 ///
 /// The package remains the lifecycle unit. Hosts use this inventory to stage
-/// Tool, MCP, OKF, Skill, and UI contributions in dependency order and to
+/// Tool, MCP, OKF, Flow, Skill, and UI contributions in dependency order and to
 /// remove them in reverse order; a surface is never installed independently
 /// from its owning package generation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -262,6 +265,9 @@ impl ExtensionManifest {
                 .iter()
                 .map(|surface| Path::new(surface.bundle.root.as_str())),
         );
+        for flow in &self.flows {
+            paths.extend(flow.package_paths());
+        }
         paths.extend(self.skills.iter().map(|surface| surface.path.as_path()));
         for ui in &self.ui {
             paths.extend(ui.package_paths());
@@ -294,6 +300,9 @@ impl ExtensionManifest {
         if !self.okf.is_empty() {
             surfaces.push("okf");
         }
+        if !self.flows.is_empty() {
+            surfaces.push("flow");
+        }
         if self.skill.is_some() || !self.skills.is_empty() {
             surfaces.push("skill");
         }
@@ -320,6 +329,7 @@ impl ExtensionManifest {
             self.tools.len()
                 + self.mcp_servers.len()
                 + self.okf.len()
+                + self.flows.len()
                 + self.skills.len()
                 + self.ui.len(),
         );
@@ -345,6 +355,32 @@ impl ExtensionManifest {
             optional: surface.optional,
             dependencies: Vec::new(),
         }));
+        surfaces.extend(self.flows.iter().map(|surface| {
+            let mut dependencies = surface
+                .requires_tools
+                .iter()
+                .map(|id| plugin_surface_ref(PluginSurfaceKind::Tool, id))
+                .chain(
+                    surface
+                        .requires_mcp
+                        .iter()
+                        .map(|id| plugin_surface_ref(PluginSurfaceKind::Mcp, id)),
+                )
+                .chain(
+                    surface
+                        .requires_okf
+                        .iter()
+                        .map(|id| plugin_surface_ref(PluginSurfaceKind::Okf, id)),
+                )
+                .collect::<Vec<_>>();
+            dependencies.sort();
+            ManifestPluginSurface {
+                surface: plugin_surface_ref(PluginSurfaceKind::Flow, &surface.id),
+                activation: SurfaceActivation::Lazy,
+                optional: surface.optional,
+                dependencies,
+            }
+        }));
         surfaces.extend(self.skills.iter().map(|surface| {
             let mut dependencies = surface
                 .requires_tools
@@ -361,6 +397,12 @@ impl ExtensionManifest {
                         .requires_okf
                         .iter()
                         .map(|id| plugin_surface_ref(PluginSurfaceKind::Okf, id)),
+                )
+                .chain(
+                    surface
+                        .requires_flows
+                        .iter()
+                        .map(|id| plugin_surface_ref(PluginSurfaceKind::Flow, id)),
                 )
                 .collect::<Vec<_>>();
             dependencies.sort();
@@ -387,6 +429,12 @@ impl ExtensionManifest {
                         .bind_mcp
                         .iter()
                         .map(|id| plugin_surface_ref(PluginSurfaceKind::Mcp, id)),
+                )
+                .chain(
+                    surface
+                        .bind_flows
+                        .iter()
+                        .map(|id| plugin_surface_ref(PluginSurfaceKind::Flow, id)),
                 )
                 .collect::<Vec<_>>();
             dependencies.sort();
@@ -512,6 +560,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     let mut tools = Vec::new();
     let mut mcp_servers = Vec::new();
     let mut okf = Vec::new();
+    let mut flows = Vec::new();
     let mut skills = Vec::new();
     let mut ui = Vec::new();
     for surface in &block.blocks {
@@ -540,6 +589,9 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             "mcp" => mcp = Some(parse_mcp(surface)?),
             "okf" if schema_version == 3 => {
                 okf.push(plugin_manifest::parse_okf(surface)?);
+            }
+            "flow" if schema_version == 3 => {
+                flows.push(plugin_manifest::parse_flow(surface)?);
             }
             "skill" if schema_version == 3 => {
                 skills.push(plugin_manifest::parse_skill(surface)?);
@@ -574,15 +626,16 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         && tools.is_empty()
         && mcp_servers.is_empty()
         && okf.is_empty()
+        && flows.is_empty()
         && skills.is_empty()
         && ui.is_empty()
     {
         return Err(manifest_error(
-            "A schema version 3 extension must declare Tool, MCP, OKF, Skill, and/or UI.",
+            "A schema version 3 extension must declare Tool, MCP, OKF, Flow, Skill, and/or UI.",
         ));
     }
     if schema_version == 3 {
-        plugin_manifest::validate_dependencies(&tools, &mcp_servers, &okf, &skills, &ui)?;
+        plugin_manifest::validate_dependencies(&tools, &mcp_servers, &okf, &flows, &skills, &ui)?;
         dependencies.sort_by(|left, right| left.package_id.cmp(&right.package_id));
         if dependencies
             .windows(2)
@@ -633,15 +686,8 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         }
         if schema_version == 3 {
             let v3_host = semver::Version::new(0, 3, 0);
-            let current_host =
-                semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|error| {
-                    manifest_error(format!(
-                        "The A3S Use package version is invalid during schema validation: {error}"
-                    ))
-                })?;
-            if !requirement.matches(&v3_host)
-                || (current_host < v3_host && requirement.matches(&current_host))
-            {
+            let pre_v3_host = semver::Version::new(0, 2, 1);
+            if !requirement.matches(&v3_host) || requirement.matches(&pre_v3_host) {
                 return Err(manifest_error(
                     "Schema version 3 must require A3S Use 0.3 and exclude pre-0.3 hosts.",
                 ));
@@ -664,6 +710,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         tools,
         mcp_servers,
         okf,
+        flows,
         skills,
         ui,
     })

@@ -244,6 +244,20 @@ fn catalog_versions_fail_closed_across_new_evidence_fields() {
         PluginCatalogRecord::from_json(&serde_json::to_vec(&missing_package_digest).unwrap())
             .is_err()
     );
+
+    let mut v2_flow: serde_json::Value = serde_json::from_slice(CATALOG_RECORD).unwrap();
+    v2_flow["schema"] = serde_json::json!(PLUGIN_CATALOG_SCHEMA_V2);
+    v2_flow["package"]["manifestSha256"] = serde_json::json!(format!("sha256:{}", "c".repeat(64)));
+    v2_flow["surfaces"].as_array_mut().unwrap().insert(
+        0,
+        serde_json::json!({
+            "kind": "flow",
+            "id": "review-flow",
+            "optional": true,
+            "requires": []
+        }),
+    );
+    assert!(PluginCatalogRecord::from_json(&serde_json::to_vec(&v2_flow).unwrap()).is_err());
 }
 
 #[test]
@@ -346,6 +360,79 @@ fn catalog_v3_binds_okf_and_skill_dependency_closure_without_runtime_authority()
     };
     permission.surfaces.insert(1, unauthorized);
     assert!(permission.validate().is_err());
+}
+
+#[test]
+fn catalog_v3_resolves_flow_between_okf_and_skill_ui_consumers() {
+    let mut record = okf_only_catalog();
+    for surface in &mut record.surfaces {
+        surface.optional = true;
+    }
+    record.surfaces.insert(
+        0,
+        CatalogSurface {
+            kind: PluginSurfaceKind::Flow,
+            id: "review".to_owned(),
+            optional: true,
+            workload: None,
+            mcp_transport: None,
+            mcp_tool_count: None,
+            okf_bundle: None,
+            requires: vec![PluginSurfaceRef {
+                kind: PluginSurfaceKind::Okf,
+                id: "domain-knowledge".to_owned(),
+            }],
+        },
+    );
+    record.surfaces[2].requires = vec![PluginSurfaceRef {
+        kind: PluginSurfaceKind::Flow,
+        id: "review".to_owned(),
+    }];
+    record.surfaces.push(CatalogSurface {
+        kind: PluginSurfaceKind::Ui,
+        id: "review".to_owned(),
+        optional: true,
+        workload: None,
+        mcp_transport: None,
+        mcp_tool_count: None,
+        okf_bundle: None,
+        requires: vec![
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Flow,
+                id: "review".to_owned(),
+            },
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Skill,
+                id: "research".to_owned(),
+            },
+        ],
+    });
+    record.validate().unwrap();
+
+    let selected = record
+        .resolve_surfaces(&[PluginSurfaceRef {
+            kind: PluginSurfaceKind::Ui,
+            id: "review".to_owned(),
+        }])
+        .unwrap();
+    assert_eq!(
+        selected
+            .iter()
+            .map(CatalogSurface::reference)
+            .collect::<Vec<_>>(),
+        record
+            .surfaces
+            .iter()
+            .map(CatalogSurface::reference)
+            .collect::<Vec<_>>()
+    );
+
+    let mut invalid = record;
+    invalid.surfaces[0].requires = vec![PluginSurfaceRef {
+        kind: PluginSurfaceKind::Skill,
+        id: "research".to_owned(),
+    }];
+    assert!(invalid.validate().is_err());
 }
 
 #[test]

@@ -113,15 +113,25 @@ pub(super) fn validate_surface_dependencies(
 
 fn valid_surface_dependency(owner: PluginSurfaceKind, required: PluginSurfaceKind) -> bool {
     match owner {
+        PluginSurfaceKind::Flow => matches!(
+            required,
+            PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp | PluginSurfaceKind::Okf
+        ),
         PluginSurfaceKind::Skill => {
             matches!(
                 required,
-                PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp | PluginSurfaceKind::Okf
+                PluginSurfaceKind::Flow
+                    | PluginSurfaceKind::Tool
+                    | PluginSurfaceKind::Mcp
+                    | PluginSurfaceKind::Okf
             )
         }
         PluginSurfaceKind::Ui => matches!(
             required,
-            PluginSurfaceKind::Skill | PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
+            PluginSurfaceKind::Flow
+                | PluginSurfaceKind::Skill
+                | PluginSurfaceKind::Tool
+                | PluginSurfaceKind::Mcp
         ),
         PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp | PluginSurfaceKind::Okf => false,
     }

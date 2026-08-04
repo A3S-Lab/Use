@@ -4,8 +4,9 @@
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
-  package-level five-surface lifecycle foundation accepted 2026-08-03, and the
-  cognitive-package dependency/lock foundation accepted 2026-08-03
+  package-level six-surface lifecycle foundation accepted 2026-08-03, the
+  cognitive-package dependency/lock foundation accepted 2026-08-03, and the
+  unified A3S Flow surface accepted 2026-08-04
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -45,11 +46,11 @@ The architecture document owns domain and runtime boundaries.
                  ordered typed hosts / idempotent replay
                                   |
                        capability snapshot/watch
-       +----------+----------+----------+----------+----------+
-       |          |          |          |          |          |
-     Skills   Tool Tasks Tool Services MCP servers UI assets OKF bundles
-    guidance   Runtime     Runtime      standard   sandboxed Knowledge
-                 Task      Service      protocol     view      index
+       +----------+----------+----------+----------+----------+----------+
+       |          |          |          |          |          |          |
+   Tool Tasks Tool Services MCP servers OKF bundles A3S Flows  Skills   UI assets
+    Runtime     Runtime      standard   Knowledge   durable   guidance  sandboxed
+      Task      Service      protocol     index      engine               view
 ```
 
 Ownership remains explicit:
@@ -58,8 +59,8 @@ Ownership remains explicit:
   policy, user confirmation, and workspace authorization;
 - A3S Use owns package validation, immutable activation, receipts, leases,
   surface reconciliation, provider/runtime bindings, and owned-file removal;
-- each plugin repository owns its Tool CLI/HTTP and MCP vocabulary, Skill
-  guidance, UI and OKF assets, version, license, and reproducible package;
+- each plugin repository owns its Tool CLI/HTTP and MCP vocabulary, A3S Flow
+  source, Skill guidance, UI and OKF assets, version, license, and reproducible package;
 - A3S Code/Web adapts the shared manager and capability registry without
   becoming a second package manager.
 
@@ -75,18 +76,26 @@ One package may declare multiple named surfaces in any compatible combination:
 | Tool Task | A non-interactive CLI program with native argv and exit semantics | One-shot A3S Runtime Task, or constrained legacy native runner |
 | Tool Service | A private HTTP API with health and optional content-bound OpenAPI | Long-lived A3S Runtime Service behind a scoped binding |
 | MCP | Standard stdio or Streamable HTTP server | Runtime Service for HTTP; supervised session for stdio |
+| Flow | Durable workflow with explicit Tool/MCP/OKF dependencies | One injected `a3s-flow` engine with a typed runtime adapter |
 | UI | Declared HTML, CSS, and JavaScript assets | Sandboxed view with scoped declared backend bindings |
 | OKF | Conformant Open Knowledge Format Markdown concept bundle | Non-executable, exact-generation A3S Knowledge projection and local cited-search index |
 
-The checked-in schema-v3 baseline implements Tool, MCP, OKF, Skill, and UI.
+The checked-in schema-v3 baseline implements Tool, MCP, OKF, Flow, Skill, and UI.
 M0K-B freezes the OKF manifest, package validation, catalog, plan,
 receipt/projection, and host-observation contracts. M0K-C-A adds the injected
 Knowledge port, exact-byte stage request, checked adapter client, and durable
 generation store. A package-level intent/journal/coordinator, typed Runtime,
-Skill/UI, and OKF adapters, and P0 package/capability hosts now provide the
+Flow/Skill/UI, and OKF adapters, and P0 package/capability hosts now provide the
 in-crate lifecycle foundation. Production publication still requires umbrella
 Plugin Manager host composition and a real A3S Knowledge backend to supply
 exact promoted evidence.
+
+Flow uses one product model. `engine = "a3s-flow"` is fixed; `native-ts` is the
+first admitted execution adapter. Use owns package integrity, dependency
+ordering, and catalog projection. Code/Web or another embedding host owns
+compiler preflight and durable execution. Existing `flow.json` documents are
+imported or deployed through a typed adapter to that same Flow identity rather
+than retained as a parallel runtime.
 
 The dependency foundation is also implemented: schema-v3 ACL package
 dependencies, a required bounded `README.md`, bounded deterministic SemVer
@@ -123,9 +132,9 @@ available
 ```
 
 `incompatible`, `broken`, `degraded`, and `disabled` are explicit diagnosable
-states. A Skill is ready only after its required Tool and MCP bindings are
-prepared or healthy and every required OKF generation is conformant and
-atomically promoted.
+states. A Flow is ready only after its required Tool/MCP bindings and OKF
+generation are usable. A Skill is ready only after every required Flow or
+direct Tool/MCP/OKF dependency is ready.
 
 This sequence is a user-facing phase view derived from separate desired and
 observed state. It is not persisted as one mutable linear enum.
@@ -139,7 +148,7 @@ Its deterministic Surface Reconciler calculates dependency levels, required
 closure, host ownership, desired/observed surface state, aggregate readiness,
 and publication eligibility. The package coordinator consumes the same graph,
 persists deterministic checkpoints, prepares surfaces forward, and removes
-them in reverse. Concrete Runtime, immutable Skill/UI, and OKF adapters exist,
+them in reverse. Concrete Runtime, immutable Flow/Skill/UI evidence, and OKF adapters exist,
 but production host injection is not connected: missing observations remain
 explicit `pending` evidence, while a Skill can be projected only when its
 required dependency closure is already usable. OKF enters this same operation
@@ -220,8 +229,9 @@ Remaining on the critical path:
 - assemble workspace grant proposals/change sets before final draft binding;
 - inject the implemented package/capability and typed surface hosts into the
   package-level coordinator through one umbrella Plugin Manager composition;
-- transport and apply the implemented dependency lock through CLI, Web,
-  management MCP, and managed-host adapters instead of the legacy installer;
+- transport and apply the implemented dependency lock from the standalone CLI
+  through Code Web, TUI, management MCP, and managed-host adapters using the
+  public lifecycle factory and the same durable graph records;
 - coordinate the existing grant sub-saga and new package journal through the
   umbrella Plugin Manager without a parallel lifecycle path;
 - implement prior Runtime generation retirement after blue/green cutover; and
@@ -236,12 +246,13 @@ earlier ownership or durability gate.
 | Slice | Scope | Required proof |
 | --- | --- | --- |
 | P0 — Package/capability hosts (complete 2026-08-03) | Installed-disabled generation commit/removal and atomic publish/hide/drain over receipt schema v3, snapshots, and route leases | Root/receipt/snapshot replay, exact removal, drain timeout, tamper rejection, and unchanged v1/v2 suites pass |
-| P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, retained dependency verification, forward install, atomic graph publication, and reverse uninstall | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection, two-package TUF closure, retained-node checks, reverse-dependent guard, and partial-receipt recovery pass |
-| P1 — Host composition | Have the umbrella Plugin Manager inject explicit Runtime selections, Gateway readiness, stdio MCP, Skill/UI, and A3S Knowledge adapters into one coordinator | CLI and Web produce the same intent and host set; unavailable hosts fail before publication |
+| P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, standalone CLI dispatch, retained dependency verification, forward install, atomic graph publication, reverse uninstall, and durable graph replay | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection before download, cross-Registry TUF closure, retained-node checks, reverse-dependent guard, published-install repair, pending-only uninstall recovery, and symlink ownership tests pass |
+| P0-F — Unified Flow contract (complete 2026-08-04) | First-class Flow inventory, `a3s-flow` engine identity, Native TypeScript source integrity, Tool/MCP/OKF edges, lifecycle, reconciliation, host capabilities v2, and typed catalog | Manifest/catalog drift fails closed; Flow prepares after dependencies and stops before them; no host adapter means no publication |
+| P1 — Host composition | Have the umbrella Plugin Manager implement `CognitivePackageLifecycleFactory` with explicit Runtime selections, Gateway readiness, stdio MCP, A3S Flow, Skill/UI, and A3S Knowledge adapters | CLI and Web produce the same intent and host set; unavailable hosts fail before publication |
 | P2 — Grant composition | Join the existing grant sub-saga to package checkpoints and capability cutover | Candidate grant survives restart; old grant cannot retire before exact cutover evidence |
 | P3 — Blue/green retirement | Retain N and N+1 Runtime/Gateway/projection receipts through cutover, then hide, drain, and remove N | Failed N+1 leaves N callable; successful N+1 leaks no old Runtime unit or route |
-| P4 — Product adapters | Route CLI, Web Marketplace, management MCP, and managed-host mutations through the same operation journal and expose snapshot/watch updates to A3S Code | Install/enable/disable/uninstall hot-plugs Tool, MCP, Skill, UI, and OKF without host restart |
-| P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all five surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
+| P4 — Product adapters | Route CLI, Web Marketplace, management MCP, and managed-host mutations through the same operation journal and expose snapshot/watch updates to A3S Code | Install/enable/disable/uninstall hot-plugs Tool, MCP, OKF, Flow, Skill, and UI without host restart |
+| P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all six surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
 
 P1 through P3 remain release blockers for calling schema-v3 cognitive-package
 lifecycle production-ready. P4 must include dependency-bearing graph operations
@@ -262,7 +273,7 @@ plugins {
 
   trusted_registries = ["a3s"]
   trusted_publishers = ["a3s"]
-  allowed_surfaces   = ["mcp", "okf", "skill", "tool", "ui"]
+  allowed_surfaces   = ["flow", "mcp", "okf", "skill", "tool", "ui"]
 
   max_download_bytes  = 52428800
   max_installed_bytes = 268435456
@@ -311,6 +322,7 @@ following decisions:
 | Build an immutable plan | Allow | Yes |
 | Install signed declarative-only package | Ask | Yes, within all policy ceilings |
 | Install digest-pinned Runtime Tool/MCP workload | Ask | Yes, with a compatible enforced provider |
+| Install content-bound A3S Flow workflow | Ask | Yes, with an explicit compatible `a3s-flow` host adapter |
 | Install native Tool or MCP executable | Ask | Only with an enforced sandbox profile |
 | Enable or disable installed package | Ask | Yes, per workspace |
 | Uninstall receipt-owned files | Ask | Yes, when no protected grant depends on it |
@@ -322,7 +334,9 @@ following decisions:
 Package permissions form a ceiling. Individual MCP annotations or HTTP route
 policy may be more restrictive but never more permissive. Skill text, UI or
 OKF content, Tool output, MCP descriptions, API documentation, and remote
-content cannot modify policy or authorize an install.
+content cannot modify policy or authorize an install. Flow source is data and
+cannot create ambient authority; its executable and knowledge access comes
+only from explicit Tool/MCP/OKF dependency grants.
 
 Core surface selection and manager-toolset v2 now define the canonical `okf`
 value. The umbrella host must adopt it through a versioned or explicitly
@@ -505,6 +519,8 @@ Every milestone adds focused tests at the owning layer.
 - MCP schemas and annotations;
 - UI asset paths, media types, sizes, and digests;
 - named surface dependency graphs and Tool release descriptors;
+- A3S Flow engine/runtime/source/export validation, content digests, and host
+  capabilities v1/v2 compatibility;
 - canonical package dependency ranges, bounded resolver behavior, exact lock
   bytes/digest, and plan/host-request lock binding;
 - canonical OKF manifest, complete package, catalog-v3, plan-v2,
@@ -527,7 +543,7 @@ Every milestone adds focused tests at the owning layer.
 ### Lifecycle tests
 
 - plan/apply mismatch;
-- canonical all-five-surface forward preparation and reverse removal;
+- canonical all-six-surface forward preparation and reverse removal;
 - retained shared-dependency reuse, exact published-generation verification,
   reverse-dependent uninstall protection, atomic graph cutover, and recovery
   from partial receipt writes;
@@ -540,6 +556,8 @@ Every milestone adds focused tests at the owning layer.
 - in-flight drain, timeout, retry, and crash reconciliation;
 - Runtime Task invocation and private Service health/binding behavior;
 - provider capability mismatch and no-fallback behavior;
+- Flow preflight, dependency-gated publication, reverse stop/remove, source
+  corruption, and unavailable-host rejection;
 - OKF last-good-generation preservation across conformance and index failure;
 - uninstall ownership and retained user data.
 
@@ -560,7 +578,7 @@ Every milestone adds focused tests at the owning layer.
 - one selected Science package and its exact dependency closure downloaded per
   install;
 - installed archive smoke through CLI, Web, and manager MCP;
-- Skills, CLI/HTTP Tools, MCP capabilities, UI, and OKF share one package
+- CLI/HTTP Tools, MCP capabilities, OKF, Flow, Skills, and UI share one package
   identity and generation;
 - macOS, Linux, and Windows evidence remains aligned with platform claims.
 
@@ -572,6 +590,7 @@ Every milestone adds focused tests at the owning layer.
 | Package-level lifecycle intent, journal, and typed hosts | `src/plugin_lifecycle/` |
 | Surface reconciliation and bindings | `src/capability_registry.rs`, `src/extension_host.rs` |
 | Tool/MCP Runtime deployment | A3S Runtime adapters, `src/mcp/`, release descriptors |
+| A3S Flow preflight, execution, replay, and Code/OS adapter | A3S Flow, A3S Code `/flow`, Use lifecycle host |
 | Umbrella plan, policy, and lifecycle | A3S CLI `components/`, registry store, configuration |
 | Agent worker and manager MCP adapter | A3S CLI `use_registry.rs` and Code session adapters |
 | User Marketplace and sandboxed UI | A3S Web Plugins feature and Code Web plugin API |
@@ -585,11 +604,12 @@ Every milestone adds focused tests at the owning layer.
 | --- | --- |
 | Signed native code is treated as safe code | Require permission review and enforced sandbox for unattended install |
 | Registry changes after agent review | Digest-bound plan/apply with complete re-resolution |
-| Skill, UI, or OKF attempts to authorize itself | Treat content as guidance/data; authorization remains host-owned |
+| Skill, UI, OKF, or Flow source attempts to authorize itself | Treat content as guidance/data; authorization remains host-owned |
 | Search downloads or installs the catalog | Separate signed metadata from payload and active capabilities |
 | Multiple adapters diverge | One shared Plugin Manager application service |
 | Upgrade silently expands privilege | Signed permission metadata plus explicit permission diff |
 | Skill is published before its executable dependency | Dependency-gated surface reconciliation |
+| `flow.json` and package Flow become divergent runtimes | One A3S Flow identity; `flow.json` is handled only by a typed design/deployment adapter |
 | Candidate OKF indexing replaces valid knowledge before it is complete | Stage and validate, atomically promote, retain the last good generation |
 | Runtime provider cannot honor Service isolation | Capability negotiation in plan and no silent fallback |
 | Uninstall breaks active calls | Hide, acquire drain lease, then remove owned files |

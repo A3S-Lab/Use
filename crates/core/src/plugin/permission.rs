@@ -158,7 +158,7 @@ impl SurfacePermissionCeiling {
         if !valid_segment(&self.surface.id)
             || matches!(
                 self.surface.kind,
-                PluginSurfaceKind::Okf | PluginSurfaceKind::Skill
+                PluginSurfaceKind::Flow | PluginSurfaceKind::Okf | PluginSurfaceKind::Skill
             )
             || self.filesystem.len() > MAX_ITEMS_PER_PERMISSION
             || self.network_egress.len() > MAX_ITEMS_PER_PERMISSION
@@ -234,9 +234,9 @@ impl SurfacePermissionCeiling {
                     ));
                 }
             }
-            PluginSurfaceKind::Okf | PluginSurfaceKind::Skill => {
+            PluginSurfaceKind::Flow | PluginSurfaceKind::Okf | PluginSurfaceKind::Skill => {
                 return Err(permission_error(
-                    "OKF and Skill surfaces cannot carry runtime permission ceilings.",
+                    "Flow, OKF, and Skill surfaces cannot carry runtime permission ceilings.",
                 ));
             }
         }

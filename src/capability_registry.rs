@@ -17,7 +17,7 @@ use tokio::io::AsyncReadExt;
 #[cfg(feature = "extensions")]
 use crate::surface_reconciler::{
     reconcile_with_runtime, PluginDesiredState, PluginObservedState, SurfaceObservations,
-    SurfaceReconcileSnapshot,
+    SurfaceObservedState, SurfaceReconcileSnapshot,
 };
 
 const SCHEMA_VERSION: u32 = 1;
@@ -25,6 +25,7 @@ const SCHEMA_VERSION: u32 = 1;
 const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
 const WATCH_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_STABLE_SNAPSHOT_ATTEMPTS: usize = 5;
+const MAX_FLOW_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +64,34 @@ struct SkillSurface {
     sha256: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FlowEngine {
+    A3sFlow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FlowRuntime {
+    NativeTs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowSurface {
+    id: String,
+    engine: FlowEngine,
+    runtime: FlowRuntime,
+    source: ManagedAsset,
+    export_name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    requires_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    requires_mcp: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    requires_okf: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ManagedAsset {
@@ -83,7 +112,8 @@ struct ActivityBarContribution {
     styles: Vec<ManagedAsset>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     scripts: Vec<ManagedAsset>,
-    skill: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skill: Option<String>,
     order: i32,
 }
 
@@ -135,6 +165,8 @@ pub(crate) struct CapabilityBinding {
     mcp: Option<McpSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     skills: Vec<SkillSurface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    flows: Vec<FlowSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     activity_bar: Vec<ActivityBarContribution>,
 }
@@ -245,6 +277,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
                 transport: McpTransport::Stdio,
             }),
             skills,
+            flows: Vec::new(),
             activity_bar: Vec::new(),
         })
     }
@@ -267,6 +300,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            flows: Vec::new(),
             activity_bar: Vec::new(),
         })
     }
@@ -310,6 +344,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             #[cfg(not(feature = "mcp"))]
             mcp: None,
             skills,
+            flows: Vec::new(),
             activity_bar: Vec::new(),
         })
     }
@@ -332,6 +367,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             surfaces: Vec::new(),
             mcp: None,
             skills: Vec::new(),
+            flows: Vec::new(),
             activity_bar: Vec::new(),
         })
     }
@@ -356,6 +392,7 @@ fn box_capability() -> CapabilityBinding {
         surfaces: vec!["cli".to_string()],
         mcp: None,
         skills: Vec::new(),
+        flows: Vec::new(),
         activity_bar: Vec::new(),
     }
 }
@@ -448,11 +485,62 @@ async fn activity_asset(path: PathBuf, media_type: &str) -> UseResult<ManagedAss
     })
 }
 
+async fn flow_asset(path: PathBuf) -> UseResult<ManagedAsset> {
+    let metadata = tokio::fs::symlink_metadata(&path)
+        .await
+        .map_err(|error| flow_io_error("inspect", &path, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(UseError::new(
+            "use.capability.flow_source_invalid",
+            format!(
+                "Projected A3S Flow source '{}' must be a regular package file.",
+                path.display()
+            ),
+        ));
+    }
+    if metadata.len() == 0 || metadata.len() > MAX_FLOW_SOURCE_BYTES {
+        return Err(UseError::new(
+            "use.capability.flow_source_invalid",
+            format!(
+                "Projected A3S Flow source '{}' exceeds the supported size.",
+                path.display()
+            ),
+        ));
+    }
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|error| flow_io_error("read", &path, error))?;
+    std::str::from_utf8(&bytes).map_err(|error| {
+        UseError::new(
+            "use.capability.flow_source_invalid",
+            format!(
+                "Projected A3S Flow source '{}' must be UTF-8 TypeScript: {error}",
+                path.display(),
+            ),
+        )
+    })?;
+    Ok(ManagedAsset {
+        path,
+        sha256: format!("{:x}", Sha256::digest(&bytes)),
+        media_type: "text/typescript".to_string(),
+    })
+}
+
 fn activity_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError {
     UseError::new(
         "use.capability.activity_asset_unreadable",
         format!(
             "Failed to {action} projected Activity Bar asset '{}': {error}",
+            path.display()
+        ),
+    )
+}
+
+fn flow_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError {
+    UseError::new(
+        "use.capability.flow_source_unreadable",
+        format!(
+            "Failed to {action} projected A3S Flow source '{}': {error}",
             path.display()
         ),
     )
@@ -545,9 +633,28 @@ async fn project_extension_for_host(
     surfaces: Vec<String>,
     host_version: &str,
 ) -> UseResult<CapabilityBinding> {
+    project_extension_for_host_with_flow_observations(
+        extension,
+        surfaces,
+        host_version,
+        &SurfaceObservations::new(),
+    )
+    .await
+}
+
+#[cfg(feature = "extensions")]
+async fn project_extension_for_host_with_flow_observations(
+    extension: &a3s_use_extension::InstalledExtension,
+    surfaces: Vec<String>,
+    host_version: &str,
+    flow_observations: &SurfaceObservations,
+) -> UseResult<CapabilityBinding> {
     let receipt = &extension.receipt;
     let compatible = extension.supports_use_version(host_version);
     let reconciliation = if extension.manifest.schema_version == 3 {
+        let observations =
+            surface_observations(extension, receipt.enabled && compatible, flow_observations)
+                .await?;
         Some(reconcile_with_runtime(
             &extension.manifest,
             if receipt.enabled {
@@ -556,7 +663,7 @@ async fn project_extension_for_host(
                 PluginDesiredState::InstalledDisabled
             },
             compatible,
-            &SurfaceObservations::new(),
+            &observations,
             None,
         )?)
     } else {
@@ -610,6 +717,28 @@ async fn project_extension_for_host(
         }
     }
     let mut activity_bar = Vec::new();
+    let mut flows = Vec::new();
+    if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
+        for surface in &extension.manifest.flows {
+            if !snapshot.publishes(PluginSurfaceKind::Flow, &surface.id) {
+                continue;
+            }
+            flows.push(FlowSurface {
+                id: surface.id.clone(),
+                engine: match surface.engine {
+                    a3s_use_extension::PluginFlowEngine::A3sFlow => FlowEngine::A3sFlow,
+                },
+                runtime: match surface.runtime {
+                    a3s_use_extension::PluginFlowRuntime::NativeTs => FlowRuntime::NativeTs,
+                },
+                source: flow_asset(receipt.package_root.join(&surface.source)).await?,
+                export_name: surface.export_name.clone(),
+                requires_tools: surface.requires_tools.clone(),
+                requires_mcp: surface.requires_mcp.clone(),
+                requires_okf: surface.requires_okf.clone(),
+            });
+        }
+    }
     for contribution in extension
         .manifest
         .contributes
@@ -634,9 +763,38 @@ async fn project_extension_for_host(
                 .await?,
             styles,
             scripts,
-            skill: contribution.skill.clone(),
+            skill: Some(contribution.skill.clone()),
             order: contribution.order,
         });
+    }
+    if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
+        for surface in &extension.manifest.ui {
+            if !snapshot.publishes(PluginSurfaceKind::Ui, &surface.id) {
+                continue;
+            }
+            let mut styles = Vec::with_capacity(surface.styles.len());
+            for path in &surface.styles {
+                styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
+            }
+            let mut scripts = Vec::with_capacity(surface.scripts.len());
+            for path in &surface.scripts {
+                scripts.push(
+                    activity_asset(receipt.package_root.join(path), "text/javascript").await?,
+                );
+            }
+            activity_bar.push(ActivityBarContribution {
+                id: surface.id.clone(),
+                title: surface.title.clone(),
+                description: surface.description.clone(),
+                icon: surface.icon.clone(),
+                entry: activity_asset(receipt.package_root.join(&surface.entry), "text/html")
+                    .await?,
+                styles,
+                scripts,
+                skill: surface.skill.clone(),
+                order: surface.order,
+            });
+        }
     }
     let planner_evidence = plugin_planner_evidence(extension, reconciliation.as_ref())?;
     Ok(CapabilityBinding {
@@ -662,8 +820,68 @@ async fn project_extension_for_host(
         surfaces,
         mcp,
         skills,
+        flows,
         activity_bar,
     })
+}
+
+#[cfg(feature = "extensions")]
+async fn surface_observations(
+    extension: &a3s_use_extension::InstalledExtension,
+    inspect_enabled_surfaces: bool,
+    flow_observations: &SurfaceObservations,
+) -> UseResult<SurfaceObservations> {
+    if flow_observations.keys().any(|surface| {
+        surface.kind != PluginSurfaceKind::Flow
+            || !extension
+                .manifest
+                .flows
+                .iter()
+                .any(|flow| flow.id == surface.id)
+    }) {
+        return Err(UseError::new(
+            "use.capability.flow_observation_invalid",
+            "A3S Flow host observations must reference only Flow surfaces in the admitted package generation.",
+        ));
+    }
+    if !inspect_enabled_surfaces {
+        return Ok(SurfaceObservations::new());
+    }
+
+    let mut observations = flow_observations.clone();
+    for surface in &extension.manifest.flows {
+        if a3s_use_extension::inspect_flow_surface_file(surface, &extension.receipt.package_root)
+            .await
+            .is_err()
+        {
+            observations.insert(
+                PluginSurfaceRef {
+                    kind: PluginSurfaceKind::Flow,
+                    id: surface.id.clone(),
+                },
+                SurfaceObservedState::Failed,
+            );
+        }
+    }
+    for surface in &extension.manifest.ui {
+        let observed = match a3s_use_extension::inspect_ui_surface_files(
+            surface,
+            &extension.receipt.package_root,
+        )
+        .await
+        {
+            Ok(_) => SurfaceObservedState::Prepared,
+            Err(_) => SurfaceObservedState::Failed,
+        };
+        observations.insert(
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Ui,
+                id: surface.id.clone(),
+            },
+            observed,
+        );
+    }
+    Ok(observations)
 }
 
 #[cfg(feature = "extensions")]
@@ -823,6 +1041,80 @@ extension "acme/guide" {
 "#;
 
     #[cfg(feature = "extensions")]
+    const SKILL_UI_PLUGIN: &str = r#"
+extension "acme/workbench" {
+  schema_version = 3
+  version        = "1.0.0"
+  route          = "workbench"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read"]
+
+  repository {
+    url      = "https://github.com/acme/workbench"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  skill "guide" {
+    path          = "skills/guide/SKILL.md"
+    requires_tool = []
+    requires_mcp  = []
+    requires_okf  = []
+    optional      = false
+  }
+
+  ui "review" {
+    title       = "Evidence Review"
+    description = "Review the cognitive package evidence."
+    icon        = "flask-conical"
+    order       = 80
+    entry        = "ui/review.html"
+    styles       = ["ui/review.css"]
+    scripts      = ["ui/review.js"]
+    skill        = "guide"
+    bind_tool    = []
+    bind_mcp     = []
+    optional     = false
+  }
+
+  ui "standalone" {
+    entry     = "ui/standalone.html"
+    styles    = []
+    scripts   = []
+    bind_tool = []
+    bind_mcp  = []
+    optional  = false
+  }
+}
+"#;
+
+    #[cfg(feature = "extensions")]
+    const FLOW_PLUGIN: &str = r#"
+extension "acme/workflow" {
+  schema_version = 3
+  version        = "1.0.0"
+  route          = "workflow"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read"]
+
+  repository {
+    url      = "https://github.com/acme/workflow"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  flow "review" {
+    engine        = "a3s-flow"
+    runtime       = "native-ts"
+    source        = "flows/review.ts"
+    export        = "run"
+    requires_tool = []
+    requires_mcp  = []
+    requires_okf  = []
+    optional      = false
+  }
+}
+"#;
+
+    #[cfg(feature = "extensions")]
     const LEGACY_CLI_PLUGIN: &str = r#"
 extension "acme/slack" {
   schema_version = 2
@@ -968,7 +1260,7 @@ extension "acme/slack" {
             entry: first,
             styles: Vec::new(),
             scripts: Vec::new(),
-            skill: "science".to_string(),
+            skill: Some("science".to_string()),
             order: 120,
         }];
         let first_revision = revision(&[capability.clone()]).unwrap();
@@ -995,7 +1287,7 @@ extension "acme/slack" {
             .surfaces()
             .into_iter()
             .map(str::to_string)
-            .collect();
+            .collect::<Vec<_>>();
 
         let binding = project_extension_for_host(&extension, surfaces, "0.3.0")
             .await
@@ -1019,6 +1311,294 @@ extension "acme/slack" {
             json["reconciliation"]["surfaces"][0]["surface"]["id"],
             "guide"
         );
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn schema_three_projects_ready_ui_assets_with_optional_skill_guidance() {
+        let temp = tempfile::tempdir().unwrap();
+        let skill = temp.path().join("skills/guide/SKILL.md");
+        let review = temp.path().join("ui/review.html");
+        let style = temp.path().join("ui/review.css");
+        let script = temp.path().join("ui/review.js");
+        let standalone = temp.path().join("ui/standalone.html");
+        tokio::fs::create_dir_all(skill.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(review.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&skill, b"# Guide\n").await.unwrap();
+        tokio::fs::write(&review, b"<main>review</main>")
+            .await
+            .unwrap();
+        tokio::fs::write(&style, b"main { color: purple; }")
+            .await
+            .unwrap();
+        tokio::fs::write(&script, b"window.reviewReady = true;")
+            .await
+            .unwrap();
+        tokio::fs::write(&standalone, b"<main>standalone</main>")
+            .await
+            .unwrap();
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_UI_PLUGIN).unwrap();
+        let mut extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        extension.receipt.schema_version = 3;
+        extension.receipt.package_sha256 = Some("a".repeat(64));
+        extension.receipt.lifecycle_generation = Some(9);
+        let surfaces = extension
+            .surfaces()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        let binding = project_extension_for_host(&extension, surfaces, "0.3.0")
+            .await
+            .unwrap();
+        assert_eq!(binding.activity_bar.len(), 2);
+        let review = binding
+            .activity_bar
+            .iter()
+            .find(|activity| activity.id == "review")
+            .unwrap();
+        assert_eq!(review.title, "Evidence Review");
+        assert_eq!(review.description, "Review the cognitive package evidence.");
+        assert_eq!(review.icon, "flask-conical");
+        assert_eq!(review.order, 80);
+        assert_eq!(review.skill.as_deref(), Some("guide"));
+        assert_eq!(review.entry.media_type, "text/html");
+        assert_eq!(review.styles[0].media_type, "text/css");
+        assert_eq!(review.scripts[0].media_type, "text/javascript");
+
+        let standalone = binding
+            .activity_bar
+            .iter()
+            .find(|activity| activity.id == "standalone")
+            .unwrap();
+        assert_eq!(standalone.title, "standalone");
+        assert_eq!(standalone.icon, "package");
+        assert_eq!(standalone.order, 100);
+        assert!(standalone.skill.is_none());
+        assert!(binding
+            .reconciliation
+            .as_ref()
+            .unwrap()
+            .publishes(PluginSurfaceKind::Ui, "review"));
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn schema_three_requires_a3s_flow_host_preflight_before_catalog_publication() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("flows/review.ts");
+        tokio::fs::create_dir_all(source.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(
+            &source,
+            b"export async function run() { return { type: 'complete', output: null }; }\n",
+        )
+        .await
+        .unwrap();
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(FLOW_PLUGIN).unwrap();
+        let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        let surfaces = extension
+            .surfaces()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+
+        let source_only = project_extension_for_host(&extension, surfaces.clone(), "0.3.0")
+            .await
+            .unwrap();
+        let source_only_flow = source_only
+            .reconciliation
+            .as_ref()
+            .unwrap()
+            .surfaces
+            .iter()
+            .find(|surface| surface.surface.kind == PluginSurfaceKind::Flow)
+            .unwrap();
+        assert!(!source_only.enabled);
+        assert_eq!(source_only.readiness, Readiness::Unknown);
+        assert!(source_only.flows.is_empty());
+        assert_eq!(source_only_flow.observed, SurfaceObservedState::Pending);
+        assert_eq!(
+            source_only_flow.reason,
+            Some(crate::surface_reconciler::SurfaceStateReason::FlowObservationMissing)
+        );
+
+        let mut flow_observations = SurfaceObservations::new();
+        flow_observations.insert(
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Flow,
+                id: "review".to_owned(),
+            },
+            SurfaceObservedState::Prepared,
+        );
+        let binding = project_extension_for_host_with_flow_observations(
+            &extension,
+            surfaces,
+            "0.3.0",
+            &flow_observations,
+        )
+        .await
+        .unwrap();
+        assert!(binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Ready);
+        assert_eq!(binding.flows.len(), 1);
+        let flow = &binding.flows[0];
+        assert_eq!(flow.id, "review");
+        assert_eq!(flow.engine, FlowEngine::A3sFlow);
+        assert_eq!(flow.runtime, FlowRuntime::NativeTs);
+        assert_eq!(flow.source.path, source);
+        assert_eq!(flow.source.sha256.len(), 64);
+        assert_eq!(flow.source.media_type, "text/typescript");
+        assert_eq!(flow.export_name, "run");
+        assert!(binding
+            .reconciliation
+            .as_ref()
+            .unwrap()
+            .publishes(PluginSurfaceKind::Flow, "review"));
+
+        let json = serde_json::to_value(&binding).unwrap();
+        assert_eq!(json["flows"][0]["engine"], "a3s-flow");
+        assert_eq!(json["flows"][0]["runtime"], "native-ts");
+        assert_eq!(json["flows"][0]["exportName"], "run");
+        assert_eq!(json["flows"][0]["source"]["mediaType"], "text/typescript");
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn required_a3s_flow_source_corruption_withholds_the_generation() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("flows/review.ts");
+        tokio::fs::create_dir_all(source.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&source, [0xff_u8]).await.unwrap();
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(FLOW_PLUGIN).unwrap();
+        let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        let mut flow_observations = SurfaceObservations::new();
+        flow_observations.insert(
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Flow,
+                id: "review".to_owned(),
+            },
+            SurfaceObservedState::Prepared,
+        );
+        let binding = project_extension_for_host_with_flow_observations(
+            &extension,
+            extension
+                .surfaces()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            "0.3.0",
+            &flow_observations,
+        )
+        .await
+        .unwrap();
+        let flow = binding
+            .reconciliation
+            .as_ref()
+            .unwrap()
+            .surfaces
+            .iter()
+            .find(|surface| surface.surface.kind == PluginSurfaceKind::Flow)
+            .unwrap();
+
+        assert!(!binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Broken);
+        assert!(binding.flows.is_empty());
+        assert_eq!(flow.observed, SurfaceObservedState::Failed);
+        assert!(!flow.published);
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn schema_three_ui_integrity_failure_blocks_only_required_surfaces() {
+        let temp = tempfile::tempdir().unwrap();
+        let skill = temp.path().join("skills/guide/SKILL.md");
+        let review = temp.path().join("ui/review.html");
+        tokio::fs::create_dir_all(skill.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(review.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&skill, b"# Guide\n").await.unwrap();
+        tokio::fs::write(&review, b"<main>review</main>")
+            .await
+            .unwrap();
+        tokio::fs::write(
+            temp.path().join("ui/review.css"),
+            b"main { color: purple; }",
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            temp.path().join("ui/review.js"),
+            b"window.reviewReady = true;",
+        )
+        .await
+        .unwrap();
+
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_UI_PLUGIN).unwrap();
+        let required = installed_extension(manifest.clone(), temp.path().to_path_buf(), true);
+        let binding = project_extension_for_host(
+            &required,
+            required
+                .surfaces()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            "0.3.0",
+        )
+        .await
+        .unwrap();
+        assert!(!binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Broken);
+        assert!(binding.activity_bar.is_empty());
+        assert_eq!(
+            binding.reconciliation.as_ref().unwrap().observed,
+            PluginObservedState::Broken
+        );
+
+        let mut optional_manifest = manifest;
+        optional_manifest
+            .ui
+            .iter_mut()
+            .find(|surface| surface.id == "standalone")
+            .unwrap()
+            .optional = true;
+        let optional = installed_extension(optional_manifest, temp.path().to_path_buf(), true);
+        let binding = project_extension_for_host(
+            &optional,
+            optional
+                .surfaces()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            "0.3.0",
+        )
+        .await
+        .unwrap();
+        let reconciliation = binding.reconciliation.as_ref().unwrap();
+        let standalone = reconciliation
+            .surfaces
+            .iter()
+            .find(|surface| {
+                surface.surface.kind == PluginSurfaceKind::Ui && surface.surface.id == "standalone"
+            })
+            .unwrap();
+        assert!(binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Ready);
+        assert_eq!(binding.activity_bar.len(), 1);
+        assert_eq!(binding.activity_bar[0].id, "review");
+        assert_eq!(reconciliation.observed, PluginObservedState::Degraded);
+        assert_eq!(standalone.observed, SurfaceObservedState::Failed);
+        assert!(!standalone.published);
     }
 
     #[cfg(feature = "extensions")]
@@ -1054,6 +1634,17 @@ extension "acme/slack" {
         ))
         .unwrap();
         let temp = tempfile::tempdir().unwrap();
+        let ui = temp.path().join("ui/review");
+        tokio::fs::create_dir_all(&ui).await.unwrap();
+        tokio::fs::write(ui.join("index.html"), b"<main>review</main>")
+            .await
+            .unwrap();
+        tokio::fs::write(ui.join("index.css"), b"main { color: purple; }")
+            .await
+            .unwrap();
+        tokio::fs::write(ui.join("index.js"), b"window.reviewReady = true;")
+            .await
+            .unwrap();
         let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
         let surfaces = extension
             .surfaces()

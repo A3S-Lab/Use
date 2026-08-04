@@ -1,6 +1,6 @@
 ---
 title: Package Model
-description: Learn how a versioned A3S cognitive package declares SemVer dependencies and delivers Tool, MCP, Skill, UI, and OKF surfaces as one lifecycle unit.
+description: Learn how a versioned A3S cognitive package declares SemVer dependencies and delivers Tool, MCP, OKF, Flow, Skill, and UI as one lifecycle unit.
 ---
 
 # Package Model
@@ -10,7 +10,7 @@ An A3S cognitive package is an npm-like versioned distribution unit. It may cont
 ```text
 A3S package
 ├── native plane       executable · runtime assets · target · provenance
-└── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
+└── cognitive plane    Tool · MCP · OKF · Flow · Skill · UI · agent context
 ```
 
 A typical schema-v3 package has this shape:
@@ -21,6 +21,7 @@ acme-research/
 ├── README.md               required package documentation
 ├── tools/                  native Task or Service artifacts
 ├── releases/               content-bound Tool/MCP descriptors
+├── flows/                  A3S Flow TypeScript sources
 ├── skills/                 SKILL.md files and supporting content
 ├── ui/                     integrity-bound static assets
 └── okf/                    conformant knowledge bundles
@@ -35,13 +36,14 @@ Only the manifest and `README.md` names are fixed. Contribution paths are declar
 | Tool Task    | A one-shot, non-interactive CLI workload                           | A3S Runtime Task or a constrained legacy runner           |
 | Tool Service | A service with a private HTTP contract                             | Runtime Service through a scoped binding                  |
 | MCP          | A distinct, standard MCP server                                    | Streamable HTTP Service or supervised stdio session       |
+| Flow         | A durable workflow with explicit capability dependencies           | Injected A3S Flow engine and typed runtime adapter        |
 | Skill        | Instructions and supporting content                                | Managed Skill projection or session registry              |
 | UI           | Integrity-bound static HTML/CSS/JS                                 | A3S Code/Web sandbox                                      |
 | OKF          | An Open Knowledge Format package of cross-linked Markdown concepts | A3S Knowledge service, host OKF registry, and local index |
 
 In this model, a **Tool is not an MCP `tools/list` item**. A Tool keeps its own CLI or HTTP contract; Use does not translate every workload into a private universal protocol. Static UI is not a Runtime workload either. Only its declared Tool or MCP backend enters Runtime.
 
-Tool, MCP, OKF, Skill, and UI have a schema-v3 contract baseline. P0 adds generation-bound package commit/removal, atomic capability publish/hide, route-lease drain, and legacy-bypass rejection. The package dependency foundation adds bounded SemVer resolution, an exact Registry/TUF-bound lock, dependency-forward download and preparation, retained shared dependencies, one graph cutover, and reverse uninstall. M0K-B implements the named OKF manifest, recursive package validation, catalog-v3 evidence, plan-v2 impact, Knowledge receipt/observation/projection contracts, and dependency-gated reconciliation. M0K-C-A implements the injected Knowledge lifecycle port, exact-byte validation, durable binding records, and receipt-owned package adapter. The umbrella product path and real A3S Knowledge backend remain pending, so the legacy CLI does not yet expose schema-v3 graph install and missing promoted OKF evidence stays unpublished.
+Tool, MCP, OKF, Flow, Skill, and UI have a schema-v3 contract baseline. P0 adds generation-bound package commit/removal, atomic capability publish/hide, route-lease drain, and legacy-bypass rejection. The package dependency foundation adds bounded SemVer resolution, an exact Registry/TUF-bound lock, dependency-forward download and preparation, retained shared dependencies, one graph cutover, reverse uninstall, and durable crash replay. Flow adds a fixed `a3s-flow` engine, Native TypeScript source evidence, Tool/MCP/OKF dependency closure, lifecycle ordering, and typed catalog projection. M0K-B/M0K-C-A implement OKF control-plane and lifecycle foundations. Complete umbrella Code/Web Flow/Knowledge host composition remains pending, so missing host evidence stays unpublished.
 
 OKF is not an executable workload. It is a shareable knowledge package: each non-reserved concept is UTF-8 Markdown with YAML frontmatter, the file path is concept identity, standard Markdown links form the knowledge graph, and `type` is required. The frozen content contract targets OKF v0.2 with explicit v0.1 compatibility. Raw PDF, Office, image, or web sources do not become OKF authority directly; an independent compiler must emit a conformant bundle first.
 
@@ -104,11 +106,23 @@ extension "acme/research" {
     optional               = false
   }
 
+  flow "review" {
+    engine         = "a3s-flow"
+    runtime        = "native-ts"
+    source         = "flows/review.ts"
+    export         = "run"
+    requires_tool  = ["convert"]
+    requires_mcp   = ["library"]
+    requires_okf   = ["domain-knowledge"]
+    optional       = false
+  }
+
   skill "review" {
     path          = "skills/review/SKILL.md"
     requires_tool = ["convert"]
     requires_mcp  = ["library"]
     requires_okf  = ["domain-knowledge"]
+    requires_flow = ["review"]
     optional      = false
   }
 
@@ -116,6 +130,7 @@ extension "acme/research" {
     entry    = "ui/review/index.html"
     skill    = "review"
     bind_mcp = ["library"]
+    bind_flow = ["review"]
     optional = false
   }
 }
@@ -123,7 +138,7 @@ extension "acme/research" {
 
 Schema v1 and v2 remain compatible. Schema v3 adds repeatable named surfaces, package dependencies, a required bounded UTF-8 `README.md`, and an acyclic readiness graph. All paths are relative to the package root. Activation rejects path traversal, links, archive ambiguity, route collisions, oversized packages, provenance drift, and incompatible host ranges.
 
-The repository contains executable [`plugin-v3.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl) and knowledge [`plugin-v3-okf.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3-okf.acl) fixtures.
+The repository contains executable [`plugin-v3.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl), knowledge [`plugin-v3-okf.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3-okf.acl), and an all-six-surface [`plugin-v3-cognitive`](https://github.com/A3S-Lab/Use/tree/main/crates/extension/fixtures/packages/plugin-v3-cognitive) fixture.
 
 ## Package dependencies and exact lock
 
@@ -139,16 +154,18 @@ resolve signed catalogs → freeze exact lock → revalidate all metadata
 
 Shared dependencies are not recommitted. A `Retain` node is reusable only when the exact Registry-backed generation is installed, enabled, and visible in the current capability snapshot. Direct uninstall is rejected while another installed package depends on the target.
 
+The public `CognitivePackageManager` accepts a root Registry and a bounded set of host-injected dependency Registries. It persists the exact root lock plus admitted pending manifest/generation evidence, so a published install can finish incomplete journals and reverse uninstall can resume even after root metadata has already been removed. Code/Web hosts inject surface owners through `CognitivePackageLifecycleFactory`; the standalone factory never substitutes a missing Runtime, Gateway, A3S Flow, or Knowledge provider.
+
 ## Surface dependencies and readiness
 
 Surfaces are not installed independently. The Surface Reconciler builds a complete dependency closure for one package generation:
 
 1. Tool and MCP require an explicit Runtime provider that satisfies workload, network, resource, and isolation requirements.
-2. Skill content must match its digest, and all required Tool/MCP dependencies must be usable.
-3. UI content must be intact, with every declared backend binding authorized.
-4. An OKF surface must pass frontmatter, path, link, size, and content-digest checks; A3S Knowledge indexes only a generation atomically promoted by the host.
-5. One capability generation is published atomically only after every required surface is ready.
-6. Optional failure may produce `degraded`; required failure withholds the new generation.
+2. An OKF surface must pass frontmatter, path, link, size, and content-digest checks; A3S Knowledge indexes only a generation atomically promoted by the host.
+3. Flow source must match its digest, pass typed `a3s-flow` preflight, and wait for every required Tool/MCP/OKF dependency.
+4. Skill content must match its digest, and all required Flow or direct dependencies must be usable.
+5. UI content must be intact, with every declared backend binding authorized.
+6. One capability generation is published atomically only after every required surface is ready. Optional failure may produce `degraded`; required failure withholds it.
 
 ## Identity and ownership
 

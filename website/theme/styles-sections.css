@@ -571,6 +571,7 @@
 
   .use-cognitive-art {
     gap: 5px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .use-cognitive-art span {

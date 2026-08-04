@@ -105,7 +105,7 @@ async fn package_graph_resolution_and_download_replay_the_exact_verified_lock() 
     let mut catalog: serde_json::Value = serde_json::from_slice(OKF_CATALOG_V3).unwrap();
     let target = host_target().unwrap();
     catalog["target"] = serde_json::json!(target);
-    catalog["requiresUse"] = serde_json::json!(">=0.2.0, <0.3.0");
+    catalog["requiresUse"] = serde_json::json!(">=0.3.0, <0.4.0");
     let original_target_name = catalog["archive"]["targetName"]
         .as_str()
         .unwrap()
@@ -166,7 +166,7 @@ async fn package_graph_downloads_the_complete_dependency_closure_in_install_orde
     base["description"] = serde_json::json!("Dependency closure base fixture.");
     base["repository"] = serde_json::json!("https://github.com/acme/base");
     base["target"] = serde_json::json!(&target);
-    base["requiresUse"] = serde_json::json!(">=0.2.0, <0.3.0");
+    base["requiresUse"] = serde_json::json!(">=0.3.0, <0.4.0");
     base["archive"]["targetName"] = serde_json::json!(format!(
         "extensions/acme/base/1.0.0/stable/{target}/acme-base-1.0.0-{target}.tar.gz"
     ));

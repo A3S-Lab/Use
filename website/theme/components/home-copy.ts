@@ -1,5 +1,5 @@
 export type Locale = "zh" | "en";
-export type SurfaceKey = "tool" | "mcp" | "skill" | "ui" | "okf";
+export type SurfaceKey = "tool" | "mcp" | "okf" | "flow" | "skill" | "ui";
 
 type SurfaceCopy = {
   label: string;
@@ -86,12 +86,12 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     getStarted: "开始使用",
     github: "查看 GitHub",
     statusLabel: "实现状态",
-    available: "已可用",
+    available: "main 已可用",
     building: "开发中",
-    foundationLabel: "v0.2 包管理基础",
+    foundationLabel: "v0.3 认知包依赖图",
     platformLabel: "认知插件平台",
-    installLabel: "安装已验证版本",
-    installHint: "通过 A3S CLI 安装完整发布包",
+    installLabel: "安装 A3S Use",
+    installHint: "稳定发布版；v0.3 认知包图已进入 main",
     copy: "复制",
     copied: "已复制",
     consoleLabel: "PACKAGE INSPECTION",
@@ -99,18 +99,18 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTarget: "目标",
     consoleTrust: "信任",
     consoleGeneration: "代际",
-    consoleReady: "P0 包/能力宿主已就绪 · umbrella 组合待完成",
-    modelEyebrow: "ONE PACKAGE · FIVE CONTRIBUTIONS",
+    consoleReady: "v0.3 图安装 CLI 已就绪 · Flow 与 OKF 生产宿主集成中",
+    modelEyebrow: "ONE PACKAGE · SIX CONTRIBUTIONS",
     modelTitle: "一个不可变身份，一套安装与移除边界",
     modelBody:
-      "Tool、MCP、Skill、UI 与 OKF 是包拥有的贡献，不是可独立安装的包。A3S Use 验证它们共享的代际，只向宿主投影依赖已就绪的证据。",
+      "Tool、MCP、OKF、Flow、Skill 与 UI 是包拥有的贡献，不是可独立安装的包。A3S Use 验证它们共享的代际，只向宿主投影依赖已就绪的证据。",
     nativePlane: "NATIVE PLANE",
     nativeTitle: "平台原生执行",
     nativeBody: "目标相关的可执行文件、运行时资产、原生 argv 与标准进程状态。",
     cognitivePlane: "COGNITIVE PLANE",
     cognitiveTitle: "Agent 可发现能力",
     cognitiveBody:
-      "内容绑定的指令、工具依赖、MCP 服务、沙箱 UI 与可共享 OKF 知识，不从文本获得额外权限。",
+      "内容绑定的工作流与指令、工具依赖、MCP 服务、沙箱 UI 与可共享 OKF 知识，不从文本获得额外权限。",
     surfaceHint: "选择一个表面查看它的运行边界",
     surfaces: {
       tool: {
@@ -127,11 +127,18 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         body: "stdio 会话受监督；Streamable HTTP 运行在私有 Runtime Service 后，并在发布前完成协议探测。",
         evidence: ["standard protocol", "health probe", "scoped binding"],
       },
+      flow: {
+        label: "Flow",
+        kind: "A3S FLOW · NATIVE TYPESCRIPT",
+        title: "一个工作流引擎，多种宿主目标",
+        body: "Flow 固定使用 a3s-flow 引擎，并显式依赖 Tool、MCP 与 OKF。native-ts 是执行适配器；flow.json 是同一身份的设计/部署文档。",
+        evidence: ["source digest", "durable replay", "typed host adapter"],
+      },
       skill: {
         label: "Skill",
         kind: "CONTENT-BOUND",
         title: "指令依赖真实可用能力",
-        body: "Skill 与包内容摘要绑定，并声明所需 Tool、MCP 与 OKF；依赖未就绪时不会进入能力快照。",
+        body: "Skill 与包内容摘要绑定，并声明所需 Flow、Tool、MCP 与 OKF；依赖未就绪时不会进入能力快照。",
         evidence: [
           "content digest",
           "dependency closure",
@@ -160,7 +167,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     lifecycleEyebrow: "TRUSTED LIFECYCLE",
     lifecycleTitle: "正向准备，一次发布，反向移除",
     lifecycleBody:
-      "在跨宿主变更前，一个持久包日志会绑定已审查计划、精确代际、五表面依赖图和幂等检查点。",
+      "在跨宿主变更前，一个持久包日志会绑定已审查计划、精确代际、六表面依赖图和幂等检查点。",
     lifecycle: [
       {
         number: "01",
@@ -185,7 +192,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       {
         number: "05",
         title: "准备",
-        body: "按依赖顺序准备 Runtime、Knowledge、Skill 与 UI 宿主。",
+        body: "按依赖顺序准备 Runtime、Knowledge、A3S Flow、Skill 与 UI 宿主。",
       },
       {
         number: "06",
@@ -203,14 +210,14 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     engine: "A3S Use 包引擎",
     engineBody: "verify · journal · prepare · publish · drain",
     planes: "原生 + 认知表面",
-    planesBody: "Tool · MCP · Skill · UI · OKF",
+    planesBody: "Tool · MCP · OKF · Flow · Skill · UI",
     hosts: "A3S 宿主",
     hostsBody: "A3S Code · Web · Knowledge · agents",
     architectureLink: "阅读架构说明",
     trustEyebrow: "SECURE BY EVIDENCE",
     trustTitle: "包内容不能给自己授权",
     trustBody:
-      "Skill 文本、UI 消息、OKF 知识、工具输出和远端内容都被视为数据。权限只能来自宿主策略、明确授权与代际绑定的收据。",
+      "Flow/Skill 源码、UI 消息、OKF 知识、工具输出和远端内容都被视为数据。权限只能来自宿主策略、明确授权与代际绑定的收据。",
     trustCards: [
       {
         title: "可验证供应链",
@@ -234,10 +241,10 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       "macOS 与 Linux 已覆盖完整发布包和包生命周期；Windows x86_64 当前为 Preview，并持续补齐运行时与插件生命周期门禁。",
     supported: "SUPPORTED",
     preview: "PREVIEW",
-    ctaEyebrow: "START WITH THE FOUNDATION",
-    ctaTitle: "先检查本机能力，再构建认知包",
+    ctaEyebrow: "START WITH THE PACKAGE GRAPH",
+    ctaTitle: "一次安装认知包及其完整依赖",
     ctaBody:
-      "安装 v0.2 发布版，运行 doctor 和 capability snapshot；认知插件开发请以 schema-v3 合约与路线图为准。",
+      "从当前 v0.3 主线构建后，用 a3s-use install 解析、锁定并安装完整 SemVer 依赖闭包。Runtime Service、HTTP MCP、A3S Flow 与 OKF 仍需 embedding host 注入真实适配器。",
     ctaPrimary: "打开快速开始",
     ctaSecondary: "查看路线图",
     footer: "MIT 开源 · Rust 编写 · Linux / macOS / Windows",
@@ -251,12 +258,12 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     getStarted: "Get started",
     github: "View on GitHub",
     statusLabel: "Implementation status",
-    available: "Available",
+    available: "Available on main",
     building: "In development",
-    foundationLabel: "v0.2 package foundation",
+    foundationLabel: "v0.3 cognitive package graph",
     platformLabel: "Cognitive plugin platform",
-    installLabel: "Install the verified release",
-    installHint: "Install the complete release through the A3S CLI",
+    installLabel: "Install A3S Use",
+    installHint: "Stable release; the v0.3 cognitive graph is on main",
     copy: "Copy",
     copied: "Copied",
     consoleLabel: "PACKAGE INSPECTION",
@@ -265,11 +272,11 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTrust: "trust",
     consoleGeneration: "generation",
     consoleReady:
-      "P0 package/capability hosts ready · umbrella composition pending",
-    modelEyebrow: "ONE PACKAGE · FIVE CONTRIBUTIONS",
+      "v0.3 graph CLI ready · production Flow and OKF hosts in progress",
+    modelEyebrow: "ONE PACKAGE · SIX CONTRIBUTIONS",
     modelTitle: "One immutable identity. One install and removal boundary.",
     modelBody:
-      "Tool, MCP, Skill, UI, and OKF are package-owned contributions—not independently installed packages. A3S Use verifies their shared generation and projects only dependency-ready evidence to hosts.",
+      "Tool, MCP, OKF, Flow, Skill, and UI are package-owned contributions—not independently installed packages. A3S Use verifies their shared generation and projects only dependency-ready evidence to hosts.",
     nativePlane: "NATIVE PLANE",
     nativeTitle: "Platform-native execution",
     nativeBody:
@@ -277,7 +284,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     cognitivePlane: "COGNITIVE PLANE",
     cognitiveTitle: "Agent-discoverable capabilities",
     cognitiveBody:
-      "Content-bound instructions, tool dependencies, MCP services, sandboxed UI, and shareable OKF knowledge with no authority derived from text.",
+      "Content-bound workflows and instructions, tool dependencies, MCP services, sandboxed UI, and shareable OKF knowledge with no authority derived from text.",
     surfaceHint: "Select a surface to inspect its execution boundary",
     surfaces: {
       tool: {
@@ -294,11 +301,18 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         body: "stdio sessions are supervised. Streamable HTTP runs behind a private Runtime Service and passes a protocol probe before publication.",
         evidence: ["standard protocol", "health probe", "scoped binding"],
       },
+      flow: {
+        label: "Flow",
+        kind: "A3S FLOW · NATIVE TYPESCRIPT",
+        title: "One workflow engine across host targets",
+        body: "Flow always uses the a3s-flow engine with explicit Tool, MCP, and OKF dependencies. native-ts is an execution adapter; flow.json is a design/deployment document for the same identity.",
+        evidence: ["source digest", "durable replay", "typed host adapter"],
+      },
       skill: {
         label: "Skill",
         kind: "CONTENT-BOUND",
         title: "Instructions depend on real capabilities",
-        body: "A Skill is bound to package content and declares required Tools, MCP, and OKF. It stays out of the capability snapshot until dependencies are ready.",
+        body: "A Skill is bound to package content and declares required Flow, Tool, MCP, and OKF surfaces. It stays out of the capability snapshot until dependencies are ready.",
         evidence: [
           "content digest",
           "dependency closure",
@@ -327,7 +341,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     lifecycleEyebrow: "TRUSTED LIFECYCLE",
     lifecycleTitle: "Prepare forward. Publish once. Remove in reverse.",
     lifecycleBody:
-      "One durable package journal binds the reviewed plan, exact generation, five-surface dependency graph, and idempotent checkpoints before multi-host mutation.",
+      "One durable package journal binds the reviewed plan, exact generation, six-surface dependency graph, and idempotent checkpoints before multi-host mutation.",
     lifecycle: [
       {
         number: "01",
@@ -352,7 +366,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       {
         number: "05",
         title: "Prepare",
-        body: "Prepare Runtime, Knowledge, Skill, and UI hosts in dependency order.",
+        body: "Prepare Runtime, Knowledge, A3S Flow, Skill, and UI hosts in dependency order.",
       },
       {
         number: "06",
@@ -370,14 +384,14 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     engine: "A3S Use package engine",
     engineBody: "verify · journal · prepare · publish · drain",
     planes: "Native + cognitive surfaces",
-    planesBody: "Tool · MCP · Skill · UI · OKF",
+    planesBody: "Tool · MCP · OKF · Flow · Skill · UI",
     hosts: "A3S hosts",
     hostsBody: "A3S Code · Web · Knowledge · agents",
     architectureLink: "Read the architecture guide",
     trustEyebrow: "SECURE BY EVIDENCE",
     trustTitle: "Package content cannot authorize itself",
     trustBody:
-      "Skill text, UI messages, OKF knowledge, tool output, and remote content are data. Authority comes only from host policy, explicit grants, and generation-bound receipts.",
+      "Flow and Skill source, UI messages, OKF knowledge, tool output, and remote content are data. Authority comes only from host policy, explicit grants, and generation-bound receipts.",
     trustCards: [
       {
         title: "Verifiable supply chain",
@@ -401,10 +415,10 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       "macOS and Linux cover complete release archives and package lifecycle. Windows x86_64 is currently Preview while runtime and plugin lifecycle gates are completed.",
     supported: "SUPPORTED",
     preview: "PREVIEW",
-    ctaEyebrow: "START WITH THE FOUNDATION",
-    ctaTitle: "Inspect local capabilities. Build a cognitive package.",
+    ctaEyebrow: "START WITH THE PACKAGE GRAPH",
+    ctaTitle: "Install a cognitive package and its complete dependency graph.",
     ctaBody:
-      "Install the v0.2 release and run doctor plus capability snapshot. Use the schema-v3 contracts and roadmap for cognitive plugin development.",
+      "Build the current v0.3 line, then use a3s-use install to resolve, lock, and install the complete SemVer closure. Runtime Service, HTTP MCP, A3S Flow, and OKF still require real adapters from the embedding host.",
     ctaPrimary: "Open the quick start",
     ctaSecondary: "Read the roadmap",
     footer: "MIT licensed · Built in Rust · Linux / macOS / Windows",

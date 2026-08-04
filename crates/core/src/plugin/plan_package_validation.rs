@@ -287,7 +287,7 @@ fn validate_surface_permissions(
                 None => false,
             },
             PluginSurfaceKind::Ui => true,
-            PluginSurfaceKind::Okf | PluginSurfaceKind::Skill => false,
+            PluginSurfaceKind::Flow | PluginSurfaceKind::Okf | PluginSurfaceKind::Skill => false,
         };
         if !matches_surface {
             return Err(plan_error(

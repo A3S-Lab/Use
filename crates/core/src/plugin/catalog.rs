@@ -208,13 +208,15 @@ impl PluginCatalogRecord {
             }
         }
         if !schema_v3
-            && self
-                .surfaces
-                .iter()
-                .any(|surface| surface.kind == PluginSurfaceKind::Okf)
+            && self.surfaces.iter().any(|surface| {
+                matches!(
+                    surface.kind,
+                    PluginSurfaceKind::Flow | PluginSurfaceKind::Okf
+                )
+            })
         {
             return Err(catalog_error(
-                "OKF catalog surfaces require plugin catalog schema version 3.",
+                "Flow and OKF catalog surfaces require plugin catalog schema version 3.",
             ));
         }
         self.validate_surface_dependencies(&surface_refs, complete_package_schema)?;
@@ -298,9 +300,9 @@ impl PluginCatalogRecord {
                     }
                 }
                 PluginSurfaceKind::Ui => {}
-                PluginSurfaceKind::Okf | PluginSurfaceKind::Skill => {
+                PluginSurfaceKind::Flow | PluginSurfaceKind::Okf | PluginSurfaceKind::Skill => {
                     return Err(catalog_error(
-                        "OKF and Skill surfaces cannot carry runtime permission ceilings.",
+                        "Flow, OKF, and Skill surfaces cannot carry runtime permission ceilings.",
                     ));
                 }
             }
@@ -397,7 +399,7 @@ impl CatalogSurface {
             {
                 Ok(())
             }
-            PluginSurfaceKind::Skill | PluginSurfaceKind::Ui
+            PluginSurfaceKind::Flow | PluginSurfaceKind::Skill | PluginSurfaceKind::Ui
                 if self.workload.is_none()
                     && self.mcp_transport.is_none()
                     && self.mcp_tool_count.is_none()

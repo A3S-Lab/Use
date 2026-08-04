@@ -4,15 +4,16 @@
 - Planning baseline: 2026-07-30
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31 and M0K-B control-plane contracts frozen
-  2026-08-01; package-level five-surface lifecycle and cognitive-package
-  dependency/lock foundations accepted 2026-08-03
+  2026-08-01; package-level six-surface lifecycle and cognitive-package
+  dependency/lock foundations accepted 2026-08-03; unified A3S Flow surface
+  accepted 2026-08-04
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
 platform where a user or an authorized agent can discover, install, enable,
-use, disable, and uninstall an immutable package that contributes Skills,
-executable Tools, standard MCP servers, sandboxed UI, and Open Knowledge Format
-(OKF) knowledge packages.
+use, disable, and uninstall an immutable package that contributes executable
+Tools, standard MCP servers, OKF knowledge, A3S Flow workflows, Skills, and
+sandboxed UI.
 
 The milestones are dependency ordered. They are not calendar commitments.
 Effort ranges assume one primary engineer with review and cross-platform CI
@@ -27,7 +28,7 @@ search catalog
   -> inspect signed metadata, permissions, provenance, and size
   -> resolve and review an immutable dependency lock plus install plan
   -> install and enable the selected package and required dependency closure
-  -> use its Skill, CLI/HTTP Tool, MCP capabilities, UI, or cited OKF knowledge
+  -> use its CLI/HTTP Tool, MCP, cited OKF knowledge, Flow, Skill, or UI
   -> disable or uninstall it without restarting the host
 ```
 
@@ -47,8 +48,8 @@ These decisions are part of the target contract:
    presentation and dispatch alias, not an ownership identity.
 3. "Plugin" is the user-facing product term. Existing extension manifests and
    commands remain compatible until a versioned migration is complete.
-4. A plugin may contribute multiple named Skills, executable Tools, standard
-   MCP servers, sandboxed UIs, and conformant OKF knowledge bundles.
+4. A plugin may contribute multiple named Tools, MCP servers, conformant OKF
+   bundles, A3S Flow workflows, Skills, and sandboxed UIs.
 5. A Plugin Tool is a real workload on which a Skill or UI may depend. A CLI
    Tool maps to a one-shot Runtime Task; an HTTP Tool maps to a Runtime Service.
    It is distinct from an MCP `tools/list` item and retains its native argv or
@@ -58,7 +59,7 @@ These decisions are part of the target contract:
    `execute(plugin, action, payload)` RPC.
 7. Catalog availability and active capability projection are separate.
    Uninstalled packages may appear in search results but never in the active
-   Skill, Tool binding, MCP, UI, or OKF registry.
+   Tool binding, MCP, OKF, Flow, Skill, or UI registry.
 8. Registry metadata is fetched separately from package payloads. Browsing,
    searching, Code startup, and Skill matching never install a package.
 9. Every install, upgrade, or uninstall uses plan/apply. Apply repeats
@@ -82,6 +83,10 @@ These decisions are part of the target contract:
     exact versions and Registry/TUF provenance in a package lock, installs
     dependencies before dependents, and removes them in reverse without
     deleting shared retained dependencies.
+15. A3S Flow is the single workflow engine. A package Flow uses a typed runtime
+    adapter and explicit Tool/MCP/OKF dependencies. Code's `flow.json` is a
+    design/deployment document mapped to the same identity, not a second
+    package lifecycle or execution mechanism.
 
 ## Current Baseline
 
@@ -89,7 +94,7 @@ The following foundations are implemented:
 
 - typed Browser, OCR, Box, component, and extension contracts;
 - native CLI, standard MCP, Skill, and content-bound Activity Bar surfaces;
-- schema v3 named Tool Task/Service, MCP, OKF, Skill, and UI surface contracts
+- schema v3 named Tool Task/Service, MCP, OKF, Flow, Skill, and UI surface contracts
   while retaining schema v1/v2 parsing compatibility;
 - canonical MCP Service, Skill Agent-input, and Tool Task/Service release
   descriptors with stable JSON fixtures and package-level manifest binding
@@ -115,6 +120,15 @@ The following foundations are implemented:
 - complete dependency-forward Registry revalidation/download, exact retained
   dependency checks, reverse-dependent uninstall protection, and one atomic
   capability snapshot cutover for changed package graphs;
+- standalone `a3s-use install` / `uninstall` graph commands plus compatible
+  remote `component install` / `uninstall` dispatch for signed schema-v3
+  records, with optional reviewed package-lock digests;
+- durable installed-root locks and admitted pending graph operations carrying
+  exact manifests and generations, including published-install journal repair
+  and pending-only reverse-uninstall recovery;
+- a public lifecycle factory that lets Code/Web hosts inject Runtime, Gateway,
+  Knowledge, Skill, and UI ownership while the standalone composition fails
+  closed for unavailable Runtime Service, HTTP MCP, or OKF hosts;
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
 - generation/revision capability snapshots consumed by A3S Code;
 - live MCP and Skill projection into a dedicated A3S Use worker;
@@ -131,8 +145,16 @@ The following foundations are implemented:
   deterministic dependency-forward and reverse-removal checkpoints;
 - a bounded atomic cross-process lifecycle journal with idempotent restart,
   optional-surface failure evidence, and tamper rejection; and
-- typed Runtime Tool/MCP, immutable Skill/UI, and OKF Knowledge lifecycle
-  adapters, proven by one content-addressed package containing all five kinds.
+- typed Runtime Tool/MCP and Flow lifecycle ports, immutable Skill/UI evidence,
+  and OKF Knowledge lifecycle adapters, proven by one content-addressed package
+  containing all six kinds;
+- first-class A3S Flow manifest, source integrity, Tool/MCP/OKF dependency
+  edges, lifecycle ordering, reconciler ownership, and typed capability
+  projection;
+- additive host-capabilities v2 and manager-toolset v3 contracts that advertise
+  Flow without rewriting frozen older schemas; and
+- standalone-host rejection before mutation when a required Flow lacks an
+  injected compiler/runtime adapter.
 
 The OKF control plane is implemented without creating another package manager,
 Runtime route, or reconciler. It intentionally publishes no OKF capability
@@ -153,17 +175,20 @@ The main gaps are:
   Plugin Manager yet;
 - persisted Tool Task/Service bindings and Runtime observations feed the shared
   reconciler, and package-level package/capability plus
-  Runtime/MCP/Skill/UI/OKF adapters exist, but the Plugin Manager still lacks
+  Runtime/MCP/Flow/Skill/UI/OKF adapters exist, but the Plugin Manager still lacks
   complete host composition and scope-aware apply/observation wiring;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
   its bounded read-only management MCP is connected, while production host
   composition across package/capability and surface adapters remains to be
   connected;
-- the dependency resolver, lock, remote closure downloader, and graph lifecycle
-  coordinator are implemented in A3S Use, but the compatible `component
-  install` CLI and current Code/Web Marketplace E2E still enter the legacy
-  single-package installer;
+- the dependency resolver, lock, remote closure downloader, graph lifecycle
+  coordinator, and signed remote standalone CLI path are implemented in A3S
+  Use, but Code TUI/Web and management MCP have not yet injected their complete
+  host set through the public lifecycle factory;
+- A3S Use freezes and projects Flow identity, but A3S Code still needs the
+  production `a3s-flow` preflight/execution host and a typed `flow.json`
+  import/deployment adapter before local and OS workflow UX are one path;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - the versioned OKF manager/search/selection contract, injected Knowledge port,
@@ -337,6 +362,39 @@ Exit criteria:
 - the ownership contract forbids removing personal notes or another package's
   index; production cleanup and recovery proof remains part of M0K-C.
 
+### M0F — Unified A3S Flow contribution (control plane complete 2026-08-04; production host pending)
+
+Implementation status:
+
+- completed: schema-v3 named Flow with fixed `a3s-flow` engine, typed
+  `native-ts` runtime, bounded source/export, optionality, and Tool/MCP/OKF
+  dependencies;
+- completed: catalog dependency closure, exact manifest/catalog inventory
+  binding, package source validation/digest, lifecycle ordering, reverse
+  stop/removal, reconciler ownership, and typed capability projection that
+  withholds source-only readiness until host preflight evidence exists;
+- completed: additive host-capabilities v2/protocol level 2 and manager-toolset
+  v3, while v1/v2 canonical contracts remain frozen;
+- completed: one six-surface content-addressed fixture and regression coverage
+  for source corruption, missing dependencies, unavailable hosts, publication,
+  and reverse teardown; and
+- pending: A3S Code production compiler/runtime injection, durable run
+  observation, unified TUI/Web discovery, and typed `flow.json`
+  import/deployment.
+
+Exit criteria:
+
+- installing one package resolves Flow with the same SemVer/Registry lock as
+  every other contribution;
+- required Tool/MCP/OKF capabilities are ready before Flow, while dependent
+  Skill/UI appear only after Flow is ready;
+- no Flow is published when source integrity, preflight, or host evidence is
+  missing;
+- install, disable, and uninstall need no host restart and retain explicit run
+  history according to host policy; and
+- local Native TypeScript, Code `flow.json`, and remote OS deployment resolve
+  to one A3S Flow identity rather than independent workflow mechanisms.
+
 ### M1 – Signed searchable catalog (complete 2026-07-30)
 
 Estimated effort: 1–2 weeks
@@ -443,7 +501,7 @@ Implementation status (2026-08-03):
   evidence and project named Skills only after every required Tool, MCP, and
   OKF dependency is prepared or healthy; missing Runtime, MCP, UI, and
   Knowledge observations remain explicit `pending` evidence;
-- completed in A3S Use: one canonical package-owned Tool/MCP/OKF/Skill/UI graph
+- completed in A3S Use: one canonical package-owned Tool/MCP/OKF/Flow/Skill/UI graph
   now drives both reconciliation and lifecycle, preventing independently
   installed surface state or divergent dependency order;
 - completed in A3S Use: a versioned package-level intent, deterministic
@@ -458,7 +516,7 @@ Implementation status (2026-08-03):
   ownership;
 - completed in A3S Use: concrete Runtime Tool/MCP, immutable Skill/UI, and OKF
   Knowledge adapters validate exact package bytes and retain receipt-owned
-  cleanup boundaries; an all-five-surface package fixture freezes the contract;
+  cleanup boundaries; an all-six-surface package fixture freezes the contract;
 - completed in A3S Use: schema-v3 package dependency declarations, required
   README validation, bounded deterministic SemVer resolution, exact canonical
   lock/plan/host binding, and dependency-forward Registry closure download;
@@ -467,6 +525,16 @@ Implementation status (2026-08-03):
   published snapshot, publishes the changed closure once, removes in reverse,
   rejects installed dependents, and recovers partial receipt writes without
   exposing a partial graph;
+- completed in A3S Use: top-level `install`/`uninstall` and compatible remote
+  `component` commands dispatch signed schema-v3 records through the graph
+  manager; package-lock mismatches fail before archive download;
+- completed in A3S Use: root dependency locks, admitted pending plans,
+  per-package manifest/generation evidence, and symlink-safe stores survive
+  restart; a published install completes unfinished journals, and uninstall
+  can resume after both the root receipt and installed-root graph are gone;
+- completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
+  embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
+  Knowledge adapters; the standalone factory does not invent fallback hosts;
 - covered: typed complete-catalog mapping, lifecycle argument and digest
   validation, Use-owned JSON output, operation ID uniqueness, expiry,
   append-only replay, corruption rejection, cross-process locking, Web adapter
@@ -475,9 +543,9 @@ Implementation status (2026-08-03):
   contracts, offline child-policy propagation, a signed-registry CLI
   plan/apply/replay fixture, and a controlled Web Marketplace/invalid-plan
   smoke test;
-- pending: umbrella-manager injection of the implemented package graph,
-  package/capability,
-  typed Runtime, Gateway, stdio MCP, Skill/UI, and Knowledge adapters; grant
+- pending: umbrella-manager use of the public lifecycle factory to inject the
+  implemented package/capability, typed Runtime, Gateway, stdio MCP, Skill/UI,
+  and Knowledge adapters; grant
   sub-saga composition; prior Runtime generation retirement; and complete Unix
   Marketplace lifecycle E2E through the shared service. The shared manager
   must also implement the published managed-host port before a Cloud adapter
@@ -881,10 +949,10 @@ Deliverables:
 - inherit parent confirmation for `ask` decisions;
 - support unattended apply only when every policy ceiling passes;
 - refresh the active capability registry after successful mutation;
-- attach new Tool bindings, MCP, Skill, UI, and OKF surfaces to active sessions
+- attach new Tool bindings, MCP, OKF, Flow, Skill, and UI surfaces to active sessions
   without restart;
-- publish a Skill only after every required Tool, MCP, and OKF binding is
-  usable;
+- publish a Skill only after every required Flow or direct Tool/MCP/OKF
+  binding is usable;
 - hide routes before drain and remove package files only after lease release;
 - report partial readiness and typed provider failures without fallback.
 
@@ -896,6 +964,9 @@ Exit criteria:
 - an E2E user and agent can install a signed OKF-bearing package, retrieve a
   line-cited concept from its exact generation, upgrade atomically, and retain
   the prior searchable generation after an injected index failure;
+- an E2E user and agent can install a signed Flow-bearing package from a
+  replaceable Registry, run it through A3S Code, observe the same identity in
+  TUI/Web, then disable and uninstall it without restart;
 - the same E2E succeeds without a prompt only under an explicit matching ACL
   policy;
 - denial, cancellation, timeout, plan drift, permission drift, and drain

@@ -8,8 +8,9 @@ use a3s_use_core::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    manifest_error, optional_bool_attribute, optional_list_attribute, optional_string_attribute,
-    require_known_attributes, string_attribute, valid_segment, validate_relative_path,
+    bounded_text, manifest_error, optional_bool_attribute, optional_i32_attribute,
+    optional_list_attribute, optional_string_attribute, require_known_attributes, string_attribute,
+    valid_segment, validate_relative_path,
 };
 
 const MAX_SURFACES_PER_KIND: usize = 64;
@@ -121,6 +122,7 @@ pub struct PluginSkillSurface {
     pub requires_tools: Vec<String>,
     pub requires_mcp: Vec<String>,
     pub requires_okf: Vec<String>,
+    pub requires_flows: Vec<String>,
     pub optional: bool,
 }
 
@@ -132,10 +134,50 @@ pub struct PluginOkfSurface {
     pub optional: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PluginFlowEngine {
+    A3sFlow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PluginFlowRuntime {
+    NativeTs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginFlowSurface {
+    pub id: String,
+    pub engine: PluginFlowEngine,
+    pub runtime: PluginFlowRuntime,
+    pub source: PathBuf,
+    pub export_name: String,
+    pub requires_tools: Vec<String>,
+    pub requires_mcp: Vec<String>,
+    pub requires_okf: Vec<String>,
+    pub optional: bool,
+}
+
+impl PluginFlowSurface {
+    pub(crate) fn package_paths(&self) -> impl Iterator<Item = &Path> {
+        std::iter::once(self.source.as_path())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginUiSurface {
     pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default = "default_ui_icon")]
+    pub icon: String,
+    #[serde(default = "default_ui_order")]
+    pub order: i32,
     pub entry: PathBuf,
     pub styles: Vec<PathBuf>,
     pub scripts: Vec<PathBuf>,
@@ -143,6 +185,7 @@ pub struct PluginUiSurface {
     pub skill: Option<String>,
     pub bind_tools: Vec<String>,
     pub bind_mcp: Vec<String>,
+    pub bind_flows: Vec<String>,
     pub optional: bool,
 }
 
@@ -331,6 +374,7 @@ pub(crate) fn parse_skill(block: &Block) -> UseResult<PluginSkillSurface> {
             "requires_tool",
             "requires_mcp",
             "requires_okf",
+            "requires_flow",
             "optional",
         ],
     )?;
@@ -348,6 +392,7 @@ pub(crate) fn parse_skill(block: &Block) -> UseResult<PluginSkillSurface> {
         requires_tools,
         requires_mcp,
         requires_okf: dependency_ids(block, "requires_okf", "OKF")?,
+        requires_flows: dependency_ids(block, "requires_flow", "Flow")?,
         optional: optional_bool_attribute(block, "optional")?.unwrap_or(false),
     })
 }
@@ -409,20 +454,96 @@ pub(crate) fn parse_okf(block: &Block) -> UseResult<PluginOkfSurface> {
     })
 }
 
+pub(crate) fn parse_flow(block: &Block) -> UseResult<PluginFlowSurface> {
+    let id = named_surface_id(block, "Flow")?;
+    require_known_attributes(
+        block,
+        &[
+            "engine",
+            "runtime",
+            "source",
+            "export",
+            "requires_tool",
+            "requires_mcp",
+            "requires_okf",
+            "optional",
+        ],
+    )?;
+    let engine = match string_attribute(block, "engine")?.as_str() {
+        "a3s-flow" => PluginFlowEngine::A3sFlow,
+        value => {
+            return Err(manifest_error(format!(
+                "Flow surface '{id}' engine '{value}' is unsupported."
+            )))
+        }
+    };
+    let runtime = match string_attribute(block, "runtime")?.as_str() {
+        "native-ts" => PluginFlowRuntime::NativeTs,
+        value => {
+            return Err(manifest_error(format!(
+                "Flow surface '{id}' runtime '{value}' is unsupported."
+            )))
+        }
+    };
+    let source = path_attribute(block, "source")?;
+    if source.extension().and_then(|value| value.to_str()) != Some("ts") {
+        return Err(manifest_error(format!(
+            "Flow surface '{id}' source must be a TypeScript .ts file."
+        )));
+    }
+    let export_name = string_attribute(block, "export")?;
+    if !valid_flow_export(&export_name) {
+        return Err(manifest_error(format!(
+            "Flow surface '{id}' export must be a portable TypeScript identifier."
+        )));
+    }
+    Ok(PluginFlowSurface {
+        id,
+        engine,
+        runtime,
+        source,
+        export_name,
+        requires_tools: dependency_ids(block, "requires_tool", "Tool")?,
+        requires_mcp: dependency_ids(block, "requires_mcp", "MCP")?,
+        requires_okf: dependency_ids(block, "requires_okf", "OKF")?,
+        optional: optional_bool_attribute(block, "optional")?.unwrap_or(false),
+    })
+}
+
 pub(crate) fn parse_ui(block: &Block) -> UseResult<PluginUiSurface> {
     let id = named_surface_id(block, "UI")?;
     require_known_attributes(
         block,
         &[
+            "title",
+            "description",
+            "icon",
+            "order",
             "entry",
             "styles",
             "scripts",
             "skill",
             "bind_tool",
             "bind_mcp",
+            "bind_flow",
             "optional",
         ],
     )?;
+    let title = optional_string_attribute(block, "title")?
+        .map(|value| bounded_text(value, "UI title", 64))
+        .transpose()?
+        .unwrap_or_else(|| id.clone());
+    let description = optional_string_attribute(block, "description")?
+        .map(|value| bounded_text(value, "UI description", 240))
+        .transpose()?
+        .unwrap_or_default();
+    let icon = optional_string_attribute(block, "icon")?.unwrap_or_else(default_ui_icon);
+    if !valid_segment(&icon) {
+        return Err(manifest_error(format!(
+            "UI icon '{icon}' must be a lowercase icon identifier."
+        )));
+    }
+    let order = optional_i32_attribute(block, "order")?.unwrap_or_else(default_ui_order);
     let entry = path_attribute(block, "entry")?;
     if entry.extension().and_then(|value| value.to_str()) != Some("html") {
         return Err(manifest_error(format!(
@@ -448,35 +569,77 @@ pub(crate) fn parse_ui(block: &Block) -> UseResult<PluginUiSurface> {
     }
     Ok(PluginUiSurface {
         id,
+        title,
+        description,
+        icon,
+        order,
         entry,
         styles,
         scripts,
         skill,
         bind_tools: dependency_ids(block, "bind_tool", "Tool")?,
         bind_mcp: dependency_ids(block, "bind_mcp", "MCP")?,
+        bind_flows: dependency_ids(block, "bind_flow", "Flow")?,
         optional: optional_bool_attribute(block, "optional")?.unwrap_or(false),
     })
+}
+
+fn default_ui_icon() -> String {
+    "package".to_string()
+}
+
+fn default_ui_order() -> i32 {
+    100
 }
 
 pub(crate) fn validate_dependencies(
     tools: &[ToolSurface],
     mcp: &[PluginMcpSurface],
     okf: &[PluginOkfSurface],
+    flows: &[PluginFlowSurface],
     skills: &[PluginSkillSurface],
     ui: &[PluginUiSurface],
 ) -> UseResult<()> {
     validate_surface_count("Tool", tools.len())?;
     validate_surface_count("MCP", mcp.len())?;
     validate_surface_count("OKF", okf.len())?;
+    validate_surface_count("Flow", flows.len())?;
     validate_surface_count("Skill", skills.len())?;
     validate_surface_count("UI", ui.len())?;
 
     let tool_ids = unique_ids("Tool", tools.iter().map(|surface| surface.id.as_str()))?;
     let mcp_ids = unique_ids("MCP", mcp.iter().map(|surface| surface.id.as_str()))?;
     let okf_ids = unique_ids("OKF", okf.iter().map(|surface| surface.id.as_str()))?;
+    let flow_ids = unique_ids("Flow", flows.iter().map(|surface| surface.id.as_str()))?;
     let skill_ids = unique_ids("Skill", skills.iter().map(|surface| surface.id.as_str()))?;
     unique_ids("UI", ui.iter().map(|surface| surface.id.as_str()))?;
 
+    for flow in flows {
+        for dependency in &flow.requires_tools {
+            if !tool_ids.contains(dependency.as_str()) {
+                return Err(manifest_error(format!(
+                    "Flow '{}' requires unknown Tool '{dependency}'.",
+                    flow.id
+                )));
+            }
+        }
+        for dependency in &flow.requires_mcp {
+            if !mcp_ids.contains(dependency.as_str()) {
+                return Err(manifest_error(format!(
+                    "Flow '{}' requires unknown MCP surface '{dependency}'.",
+                    flow.id
+                )));
+            }
+        }
+        for dependency in &flow.requires_okf {
+            if !okf_ids.contains(dependency.as_str()) {
+                return Err(manifest_error(format!(
+                    "Flow '{}' requires unknown OKF surface '{dependency}'.",
+                    flow.id
+                )));
+            }
+        }
+    }
     for skill in skills {
         for dependency in &skill.requires_tools {
             if !tool_ids.contains(dependency.as_str()) {
@@ -498,6 +661,14 @@ pub(crate) fn validate_dependencies(
             if !okf_ids.contains(dependency.as_str()) {
                 return Err(manifest_error(format!(
                     "Skill '{}' requires unknown OKF surface '{dependency}'.",
+                    skill.id
+                )));
+            }
+        }
+        for dependency in &skill.requires_flows {
+            if !flow_ids.contains(dependency.as_str()) {
+                return Err(manifest_error(format!(
+                    "Skill '{}' requires unknown Flow surface '{dependency}'.",
                     skill.id
                 )));
             }
@@ -524,6 +695,14 @@ pub(crate) fn validate_dependencies(
             if !mcp_ids.contains(dependency.as_str()) {
                 return Err(manifest_error(format!(
                     "UI '{}' binds unknown MCP surface '{dependency}'.",
+                    surface.id
+                )));
+            }
+        }
+        for dependency in &surface.bind_flows {
+            if !flow_ids.contains(dependency.as_str()) {
+                return Err(manifest_error(format!(
+                    "UI '{}' binds unknown Flow surface '{dependency}'.",
                     surface.id
                 )));
             }
@@ -697,6 +876,13 @@ fn valid_command(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn valid_flow_export(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    matches!(bytes.next(), Some(b'a'..=b'z' | b'A'..=b'Z' | b'_'))
+        && value.len() <= 128
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 fn valid_http_path(value: &str) -> bool {
