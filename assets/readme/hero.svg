@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
   <title id="title">A3S Use — AI Native Package Manager</title>
-  <desc id="desc">One install resolves an exact versioned cognitive package graph whose Tool, MCP, OKF, A3S Flow, Skill, and UI contributions publish through one recoverable cutover.</desc>
+  <desc id="desc">One install resolves an exact versioned cognitive package graph whose Tool, MCP, OKF, A3S Flow, Skill, and UI contributions publish through one recoverable cutover, with a3s-flow as the only workflow engine.</desc>
 
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
@@ -35,7 +35,7 @@
 
   <g transform="translate(54 150)">
     <text fill="#f4f7fb" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="58" font-weight="780" letter-spacing="-2">ONE INSTALL.</text>
-    <text x="360" fill="#f0b65b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="58" font-weight="780" letter-spacing="-2">EXACT VERSION GRAPH.</text>
+    <text x="376" fill="#f0b65b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="58" font-weight="780" letter-spacing="-2">EXACT VERSION GRAPH.</text>
     <text y="62" fill="#f4f7fb" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="58" font-weight="780" letter-spacing="-2">SIX SURFACES. ONE CUTOVER.</text>
     <rect y="85" width="1092" height="2" fill="url(#rule)"/>
     <text y="118" fill="#aeb7c4" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20">
@@ -74,7 +74,7 @@
     </g>
     <g id="flow" transform="translate(606 50)">
       <rect width="142" height="52" rx="10" fill="#b982ff" fill-opacity="0.12" stroke="#b982ff" stroke-width="1.5"/>
-      <text x="71" y="34" text-anchor="middle" fill="#d5b5ff" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" font-weight="700">FLOW</text>
+      <text x="71" y="34" text-anchor="middle" fill="#d5b5ff" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">A3S FLOW</text>
     </g>
     <g id="skill" transform="translate(790 50)">
       <rect width="142" height="52" rx="10" fill="#f0b65b" fill-opacity="0.12" stroke="#f0b65b" stroke-width="1.5"/>

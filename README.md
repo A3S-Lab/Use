@@ -248,20 +248,28 @@ extension "acme/research" {
 ### One A3S Flow model
 
 A cognitive-package Flow is an `a3s-flow` workflow, not a second workflow
-engine. `engine = "a3s-flow"` is fixed by the schema; `runtime = "native-ts"`
-selects the currently admitted A3S Flow runtime adapter. Use validates and
-content-binds the TypeScript source, freezes its Tool/MCP/OKF capability edges,
-and coordinates atomic prepare/publish/hide/remove. The embedding host owns
-`a3s-flow` compilation, preflight, durable execution, replay, and storage.
-Source integrity alone never marks a Flow ready: publication remains pending
-until the typed A3S Flow host supplies successful preflight evidence for the
-same admitted package generation.
+engine. The names below describe layers of one model rather than competing
+mechanisms:
 
-A3S Code's existing `flow.json` is a visual design/deployment document for the
-same product model. It must be handled by a typed import/deployment adapter; it
-does not define another lifecycle, package identity, or execution engine.
-Native TypeScript is an execution adapter inside A3S Flow, while local Code and
-remote OS are host/deployment targets.
+- **`a3s-use-extension.acl`** declares the packaged Flow identity, source,
+  capability edges, and lifecycle metadata.
+- **`flow.json`** stores A3S Code's visual design/deployment document for that
+  same Flow identity.
+- **`flows/*.ts`** supplies code-authored workflow and step handlers.
+- **`native-ts`** adapts that TypeScript source to the A3S Flow runtime
+  protocol.
+- **`a3s-flow`** remains the only workflow engine: preflight, durable
+  execution, event history, replay, scheduling, and observation.
+- **A3S Code, Web, and OS** host or deploy the admitted Flow; they do not create
+  another package journal or engine.
+
+`engine = "a3s-flow"` is therefore fixed by the schema. Use validates and
+content-binds the source, freezes its Tool/MCP/OKF capability edges, and
+coordinates atomic prepare/publish/hide/remove. Source integrity alone never
+marks a Flow ready: publication remains pending until the typed A3S Flow host
+supplies successful preflight evidence for the same admitted package
+generation. A typed import/deployment adapter must map `flow.json` to that
+identity rather than creating another lifecycle.
 
 ### Package dependencies and lock graph
 
@@ -352,7 +360,8 @@ These commands remain the compatible package-engine entry points. Production
 schema-v3 local-package admission and multi-host parent-saga composition are
 still being wired. Signed remote schema-v3 packages use the graph manager;
 required Runtime Service, HTTP MCP, or OKF surfaces fail before publication
-when their owning host adapter is unavailable.
+when their owning host adapter is unavailable. Required Flow surfaces likewise
+fail before mutation unless the embedding host injects an `a3s-flow` adapter.
 
 The package ID is the stable lifecycle identity. A route is a presentation and
 dispatch alias. A3S Use preserves native `argv`, stdin, stdout, stderr, process
@@ -395,39 +404,38 @@ authorization, Runtime binding, and surface readiness as separate evidence.
 
 ### TUF registry install
 
-Registry sources are named host configuration, not compiled endpoints. The
-official `a3s` source is only the default identity: an operator may bind it to a
-mirror or private service, disable it without deleting trust state, or remove
-the override and return to the unconfigured default hint. Release-bundled
-packages remain an independent source and do not require any remote registry.
+Registry endpoints and trust roots are host-injected, not compiled into the
+package engine. `CognitivePackageManager` can therefore resolve the same
+package format from a mirror, a private service, or another explicitly trusted
+TUF Registry without changing the resolver or lifecycle journal.
 
-Add a source or replace a stable source name, then review the immutable
-component plan and apply its exact digest:
+The current umbrella CLI supports adding, removing, and refreshing additional
+trusted sources. Stable-name replacement plus enable/disable controls,
+including a production override for the unconfigured official `a3s` hint, are
+still an integration item and are not presented here as shipped commands.
+Release-bundled packages remain an independent source and do not require a
+remote Registry.
+
+Add and verify a source, then review the immutable component plan and apply its
+exact digest:
 
 ```bash
 a3s registry add https://packages.example.org/a3s/ \
-  --name packages \
   --trust-root ./root.json \
   --yes
 a3s registry refresh packages
-
-a3s registry replace a3s https://mirror.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
-  --yes
-a3s registry disable a3s
-a3s registry enable a3s
 
 a3s --output json install use/acme/calendar --dry-run
 a3s --output json install use/acme/calendar \
   --plan-digest <reviewed-plan-sha256>
 ```
 
-Only enabled registries participate in catalog discovery and package
-selection. If two enabled registries contain the same package, resolution fails
-as ambiguous instead of choosing one silently. An installed receipt continues
-to bind its source name, URL, TUF root, channel, and target digest; replacing or
-disabling that source therefore blocks upgrades until the original identity is
-restored or the package is explicitly migrated or reinstalled.
+Only configured registries participate in catalog discovery and package
+selection. If two configured registries contain the same package, resolution
+fails as ambiguous instead of choosing one silently. An installed receipt
+continues to bind its source name, URL, TUF root, channel, and target digest;
+changing or removing that source therefore blocks upgrades until the original
+identity is restored or the package is explicitly migrated or reinstalled.
 
 Catalog v1 adds bounded metadata-only search. Catalog v2 binds the manifest,
 expanded package, permission ceiling, and surface dependencies. Catalog v3
@@ -446,7 +454,9 @@ package and surface graphs must exactly match the admitted ACL manifest.
 | Local directories and bounded archives | Available |
 | Digest-reviewed release bundles | Available |
 | TUF-verified registries and target selection | Available |
-| Named registry add, replace, enable, disable, remove, and refresh | Available in the umbrella host |
+| Host-injected Registry URL and trust root | Available in the package engine; no Registry endpoint is compiled in |
+| Named registry add, remove, and refresh | Available in the umbrella host |
+| Stable-name Registry replace, enable, and disable | Planned umbrella CLI integration |
 | ACL identity, provenance, and SemVer host compatibility | Available |
 | Digest-pinned MCP Runtime Service and immutable Skill Agent-input releases | Available with canonical cross-SDK fixtures and Linux OCI conformance |
 | Native CLI, standard MCP, and content-bound Skill surfaces | Available |
@@ -495,7 +505,8 @@ provider, or a different Registry.
 | OCR | Reserved built-in route | Local PP-OCRv6 CLI, standard MCP, Skill | Use + [A3S OCR](https://github.com/A3S-Lab/OCR) |
 | Box | Component-backed route | Native CLI | Umbrella A3S CLI |
 | Office | External `a3s/office` package | Package-declared CLI, MCP, Skill | [A3S Office](https://github.com/A3S-Lab/Office) |
-| Science | External reference packages | Tool, MCP, Flow, Skill, and UI combinations | Use + [A3S Science](https://github.com/A3S-Lab/Science) |
+| Science | External reference packages | Tool, MCP, Skill, and UI combinations | Use + [A3S Science](https://github.com/A3S-Lab/Science) |
+| Cognitive fixture | Content-addressed schema-v3 package | Tool, MCP, OKF, Flow, Skill, and UI in one generation | Use contract and lifecycle tests |
 | Any external domain | Installed package | Declared package surfaces | Package repository + Use lifecycle |
 
 Inspect runtime readiness and immutable projection evidence with:
