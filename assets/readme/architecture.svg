@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
   <title id="title">A3S Use package and capability lifecycle architecture</title>
-  <desc id="desc">Replaceable local, release, and TUF registry sources enter one host plugin manager. A3S Use resolves and verifies an exact package graph, prepares Tool and MCP through Runtime, Flow through a3s-flow, OKF through Knowledge, and Skill and UI as static surfaces, then atomically publishes one exact capability generation to Code, Web, agents, and MCP consumers.</desc>
+  <desc id="desc">Replaceable local, release, and named TUF registry sources enter one host plugin manager. Registries can be replaced, enabled, or disabled without rewriting package receipts. A3S Use resolves and verifies an exact package graph, prepares Tool and MCP through Runtime, Flow through a3s-flow, OKF through Knowledge, and Skill and UI as static surfaces, then atomically publishes one exact capability generation to Code, Web, agents, and MCP consumers.</desc>
 
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
@@ -35,13 +35,13 @@
     <g transform="translate(488)">
       <rect width="260" height="70" rx="14" fill="#111721" stroke="#55dda2"/>
       <text x="130" y="31" text-anchor="middle" fill="#dff9ed" font-size="20" font-weight="700">Named TUF registries</text>
-      <text x="130" y="54" text-anchor="middle" fill="#8ce9bd" font-size="18">replaceable host input</text>
+      <text x="130" y="54" text-anchor="middle" fill="#8ce9bd" font-size="18">replace · enable · disable</text>
     </g>
     <path d="M748 35 H790" fill="none" stroke="#7d8796" stroke-width="1.8" marker-end="url(#arrow)"/>
     <g transform="translate(806)">
       <rect width="340" height="70" rx="14" fill="#18150f" stroke="#f0b65b" stroke-width="1.5"/>
       <text x="170" y="31" text-anchor="middle" fill="#f5d49d" font-size="20" font-weight="700">Host Plugin Manager</text>
-      <text x="170" y="54" text-anchor="middle" fill="#c5ad84" font-size="18">policy · source set · confirmation</text>
+      <text x="170" y="54" text-anchor="middle" fill="#c5ad84" font-size="18">policy · source state · confirmation</text>
     </g>
   </g>
 
@@ -63,7 +63,7 @@
       <g transform="translate(264)">
         <rect width="240" height="88" rx="13" fill="#171221" stroke="#b982ff" stroke-width="1.5"/>
         <text x="120" y="32" text-anchor="middle" fill="#d5b5ff" font-size="20" font-weight="700">A3S Flow</text>
-        <text x="120" y="59" text-anchor="middle" fill="#cab9dc" font-size="18">preflight · binding</text>
+        <text x="120" y="59" text-anchor="middle" fill="#cab9dc" font-size="18">preflight · exact binding</text>
       </g>
       <g transform="translate(528)">
         <rect width="240" height="88" rx="13" fill="#18150f" stroke="#f0b65b"/>

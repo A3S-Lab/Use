@@ -99,7 +99,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTarget: "目标",
     consoleTrust: "信任",
     consoleGeneration: "代际",
-    consoleReady: "v0.3 图安装 CLI 已就绪 · Flow 与 OKF 生产宿主集成中",
+    consoleReady: "Code Flow 热插拔已就绪 · OKF 与 Service 生产宿主集成中",
     modelEyebrow: "ONE PACKAGE · SIX CONTRIBUTIONS",
     modelTitle: "一个不可变身份，一套安装与移除边界",
     modelBody:
@@ -132,7 +132,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         kind: "A3S FLOW · NATIVE TYPESCRIPT",
         title: "一个工作流引擎，多种宿主目标",
         body: "Flow 固定使用 a3s-flow 引擎，并显式依赖 Tool、MCP 与 OKF。native-ts 是执行适配器；flow.json 是同一身份的设计/部署文档。",
-        evidence: ["source digest", "durable replay", "typed host adapter"],
+        evidence: ["source digest", "compiled artifact", "typed live catalog"],
       },
       skill: {
         label: "Skill",
@@ -244,7 +244,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     ctaEyebrow: "START WITH THE PACKAGE GRAPH",
     ctaTitle: "一次安装认知包及其完整依赖",
     ctaBody:
-      "从当前 v0.3 主线构建后，用 a3s-use install 解析、锁定并安装完整 SemVer 依赖闭包。Runtime Service、HTTP MCP、A3S Flow 与 OKF 仍需 embedding host 注入真实适配器。",
+      "用 a3s plugin 安装后，Code TUI/Web 会热插拔已验证的 Tool、MCP、Flow、Skill 与 UI。生产 Runtime Service、HTTP MCP、OKF 与 flow.json run 映射仍是发布门禁。",
     ctaPrimary: "打开快速开始",
     ctaSecondary: "查看路线图",
     footer: "MIT 开源 · Rust 编写 · Linux / macOS / Windows",
@@ -272,7 +272,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTrust: "trust",
     consoleGeneration: "generation",
     consoleReady:
-      "v0.3 graph CLI ready · production Flow and OKF hosts in progress",
+      "Code Flow hot-plug ready · production OKF and Service hosts in progress",
     modelEyebrow: "ONE PACKAGE · SIX CONTRIBUTIONS",
     modelTitle: "One immutable identity. One install and removal boundary.",
     modelBody:
@@ -306,7 +306,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         kind: "A3S FLOW · NATIVE TYPESCRIPT",
         title: "One workflow engine across host targets",
         body: "Flow always uses the a3s-flow engine with explicit Tool, MCP, and OKF dependencies. native-ts is an execution adapter; flow.json is a design/deployment document for the same identity.",
-        evidence: ["source digest", "durable replay", "typed host adapter"],
+        evidence: ["source digest", "compiled artifact", "typed live catalog"],
       },
       skill: {
         label: "Skill",
@@ -418,7 +418,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     ctaEyebrow: "START WITH THE PACKAGE GRAPH",
     ctaTitle: "Install a cognitive package and its complete dependency graph.",
     ctaBody:
-      "Build the current v0.3 line, then use a3s-use install to resolve, lock, and install the complete SemVer closure. Runtime Service, HTTP MCP, A3S Flow, and OKF still require real adapters from the embedding host.",
+      "Install with a3s plugin and Code TUI/Web hot-plugs verified Tool, MCP, Flow, Skill, and UI surfaces. Production Runtime Service, HTTP MCP, OKF, and flow.json run mapping remain release gates.",
     ctaPrimary: "Open the quick start",
     ctaSecondary: "Read the roadmap",
     footer: "MIT licensed · Built in Rust · Linux / macOS / Windows",

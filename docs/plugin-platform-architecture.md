@@ -550,16 +550,21 @@ already disappeared. Both stores reject symlinked ownership paths and sync
 their parent directory after atomic creation or removal.
 
 Embedding hosts implement `CognitivePackageLifecycleFactory` to compose their
-typed Runtime, Gateway, Knowledge, Skill, and UI adapters. Registry resolution
-and graph orchestration remain single-source Use logic; a host may not fork the
-resolver or create per-surface installation units. The standalone factory
-supports native executable Tasks, stdio MCP, and immutable Skill/UI projection,
-and fails before publication when a required Runtime Service, HTTP MCP, or OKF
-owner is absent.
+typed Runtime, Gateway, A3S Flow, Knowledge, Skill, and UI adapters. Registry
+resolution and graph orchestration remain single-source Use logic; a host may
+not fork the resolver or create per-surface installation units. The standalone
+factory supports native executable Tasks, stdio MCP, and immutable Skill/UI
+projection, and fails before publication when a required Runtime Service, HTTP
+MCP, Flow, or OKF owner is absent.
 
-Umbrella-manager host composition remains pending. The production package host
-also rejects upgrade before mutation until blue/green dual-generation
-retirement is implemented; it never overwrites the only retained generation.
+A3S Code now composes executable Tool Tasks, stdio MCP, the real `a3s-flow`
+preflight host, and immutable Skill/UI projection through this factory. Its TUI
+and Web adapters consume one exact-generation watcher, including a typed live
+Flow catalog and install/upgrade/uninstall hot-plug coverage. Production
+Knowledge, Runtime Service, Gateway/HTTP MCP, grant, management-MCP, and
+managed-host composition remain pending. The production package host also
+rejects upgrade before mutation until blue/green dual-generation retirement is
+implemented; it never overwrites the only retained generation.
 
 ## Surface Reconciliation
 

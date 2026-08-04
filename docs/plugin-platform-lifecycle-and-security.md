@@ -7,7 +7,7 @@
   M0K-C-A adapter/store foundation frozen 2026-08-02, and package-level
   six-surface saga, P0 package/capability hosts, and cognitive-package
   dependency/lock foundation frozen 2026-08-03; unified A3S Flow semantics
-  frozen 2026-08-04
+  plus A3S Code TUI/Web host/catalog integration frozen 2026-08-04
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -23,17 +23,20 @@ persistent generation store are implemented. The production A3S Knowledge
 index backend remains target behavior. A package-level checkpoint journal and
 typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
 foundation. P0 package/capability hosts add generation-bound commit,
-publish/hide, lease drain, and exact removal; umbrella-manager composition
-remains pending. Without promoted observation, an OKF surface stays
-unpublished.
+publish/hide, lease drain, and exact removal. A3S Code composes the supported
+Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production Knowledge,
+Runtime Service, Gateway/HTTP MCP, grant, and managed-host composition remain
+pending. Without promoted observation, an OKF surface stays unpublished.
 
 The dependency foundation adds canonical schema-v3 SemVer edges, a bounded
 deterministic transitive resolver, exact Registry/TUF-bound package locks,
 dependency-forward download and preparation, exact retained-node verification,
 single-snapshot graph publication, reverse uninstall, and crash-safe partial
 receipt recovery. Signed remote schema-v3 `install`/`uninstall` and compatible
-remote `component` commands call this graph coordinator. Code/Web still need to
-inject their complete host set through the public lifecycle factory.
+remote `component` commands call this graph coordinator. Code TUI/Web inject
+their supported host set through the public lifecycle factory and consume one
+exact-generation watcher; management MCP and managed-host mutations must still
+reuse that composition.
 
 Flow has one engine, `a3s-flow`. Use verifies its bounded source and explicit
 Tool/MCP/OKF dependency edges; a typed host adapter owns Native TypeScript

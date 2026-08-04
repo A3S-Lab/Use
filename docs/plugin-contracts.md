@@ -18,8 +18,10 @@ implemented in `a3s-use`. It does not claim that production Plugin Manager
 wiring, Knowledge, Gateway, or Runtime generation retirement are complete. The
 package/capability and dependency-graph hosts are implemented foundations.
 Signed remote schema-v3 records enter that graph from `a3s-use install` and
-the compatible `component install` command; Code/Web host composition remains
-in progress.
+the compatible `component install` command. A3S Code TUI/Web now composes the
+supported Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production
+Knowledge, Service/HTTP, durable Flow execution, and managed-host composition
+remain product integration gates.
 
 ## Contract Set
 
