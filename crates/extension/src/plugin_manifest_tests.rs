@@ -88,8 +88,35 @@ fn parses_schema_v3_named_multi_surfaces() {
     assert_eq!(manifest.skills[0].requires_tools, ["convert", "index"]);
     assert_eq!(manifest.skills[0].requires_mcp, ["library"]);
     assert_eq!(manifest.ui[0].skill.as_deref(), Some("review"));
+    assert_eq!(manifest.ui[0].title, "review");
+    assert_eq!(manifest.ui[0].description, "");
+    assert_eq!(manifest.ui[0].icon, "package");
+    assert_eq!(manifest.ui[0].order, 100);
     assert_eq!(manifest.ui[0].bind_tools, ["index"]);
     assert_eq!(manifest.ui[0].bind_mcp, ["library"]);
+}
+
+#[test]
+fn schema_v3_ui_parses_bounded_workbench_metadata() {
+    let manifest = NAMED_SURFACE_MANIFEST.replace(
+        "ui \"review\" {",
+        "ui \"review\" {\n    title       = \"Research Review\"\n    description = \"Inspect evidence from the installed cognitive package.\"\n    icon        = \"flask-conical\"\n    order       = 80",
+    );
+    let manifest = ExtensionManifest::parse_acl(&manifest).unwrap();
+    let ui = &manifest.ui[0];
+    assert_eq!(ui.title, "Research Review");
+    assert_eq!(
+        ui.description,
+        "Inspect evidence from the installed cognitive package."
+    );
+    assert_eq!(ui.icon, "flask-conical");
+    assert_eq!(ui.order, 80);
+
+    let invalid = NAMED_SURFACE_MANIFEST.replace(
+        "ui \"review\" {",
+        "ui \"review\" {\n    icon = \"Flask Icon\"",
+    );
+    assert!(ExtensionManifest::parse_acl(&invalid).is_err());
 }
 
 #[test]

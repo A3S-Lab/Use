@@ -8,8 +8,9 @@ use a3s_use_core::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    manifest_error, optional_bool_attribute, optional_list_attribute, optional_string_attribute,
-    require_known_attributes, string_attribute, valid_segment, validate_relative_path,
+    bounded_text, manifest_error, optional_bool_attribute, optional_i32_attribute,
+    optional_list_attribute, optional_string_attribute, require_known_attributes, string_attribute,
+    valid_segment, validate_relative_path,
 };
 
 const MAX_SURFACES_PER_KIND: usize = 64;
@@ -136,6 +137,14 @@ pub struct PluginOkfSurface {
 #[serde(rename_all = "camelCase")]
 pub struct PluginUiSurface {
     pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default = "default_ui_icon")]
+    pub icon: String,
+    #[serde(default = "default_ui_order")]
+    pub order: i32,
     pub entry: PathBuf,
     pub styles: Vec<PathBuf>,
     pub scripts: Vec<PathBuf>,
@@ -414,6 +423,10 @@ pub(crate) fn parse_ui(block: &Block) -> UseResult<PluginUiSurface> {
     require_known_attributes(
         block,
         &[
+            "title",
+            "description",
+            "icon",
+            "order",
             "entry",
             "styles",
             "scripts",
@@ -423,6 +436,21 @@ pub(crate) fn parse_ui(block: &Block) -> UseResult<PluginUiSurface> {
             "optional",
         ],
     )?;
+    let title = optional_string_attribute(block, "title")?
+        .map(|value| bounded_text(value, "UI title", 64))
+        .transpose()?
+        .unwrap_or_else(|| id.clone());
+    let description = optional_string_attribute(block, "description")?
+        .map(|value| bounded_text(value, "UI description", 240))
+        .transpose()?
+        .unwrap_or_default();
+    let icon = optional_string_attribute(block, "icon")?.unwrap_or_else(default_ui_icon);
+    if !valid_segment(&icon) {
+        return Err(manifest_error(format!(
+            "UI icon '{icon}' must be a lowercase icon identifier."
+        )));
+    }
+    let order = optional_i32_attribute(block, "order")?.unwrap_or_else(default_ui_order);
     let entry = path_attribute(block, "entry")?;
     if entry.extension().and_then(|value| value.to_str()) != Some("html") {
         return Err(manifest_error(format!(
@@ -448,6 +476,10 @@ pub(crate) fn parse_ui(block: &Block) -> UseResult<PluginUiSurface> {
     }
     Ok(PluginUiSurface {
         id,
+        title,
+        description,
+        icon,
+        order,
         entry,
         styles,
         scripts,
@@ -456,6 +488,14 @@ pub(crate) fn parse_ui(block: &Block) -> UseResult<PluginUiSurface> {
         bind_mcp: dependency_ids(block, "bind_mcp", "MCP")?,
         optional: optional_bool_attribute(block, "optional")?.unwrap_or(false),
     })
+}
+
+fn default_ui_icon() -> String {
+    "package".to_string()
+}
+
+fn default_ui_order() -> i32 {
+    100
 }
 
 pub(crate) fn validate_dependencies(

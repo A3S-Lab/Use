@@ -17,7 +17,7 @@ use tokio::io::AsyncReadExt;
 #[cfg(feature = "extensions")]
 use crate::surface_reconciler::{
     reconcile_with_runtime, PluginDesiredState, PluginObservedState, SurfaceObservations,
-    SurfaceReconcileSnapshot,
+    SurfaceObservedState, SurfaceReconcileSnapshot,
 };
 
 const SCHEMA_VERSION: u32 = 1;
@@ -83,7 +83,8 @@ struct ActivityBarContribution {
     styles: Vec<ManagedAsset>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     scripts: Vec<ManagedAsset>,
-    skill: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skill: Option<String>,
     order: i32,
 }
 
@@ -548,6 +549,7 @@ async fn project_extension_for_host(
     let receipt = &extension.receipt;
     let compatible = extension.supports_use_version(host_version);
     let reconciliation = if extension.manifest.schema_version == 3 {
+        let observations = static_ui_observations(extension, receipt.enabled && compatible).await;
         Some(reconcile_with_runtime(
             &extension.manifest,
             if receipt.enabled {
@@ -556,7 +558,7 @@ async fn project_extension_for_host(
                 PluginDesiredState::InstalledDisabled
             },
             compatible,
-            &SurfaceObservations::new(),
+            &observations,
             None,
         )?)
     } else {
@@ -634,9 +636,38 @@ async fn project_extension_for_host(
                 .await?,
             styles,
             scripts,
-            skill: contribution.skill.clone(),
+            skill: Some(contribution.skill.clone()),
             order: contribution.order,
         });
+    }
+    if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
+        for surface in &extension.manifest.ui {
+            if !snapshot.publishes(PluginSurfaceKind::Ui, &surface.id) {
+                continue;
+            }
+            let mut styles = Vec::with_capacity(surface.styles.len());
+            for path in &surface.styles {
+                styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
+            }
+            let mut scripts = Vec::with_capacity(surface.scripts.len());
+            for path in &surface.scripts {
+                scripts.push(
+                    activity_asset(receipt.package_root.join(path), "text/javascript").await?,
+                );
+            }
+            activity_bar.push(ActivityBarContribution {
+                id: surface.id.clone(),
+                title: surface.title.clone(),
+                description: surface.description.clone(),
+                icon: surface.icon.clone(),
+                entry: activity_asset(receipt.package_root.join(&surface.entry), "text/html")
+                    .await?,
+                styles,
+                scripts,
+                skill: surface.skill.clone(),
+                order: surface.order,
+            });
+        }
     }
     let planner_evidence = plugin_planner_evidence(extension, reconciliation.as_ref())?;
     Ok(CapabilityBinding {
@@ -664,6 +695,37 @@ async fn project_extension_for_host(
         skills,
         activity_bar,
     })
+}
+
+#[cfg(feature = "extensions")]
+async fn static_ui_observations(
+    extension: &a3s_use_extension::InstalledExtension,
+    inspect_enabled_surfaces: bool,
+) -> SurfaceObservations {
+    if !inspect_enabled_surfaces {
+        return SurfaceObservations::new();
+    }
+
+    let mut observations = SurfaceObservations::new();
+    for surface in &extension.manifest.ui {
+        let observed = match a3s_use_extension::inspect_ui_surface_files(
+            surface,
+            &extension.receipt.package_root,
+        )
+        .await
+        {
+            Ok(_) => SurfaceObservedState::Prepared,
+            Err(_) => SurfaceObservedState::Failed,
+        };
+        observations.insert(
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Ui,
+                id: surface.id.clone(),
+            },
+            observed,
+        );
+    }
+    observations
 }
 
 #[cfg(feature = "extensions")]
@@ -823,6 +885,53 @@ extension "acme/guide" {
 "#;
 
     #[cfg(feature = "extensions")]
+    const SKILL_UI_PLUGIN: &str = r#"
+extension "acme/workbench" {
+  schema_version = 3
+  version        = "1.0.0"
+  route          = "workbench"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read"]
+
+  repository {
+    url      = "https://github.com/acme/workbench"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  skill "guide" {
+    path          = "skills/guide/SKILL.md"
+    requires_tool = []
+    requires_mcp  = []
+    requires_okf  = []
+    optional      = false
+  }
+
+  ui "review" {
+    title       = "Evidence Review"
+    description = "Review the cognitive package evidence."
+    icon        = "flask-conical"
+    order       = 80
+    entry        = "ui/review.html"
+    styles       = ["ui/review.css"]
+    scripts      = ["ui/review.js"]
+    skill        = "guide"
+    bind_tool    = []
+    bind_mcp     = []
+    optional     = false
+  }
+
+  ui "standalone" {
+    entry     = "ui/standalone.html"
+    styles    = []
+    scripts   = []
+    bind_tool = []
+    bind_mcp  = []
+    optional  = false
+  }
+}
+"#;
+
+    #[cfg(feature = "extensions")]
     const LEGACY_CLI_PLUGIN: &str = r#"
 extension "acme/slack" {
   schema_version = 2
@@ -968,7 +1077,7 @@ extension "acme/slack" {
             entry: first,
             styles: Vec::new(),
             scripts: Vec::new(),
-            skill: "science".to_string(),
+            skill: Some("science".to_string()),
             order: 120,
         }];
         let first_revision = revision(&[capability.clone()]).unwrap();
@@ -1023,6 +1132,165 @@ extension "acme/slack" {
 
     #[cfg(feature = "extensions")]
     #[tokio::test]
+    async fn schema_three_projects_ready_ui_assets_with_optional_skill_guidance() {
+        let temp = tempfile::tempdir().unwrap();
+        let skill = temp.path().join("skills/guide/SKILL.md");
+        let review = temp.path().join("ui/review.html");
+        let style = temp.path().join("ui/review.css");
+        let script = temp.path().join("ui/review.js");
+        let standalone = temp.path().join("ui/standalone.html");
+        tokio::fs::create_dir_all(skill.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(review.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&skill, b"# Guide\n").await.unwrap();
+        tokio::fs::write(&review, b"<main>review</main>")
+            .await
+            .unwrap();
+        tokio::fs::write(&style, b"main { color: purple; }")
+            .await
+            .unwrap();
+        tokio::fs::write(&script, b"window.reviewReady = true;")
+            .await
+            .unwrap();
+        tokio::fs::write(&standalone, b"<main>standalone</main>")
+            .await
+            .unwrap();
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_UI_PLUGIN).unwrap();
+        let mut extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        extension.receipt.schema_version = 3;
+        extension.receipt.package_sha256 = Some("a".repeat(64));
+        extension.receipt.lifecycle_generation = Some(9);
+        let surfaces = extension
+            .surfaces()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        let binding = project_extension_for_host(&extension, surfaces, "0.3.0")
+            .await
+            .unwrap();
+        assert_eq!(binding.activity_bar.len(), 2);
+        let review = binding
+            .activity_bar
+            .iter()
+            .find(|activity| activity.id == "review")
+            .unwrap();
+        assert_eq!(review.title, "Evidence Review");
+        assert_eq!(review.description, "Review the cognitive package evidence.");
+        assert_eq!(review.icon, "flask-conical");
+        assert_eq!(review.order, 80);
+        assert_eq!(review.skill.as_deref(), Some("guide"));
+        assert_eq!(review.entry.media_type, "text/html");
+        assert_eq!(review.styles[0].media_type, "text/css");
+        assert_eq!(review.scripts[0].media_type, "text/javascript");
+
+        let standalone = binding
+            .activity_bar
+            .iter()
+            .find(|activity| activity.id == "standalone")
+            .unwrap();
+        assert_eq!(standalone.title, "standalone");
+        assert_eq!(standalone.icon, "package");
+        assert_eq!(standalone.order, 100);
+        assert!(standalone.skill.is_none());
+        assert!(binding
+            .reconciliation
+            .as_ref()
+            .unwrap()
+            .publishes(PluginSurfaceKind::Ui, "review"));
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn schema_three_ui_integrity_failure_blocks_only_required_surfaces() {
+        let temp = tempfile::tempdir().unwrap();
+        let skill = temp.path().join("skills/guide/SKILL.md");
+        let review = temp.path().join("ui/review.html");
+        tokio::fs::create_dir_all(skill.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(review.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&skill, b"# Guide\n").await.unwrap();
+        tokio::fs::write(&review, b"<main>review</main>")
+            .await
+            .unwrap();
+        tokio::fs::write(
+            temp.path().join("ui/review.css"),
+            b"main { color: purple; }",
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            temp.path().join("ui/review.js"),
+            b"window.reviewReady = true;",
+        )
+        .await
+        .unwrap();
+
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_UI_PLUGIN).unwrap();
+        let required = installed_extension(manifest.clone(), temp.path().to_path_buf(), true);
+        let binding = project_extension_for_host(
+            &required,
+            required
+                .surfaces()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            "0.3.0",
+        )
+        .await
+        .unwrap();
+        assert!(!binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Broken);
+        assert!(binding.activity_bar.is_empty());
+        assert_eq!(
+            binding.reconciliation.as_ref().unwrap().observed,
+            PluginObservedState::Broken
+        );
+
+        let mut optional_manifest = manifest;
+        optional_manifest
+            .ui
+            .iter_mut()
+            .find(|surface| surface.id == "standalone")
+            .unwrap()
+            .optional = true;
+        let optional = installed_extension(optional_manifest, temp.path().to_path_buf(), true);
+        let binding = project_extension_for_host(
+            &optional,
+            optional
+                .surfaces()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            "0.3.0",
+        )
+        .await
+        .unwrap();
+        let reconciliation = binding.reconciliation.as_ref().unwrap();
+        let standalone = reconciliation
+            .surfaces
+            .iter()
+            .find(|surface| {
+                surface.surface.kind == PluginSurfaceKind::Ui && surface.surface.id == "standalone"
+            })
+            .unwrap();
+        assert!(binding.enabled);
+        assert_eq!(binding.readiness, Readiness::Ready);
+        assert_eq!(binding.activity_bar.len(), 1);
+        assert_eq!(binding.activity_bar[0].id, "review");
+        assert_eq!(reconciliation.observed, PluginObservedState::Degraded);
+        assert_eq!(standalone.observed, SurfaceObservedState::Failed);
+        assert!(!standalone.published);
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
     async fn legacy_extension_projection_remains_active_without_reconciliation() {
         let manifest = a3s_use_extension::ExtensionManifest::parse_acl(LEGACY_CLI_PLUGIN).unwrap();
         let temp = tempfile::tempdir().unwrap();
@@ -1054,6 +1322,17 @@ extension "acme/slack" {
         ))
         .unwrap();
         let temp = tempfile::tempdir().unwrap();
+        let ui = temp.path().join("ui/review");
+        tokio::fs::create_dir_all(&ui).await.unwrap();
+        tokio::fs::write(ui.join("index.html"), b"<main>review</main>")
+            .await
+            .unwrap();
+        tokio::fs::write(ui.join("index.css"), b"main { color: purple; }")
+            .await
+            .unwrap();
+        tokio::fs::write(ui.join("index.js"), b"window.reviewReady = true;")
+            .await
+            .unwrap();
         let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
         let surfaces = extension
             .surfaces()
