@@ -4,7 +4,11 @@ use std::process::ExitCode;
 async fn main() -> ExitCode {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let json = args.iter().any(|argument| argument == "--json");
-    match a3s_use::cli::run(args).await {
+    // Keep the large top-level command future on the heap. Windows gives the
+    // process entry thread a smaller stack than Unix, and the schema-v3
+    // dependency-graph branches make this future large even when a small
+    // command such as `--help` is selected.
+    match Box::pin(a3s_use::cli::run(args)).await {
         Ok(output) => {
             if output.should_print && json {
                 println!(
