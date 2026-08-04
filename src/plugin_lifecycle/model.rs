@@ -35,6 +35,7 @@ impl PluginLifecycleAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PluginSurfaceHost {
+    Flow,
     Knowledge,
     Mcp,
     Runtime,
@@ -45,6 +46,7 @@ pub enum PluginSurfaceHost {
 impl PluginSurfaceHost {
     pub(super) fn for_kind(kind: PluginSurfaceKind) -> Self {
         match kind {
+            PluginSurfaceKind::Flow => Self::Flow,
             PluginSurfaceKind::Tool => Self::Runtime,
             PluginSurfaceKind::Mcp => Self::Mcp,
             PluginSurfaceKind::Okf => Self::Knowledge,
@@ -225,6 +227,7 @@ pub(super) fn valid_machine_id(value: &str) -> bool {
 
 pub(super) fn surface_kind_name(kind: PluginSurfaceKind) -> &'static str {
     match kind {
+        PluginSurfaceKind::Flow => "flow",
         PluginSurfaceKind::Mcp => "mcp",
         PluginSurfaceKind::Okf => "okf",
         PluginSurfaceKind::Skill => "skill",

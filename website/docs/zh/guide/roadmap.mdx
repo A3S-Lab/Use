@@ -9,9 +9,9 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 
 ## 当前基线
 
-截至 2026-08-03，`main` 已包含：
+截至 2026-08-04，`main` 已包含：
 
-- schema-v3 命名 Tool Task/Service、MCP、OKF、Skill 与 UI contract；
+- schema-v3 命名 Tool Task/Service、MCP、OKF、Flow、Skill 与 UI contract；
 - signed catalog v1–v3、离线验证、metadata-only search 与 planning target；
 - immutable operation plan、permission ceiling、grant 与 provider evidence contract；
 - exact-generation workspace grant store 和 recoverable journal；
@@ -22,6 +22,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 - M0K-C-A 注入式 Knowledge lifecycle contract、精确字节验证、持久 last-good binding 与 package adapter；
 - P0 schema-v3 package/capability host，包括 generation-bound receipt、确定性 root、原子 snapshot、route-lease drain 与精确移除。
 - P0-D schema-v3 SemVer package dependency、有界解析、精确 Registry/TUF lock、signed remote CLI install/uninstall、前向闭包下载/安装、retained dependency 校验、原子图发布、durable crash replay 与反向移除。
+- P0-F A3S Flow engine/runtime/source contract、Tool/MCP/OKF 依赖闭包、lifecycle/reconciler/catalog projection、host-capabilities v2 与 manager-toolset v3。
 
 稳定 v0.2 package foundation 仍可独立使用。上述 plugin-platform baseline 是 `main` 上的在建能力，不能被描述为完整 production plugin product。
 
@@ -36,6 +37,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 | M0K-B — OKF control plane            | 完成     | Manifest、package、catalog、plan、Knowledge evidence 与 reconciler gate |
 | M0K-C-A — OKF lifecycle foundation   | 完成     | 注入式 port、精确字节验证、持久 binding 与 owned cleanup                |
 | M0K-C-B — Production OKF integration | 进行中   | 真实 Knowledge indexing、scoped projection、带引用检索与 rollback       |
+| M0F — Unified A3S Flow surface       | 宿主集成 | Use 控制面完成；Code runtime 与 `flow.json` adapter 待完成              |
 | M1 — Signed searchable catalog       | 完成     | TUF 签名目录、bounded search、planning bundle 与 cache                  |
 | M2 — Shared Plugin Manager           | 进行中   | 统一 CLI/Web/MCP lifecycle、durable plan/apply/replay 与 parent saga    |
 | P0 — Package/capability hosts        | 完成     | Generation commit/remove、snapshot publish/hide、lease drain 与 replay  |
@@ -48,20 +50,21 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 
 ## 当前关键路径
 
-1. 让 umbrella Plugin Manager 把已实现的 package、capability、Runtime、Gateway、static-surface 与 Knowledge host 组合到同一 coordinator。
+1. 让 umbrella Plugin Manager 把已实现的 package、capability、Runtime、Gateway、A3S Flow、static-surface 与 Knowledge host 组合到同一 coordinator。
 2. 把 workspace-grant sub-saga 接入 package checkpoint 与 capability cutover，再让 CLI、Web、management MCP 和 managed-host mutation 统一通过该 journal。
 3. 在 blue/green capability cutover 后增加旧 generation 退休，再完成 CLI/Web/Agent lifecycle 与 crash-recovery E2E。
 4. 让 Code Web、TUI、management MCP 与 managed-host apply 通过 public lifecycle factory 和同一 package graph，再增加 retained-generation rollback 与 garbage collection。
 5. 把 M0K-C-A Knowledge port 与 lifecycle adapter 接入真实 A3S Knowledge 后端和 scoped capability/session projection。
-6. 每个宿主合约冻结后，再扩展 Agent、prompt、hook、memory 与 context-provider contribution。
-7. 完成官方 Registry 运维与 Windows platform gate。
+6. 把 Code TUI/Web 与 `flow.json` import/deployment adapter 连接到同一个已安装 A3S Flow 身份。
+7. 每个宿主合约冻结后，再扩展 Agent、prompt、hook、memory 与 context-provider contribution。
+8. 完成官方 Registry 运维与 Windows platform gate。
 
 ## 完成标准
 
 认知插件平台只有在以下条件同时满足时才可宣称 production-ready：
 
 - 同一 package identity 覆盖发现、计划、授权、安装、启用、升级、禁用与卸载；
-- required Tool/MCP/Skill/UI/OKF 对同一 generation 原子可见；
+- required Tool/MCP/OKF/Flow/Skill/UI 对同一 generation 原子可见；
 - package、grant、Runtime、Gateway 和 projection 崩溃后可恢复且不会重复副作用；
 - 签名目录、计划摘要、权限、provider 和 runtime observation 全链路可审计；
 - CLI、Web 与 agent management MCP 共享一个 manager 和 receipt format；

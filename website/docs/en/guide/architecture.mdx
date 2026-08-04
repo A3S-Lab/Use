@@ -20,7 +20,7 @@ The target architecture separates package management, workload scheduling, and h
                     ┌─────────────┴─────────────┐
                     │                           │
                native plane               cognitive plane
-          Runtime Task/Service       MCP · Skill · UI · OKF · context
+          Runtime Task/Service       MCP · OKF · Flow · Skill · UI · context
                     │                           │
                     └─────────────┬─────────────┘
                                   ▼
@@ -35,6 +35,7 @@ The target architecture separates package management, workload scheduling, and h
 | Shared Plugin Manager  | Catalog, policy, plan/apply, operation replay, and parent saga                                                               | Package archive format or provider scheduling internals    |
 | A3S Use                | Package verification, immutable generations, receipts, grants, binding evidence, route leases, and capability reconciliation | Generic scheduling, UI rendering, or an agent RPC protocol |
 | A3S Runtime            | Task/Service workloads and provider capability                                                                               | Package parsing, trust roots, or user authorization        |
+| A3S Flow               | Workflow compilation, durable execution, replay, storage, and observation                                                    | Package resolution or a parallel `flow.json` lifecycle     |
 | A3S Code/Web/Knowledge | Skill session registry, sandboxed UI, OKF registry/index, and product experience                                             | Package transactions or Runtime provider registration      |
 | Package process        | Its own CLI, HTTP, and MCP vocabulary                                                                                        | Host policy or ambient authority                           |
 
@@ -44,7 +45,7 @@ The current implementation reuses these existing mechanisms:
 
 - `a3s-use-core`: canonical package/plugin, dependency resolver/lock, catalog, plan, permission, grant, release, and OKF bundle contracts;
 - `a3s-use-extension`: ACL manifests, package-graph Registry resolution/download, TUF catalog, package store, receipts, leases, and workspace grants;
-- `src/plugin_lifecycle`: canonical package and package-graph intent, dependency schedule, durable journal, coordinator, and typed Tool/MCP/OKF/Skill/UI hosts;
+- `src/plugin_lifecycle`: canonical package and package-graph intent, dependency schedule, durable journal, coordinator, and typed Tool/MCP/OKF/Flow/Skill/UI hosts;
 - `src/plugin_runtime`: Runtime selection, bindings, receipts, invocation, and observation;
 - `src/surface_reconciler` plus `src/capability_registry`: dependency readiness and capability publication;
 - the umbrella CLI shared Plugin Manager: the only lifecycle application service.
@@ -93,15 +94,17 @@ surface enable:   prepare surfaces forward → publish once
 surface disable:  hide → drain → stop surfaces in reverse
 ```
 
-Runtime Tool/MCP, immutable Skill/UI, and OKF Knowledge adapters are implemented. The P0 schema-v3 package/capability hosts commit a verified generation as installed-disabled, publish or hide exact-generation snapshots, drain route leases, and remove only receipt-owned roots. The dependency foundation adds exact retained-node verification, crash-safe atomic graph publication, durable admission/lock records, and journal recovery after partial install or uninstall. Signed remote standalone CLI installs use this graph. Umbrella Plugin Manager and grant composition, the real A3S Knowledge backend, Gateway integration, and prior Runtime generation retirement remain in progress, so this foundation does not claim a complete production saga.
+Runtime Tool/MCP, immutable Flow/Skill/UI evidence, and OKF Knowledge adapters are implemented. The P0 schema-v3 package/capability hosts commit a verified generation as installed-disabled, publish or hide exact-generation snapshots, drain route leases, and remove only receipt-owned roots. The dependency foundation adds exact retained-node verification, crash-safe atomic graph publication, durable admission/lock records, and journal recovery after partial install or uninstall. Signed remote standalone CLI installs use this graph. Umbrella Plugin Manager and grant composition, the production A3S Flow/Knowledge hosts, Gateway integration, and prior Runtime generation retirement remain in progress, so this foundation does not claim a complete production saga.
 
-Embedding hosts implement `CognitivePackageLifecycleFactory` to supply their exact Runtime, Gateway, Skill/UI, and A3S Knowledge adapters. They reuse Use's resolver, graph journal, and capability cutover rather than creating another package manager. The standalone factory supports executable Tasks, stdio MCP, and immutable Skill/UI projection; it fails before publication for required Service, HTTP MCP, or OKF owners that were not injected.
+Embedding hosts implement `CognitivePackageLifecycleFactory` to supply their exact Runtime, Gateway, A3S Flow, Skill/UI, and A3S Knowledge adapters. They reuse Use's resolver, graph journal, and capability cutover rather than creating another package manager. The standalone factory supports executable Tasks, stdio MCP, and immutable Skill/UI projection; it fails before publication for required Service, HTTP MCP, Flow, or OKF owners that were not injected.
 
 [ADR-002](https://github.com/A3S-Lab/Use/blob/main/docs/adr-002-cognitive-package-lifecycle-saga.md) freezes this lifecycle boundary.
 
 ## Runtime visibility
 
-The Surface Reconciler observes desired state, generation receipt, grants, bindings, Runtime/Gateway health, and Skill/UI/OKF projection. OKF has a distinct Knowledge-host owner: missing is pending, staged is unpublished, and only exact promoted evidence is healthy. The Capability Registry publishes a new snapshot only when complete evidence agrees on one generation. Resident hosts can watch generation plus revision and hot-refresh without restarting.
+The Surface Reconciler observes desired state, generation receipt, grants, bindings, Runtime/Gateway health, A3S Flow observation, and Skill/UI/OKF projection. OKF has a distinct Knowledge-host owner: missing is pending, staged is unpublished, and only exact promoted evidence is healthy. The Capability Registry publishes a new snapshot only when complete evidence agrees on one generation. Resident hosts can watch generation plus revision and hot-refresh without restarting.
+
+Flow has one engine identity. Native TypeScript is an execution adapter, `flow.json` is a visual design/deployment document, Code is a local host, and OS is a remote target. These paths must never create parallel package receipts or lifecycle journals.
 
 OKF has a different host boundary from Runtime: it runs no process. Use verifies and records the exact package generation; A3S Knowledge owns conformant atomic promotion, indexing, and cited retrieval. A failed new OKF generation must not replace the last searchable generation.
 

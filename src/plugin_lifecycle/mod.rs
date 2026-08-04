@@ -1,8 +1,8 @@
 //! Durable package-level lifecycle planning for cognitive plugins.
 //!
 //! A schema-v3 package is the unit of identity, trust, generation,
-//! installation, enablement, upgrade, and removal. Tool, MCP, OKF, Skill, and
-//! UI contributions participate in one ordered operation; they are not
+//! installation, enablement, upgrade, and removal. Tool, MCP, OKF, Flow, Skill,
+//! and UI contributions participate in one ordered operation; they are not
 //! independently installable packages.
 
 mod coordinator;
@@ -17,8 +17,8 @@ mod static_surfaces;
 mod store;
 
 pub use coordinator::{
-    PluginCapabilityLifecycleHost, PluginLifecycleCoordinator, PluginLifecycleEvidence,
-    PluginLifecycleHosts, PluginMcpLifecycleHost, PluginOkfLifecycleHost,
+    PluginCapabilityLifecycleHost, PluginFlowLifecycleHost, PluginLifecycleCoordinator,
+    PluginLifecycleEvidence, PluginLifecycleHosts, PluginMcpLifecycleHost, PluginOkfLifecycleHost,
     PluginPackageLifecycleHost, PluginSkillLifecycleHost, PluginToolLifecycleHost,
     PluginUiLifecycleHost,
 };

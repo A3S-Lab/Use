@@ -47,6 +47,7 @@ const TRANSITIONAL_SURFACE_STATES: [SurfaceObservedState; 2] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SurfaceOwner {
+    FlowHost,
     KnowledgeHost,
     Runtime,
     McpHost,
@@ -57,6 +58,7 @@ pub(crate) enum SurfaceOwner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SurfaceStateReason {
+    FlowObservationMissing,
     KnowledgeObservationMissing,
     PackageNotEnabled,
     RuntimeObservationMissing,
@@ -193,6 +195,7 @@ fn surface_nodes(
     let mut nodes = BTreeMap::new();
     for surface in manifest.plugin_surfaces()? {
         let owner = match surface.surface.kind {
+            PluginSurfaceKind::Flow => SurfaceOwner::FlowHost,
             PluginSurfaceKind::Tool => SurfaceOwner::Runtime,
             PluginSurfaceKind::Mcp => SurfaceOwner::McpHost,
             PluginSurfaceKind::Okf => SurfaceOwner::KnowledgeHost,
@@ -329,6 +332,7 @@ fn desired_surface_state(node: &SurfaceNode, desired: PluginDesiredState) -> Sur
         }
         SurfaceOwner::Runtime
         | SurfaceOwner::McpHost
+        | SurfaceOwner::FlowHost
         | SurfaceOwner::SkillHost
         | SurfaceOwner::UiHost => SurfaceDesiredState::Prepared,
     }
@@ -389,6 +393,10 @@ fn observed_surface_state(
 fn default_observation(node: &SurfaceNode) -> (SurfaceObservedState, Option<SurfaceStateReason>) {
     match node.owner {
         SurfaceOwner::SkillHost => (SurfaceObservedState::Prepared, None),
+        SurfaceOwner::FlowHost => (
+            SurfaceObservedState::Pending,
+            Some(SurfaceStateReason::FlowObservationMissing),
+        ),
         SurfaceOwner::KnowledgeHost => (
             SurfaceObservedState::Pending,
             Some(SurfaceStateReason::KnowledgeObservationMissing),
@@ -491,6 +499,7 @@ fn surface_ref(kind: PluginSurfaceKind, id: &str) -> PluginSurfaceRef {
 
 fn surface_kind_name(kind: PluginSurfaceKind) -> &'static str {
     match kind {
+        PluginSurfaceKind::Flow => "flow",
         PluginSurfaceKind::Mcp => "mcp",
         PluginSurfaceKind::Okf => "okf",
         PluginSurfaceKind::Skill => "skill",

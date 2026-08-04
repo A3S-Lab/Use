@@ -332,6 +332,7 @@ fn search_digest(host: &PluginCatalogHost, search: &PluginCatalogSearch) -> Stri
 
 fn surface_kind_name(kind: PluginSurfaceKind) -> &'static str {
     match kind {
+        PluginSurfaceKind::Flow => "flow",
         PluginSurfaceKind::Mcp => "mcp",
         PluginSurfaceKind::Okf => "okf",
         PluginSurfaceKind::Skill => "skill",

@@ -1,7 +1,7 @@
 ---
 type: Project-Specific Decision
 title: Atomic cognitive package lifecycle
-description: Tool, Skill, MCP, UI, and OKF contributions activate as one package generation.
+description: Tool, MCP, OKF, Flow, Skill, and UI contributions activate as one package generation.
 status: stable
 ---
 

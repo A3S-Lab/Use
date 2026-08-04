@@ -1,0 +1,87 @@
+---
+title: A3S Flow Workflows
+description: Package durable A3S Flow workflows with explicit Tool, MCP, and OKF dependencies under one versioned cognitive-package lifecycle.
+---
+
+# A3S Flow Workflows
+
+A cognitive-package Flow is a first-class workflow contribution powered by [A3S Flow](https://github.com/A3S-Lab/Flow). It shares the package's version, Registry provenance, dependency lock, generation, and atomic install/uninstall boundary.
+
+There is one workflow engine:
+
+```text
+package source / Code flow.json design
+                 ↓ typed adapter
+              A3S Flow
+                 ↓
+        local Code host / remote OS target
+```
+
+`a3s-flow` owns durable execution, event history, replay, scheduling, storage, and observation. A3S Use owns distribution, integrity, SemVer dependency resolution, capability dependencies, and package lifecycle. A3S Code/Web provides product discovery and an injected runtime host.
+
+## Manifest contract
+
+Schema v3 declares a named Flow inside `a3s-use-extension.acl`:
+
+```acl
+flow "review" {
+  engine         = "a3s-flow"
+  runtime        = "native-ts"
+  source         = "flows/review.ts"
+  export         = "run"
+  requires_tool  = ["convert"]
+  requires_mcp   = ["library"]
+  requires_okf   = ["domain-knowledge"]
+  optional       = false
+}
+
+skill "review" {
+  path          = "skills/review/SKILL.md"
+  requires_flow = ["review"]
+  optional      = false
+}
+
+ui "review" {
+  entry     = "ui/review/index.html"
+  skill     = "review"
+  bind_flow = ["review"]
+  optional  = false
+}
+```
+
+`engine = "a3s-flow"` is fixed. `native-ts` is the first admitted runtime adapter, not another workflow engine. The source must be a bounded UTF-8 TypeScript file and `export` must be a portable TypeScript identifier.
+
+## Dependency and lifecycle order
+
+Flow owns no ambient permission ceiling. It can use only explicitly declared Tool, MCP, and OKF capabilities, each authorized and observed by its owning host.
+
+```text
+Tool / MCP / OKF
+        ↓
+      Flow
+        ↓
+      Skill
+        ↓
+        UI
+```
+
+Install prepares this graph forward and publishes one package generation. Disable hides the generation before stopping it. Uninstall drains accepted work and removes surfaces in reverse. A missing or corrupted required Flow withholds its dependent Skill/UI and the new package generation.
+
+## What `flow.json` means
+
+A3S Code historically uses `flow.json` as the visible Workflow-as-a-Service design document. It is not a second package format or execution engine. The product direction is a typed import/deployment adapter that maps that document to the same installed Flow identity:
+
+- Native TypeScript is an A3S Flow execution adapter.
+- `flow.json` is a visual design/deployment document.
+- A3S Code is a local editor and host.
+- A3S OS is a remote deployment target.
+
+No adapter may create a parallel package receipt, dependency graph, or lifecycle journal.
+
+## Current implementation boundary
+
+A3S Use implements manifest admission, exact source evidence, signed catalog closure, package lifecycle ordering, reconciler ownership, host-capabilities v2, manager-toolset v3, and typed capability projection. The standalone engine rejects required Flow packages before mutation when no `a3s-flow` host adapter is injected.
+
+Valid source bytes are necessary but not sufficient readiness evidence. A Flow remains pending and absent from the published catalog until the typed A3S Flow host reports successful preflight for that admitted generation; source corruption overrides even a stale positive host observation.
+
+Production compiler preflight, durable execution, run observation, Code TUI/Web integration, and the `flow.json` import/deployment adapter remain release gates. The [roadmap](./roadmap) tracks those gates explicitly.

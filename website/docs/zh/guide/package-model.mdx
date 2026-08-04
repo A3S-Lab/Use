@@ -1,6 +1,6 @@
 ---
 title: 包模型
-description: 了解版本化 A3S 认知包如何声明 SemVer 依赖，并以一个生命周期单元交付 Tool、MCP、Skill、UI 与 OKF。
+description: 了解版本化 A3S 认知包如何声明 SemVer 依赖，并以一个生命周期单元交付 Tool、MCP、OKF、Flow、Skill 与 UI。
 ---
 
 # 包模型
@@ -10,7 +10,7 @@ A3S 认知包是一种类似 npm package 的版本化分发单元。它可以只
 ```text
 A3S package
 ├── native plane       executable · runtime assets · target · provenance
-└── cognitive plane    Tool · MCP · Skill · UI · OKF · agent context
+└── cognitive plane    Tool · MCP · OKF · Flow · Skill · UI · agent context
 ```
 
 典型 schema-v3 包结构如下：
@@ -21,6 +21,7 @@ acme-research/
 ├── README.md               必需的包说明
 ├── tools/                  原生 Task 或 Service 产物
 ├── releases/               内容绑定的 Tool/MCP descriptor
+├── flows/                  A3S Flow TypeScript 源码
 ├── skills/                 SKILL.md 与支持内容
 ├── ui/                     完整性绑定的静态资产
 └── okf/                    合规知识 bundle
@@ -35,13 +36,14 @@ acme-research/
 | Tool Task    | 一次性、非交互 CLI 工作负载                    | A3S Runtime Task 或受约束的 legacy runner           |
 | Tool Service | 提供私有 HTTP 合约的服务                       | 通过 scoped binding 暴露的 Runtime Service          |
 | MCP          | 独立的标准 MCP server                          | Streamable HTTP Service 或受监督 stdio 会话         |
+| Flow         | 带显式能力依赖的持久工作流                     | 注入式 A3S Flow 引擎与类型化 runtime adapter        |
 | Skill        | 指令与支持内容                                 | 受管理 Skill 投影或 session registry                |
 | UI           | 完整性绑定的静态 HTML/CSS/JS                   | A3S Code/Web 沙箱                                   |
 | OKF          | Open Knowledge Format 交叉链接 Markdown 概念包 | A3S Knowledge service、宿主 OKF registry 与本地索引 |
 
 这里的 **Tool 不是 MCP `tools/list` item**。Tool 保留它自己的 CLI 或 HTTP 合约；Use 不将所有工作负载翻译为私有通用协议。静态 UI 也不是 Runtime 工作负载，只有它声明的 Tool 或 MCP 后端进入 Runtime。
 
-Tool、MCP、OKF、Skill 与 UI 已有 schema-v3 contract baseline。P0 已增加 generation-bound package commit/removal、原子 capability publish/hide、route-lease drain 与 legacy-bypass rejection。包依赖基础已增加有界 SemVer 解析、精确 Registry/TUF 绑定 lock、依赖前向下载与准备、共享依赖保留、一次图切换、反向卸载和 durable crash replay；signed remote standalone CLI 已使用该图。M0K-B 已实现命名 OKF manifest、递归包验证、catalog-v3 evidence、plan-v2 impact、Knowledge receipt/observation/projection 合约与依赖门禁。M0K-C-A 已实现注入式 Knowledge lifecycle port、精确字节验证、持久 binding record 与 receipt-owned package adapter。完整 umbrella Code/Web host 组合和真实 A3S Knowledge 后端仍待完成，因此缺少 promoted OKF evidence 时不会发布。
+Tool、MCP、OKF、Flow、Skill 与 UI 已有 schema-v3 contract baseline。P0 已增加 generation-bound package commit/removal、原子 capability publish/hide、route-lease drain 与 legacy-bypass rejection。包依赖基础已增加有界 SemVer 解析、精确 Registry/TUF 绑定 lock、依赖前向下载与准备、共享依赖保留、一次图切换、反向卸载和 durable crash replay。Flow 增加固定的 `a3s-flow` 引擎、Native TypeScript 源码证据、Tool/MCP/OKF 依赖闭包、生命周期顺序与类型化 catalog projection。M0K-B/M0K-C-A 实现 OKF 控制面与生命周期基础。完整 umbrella Code/Web Flow/Knowledge host 组合仍待完成，因此缺少宿主证据时不会发布。
 
 OKF 不是可执行 workload。它是一个可共享知识包：每个非保留概念是带 YAML frontmatter 的 UTF-8 Markdown，文件路径是概念身份，标准 Markdown links 形成知识图，`type` 是必需字段。已冻结的内容合约以 OKF v0.2 为目标，并明确兼容 v0.1。原始 PDF、Office、图片或网页不直接作为 OKF 权威内容；独立 compiler 必须先生成合规 bundle。
 
@@ -104,11 +106,23 @@ extension "acme/research" {
     optional               = false
   }
 
+  flow "review" {
+    engine         = "a3s-flow"
+    runtime        = "native-ts"
+    source         = "flows/review.ts"
+    export         = "run"
+    requires_tool  = ["convert"]
+    requires_mcp   = ["library"]
+    requires_okf   = ["domain-knowledge"]
+    optional       = false
+  }
+
   skill "review" {
     path          = "skills/review/SKILL.md"
     requires_tool = ["convert"]
     requires_mcp  = ["library"]
     requires_okf  = ["domain-knowledge"]
+    requires_flow = ["review"]
     optional      = false
   }
 
@@ -116,6 +130,7 @@ extension "acme/research" {
     entry    = "ui/review/index.html"
     skill    = "review"
     bind_mcp = ["library"]
+    bind_flow = ["review"]
     optional = false
   }
 }
@@ -123,7 +138,7 @@ extension "acme/research" {
 
 schema v1 和 v2 保持兼容。schema v3 增加可重复命名表面、包依赖、必需且有大小限制的 UTF-8 `README.md`，以及无环 readiness graph。所有路径都相对包根目录；激活前会拒绝路径穿越、链接、归档歧义、route 冲突、超限包、provenance 漂移和宿主版本不兼容。
 
-仓库包含可执行 [`plugin-v3.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl) 与知识 [`plugin-v3-okf.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3-okf.acl) fixture。
+仓库包含可执行 [`plugin-v3.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3.acl)、知识 [`plugin-v3-okf.acl`](https://github.com/A3S-Lab/Use/blob/main/crates/extension/fixtures/manifests/plugin-v3-okf.acl)，以及包含六类表面的 [`plugin-v3-cognitive`](https://github.com/A3S-Lab/Use/tree/main/crates/extension/fixtures/packages/plugin-v3-cognitive) fixture。
 
 ## 包依赖与精确 lock
 
@@ -139,18 +154,18 @@ Canonical `a3s.use.plugin-package-lock.v1` 会冻结每个选定版本与依赖�
 
 共享依赖不会被重复提交。只有精确的 Registry-backed generation 已安装、启用并出现在当前 capability snapshot 中时，`Retain` node 才可复用。其他已安装包仍依赖目标时，直接卸载会被拒绝。
 
-公开的 `CognitivePackageManager` 接受一个 root Registry 和一组有界的 host-injected dependency Registry。它持久化精确 root lock 以及已经准入的 pending manifest/generation evidence，因此 published install 可以补齐未完成 journal，reverse uninstall 也能在 root metadata 已移除后继续。Code/Web host 通过 `CognitivePackageLifecycleFactory` 注入 surface owner；standalone factory 不会替换缺失的 Runtime、Gateway 或 Knowledge provider。
+公开的 `CognitivePackageManager` 接受一个 root Registry 和一组有界的 host-injected dependency Registry。它持久化精确 root lock 以及已经准入的 pending manifest/generation evidence，因此 published install 可以补齐未完成 journal，reverse uninstall 也能在 root metadata 已移除后继续。Code/Web host 通过 `CognitivePackageLifecycleFactory` 注入 surface owner；standalone factory 不会替换缺失的 Runtime、Gateway、A3S Flow 或 Knowledge provider。
 
 ## 表面依赖与 readiness
 
 表面不是独立安装的。Surface Reconciler 对一个包代际构建完整依赖闭包：
 
 1. Tool/MCP 必须有满足 workload、网络、资源和隔离要求的显式 Runtime provider。
-2. Skill 内容摘要必须匹配，并且所有 required Tool/MCP 已可用。
-3. UI 内容必须完整，并且所有声明的后端 binding 已授权。
-4. OKF 表面必须通过 frontmatter、路径、链接、大小和内容摘要检查；A3S Knowledge 只能索引宿主原子提升的 generation。
-5. 所有 required 表面就绪后，才原子发布一个 capability generation。
-6. optional 表面失败可形成 `degraded`，required 表面失败则不发布新代际。
+2. OKF 表面必须通过 frontmatter、路径、链接、大小和内容摘要检查；A3S Knowledge 只能索引宿主原子提升的 generation。
+3. Flow 源码必须匹配摘要、通过类型化 `a3s-flow` preflight，并等待所有 required Tool/MCP/OKF 依赖。
+4. Skill 内容摘要必须匹配，并且所有 required Flow 或直接依赖已可用。
+5. UI 内容必须完整，并且所有声明的后端 binding 已授权。
+6. 所有 required 表面就绪后，才原子发布一个 capability generation；optional 失败可形成 `degraded`，required 失败则不发布新代际。
 
 ## 身份与所有权
 

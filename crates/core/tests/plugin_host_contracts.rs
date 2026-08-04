@@ -1,18 +1,19 @@
 use a3s_use_core::{
-    PlanActor, PlanAuthority, PlanPackageRole, PlanPolicyDecision, PlanScope, PlanScopeKind,
-    PlannedOperationImpact, PlannedStateEvidence, PlannedWorkspaceImpact, PluginCatalogRecord,
-    PluginDesiredState, PluginHostApplyRequest, PluginHostApplyResult, PluginHostCapabilities,
-    PluginHostEnablementRequest, PluginHostEnablementResult, PluginHostManager,
-    PluginHostObservationRequest, PluginHostObservationResult, PluginHostObservationStatus,
-    PluginHostPackageState, PluginHostPlanRequest, PluginHostPlanResult,
-    PluginHostUnavailableReason, PluginManagedScope, PluginObservedState, PluginOperationAction,
-    PluginOperationConfirmation, PluginOperationPlanBinding, PluginOperationPlanDraft,
-    PluginOperationPlanEnvelope, PluginPackageId, PluginSurfaceKind, PluginSurfaceRef,
-    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, PLUGIN_HOST_APPLY_REQUEST_SCHEMA,
-    PLUGIN_HOST_APPLY_RESULT_SCHEMA, PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA,
+    CatalogSurface, PlanActor, PlanAuthority, PlanPackageRole, PlanPolicyDecision, PlanScope,
+    PlanScopeKind, PlannedOperationImpact, PlannedStateEvidence, PlannedWorkspaceImpact,
+    PluginCatalogRecord, PluginDesiredState, PluginHostApplyRequest, PluginHostApplyResult,
+    PluginHostCapabilities, PluginHostEnablementRequest, PluginHostEnablementResult,
+    PluginHostManager, PluginHostObservationRequest, PluginHostObservationResult,
+    PluginHostObservationStatus, PluginHostPackageState, PluginHostPlanRequest,
+    PluginHostPlanResult, PluginHostUnavailableReason, PluginManagedScope, PluginObservedState,
+    PluginOperationAction, PluginOperationConfirmation, PluginOperationPlanBinding,
+    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageId, PluginSurfaceKind,
+    PluginSurfaceRef, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA,
     PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
     PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
-    PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V2, PLUGIN_MANAGED_SCOPE_SCHEMA,
     PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
 };
 
@@ -20,6 +21,9 @@ const CATALOG: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3
 const HOST_CAPABILITIES: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v1.json");
 const HOST_CAPABILITIES_DIGEST: &str =
     include_str!("../fixtures/plugins/host-capabilities-v1.sha256").trim_ascii_end();
+const HOST_CAPABILITIES_V2: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v2.json");
+const HOST_CAPABILITIES_V2_DIGEST: &str =
+    include_str!("../fixtures/plugins/host-capabilities-v2.sha256").trim_ascii_end();
 const MANAGED_SCOPE: &[u8] = include_bytes!("../fixtures/plugins/managed-scope-v1.json");
 const MANAGED_SCOPE_DIGEST: &str =
     include_str!("../fixtures/plugins/managed-scope-v1.sha256").trim_ascii_end();
@@ -73,6 +77,37 @@ fn candidate() -> VerifiedPluginCatalogRecord {
         },
     )
     .unwrap()
+}
+
+fn flow_candidate() -> VerifiedPluginCatalogRecord {
+    let candidate = candidate();
+    let mut record = candidate.record;
+    record.surfaces.insert(
+        0,
+        CatalogSurface {
+            kind: PluginSurfaceKind::Flow,
+            id: "reason".to_owned(),
+            optional: false,
+            workload: None,
+            mcp_transport: None,
+            mcp_tool_count: None,
+            okf_bundle: None,
+            requires: vec![PluginSurfaceRef {
+                kind: PluginSurfaceKind::Okf,
+                id: "domain-knowledge".to_owned(),
+            }],
+        },
+    );
+    record.surfaces[2].requires.insert(
+        0,
+        PluginSurfaceRef {
+            kind: PluginSurfaceKind::Flow,
+            id: "reason".to_owned(),
+        },
+    );
+    let mut provenance = candidate.provenance;
+    provenance.catalog_record_digest = record.descriptor_digest().unwrap();
+    VerifiedPluginCatalogRecord::new(record, provenance).unwrap()
 }
 
 fn plan_request() -> PluginHostPlanRequest {
@@ -253,6 +288,68 @@ fn capabilities_freeze_one_versioned_host_contract() {
         .contract_schemas
         .push("a3s.use.plugin-host-universal-action.v1".to_owned());
     assert!(expanded.validate().is_err());
+}
+
+#[test]
+fn capabilities_v2_advertises_flow_without_rewriting_v1() {
+    let v1 = capabilities();
+    let v2 = PluginHostCapabilities::v2(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+    assert_eq!(v1.protocol_level, 1);
+    assert!(!v1.surface_kinds.contains(&PluginSurfaceKind::Flow));
+    assert_eq!(v2.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V2);
+    assert_eq!(v2.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V2);
+    assert_eq!(v2.surface_kinds[0], PluginSurfaceKind::Flow);
+    assert!(v2
+        .contract_schemas
+        .contains(&PLUGIN_HOST_CAPABILITIES_SCHEMA_V2.to_owned()));
+    assert_eq!(
+        PluginHostCapabilities::from_json(&v2.canonical_bytes().unwrap()).unwrap(),
+        v2
+    );
+
+    let fixture = PluginHostCapabilities::from_json(HOST_CAPABILITIES_V2).unwrap();
+    assert_eq!(
+        fixture,
+        PluginHostCapabilities::v2(
+            "host:node-01",
+            env!("CARGO_PKG_VERSION"),
+            "use:0.2.1:linux-x86_64",
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        fixture.canonical_bytes().unwrap(),
+        canonical_fixture(HOST_CAPABILITIES_V2)
+    );
+    assert_eq!(
+        fixture.descriptor_digest().unwrap(),
+        HOST_CAPABILITIES_V2_DIGEST
+    );
+}
+
+#[test]
+fn host_protocol_v1_rejects_flow_plans_while_v2_accepts_them() {
+    let v1 = capabilities();
+    let mut request = plan_request();
+    request.candidate = Some(flow_candidate());
+    request.capabilities_digest = v1.descriptor_digest().unwrap();
+    request.validate().unwrap();
+    let error = request.validate_for_capabilities(&v1).unwrap_err();
+    assert_eq!(error.code, "use.plugin.host_surface_unsupported");
+
+    let v2 = PluginHostCapabilities::v2(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+    request.capabilities_digest = v2.descriptor_digest().unwrap();
+    request.validate_for_capabilities(&v2).unwrap();
 }
 
 #[test]

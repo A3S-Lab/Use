@@ -9,17 +9,17 @@ use a3s_use_core::{
     VerifiedPluginCatalogRecord,
 };
 use a3s_use_extension::{
-    ExtensionManifest, PluginMcpSurface, PluginOkfSurface, PluginSkillSurface, PluginUiSurface,
-    ToolSurface,
+    ExtensionManifest, PluginFlowSurface, PluginMcpSurface, PluginOkfSurface, PluginSkillSurface,
+    PluginUiSurface, ToolSurface,
 };
 use tokio::sync::Mutex;
 
 use super::*;
 use crate::plugin_lifecycle::{
-    PluginCapabilityLifecycleHost, PluginLifecycleHosts, PluginLifecycleIntentSpec,
-    PluginLifecycleJournalStore, PluginLifecycleOperationStatus, PluginMcpLifecycleHost,
-    PluginOkfLifecycleHost, PluginPackageLifecycleHost, PluginSkillLifecycleHost,
-    PluginToolLifecycleHost, PluginUiLifecycleHost,
+    PluginCapabilityLifecycleHost, PluginFlowLifecycleHost, PluginLifecycleHosts,
+    PluginLifecycleIntentSpec, PluginLifecycleJournalStore, PluginLifecycleOperationStatus,
+    PluginMcpLifecycleHost, PluginOkfLifecycleHost, PluginPackageLifecycleHost,
+    PluginSkillLifecycleHost, PluginToolLifecycleHost, PluginUiLifecycleHost,
 };
 
 const CATALOG: &[u8] =
@@ -181,6 +181,34 @@ impl PluginOkfLifecycleHost for RecordingHost {
 }
 
 #[async_trait]
+impl PluginFlowLifecycleHost for RecordingHost {
+    async fn prepare_flow(
+        &self,
+        intent: &PluginLifecycleIntent,
+        _surface: &PluginFlowSurface,
+        key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        self.evidence("flow-prepare", intent, key).await
+    }
+    async fn stop_flow(
+        &self,
+        intent: &PluginLifecycleIntent,
+        _surface: &PluginFlowSurface,
+        key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        self.evidence("flow-stop", intent, key).await
+    }
+    async fn remove_flow(
+        &self,
+        intent: &PluginLifecycleIntent,
+        _surface: &PluginFlowSurface,
+        key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        self.evidence("flow-remove", intent, key).await
+    }
+}
+
+#[async_trait]
 impl PluginSkillLifecycleHost for RecordingHost {
     async fn prepare_skill(
         &self,
@@ -330,6 +358,7 @@ fn manifest(package_id: &str, dependency: Option<&str>) -> ExtensionManifest {
 
 fn coordinator(root: &std::path::Path, host: Arc<RecordingHost>) -> PluginLifecycleCoordinator {
     let hosts = PluginLifecycleHosts::new(
+        host.clone(),
         host.clone(),
         host.clone(),
         host.clone(),

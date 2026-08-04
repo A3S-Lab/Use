@@ -3,7 +3,14 @@ import { useLang, withBase } from "@rspress/core/runtime";
 import { homeCopy, type Locale, type SurfaceKey } from "./home-copy";
 
 const installCommand = "a3s install use --source release";
-const surfaceOrder: SurfaceKey[] = ["tool", "mcp", "skill", "ui", "okf"];
+const surfaceOrder: SurfaceKey[] = [
+  "tool",
+  "mcp",
+  "okf",
+  "flow",
+  "skill",
+  "ui",
+];
 
 function ArrowIcon() {
   return (
@@ -32,9 +39,10 @@ function MarkdownHome({ locale }: { locale: Locale }) {
       <ul>
         <li>Tool</li>
         <li>MCP</li>
+        <li>OKF</li>
+        <li>Flow</li>
         <li>Skill</li>
         <li>UI</li>
-        <li>OKF</li>
       </ul>
       <h2>{labels.lifecycleTitle}</h2>
       <p>{labels.lifecycleBody}</p>
@@ -177,19 +185,24 @@ export function HomeLayout() {
                 <i>READY</i>
               </div>
               <div>
+                <span>OKF</span>
+                <code>domain-knowledge</code>
+                <i>READY</i>
+              </div>
+              <div>
+                <span>Flow</span>
+                <code>review</code>
+                <i>PENDING</i>
+              </div>
+              <div>
                 <span>Skill</span>
                 <code>review</code>
-                <i>READY</i>
+                <i>BLOCKED</i>
               </div>
               <div>
                 <span>UI</span>
                 <code>review</code>
-                <i>READY</i>
-              </div>
-              <div>
-                <span>OKF</span>
-                <code>domain-knowledge</code>
-                <i>PENDING</i>
+                <i>BLOCKED</i>
               </div>
             </div>
             <footer>

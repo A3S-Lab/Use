@@ -1203,7 +1203,7 @@ async fn uninstall_retry_cleans_packages_after_receipt_removal_was_already_commi
 }
 
 #[tokio::test]
-async fn lifecycle_commit_keeps_all_five_surfaces_installed_disabled_until_atomic_publish() {
+async fn lifecycle_commit_keeps_all_six_surfaces_installed_disabled_until_atomic_publish() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");
     compatible_cognitive_package(&source).await;
@@ -1228,7 +1228,7 @@ async fn lifecycle_commit_keeps_all_five_surfaces_installed_disabled_until_atomi
     assert!(!committed.extension.receipt.enabled);
     assert_eq!(
         committed.extension.surfaces(),
-        ["tool", "mcp", "okf", "skill", "ui"]
+        ["tool", "mcp", "okf", "flow", "skill", "ui"]
     );
     assert_eq!(
         committed.extension.receipt.package_root,
@@ -1690,6 +1690,57 @@ async fn verified_catalog_dependencies_must_match_the_admitted_manifest() {
     .unwrap_err();
     assert_eq!(error.code, "use.extension.catalog_package_mismatch");
     assert!(error.message.contains("dependency graph"));
+}
+
+#[test]
+fn verified_catalog_flow_inventory_and_dependencies_match_the_admitted_manifest() {
+    let manifest = ExtensionManifest::parse_acl(include_str!(
+        "../fixtures/packages/plugin-v3-cognitive/package/a3s-use-extension.acl"
+    ))
+    .unwrap();
+    let graph = manifest.plugin_surfaces().unwrap();
+    let mut record = a3s_use_core::PluginCatalogRecord::from_json(include_bytes!(
+        "../../core/fixtures/plugins/catalog-record-okf-v3.json"
+    ))
+    .unwrap();
+    record.surfaces = graph
+        .iter()
+        .map(|surface| a3s_use_core::CatalogSurface {
+            kind: surface.surface.kind,
+            id: surface.surface.id.clone(),
+            optional: surface.optional,
+            workload: None,
+            mcp_transport: None,
+            mcp_tool_count: None,
+            okf_bundle: manifest
+                .okf
+                .iter()
+                .find(|okf| {
+                    surface.surface.kind == PluginSurfaceKind::Okf && okf.id == surface.surface.id
+                })
+                .map(|okf| okf.bundle.clone()),
+            requires: surface.dependencies.clone(),
+        })
+        .collect();
+
+    validate_surface_catalog_binding(&record, &manifest).unwrap();
+
+    record
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.kind == PluginSurfaceKind::Flow)
+        .unwrap()
+        .requires
+        .clear();
+    let error = validate_surface_catalog_binding(&record, &manifest).unwrap_err();
+    assert_eq!(error.code, "use.extension.catalog_package_mismatch");
+    assert!(error.message.contains("surface dependency graph"));
+
+    record
+        .surfaces
+        .retain(|surface| surface.kind != PluginSurfaceKind::Flow);
+    let error = validate_surface_catalog_binding(&record, &manifest).unwrap_err();
+    assert!(error.message.contains("surface inventory"));
 }
 
 #[tokio::test]

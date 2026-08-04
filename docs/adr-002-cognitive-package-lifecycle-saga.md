@@ -9,10 +9,10 @@
 
 ## Context
 
-An A3S cognitive package may contain Tool, Skill, MCP, UI, and OKF
+An A3S cognitive package may contain Tool, MCP, OKF, Flow, Skill, and UI
 contributions. Those contributions cross several hosts and persistence systems:
-the immutable package store, A3S Runtime, Gateway, Skill and UI projections,
-A3S Knowledge, route leases, and the capability registry.
+the immutable package store, A3S Runtime, Gateway, A3S Flow, Skill and UI
+projections, A3S Knowledge, route leases, and the capability registry.
 
 Treating each contribution as an independently installable package would split
 identity, trust, version, permission review, upgrade, and uninstall ownership.
@@ -21,8 +21,8 @@ these hosts do not share an ACID database.
 
 ## Decision
 
-The signed package is the only lifecycle aggregate. Tool, MCP, OKF, Skill, and
-UI are named package-owned contributions, never independently installed
+The signed package is the only lifecycle aggregate. Tool, MCP, OKF, Flow,
+Skill, and UI are named package-owned contributions, never independently installed
 packages.
 
 One lifecycle intent binds all authority needed to replay the operation:
@@ -44,7 +44,7 @@ The version-1 schedules are:
 ```text
 install / candidate upgrade
   package committed installed-disabled
-  -> prepare Tool | MCP | OKF | Skill | UI in dependency order
+  -> prepare Tool | MCP | OKF | Flow | Skill | UI in dependency order
   -> atomically publish one package capability generation
 
 enable
@@ -79,6 +79,7 @@ to separate `Send + Sync` host ports for:
 - Tool lifecycle;
 - MCP lifecycle;
 - OKF Knowledge lifecycle;
+- A3S Flow lifecycle;
 - Skill projection lifecycle; and
 - UI projection lifecycle.
 
@@ -88,12 +89,16 @@ The concrete foundation keeps surface semantics distinct:
 - a release-backed Tool Task uses an explicit Runtime Task selection;
 - an HTTP Tool and Streamable HTTP MCP use explicit Runtime Services;
 - an HTTP MCP Service additionally requires standard initialize evidence;
+- a Flow always uses the `a3s-flow` engine; its runtime adapter is typed and
+  its Tool/MCP/OKF dependencies are prepared first;
 - Skill and UI preparation revalidates immutable content evidence;
 - OKF uses stage, persist, promote, and persist, while disable only hides its
   capability and uninstall removes only the retained projection receipt.
 
 No host may translate a Tool into a universal action RPC, treat OKF as an
-executable workload, or delete mutable user data as part of normal uninstall.
+executable workload, turn `flow.json` into a second workflow engine, or delete
+mutable user data as part of normal uninstall. `flow.json` is a design and
+deployment document adapted to the same A3S Flow identity and lifecycle.
 
 ## Durability and Ownership
 
@@ -134,16 +139,16 @@ Implemented:
 - canonical manifest surface inventory shared with reconciliation;
 - package-level intent and deterministic dependency schedule;
 - durable checkpoint and failure journal with crash-safe replay;
-- typed package, capability, Tool, MCP, OKF, Skill, and UI ports;
+- typed package, capability, Tool, MCP, OKF, Flow, Skill, and UI ports;
 - production package commit/removal and atomic capability publish/hide/drain
   adapters over generation-bound receipt schema v3, immutable snapshots, and
   route leases;
-- concrete Runtime, immutable Skill/UI, and OKF Knowledge adapters;
+- concrete Runtime, immutable Flow/Skill/UI evidence, and OKF Knowledge adapters;
 - a public lifecycle factory for embedding host composition;
 - standalone signed-Registry graph install/uninstall with durable lock,
   admission, manifest, and generation evidence;
 - stable replay evidence for Runtime preparation and removal;
-- a content-addressed package fixture containing all five contribution kinds;
+- a content-addressed package fixture containing all six contribution kinds;
   and
 - unit and integration coverage for forward preparation, reverse removal,
   optional failure, required failure, root/receipt/snapshot crash replay,
@@ -153,8 +158,8 @@ Implemented:
 
 Remaining before the product can claim complete cognitive-package lifecycle:
 
-- injection of Runtime, Gateway, stdio MCP, Skill/UI, and A3S Knowledge hosts
-  by the umbrella Plugin Manager;
+- injection of Runtime, Gateway, stdio MCP, A3S Flow, Skill/UI, and A3S
+  Knowledge hosts by the umbrella Plugin Manager;
 - Code TUI/Web, management MCP, and managed-host lifecycle-factory wiring into
   this coordinator;
 - prior-generation retirement during blue/green upgrade; and

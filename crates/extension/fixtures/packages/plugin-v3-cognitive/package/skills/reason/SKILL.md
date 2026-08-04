@@ -1,6 +1,6 @@
 ---
 name: reason
-description: Use the package Tool, MCP server, and cited OKF knowledge as one cognitive capability.
+description: Use the package Tool, MCP server, cited OKF knowledge, and durable A3S Flow as one cognitive capability.
 ---
 
 # Reason

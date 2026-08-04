@@ -185,6 +185,38 @@ impl PluginOkfLifecycleHost for RecordingHosts {
 }
 
 #[async_trait]
+impl PluginFlowLifecycleHost for RecordingHosts {
+    async fn prepare_flow(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        surface: &PluginFlowSurface,
+        key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        self.execute(format!("flow.prepare:{}", surface.id), key)
+            .await
+    }
+
+    async fn stop_flow(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        surface: &PluginFlowSurface,
+        key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        self.execute(format!("flow.stop:{}", surface.id), key).await
+    }
+
+    async fn remove_flow(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        surface: &PluginFlowSurface,
+        key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        self.execute(format!("flow.remove:{}", surface.id), key)
+            .await
+    }
+}
+
+#[async_trait]
 impl PluginSkillLifecycleHost for RecordingHosts {
     async fn prepare_skill(
         &self,
@@ -256,6 +288,7 @@ fn coordinator(temp: &tempfile::TempDir, host: Arc<RecordingHosts>) -> PluginLif
         host.clone(),
         host.clone(),
         host.clone(),
+        host.clone(),
         host,
     );
     PluginLifecycleCoordinator::new(
@@ -292,6 +325,7 @@ async fn installs_all_surface_hosts_before_one_capability_publication() {
             "mcp.prepare:catalog",
             "okf.prepare:papers",
             "tool.prepare:query",
+            "flow.prepare:review",
             "skill.prepare:review",
             "ui.prepare:review",
             "capability.publish",
@@ -302,7 +336,7 @@ async fn installs_all_surface_hosts_before_one_capability_publication() {
         .apply(&intent, &manifest(), clock())
         .await
         .unwrap();
-    assert_eq!(host.calls().await.len(), 7);
+    assert_eq!(host.calls().await.len(), 8);
 }
 
 #[tokio::test]
@@ -336,6 +370,7 @@ async fn required_failure_withholds_publication_and_retry_resumes_exact_step() {
         [
             "okf.prepare:papers",
             "tool.prepare:query",
+            "flow.prepare:review",
             "skill.prepare:review",
             "ui.prepare:review",
             "capability.publish",
@@ -395,6 +430,7 @@ async fn uninstall_hides_then_drains_and_removes_every_surface_before_package() 
             "capability.drain",
             "ui.remove:review",
             "skill.remove:review",
+            "flow.remove:review",
             "tool.remove:query",
             "okf.remove:papers",
             "mcp.remove:catalog",

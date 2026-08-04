@@ -3,16 +3,17 @@ use std::sync::Arc;
 use a3s_runtime::contract::RuntimeObservation;
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_extension::{
-    ExtensionLifecyclePackage, ExtensionManifest, ExtensionRegistry, PluginMcpLaunch,
-    PluginMcpSurface, PluginOkfSurface, ToolSurface, ToolTaskSource, ToolWorkload,
+    ExtensionLifecyclePackage, ExtensionManifest, ExtensionRegistry, PluginFlowSurface,
+    PluginMcpLaunch, PluginMcpSurface, PluginOkfSurface, ToolSurface, ToolTaskSource, ToolWorkload,
 };
 use async_trait::async_trait;
 
 use crate::plugin_lifecycle::{
-    ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost, PluginLifecycleCoordinator,
-    PluginLifecycleEvidence, PluginLifecycleHosts, PluginLifecycleIntent,
-    PluginMcpServiceReadiness, PluginOkfLifecycleHost, PluginRuntimeServiceReadinessHost,
-    RuntimePluginSurfaceLifecycleHost, StaticPluginSurfaceLifecycleHost,
+    ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost, PluginFlowLifecycleHost,
+    PluginLifecycleCoordinator, PluginLifecycleEvidence, PluginLifecycleHosts,
+    PluginLifecycleIntent, PluginMcpServiceReadiness, PluginOkfLifecycleHost,
+    PluginRuntimeServiceReadinessHost, RuntimePluginSurfaceLifecycleHost,
+    StaticPluginSurfaceLifecycleHost,
 };
 use crate::plugin_runtime::{
     RuntimeBindingStore, RuntimeEndpointRef, RuntimeProviderSelection, RuntimeSurfacePlan,
@@ -24,7 +25,8 @@ use super::CognitivePackageLifecycleFactory;
 ///
 /// Embedding hosts may wrap this factory for executable Tool Tasks, stdio MCP,
 /// Skill, and UI packages. It deliberately rejects Runtime Service, HTTP MCP,
-/// and OKF surfaces until the host supplies their real lifecycle adapters.
+/// A3S Flow, and OKF surfaces until the host supplies their real lifecycle
+/// adapters.
 #[derive(Debug, Default)]
 pub struct StandaloneCognitivePackageLifecycleFactory;
 
@@ -64,6 +66,23 @@ impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFac
 }
 
 pub(super) fn validate_available_hosts(manifest: &ExtensionManifest) -> UseResult<()> {
+    if !manifest.flows.is_empty() {
+        return Err(provider_error(
+            "use.plugin.flow_provider_required",
+            format!(
+                "Cognitive package '{}' requires an injected a3s-flow lifecycle provider.",
+                manifest.package_id
+            ),
+        )
+        .with_detail(
+            "surfaces",
+            serde_json::json!(manifest.flows.iter().map(|value| &value.id).collect::<Vec<_>>()),
+        )
+        .with_suggestion(
+            "Install through an A3S host with an explicit a3s-flow compiler/runtime adapter, then replay the exact package lock.",
+        ));
+    }
+
     if !manifest.okf.is_empty() {
         return Err(provider_error(
             "use.plugin.okf_provider_required",
@@ -170,12 +189,14 @@ fn coordinator(
     ));
     let static_surfaces = Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root));
     let okf = Arc::new(UnavailableOkfLifecycleHost);
+    let flow = Arc::new(UnavailableFlowLifecycleHost);
     let hosts = PluginLifecycleHosts::new(
         package,
         capability,
         runtime.clone(),
         runtime,
         okf,
+        flow,
         static_surfaces.clone(),
         static_surfaces,
     );
@@ -219,6 +240,45 @@ impl PluginRuntimeServiceReadinessHost for UnavailableRuntimeServiceReadinessHos
 }
 
 struct UnavailableOkfLifecycleHost;
+
+struct UnavailableFlowLifecycleHost;
+
+#[async_trait]
+impl PluginFlowLifecycleHost for UnavailableFlowLifecycleHost {
+    async fn prepare_flow(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _surface: &PluginFlowSurface,
+        _idempotency_key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        Err(flow_unavailable())
+    }
+
+    async fn stop_flow(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _surface: &PluginFlowSurface,
+        _idempotency_key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        Err(flow_unavailable())
+    }
+
+    async fn remove_flow(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _surface: &PluginFlowSurface,
+        _idempotency_key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        Err(flow_unavailable())
+    }
+}
+
+fn flow_unavailable() -> UseError {
+    provider_error(
+        "use.plugin.flow_provider_required",
+        "No a3s-flow compiler/runtime lifecycle adapter was injected for this cognitive-package operation.",
+    )
+}
 
 #[async_trait]
 impl PluginOkfLifecycleHost for UnavailableOkfLifecycleHost {
@@ -329,6 +389,40 @@ mod tests {
         .unwrap();
         let error = validate_available_hosts(&manifest).unwrap_err();
         assert_eq!(error.code, "use.plugin.okf_provider_required");
+    }
+
+    #[test]
+    fn flow_surfaces_fail_before_lifecycle_composition_without_a3s_flow() {
+        let manifest = ExtensionManifest::parse_acl(
+            r#"
+extension "acme/flow" {
+  schema_version = 3
+  version        = "1.0.0"
+  route          = "flow"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read"]
+
+  repository {
+    url      = "https://github.com/acme/flow"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  flow "review" {
+    engine        = "a3s-flow"
+    runtime       = "native-ts"
+    source        = "flows/review.ts"
+    export        = "run"
+    requires_tool = []
+    requires_mcp  = []
+    requires_okf  = []
+    optional      = false
+  }
+}
+"#,
+        )
+        .unwrap();
+        let error = validate_available_hosts(&manifest).unwrap_err();
+        assert_eq!(error.code, "use.plugin.flow_provider_required");
     }
 
     #[test]

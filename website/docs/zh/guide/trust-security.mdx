@@ -5,7 +5,7 @@ description: A3S Use 如何验证包来源、冻结操作计划、限制权限�
 
 # 信任与安全
 
-A3S Use 的核心安全原则是：**包内容可以描述需求，但不能给自己授权。** Skill 文本、UI 消息、OKF 知识、Tool 输出、MCP 描述和远端内容始终是数据。
+A3S Use 的核心安全原则是：**包内容可以描述需求，但不能给自己授权。** Flow/Skill 源码、UI 消息、OKF 知识、Tool 输出、MCP 描述和远端内容始终是数据。
 
 ## 三条信任路径
 
@@ -97,7 +97,7 @@ resolve signed dependency graph
     → revalidate every Registry before payload download
     → verify and stage dependencies before dependents
     → prepare grants and Runtime bindings
-    → validate and stage static Skill, UI, and OKF projections
+    → preflight A3S Flow and stage Skill, UI, and OKF projections
     → publish changed packages in one capability generation
     → hide and drain superseded generation
     → retire old grants, bindings, and owned files
@@ -108,6 +108,8 @@ resolve signed dependency graph
 精确且已发布的依赖可以 retained 而不重复 commit。卸载按 package 反向顺序执行；另一个已安装包仍需要该依赖时会拒绝移除。部分 enabled receipt 写入在完整 immutable snapshot 发布前保持不可见。
 
 OKF 控制面门禁与 package-lifecycle adapter 已经实现：缺失 Knowledge evidence 为 pending，staged 不发布，只有精确 promoted observation 才是 healthy。产生和清理这些 record 的真实 A3S Knowledge index 后端与 scoped 产品接线仍在开发中。
+
+Flow 的源码完整性与生命周期顺序已实现，但 embedding host 必须注入精确的 `a3s-flow` compiler/runtime adapter。standalone engine 会在 mutation 前拒绝 required Flow，不会把只有源码证据的 Flow 发布为 ready。
 
 ## 平台隔离边界
 

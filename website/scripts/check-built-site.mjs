@@ -16,6 +16,8 @@ const requiredFiles = [
   "en/guide/index.html",
   "guide/package-model.html",
   "en/guide/package-model.html",
+  "guide/flow.html",
+  "en/guide/flow.html",
   "guide/okf.html",
   "en/guide/okf.html",
   "guide/trust-security.html",
@@ -55,7 +57,15 @@ for (const file of requiredFiles) {
 
 for (const homepage of ["index.html", "en/index.html"]) {
   const html = await readFile(path.join(outputRoot, homepage), "utf8");
-  for (const marker of ["a3s-use-home", "Tool", "MCP", "Skill", "UI", "OKF"]) {
+  for (const marker of [
+    "a3s-use-home",
+    "Tool",
+    "MCP",
+    "OKF",
+    "Flow",
+    "Skill",
+    "UI",
+  ]) {
     if (!html.includes(marker)) {
       throw new Error(`${homepage} is missing homepage marker: ${marker}`);
     }

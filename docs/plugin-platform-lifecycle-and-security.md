@@ -5,8 +5,9 @@
 - Product amendment: first-class OKF knowledge contribution accepted; M0K-A
   bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
   M0K-C-A adapter/store foundation frozen 2026-08-02, and package-level
-  five-surface saga, P0 package/capability hosts, and cognitive-package
-  dependency/lock foundation frozen 2026-08-03
+  six-surface saga, P0 package/capability hosts, and cognitive-package
+  dependency/lock foundation frozen 2026-08-03; unified A3S Flow semantics
+  frozen 2026-08-04
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -15,7 +16,7 @@ This document is the operational companion to the plugin platform
 architecture. It defines lifecycle consistency, failure recovery, security,
 storage, public application contracts, and observability.
 
-The checked-in M0/M0K contracts cover Tool, MCP, OKF, Skill, and UI. The shared
+The checked-in M0/M0K contracts cover Tool, MCP, OKF, Flow, Skill, and UI. The shared
 OKF bundle inspector, schema-v3 parser, package validator, exact host evidence,
 reconciler gate, injected Knowledge port, evidence-checking client, and
 persistent generation store are implemented. The production A3S Knowledge
@@ -33,6 +34,12 @@ single-snapshot graph publication, reverse uninstall, and crash-safe partial
 receipt recovery. Signed remote schema-v3 `install`/`uninstall` and compatible
 remote `component` commands call this graph coordinator. Code/Web still need to
 inject their complete host set through the public lifecycle factory.
+
+Flow has one engine, `a3s-flow`. Use verifies its bounded source and explicit
+Tool/MCP/OKF dependency edges; a typed host adapter owns Native TypeScript
+preflight, durable execution, replay, and observation. `flow.json` remains a
+design/deployment document for that same identity, never an independent
+package or lifecycle mechanism.
 
 ## Complete End-to-End Lifecycle Flow
 
@@ -75,7 +82,7 @@ flowchart TD
   resolveUpgrade --> hostContext
   resolveUninstall --> hostContext
   hostContext --> executable
-  executable -- "No: uninstall or Skill/UI/OKF only" --> buildPlan
+  executable -- "No Runtime Tool/MCP planning target" --> buildPlan
   executable -- "Yes" --> planningTarget
   planningTarget --> providerPreflight
   providerPreflight --> providerCapable
@@ -200,7 +207,7 @@ flowchart TD
 
   subgraph use["5. Active use and observation"]
     watch["Session watches capability revision"]
-    useRequest["Skill/UI/OKF load or Tool/MCP invocation"]
+    useRequest["Flow run, Skill/UI/OKF load,<br/>or Tool/MCP invocation"]
     visible{"Authorized exact-generation binding visible?"}
     rejectUse["Reject new use<br/>disabled, stale, incompatible, or unauthorized"]
     lease["Acquire exact-generation shared lease"]
@@ -208,6 +215,7 @@ flowchart TD
     runTask["CLI Tool:<br/>run one Runtime Task with native argv,<br/>bounded input/output, and exit status"]
     callService["HTTP Tool:<br/>call private Service through scoped Gateway binding"]
     callMcp["MCP:<br/>use standard MCP client and declared transport"]
+    runFlow["A3S Flow:<br/>run exact-generation durable workflow<br/>through the injected host adapter"]
     loadStatic["Skill/UI/OKF:<br/>load verified generation-scoped projection"]
     release["Release lease and record bounded observation"]
     changed{"Health or provider observation changed?"}
@@ -226,10 +234,12 @@ flowchart TD
   surfaceKind -- "CLI Tool" --> runTask
   surfaceKind -- "HTTP Tool" --> callService
   surfaceKind -- "MCP" --> callMcp
+  surfaceKind -- "Flow" --> runFlow
   surfaceKind -- "Skill / UI / OKF" --> loadStatic
   runTask --> release
   callService --> release
   callMcp --> release
+  runFlow --> release
   loadStatic --> release
   release --> changed
   changed -- "No" --> command
@@ -262,7 +272,7 @@ flowchart TD
     hide["Atomically hide routes and projections<br/>Block new calls"]
     drain["Drain exact-generation leases<br/>or reach reviewed timeout policy"]
     removalAction{"Desired state"}
-    stop["Stop eager Tool/MCP workloads<br/>Keep immutable package and data"]
+    stop["Stop eager Tool/MCP/Flow workloads<br/>Keep immutable package and data"]
     removeRuntime["Stop and remove Runtime units,<br/>Gateway routes, and endpoint bindings"]
     removeProjection["Remove receipt-owned Skill roots,<br/>command shims, UI/OKF indexes, and bindings"]
     removePackage["Remove scope receipt and unreferenced<br/>immutable package generations"]
@@ -341,7 +351,7 @@ flowchart TD
   class ready,degraded,installedDisabled,removed,keepPrevious,keepPreviousDisabled stable;
   class denied,drift,rejectPlanning,rejectPackage,rejectUse,broken failure;
   class hostContext,planningTarget,grantProposal,buildPlan,confirmationEvidence,intent,toggleIntent,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
-  class providerPreflight,providerCapable,runtimePlan,taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,removeRuntime runtime;
+  class providerPreflight,providerCapable,runtimePlan,taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,runFlow,removeRuntime runtime;
 ```
 
 The graph has nine important invariants:
@@ -354,12 +364,26 @@ The graph has nine important invariants:
   starting another child process or side effect;
 - package installation commits a disabled receipt before any capability is
   published;
-- a required Skill is invisible until its Tool, MCP, and OKF dependency
-  closure is usable;
+- a required Flow is unpublished until its Tool/MCP/OKF closure is usable, and
+  a required Skill is invisible until its Flow or direct dependency closure is usable;
 - a stored grant alone never publishes a capability;
 - upgrade switches all required N+1 bindings in one capability generation or
   keeps N active; and
 - disable or uninstall hides new routes before waiting for existing leases.
+
+### Flow readiness and cutover
+
+A Flow is an executable orchestration surface but owns no ambient authority.
+Its package source is admitted only after bounded UTF-8 and digest validation.
+The typed `a3s-flow` host then preflights the exact engine, runtime adapter,
+source, export, package version, and generation. Tool, MCP, and OKF dependencies
+must already be ready. Only matching host observation may publish the Flow and
+its dependent Skill/UI surfaces.
+
+Disable hides the complete package generation before stopping new Flow starts.
+Uninstall removes Flow host state before removing its dependencies or package
+root. Durable run history follows explicit host retention policy and is not
+silently deleted as package content.
 
 ### OKF readiness and cutover
 
@@ -454,7 +478,7 @@ The implemented package checkpoint schedules are:
 | Disable | hide package capability → drain accepted calls → stop surfaces in reverse dependency order |
 | Uninstall | hide package capability → drain accepted calls → remove receipt-owned surfaces in reverse dependency order → remove package |
 
-Tool, MCP, OKF, Skill, and UI are contributions inside this sequence. No
+Tool, MCP, OKF, Flow, Skill, and UI are contributions inside this sequence. No
 surface receives an independent install or uninstall record.
 
 The package-graph schedules are:
@@ -492,15 +516,15 @@ schema-v3 ownership.
    dependency order; exact published `Retain` generations are reused.
 6. Persist any planned exact-generation grant without replacing another
    package generation's authorization.
-7. Record desired `enabled` state and reconcile Tool, MCP, Skill, UI, and OKF
+7. Record desired `enabled` state and reconcile Tool, MCP, OKF, Flow, Skill, and UI
    bindings in dependency order.
 8. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
 9. Atomically publish all changed packages in one capability generation.
 10. Mark the operation complete and garbage-collect safe staging data.
 
 If activation fails, the package remains installed but disabled or broken with
-typed diagnostics. No partial Skill, command shim, endpoint, MCP route, UI, or
-OKF generation is advertised as ready.
+typed diagnostics. No partial command shim, endpoint, MCP route, OKF generation,
+Flow, Skill, or UI is advertised as ready.
 
 ### Upgrade
 
