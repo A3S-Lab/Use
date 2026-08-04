@@ -253,7 +253,8 @@ Remaining:
 - host broker integration into the shared Plugin Manager's final draft;
 - two-pass preflight/authorization/final selection;
 - workspace-aware grant-change and package-journal coordination;
-- prior Runtime generation retirement after capability cutover;
+- parent-saga coordination of the implemented exact Runtime N/N+1 store and
+  prior-generation retirement after capability cutover;
 - production provider injection for every CLI/Web/Cloud host;
 - secret, filesystem, egress, and child-process enforcement adapters;
 - Gateway route and MCP initialization orchestration;

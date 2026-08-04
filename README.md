@@ -45,8 +45,8 @@ available for automation, embedding, and diagnostics.
 > identity and share workspace-local durable execution/history; Web verifies
 > install, run, exact-generation upgrade, uninstall, and process-restart
 > recovery. Production Knowledge, Service/HTTP hosts, distributed Flow
-> scheduling/resumption, prior-generation retirement/rollback/GC, and complete
-> real-process cross-platform E2E remain release gates.
+> scheduling/resumption, graph-coordinated automatic rollback/retirement/GC,
+> and complete real-process cross-platform E2E remain release gates.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 ## Proof in the codebase
@@ -61,6 +61,9 @@ The package model is exercised as code, not only described in prose:
 - [`FlowRuntimeBindingStore`](src/flow_runtime/store.rs) retains symlink-safe,
   exact-generation Flow evidence so a candidate generation cannot hide the
   last published generation.
+- Package receipts, route leases, Runtime bindings, and Runtime observation
+  retain exact N/N+1 generations; staging a candidate cannot replace the
+  snapshot-selected generation, and retirement removes only receipt-owned N.
 - [`CognitivePackageManager`](src/cognitive_package/) installs a verified
   dependency closure forward, publishes changed packages once, and uninstalls
   unused packages in reverse dependency order.
@@ -405,11 +408,14 @@ a3s-use extension enable acme/calendar --json
 a3s-use component uninstall calendar --json
 ```
 
-Production grant/Knowledge/Service/Gateway composition and prior-generation
-retirement are still being wired. Required surfaces fail closed when their
-owning adapter is absent: Runtime Service and HTTP MCP need Runtime/Gateway,
-OKF needs Knowledge, and Flow needs the `a3s-flow` lifecycle host. No path
-silently falls back to a different provider, execution model, or Registry.
+Production grant/Knowledge/Service/Gateway composition and the graph-level
+upgrade/rollback/garbage-collection coordinator are still being wired. The
+storage layer already preserves exact package and Runtime generations across
+candidate preparation, cutover, drain, rollback, and receipt-owned removal.
+Required surfaces fail closed when their owning adapter is absent: Runtime
+Service and HTTP MCP need Runtime/Gateway, OKF needs Knowledge, and Flow needs
+the `a3s-flow` lifecycle host. No path silently falls back to a different
+provider, execution model, or Registry.
 
 ## Architecture
 
@@ -455,14 +461,14 @@ do not share one database transaction. The boundaries are frozen in
 | Dependency graph install | Available for signed remote packages: deterministic resolve, exact lock, forward install, shared retention, one publication, reverse uninstall, and replay |
 | Replaceable Registry input | Available in the package engine; host-selected URL/trust root and bounded dependency source set, with no compiled endpoint |
 | Umbrella Registry management | Available: add/list/show/refresh, stable-name replace, enable/disable, and remove; disabled sources stay visible but are excluded from browsing and resolution |
-| Tool/MCP runtime lifecycle | Typed adapters implemented; standalone supports executable Tool Tasks and stdio MCP, while Services/HTTP require injected providers |
+| Tool/MCP runtime lifecycle | Typed adapters plus bounded exact-generation N/N+1 Runtime binding storage and observation implemented; standalone supports executable Tool Tasks and stdio MCP, while Services/HTTP require injected providers |
 | A3S Flow lifecycle | Concrete `a3s-flow` preflight adapter, exact-generation binding store, artifact/source reinspection, lifecycle evidence, and capability observation implemented |
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
-| Upgrade/rollback | Prior-generation retirement, automatic rollback, and garbage collection remain release gates |
+| Upgrade/rollback | Package and Runtime N/N+1 retention, snapshot-selected routing, pre-cutover rollback, exact drain/removal, and crash replay implemented; graph-coordinated automatic rollback, retirement, and garbage collection remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,
 Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages

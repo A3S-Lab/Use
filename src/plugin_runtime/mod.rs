@@ -33,7 +33,7 @@ pub use provider_selector::{
     SelectedRuntimeSurface,
 };
 pub use receipt::{RuntimeBindingReadiness, RuntimeBindingReceipt};
-pub use store::RuntimeBindingStore;
+pub use store::{RuntimeBindingStore, MAX_RUNTIME_BINDING_GENERATIONS};
 pub use surface_observer::{
     RuntimeSurfaceObservation, RuntimeSurfaceObservationSnapshot, RuntimeSurfaceObservedState,
     RuntimeSurfaceObserver, RUNTIME_SURFACE_OBSERVATION_SCHEMA_VERSION,

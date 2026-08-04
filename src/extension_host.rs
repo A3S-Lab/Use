@@ -2,8 +2,8 @@ use std::path::Path;
 
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_extension::{
-    ActivationResult, ExtensionRegistry, ExtensionRegistrySnapshot, InstallOptions, InstallResult,
-    InstalledExtension, TrustedRegistry, UninstallResult,
+    ActivationResult, ExtensionRegistry, ExtensionRegistrySnapshot, ExtensionRouteBinding,
+    InstallOptions, InstallResult, InstalledExtension, TrustedRegistry, UninstallResult,
 };
 use std::time::Duration;
 
@@ -13,6 +13,14 @@ pub async fn list() -> UseResult<Vec<InstalledExtension>> {
 
 pub async fn get(package_id: &str) -> UseResult<Option<InstalledExtension>> {
     ExtensionRegistry::from_env()?.get(package_id).await
+}
+
+pub async fn get_snapshot_binding(
+    binding: &ExtensionRouteBinding,
+) -> UseResult<Option<InstalledExtension>> {
+    ExtensionRegistry::from_env()?
+        .get_snapshot_binding(binding)
+        .await
 }
 
 pub async fn install(

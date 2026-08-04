@@ -482,7 +482,16 @@ fn schema_v3_uninstall_replays_after_the_root_and_graph_record_are_removed() {
     let base_receipt = home.join("state/extensions/acme/base.json");
     let pending_path = home.join("state/operations/package-graphs/uninstall/acme/root.json");
     let graph_path = home.join("state/package-graphs/acme/root.json");
-    let route_lock = exclusive_lock(&home.join("state/route-locks/acme/base.lock"));
+    let base_generation =
+        serde_json::from_slice::<serde_json::Value>(&std::fs::read(&base_receipt).unwrap())
+            .unwrap()["lifecycleGeneration"]
+            .as_u64()
+            .unwrap();
+    let route_lock = exclusive_lock(
+        &home
+            .join("state/route-locks/acme/base")
+            .join(format!("{base_generation:020}.lock")),
+    );
     let mut interrupted = Command::new(binary())
         .args(["uninstall", "acme/root", "--json"])
         .env("A3S_USE_HOME", &home)

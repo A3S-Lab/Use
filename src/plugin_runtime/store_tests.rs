@@ -94,17 +94,14 @@ async fn binding_store_round_trips_idempotently_and_removes_exact_ownership() {
 }
 
 #[tokio::test]
-async fn binding_store_rejects_stale_and_conflicting_generations() {
+async fn binding_store_retains_exact_generations_and_rejects_conflicts() {
     let temporary = TempDir::new().unwrap();
     let store = RuntimeBindingStore::new(temporary.path());
     let current = task_receipt(7);
     store.put(&current).await.unwrap();
 
-    let stale = task_receipt(6);
-    assert_eq!(
-        store.put(&stale).await.unwrap_err().code,
-        "use.plugin.runtime.binding_stale"
-    );
+    let prior = task_receipt(6);
+    assert!(store.put(&prior).await.unwrap());
     let mut conflict = task_receipt(7);
     let RuntimeBindingReceipt::Task(conflict_receipt) = &mut conflict else {
         panic!("fixture should be a Task binding");
@@ -114,7 +111,41 @@ async fn binding_store_rejects_stale_and_conflicting_generations() {
         store.put(&conflict).await.unwrap_err().code,
         "use.plugin.runtime.binding_conflict"
     );
-    assert!(store.put(&task_receipt(8)).await.unwrap());
+    let next = task_receipt(8);
+    assert!(store.put(&next).await.unwrap());
+    assert_eq!(
+        store
+            .get_generation("workspace-01", current.surface(), 6)
+            .await
+            .unwrap(),
+        Some(prior.clone())
+    );
+    assert_eq!(
+        store
+            .get_generation("workspace-01", current.surface(), 7)
+            .await
+            .unwrap(),
+        Some(current.clone())
+    );
+    assert_eq!(
+        store
+            .get_generation("workspace-01", current.surface(), 8)
+            .await
+            .unwrap(),
+        Some(next.clone())
+    );
+    assert_eq!(
+        store.get("workspace-01", current.surface()).await.unwrap(),
+        Some(next)
+    );
+    assert!(store.remove(&current).await.unwrap());
+    assert_eq!(
+        store
+            .get_generation("workspace-01", prior.surface(), 6)
+            .await
+            .unwrap(),
+        Some(prior)
+    );
 }
 
 #[tokio::test]
@@ -150,7 +181,12 @@ async fn binding_store_fails_closed_on_tampered_json() {
     let store = RuntimeBindingStore::new(temporary.path());
     let receipt = task_receipt(7);
     store.put(&receipt).await.unwrap();
-    let path = binding_path(&store, receipt.scope_id(), receipt.surface());
+    let path = binding_path(
+        &store,
+        receipt.scope_id(),
+        receipt.surface(),
+        receipt.generation(),
+    );
     fs::write(&path, b"{\"bindingKind\":\"task\",\"receipt\":{}}").unwrap();
 
     let error = store
@@ -158,6 +194,83 @@ async fn binding_store_fails_closed_on_tampered_json() {
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.binding_receipt_invalid");
+}
+
+#[tokio::test]
+async fn binding_store_rejects_a_receipt_moved_to_another_generation() {
+    let temporary = TempDir::new().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let receipt = task_receipt(7);
+    store.put(&receipt).await.unwrap();
+    let original = binding_path(&store, receipt.scope_id(), receipt.surface(), 7);
+    let moved = binding_path(&store, receipt.scope_id(), receipt.surface(), 8);
+    fs::rename(original, moved).unwrap();
+
+    let error = store
+        .get_generation(receipt.scope_id(), receipt.surface(), 8)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.runtime.binding_ownership_mismatch");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn binding_store_rejects_symlinked_generation_receipts() {
+    let temporary = TempDir::new().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let receipt = task_receipt(7);
+    store.put(&receipt).await.unwrap();
+    let path = binding_path(&store, receipt.scope_id(), receipt.surface(), 7);
+    let owned = temporary.path().join("owned-runtime-receipt.json");
+    fs::rename(&path, &owned).unwrap();
+    std::os::unix::fs::symlink(&owned, &path).unwrap();
+
+    let error = store
+        .get(receipt.scope_id(), receipt.surface())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.runtime.binding_path_invalid");
+}
+
+#[tokio::test]
+async fn binding_store_enforces_the_retained_generation_limit() {
+    let temporary = TempDir::new().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    for generation in 1..=MAX_RUNTIME_BINDING_GENERATIONS as u64 {
+        store.put(&task_receipt(generation)).await.unwrap();
+    }
+
+    let error = store
+        .put(&task_receipt(MAX_RUNTIME_BINDING_GENERATIONS as u64 + 1))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.runtime.binding_limit_exceeded");
+    let qualified = surface(PluginSurfaceKind::Tool, "convert");
+    assert!(store
+        .get_generation("workspace-01", &qualified, 1)
+        .await
+        .unwrap()
+        .is_some());
+    assert!(store
+        .get_generation(
+            "workspace-01",
+            &qualified,
+            MAX_RUNTIME_BINDING_GENERATIONS as u64,
+        )
+        .await
+        .unwrap()
+        .is_some());
+
+    let first = binding_path(&store, "workspace-01", &qualified, 1);
+    let injected = binding_path(
+        &store,
+        "workspace-01",
+        &qualified,
+        MAX_RUNTIME_BINDING_GENERATIONS as u64 + 1,
+    );
+    fs::copy(first, injected).unwrap();
+    let error = store.get("workspace-01", &qualified).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.runtime.binding_limit_exceeded");
 }
 
 #[tokio::test]
@@ -205,6 +318,7 @@ fn binding_path(
     store: &RuntimeBindingStore,
     scope_id: &str,
     surface: &PlanQualifiedSurfaceRef,
+    generation: u64,
 ) -> std::path::PathBuf {
     let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
     store
@@ -212,5 +326,6 @@ fn binding_path(
         .join(scope_digest)
         .join("acme")
         .join("research")
-        .join(format!("tool-{}.json", surface.surface.id))
+        .join(format!("tool-{}", surface.surface.id))
+        .join(format!("{generation:020}.json"))
 }

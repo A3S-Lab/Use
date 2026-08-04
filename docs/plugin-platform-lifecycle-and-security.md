@@ -7,7 +7,8 @@
   M0K-C-A adapter/store foundation frozen 2026-08-02, and package-level
   six-surface saga, P0 package/capability hosts, and cognitive-package
   dependency/lock foundation frozen 2026-08-03; unified A3S Flow semantics
-  plus A3S Code TUI/Web host/catalog integration frozen 2026-08-04
+  plus A3S Code TUI/Web host/catalog integration frozen 2026-08-04,
+  and bounded exact-generation package/Runtime N/N+1 storage frozen 2026-08-05
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -476,7 +477,7 @@ The implemented package checkpoint schedules are:
 | Action | Canonical order |
 | --- | --- |
 | Install | commit installed-disabled package → prepare surfaces in dependency order → publish one capability generation |
-| Upgrade candidate | commit candidate → prepare candidate surfaces → publish candidate; prior-generation retirement is still pending |
+| Upgrade candidate | retain exact N → commit N+1 disabled → prepare candidate surfaces → publish candidate; storage-level rollback/hide/drain/exact removal is implemented, while parent-saga automatic retirement remains pending |
 | Enable | prepare surfaces in dependency order → publish one capability generation |
 | Disable | hide package capability → drain accepted calls → stop surfaces in reverse dependency order |
 | Uninstall | hide package capability → drain accepted calls → remove receipt-owned surfaces in reverse dependency order → remove package |
@@ -809,13 +810,16 @@ requires the exact current receipt and persists a tombstone; a moved,
 conflicting, stale, malformed, oversized, symlinked, or non-regular record
 fails closed.
 
-The initial Runtime binding store is rooted at
-`<state-root>/bindings/runtime/<scope-sha256>/`. It never uses a caller-provided
-scope, package, or surface string as an unchecked path. Receipts are bounded,
-validated, atomically replaced under a cross-process lock, and removed only
-when the caller presents the exact current receipt. A higher Runtime generation
-may replace an older generation; within one Service generation, only a newer
-observation with unchanged immutable binding evidence may refresh the receipt.
+The Runtime binding store is rooted at
+`<state-root>/bindings/runtime/<scope-sha256>/<publisher>/<package>/<surface>/`
+with one fixed-width generation receipt per file. It never uses a
+caller-provided scope, package, surface, or generation as an unchecked path.
+The cross-process-locked store retains at most 32 exact generations, validates
+every directory entry, fails closed on moved, malformed, oversized, symlinked,
+or non-regular receipts, and removes only the exact receipt presented by its
+owner. N and N+1 therefore coexist during preparation. Within one Service
+generation, only a newer observation with unchanged immutable binding evidence
+may refresh the receipt.
 
 Live observation also binds the Service receipt to the Runtime process start
 time. A restart within the same unit generation marks the old endpoint receipt
@@ -825,13 +829,14 @@ provider to stop and remove the exact Runtime unit/generation, then removes the
 exact-current binding receipt. Provider build drift blocks new apply but does
 not redirect or silently prevent cleanup of an already-owned unit.
 
-Runtime-to-reconciler observation is also scope-explicit. The observer accepts
-the workspace identity and canonical package digest, reads only receipt-owned
-surfaces, and resolves only their recorded providers. Release-backed Tool
-Tasks, Tool Services, and Streamable HTTP MCP are merged with disjoint
-compatibility-host and UI observations. An absent receipt stays pending; a
-stale binding cannot publish its dependency closure. A process-wide caller
-without a workspace identity must not choose a `current` or default scope.
+Runtime-to-reconciler observation is also scope- and generation-explicit. The
+observer accepts the workspace identity, canonical package digest, and exact
+package generation, reads only matching receipt-owned surfaces, and resolves
+only their recorded providers. Release-backed Tool Tasks, Tool Services, and
+Streamable HTTP MCP are merged with disjoint compatibility-host and UI
+observations. An absent receipt stays pending; a stale binding cannot publish
+its dependency closure. A process-wide caller without a workspace identity
+and exact generation must not choose a `current` or default binding.
 
 The current `data/use/extensions/` layout migrates in place through versioned
 receipts or remains a compatibility path. A migration must not duplicate large

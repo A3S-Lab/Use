@@ -14,6 +14,8 @@ use tokio::io::AsyncWriteExt;
 use super::receipt::RuntimeBindingReceipt;
 
 const MAX_BINDING_RECEIPT_BYTES: u64 = 256 * 1024;
+const MAX_BINDING_DIRECTORY_ENTRIES: usize = 64;
+pub const MAX_RUNTIME_BINDING_GENERATIONS: usize = 32;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,46 +44,78 @@ impl RuntimeBindingStore {
     pub async fn put(&self, receipt: &RuntimeBindingReceipt) -> UseResult<bool> {
         receipt.validate()?;
         let _lock = self.acquire_lock().await?;
-        let path = self.binding_path(receipt.scope_id(), receipt.surface())?;
-        ensure_owned_directory(&self.root, path.parent()).await?;
+        let directory = self.surface_directory(receipt.scope_id(), receipt.surface())?;
+        ensure_owned_directory(&self.root, Some(&directory)).await?;
+        let retained = generations(&directory).await?;
+        let path = binding_path(&directory, receipt.generation());
         if let Some(current) = read_optional_receipt(&path).await? {
+            validate_ownership(
+                &current,
+                receipt.scope_id(),
+                receipt.surface(),
+                receipt.generation(),
+            )?;
             if current == *receipt {
                 return Ok(false);
             }
-            validate_replacement(&current, receipt)?;
+            validate_same_generation_replacement(&current, receipt)?;
+        } else if retained.len() >= MAX_RUNTIME_BINDING_GENERATIONS {
+            return Err(generation_limit_error());
         }
         write_receipt(&path, receipt).await?;
         Ok(true)
     }
 
+    /// Return the newest retained receipt for inventory and diagnostics.
+    /// Lifecycle and capability decisions must use [`Self::get_generation`]
+    /// with the generation selected by their immutable package evidence.
     pub async fn get(
         &self,
         scope_id: &str,
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<Option<RuntimeBindingReceipt>> {
-        let path = self.binding_path(scope_id, surface)?;
-        if !validate_existing_directory_chain(&self.state_root, path.parent()).await? {
+        let directory = self.surface_directory(scope_id, surface)?;
+        if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(None);
         }
+        let Some(generation) = generations(&directory).await?.into_iter().next_back() else {
+            return Ok(None);
+        };
+        self.get_generation(scope_id, surface, generation).await
+    }
+
+    /// Read one exact retained Runtime generation. Candidate preparation and
+    /// prior-generation retirement must never infer ownership from the newest
+    /// receipt for a surface.
+    pub async fn get_generation(
+        &self,
+        scope_id: &str,
+        surface: &PlanQualifiedSurfaceRef,
+        generation: u64,
+    ) -> UseResult<Option<RuntimeBindingReceipt>> {
+        if generation == 0 {
+            return Err(invalid_path_identity());
+        }
+        let directory = self.surface_directory(scope_id, surface)?;
+        if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
+            return Ok(None);
+        }
+        let path = binding_path(&directory, generation);
         let Some(receipt) = read_optional_receipt(&path).await? else {
             return Ok(None);
         };
-        if receipt.scope_id() != scope_id || receipt.surface() != surface {
-            return Err(store_error(
-                "use.plugin.runtime.binding_ownership_mismatch",
-                "A Runtime binding receipt does not match its scope and surface path.",
-            ));
-        }
+        validate_ownership(&receipt, scope_id, surface, generation)?;
         Ok(Some(receipt))
     }
 
     pub async fn remove(&self, expected: &RuntimeBindingReceipt) -> UseResult<bool> {
         expected.validate()?;
         let _lock = self.acquire_lock().await?;
-        let path = self.binding_path(expected.scope_id(), expected.surface())?;
-        if !validate_existing_directory_chain(&self.state_root, path.parent()).await? {
+        let directory = self.surface_directory(expected.scope_id(), expected.surface())?;
+        if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(false);
         }
+        let path = binding_path(&directory, expected.generation());
         let Some(current) = read_optional_receipt(&path).await? else {
             return Ok(false);
         };
@@ -98,7 +132,7 @@ impl RuntimeBindingStore {
         Ok(true)
     }
 
-    fn binding_path(
+    fn surface_directory(
         &self,
         scope_id: &str,
         surface: &PlanQualifiedSurfaceRef,
@@ -121,7 +155,7 @@ impl RuntimeBindingStore {
             .join(scope_digest)
             .join(publisher)
             .join(package)
-            .join(format!("{kind}-{}.json", surface.surface.id)))
+            .join(format!("{kind}-{}", surface.surface.id)))
     }
 
     async fn acquire_lock(&self) -> UseResult<StdFile> {
@@ -175,18 +209,15 @@ impl RuntimeBindingStore {
     }
 }
 
-fn validate_replacement(
+fn validate_same_generation_replacement(
     current: &RuntimeBindingReceipt,
     next: &RuntimeBindingReceipt,
 ) -> UseResult<()> {
-    if current.generation() > next.generation() {
+    if current.generation() != next.generation() {
         return Err(store_error(
-            "use.plugin.runtime.binding_stale",
-            "A stale Runtime binding generation cannot replace the current receipt.",
+            "use.plugin.runtime.binding_ownership_mismatch",
+            "A Runtime binding receipt was stored under a different generation path.",
         ));
-    }
-    if current.generation() < next.generation() {
-        return Ok(());
     }
     match (current, next) {
         (RuntimeBindingReceipt::Service(current), RuntimeBindingReceipt::Service(next))
@@ -200,6 +231,90 @@ fn validate_replacement(
             "A Runtime binding generation has conflicting immutable content.",
         )),
     }
+}
+
+fn validate_ownership(
+    receipt: &RuntimeBindingReceipt,
+    scope_id: &str,
+    surface: &PlanQualifiedSurfaceRef,
+    generation: u64,
+) -> UseResult<()> {
+    if receipt.scope_id() != scope_id
+        || receipt.surface() != surface
+        || receipt.generation() != generation
+    {
+        return Err(store_error(
+            "use.plugin.runtime.binding_ownership_mismatch",
+            "A Runtime binding receipt does not match its scope, surface, and generation path.",
+        ));
+    }
+    Ok(())
+}
+
+fn binding_path(directory: &Path, generation: u64) -> PathBuf {
+    directory.join(format!("{generation:020}.json"))
+}
+
+async fn generations(directory: &Path) -> UseResult<std::collections::BTreeSet<u64>> {
+    let mut entries = fs::read_dir(directory)
+        .await
+        .map_err(|error| path_error("read Runtime binding directory", directory, error))?;
+    let mut values = std::collections::BTreeSet::new();
+    let mut entries_seen = 0_usize;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| path_error("read Runtime binding entry", directory, error))?
+    {
+        entries_seen = entries_seen.saturating_add(1);
+        if entries_seen > MAX_BINDING_DIRECTORY_ENTRIES {
+            return Err(store_error(
+                "use.plugin.runtime.binding_limit_exceeded",
+                "The Runtime binding directory exceeds its entry bound.",
+            ));
+        }
+        let name = entry.file_name();
+        let name = name.to_str().ok_or_else(invalid_path_identity)?;
+        if name.starts_with(".binding-") && name.ends_with(".tmp") {
+            let metadata = fs::symlink_metadata(entry.path()).await.map_err(|error| {
+                path_error("inspect temporary Runtime binding", &entry.path(), error)
+            })?;
+            if metadata.file_type().is_symlink()
+                || !metadata.is_file()
+                || metadata.len() > MAX_BINDING_RECEIPT_BYTES
+            {
+                return Err(invalid_path_identity());
+            }
+            continue;
+        }
+        let Some(stem) = name.strip_suffix(".json") else {
+            return Err(invalid_path_identity());
+        };
+        let metadata = fs::symlink_metadata(entry.path())
+            .await
+            .map_err(|error| path_error("inspect Runtime binding receipt", &entry.path(), error))?;
+        if metadata.file_type().is_symlink()
+            || !metadata.is_file()
+            || metadata.len() == 0
+            || metadata.len() > MAX_BINDING_RECEIPT_BYTES
+        {
+            return Err(invalid_path_identity());
+        }
+        if stem.len() != 20 || !stem.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(invalid_path_identity());
+        }
+        let generation = stem.parse::<u64>().map_err(|_| invalid_path_identity())?;
+        if generation == 0 || format!("{generation:020}.json") != name {
+            return Err(invalid_path_identity());
+        }
+        if !values.insert(generation) {
+            return Err(invalid_path_identity());
+        }
+    }
+    if values.len() > MAX_RUNTIME_BINDING_GENERATIONS {
+        return Err(generation_limit_error());
+    }
+    Ok(values)
 }
 
 fn same_service_generation(
@@ -460,6 +575,15 @@ fn invalid_path_identity() -> UseError {
     store_error(
         "use.plugin.runtime.binding_path_invalid",
         "A Runtime binding scope or surface identity is invalid.",
+    )
+}
+
+fn generation_limit_error() -> UseError {
+    store_error(
+        "use.plugin.runtime.binding_limit_exceeded",
+        format!(
+            "The Runtime binding reached its retained-generation limit of {MAX_RUNTIME_BINDING_GENERATIONS}; receipt-owned cleanup is required before another generation is prepared."
+        ),
     )
 }
 

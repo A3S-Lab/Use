@@ -60,6 +60,10 @@ impl ExtensionPaths {
         self.state_root.join("extensions")
     }
 
+    pub(crate) fn retained_lifecycle_receipts_root(&self) -> PathBuf {
+        self.state_root.join("extension-generations")
+    }
+
     pub(crate) fn package_parent(&self, package_id: &str) -> PathBuf {
         append_package_id(self.extensions_root(), package_id)
     }
@@ -90,6 +94,20 @@ impl ExtensionPaths {
         path
     }
 
+    pub(crate) fn retained_lifecycle_receipt_directory(&self, package_id: &str) -> PathBuf {
+        append_package_id(self.retained_lifecycle_receipts_root(), package_id)
+    }
+
+    pub(crate) fn retained_lifecycle_receipt_path(
+        &self,
+        package_id: &str,
+        generation: u64,
+        package_sha256: &str,
+    ) -> PathBuf {
+        self.retained_lifecycle_receipt_directory(package_id)
+            .join(format!("{generation:020}-{package_sha256}.json"))
+    }
+
     pub(crate) fn registry_lock_path(&self) -> PathBuf {
         self.receipts_root().join(".registry.lock")
     }
@@ -102,6 +120,11 @@ impl ExtensionPaths {
         let mut path = append_package_id(self.state_root.join("route-locks"), package_id);
         path.set_extension("lock");
         path
+    }
+
+    pub(crate) fn lifecycle_package_lock_path(&self, package_id: &str, generation: u64) -> PathBuf {
+        append_package_id(self.state_root.join("route-locks"), package_id)
+            .join(format!("{generation:020}.lock"))
     }
 
     pub fn tuf_datastore(&self, registry_name: &str) -> PathBuf {
@@ -179,8 +202,20 @@ mod tests {
             PathBuf::from("/state/use/extensions/acme/slack.json")
         );
         assert_eq!(
+            paths.retained_lifecycle_receipt_path("acme/slack", 7, &"a".repeat(64)),
+            PathBuf::from(format!(
+                "/state/use/extension-generations/acme/slack/{:020}-{}.json",
+                7,
+                "a".repeat(64)
+            ))
+        );
+        assert_eq!(
             paths.package_lock_path("acme/slack"),
             PathBuf::from("/state/use/route-locks/acme/slack.lock")
+        );
+        assert_eq!(
+            paths.lifecycle_package_lock_path("acme/slack", 7),
+            PathBuf::from("/state/use/route-locks/acme/slack/00000000000000000007.lock")
         );
         assert_eq!(
             paths.registry_snapshot_path(),

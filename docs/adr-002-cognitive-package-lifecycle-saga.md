@@ -121,16 +121,19 @@ reviewed for that package generation.
 ## Upgrade Boundary
 
 The version-1 coordinator models candidate commit, preparation, and
-publication. Production blue/green upgrade still requires explicit retirement
-of the prior Runtime, Gateway, grant, projection, and package generation after
-capability cutover and drain.
+publication. The package and Runtime storage layer now preserves exact N and
+N+1 receipts concurrently. Snapshot-selected package reads and
+generation-specific route leases keep N callable while N+1 is prepared;
+pre-cutover package rollback and exact Runtime/package removal cannot overwrite
+or retire the other generation.
 
-Until that retirement protocol preserves both old and candidate receipts, the
-production package host rejects upgrade before mutation with
-`use.plugin.package_generation_retirement_required`; the Runtime lifecycle
-adapter independently rejects a different retained binding generation with
-`use.plugin.runtime_generation_retirement_required`. Neither may overwrite the
-only receipt for a live old-generation resource.
+The shared Plugin Manager does not yet drive those primitives as one durable
+dependency-closure upgrade. Its production package host therefore continues
+to reject that uncoordinated path with
+`use.plugin.package_generation_retirement_required`. Production blue/green
+upgrade still requires the parent saga to compose candidate grants, Runtime,
+Gateway, Knowledge, projections, atomic capability cutover, drain, automatic
+rollback, prior-generation retirement, and garbage collection.
 
 ## Implementation State
 
@@ -143,6 +146,9 @@ Implemented:
 - production package commit/removal and atomic capability publish/hide/drain
   adapters over generation-bound receipt schema v3, immutable snapshots, and
   route leases;
+- bounded symlink-safe package and Runtime N/N+1 stores, exact snapshot receipt
+  resolution, generation-specific leases, pre-cutover rollback, and
+  receipt-owned prior-generation removal;
 - concrete Runtime, immutable Flow/Skill/UI evidence, and OKF Knowledge adapters;
 - a public lifecycle factory for embedding host composition;
 - standalone signed-Registry graph install/uninstall with durable lock,
@@ -162,7 +168,8 @@ Remaining before the product can claim complete cognitive-package lifecycle:
   Knowledge hosts by the umbrella Plugin Manager;
 - Code TUI/Web, management MCP, and managed-host lifecycle-factory wiring into
   this coordinator;
-- prior-generation retirement during blue/green upgrade; and
+- graph-coordinated automatic rollback, prior-generation retirement, and
+  garbage collection during blue/green upgrade; and
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
 
 ## Consequences
@@ -179,5 +186,5 @@ Costs:
 
 - every product host must provide typed lifecycle adapters;
 - capability publication requires a multi-resource saga; and
-- Runtime-backed upgrades remain unavailable until dual-generation retirement
-  evidence is implemented.
+- Runtime-backed upgrades remain unavailable through the shared Plugin Manager
+  until its parent saga consumes the implemented dual-generation evidence.
