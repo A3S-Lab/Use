@@ -69,7 +69,7 @@ Install prepares this graph forward and publishes one package generation. Disabl
 
 ## What `flow.json` means
 
-A3S Code historically uses `flow.json` as the visible Workflow-as-a-Service design document. It is not a second package format or execution engine. The product direction is a typed import/deployment adapter that maps that document to the same installed Flow identity:
+A3S Code uses `flow.json` as the visible Workflow-as-a-Service design document. It is not a second package format or execution engine. An executable design carries a strict, path-free `installedFlow` reference that maps it to one exact installed package generation:
 
 - Native TypeScript is an A3S Flow execution adapter.
 - `flow.json` is a visual design/deployment document.
@@ -84,6 +84,6 @@ A3S Use implements manifest admission, exact source evidence, signed catalog clo
 
 Valid source bytes are necessary but not sufficient readiness evidence. A Flow remains pending and absent from the published catalog until the typed A3S Flow host reports successful preflight for that admitted generation; source corruption overrides even a stale positive host observation.
 
-A3S Code injects the concrete host through its shared package lifecycle factory. TUI and Web consume the same exact-generation watcher, and Web exposes the typed live catalog at `GET /api/v1/plugins/flows`. The detached-Web gate verifies Flow install, exact-generation upgrade, and uninstall without daemon restart.
+A3S Code injects the concrete host through its shared package lifecycle factory. CLI, TUI, and Web resolve the same strict `flow.json` identity. Before a new run, Code reinspects the current regular package source, verifies containment, size, UTF-8, and SHA-256, stages only the verified bytes, and completes Native TypeScript preflight before creating a binding or event. All three entrypoints use one cross-process-locked `.a3s/flow-runtime/` event store without requiring an OS login.
 
-Durable run execution/observation, `flow.json` import/deployment mapping to the installed identity, and complete real-process cross-platform coverage remain release gates. The [roadmap](./roadmap) tracks those gates explicitly.
+Web exposes the live catalog and local run APIs under `/api/v1/plugins/flows`. The detached-Web gate verifies `install → run → upgrade → run → uninstall → restart`, source-drift rejection before compiler/event mutation, retained exact-generation history, and public responses that add no managed or workspace path. The current Marketplace frontend does not yet present Flow run or history controls, so CLI/TUI are the interactive local execution surfaces. This is single-node crash/restart durability. A visible Web control surface, distributed worker placement, automatic resumption of suspended waits/retries/hooks, production retention/garbage collection, and complete real-process cross-platform coverage remain release gates. The [roadmap](./roadmap) tracks those gates explicitly.

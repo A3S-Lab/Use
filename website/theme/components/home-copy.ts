@@ -99,7 +99,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTarget: "目标",
     consoleTrust: "信任",
     consoleGeneration: "代际",
-    consoleReady: "Code Flow 热插拔已就绪 · OKF 与 Service 生产宿主集成中",
+    consoleReady: "Code Flow 本地持久运行已就绪 · 分布式宿主集成中",
     modelEyebrow: "ONE PACKAGE · SIX CONTRIBUTIONS",
     modelTitle: "一个不可变身份，一套安装与移除边界",
     modelBody:
@@ -244,7 +244,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     ctaEyebrow: "START WITH THE PACKAGE GRAPH",
     ctaTitle: "一次安装认知包及其完整依赖",
     ctaBody:
-      "用 a3s plugin 安装后，Code TUI/Web 会热插拔已验证的 Tool、MCP、Flow、Skill 与 UI。生产 Runtime Service、HTTP MCP、OKF 与 flow.json run 映射仍是发布门禁。",
+      "用 a3s plugin 安装后，Code CLI/TUI/Web 会热插拔已验证的 Tool、MCP、Flow、Skill 与 UI，并共用精确 flow.json 身份和本地持久运行历史。生产 Runtime Service、HTTP MCP、OKF 与分布式 Flow 调度仍是发布门禁。",
     ctaPrimary: "打开快速开始",
     ctaSecondary: "查看路线图",
     footer: "MIT 开源 · Rust 编写 · Linux / macOS / Windows",
@@ -272,7 +272,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     consoleTrust: "trust",
     consoleGeneration: "generation",
     consoleReady:
-      "Code Flow hot-plug ready · production OKF and Service hosts in progress",
+      "Code Flow local durability ready · distributed hosts in progress",
     modelEyebrow: "ONE PACKAGE · SIX CONTRIBUTIONS",
     modelTitle: "One immutable identity. One install and removal boundary.",
     modelBody:
@@ -418,7 +418,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     ctaEyebrow: "START WITH THE PACKAGE GRAPH",
     ctaTitle: "Install a cognitive package and its complete dependency graph.",
     ctaBody:
-      "Install with a3s plugin and Code TUI/Web hot-plugs verified Tool, MCP, Flow, Skill, and UI surfaces. Production Runtime Service, HTTP MCP, OKF, and flow.json run mapping remain release gates.",
+      "Install with a3s plugin and Code CLI/TUI/Web hot-plugs verified Tool, MCP, Flow, Skill, and UI surfaces with one exact flow.json identity and durable local history. Production Runtime Service, HTTP MCP, OKF, and distributed Flow scheduling remain release gates.",
     ctaPrimary: "Open the quick start",
     ctaSecondary: "Read the roadmap",
     footer: "MIT licensed · Built in Rust · Linux / macOS / Windows",

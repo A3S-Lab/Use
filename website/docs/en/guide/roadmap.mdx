@@ -24,7 +24,7 @@ As of 2026-08-04, `main` contains:
 - P0-D schema-v3 SemVer package dependencies, bounded resolution, exact Registry/TUF lock, signed remote CLI install/uninstall, forward closure download/install, retained dependency checks, atomic graph publication, durable crash replay, and reverse removal.
 - P0-F A3S Flow engine/runtime/source contracts, Tool/MCP/OKF dependency closure, lifecycle/reconciler/catalog projection, real Native TypeScript preflight, exact-generation bindings, host-capabilities v2, and manager-toolset v3;
 - host-owned stable-name Registry replace and enable/disable, with disabled-source filtering and content-addressed trust-root cutover; and
-- A3S Code TUI/Web lifecycle-factory composition, one exact-generation watcher, a typed live Flow catalog, and detached-Web install/upgrade/uninstall hot-plug coverage.
+- A3S Code CLI/TUI/Web lifecycle-factory composition, strict `flow.json` identity, one workspace-local durable runtime, and detached-Web install/run/upgrade/uninstall/restart coverage.
 
 The stable v0.2 package foundation remains independently usable. The plugin-platform baseline above is in development on `main` and is not a complete production plugin product.
 
@@ -32,23 +32,23 @@ The stable v0.2 package foundation remains independently usable. The plugin-plat
 
 ## Milestones
 
-| Milestone                            | Status             | Outcome                                                                                    |
-| ------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------ |
-| M0 — Contract freeze and fixtures    | Complete           | Identity, surface, permission, plan, grant, and release fixtures frozen                    |
-| M0K-A — OKF bundle contract          | Complete           | Exact content identity, bounded conformance, and canonical fixtures                        |
-| M0K-B — OKF control plane            | Complete           | Manifest, package, catalog, plan, Knowledge evidence, and reconciler gates                 |
-| M0K-C-A — OKF lifecycle foundation   | Complete           | Injected port, exact-byte validation, durable bindings, and owned cleanup                  |
-| M0K-C-B — Production OKF integration | In progress        | Real Knowledge indexing, scoped projection, cited retrieval, and rollback                  |
-| M0F — Unified A3S Flow surface       | Execution mapping  | Code preflight/catalog/hot-plug complete; durable runs and `flow.json` mapping pending     |
-| M1 — Signed searchable catalog       | Complete           | TUF-signed catalog, bounded search, planning bundle, and cache                             |
-| M2 — Shared Plugin Manager           | In progress        | Unified CLI/Web/MCP lifecycle, durable plan/apply/replay, and parent saga                  |
-| P0 — Package/capability hosts        | Complete           | Generation commit/remove, snapshot publish/hide, lease drain, and replay                   |
-| P0-D — Package dependency graph      | Complete           | SemVer resolver, exact lock, retained nodes, forward install, one cutover, reverse removal |
-| M3 — User plugin UX                  | In progress        | CLI/Marketplace lifecycle available; on-demand Science/OKF delivery and release E2E remain |
-| M4 — Agent read-only management      | Contracts complete | Search, inspect, list, status, and plan tools                                              |
-| M5 — Permission/runtime enforcement  | In progress        | Production grant, secret, egress, filesystem, process, and Gateway adapters                |
-| M6 — Authorized agent lifecycle      | Pending            | Authorized apply, hot use, upgrade, disable, and uninstall                                 |
-| M7 — Supply chain/platform gates     | Pending            | Official signing/key operations, rollback/GC, Windows parity, and release gates            |
+| Milestone                            | Status             | Outcome                                                                                           |
+| ------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------- |
+| M0 — Contract freeze and fixtures    | Complete           | Identity, surface, permission, plan, grant, and release fixtures frozen                           |
+| M0K-A — OKF bundle contract          | Complete           | Exact content identity, bounded conformance, and canonical fixtures                               |
+| M0K-B — OKF control plane            | Complete           | Manifest, package, catalog, plan, Knowledge evidence, and reconciler gates                        |
+| M0K-C-A — OKF lifecycle foundation   | Complete           | Injected port, exact-byte validation, durable bindings, and owned cleanup                         |
+| M0K-C-B — Production OKF integration | In progress        | Real Knowledge indexing, scoped projection, cited retrieval, and rollback                         |
+| M0F — Unified A3S Flow surface       | Local complete     | Code CLI/TUI/Web durable runs and exact `flow.json` mapping complete; distributed runtime pending |
+| M1 — Signed searchable catalog       | Complete           | TUF-signed catalog, bounded search, planning bundle, and cache                                    |
+| M2 — Shared Plugin Manager           | In progress        | Unified CLI/Web/MCP lifecycle, durable plan/apply/replay, and parent saga                         |
+| P0 — Package/capability hosts        | Complete           | Generation commit/remove, snapshot publish/hide, lease drain, and replay                          |
+| P0-D — Package dependency graph      | Complete           | SemVer resolver, exact lock, retained nodes, forward install, one cutover, reverse removal        |
+| M3 — User plugin UX                  | In progress        | CLI/Marketplace lifecycle available; on-demand Science/OKF delivery and release E2E remain        |
+| M4 — Agent read-only management      | Contracts complete | Search, inspect, list, status, and plan tools                                                     |
+| M5 — Permission/runtime enforcement  | In progress        | Production grant, secret, egress, filesystem, process, and Gateway adapters                       |
+| M6 — Authorized agent lifecycle      | Pending            | Authorized apply, hot use, upgrade, disable, and uninstall                                        |
+| M7 — Supply chain/platform gates     | Pending            | Official signing/key operations, rollback/GC, Windows parity, and release gates                   |
 
 ## Current critical path
 
@@ -57,7 +57,7 @@ The stable v0.2 package foundation remains independently usable. The plugin-plat
 3. Add prior-generation retirement after blue/green capability cutover, then complete CLI/Web/agent lifecycle and crash-recovery E2E.
 4. Preserve the shared Code Web/TUI lifecycle path while routing management MCP and managed-host apply through the same public factory and package graph, then add retained-generation rollback and garbage collection.
 5. Connect the M0K-C-A Knowledge port and lifecycle adapter to the real A3S Knowledge backend and scoped capability/session projection.
-6. Connect durable run execution/observation and the `flow.json` import/deployment adapter to the same installed A3S Flow identity already projected into Code TUI/Web.
+6. Add visible Web Flow run/history controls, then extend the completed workspace-local runtime with distributed worker placement, automatic suspended-work resumption, and production retention/garbage collection.
 7. Extend Agent, prompt, hook, memory, and context-provider contributions only after each host contract is frozen.
 8. Complete official Registry signing/key operations and Windows platform gates.
 

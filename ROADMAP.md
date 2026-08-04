@@ -8,7 +8,8 @@
   dependency/lock foundations accepted 2026-08-03; unified A3S Flow surface
   and exact-generation preflight binding foundation accepted 2026-08-04;
   stable-name Registry controls plus A3S Code TUI/Web Flow and hot-plug host
-  integration accepted 2026-08-04
+  integration accepted 2026-08-04; exact `flow.json` identity plus shared
+  workspace-local durable execution/observation accepted 2026-08-04
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -165,8 +166,11 @@ The following foundations are implemented:
   immutable Skill/UI, and real `a3s-flow` Native TypeScript preflight;
 - one exact-generation watcher feeding Code TUI/Web plus the typed
   `GET /api/v1/plugins/flows` catalog; and
-- detached-Web `install -> upgrade -> uninstall` hot-plug coverage for
-  Activity, Skill, and Flow replacement without daemon restart.
+- exact `flow.json` identity resolution plus one cross-process-locked local
+  `a3s-flow` event store shared by Code CLI, TUI, and Web; and
+- detached-Web `install -> run -> upgrade -> run -> uninstall -> restart`
+  coverage for Activity, Skill, Flow replacement, retained run history, and
+  path-free observation.
 
 The OKF control plane is implemented without creating another package manager,
 Runtime route, or reconciler. It intentionally publishes no OKF capability
@@ -201,9 +205,10 @@ The main gaps are:
   the same composition;
 - A3S Use supplies the production `a3s-flow` preflight host and retained
   binding evidence, and A3S Code injects it and exposes the typed live Flow
-  catalog; durable execution/observation and `flow.json` import/deployment must
-  still map to that installed identity before local and OS workflow UX are one
-  path;
+  catalog; Code now resolves strict `flow.json` identities and provides local
+  durable execution/observation through the same engine, while distributed
+  workers, automatic suspended-work resumption, and production retention
+  remain pending;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
 - the versioned OKF manager/search/selection contract, injected Knowledge port,
@@ -377,7 +382,7 @@ Exit criteria:
 - the ownership contract forbids removing personal notes or another package's
   index; production cleanup and recovery proof remains part of M0K-C.
 
-### M0F — Unified A3S Flow contribution (Code host/catalog complete 2026-08-04; execution mapping pending)
+### M0F — Unified A3S Flow contribution (Code local execution/observation complete 2026-08-04; distributed runtime pending)
 
 Implementation status:
 
@@ -398,9 +403,15 @@ Implementation status:
   and reverse teardown;
 - completed: A3S Code lifecycle-factory injection, exact-generation TUI/Web
   watcher projection, typed live Flow catalog, and install/upgrade/uninstall
-  hot-plug coverage; and
-- pending: durable run execution/observation and typed `flow.json`
-  import/deployment mapping to the installed Flow identity.
+  hot-plug coverage;
+- completed: strict path-free `flow.json` identity resolution for non-resident
+  CLI, resident TUI, and Web; source revalidation and immutable staging before
+  compiler/event mutation; workspace-local durable `a3s-flow` runs, idempotent
+  run IDs, status/event APIs, upgrade/uninstall history retention, and Web
+  process-restart recovery; and
+- pending: distributed worker placement, automatic scheduling/resumption of
+  suspended waits/retries/hooks, production retention/garbage collection, and
+  a visible Web Flow run/history control surface over the completed APIs.
 
 Exit criteria:
 

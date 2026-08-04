@@ -9,20 +9,20 @@ A3S Use is the **AI Native Package Manager** for the A3S ecosystem. It does not 
 
 ## What is available now
 
-| Capability                                                            | Status                                                       |
-| --------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Local directories and bounded archives                                | Available in v0.2                                            |
-| Digest-reviewed releases and TUF registries                           | Available in v0.2                                            |
-| Named registry replace, enable, disable, remove, and refresh          | Available through the umbrella host                          |
-| Native CLI, standard MCP, and content-bound Skills                    | Available in v0.2                                            |
-| Schema-v3 Tool, MCP, OKF, Flow, Skill, and UI contracts               | Control-plane baseline implemented on `main`                 |
-| Schema-v3 SemVer dependency resolver, exact lock, and graph lifecycle | Available for signed remote standalone CLI installs          |
-| Schema-v3 package commit/remove and capability publish/hide/drain     | P0 generation-bound hosts implemented                        |
-| OKF (Open Knowledge Format) knowledge surface                         | M0K-C-A lifecycle adapter ready; production backend pending  |
-| A3S Flow workflow surface                                             | Code TUI/Web preflight, live catalog, and hot-plug E2E ready |
-| Complete Plugin Manager apply saga and production product integration | In development                                               |
+| Capability                                                            | Status                                                        |
+| --------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Local directories and bounded archives                                | Available in v0.2                                             |
+| Digest-reviewed releases and TUF registries                           | Available in v0.2                                             |
+| Named registry replace, enable, disable, remove, and refresh          | Available through the umbrella host                           |
+| Native CLI, standard MCP, and content-bound Skills                    | Available in v0.2                                             |
+| Schema-v3 Tool, MCP, OKF, Flow, Skill, and UI contracts               | Control-plane baseline implemented on `main`                  |
+| Schema-v3 SemVer dependency resolver, exact lock, and graph lifecycle | Available for signed remote standalone CLI installs           |
+| Schema-v3 package commit/remove and capability publish/hide/drain     | P0 generation-bound hosts implemented                         |
+| OKF (Open Knowledge Format) knowledge surface                         | M0K-C-A lifecycle adapter ready; production backend pending   |
+| A3S Flow workflow surface                                             | Code CLI/TUI/Web local durable runtime and hot-plug E2E ready |
+| Complete Plugin Manager apply saga and production product integration | In development                                                |
 
-The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`. Signed remote schema-v3 records enter that graph from both `a3s-use install` and compatible remote `component install`. The umbrella host provides stable-name Registry replace and enable/disable, while A3S Code composes the real Flow preflight host and projects exact-generation changes into TUI/Web without restart. Production grant/Knowledge/Service/Gateway composition, durable Flow execution, and prior-generation retirement are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
+The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`. Signed remote schema-v3 records enter that graph from both `a3s-use install` and compatible remote `component install`. The umbrella host provides stable-name Registry replace and enable/disable, while A3S Code composes the real Flow preflight host, resolves exact `flow.json` identities, and shares one workspace-local durable runtime across CLI, TUI, and Web. Production grant/Knowledge/Service/Gateway composition, distributed Flow scheduling/resumption, retention, and prior-generation retirement are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
 
 ## Install a release
 

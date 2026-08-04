@@ -24,7 +24,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 - P0-D schema-v3 SemVer package dependency、有界解析、精确 Registry/TUF lock、signed remote CLI install/uninstall、前向闭包下载/安装、retained dependency 校验、原子图发布、durable crash replay 与反向移除。
 - P0-F A3S Flow engine/runtime/source contract、Tool/MCP/OKF 依赖闭包、lifecycle/reconciler/catalog projection、真实 Native TypeScript preflight、exact-generation binding、host-capabilities v2 与 manager-toolset v3；
 - 宿主持有的稳定名称 Registry 替换与启停，以及 disabled-source 过滤和内容寻址 trust-root 切换；
-- A3S Code TUI/Web lifecycle-factory 组合、单一 exact-generation watcher、类型化实时 Flow catalog 与 detached-Web 安装/升级/卸载热插拔覆盖。
+- A3S Code CLI/TUI/Web lifecycle-factory 组合、严格 `flow.json` 身份、单一 workspace-local 持久 runtime，以及 detached-Web 安装/运行/升级/卸载/重启覆盖。
 
 稳定 v0.2 package foundation 仍可独立使用。上述 plugin-platform baseline 是 `main` 上的在建能力，不能被描述为完整 production plugin product。
 
@@ -39,7 +39,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 | M0K-B — OKF control plane            | 完成     | Manifest、package、catalog、plan、Knowledge evidence 与 reconciler gate         |
 | M0K-C-A — OKF lifecycle foundation   | 完成     | 注入式 port、精确字节验证、持久 binding 与 owned cleanup                        |
 | M0K-C-B — Production OKF integration | 进行中   | 真实 Knowledge indexing、scoped projection、带引用检索与 rollback               |
-| M0F — Unified A3S Flow surface       | 执行映射 | Code preflight/catalog/热插拔完成；持久 run 与 `flow.json` 映射待完成           |
+| M0F — Unified A3S Flow surface       | 本地完成 | Code CLI/TUI/Web 持久 run 与精确 `flow.json` 映射完成；分布式 runtime 待完成    |
 | M1 — Signed searchable catalog       | 完成     | TUF 签名目录、bounded search、planning bundle 与 cache                          |
 | M2 — Shared Plugin Manager           | 进行中   | 统一 CLI/Web/MCP lifecycle、durable plan/apply/replay 与 parent saga            |
 | P0 — Package/capability hosts        | 完成     | Generation commit/remove、snapshot publish/hide、lease drain 与 replay          |
@@ -57,7 +57,7 @@ description: A3S Use 从稳定包管理基础走向完整认知插件平台的�
 3. 在 blue/green capability cutover 后增加旧 generation 退休，再完成 CLI/Web/Agent lifecycle 与 crash-recovery E2E。
 4. 保持 Code Web/TUI 的共享 lifecycle 路径，同时让 management MCP 与 managed-host apply 通过同一个 public factory 和 package graph，再增加 retained-generation rollback 与 garbage collection。
 5. 把 M0K-C-A Knowledge port 与 lifecycle adapter 接入真实 A3S Knowledge 后端和 scoped capability/session projection。
-6. 把持久 run 执行/observation 和 `flow.json` import/deployment adapter 连接到已经投影到 Code TUI/Web 的同一个已安装 A3S Flow 身份。
+6. 增加可见 Web Flow run/history 控件，再在已完成的 workspace-local runtime 上增加分布式 worker placement、suspended work 自动恢复与生产 retention/garbage collection。
 7. 每个宿主合约冻结后，再扩展 Agent、prompt、hook、memory 与 context-provider contribution。
 8. 完成官方 Registry 签名/密钥运维与 Windows platform gate。
 
