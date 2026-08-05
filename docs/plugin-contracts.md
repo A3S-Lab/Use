@@ -495,8 +495,11 @@ drain calls admitted by the prior snapshot, and then retire prior Grants before
 surface/package cleanup. The standalone manager now derives and persists these
 inputs after trusted authority binding and exact confirmation, and it selects
 the Grant-aware entry point whenever required. Umbrella and managed-host
-adapters still need to forward the same authority; the grant-free compatibility
-methods do not provide authorization.
+adapters can now construct `ReviewedCognitivePackageAuthorizationProvider`,
+which preserves the complete external operation identity, lifetime, scope,
+policy, lock-bound envelope, and confirmation and rejects locally replanned or
+replayed drift. Those product adapters still need to invoke this provider; the
+grant-free compatibility methods do not provide authorization.
 
 An observed record is evidence, not executable authority. Callers must use the
 active resolver, which rechecks the path identity, exact package digest,

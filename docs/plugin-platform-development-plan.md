@@ -92,9 +92,8 @@ Flow/Skill/UI, and OKF adapters, and P0 package/capability hosts now provide the
 in-crate lifecycle foundation. Grant-aware graph paths additionally compose
 durable Grant prepare, exact cutover, pre-cutover rollback, drain, and
 retirement around that package graph. Production publication still requires
-umbrella and managed-host forwarding of the standalone manager's
-policy/confirmation-driven Grant authority, typed provider composition, and a
-real A3S Knowledge backend.
+umbrella and managed-host invocation of Use's reviewed-plan authorization
+provider, typed provider composition, and a real A3S Knowledge backend.
 
 Flow uses one product model. `engine = "a3s-flow"` is fixed; `native-ts` is the
 first admitted execution adapter. Use owns package integrity, dependency
@@ -238,8 +237,9 @@ Implemented as of the planning baseline:
 Remaining on the critical path:
 
 - inject the host Runtime Broker into the shared Plugin Manager;
-- forward workspace Grant authority and exact confirmation from the umbrella
-  reviewed plan into the standalone Use operation without changing identity;
+- invoke the completed Use reviewed-plan authorization provider from the
+  umbrella and managed-host paths so workspace Grant authority and exact
+  confirmation cross the product boundary without changing identity;
 - inject the implemented package/capability and typed surface hosts into the
   package-level coordinator through one umbrella Plugin Manager composition;
 - transport and apply the implemented dependency lock from the standalone CLI
@@ -266,7 +266,7 @@ earlier ownership or durability gate.
 | P0-G — Dependency-graph upgrade and GC core (complete 2026-08-05) | Plan-v3 prior/candidate lock binding, Add/Replace/Remove/Retain, selected downloads, shared-node retention, dependency-forward N+1 preparation, one capability cutover including removed routes, automatic unpublished-candidate rollback, reverse N retirement, exact graph CAS, and durable replay | Preparation/publication failure restores N and removes additions; successful cutover retires replacements and unreferenced dependencies exactly once; retained-receipt and applying/rolling-back crash fixtures converge without generation inflation |
 | P1 — Host composition (Code baseline complete; production providers pending) | Keep Code's public lifecycle-factory composition for executable Tool Tasks, stdio MCP, A3S Flow, and Skill/UI; add explicit Runtime Service, Gateway/HTTP MCP, and A3S Knowledge adapters | TUI and Web produce the same intent and supported host set today; unavailable production hosts continue to fail before publication |
 | P2-A — Grant graph saga (complete 2026-08-05) | Compose durable Grant prepare, exact Registry cutover, joint pre-cutover rollback, accepted-call drain, and prior-Grant retirement with package graph operations | Candidate Grant survives restart; failed publication restores package and Grant candidates; prior Grant survives until exact cutover and drain |
-| P2-B — Product Grant wiring (standalone complete 2026-08-06; umbrella pending) | Standalone derives canonical proposals/change sets/resolved Grants/ceilings after injected policy authority and exact confirmation, persists pending-v2 replay evidence, and invokes only the Grant-aware path when required; umbrella and managed hosts must forward the same authority | Standalone install/upgrade/uninstall and crash replay cannot bypass or regenerate authorization; CLI, Web, management MCP, and managed hosts still need identical end-to-end evidence |
+| P2-B — Product Grant wiring (Use provider complete 2026-08-06; product adapters pending) | Standalone derives canonical proposals/change sets/resolved Grants/ceilings after injected policy authority and exact confirmation; the reviewed-host provider preserves an external operation identity, policy, lock-bound envelope, and confirmation across apply/replay; umbrella and managed hosts must invoke it | Standalone and reviewed-provider signed-lock install/replay cannot bypass or regenerate authorization; CLI, Web, management MCP, and managed hosts still need identical end-to-end evidence |
 | P3 — Production blue/green composition (core complete; providers pending) | Compose the implemented graph cutover, rollback, dependency GC, and retirement coordinator with Gateway/Knowledge/grant receipts | Failed N+1 leaves N callable across every production provider; successful N+1 leaks no old Runtime unit or route; provider receipts preserve the core's crash-safe removed-node behavior |
 | P4 — Product adapters (Code baseline complete; MCP/managed hosts pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, and local Flow runtime; add visible Web Flow controls and route management MCP/managed-host mutations through the same path | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history and TUI covers local routing plus watcher readiness; visible Web UX and production hosts must extend the same no-restart proof |
 | P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all six surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |

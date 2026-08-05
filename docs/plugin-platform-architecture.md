@@ -57,7 +57,8 @@ paths now persist candidate Grants before package preparation, bind exact
 Registry cutover evidence, jointly roll back candidates before cutover, and
 drain accepted prior calls before Grant retirement. Standalone Grant
 planning/apply selection is now implemented; umbrella/managed-host authority
-forwarding, production provider composition, the A3S Knowledge index backend,
+forwarding has an exact reviewed-plan provider but is not yet invoked by those
+adapters. Production provider composition, the A3S Knowledge index backend,
 and scoped cited retrieval remain to be implemented. Missing promoted evidence
 therefore stays explicitly unpublished.
 

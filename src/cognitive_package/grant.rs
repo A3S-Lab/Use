@@ -90,7 +90,35 @@ pub trait CognitivePackageAuthorizationProvider: Send + Sync {
 
     fn bind_authority(&self, draft: &PluginOperationPlanDraft) -> UseResult<PlanAuthority>;
 
+    /// Bind the complete trusted operation identity around planner-owned
+    /// evidence.
+    ///
+    /// The default preserves the manager-generated identity, lifetime, and
+    /// scope while using [`Self::bind_authority`]. Managed hosts may override
+    /// this hook only to replay an already reviewed exact plan. The manager
+    /// still supplies `default_binding.scope`, which an override must verify
+    /// before adopting host-owned identity.
+    fn bind_operation(
+        &self,
+        draft: &PluginOperationPlanDraft,
+        default_binding: PluginOperationPlanBinding,
+    ) -> UseResult<PluginOperationPlanBinding> {
+        draft.validate()?;
+        Ok(default_binding)
+    }
+
     fn verify_authority(&self, plan: &PluginOperationPlan) -> UseResult<()>;
+
+    /// Revalidate the complete immutable envelope before authorization or
+    /// crash replay.
+    ///
+    /// Existing standalone providers re-evaluate policy through
+    /// [`Self::verify_authority`]. A reviewed-host provider overrides this to
+    /// require byte-equivalent plan and dependency-lock evidence.
+    fn verify_plan(&self, envelope: &PluginOperationPlanEnvelope) -> UseResult<()> {
+        envelope.validate()?;
+        self.verify_authority(&envelope.plan)
+    }
 
     async fn authorize(
         &self,
@@ -419,7 +447,7 @@ pub(super) async fn authorize_planned_operation(
     planned: Option<&PlannedWorkspaceGrantOperation>,
     admitted_at_ms: u64,
 ) -> UseResult<PackageGraphAuthorization> {
-    provider.verify_authority(&envelope.plan)?;
+    provider.verify_plan(envelope)?;
     let evidence = provider
         .authorize(
             envelope,

@@ -139,10 +139,12 @@ generation evidence, restores package and Grant candidates together before
 cutover, drains accepted prior calls after cutover, and only then revokes prior
 Grants. The standalone manager now binds trusted authority, exact confirmation,
 canonical Grant changes, resolved Grants, and signed ceilings into the pending
-operation and selects this path whenever the plan carries Grants. Production
-blue/green completion still requires umbrella and managed-host adapters to
-forward the same authority and confirmation, and to compose Runtime Service,
-Gateway, Knowledge, and projection providers.
+operation and selects this path whenever the plan carries Grants. Use now also
+supplies a reviewed-host provider that preserves the complete external
+operation identity, lifetime, scope, policy, lock-bound envelope, and
+confirmation across apply and crash replay. Production blue/green completion
+still requires umbrella and managed-host adapters to invoke that provider and
+to compose Runtime Service, Gateway, Knowledge, and projection providers.
 
 ## Implementation State
 

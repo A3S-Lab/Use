@@ -139,6 +139,10 @@ The following foundations are implemented:
   authority, persists replay-stable Grant snapshots/change sets/resolutions and
   signed ceilings in pending-v2 operations, and selects Grant-aware install,
   upgrade, and uninstall paths whenever the immutable graph needs Grants;
+- a reviewed-host authorization provider that preserves the externally
+  reviewed operation identity, lifetime, scope, policy, complete lock-bound
+  envelope, and confirmation, derives only plan-bound Grant confirmations, and
+  rejects planner, dependency-lock, policy, or replay drift before mutation;
 - a public lifecycle factory that lets Code/Web hosts inject Runtime, Gateway,
   A3S Flow, Knowledge, Skill, and UI ownership while the standalone
   composition fails closed for unavailable Runtime Service, HTTP MCP, Flow,
@@ -488,7 +492,7 @@ Exit criteria:
 
 Estimated effort: 2–3 weeks
 
-Implementation status (2026-08-05):
+Implementation status (2026-08-06):
 
 - completed in `a3s-use-core`: one object-safe `PluginHostManager` port and
   canonical v1 managed-host capability, scope-fence, plan, digest-only apply,
@@ -602,6 +606,10 @@ Implementation status (2026-08-05):
   interrupted replay revalidates the original provider authority without
   reauthorization, and altered confirmation, Grant, ceiling, or legacy-v1
   evidence fails closed before package mutation;
+- completed in A3S Use: `ReviewedCognitivePackageAuthorizationProvider`
+  preserves one external host plan and confirmation without regenerating child
+  identity, reproduces an exact signed package lock in a clean workspace, and
+  rejects a changed policy or envelope during interrupted replay;
 - completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
   embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
   Knowledge adapters; the standalone factory does not invent fallback hosts;
@@ -618,8 +626,9 @@ Implementation status (2026-08-05):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; umbrella and managed-host forwarding of the standalone Use plan
-  authority, confirmation, and canonical Grant evidence; real signed
+  injection; umbrella and managed-host invocation of the reviewed-plan
+  provider with their exact authority, confirmation, and canonical Grant
+  evidence; real signed
   cross-platform lifecycle E2E; and the published
   managed-host port required before a Cloud adapter can enable mutation. Hosts
   must not add a parallel implementation.
@@ -983,9 +992,12 @@ Implementation status (in progress 2026-07-30):
   changes after trusted authority binding, persist exact confirmation and
   resolved Grant evidence, construct `PluginGrantLifecycleUnit`, and select
   the grant-aware graph apply path for permission-bearing operations;
+- completed in `a3s-use`: expose a fail-closed reviewed-plan provider that
+  binds the exact external authority, confirmation, operation identity, and
+  lock-bound envelope into Grant-aware graph apply and replay;
 - pending: inject the Runtime Broker into the shared umbrella Plugin Manager,
-  forward exact Use Grant authority and confirmation through CLI/Web/management
-  MCP/managed-host entry points, and add secret-reference adapters,
+  invoke that provider through CLI/Web/management MCP/managed-host entry
+  points, and add secret-reference adapters,
   filesystem/network/child-process enforcement, production-provider-backed
   prior-generation Runtime retirement, streaming/file-backed large Task
   output, the production MCP initialize client adapter, stdio supervision,

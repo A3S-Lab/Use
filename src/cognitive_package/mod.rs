@@ -9,6 +9,7 @@ mod grant;
 mod hosts;
 mod install;
 mod plan;
+mod reviewed_authorization;
 mod store;
 mod uninstall;
 mod upgrade;
@@ -33,6 +34,7 @@ pub use grant::{
     StandaloneCognitivePackageAuthorizationProvider,
 };
 pub use hosts::StandaloneCognitivePackageLifecycleFactory;
+pub use reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
 
 /// Stable user-level scope shared by the standalone facade and embedding A3S
 /// hosts for globally installed cognitive packages.

@@ -203,8 +203,7 @@ impl CognitivePackageManager {
             }
         };
         if pending.requires_authority_revalidation() {
-            self.authorization
-                .verify_authority(&pending.envelope.plan)?;
+            self.authorization.verify_plan(&pending.envelope)?;
         }
         let apply_time = now_ms()?;
 
@@ -405,8 +404,7 @@ impl CognitivePackageManager {
     ) -> UseResult<()> {
         pending.validate()?;
         if pending.requires_authority_revalidation() {
-            self.authorization
-                .verify_authority(&pending.envelope.plan)?;
+            self.authorization.verify_plan(&pending.envelope)?;
         }
         if pending.envelope.plan.action != PluginOperationAction::Install
             || pending.envelope.package_lock.as_ref() != Some(lock)

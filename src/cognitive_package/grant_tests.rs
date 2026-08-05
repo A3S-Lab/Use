@@ -1,9 +1,12 @@
+use super::super::ReviewedCognitivePackageAuthorizationProvider;
 use super::*;
 
 use a3s_use_core::{
-    PlanPackageRole, PlanScope, PlannedOperationImpact, PlannedPackageTransition,
-    PlannedStateEvidence, PluginOperationAction, PluginOperationPlanBinding, PluginPlanSource,
-    PluginWorkspaceGrantSnapshot, WorkspaceGrantEvidence, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+    PlanActor, PlanPackageRole, PlanScope, PlanScopeKind, PlannedOperationImpact,
+    PlannedPackageTransition, PlannedStateEvidence, PluginOperationAction,
+    PluginOperationConfirmation, PluginOperationPlanBinding, PluginPlanSource,
+    PluginWorkspaceGrantSnapshot, WorkspaceGrantEvidence, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
 const INSTALL_PLAN: &[u8] =
@@ -33,6 +36,55 @@ impl CognitivePackageAuthorizationProvider for ConfirmAll {
         now_ms: u64,
     ) -> UseResult<CognitivePackageAuthorizationEvidence> {
         CognitivePackageAuthorizationEvidence::confirmed(envelope, changes, now_ms)
+    }
+}
+
+#[derive(Debug)]
+struct AgentAsk;
+
+#[async_trait]
+impl CognitivePackageAuthorizationProvider for AgentAsk {
+    fn name(&self) -> &'static str {
+        "test-agent-ask"
+    }
+
+    fn bind_authority(&self, draft: &PluginOperationPlanDraft) -> UseResult<PlanAuthority> {
+        let mut authority =
+            StandaloneCognitivePackageAuthorizationProvider.bind_authority(draft)?;
+        authority.actor = PlanActor::Agent;
+        Ok(authority)
+    }
+
+    fn verify_authority(&self, plan: &PluginOperationPlan) -> UseResult<()> {
+        let draft = PluginOperationPlanDraft::new(
+            plan.action,
+            plan.package_id.clone(),
+            plan.component_id.clone(),
+            plan.packages.clone(),
+            plan.providers.clone(),
+            Vec::new(),
+            plan.impact.clone(),
+            plan.state.clone(),
+        )?;
+        if plan.authority != self.bind_authority(&draft)? {
+            return Err(UseError::new(
+                "test.agent_authority_changed",
+                "The test agent authority changed.",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn authorize(
+        &self,
+        _envelope: &PluginOperationPlanEnvelope,
+        _changes: Option<&PluginWorkspaceGrantChangeSet>,
+        _now_ms: u64,
+    ) -> UseResult<CognitivePackageAuthorizationEvidence> {
+        Err(UseError::new(
+            "test.agent_confirmation_required",
+            "The test agent provider requires host confirmation.",
+        ))
     }
 }
 
@@ -136,8 +188,232 @@ async fn upgrade_and_uninstall_bind_exact_prior_grants_before_mutation() {
     assert!(uninstall.grant_ceilings.is_empty());
 }
 
+#[tokio::test]
+async fn reviewed_host_authorization_preserves_exact_plan_and_confirmation() {
+    let (expected, expected_grants) = install_plan(&ConfirmAll);
+    let confirmed_at_ms = expected.plan.created_at_ms + 100;
+    let confirmation = CognitivePackageAuthorizationEvidence::confirmed(
+        &expected,
+        Some(&expected_grants.change_set),
+        confirmed_at_ms,
+    )
+    .unwrap()
+    .operation_confirmation
+    .unwrap();
+    let provider = ReviewedCognitivePackageAuthorizationProvider::new(
+        expected.clone(),
+        Some(confirmation.clone()),
+    )
+    .unwrap();
+
+    let (actual, actual_grants) = install_plan_with_operation(
+        &provider,
+        "install:untrusted:replacement",
+        expected.plan.created_at_ms + 10,
+    );
+    assert_eq!(actual, expected);
+    assert_eq!(actual_grants, expected_grants);
+
+    let authorization =
+        authorize_planned_operation(&provider, &actual, Some(&actual_grants), confirmed_at_ms)
+            .await
+            .unwrap();
+    assert_eq!(authorization.operation_confirmation, Some(confirmation));
+    assert_eq!(authorization.grant_confirmations.len(), 1);
+    assert_eq!(
+        authorization.grant_confirmations[0].operation_id,
+        expected.plan.operation_id
+    );
+    assert_eq!(
+        authorization.grant_confirmations[0].plan_digest,
+        expected.plan_digest
+    );
+}
+
+#[tokio::test]
+async fn reviewed_agent_plan_accepts_only_exact_user_confirmation() {
+    let (expected, expected_grants) = agent_install_plan();
+    let confirmed_at_ms = expected.plan.created_at_ms + 100;
+    let confirmation = PluginOperationConfirmation {
+        schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_string(),
+        operation_id: expected.plan.operation_id.clone(),
+        plan_digest: expected.plan_digest.clone(),
+        confirmed_by: PlanActor::User,
+        confirmed_at_ms,
+    };
+    let provider = ReviewedCognitivePackageAuthorizationProvider::new(
+        expected.clone(),
+        Some(confirmation.clone()),
+    )
+    .unwrap();
+
+    let authorization = authorize_planned_operation(
+        &provider,
+        &expected,
+        Some(&expected_grants),
+        confirmed_at_ms,
+    )
+    .await
+    .unwrap();
+    assert_eq!(authorization.operation_confirmation, Some(confirmation));
+    assert_eq!(authorization.grant_confirmations.len(), 1);
+
+    let mut wrong = authorization.operation_confirmation.unwrap();
+    wrong.plan_digest = digest('9');
+    assert_eq!(
+        ReviewedCognitivePackageAuthorizationProvider::new(expected, Some(wrong))
+            .unwrap_err()
+            .code,
+        "use.plugin.package_reviewed_authorization_invalid"
+    );
+}
+
+fn agent_install_plan() -> (PluginOperationPlanEnvelope, PlannedWorkspaceGrantOperation) {
+    let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
+    let source_transition = &source.packages[0];
+    let mut after = source_transition.after.clone().unwrap();
+    for permission in &mut after.permissions.surfaces {
+        permission.secrets.clear();
+    }
+    after.release.permission_ceiling_digest = after.permissions.descriptor_digest().unwrap();
+    let transition = PlannedPackageTransition::resolved(
+        source.package_id.clone(),
+        PlanPackageRole::Root,
+        PlanPackageChangeKind::Add,
+        None,
+        Some(after),
+        source_transition.source.clone(),
+    )
+    .unwrap();
+    let mut draft = PluginOperationPlanDraft::new(
+        source.action,
+        source.package_id,
+        source.component_id,
+        vec![transition],
+        source.providers,
+        Vec::new(),
+        source.impact,
+        source.state,
+    )
+    .unwrap();
+    let binding = binding(
+        &source.scope,
+        &draft,
+        &AgentAsk,
+        "install:test:agent-grant",
+        1_710_000_000_000,
+    );
+    let snapshot = empty_snapshot(&source.scope.id, draft.state.state_revision);
+    let planned = plan_workspace_grants(&mut draft, &binding, &snapshot, false, true)
+        .unwrap()
+        .unwrap();
+    let envelope = PluginOperationPlanEnvelope::new(draft.bind(binding).unwrap()).unwrap();
+    (envelope, planned)
+}
+
+#[test]
+fn reviewed_host_authorization_rejects_planner_drift_before_binding() {
+    let (expected, expected_grants) = install_plan(&ConfirmAll);
+    let confirmation = CognitivePackageAuthorizationEvidence::confirmed(
+        &expected,
+        Some(&expected_grants.change_set),
+        expected.plan.created_at_ms + 100,
+    )
+    .unwrap()
+    .operation_confirmation;
+    let provider =
+        ReviewedCognitivePackageAuthorizationProvider::new(expected, confirmation).unwrap();
+    let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
+    let mut draft = PluginOperationPlanDraft::new(
+        source.action,
+        source.package_id,
+        source.component_id,
+        source.packages,
+        source.providers,
+        Vec::new(),
+        source.impact,
+        source.state,
+    )
+    .unwrap();
+    draft.impact.download_bytes += 1;
+    let default = PluginOperationPlanBinding {
+        operation_id: "install:untrusted:replacement".to_string(),
+        created_at_ms: 1_710_000_000_010,
+        expires_at_ms: 1_710_000_600_010,
+        scope: PlanScope {
+            kind: PlanScopeKind::User,
+            id: "other".to_string(),
+        },
+        authority: provider.expected_plan().plan.authority.clone(),
+    };
+
+    assert_eq!(
+        provider.bind_operation(&draft, default).unwrap_err().code,
+        "use.plugin.package_reviewed_plan_mismatch"
+    );
+}
+
+#[test]
+fn reviewed_host_authorization_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<ReviewedCognitivePackageAuthorizationProvider>();
+}
+
+#[test]
+fn reviewed_host_authorization_preserves_upgrade_and_uninstall_bindings() {
+    let (expected_upgrade, expected_upgrade_grants) = replacement_plan(&ConfirmAll);
+    let upgrade_confirmation = CognitivePackageAuthorizationEvidence::confirmed(
+        &expected_upgrade,
+        Some(&expected_upgrade_grants.change_set),
+        expected_upgrade.plan.created_at_ms + 100,
+    )
+    .unwrap()
+    .operation_confirmation;
+    let upgrade_provider = ReviewedCognitivePackageAuthorizationProvider::new(
+        expected_upgrade.clone(),
+        upgrade_confirmation,
+    )
+    .unwrap();
+    let (actual_upgrade, actual_upgrade_grants) = replacement_plan_with_operation(
+        &upgrade_provider,
+        "upgrade:untrusted:replacement",
+        expected_upgrade.plan.created_at_ms + 10,
+    );
+    assert_eq!(actual_upgrade, expected_upgrade);
+    assert_eq!(actual_upgrade_grants, expected_upgrade_grants);
+
+    let (expected_uninstall, expected_uninstall_grants) = uninstall_plan(&ConfirmAll);
+    let uninstall_confirmation = CognitivePackageAuthorizationEvidence::confirmed(
+        &expected_uninstall,
+        Some(&expected_uninstall_grants.change_set),
+        expected_uninstall.plan.created_at_ms + 100,
+    )
+    .unwrap()
+    .operation_confirmation;
+    let uninstall_provider = ReviewedCognitivePackageAuthorizationProvider::new(
+        expected_uninstall.clone(),
+        uninstall_confirmation,
+    )
+    .unwrap();
+    let (actual_uninstall, actual_uninstall_grants) = uninstall_plan_with_operation(
+        &uninstall_provider,
+        "uninstall:untrusted:replacement",
+        expected_uninstall.plan.created_at_ms + 10,
+    );
+    assert_eq!(actual_uninstall, expected_uninstall);
+    assert_eq!(actual_uninstall_grants, expected_uninstall_grants);
+}
+
 fn install_plan(
     provider: &dyn CognitivePackageAuthorizationProvider,
+) -> (PluginOperationPlanEnvelope, PlannedWorkspaceGrantOperation) {
+    install_plan_with_operation(provider, "install:test:grant", 1_710_000_000_000)
+}
+
+fn install_plan_with_operation(
+    provider: &dyn CognitivePackageAuthorizationProvider,
+    operation_id: &str,
+    created_at_ms: u64,
 ) -> (PluginOperationPlanEnvelope, PlannedWorkspaceGrantOperation) {
     let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
     let mut draft = PluginOperationPlanDraft::new(
@@ -151,7 +427,7 @@ fn install_plan(
         source.state,
     )
     .unwrap();
-    let binding = binding(&source.scope, &draft, provider, "install:test:grant");
+    let binding = binding(&source.scope, &draft, provider, operation_id, created_at_ms);
     let snapshot = empty_snapshot(&source.scope.id, draft.state.state_revision);
     let planned = plan_workspace_grants(&mut draft, &binding, &snapshot, false, true)
         .unwrap()
@@ -162,6 +438,14 @@ fn install_plan(
 
 fn replacement_plan(
     provider: &dyn CognitivePackageAuthorizationProvider,
+) -> (PluginOperationPlanEnvelope, PlannedWorkspaceGrantOperation) {
+    replacement_plan_with_operation(provider, "upgrade:test:grant", 1_710_000_000_000)
+}
+
+fn replacement_plan_with_operation(
+    provider: &dyn CognitivePackageAuthorizationProvider,
+    operation_id: &str,
+    created_at_ms: u64,
 ) -> (PluginOperationPlanEnvelope, PlannedWorkspaceGrantOperation) {
     let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
     let before = source.packages[0].after.clone().unwrap();
@@ -204,7 +488,7 @@ fn replacement_plan(
         },
     )
     .unwrap();
-    let binding = binding(&source.scope, &draft, provider, "upgrade:test:grant");
+    let binding = binding(&source.scope, &draft, provider, operation_id, created_at_ms);
     let snapshot = prior_snapshot(&source.scope.id, 4, &before);
     let planned = plan_workspace_grants(&mut draft, &binding, &snapshot, true, true)
         .unwrap()
@@ -215,6 +499,14 @@ fn replacement_plan(
 
 fn uninstall_plan(
     provider: &dyn CognitivePackageAuthorizationProvider,
+) -> (PluginOperationPlanEnvelope, PlannedWorkspaceGrantOperation) {
+    uninstall_plan_with_operation(provider, "uninstall:test:grant", 1_710_000_000_000)
+}
+
+fn uninstall_plan_with_operation(
+    provider: &dyn CognitivePackageAuthorizationProvider,
+    operation_id: &str,
+    created_at_ms: u64,
 ) -> (PluginOperationPlanEnvelope, PlannedWorkspaceGrantOperation) {
     let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
     let before = source.packages[0].after.clone().unwrap();
@@ -249,7 +541,7 @@ fn uninstall_plan(
         },
     )
     .unwrap();
-    let binding = binding(&source.scope, &draft, provider, "uninstall:test:grant");
+    let binding = binding(&source.scope, &draft, provider, operation_id, created_at_ms);
     let snapshot = prior_snapshot(&source.scope.id, 4, &before);
     let planned = plan_workspace_grants(&mut draft, &binding, &snapshot, true, false)
         .unwrap()
@@ -263,14 +555,16 @@ fn binding(
     draft: &PluginOperationPlanDraft,
     provider: &dyn CognitivePackageAuthorizationProvider,
     operation_id: &str,
+    created_at_ms: u64,
 ) -> PluginOperationPlanBinding {
-    PluginOperationPlanBinding {
+    let default = PluginOperationPlanBinding {
         operation_id: operation_id.to_string(),
-        created_at_ms: 1_710_000_000_000,
-        expires_at_ms: 1_710_000_600_000,
+        created_at_ms,
+        expires_at_ms: created_at_ms + 600_000,
         scope: scope.clone(),
         authority: provider.bind_authority(draft).unwrap(),
-    }
+    };
+    provider.bind_operation(draft, default).unwrap()
 }
 
 fn empty_snapshot(scope_id: &str, state_revision: u64) -> PluginWorkspaceGrantSnapshot {
