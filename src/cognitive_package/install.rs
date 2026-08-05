@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{PluginOperationAction, PluginPackageLockHost, PluginReleaseChannel, UseResult};
+use a3s_use_core::{
+    PlanScope, PluginOperationAction, PluginPackageLockHost, PluginReleaseChannel, UseResult,
+};
 use a3s_use_extension::{
     download_selected_locked_remote_packages, resolve_remote_package_lock,
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest, InstalledExtension,
@@ -163,7 +165,7 @@ impl CognitivePackageManager {
                     &dispositions,
                     &manifests,
                     &changed_manifests,
-                    &self.scope_id,
+                    &self.scope,
                 )?;
                 pending
             }
@@ -171,14 +173,14 @@ impl CognitivePackageManager {
                 let snapshot = self.registry.snapshot().await?;
                 let grant_snapshot = self
                     .grant_store()
-                    .snapshot_scope(&self.scope_id, package_state_revision(snapshot.generation)?)
+                    .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
                     .await?;
                 let generated = install_operation(
                     &lock,
                     &dispositions,
                     &manifests,
                     snapshot.generation,
-                    &self.scope_id,
+                    &self.scope,
                     now_ms()?,
                     &grant_snapshot,
                     self.authorization.as_ref(),
@@ -247,7 +249,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope_id: self.scope_id.clone(),
+                    scope_id: self.scope.id.clone(),
                     package_id: package_id.clone(),
                     package_digest: prepared.package.package_digest().to_string(),
                     manifest_digest: prepared.package.manifest_digest().to_string(),
@@ -408,7 +410,7 @@ impl CognitivePackageManager {
         }
         if pending.envelope.plan.action != PluginOperationAction::Install
             || pending.envelope.package_lock.as_ref() != Some(lock)
-            || pending.envelope.plan.scope.id != self.scope_id
+            || pending.envelope.plan.scope != self.scope
         {
             return Err(package_manager_error(
                 "use.plugin.package_graph_busy",
@@ -458,7 +460,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope_id: self.scope_id.clone(),
+                    scope_id: self.scope.id.clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),
@@ -537,7 +539,7 @@ fn validate_replay(
     dispositions: &BTreeMap<String, InstallDisposition>,
     admitted_manifests: &BTreeMap<String, ExtensionManifest>,
     changed_manifests: &BTreeMap<String, ExtensionManifest>,
-    scope_id: &str,
+    scope: &PlanScope,
 ) -> UseResult<()> {
     pending.validate()?;
     let expected_packages = install_plan_packages(lock, dispositions)?;
@@ -547,7 +549,7 @@ fn validate_replay(
     if pending.envelope.package_lock.as_ref() != Some(lock)
         || pending.envelope.plan.action != PluginOperationAction::Install
         || pending.envelope.plan.package_id != lock.root_package_id
-        || pending.envelope.plan.scope.id != scope_id
+        || &pending.envelope.plan.scope != scope
         || pending.envelope.plan.state.state_revision != state_revision
         || pending.envelope.plan.packages != expected_packages
         || pending.envelope.plan.providers != expected_providers

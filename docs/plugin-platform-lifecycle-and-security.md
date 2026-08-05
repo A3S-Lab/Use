@@ -549,7 +549,9 @@ candidate Grant unless the durable operation remains resumable. The Grant-aware
 graph path persists N+1 authorization before package preparation, checkpoints
 the exact Registry snapshot transition, drains calls admitted by N, and only
 then revokes N. A pre-cutover publication failure restores both package and
-Grant candidates.
+Grant candidates. The parent package manager carries the complete User or
+Workspace plan scope through every checkpoint; replay rejects a caller that
+keeps the scope ID but changes its kind.
 
 An added permission, secret request, provider requirement, external
 dependency, command alias, or public interface is plan drift and requires a

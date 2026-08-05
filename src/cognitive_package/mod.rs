@@ -15,8 +15,8 @@ mod uninstall;
 mod upgrade;
 
 use a3s_use_core::{
-    LockedPluginPackage, PluginOperationPlanEnvelope, PluginPackageLock, PluginReleaseChannel,
-    UseError, UseResult, VerifiedPluginCatalogRecord,
+    LockedPluginPackage, PlanScope, PlanScopeKind, PluginOperationPlanEnvelope, PluginPackageLock,
+    PluginReleaseChannel, UseError, UseResult, VerifiedPluginCatalogRecord,
 };
 use a3s_use_extension::{
     inspect_remote_plugin, ExtensionLifecyclePackage, ExtensionManifest, ExtensionRegistry,
@@ -54,7 +54,7 @@ pub fn cognitive_package_host_target() -> UseResult<String> {
 #[derive(Clone)]
 pub struct CognitivePackageManager {
     registry: ExtensionRegistry,
-    scope_id: String,
+    scope: PlanScope,
     lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
     authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
 }
@@ -64,7 +64,7 @@ impl std::fmt::Debug for CognitivePackageManager {
         formatter
             .debug_struct("CognitivePackageManager")
             .field("registry", &self.registry)
-            .field("scope_id", &self.scope_id)
+            .field("scope", &self.scope)
             .field("lifecycle", &self.lifecycle.name())
             .field("authorization", &self.authorization.name())
             .finish()
@@ -217,7 +217,29 @@ impl CognitivePackageManager {
         lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
         authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
     ) -> UseResult<Self> {
-        let scope_id = scope_id.into();
+        Self::with_plan_scope_lifecycle_and_authorization(
+            registry,
+            PlanScope {
+                kind: PlanScopeKind::User,
+                id: scope_id.into(),
+            },
+            lifecycle,
+            authorization,
+        )
+    }
+
+    /// Construct an embedding-host manager bound to one exact plan scope.
+    ///
+    /// Standalone callers retain the user-scoped constructors above. Managed
+    /// hosts use this entry point so a workspace-scoped reviewed plan cannot
+    /// be regenerated or replayed as a user-scoped operation with the same ID.
+    pub fn with_plan_scope_lifecycle_and_authorization(
+        registry: ExtensionRegistry,
+        scope: PlanScope,
+        lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
+        authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
+    ) -> UseResult<Self> {
+        let scope_id = &scope.id;
         if scope_id.is_empty()
             || scope_id.len() > 256
             || !scope_id
@@ -236,7 +258,7 @@ impl CognitivePackageManager {
         }
         Ok(Self {
             registry,
-            scope_id,
+            scope,
             lifecycle,
             authorization,
         })
@@ -247,7 +269,11 @@ impl CognitivePackageManager {
     }
 
     pub fn scope_id(&self) -> &str {
-        &self.scope_id
+        &self.scope.id
+    }
+
+    pub fn scope(&self) -> &PlanScope {
+        &self.scope
     }
 
     pub fn lifecycle(&self) -> &dyn CognitivePackageLifecycleFactory {

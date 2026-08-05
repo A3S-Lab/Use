@@ -143,6 +143,9 @@ The following foundations are implemented:
   reviewed operation identity, lifetime, scope, policy, complete lock-bound
   envelope, and confirmation, derives only plan-bound Grant confirmations, and
   rejects planner, dependency-lock, policy, or replay drift before mutation;
+- full User/Workspace plan-scope retention for Grant-bearing cognitive-package
+  operations, with pending replay rejecting a scope-kind substitution even
+  when the scope ID matches;
 - a public lifecycle factory that lets Code/Web hosts inject Runtime, Gateway,
   A3S Flow, Knowledge, Skill, and UI ownership while the standalone
   composition fails closed for unavailable Runtime Service, HTTP MCP, Flow,
@@ -610,6 +613,10 @@ Implementation status (2026-08-06):
   preserves one external host plan and confirmation without regenerating child
   identity, reproduces an exact signed package lock in a clean workspace, and
   rejects a changed policy or envelope during interrupted replay;
+- completed in A3S Use: embedding managers bind the complete User or Workspace
+  `PlanScope` for Grant-bearing operations, carry it through install/upgrade/
+  uninstall plans, and reject pending replay when a caller substitutes only
+  the scope kind;
 - completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
   embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
   Knowledge adapters; the standalone factory does not invent fallback hosts;

@@ -142,7 +142,10 @@ canonical Grant changes, resolved Grants, and signed ceilings into the pending
 operation and selects this path whenever the plan carries Grants. Use now also
 supplies a reviewed-host provider that preserves the complete external
 operation identity, lifetime, scope, policy, lock-bound envelope, and
-confirmation across apply and crash replay. Production blue/green completion
+confirmation across apply and crash replay. The Grant-aware package manager
+now retains the complete User or Workspace `PlanScope`; pending replay compares
+both kind and ID so a managed workspace cannot be reopened as user authority.
+Production blue/green completion
 still requires umbrella and managed-host adapters to invoke that provider and
 to compose Runtime Service, Gateway, Knowledge, and projection providers.
 
@@ -172,6 +175,8 @@ Implemented:
 - standalone authorization-provider composition, pending-v2 exact confirmation
   and Grant evidence, mandatory Grant-aware path selection for permission-bearing
   operations, authority-stable replay, and tamper/legacy-bypass rejection;
+- exact User/Workspace plan-scope propagation across Grant-bearing graph
+  install, upgrade, uninstall, and pending replay;
 - stable replay evidence for Runtime preparation and removal;
 - a content-addressed package fixture containing all six contribution kinds;
   and
