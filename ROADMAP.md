@@ -134,6 +134,11 @@ The following foundations are implemented:
 - durable installed-root locks and admitted pending graph operations carrying
   exact manifests and generations, including published-install journal repair
   and pending-only reverse-uninstall recovery;
+- standalone cognitive-package authorization that injects trusted actor/policy
+  authority before final plan binding, requires exact confirmation for ambient
+  authority, persists replay-stable Grant snapshots/change sets/resolutions and
+  signed ceilings in pending-v2 operations, and selects Grant-aware install,
+  upgrade, and uninstall paths whenever the immutable graph needs Grants;
 - a public lifecycle factory that lets Code/Web hosts inject Runtime, Gateway,
   A3S Flow, Knowledge, Skill, and UI ownership while the standalone
   composition fails closed for unavailable Runtime Service, HTTP MCP, Flow,
@@ -587,6 +592,16 @@ Implementation status (2026-08-05):
   Grant candidates, successful upgrade and uninstall drain accepted prior calls
   before revoking old Grants, and generation drift or cutover replay fails
   closed without inventing new evidence;
+- completed in A3S Use: the standalone `CognitivePackageManager` injects a
+  trusted authorization provider, binds actor and policy before final planning,
+  confirms the exact immutable plan and canonical Grant changes, and persists
+  confirmation, snapshot, change-set, resolved-Grant, and signed-ceiling
+  evidence in pending-v2 records;
+- completed in A3S Use: permission-bearing standalone install, upgrade, and
+  uninstall operations cannot select the grant-free compatibility path;
+  interrupted replay revalidates the original provider authority without
+  reauthorization, and altered confirmation, Grant, ceiling, or legacy-v1
+  evidence fails closed before package mutation;
 - completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
   embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
   Knowledge adapters; the standalone factory does not invent fallback hosts;
@@ -603,9 +618,9 @@ Implementation status (2026-08-05):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; standalone and umbrella generation of canonical Grant inputs plus
-  selection of the grant-aware apply paths; real signed cross-platform
-  lifecycle E2E; and the published
+  injection; umbrella and managed-host forwarding of the standalone Use plan
+  authority, confirmation, and canonical Grant evidence; real signed
+  cross-platform lifecycle E2E; and the published
   managed-host port required before a Cloud adapter can enable mutation. Hosts
   must not add a parallel implementation.
 
@@ -964,11 +979,13 @@ Implementation status (in progress 2026-07-30):
   idempotent stop/removal. Its bounded exact-generation store retains N and
   N+1 concurrently, observes and removes the intent-selected generation, and
   rejects moved, tampered, symlinked, or over-limit receipts;
-- pending: inject that Runtime Broker into the shared Plugin Manager, assemble
-  canonical workspace Grant changes and explicit provider assignments for Tool
-  and MCP drafts, then construct `PluginGrantLifecycleUnit` and select the
-  grant-aware graph apply path from standalone and umbrella product entry
-  points; add secret-reference adapters,
+- completed in standalone `a3s-use`: assemble canonical workspace Grant
+  changes after trusted authority binding, persist exact confirmation and
+  resolved Grant evidence, construct `PluginGrantLifecycleUnit`, and select
+  the grant-aware graph apply path for permission-bearing operations;
+- pending: inject the Runtime Broker into the shared umbrella Plugin Manager,
+  forward exact Use Grant authority and confirmation through CLI/Web/management
+  MCP/managed-host entry points, and add secret-reference adapters,
   filesystem/network/child-process enforcement, production-provider-backed
   prior-generation Runtime retirement, streaming/file-backed large Task
   output, the production MCP initialize client adapter, stdio supervision,

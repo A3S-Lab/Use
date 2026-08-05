@@ -52,10 +52,14 @@ available for automation, embedding, and diagnostics.
 > host capabilities v3; v1/v2 remain frozen. Grant-aware graph paths now
 > persist candidate Workspace Grants before package preparation, bind the exact
 > Registry snapshot cutover, drain accepted calls before revoking prior grants,
-> and roll back package and Grant candidates together before cutover. Production
-> Knowledge, Service/HTTP hosts, product-level Grant planning/apply wiring,
-> distributed Flow scheduling/resumption, and complete real-process
-> cross-platform E2E remain release gates.
+> and roll back package and Grant candidates together before cutover. The
+> standalone manager now binds trusted policy authority, exact confirmation,
+> canonical Grant changes, resolved Grants, and signed ceilings into durable
+> replay evidence, then selects the Grant-aware path for every permission-bearing
+> graph mutation. Production Knowledge, Service/HTTP hosts, umbrella and
+> managed-host Grant-authority forwarding, distributed Flow
+> scheduling/resumption, and complete real-process cross-platform E2E remain
+> release gates.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 ## Proof in the codebase
@@ -76,7 +80,10 @@ The package model is exercised as code, not only described in prose:
 - [`CognitivePackageManager`](src/cognitive_package/) installs a verified
   dependency closure forward, reuses exact shared nodes, publishes graph
   additions, replacements, and removals once, and retires only unreferenced
-  packages in reverse dependency order.
+  packages in reverse dependency order. Its injectable authorization provider
+  binds host-owned actor and policy authority before the plan becomes
+  immutable; pending-v2 records retain exact confirmation and Grant evidence
+  without asking again during crash replay.
 - [`PluginGrantLifecycleUnit`](src/plugin_lifecycle/grant.rs) binds one reviewed
   package plan to its exact Workspace Grant changes and signed ceilings. The
   grant-aware graph paths persist candidates before package preparation,
@@ -442,9 +449,13 @@ The grant-aware graph coordinator persists candidate grants before package or
 Runtime preparation, requires exact Registry generation and snapshot evidence
 at cutover, restores package and Grant candidates together after a pre-cutover
 upgrade failure, and drains prior calls before revoking prior grants. The
-standalone manager and umbrella Plugin Manager still need to derive the
-plan-bound Grant inputs and select these grant-aware apply paths; production
-Knowledge, Service, and Gateway composition is also still being wired.
+standalone manager derives canonical proposals, change sets, resolved Grants,
+and candidate ceilings from the final plan, persists the complete authorization
+bundle, revalidates injected authority on replay, and uses a grant-free path
+only when the immutable plan contains no Grant-bearing package transition. The
+umbrella Plugin Manager and managed-host adapters still need to forward the
+same exact Use authority and confirmation evidence; production Knowledge,
+Service, and Gateway composition is also still being wired.
 The storage layer preserves exact package and Runtime generations across
 candidate preparation, cutover, drain, rollback, and receipt-owned removal.
 Required surfaces fail closed when their owning adapter is absent: Runtime
@@ -501,10 +512,10 @@ do not share one database transaction. The boundaries are frozen in
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
-| Workspace Grant graph saga | Foundation implemented: plan/ceiling binding, candidate-first persistence, exact Registry cutover evidence, pre-cutover candidate restoration, drain-before-revoke retirement, fail-closed generation-drift handling, and crash replay; standalone and umbrella product planning/apply wiring remains pending |
+| Workspace Grant graph saga | Graph saga and standalone product wiring implemented: injected host authority, exact confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, tamper rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host authority forwarding remains pending |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
-| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented in the graph layer; production providers and product-level Grant plan/apply selection remain release gates |
+| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone Grant plan/apply selection is wired, while production providers and umbrella/managed-host authority forwarding remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,
 Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages

@@ -2,18 +2,19 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    LockedPluginPackage, PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind,
-    PlanPackageRole, PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind,
-    PlannedOperationImpact, PlannedPackageTransition, PlannedProviderEvidence,
-    PlannedStateEvidence, PluginOperationAction, PluginOperationPlanBinding,
-    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageLock, PluginSurfaceKind,
-    UseResult,
+    LockedPluginPackage, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind,
+    PlanPackageRole, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOperationImpact,
+    PlannedPackageTransition, PlannedProviderEvidence, PlannedStateEvidence, PluginOperationAction,
+    PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
+    PluginPackageLock, PluginSurfaceKind, PluginWorkspaceGrantSnapshot, UseResult,
 };
 use a3s_use_extension::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 use sha2::{Digest, Sha256};
 
 use super::{
-    all_catalog_surfaces, current_host_target, package_manager_error, InstallDisposition,
+    all_catalog_surfaces, current_host_target,
+    grant::{plan_workspace_grants, PlannedWorkspaceGrantOperation},
+    package_manager_error, CognitivePackageAuthorizationProvider, InstallDisposition,
     UninstallDisposition, UpgradeDisposition,
 };
 
@@ -22,8 +23,10 @@ const PLAN_LIFETIME_MS: u64 = 60 * 60 * 1000;
 pub(super) struct PlannedGraphOperation {
     pub envelope: PluginOperationPlanEnvelope,
     pub generations: BTreeMap<String, u64>,
+    pub grants: Option<PlannedWorkspaceGrantOperation>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn install_operation(
     lock: &PluginPackageLock,
     dispositions: &BTreeMap<String, InstallDisposition>,
@@ -31,7 +34,75 @@ pub(super) fn install_operation(
     registry_generation: u64,
     scope_id: &str,
     created_at_ms: u64,
+    grant_snapshot: &PluginWorkspaceGrantSnapshot,
+    authorization: &dyn CognitivePackageAuthorizationProvider,
 ) -> UseResult<PlannedGraphOperation> {
+    let packages = install_plan_packages(lock, dispositions)?;
+    if dispositions.get(&lock.root_package_id) != Some(&InstallDisposition::Add) {
+        return Err(package_manager_error(
+            "use.plugin.package_graph_invalid",
+            "A new graph install must add its root package generation.",
+        ));
+    }
+
+    let state_revision = package_state_revision(registry_generation)?;
+    let lock_digest = lock.descriptor_digest()?;
+    let providers = static_provider_evidence(&lock.packages, manifests)?;
+    let impact = PlannedOperationImpact {
+        download_bytes: lock
+            .packages
+            .iter()
+            .filter(|package| {
+                dispositions.get(package.package_id()) == Some(&InstallDisposition::Add)
+            })
+            .map(|package| package.catalog.record.archive.length)
+            .sum(),
+        installed_bytes_after: lock
+            .packages
+            .iter()
+            .map(|package| package.catalog.record.package.expanded_bytes)
+            .sum(),
+        reclaimed_bytes: 0,
+        drain_required: false,
+        retained_data: false,
+        okf_changes: Vec::new(),
+    };
+    let mut draft = PluginOperationPlanDraft::new(
+        PluginOperationAction::Install,
+        lock.root_package_id.clone(),
+        format!("use/{}", lock.root_package_id),
+        packages,
+        providers,
+        Vec::new(),
+        impact,
+        PlannedStateEvidence {
+            state_revision,
+            capability_generation: registry_generation,
+            receipt_digest: None,
+        },
+    )?;
+    let binding = binding(
+        PluginOperationAction::Install,
+        &lock_digest,
+        scope_id,
+        created_at_ms,
+        authorization.bind_authority(&draft)?,
+    )?;
+    let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, false, true)?;
+    let plan = draft.bind(binding)?;
+    let envelope = PluginOperationPlanEnvelope::new_with_package_lock(plan, lock.clone())?;
+    let generations = install_generations(lock, dispositions, state_revision)?;
+    Ok(PlannedGraphOperation {
+        envelope,
+        generations,
+        grants,
+    })
+}
+
+pub(super) fn install_plan_packages(
+    lock: &PluginPackageLock,
+    dispositions: &BTreeMap<String, InstallDisposition>,
+) -> UseResult<Vec<PlannedPackageTransition>> {
     let mut packages = Vec::with_capacity(lock.packages.len());
     for package in &lock.packages {
         let role = package_role(lock, package.package_id());
@@ -59,61 +130,14 @@ pub(super) fn install_operation(
         packages.push(transition);
     }
     packages.sort_by(|left, right| left.package_id.cmp(&right.package_id));
-    if dispositions.get(&lock.root_package_id) != Some(&InstallDisposition::Add) {
-        return Err(package_manager_error(
-            "use.plugin.package_graph_invalid",
-            "A new graph install must add its root package generation.",
-        ));
-    }
+    Ok(packages)
+}
 
-    let state_revision = registry_generation.checked_add(1).ok_or_else(|| {
-        package_manager_error(
-            "use.plugin.package_generation_exhausted",
-            "The package state revision counter is exhausted.",
-        )
-    })?;
-    let lock_digest = lock.descriptor_digest()?;
-    let providers = static_provider_evidence(&lock.packages, manifests)?;
-    let impact = PlannedOperationImpact {
-        download_bytes: lock
-            .packages
-            .iter()
-            .filter(|package| {
-                dispositions.get(package.package_id()) == Some(&InstallDisposition::Add)
-            })
-            .map(|package| package.catalog.record.archive.length)
-            .sum(),
-        installed_bytes_after: lock
-            .packages
-            .iter()
-            .map(|package| package.catalog.record.package.expanded_bytes)
-            .sum(),
-        reclaimed_bytes: 0,
-        drain_required: false,
-        retained_data: false,
-        okf_changes: Vec::new(),
-    };
-    let draft = PluginOperationPlanDraft::new(
-        PluginOperationAction::Install,
-        lock.root_package_id.clone(),
-        format!("use/{}", lock.root_package_id),
-        packages,
-        providers,
-        Vec::new(),
-        impact,
-        PlannedStateEvidence {
-            state_revision,
-            capability_generation: registry_generation,
-            receipt_digest: None,
-        },
-    )?;
-    let plan = draft.bind(binding(
-        PluginOperationAction::Install,
-        &lock_digest,
-        scope_id,
-        created_at_ms,
-    )?)?;
-    let envelope = PluginOperationPlanEnvelope::new_with_package_lock(plan, lock.clone())?;
+pub(super) fn install_generations(
+    lock: &PluginPackageLock,
+    dispositions: &BTreeMap<String, InstallDisposition>,
+    state_revision: u64,
+) -> UseResult<BTreeMap<String, u64>> {
     let mut generations = BTreeMap::new();
     for (index, package) in lock.install_order()?.into_iter().enumerate() {
         if dispositions.get(package.package_id()) != Some(&InstallDisposition::Add) {
@@ -133,12 +157,10 @@ pub(super) fn install_operation(
         })?;
         generations.insert(package.package_id().to_string(), generation);
     }
-    Ok(PlannedGraphOperation {
-        envelope,
-        generations,
-    })
+    Ok(generations)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn uninstall_operation(
     lock: &PluginPackageLock,
     dispositions: &BTreeMap<String, UninstallDisposition>,
@@ -147,6 +169,8 @@ pub(super) fn uninstall_operation(
     registry_generation: u64,
     scope_id: &str,
     created_at_ms: u64,
+    grant_snapshot: &PluginWorkspaceGrantSnapshot,
+    authorization: &dyn CognitivePackageAuthorizationProvider,
 ) -> UseResult<PlannedGraphOperation> {
     let mut packages = Vec::with_capacity(lock.packages.len());
     for package in &lock.packages {
@@ -189,12 +213,7 @@ pub(super) fn uninstall_operation(
             ),
         ));
     }
-    let state_revision = registry_generation.checked_add(1).ok_or_else(|| {
-        package_manager_error(
-            "use.plugin.package_generation_exhausted",
-            "The package state revision counter is exhausted.",
-        )
-    })?;
+    let state_revision = package_state_revision(registry_generation)?;
     let lock_digest = lock.descriptor_digest()?;
     let impact = PlannedOperationImpact {
         download_bytes: 0,
@@ -211,7 +230,7 @@ pub(super) fn uninstall_operation(
         retained_data: true,
         okf_changes: Vec::new(),
     };
-    let draft = PluginOperationPlanDraft::new(
+    let mut draft = PluginOperationPlanDraft::new(
         PluginOperationAction::Uninstall,
         lock.root_package_id.clone(),
         format!("use/{}", lock.root_package_id),
@@ -225,15 +244,19 @@ pub(super) fn uninstall_operation(
             receipt_digest: Some(root_receipt_digest),
         },
     )?;
-    let plan = draft.bind(binding(
+    let binding = binding(
         PluginOperationAction::Uninstall,
         &lock_digest,
         scope_id,
         created_at_ms,
-    )?)?;
+        authorization.bind_authority(&draft)?,
+    )?;
+    let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, true, false)?;
+    let plan = draft.bind(binding)?;
     Ok(PlannedGraphOperation {
         envelope: PluginOperationPlanEnvelope::new_with_package_lock(plan, lock.clone())?,
         generations,
+        grants,
     })
 }
 
@@ -248,6 +271,8 @@ pub(super) fn upgrade_operation(
     registry_generation: u64,
     scope_id: &str,
     created_at_ms: u64,
+    grant_snapshot: &PluginWorkspaceGrantSnapshot,
+    authorization: &dyn CognitivePackageAuthorizationProvider,
 ) -> UseResult<PlannedGraphOperation> {
     if candidate_lock.root_package_id != prior_lock.root_package_id
         || candidate_lock.host != prior_lock.host
@@ -385,12 +410,7 @@ pub(super) fn upgrade_operation(
         })
     });
 
-    let state_revision = registry_generation.checked_add(1).ok_or_else(|| {
-        package_manager_error(
-            "use.plugin.package_generation_exhausted",
-            "The package state revision counter is exhausted.",
-        )
-    })?;
+    let state_revision = package_state_revision(registry_generation)?;
     let lock_digest = candidate_lock.descriptor_digest()?;
     let upgrade_identity_digest = digest(&format!(
         "a3s-use-package-graph-upgrade-v1\n{}\n{}",
@@ -438,7 +458,7 @@ pub(super) fn upgrade_operation(
         retained_data: false,
         okf_changes: Vec::new(),
     };
-    let draft = PluginOperationPlanDraft::new(
+    let mut draft = PluginOperationPlanDraft::new(
         PluginOperationAction::Upgrade,
         candidate_lock.root_package_id.clone(),
         format!("use/{}", candidate_lock.root_package_id),
@@ -452,12 +472,15 @@ pub(super) fn upgrade_operation(
             receipt_digest: Some(root_receipt_digest),
         },
     )?;
-    let plan = draft.bind(binding(
+    let binding = binding(
         PluginOperationAction::Upgrade,
         &upgrade_identity_digest,
         scope_id,
         created_at_ms,
-    )?)?;
+        authorization.bind_authority(&draft)?,
+    )?;
+    let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, true, true)?;
+    let plan = draft.bind(binding)?;
     let envelope = PluginOperationPlanEnvelope::new_with_upgrade_package_locks(
         plan,
         prior_lock.clone(),
@@ -512,6 +535,7 @@ pub(super) fn upgrade_operation(
     Ok(PlannedGraphOperation {
         envelope,
         generations,
+        grants,
     })
 }
 
@@ -533,11 +557,21 @@ pub(super) fn now_ms() -> UseResult<u64> {
     })
 }
 
+pub(super) fn package_state_revision(registry_generation: u64) -> UseResult<u64> {
+    registry_generation.checked_add(1).ok_or_else(|| {
+        package_manager_error(
+            "use.plugin.package_generation_exhausted",
+            "The package state revision counter is exhausted.",
+        )
+    })
+}
+
 fn binding(
     action: PluginOperationAction,
     lock_digest: &str,
     scope_id: &str,
     created_at_ms: u64,
+    authority: PlanAuthority,
 ) -> UseResult<PluginOperationPlanBinding> {
     let expires_at_ms = created_at_ms.checked_add(PLAN_LIFETIME_MS).ok_or_else(|| {
         package_manager_error(
@@ -559,14 +593,7 @@ fn binding(
             kind: PlanScopeKind::User,
             id: scope_id.to_string(),
         },
-        authority: PlanAuthority {
-            actor: PlanActor::User,
-            decision: PlanPolicyDecision::Allow,
-            policy_digest: digest(&format!(
-                "a3s-use-standalone-explicit-user-{operation}\n{lock_digest}"
-            )),
-            confirmation_required: false,
-        },
+        authority,
     })
 }
 

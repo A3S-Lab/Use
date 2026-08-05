@@ -92,6 +92,25 @@ fn first_capability_cutover_resolves_generation_zero_to_one() {
 }
 
 #[test]
+fn package_lock_bound_plan_finalizes_against_its_exact_digest() {
+    let (mut plan, changes) = multi_package_install();
+    plan.package_lock_digest = Some(DIGEST_C.to_string());
+    plan.validate().unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    let resolved = changes
+        .finalize_against_plan(
+            &plan,
+            None,
+            Some(&operation_confirmation(&plan)),
+            &confirmations(&changes, &plan_digest),
+            plan.created_at_ms + 200,
+        )
+        .unwrap();
+
+    assert_eq!(resolved.plan_digest, plan_digest);
+}
+
+#[test]
 fn change_set_rejects_plan_drift_extra_packages_and_missing_confirmation() {
     let (plan, changes) = multi_package_install();
     let mut drifted = changes.clone();

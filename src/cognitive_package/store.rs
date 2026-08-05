@@ -15,10 +15,12 @@ use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
+use super::grant::PackageGraphAuthorization;
 use super::package_manager_error;
 
 const INSTALLED_GRAPH_SCHEMA: &str = "a3s.use.installed-package-graph.v1";
 const PENDING_GRAPH_SCHEMA: &str = "a3s.use.pending-package-graph-operation.v1";
+const PENDING_GRAPH_SCHEMA_V2: &str = "a3s.use.pending-package-graph-operation.v2";
 const MAX_GRAPH_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +64,8 @@ pub(super) struct PendingPackageGraphOperation {
     pub schema: String,
     pub envelope: PluginOperationPlanEnvelope,
     pub admitted_at_ms: u64,
+    #[serde(default)]
+    pub authorization: PackageGraphAuthorization,
     pub generations: BTreeMap<String, u64>,
     pub manifests: BTreeMap<String, ExtensionManifest>,
     pub manifest_digests: BTreeMap<String, String>,
@@ -79,14 +83,16 @@ impl PendingPackageGraphOperation {
     pub fn new(
         envelope: PluginOperationPlanEnvelope,
         admitted_at_ms: u64,
+        authorization: PackageGraphAuthorization,
         generations: BTreeMap<String, u64>,
         manifests: BTreeMap<String, ExtensionManifest>,
     ) -> UseResult<Self> {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA.to_string(),
+            schema: PENDING_GRAPH_SCHEMA_V2.to_string(),
             envelope,
             admitted_at_ms,
+            authorization,
             generations,
             manifests,
             manifest_digests,
@@ -103,6 +109,7 @@ impl PendingPackageGraphOperation {
     pub fn new_upgrade(
         envelope: PluginOperationPlanEnvelope,
         admitted_at_ms: u64,
+        authorization: PackageGraphAuthorization,
         generations: BTreeMap<String, u64>,
         manifests: BTreeMap<String, ExtensionManifest>,
         prior_package_lock: PluginPackageLock,
@@ -112,9 +119,10 @@ impl PendingPackageGraphOperation {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let prior_manifest_digests = manifest_record_digests(&prior_manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA.to_string(),
+            schema: PENDING_GRAPH_SCHEMA_V2.to_string(),
             envelope,
             admitted_at_ms,
+            authorization,
             generations,
             manifests,
             manifest_digests,
@@ -129,12 +137,8 @@ impl PendingPackageGraphOperation {
 
     pub fn validate(&self) -> UseResult<()> {
         self.envelope.validate()?;
-        self.envelope.verify_confirmed_apply(
-            &self.envelope.plan.operation_id,
-            &self.envelope.plan_digest,
-            None,
-            self.admitted_at_ms,
-        )?;
+        self.authorization
+            .validate_against(&self.envelope, self.admitted_at_ms)?;
         let changed = self
             .envelope
             .plan
@@ -254,7 +258,10 @@ impl PendingPackageGraphOperation {
             .is_ok_and(|digests| digests == self.manifest_digests);
         let prior_manifest_digests_valid = manifest_record_digests(&self.prior_manifests)
             .is_ok_and(|digests| digests == self.prior_manifest_digests);
-        if self.schema != PENDING_GRAPH_SCHEMA
+        let schema_valid = self.schema == PENDING_GRAPH_SCHEMA_V2
+            || (self.schema == PENDING_GRAPH_SCHEMA
+                && self.authorization == PackageGraphAuthorization::default());
+        if !schema_valid
             || changed != generations
             || changed != manifests
             || !upgrade_evidence_valid
@@ -281,6 +288,10 @@ impl PendingPackageGraphOperation {
 
     pub fn root_package_id(&self) -> &str {
         &self.envelope.plan.package_id
+    }
+
+    pub fn requires_authority_revalidation(&self) -> bool {
+        self.schema == PENDING_GRAPH_SCHEMA_V2
     }
 }
 
@@ -862,8 +873,9 @@ mod tests {
     use crate::cognitive_package::{InstallDisposition, UninstallDisposition, UpgradeDisposition};
     use a3s_use_core::{
         CatalogAvailability, PluginCatalogRecord, PluginPackageLockHost, PluginPackageResolver,
-        SurfaceChangeKind, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
-        PLUGIN_CATALOG_SCHEMA_V3,
+        PluginWorkspaceGrantSnapshot, SurfaceChangeKind, VerifiedCatalogProvenance,
+        VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3,
+        PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
     };
 
     const CATALOG: &[u8] =
@@ -911,6 +923,15 @@ mod tests {
         .unwrap()
     }
 
+    fn grant_snapshot(state_revision: u64) -> PluginWorkspaceGrantSnapshot {
+        PluginWorkspaceGrantSnapshot {
+            schema: PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA.to_string(),
+            scope_id: "current".to_string(),
+            state_revision,
+            grants: Vec::new(),
+        }
+    }
+
     fn install_pending(lock: &PluginPackageLock) -> PendingPackageGraphOperation {
         let package_id = lock.root_package_id.clone();
         let manifests =
@@ -923,10 +944,18 @@ mod tests {
             1,
             "current",
             10,
+            &grant_snapshot(2),
+            &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
         )
         .unwrap();
-        PendingPackageGraphOperation::new(generated.envelope, 10, generated.generations, manifests)
-            .unwrap()
+        PendingPackageGraphOperation::new(
+            generated.envelope,
+            10,
+            PackageGraphAuthorization::default(),
+            generated.generations,
+            manifests,
+        )
+        .unwrap()
     }
 
     fn uninstall_pending(lock: &PluginPackageLock) -> PendingPackageGraphOperation {
@@ -943,10 +972,18 @@ mod tests {
             1,
             "current",
             10,
+            &grant_snapshot(2),
+            &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
         )
         .unwrap();
-        PendingPackageGraphOperation::new(generated.envelope, 10, generated.generations, manifests)
-            .unwrap()
+        PendingPackageGraphOperation::new(
+            generated.envelope,
+            10,
+            PackageGraphAuthorization::default(),
+            generated.generations,
+            manifests,
+        )
+        .unwrap()
     }
 
     fn upgrade_pending(
@@ -972,11 +1009,14 @@ mod tests {
             8,
             "current",
             10,
+            &grant_snapshot(9),
+            &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
         )
         .unwrap();
         PendingPackageGraphOperation::new_upgrade(
             generated.envelope,
             10,
+            PackageGraphAuthorization::default(),
             generated.generations,
             manifests,
             prior.clone(),

@@ -12,7 +12,11 @@ use crate::plugin_lifecycle::{
     PluginLifecycleIntentSpec, PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
 };
 
-use super::plan::{install_operation, now_ms};
+use super::grant::authorize_planned_operation;
+use super::plan::{
+    install_generations, install_operation, install_plan_packages, now_ms, package_state_revision,
+    static_provider_evidence,
+};
 use super::store::PendingPackageGraphOperation;
 use super::{
     current_host_target, installed_matches_lock, package_manager_error,
@@ -140,15 +144,6 @@ impl CognitivePackageManager {
             self.lifecycle.validate_manifest(manifest)?;
         }
 
-        let snapshot = self.registry.snapshot().await?;
-        let generated = install_operation(
-            &lock,
-            &dispositions,
-            &manifests,
-            snapshot.generation,
-            &self.scope_id,
-            now_ms()?,
-        )?;
         let changed_manifests = manifests
             .iter()
             .filter(|(package_id, _)| {
@@ -156,33 +151,61 @@ impl CognitivePackageManager {
             })
             .map(|(package_id, manifest)| (package_id.clone(), manifest.clone()))
             .collect();
-        let admitted_at_ms = now_ms()?;
-        generated.envelope.verify_confirmed_apply(
-            &generated.envelope.plan.operation_id,
-            &generated.envelope.plan_digest,
-            None,
-            admitted_at_ms,
-        )?;
-        let generated = PendingPackageGraphOperation::new(
-            generated.envelope,
-            admitted_at_ms,
-            generated.generations,
-            changed_manifests,
-        )?;
         let pending_store = self.pending_store();
         let pending = match pending_store
             .get(PluginOperationAction::Install, &lock.root_package_id)
             .await?
         {
             Some(pending) => {
-                validate_replay(&pending, &generated)?;
+                validate_replay(
+                    &pending,
+                    &lock,
+                    &dispositions,
+                    &manifests,
+                    &changed_manifests,
+                    &self.scope_id,
+                )?;
                 pending
             }
             None => {
+                let snapshot = self.registry.snapshot().await?;
+                let grant_snapshot = self
+                    .grant_store()
+                    .snapshot_scope(&self.scope_id, package_state_revision(snapshot.generation)?)
+                    .await?;
+                let generated = install_operation(
+                    &lock,
+                    &dispositions,
+                    &manifests,
+                    snapshot.generation,
+                    &self.scope_id,
+                    now_ms()?,
+                    &grant_snapshot,
+                    self.authorization.as_ref(),
+                )?;
+                let admitted_at_ms = now_ms()?;
+                let authorization = authorize_planned_operation(
+                    self.authorization.as_ref(),
+                    &generated.envelope,
+                    generated.grants.as_ref(),
+                    admitted_at_ms,
+                )
+                .await?;
+                let generated = PendingPackageGraphOperation::new(
+                    generated.envelope,
+                    admitted_at_ms,
+                    authorization,
+                    generated.generations,
+                    changed_manifests,
+                )?;
                 pending_store.put(&generated).await?;
                 generated
             }
         };
+        if pending.requires_authority_revalidation() {
+            self.authorization
+                .verify_authority(&pending.envelope.plan)?;
+        }
         let apply_time = now_ms()?;
 
         let mut units = Vec::with_capacity(prepared.len());
@@ -249,9 +272,23 @@ impl CognitivePackageManager {
         let graph = PluginPackageGraphLifecycleCoordinator::new(std::sync::Arc::new(
             ExtensionGraphCapabilityLifecycleHost::new(self.registry.clone()),
         ));
-        graph
-            .apply_install(&pending.envelope, &units, || now_ms().unwrap_or(apply_time))
-            .await?;
+        match pending
+            .authorization
+            .lifecycle_unit(self.grant_store(), &pending.envelope)?
+        {
+            Some(grants) => {
+                graph
+                    .apply_install_with_grants(&pending.envelope, &units, &grants, || {
+                        now_ms().unwrap_or(apply_time)
+                    })
+                    .await?;
+            }
+            None => {
+                graph
+                    .apply_install(&pending.envelope, &units, || now_ms().unwrap_or(apply_time))
+                    .await?;
+            }
+        }
         self.graph_store().put(&lock, now_ms()?).await?;
         pending_store.remove(&pending).await?;
         let root = self
@@ -367,6 +404,10 @@ impl CognitivePackageManager {
         installed: &BTreeMap<String, InstalledExtension>,
     ) -> UseResult<()> {
         pending.validate()?;
+        if pending.requires_authority_revalidation() {
+            self.authorization
+                .verify_authority(&pending.envelope.plan)?;
+        }
         if pending.envelope.plan.action != PluginOperationAction::Install
             || pending.envelope.package_lock.as_ref() != Some(lock)
             || pending.envelope.plan.scope.id != self.scope_id
@@ -438,13 +479,28 @@ impl CognitivePackageManager {
         }
 
         let completed_at_ms = now_ms()?;
-        PluginPackageGraphLifecycleCoordinator::new(std::sync::Arc::new(
+        let graph = PluginPackageGraphLifecycleCoordinator::new(std::sync::Arc::new(
             ExtensionGraphCapabilityLifecycleHost::new(self.registry.clone()),
-        ))
-        .apply_install(&pending.envelope, &units, || {
-            now_ms().unwrap_or(completed_at_ms)
-        })
-        .await?;
+        ));
+        match pending
+            .authorization
+            .lifecycle_unit(self.grant_store(), &pending.envelope)?
+        {
+            Some(grants) => {
+                graph
+                    .apply_install_with_grants(&pending.envelope, &units, &grants, || {
+                        now_ms().unwrap_or(completed_at_ms)
+                    })
+                    .await?;
+            }
+            None => {
+                graph
+                    .apply_install(&pending.envelope, &units, || {
+                        now_ms().unwrap_or(completed_at_ms)
+                    })
+                    .await?;
+            }
+        }
         Ok(())
     }
 }
@@ -479,16 +535,26 @@ fn validate_prepared_closure(
 
 fn validate_replay(
     pending: &PendingPackageGraphOperation,
-    generated: &PendingPackageGraphOperation,
+    lock: &a3s_use_core::PluginPackageLock,
+    dispositions: &BTreeMap<String, InstallDisposition>,
+    admitted_manifests: &BTreeMap<String, ExtensionManifest>,
+    changed_manifests: &BTreeMap<String, ExtensionManifest>,
+    scope_id: &str,
 ) -> UseResult<()> {
     pending.validate()?;
-    if pending.envelope.package_lock != generated.envelope.package_lock
+    let expected_packages = install_plan_packages(lock, dispositions)?;
+    let expected_providers = static_provider_evidence(&lock.packages, admitted_manifests)?;
+    let state_revision = package_state_revision(pending.envelope.plan.state.capability_generation)?;
+    let expected_generations = install_generations(lock, dispositions, state_revision)?;
+    if pending.envelope.package_lock.as_ref() != Some(lock)
         || pending.envelope.plan.action != PluginOperationAction::Install
-        || pending.envelope.plan.packages != generated.envelope.plan.packages
-        || pending.envelope.plan.providers != generated.envelope.plan.providers
-        || pending.generations.keys().collect::<Vec<_>>()
-            != generated.generations.keys().collect::<Vec<_>>()
-        || pending.manifests != generated.manifests
+        || pending.envelope.plan.package_id != lock.root_package_id
+        || pending.envelope.plan.scope.id != scope_id
+        || pending.envelope.plan.state.state_revision != state_revision
+        || pending.envelope.plan.packages != expected_packages
+        || pending.envelope.plan.providers != expected_providers
+        || pending.generations != expected_generations
+        || pending.manifests != *changed_manifests
     {
         return Err(package_manager_error(
             "use.plugin.package_graph_busy",

@@ -9,9 +9,9 @@ use super::validation::{valid_machine_id, valid_package_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPackageChangeKind,
     PlanPolicyDecision, PlannedPackageState, PlannedPackageTransition, PluginGrantConfirmation,
-    PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanEnvelope,
-    PluginWorkspaceGrantProposal, WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS,
-    PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+    PluginOperationConfirmation, PluginOperationPlan, PluginWorkspaceGrantProposal,
+    WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
 const SNAPSHOT_ERROR: &str = "use.plugin.grant_snapshot_invalid";
@@ -220,14 +220,15 @@ impl PluginWorkspaceGrantChangeSet {
         applied_at_ms: u64,
     ) -> UseResult<ResolvedWorkspaceGrantChangeSet> {
         self.validate_against_plan(plan, before)?;
-        let envelope = PluginOperationPlanEnvelope::new(plan.clone())?;
-        envelope.verify_confirmed_apply(
+        let plan_digest = plan.descriptor_digest()?;
+        super::plan_confirmation::verify_plan_confirmed_apply(
+            plan,
+            &plan_digest,
             &plan.operation_id,
-            &envelope.plan_digest,
+            &plan_digest,
             operation_confirmation,
             applied_at_ms,
         )?;
-        let plan_digest = envelope.plan_digest;
         let operation_confirmation_digest = operation_confirmation
             .map(PluginOperationConfirmation::descriptor_digest)
             .transpose()?;

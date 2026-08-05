@@ -5,7 +5,8 @@ use crate::{UseError, UseResult};
 use super::validation::{valid_machine_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanActor,
-    PlanPolicyDecision, PluginOperationPlanEnvelope, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PlanPolicyDecision, PluginOperationPlan, PluginOperationPlanEnvelope,
+    PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
 };
 
 const CONFIRMATION_ERROR: &str = "use.plugin.plan_confirmation_invalid";
@@ -63,31 +64,56 @@ impl PluginOperationPlanEnvelope {
         confirmation: Option<&PluginOperationConfirmation>,
         now_ms: u64,
     ) -> UseResult<()> {
-        self.verify_apply(operation_id, plan_digest, now_ms)?;
-        match (self.plan.authority.decision, confirmation) {
-            (PlanPolicyDecision::Allow, None) => Ok(()),
-            (PlanPolicyDecision::Ask, None) => Err(UseError::new(
-                "use.plugin.plan_confirmation_required",
-                "The plugin operation plan requires explicit user confirmation.",
-            )),
-            (PlanPolicyDecision::Ask, Some(confirmation)) => {
-                confirmation.validate()?;
-                if confirmation.operation_id != self.plan.operation_id
-                    || confirmation.plan_digest != self.plan_digest
-                    || confirmation.confirmed_at_ms < self.plan.created_at_ms
-                    || confirmation.confirmed_at_ms >= self.plan.expires_at_ms
-                    || confirmation.confirmed_at_ms > now_ms
-                {
-                    return Err(confirmation_mismatch());
-                }
-                Ok(())
+        self.validate()?;
+        verify_plan_confirmed_apply(
+            &self.plan,
+            &self.plan_digest,
+            operation_id,
+            plan_digest,
+            confirmation,
+            now_ms,
+        )
+    }
+}
+
+pub(super) fn verify_plan_confirmed_apply(
+    plan: &PluginOperationPlan,
+    expected_plan_digest: &str,
+    operation_id: &str,
+    plan_digest: &str,
+    confirmation: Option<&PluginOperationConfirmation>,
+    now_ms: u64,
+) -> UseResult<()> {
+    super::plan::verify_plan_apply(
+        plan,
+        expected_plan_digest,
+        operation_id,
+        plan_digest,
+        now_ms,
+    )?;
+    match (plan.authority.decision, confirmation) {
+        (PlanPolicyDecision::Allow, None) => Ok(()),
+        (PlanPolicyDecision::Ask, None) => Err(UseError::new(
+            "use.plugin.plan_confirmation_required",
+            "The plugin operation plan requires explicit user confirmation.",
+        )),
+        (PlanPolicyDecision::Ask, Some(confirmation)) => {
+            confirmation.validate()?;
+            if confirmation.operation_id != plan.operation_id
+                || confirmation.plan_digest != expected_plan_digest
+                || confirmation.confirmed_at_ms < plan.created_at_ms
+                || confirmation.confirmed_at_ms >= plan.expires_at_ms
+                || confirmation.confirmed_at_ms > now_ms
+            {
+                return Err(confirmation_mismatch());
             }
-            (PlanPolicyDecision::Allow, Some(_)) => Err(confirmation_mismatch()),
-            (PlanPolicyDecision::Deny, _) => Err(UseError::new(
-                "use.plugin.plan_denied",
-                "Policy denies applying the plugin operation plan.",
-            )),
+            Ok(())
         }
+        (PlanPolicyDecision::Allow, Some(_)) => Err(confirmation_mismatch()),
+        (PlanPolicyDecision::Deny, _) => Err(UseError::new(
+            "use.plugin.plan_denied",
+            "Policy denies applying the plugin operation plan.",
+        )),
     }
 }
 

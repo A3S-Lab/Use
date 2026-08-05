@@ -5,6 +5,7 @@
 //! composition; Tool, MCP, Skill, UI, and OKF remain contributions inside one
 //! immutable package generation.
 
+mod grant;
 mod hosts;
 mod install;
 mod plan;
@@ -27,6 +28,10 @@ use std::sync::Arc;
 use crate::plugin_lifecycle::PluginLifecycleCoordinator;
 use store::{InstalledPackageGraphStore, PendingPackageGraphStore};
 
+pub use grant::{
+    CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider,
+    StandaloneCognitivePackageAuthorizationProvider,
+};
 pub use hosts::StandaloneCognitivePackageLifecycleFactory;
 
 /// Stable user-level scope shared by the standalone facade and embedding A3S
@@ -49,6 +54,7 @@ pub struct CognitivePackageManager {
     registry: ExtensionRegistry,
     scope_id: String,
     lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
+    authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
 }
 
 impl std::fmt::Debug for CognitivePackageManager {
@@ -58,6 +64,7 @@ impl std::fmt::Debug for CognitivePackageManager {
             .field("registry", &self.registry)
             .field("scope_id", &self.scope_id)
             .field("lifecycle", &self.lifecycle.name())
+            .field("authorization", &self.authorization.name())
             .finish()
     }
 }
@@ -182,6 +189,32 @@ impl CognitivePackageManager {
         scope_id: impl Into<String>,
         lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
     ) -> UseResult<Self> {
+        Self::with_scope_lifecycle_and_authorization(
+            registry,
+            scope_id,
+            lifecycle,
+            Arc::new(StandaloneCognitivePackageAuthorizationProvider),
+        )
+    }
+
+    pub fn with_authorization(
+        registry: ExtensionRegistry,
+        authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
+    ) -> UseResult<Self> {
+        Self::with_scope_lifecycle_and_authorization(
+            registry,
+            COGNITIVE_PACKAGE_DEFAULT_SCOPE,
+            Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory),
+            authorization,
+        )
+    }
+
+    pub fn with_scope_lifecycle_and_authorization(
+        registry: ExtensionRegistry,
+        scope_id: impl Into<String>,
+        lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
+        authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
+    ) -> UseResult<Self> {
         let scope_id = scope_id.into();
         if scope_id.is_empty()
             || scope_id.len() > 256
@@ -203,6 +236,7 @@ impl CognitivePackageManager {
             registry,
             scope_id,
             lifecycle,
+            authorization,
         })
     }
 
@@ -216,6 +250,10 @@ impl CognitivePackageManager {
 
     pub fn lifecycle(&self) -> &dyn CognitivePackageLifecycleFactory {
         self.lifecycle.as_ref()
+    }
+
+    pub fn authorization(&self) -> &dyn CognitivePackageAuthorizationProvider {
+        self.authorization.as_ref()
     }
 
     /// Return true only for a complete signed schema-v3 catalog record.
@@ -244,6 +282,10 @@ impl CognitivePackageManager {
 
     fn pending_store(&self) -> PendingPackageGraphStore {
         PendingPackageGraphStore::new(self.registry.paths().state_root())
+    }
+
+    fn grant_store(&self) -> a3s_use_extension::WorkspaceGrantStore {
+        a3s_use_extension::WorkspaceGrantStore::from_extension_paths(self.registry.paths())
     }
 }
 
