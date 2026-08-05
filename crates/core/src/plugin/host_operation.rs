@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{UseError, UseResult};
 
-use super::host::{validate_request_identity, verify_capabilities};
+use super::host::{validate_request_identity, verify_capabilities, verify_supported_plan_schema};
 use super::validation::valid_sha256;
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPolicyDecision,
@@ -140,6 +140,7 @@ impl PluginHostApplyRequest {
     ) -> UseResult<()> {
         self.validate_for_capabilities(capabilities)?;
         plan.validate()?;
+        verify_supported_plan_schema(capabilities, &plan.plan.plan.schema)?;
         if self.assignment_generation != plan.assignment_generation
             || self.capabilities_digest != plan.capabilities_digest
             || self.scope != plan.scope

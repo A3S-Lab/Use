@@ -50,13 +50,14 @@ pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
 };
 pub use remote::{
-    download_locked_remote_packages, inspect_cached_plugin, inspect_remote_plugin,
-    list_remote_packages, prepare_remote_package, refresh_remote_registry,
-    resolve_remote_package_lock, search_cached_plugins, search_remote_plugins,
-    DownloadedRemotePackage, PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection,
-    PluginCatalogPage, PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource,
-    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry, VerifiedRegistryCatalog,
-    VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
+    download_locked_remote_packages, download_selected_locked_remote_packages,
+    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, prepare_remote_package,
+    refresh_remote_registry, resolve_remote_package_lock, search_cached_plugins,
+    search_remote_plugins, DownloadedRemotePackage, PluginCatalogAvailability, PluginCatalogHost,
+    PluginCatalogInspection, PluginCatalogPage, PluginCatalogSearch, PluginCatalogSnapshot,
+    PluginCatalogSnapshotSource, PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry,
+    VerifiedRegistryCatalog, VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES,
+    MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
 pub use surface_files::{
     inspect_flow_surface_file, inspect_mcp_surface_files, inspect_skill_surface_file,

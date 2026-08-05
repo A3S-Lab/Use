@@ -490,7 +490,7 @@ The package-graph schedules are:
 | Action | Canonical order |
 | --- | --- |
 | Install | revalidate all locked metadata → download dependencies forward → commit/prepare changed packages forward → verify retained nodes → publish changed closure once |
-| Upgrade | revalidate exact prior/candidate locks → classify Add/Replace/Retain → prepare changed N+1 forward → publish once → on pre-cutover failure roll back candidates and restore N, otherwise retire replaced N in reverse order; dependency-node removal is rejected until reviewed graph GC exists |
+| Upgrade | negotiate host capabilities v3 → revalidate plan-v3 prior/candidate locks → classify Add/Replace/Remove/Retain → download and prepare only changed N+1 forward → publish candidates and removed routes once → on pre-cutover failure restore N, otherwise hide/drain/remove replaced and unreferenced N in reverse prior-lock order |
 | Uninstall | hide/drain each changed package in reverse lock order → remove dependent before dependency → preserve every Retain node |
 
 Every retained node must still match the lock's version, catalog, package and
@@ -498,7 +498,11 @@ manifest digests, Registry/TUF provenance, host compatibility, enabled receipt,
 and current published snapshot. Receipt state alone is not visibility evidence.
 The immutable Registry snapshot is the graph commit point, so a crash after
 writing only some enabled receipts leaves the new graph invisible until exact
-replay publishes the complete closure.
+replay publishes the complete closure. Before a removed selected receipt leaves
+the primary store, it is copied to its content-bound retained-generation path;
+the cutover then removes its route atomically, and reverse retirement can hide,
+drain, and delete that exact generation without allowing a later snapshot to
+reintroduce it.
 
 The package store persists lifecycle-managed state as receipt schema v3. The
 receipt and derived route binding carry the exact positive lifecycle

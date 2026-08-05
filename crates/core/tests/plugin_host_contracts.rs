@@ -10,11 +10,12 @@ use a3s_use_core::{
     PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageId, PluginSurfaceKind,
     PluginSurfaceRef, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
     PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
-    PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA,
-    PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
-    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
-    PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V2, PLUGIN_MANAGED_SCOPE_SCHEMA,
-    PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_CAPABILITIES_SCHEMA_V3,
+    PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA,
+    PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
+    PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V2,
+    PLUGIN_HOST_PROTOCOL_LEVEL_V3, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA_V3,
 };
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
@@ -24,6 +25,9 @@ const HOST_CAPABILITIES_DIGEST: &str =
 const HOST_CAPABILITIES_V2: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v2.json");
 const HOST_CAPABILITIES_V2_DIGEST: &str =
     include_str!("../fixtures/plugins/host-capabilities-v2.sha256").trim_ascii_end();
+const HOST_CAPABILITIES_V3: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v3.json");
+const HOST_CAPABILITIES_V3_DIGEST: &str =
+    include_str!("../fixtures/plugins/host-capabilities-v3.sha256").trim_ascii_end();
 const MANAGED_SCOPE: &[u8] = include_bytes!("../fixtures/plugins/managed-scope-v1.json");
 const MANAGED_SCOPE_DIGEST: &str =
     include_str!("../fixtures/plugins/managed-scope-v1.sha256").trim_ascii_end();
@@ -329,6 +333,61 @@ fn capabilities_v2_advertises_flow_without_rewriting_v1() {
     assert_eq!(
         fixture.descriptor_digest().unwrap(),
         HOST_CAPABILITIES_V2_DIGEST
+    );
+}
+
+#[test]
+fn capabilities_v3_advertises_graph_upgrade_plans_without_rewriting_prior_versions() {
+    let v1 = capabilities();
+    let v2 = PluginHostCapabilities::v2(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+    let v3 = PluginHostCapabilities::v3(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+
+    assert_eq!(v3.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V3);
+    assert_eq!(v3.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V3);
+    assert_eq!(v3.surface_kinds, v2.surface_kinds);
+    assert!(!v1.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V3));
+    assert!(!v2.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V3));
+    assert!(v3.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V3));
+    assert!(v3
+        .contract_schemas
+        .contains(&PLUGIN_HOST_CAPABILITIES_SCHEMA_V3.to_owned()));
+
+    let mut expanded_v2 = v2.clone();
+    expanded_v2
+        .plan_schemas
+        .push(PLUGIN_OPERATION_PLAN_SCHEMA_V3.to_owned());
+    assert!(expanded_v2.validate().is_err());
+    let mut narrowed_v3 = v3;
+    narrowed_v3.plan_schemas.pop();
+    assert!(narrowed_v3.validate().is_err());
+
+    let fixture = PluginHostCapabilities::from_json(HOST_CAPABILITIES_V3).unwrap();
+    assert_eq!(
+        fixture,
+        PluginHostCapabilities::v3(
+            "host:node-01",
+            env!("CARGO_PKG_VERSION"),
+            "use:0.2.1:linux-x86_64",
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        fixture.canonical_bytes().unwrap(),
+        canonical_fixture(HOST_CAPABILITIES_V3)
+    );
+    assert_eq!(
+        fixture.descriptor_digest().unwrap(),
+        HOST_CAPABILITIES_V3_DIGEST
     );
 }
 

@@ -44,12 +44,15 @@ available for automation, embedding, and diagnostics.
 > TypeScript host. CLI, TUI, and Web resolve the same strict `flow.json`
 > identity and share workspace-local durable execution/history; Web verifies
 > install, run, exact-generation upgrade, uninstall, and process-restart
-> recovery. Dependency-graph upgrade now stages Add/Replace candidates
-> dependency-first, cuts over once, automatically rolls back before cutover,
-> retires replaced generations in reverse order, and resumes either path after
-> a crash. Production Knowledge, Service/HTTP hosts, grant composition,
-> dependency-removal graph GC, distributed Flow scheduling/resumption, and
-> complete real-process cross-platform E2E remain release gates.
+> recovery. Dependency-graph upgrade now binds exact prior and candidate locks
+> in operation plan v3, classifies Add/Replace/Remove/Retain, downloads only
+> changed candidates, cuts over additions/replacements/removals once, preserves
+> shared dependencies, and retires unreferenced prior generations in reverse
+> order with crash-safe replay. Managed hosts negotiate this contract through
+> host capabilities v3; v1/v2 remain frozen. Production Knowledge,
+> Service/HTTP hosts, grant composition, distributed Flow
+> scheduling/resumption, and complete real-process cross-platform E2E remain
+> release gates.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 ## Proof in the codebase
@@ -68,8 +71,9 @@ The package model is exercised as code, not only described in prose:
   retain exact N/N+1 generations; staging a candidate cannot replace the
   snapshot-selected generation, and retirement removes only receipt-owned N.
 - [`CognitivePackageManager`](src/cognitive_package/) installs a verified
-  dependency closure forward, publishes changed packages once, and uninstalls
-  unused packages in reverse dependency order.
+  dependency closure forward, reuses exact shared nodes, publishes graph
+  additions, replacements, and removals once, and retires only unreferenced
+  packages in reverse dependency order.
 - [`capability watch`](src/capability_registry.rs) lets resident hosts observe
   package and projection changes without restarting.
 - A3S Code's
@@ -417,15 +421,17 @@ a3s-use extension enable acme/calendar --json
 a3s-use component uninstall calendar --json
 ```
 
-The graph coordinator now resolves exact Add/Replace/Retain transitions,
-prepares candidates dependency-first, publishes the changed closure once,
+The graph coordinator resolves exact Add/Replace/Remove/Retain transitions.
+Operation plan v3 binds the complete prior/candidate lock union, and host
+capabilities v3 prevents an older managed host from accepting that plan. The
+engine downloads only Add/Replace archives, prepares candidates
+dependency-first, removes unreferenced routes in the same snapshot cutover,
 automatically restores the prior graph after a pre-cutover failure, and retires
-replaced generations in reverse order with durable crash replay. Upgrades that
-remove dependency nodes fail closed until a separately reviewed graph-GC
-operation exists. Production grant/Knowledge/Service/Gateway composition is
-still being wired. The storage layer preserves exact package and Runtime
-generations across candidate preparation, cutover, drain, rollback, and
-receipt-owned removal.
+prior generations in reverse order with durable crash replay. Shared exact
+dependencies remain selected and are neither downloaded nor rewritten.
+Production grant/Knowledge/Service/Gateway composition is still being wired.
+The storage layer preserves exact package and Runtime generations across
+candidate preparation, cutover, drain, rollback, and receipt-owned removal.
 Required surfaces fail closed when their owning adapter is absent: Runtime
 Service and HTTP MCP need Runtime/Gateway, OKF needs Knowledge, and Flow needs
 the `a3s-flow` lifecycle host. No path silently falls back to a different
@@ -472,7 +478,7 @@ do not share one database transaction. The boundaries are frozen in
 | --- | --- |
 | Native package foundation | Available: bounded local/archive install, release bundles, TUF targets, receipts, atomic schema-v1/v2 lifecycle, snapshots, and watch |
 | Schema-v3 package format | Implemented: Tool, MCP, OKF, A3S Flow, Skill, UI, required README, typed dependencies, and readiness graph |
-| Dependency graph lifecycle | Available for signed remote packages: deterministic resolve, exact prior/candidate locks, forward install and upgrade preparation, shared retention, one publication, automatic pre-cutover rollback, reverse retirement/uninstall, and replay; dependency-removal GC remains pending |
+| Dependency graph lifecycle | Available for signed remote packages: deterministic resolve, plan-v3 prior/candidate lock binding, Add/Replace/Remove/Retain, selected downloads, shared-node retention, one atomic publication, automatic pre-cutover rollback, reverse retirement/uninstall, and crash replay |
 | Replaceable Registry input | Available in the package engine; host-selected URL/trust root and bounded dependency source set, with no compiled endpoint |
 | Umbrella Registry management | Available: add/list/show/refresh, stable-name replace, enable/disable, and remove; disabled sources stay visible but are excluded from browsing and resolution |
 | Tool/MCP runtime lifecycle | Typed adapters plus bounded exact-generation N/N+1 Runtime binding storage and observation implemented; standalone supports executable Tool Tasks and stdio MCP, while Services/HTTP require injected providers |
@@ -482,7 +488,7 @@ do not share one database transaction. The boundaries are frozen in
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
-| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Retain planning, package and Runtime N/N+1 retention, one graph cutover, automatic pre-cutover rollback, reverse prior-generation retirement, exact drain/removal, and crash replay implemented; dependency-removal graph GC and production provider/grant composition remain release gates |
+| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, automatic pre-cutover rollback, reverse prior-generation retirement, exact drain/removal, dependency GC, and generation-stable crash replay implemented; production provider/grant composition remains a release gate |
 
 The baseline intentionally fails closed when required permission, Runtime,
 Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages

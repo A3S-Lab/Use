@@ -46,7 +46,8 @@ pub use grant_resolution::{
 };
 pub use host::{
     PluginHostCapabilities, PluginHostManager, PluginManagedScope, PLUGIN_HOST_CAPABILITIES_SCHEMA,
-    PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_PROTOCOL_LEVEL, PLUGIN_HOST_PROTOCOL_LEVEL_V2,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_CAPABILITIES_SCHEMA_V3,
+    PLUGIN_HOST_PROTOCOL_LEVEL, PLUGIN_HOST_PROTOCOL_LEVEL_V2, PLUGIN_HOST_PROTOCOL_LEVEL_V3,
     PLUGIN_MANAGED_SCOPE_SCHEMA,
 };
 pub use host_observation::{
@@ -106,6 +107,10 @@ pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA: &str = "a3s.use.plugin-operation-p
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan-draft.v2";
 pub const PLUGIN_OPERATION_PLAN_SCHEMA: &str = "a3s.use.plugin-operation-plan.v1";
 pub const PLUGIN_OPERATION_PLAN_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan.v2";
+/// Upgrade plan schema binding both the exact prior and candidate package
+/// locks. The two locks make dependency removals reviewable without weakening
+/// the exact-closure guarantees of plan schemas v1 and v2.
+pub const PLUGIN_OPERATION_PLAN_SCHEMA_V3: &str = "a3s.use.plugin-operation-plan.v3";
 pub const PLUGIN_PLANNING_BUNDLE_SCHEMA: &str = "a3s.use.plugin-planning-bundle.v1";
 pub const PLUGIN_PERMISSION_SCHEMA: &str = "a3s.use.plugin-permissions.v1";
 pub const PLUGIN_GRANT_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-grant-confirmation.v1";

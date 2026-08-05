@@ -21,7 +21,9 @@ use super::{
     verify_package_integrity, ExtensionReceipt, ExtensionRegistry, ExtensionTrust,
     InstalledExtension, UninstallResult, RECEIPT_SCHEMA_VERSION_V3,
 };
-use crate::package::{io_error, unix_timestamp, write_receipt, RegistryLock};
+use crate::package::{
+    io_error, sync_parent_directory, unix_timestamp, write_receipt, RegistryLock,
+};
 use crate::registry_io::{read_registry_snapshot, write_registry_snapshot};
 use crate::remote::ResolvedRemotePackage;
 use crate::source::PreparedPackageSource;
@@ -142,6 +144,13 @@ pub struct ExtensionLifecycleRollbackResult {
     pub package_id: String,
     pub changed: bool,
     pub registry_generation: u64,
+}
+
+#[derive(Debug, Clone)]
+struct RemovedLifecyclePackage {
+    identity: ExtensionLifecycleIdentity,
+    extension: InstalledExtension,
+    selected: bool,
 }
 
 impl ExtensionRegistry {
@@ -353,6 +362,7 @@ impl ExtensionRegistry {
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
         self.publish_lifecycle_packages_for_host_version(
             identities,
+            &[],
             env!("CARGO_PKG_VERSION"),
             None,
         )
@@ -369,6 +379,25 @@ impl ExtensionRegistry {
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
         self.publish_lifecycle_packages_for_host_version(
             identities,
+            &[],
+            env!("CARGO_PKG_VERSION"),
+            Some(package_lock),
+        )
+        .await
+    }
+
+    /// Publish changed candidate nodes and hide prior-only dependency nodes in
+    /// one Registry snapshot. Removed identities must be absent from the
+    /// candidate lock and remain bound to their exact reviewed generation.
+    pub async fn publish_lifecycle_package_graph_transition(
+        &self,
+        package_lock: &PluginPackageLock,
+        identities: &[ExtensionLifecycleIdentity],
+        removed: &[ExtensionLifecycleIdentity],
+    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+        self.publish_lifecycle_packages_for_host_version(
+            identities,
+            removed,
             env!("CARGO_PKG_VERSION"),
             Some(package_lock),
         )
@@ -396,8 +425,17 @@ impl ExtensionRegistry {
                 "The cognitive package must be hidden before accepted calls can drain.",
             ));
         }
-        let installed = self.list().await?;
-        let snapshot = self.publish_snapshot_locked(&installed).await?;
+        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let snapshot = if published
+            .routes
+            .iter()
+            .any(|binding| binding_matches_identity(&self.paths, binding, identity))
+        {
+            let installed = self.list().await?;
+            self.publish_snapshot_locked(&installed).await?
+        } else {
+            published
+        };
         let _drain = crate::route_lock::acquire_drain_lock(
             &self
                 .paths
@@ -577,7 +615,14 @@ impl ExtensionRegistry {
                 "A retained generation can be hidden only after atomic capability cutover selected its replacement.",
             ));
         }
-        if selected_is_exact && !enabled && !published_exact {
+        if selected_is_exact
+            && !enabled
+            && !published_exact
+            && published
+                .routes
+                .iter()
+                .any(|binding| binding.package_id == identity.package_id())
+        {
             return Err(lifecycle_state_error(
                 "An unpublished upgrade candidate cannot hide or replace the still-published prior generation.",
             ));
@@ -597,7 +642,7 @@ impl ExtensionRegistry {
                     .await?;
             }
         }
-        let snapshot = if selected_is_exact {
+        let snapshot = if selected_is_exact && (changed || published_exact) {
             let installed = self.list().await?;
             self.publish_snapshot_locked(&installed).await?
         } else {
@@ -613,10 +658,13 @@ impl ExtensionRegistry {
     async fn publish_lifecycle_packages_for_host_version(
         &self,
         identities: &[ExtensionLifecycleIdentity],
+        removed: &[ExtensionLifecycleIdentity],
         host_version: &str,
         package_lock: Option<&PluginPackageLock>,
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
-        if identities.is_empty() || identities.len() > a3s_use_core::MAX_PLUGIN_PLAN_ITEMS {
+        if identities.is_empty() && removed.is_empty()
+            || identities.len().saturating_add(removed.len()) > a3s_use_core::MAX_PLUGIN_PLAN_ITEMS
+        {
             return Err(lifecycle_state_error(
                 "A package-graph publication must contain a bounded non-empty closure.",
             ));
@@ -626,6 +674,16 @@ impl ExtensionRegistry {
             if !package_ids.insert(identity.package_id()) {
                 return Err(lifecycle_state_error(
                     "A package-graph publication contains a duplicate package identity.",
+                ));
+            }
+        }
+        let mut removed_package_ids = BTreeSet::new();
+        for identity in removed {
+            if package_ids.contains(identity.package_id())
+                || !removed_package_ids.insert(identity.package_id())
+            {
+                return Err(lifecycle_state_error(
+                    "A package-graph transition contains a duplicate or overlapping removed package identity.",
                 ));
             }
         }
@@ -643,6 +701,13 @@ impl ExtensionRegistry {
                 if package_lock.package(identity.package_id()).is_none() {
                     return Err(lifecycle_graph_error(
                         "A changed lifecycle package is absent from the reviewed package lock.",
+                    ));
+                }
+            }
+            for identity in removed {
+                if package_lock.package(identity.package_id()).is_some() {
+                    return Err(lifecycle_graph_error(
+                        "A removed lifecycle package is still present in the candidate package lock.",
                     ));
                 }
             }
@@ -690,6 +755,89 @@ impl ExtensionRegistry {
             extensions.push(extension);
         }
 
+        let mut candidate_snapshot_complete = package_lock.is_some();
+        if let Some(package_lock) = package_lock {
+            for locked in &package_lock.packages {
+                let extension = if let Some(index) = identities
+                    .iter()
+                    .position(|identity| identity.package_id() == locked.package_id())
+                {
+                    extensions.get(index).cloned()
+                } else {
+                    self.get(locked.package_id()).await?
+                };
+                candidate_snapshot_complete &= extension.as_ref().is_some_and(|extension| {
+                    extension.receipt.enabled
+                        && snapshot_before.routes.iter().any(|binding| {
+                            binding.enabled
+                                && published_binding_matches_extension(binding, extension)
+                        })
+                });
+            }
+        }
+
+        let mut removed_extensions = Vec::with_capacity(removed.len());
+        for identity in removed {
+            let selected = self.get(identity.package_id()).await?;
+            let selected_is_exact = selected
+                .as_ref()
+                .is_some_and(|extension| exact_receipt(identity, &extension.receipt).is_ok());
+            if selected.is_some() && !selected_is_exact {
+                return Err(lifecycle_graph_error(
+                    "A removed dependency has a different selected lifecycle generation.",
+                ));
+            }
+            let exact = if selected_is_exact {
+                selected
+            } else {
+                self.get_lifecycle_generation(identity).await?
+            };
+            let package_routes = snapshot_before
+                .routes
+                .iter()
+                .filter(|binding| binding.package_id == identity.package_id())
+                .collect::<Vec<_>>();
+            match exact {
+                Some(extension) => {
+                    exact_receipt(identity, &extension.receipt)?;
+                    verify_package_integrity(&extension).await?;
+                    let exact_published = package_routes.iter().any(|binding| {
+                        binding.enabled
+                            && binding_matches_identity(self.paths(), binding, identity)
+                    });
+                    if extension.receipt.enabled {
+                        if !exact_published && !candidate_snapshot_complete {
+                            return Err(lifecycle_graph_error(
+                                "An enabled removed dependency is absent before candidate graph cutover.",
+                            ));
+                        }
+                    } else if !package_routes.is_empty() {
+                        return Err(lifecycle_graph_error(
+                            "A hidden removed dependency still has a Registry snapshot route.",
+                        ));
+                    }
+                    removed_extensions.push(RemovedLifecyclePackage {
+                        identity: identity.clone(),
+                        extension,
+                        selected: selected_is_exact,
+                    });
+                }
+                None if package_routes.is_empty() && candidate_snapshot_complete => {
+                    // A crash may occur after the exact removal journal deletes
+                    // the retained receipt but before the parent graph record
+                    // advances.
+                }
+                _ => {
+                    return Err(lifecycle_graph_error(
+                        "A removed dependency is neither its exact selected or retained generation nor a completed route-free replay.",
+                    ))
+                }
+            }
+        }
+
+        let moved_removed = self
+            .retain_removed_lifecycle_packages(&removed_extensions)
+            .await?;
         let originals = extensions
             .iter()
             .map(|extension| extension.receipt.clone())
@@ -711,22 +859,33 @@ impl ExtensionRegistry {
             .await
             {
                 self.restore_lifecycle_receipts(&written_receipts).await?;
+                self.restore_removed_lifecycle_packages(&moved_removed)
+                    .await?;
                 return Err(error);
             }
             written_receipts.push(original.clone());
         }
 
-        let installed = match self.list().await {
+        let mut installed = match self.list().await {
             Ok(installed) => installed,
             Err(error) => {
                 self.restore_lifecycle_receipts(&written_receipts).await?;
+                self.restore_removed_lifecycle_packages(&moved_removed)
+                    .await?;
                 return Err(error);
             }
         };
+        installed.retain(|extension| {
+            !removed
+                .iter()
+                .any(|identity| exact_receipt(identity, &extension.receipt).is_ok())
+        });
         let snapshot = match self.publish_snapshot_locked(&installed).await {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 self.restore_lifecycle_receipts(&originals).await?;
+                self.restore_removed_lifecycle_packages(&moved_removed)
+                    .await?;
                 write_registry_snapshot(&self.paths.registry_snapshot_path(), &snapshot_before)
                     .await?;
                 return Err(error);
@@ -741,6 +900,59 @@ impl ExtensionRegistry {
                 registry_generation: snapshot.generation,
             })
             .collect())
+    }
+
+    async fn retain_removed_lifecycle_packages(
+        &self,
+        removed: &[RemovedLifecyclePackage],
+    ) -> UseResult<Vec<RemovedLifecyclePackage>> {
+        let mut moved = Vec::new();
+        for package in removed.iter().filter(|package| package.selected) {
+            if let Err(error) = self
+                .retain_lifecycle_receipt(&package.identity, &package.extension.receipt)
+                .await
+            {
+                self.restore_removed_lifecycle_packages(&moved).await?;
+                return Err(error);
+            }
+            moved.push(package.clone());
+            let receipt_path = self.paths.receipt_path(package.identity.package_id());
+            if let Err(error) = fs::remove_file(&receipt_path).await {
+                self.restore_removed_lifecycle_packages(&moved).await?;
+                return Err(io_error(
+                    "retain removed lifecycle package receipt",
+                    &receipt_path,
+                    error,
+                ));
+            }
+            if let Err(error) = sync_parent_directory(
+                receipt_path
+                    .parent()
+                    .ok_or_else(|| lifecycle_state_error("A lifecycle receipt has no parent."))?,
+                "removed lifecycle package receipt",
+            )
+            .await
+            {
+                self.restore_removed_lifecycle_packages(&moved).await?;
+                return Err(error);
+            }
+        }
+        Ok(moved)
+    }
+
+    async fn restore_removed_lifecycle_packages(
+        &self,
+        moved: &[RemovedLifecyclePackage],
+    ) -> UseResult<()> {
+        for package in moved.iter().rev() {
+            write_receipt(
+                &self.paths.receipt_path(package.identity.package_id()),
+                &package.extension.receipt,
+            )
+            .await?;
+            self.remove_retained_receipt(&package.identity).await?;
+        }
+        Ok(())
     }
 
     async fn restore_lifecycle_receipts(&self, receipts: &[ExtensionReceipt]) -> UseResult<()> {
@@ -766,7 +978,7 @@ impl ExtensionRegistry {
         identities: &[ExtensionLifecycleIdentity],
         host_version: &str,
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
-        self.publish_lifecycle_packages_for_host_version(identities, host_version, None)
+        self.publish_lifecycle_packages_for_host_version(identities, &[], host_version, None)
             .await
     }
 
@@ -779,6 +991,7 @@ impl ExtensionRegistry {
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
         self.publish_lifecycle_packages_for_host_version(
             identities,
+            &[],
             host_version,
             Some(package_lock),
         )

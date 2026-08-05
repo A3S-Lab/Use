@@ -5,8 +5,9 @@ use a3s_use_core::{
     UseResult,
 };
 use a3s_use_extension::{
-    download_locked_remote_packages, resolve_remote_package_lock, ExtensionLifecycleIdentity,
-    ExtensionLifecyclePackage, ExtensionManifest, InstalledExtension, TrustedRegistry,
+    download_selected_locked_remote_packages, resolve_remote_package_lock,
+    ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest,
+    ExtensionRegistrySnapshot, InstalledExtension, TrustedRegistry,
 };
 
 use crate::plugin_lifecycle::{
@@ -17,7 +18,7 @@ use crate::plugin_lifecycle::{
 
 use super::install::verify_expected_lock;
 use super::plan::{now_ms, upgrade_operation};
-use super::store::PendingPackageGraphOperation;
+use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
 use super::{
     current_host_target, installed_matches_lock, package_manager_error, CognitivePackageManager,
     CognitivePackageUpgradeResult, UpgradeDisposition,
@@ -92,13 +93,29 @@ impl CognitivePackageManager {
             ));
         }
 
-        let dispositions = upgrade_dispositions(&prior_lock, &candidate_lock)?;
+        let installed_graphs = graph_store.list().await?;
+        let installed_extensions = self.registry.list().await?;
+        let snapshot = self.registry.snapshot().await?;
+        let dispositions = upgrade_dispositions(
+            &prior_lock,
+            &candidate_lock,
+            &installed_graphs,
+            &installed_extensions,
+            &snapshot,
+        )?;
         if existing_pending.is_none()
             && dispositions
                 .values()
                 .all(|disposition| *disposition == UpgradeDisposition::Retain)
         {
-            let installed = self.require_published_prior(&prior_lock).await?;
+            let mut installed = self.require_published_prior(&prior_lock).await?;
+            self.add_published_candidate_retentions(
+                &prior_lock,
+                &candidate_lock,
+                &dispositions,
+                &mut installed,
+            )
+            .await?;
             let root = installed.get(package_id).cloned().ok_or_else(|| {
                 package_manager_error(
                     "use.plugin.package_graph_invalid",
@@ -114,6 +131,7 @@ impl CognitivePackageManager {
                 plan: None,
                 added_packages: Vec::new(),
                 replaced_packages: Vec::new(),
+                removed_packages: Vec::new(),
                 retained_packages: dispositions.keys().cloned().collect(),
             });
         }
@@ -121,7 +139,22 @@ impl CognitivePackageManager {
         let mut registries = Vec::with_capacity(dependency_registries.len() + 1);
         registries.push(root_registry.clone());
         registries.extend(dependency_registries.iter().cloned());
-        let downloads = download_locked_remote_packages(&candidate_lock, &registries).await?;
+        let selected_downloads = dispositions
+            .iter()
+            .filter_map(|(package_id, disposition)| {
+                matches!(
+                    disposition,
+                    UpgradeDisposition::Add | UpgradeDisposition::Replace
+                )
+                .then_some(package_id.clone())
+            })
+            .collect();
+        let downloads = download_selected_locked_remote_packages(
+            &candidate_lock,
+            &registries,
+            &selected_downloads,
+        )
+        .await?;
         let mut prepared = BTreeMap::new();
         for download in downloads {
             let package_id = download.resolved().package_id.clone();
@@ -161,7 +194,14 @@ impl CognitivePackageManager {
             }
             pending
         } else {
-            let installed = self.require_published_prior(&prior_lock).await?;
+            let mut installed = self.require_published_prior(&prior_lock).await?;
+            self.add_published_candidate_retentions(
+                &prior_lock,
+                &candidate_lock,
+                &dispositions,
+                &mut installed,
+            )
+            .await?;
             let mut manifests = BTreeMap::new();
             let mut prior_generations = BTreeMap::new();
             let mut prior_manifests = BTreeMap::new();
@@ -228,10 +268,52 @@ impl CognitivePackageManager {
                                 .clone(),
                         );
                     }
+                    Some(UpgradeDisposition::Remove) => {
+                        return Err(package_manager_error(
+                            "use.plugin.package_graph_invalid",
+                            "A removed package appeared in the candidate dependency lock.",
+                        ))
+                    }
                     None => {
                         return Err(package_manager_error(
                             "use.plugin.package_graph_invalid",
                             "An upgrade package lost its disposition.",
+                        ))
+                    }
+                }
+            }
+            for prior in &prior_lock.packages {
+                if candidate_lock.package(prior.package_id()).is_some() {
+                    continue;
+                }
+                let extension = installed.get(prior.package_id()).ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A prior-only upgrade dependency is absent from the installed graph.",
+                    )
+                })?;
+                match dispositions.get(prior.package_id()) {
+                    Some(UpgradeDisposition::Remove) => {
+                        prior_generations.insert(
+                            prior.package_id().to_string(),
+                            extension.receipt.lifecycle_generation.ok_or_else(|| {
+                                package_manager_error(
+                                    "use.plugin.package_generation_changed",
+                                    "A removed package omitted its lifecycle generation.",
+                                )
+                            })?,
+                        );
+                        prior_manifests
+                            .insert(prior.package_id().to_string(), extension.manifest.clone());
+                    }
+                    Some(UpgradeDisposition::Retain) => {
+                        manifests
+                            .insert(prior.package_id().to_string(), extension.manifest.clone());
+                    }
+                    _ => {
+                        return Err(package_manager_error(
+                            "use.plugin.package_graph_invalid",
+                            "A prior-only package has an invalid upgrade disposition.",
                         ))
                     }
                 }
@@ -334,6 +416,12 @@ impl CognitivePackageManager {
                     action: match disposition {
                         UpgradeDisposition::Add => PluginLifecycleAction::Install,
                         UpgradeDisposition::Replace => PluginLifecycleAction::Upgrade,
+                        UpgradeDisposition::Remove => {
+                            return Err(package_manager_error(
+                                "use.plugin.package_graph_invalid",
+                                "A removed package cannot create a candidate lifecycle unit.",
+                            ))
+                        }
                         UpgradeDisposition::Retain => {
                             return Err(package_manager_error(
                                 "use.plugin.package_graph_invalid",
@@ -357,7 +445,10 @@ impl CognitivePackageManager {
 
         let mut retirement_units = Vec::with_capacity(pending.prior_generations.len());
         for package in prior_lock.removal_order()? {
-            if dispositions.get(package.package_id()) != Some(&UpgradeDisposition::Replace) {
+            if !matches!(
+                dispositions.get(package.package_id()),
+                Some(UpgradeDisposition::Replace | UpgradeDisposition::Remove)
+            ) {
                 continue;
             }
             let manifest = pending
@@ -366,7 +457,7 @@ impl CognitivePackageManager {
                 .ok_or_else(|| {
                     package_manager_error(
                         "use.plugin.package_graph_invalid",
-                        "A replacement package omitted its prior manifest evidence.",
+                        "A retired package omitted its prior manifest evidence.",
                     )
                 })?;
             let generation = *pending
@@ -375,7 +466,7 @@ impl CognitivePackageManager {
                 .ok_or_else(|| {
                     package_manager_error(
                         "use.plugin.package_graph_invalid",
-                        "A replacement package omitted its prior generation evidence.",
+                        "A retired package omitted its prior generation evidence.",
                     )
                 })?;
             let transition = pending
@@ -387,13 +478,13 @@ impl CognitivePackageManager {
                 .ok_or_else(|| {
                     package_manager_error(
                         "use.plugin.package_graph_invalid",
-                        "A replacement package is absent from its admitted upgrade plan.",
+                        "A retired package is absent from its admitted upgrade plan.",
                     )
                 })?;
             let before = transition.before.as_ref().ok_or_else(|| {
                 package_manager_error(
                     "use.plugin.package_graph_invalid",
-                    "A replacement package omitted its prior selected state.",
+                    "A retired package omitted its prior selected state.",
                 )
             })?;
             let identity = ExtensionLifecycleIdentity::new(
@@ -415,6 +506,14 @@ impl CognitivePackageManager {
                 },
                 manifest,
             )?;
+            if dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Remove) {
+                match self.registry.get_lifecycle_generation(&identity).await? {
+                    Some(extension) => {
+                        validate_removed_generation(&extension, manifest, &identity)?;
+                    }
+                    None => self.validate_missing_retirement_replay(&intent).await?,
+                }
+            }
             retirement_units.push(PluginPackageLifecycleUnit::new(
                 self.lifecycle.uninstall_coordinator(
                     self.registry.clone(),
@@ -478,7 +577,20 @@ impl CognitivePackageManager {
         };
         let added_packages = package_ids(UpgradeDisposition::Add);
         let replaced_packages = package_ids(UpgradeDisposition::Replace);
-        let retained_packages = package_ids(UpgradeDisposition::Retain);
+        let removed_packages = prior_lock
+            .removal_order()?
+            .into_iter()
+            .filter(|package| {
+                dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Remove)
+            })
+            .map(|package| package.package_id().to_string())
+            .collect();
+        let retained_packages = dispositions
+            .iter()
+            .filter_map(|(package_id, disposition)| {
+                (*disposition == UpgradeDisposition::Retain).then_some(package_id.clone())
+            })
+            .collect();
         Ok(CognitivePackageUpgradeResult {
             changed: true,
             root,
@@ -488,6 +600,7 @@ impl CognitivePackageManager {
             plan: Some(pending.envelope),
             added_packages,
             replaced_packages,
+            removed_packages,
             retained_packages,
         })
     }
@@ -534,11 +647,146 @@ impl CognitivePackageManager {
         }
         Ok(installed)
     }
+
+    async fn add_published_candidate_retentions(
+        &self,
+        prior_lock: &a3s_use_core::PluginPackageLock,
+        candidate_lock: &a3s_use_core::PluginPackageLock,
+        dispositions: &BTreeMap<String, UpgradeDisposition>,
+        installed: &mut BTreeMap<String, InstalledExtension>,
+    ) -> UseResult<()> {
+        let snapshot = self.registry.snapshot().await?;
+        for candidate in &candidate_lock.packages {
+            if prior_lock.package(candidate.package_id()).is_some()
+                || dispositions.get(candidate.package_id()) != Some(&UpgradeDisposition::Retain)
+            {
+                continue;
+            }
+            let extension = self
+                .registry
+                .get(candidate.package_id())
+                .await?
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_reconcile_required",
+                        format!(
+                            "Shared candidate dependency '{}' disappeared before upgrade planning.",
+                            candidate.package_id()
+                        ),
+                    )
+                })?;
+            if !installed_matches_lock(&extension, &candidate.catalog)?
+                || !extension_is_exact_published(&snapshot, &extension)
+            {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_reconcile_required",
+                    format!(
+                        "Shared candidate dependency '{}' is not its exact published lock generation.",
+                        candidate.package_id()
+                    ),
+                ));
+            }
+            if installed
+                .insert(candidate.package_id().to_string(), extension)
+                .is_some()
+            {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "A shared candidate dependency overlaps the prior installed graph.",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn validate_missing_retirement_replay(
+        &self,
+        intent: &PluginLifecycleIntent,
+    ) -> UseResult<()> {
+        let journal = crate::plugin_lifecycle::PluginLifecycleJournalStore::from_extension_paths(
+            self.registry.paths(),
+        );
+        let exact_journal = journal
+            .load_active(&intent.scope_id, &intent.package_id)
+            .await?
+            .is_some_and(|record| record.intent == *intent);
+        let route_absent = self
+            .registry
+            .snapshot()
+            .await?
+            .routes
+            .iter()
+            .all(|binding| {
+                binding.package_id != intent.package_id
+                    || binding.lifecycle_generation != Some(intent.generation)
+                    || binding.package_sha256.as_deref()
+                        != intent.package_digest.strip_prefix("sha256:")
+                    || binding.manifest_sha256
+                        != intent
+                            .manifest_digest
+                            .strip_prefix("sha256:")
+                            .unwrap_or_default()
+            });
+        if exact_journal && route_absent {
+            Ok(())
+        } else {
+            Err(package_manager_error(
+                "use.plugin.package_graph_reconcile_required",
+                format!(
+                    "Missing removed package '{}' has no exact route-free upgrade journal to replay.",
+                    intent.package_id
+                ),
+            ))
+        }
+    }
+}
+
+fn validate_removed_generation(
+    extension: &InstalledExtension,
+    manifest: &ExtensionManifest,
+    identity: &ExtensionLifecycleIdentity,
+) -> UseResult<()> {
+    if extension.manifest != *manifest
+        || extension.receipt.lifecycle_generation != Some(identity.generation())
+        || extension.receipt.package_sha256.as_deref()
+            != identity.package_digest().strip_prefix("sha256:")
+        || extension.receipt.manifest_sha256
+            != identity
+                .manifest_digest()
+                .strip_prefix("sha256:")
+                .unwrap_or_default()
+    {
+        return Err(package_manager_error(
+            "use.plugin.package_generation_changed",
+            format!(
+                "Removed package '{}' changed generation before graph garbage collection.",
+                extension.receipt.package_id
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn extension_is_exact_published(
+    snapshot: &ExtensionRegistrySnapshot,
+    extension: &InstalledExtension,
+) -> bool {
+    extension.receipt.enabled
+        && snapshot.routes.iter().any(|route| {
+            route.package_id == extension.receipt.package_id
+                && route.enabled
+                && route.lifecycle_generation == extension.receipt.lifecycle_generation
+                && route.package_sha256 == extension.receipt.package_sha256
+                && route.manifest_sha256 == extension.receipt.manifest_sha256
+        })
 }
 
 fn upgrade_dispositions(
     prior_lock: &a3s_use_core::PluginPackageLock,
     candidate_lock: &a3s_use_core::PluginPackageLock,
+    installed_graphs: &[InstalledPackageGraph],
+    installed_extensions: &[InstalledExtension],
+    snapshot: &ExtensionRegistrySnapshot,
 ) -> UseResult<BTreeMap<String, UpgradeDisposition>> {
     if prior_lock.root_package_id != candidate_lock.root_package_id
         || prior_lock.host != candidate_lock.host
@@ -548,22 +796,7 @@ fn upgrade_dispositions(
             "Prior and candidate package locks belong to different roots or hosts.",
         ));
     }
-    let candidate_ids = candidate_lock
-        .packages
-        .iter()
-        .map(|package| package.package_id())
-        .collect::<BTreeSet<_>>();
-    if prior_lock
-        .packages
-        .iter()
-        .any(|package| !candidate_ids.contains(package.package_id()))
-    {
-        return Err(package_manager_error(
-            "use.plugin.package_graph_gc_required",
-            "The candidate removes a dependency node; explicit graph garbage collection is required.",
-        ));
-    }
-    Ok(candidate_lock
+    let mut dispositions = candidate_lock
         .packages
         .iter()
         .map(|candidate| {
@@ -574,7 +807,136 @@ fn upgrade_dispositions(
             };
             (candidate.package_id().to_string(), disposition)
         })
-        .collect())
+        .collect::<BTreeMap<_, _>>();
+    for prior in &prior_lock.packages {
+        dispositions
+            .entry(prior.package_id().to_string())
+            .or_insert(UpgradeDisposition::Remove);
+    }
+
+    let installed_by_id = installed_extensions
+        .iter()
+        .map(|extension| (extension.receipt.package_id.as_str(), extension))
+        .collect::<BTreeMap<_, _>>();
+    for candidate in &candidate_lock.packages {
+        if prior_lock.package(candidate.package_id()).is_some() {
+            continue;
+        }
+        let Some(extension) = installed_by_id.get(candidate.package_id()).copied() else {
+            continue;
+        };
+        if !installed_matches_lock(extension, &candidate.catalog)? {
+            return Err(package_manager_error(
+                "use.plugin.package_graph_shared_upgrade_required",
+                format!(
+                    "Candidate dependency '{}' is already installed at a different exact release and cannot be replaced by this graph upgrade.",
+                    candidate.package_id()
+                ),
+            ));
+        }
+        if !extension_is_exact_published(snapshot, extension) {
+            return Err(package_manager_error(
+                "use.plugin.package_graph_reconcile_required",
+                format!(
+                    "Candidate dependency '{}' exists but is not its exact published generation.",
+                    candidate.package_id()
+                ),
+            ));
+        }
+        dispositions.insert(
+            candidate.package_id().to_string(),
+            UpgradeDisposition::Retain,
+        );
+    }
+
+    let prior_ids = prior_lock
+        .packages
+        .iter()
+        .map(|package| package.package_id())
+        .collect::<BTreeSet<_>>();
+    let mut externally_retained = BTreeSet::new();
+    for graph in installed_graphs
+        .iter()
+        .filter(|graph| graph.package_lock.root_package_id != prior_lock.root_package_id)
+    {
+        for package in &graph.package_lock.packages {
+            if !prior_ids.contains(package.package_id()) {
+                continue;
+            }
+            if dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Replace) {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_shared_upgrade_required",
+                    format!(
+                        "Dependency '{}' is locked by installed root '{}' and cannot be replaced by an uncoordinated graph upgrade.",
+                        package.package_id(), graph.package_lock.root_package_id
+                    ),
+                ));
+            }
+            externally_retained.insert(package.package_id().to_string());
+        }
+    }
+
+    let operation_ids = prior_lock
+        .packages
+        .iter()
+        .chain(&candidate_lock.packages)
+        .map(|package| package.package_id())
+        .collect::<BTreeSet<_>>();
+    for extension in installed_extensions {
+        if operation_ids.contains(extension.receipt.package_id.as_str()) {
+            continue;
+        }
+        for dependency in &extension.manifest.dependencies {
+            if !prior_ids.contains(dependency.package_id.as_str()) {
+                continue;
+            }
+            if dispositions.get(&dependency.package_id) == Some(&UpgradeDisposition::Replace) {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_shared_upgrade_required",
+                    format!(
+                        "Dependency '{}' is referenced by installed package '{}' and cannot be replaced by an uncoordinated graph upgrade.",
+                        dependency.package_id, extension.receipt.package_id
+                    ),
+                ));
+            }
+            externally_retained.insert(dependency.package_id.clone());
+        }
+    }
+
+    loop {
+        let before = externally_retained.len();
+        for package_id in externally_retained.clone() {
+            if let Some(package) = prior_lock.package(&package_id) {
+                externally_retained.extend(
+                    package
+                        .dependencies
+                        .iter()
+                        .map(|dependency| dependency.package_id.clone()),
+                );
+            }
+        }
+        if externally_retained.len() == before {
+            break;
+        }
+    }
+    for package_id in externally_retained {
+        let Some(disposition) = dispositions.get_mut(&package_id) else {
+            continue;
+        };
+        match *disposition {
+            UpgradeDisposition::Remove => *disposition = UpgradeDisposition::Retain,
+            UpgradeDisposition::Replace => {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_shared_upgrade_required",
+                    format!(
+                        "Dependency '{package_id}' remains transitively owned by another installed package and cannot be replaced independently."
+                    ),
+                ));
+            }
+            UpgradeDisposition::Add | UpgradeDisposition::Retain => {}
+        }
+    }
+    Ok(dispositions)
 }
 
 fn validate_prepared_candidates(
@@ -584,7 +946,11 @@ fn validate_prepared_candidates(
     let expected = dispositions
         .iter()
         .filter_map(|(package_id, disposition)| {
-            (*disposition != UpgradeDisposition::Retain).then_some(package_id.as_str())
+            matches!(
+                disposition,
+                UpgradeDisposition::Add | UpgradeDisposition::Replace
+            )
+            .then_some(package_id.as_str())
         })
         .collect::<BTreeSet<_>>();
     let actual = prepared.keys().map(String::as_str).collect::<BTreeSet<_>>();
@@ -612,16 +978,22 @@ fn validate_pending_upgrade(
     })?;
     if pending.envelope.plan.action != PluginOperationAction::Upgrade
         || pending.envelope.package_lock.as_ref() != Some(candidate_lock)
-        || pending.envelope.plan.scope.id != scope_id
-        || graph.is_none_or(|graph| {
-            graph.package_lock != *prior && graph.package_lock != *candidate_lock
-        })
+        || pending
+            .envelope
+            .prior_package_lock
+            .as_ref()
+            .is_some_and(|bound| bound != prior)
         || pending
             .envelope
             .plan
             .packages
             .iter()
             .any(|transition| transition.change == PlanPackageChangeKind::Remove)
+            && pending.envelope.prior_package_lock.as_ref() != Some(prior)
+        || pending.envelope.plan.scope.id != scope_id
+        || graph.is_none_or(|graph| {
+            graph.package_lock != *prior && graph.package_lock != *candidate_lock
+        })
     {
         return Err(package_manager_error(
             "use.plugin.package_graph_busy",

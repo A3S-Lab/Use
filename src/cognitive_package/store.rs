@@ -163,6 +163,19 @@ impl PendingPackageGraphOperation {
                     .then_some(package_id.as_str())
             })
             .collect::<std::collections::BTreeSet<_>>();
+        let retired = self
+            .envelope
+            .plan
+            .packages
+            .iter()
+            .filter(|package| {
+                matches!(
+                    package.change,
+                    PlanPackageChangeKind::Replace | PlanPackageChangeKind::Remove
+                )
+            })
+            .map(|package| package.package_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
         let replaced = self
             .envelope
             .plan
@@ -196,14 +209,27 @@ impl PendingPackageGraphOperation {
                                 prior.root_package_id == candidate.root_package_id
                                     && prior.host == candidate.host
                             })
-                        && replaced == prior_generations
-                        && replaced == prior_manifests
+                        && self
+                            .envelope
+                            .prior_package_lock
+                            .as_ref()
+                            .is_none_or(|bound| bound == prior)
+                        && (!self
+                            .envelope
+                            .plan
+                            .packages
+                            .iter()
+                            .any(|package| package.change == PlanPackageChangeKind::Remove)
+                            || self.envelope.prior_package_lock.as_ref() == Some(prior))
+                        && retired == prior_generations
+                        && retired == prior_manifests
                 })
             }
             _ => {
                 self.prior_package_lock.is_none()
                     && self.prior_generations.is_empty()
                     && self.prior_manifests.is_empty()
+                    && self.envelope.prior_package_lock.is_none()
                     && replaced.is_empty()
             }
         };

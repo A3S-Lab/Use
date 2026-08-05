@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
-    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOperationImpact,
-    PlannedPackageTransition, PlannedProviderEvidence, PlannedStateEvidence, PluginOperationAction,
-    PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
-    PluginPackageLock, PluginSurfaceKind, UseResult,
+    LockedPluginPackage, PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind,
+    PlanPackageRole, PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind,
+    PlannedOperationImpact, PlannedPackageTransition, PlannedProviderEvidence,
+    PlannedStateEvidence, PluginOperationAction, PluginOperationPlanBinding,
+    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageLock, PluginSurfaceKind,
+    UseResult,
 };
 use a3s_use_extension::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 use sha2::{Digest, Sha256};
@@ -72,7 +73,7 @@ pub(super) fn install_operation(
         )
     })?;
     let lock_digest = lock.descriptor_digest()?;
-    let providers = static_provider_evidence(lock, manifests)?;
+    let providers = static_provider_evidence(&lock.packages, manifests)?;
     let impact = PlannedOperationImpact {
         download_bytes: lock
             .packages
@@ -256,32 +257,53 @@ pub(super) fn upgrade_operation(
             "Prior and candidate cognitive-package locks belong to different roots or hosts.",
         ));
     }
-    if prior_lock
+    let package_ids = prior_lock
         .packages
         .iter()
-        .any(|package| candidate_lock.package(package.package_id()).is_none())
+        .chain(&candidate_lock.packages)
+        .map(|package| package.package_id())
+        .collect::<std::collections::BTreeSet<_>>();
+    if package_ids.len() != dispositions.len()
+        || package_ids
+            .iter()
+            .any(|package_id| !dispositions.contains_key(*package_id))
     {
         return Err(package_manager_error(
-            "use.plugin.package_graph_gc_required",
-            "An upgrade that removes dependency nodes requires a separately reviewed garbage-collection operation.",
+            "use.plugin.package_graph_invalid",
+            "Upgrade dispositions do not cover the exact prior/candidate lock union.",
         ));
     }
 
-    let mut packages = Vec::with_capacity(candidate_lock.packages.len());
-    for candidate in &candidate_lock.packages {
-        let role = package_role(candidate_lock, candidate.package_id());
-        let surfaces = all_catalog_surfaces(candidate);
-        let transition = match dispositions.get(candidate.package_id()) {
-            Some(UpgradeDisposition::Add) => {
+    let mut packages = Vec::with_capacity(dispositions.len());
+    for (package_id, disposition) in dispositions {
+        let candidate = candidate_lock.package(package_id);
+        let prior = prior_lock.package(package_id);
+        let role = package_role(candidate_lock, package_id);
+        let transition = match disposition {
+            UpgradeDisposition::Add => {
+                let candidate = candidate.ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "An added package is absent from the candidate lock.",
+                    )
+                })?;
+                let surfaces = all_catalog_surfaces(candidate);
                 candidate.catalog.install_transition(role, &surfaces)?
             }
-            Some(UpgradeDisposition::Replace) => {
-                let prior = prior_lock.package(candidate.package_id()).ok_or_else(|| {
+            UpgradeDisposition::Replace => {
+                let candidate = candidate.ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A replacement package is absent from the candidate lock.",
+                    )
+                })?;
+                let prior = prior.ok_or_else(|| {
                     package_manager_error(
                         "use.plugin.package_graph_invalid",
                         "A replacement candidate has no exact prior lock node.",
                     )
                 })?;
+                let surfaces = all_catalog_surfaces(candidate);
                 candidate.catalog.replace_transition(
                     &prior.catalog,
                     role,
@@ -289,23 +311,46 @@ pub(super) fn upgrade_operation(
                     &surfaces,
                 )?
             }
-            Some(UpgradeDisposition::Retain) => {
-                let prior = prior_lock.package(candidate.package_id()).ok_or_else(|| {
+            UpgradeDisposition::Remove => {
+                let prior = prior.ok_or_else(|| {
                     package_manager_error(
                         "use.plugin.package_graph_invalid",
-                        "A retained candidate has no exact prior lock node.",
+                        "A removed package is absent from the prior lock.",
                     )
                 })?;
-                let before = prior.catalog.selected_state(&all_catalog_surfaces(prior))?;
-                let after = candidate.catalog.selected_state(&surfaces)?;
-                if before != after || prior.catalog != candidate.catalog {
+                if candidate.is_some() {
                     return Err(package_manager_error(
                         "use.plugin.package_graph_invalid",
-                        "A retained package changed its exact catalog or selected surface state.",
+                        "A removed package is still present in the candidate lock.",
                     ));
                 }
+                prior
+                    .catalog
+                    .remove_transition(role, &all_catalog_surfaces(prior))?
+            }
+            UpgradeDisposition::Retain => {
+                let retained = prior.or(candidate).ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A retained package is absent from both exact dependency locks.",
+                    )
+                })?;
+                let before = retained
+                    .catalog
+                    .selected_state(&all_catalog_surfaces(retained))?;
+                if let (Some(prior), Some(candidate)) = (prior, candidate) {
+                    let after = candidate
+                        .catalog
+                        .selected_state(&all_catalog_surfaces(candidate))?;
+                    if before != after || prior.catalog != candidate.catalog {
+                        return Err(package_manager_error(
+                            "use.plugin.package_graph_invalid",
+                            "A retained package changed its exact catalog or selected surface state.",
+                        ));
+                    }
+                }
                 PlannedPackageTransition::resolved(
-                    candidate.package_id(),
+                    package_id,
                     role,
                     PlanPackageChangeKind::Retain,
                     Some(before.clone()),
@@ -313,20 +358,13 @@ pub(super) fn upgrade_operation(
                     None,
                 )?
             }
-            None => {
-                return Err(package_manager_error(
-                    "use.plugin.package_graph_invalid",
-                    "A candidate package has no upgrade disposition.",
-                ))
-            }
         };
         packages.push(transition);
     }
     packages.sort_by(|left, right| left.package_id.cmp(&right.package_id));
-    if dispositions.get(&candidate_lock.root_package_id) == Some(&UpgradeDisposition::Retain)
-        && dispositions
-            .values()
-            .all(|disposition| *disposition == UpgradeDisposition::Retain)
+    if dispositions
+        .values()
+        .all(|disposition| *disposition == UpgradeDisposition::Retain)
     {
         return Err(package_manager_error(
             "use.plugin.package_graph_unchanged",
@@ -335,14 +373,16 @@ pub(super) fn upgrade_operation(
     }
 
     let drain_required = packages.iter().any(|package| {
-        package.change == PlanPackageChangeKind::Replace
-            && package.before.as_ref().is_some_and(|state| {
-                state
-                    .permissions
-                    .surfaces
-                    .iter()
-                    .any(|permission| permission.private_service)
-            })
+        matches!(
+            package.change,
+            PlanPackageChangeKind::Replace | PlanPackageChangeKind::Remove
+        ) && package.before.as_ref().is_some_and(|state| {
+            state
+                .permissions
+                .surfaces
+                .iter()
+                .any(|permission| permission.private_service)
+        })
     });
 
     let capability_generation = registry_generation.checked_add(1).ok_or_else(|| {
@@ -352,7 +392,20 @@ pub(super) fn upgrade_operation(
         )
     })?;
     let lock_digest = candidate_lock.descriptor_digest()?;
-    let providers = static_provider_evidence(candidate_lock, manifests)?;
+    let upgrade_identity_digest = digest(&format!(
+        "a3s-use-package-graph-upgrade-v1\n{}\n{}",
+        prior_lock.descriptor_digest()?,
+        lock_digest
+    ));
+    let provider_packages =
+        candidate_lock
+            .packages
+            .iter()
+            .chain(prior_lock.packages.iter().filter(|package| {
+                candidate_lock.package(package.package_id()).is_none()
+                    && dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Retain)
+            }));
+    let providers = static_provider_evidence(provider_packages, manifests)?;
     let impact = PlannedOperationImpact {
         download_bytes: candidate_lock
             .packages
@@ -374,7 +427,10 @@ pub(super) fn upgrade_operation(
             .packages
             .iter()
             .filter(|package| {
-                dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Replace)
+                matches!(
+                    dispositions.get(package.package_id()),
+                    Some(UpgradeDisposition::Replace | UpgradeDisposition::Remove)
+                )
             })
             .map(|package| package.catalog.record.package.expanded_bytes)
             .sum(),
@@ -398,12 +454,15 @@ pub(super) fn upgrade_operation(
     )?;
     let plan = draft.bind(binding(
         PluginOperationAction::Upgrade,
-        &lock_digest,
+        &upgrade_identity_digest,
         scope_id,
         created_at_ms,
     )?)?;
-    let envelope =
-        PluginOperationPlanEnvelope::new_with_package_lock(plan, candidate_lock.clone())?;
+    let envelope = PluginOperationPlanEnvelope::new_with_upgrade_package_locks(
+        plan,
+        prior_lock.clone(),
+        candidate_lock.clone(),
+    )?;
     let mut generations = BTreeMap::new();
     for (index, package) in candidate_lock.install_order()?.into_iter().enumerate() {
         let disposition = dispositions.get(package.package_id()).ok_or_else(|| {
@@ -412,8 +471,15 @@ pub(super) fn upgrade_operation(
                 "A candidate package lost its upgrade disposition.",
             )
         })?;
-        if *disposition == UpgradeDisposition::Retain {
-            continue;
+        match disposition {
+            UpgradeDisposition::Retain => continue,
+            UpgradeDisposition::Remove => {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "A removed package appeared in the candidate install order.",
+                ))
+            }
+            UpgradeDisposition::Add | UpgradeDisposition::Replace => {}
         }
         let offset = u64::try_from(index).map_err(|_| {
             package_manager_error(
@@ -504,8 +570,8 @@ fn binding(
     })
 }
 
-pub(super) fn static_provider_evidence(
-    lock: &PluginPackageLock,
+pub(super) fn static_provider_evidence<'a>(
+    packages: impl IntoIterator<Item = &'a LockedPluginPackage>,
     manifests: &BTreeMap<String, ExtensionManifest>,
 ) -> UseResult<Vec<PlannedProviderEvidence>> {
     let target = current_host_target()?;
@@ -516,7 +582,7 @@ pub(super) fn static_provider_evidence(
         env!("CARGO_PKG_VERSION")
     ));
     let mut providers = Vec::new();
-    for package in &lock.packages {
+    for package in packages {
         let manifest = manifests.get(package.package_id()).ok_or_else(|| {
             package_manager_error(
                 "use.plugin.package_graph_invalid",

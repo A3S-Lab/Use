@@ -210,10 +210,11 @@ The main gaps are:
   the same composition;
 - package and Runtime storage now support exact N/N+1 coexistence, candidate
   commit replay, pre-cutover rollback, and exact prior-generation retirement;
-  the dependency-closure coordinator now plans Add/Replace/Retain, prepares
-  N+1 forward, publishes once, automatically rolls back unpublished candidates,
-  retires replaced N generations in reverse order, and replays both paths;
-  dependency-removal graph garbage collection remains pending;
+  the dependency-closure coordinator binds prior/candidate locks in plan v3,
+  plans Add/Replace/Remove/Retain, downloads only changed nodes, prepares N+1
+  forward, publishes additions/replacements/removals once, preserves exact
+  shared nodes, retires unreferenced N generations in reverse order, and
+  replays both paths without generation inflation;
 - A3S Use supplies the production `a3s-flow` preflight host and retained
   binding evidence, and A3S Code injects it and exposes the typed live Flow
   catalog; Code now resolves strict `flow.json` identities and provides local
@@ -574,6 +575,10 @@ Implementation status (2026-08-03):
   per-package manifest/generation evidence, and symlink-safe stores survive
   restart; a published install completes unfinished journals, and uninstall
   can resume after both the root receipt and installed-root graph are gone;
+- completed in A3S Use: operation plan v3 binds the exact prior/candidate lock
+  union, host capabilities v3 advertises that schema without changing v1/v2,
+  dependency removal shares the candidate cutover, and retained receipts let
+  reverse-order GC resume after every cutover/drain/removal crash boundary;
 - completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
   embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
   Knowledge adapters; the standalone factory does not invent fallback hosts;
@@ -590,8 +595,8 @@ Implementation status (2026-08-03):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; grant sub-saga composition; dependency-removal graph garbage
-  collection; real signed cross-platform lifecycle E2E; and the published
+  injection; grant sub-saga composition; real signed cross-platform lifecycle
+  E2E; and the published
   managed-host port required before a Cloud adapter can enable mutation. Hosts
   must not add a parallel implementation.
 

@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{PluginOperationAction, PluginPackageLockHost, PluginReleaseChannel, UseResult};
 use a3s_use_extension::{
-    download_locked_remote_packages, resolve_remote_package_lock, ExtensionLifecycleIdentity,
-    ExtensionLifecyclePackage, ExtensionManifest, InstalledExtension, TrustedRegistry,
+    download_selected_locked_remote_packages, resolve_remote_package_lock,
+    ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest, InstalledExtension,
+    TrustedRegistry,
 };
 
 use crate::plugin_lifecycle::{
@@ -99,7 +100,15 @@ impl CognitivePackageManager {
         let mut registries = Vec::with_capacity(dependency_registries.len() + 1);
         registries.push(root_registry.clone());
         registries.extend(dependency_registries.iter().cloned());
-        let downloads = download_locked_remote_packages(&lock, &registries).await?;
+        let selected_downloads = dispositions
+            .iter()
+            .filter_map(|(package_id, disposition)| {
+                (*disposition == InstallDisposition::Add).then_some(package_id.clone())
+            })
+            .collect();
+        let downloads =
+            download_selected_locked_remote_packages(&lock, &registries, &selected_downloads)
+                .await?;
         let mut prepared = Vec::new();
         let mut manifests = installed
             .iter()

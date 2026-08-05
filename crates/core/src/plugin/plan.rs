@@ -24,6 +24,8 @@ pub struct PluginOperationPlan {
     pub scope: PlanScope,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_lock_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior_package_lock_digest: Option<String>,
     pub packages: Vec<PlannedPackageTransition>,
     pub secret_changes: Vec<PlannedSecretChange>,
     pub providers: Vec<PlannedProviderEvidence>,
@@ -40,6 +42,8 @@ pub struct PluginOperationPlanEnvelope {
     pub plan_digest: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_lock: Option<PluginPackageLock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior_package_lock: Option<PluginPackageLock>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -290,7 +294,7 @@ impl PluginOperationPlan {
 
 impl PluginOperationPlanEnvelope {
     pub fn new(plan: PluginOperationPlan) -> UseResult<Self> {
-        if plan.package_lock_digest.is_some() {
+        if plan.package_lock_digest.is_some() || plan.prior_package_lock_digest.is_some() {
             return Err(plan_error(
                 "A package-lock-bound plan requires its complete lock in the operation envelope.",
             ));
@@ -300,6 +304,7 @@ impl PluginOperationPlanEnvelope {
             plan,
             plan_digest,
             package_lock: None,
+            prior_package_lock: None,
         };
         envelope.validate()?;
         Ok(envelope)
@@ -311,6 +316,11 @@ impl PluginOperationPlanEnvelope {
         mut plan: PluginOperationPlan,
         package_lock: PluginPackageLock,
     ) -> UseResult<Self> {
+        if plan.prior_package_lock_digest.is_some() {
+            return Err(plan_error(
+                "A single-lock operation plan cannot carry a prior package-lock binding.",
+            ));
+        }
         let package_lock_digest = package_lock.descriptor_digest()?;
         plan.package_lock_digest = Some(package_lock_digest);
         let plan_digest = plan.descriptor_digest()?;
@@ -318,6 +328,29 @@ impl PluginOperationPlanEnvelope {
             plan,
             plan_digest,
             package_lock: Some(package_lock),
+            prior_package_lock: None,
+        };
+        envelope.validate()?;
+        Ok(envelope)
+    }
+
+    /// Bind the exact graph before and after an upgrade into one reviewed
+    /// plan. This is required when the transition union contains removed
+    /// dependency nodes and is also used for all newly created graph upgrades.
+    pub fn new_with_upgrade_package_locks(
+        mut plan: PluginOperationPlan,
+        prior_package_lock: PluginPackageLock,
+        package_lock: PluginPackageLock,
+    ) -> UseResult<Self> {
+        plan.schema = super::PLUGIN_OPERATION_PLAN_SCHEMA_V3.to_string();
+        plan.prior_package_lock_digest = Some(prior_package_lock.descriptor_digest()?);
+        plan.package_lock_digest = Some(package_lock.descriptor_digest()?);
+        let plan_digest = plan.descriptor_digest()?;
+        let envelope = Self {
+            plan,
+            plan_digest,
+            package_lock: Some(package_lock),
+            prior_package_lock: Some(prior_package_lock),
         };
         envelope.validate()?;
         Ok(envelope)
@@ -330,9 +363,14 @@ impl PluginOperationPlanEnvelope {
                 "The plugin plan digest does not match its canonical content.",
             ));
         }
-        match (&self.plan.package_lock_digest, &self.package_lock) {
-            (None, None) => {}
-            (Some(expected), Some(package_lock)) => {
+        match (
+            &self.plan.package_lock_digest,
+            &self.package_lock,
+            &self.plan.prior_package_lock_digest,
+            &self.prior_package_lock,
+        ) {
+            (None, None, None, None) => {}
+            (Some(expected), Some(package_lock), None, None) => {
                 if package_lock.descriptor_digest()? != *expected {
                     return Err(plan_error(
                         "The cognitive-package lock digest does not match the plan binding.",
@@ -340,9 +378,28 @@ impl PluginOperationPlanEnvelope {
                 }
                 package_lock.validate_for_plan(&self.plan)?;
             }
+            (
+                Some(expected),
+                Some(package_lock),
+                Some(prior_expected),
+                Some(prior_package_lock),
+            ) => {
+                if package_lock.descriptor_digest()? != *expected
+                    || prior_package_lock.descriptor_digest()? != *prior_expected
+                {
+                    return Err(plan_error(
+                        "A cognitive-package upgrade lock digest does not match its reviewed plan binding.",
+                    ));
+                }
+                PluginPackageLock::validate_upgrade_plan(
+                    prior_package_lock,
+                    package_lock,
+                    &self.plan,
+                )?;
+            }
             _ => {
                 return Err(plan_error(
-                    "The operation plan and envelope must carry package-lock evidence together.",
+                    "The operation plan and envelope must carry candidate and prior package-lock evidence together.",
                 ))
             }
         }

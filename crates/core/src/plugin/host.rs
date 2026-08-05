@@ -15,13 +15,16 @@ use super::{
     PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
     PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
     PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA_V2,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V3,
 };
 
 pub const PLUGIN_MANAGED_SCOPE_SCHEMA: &str = "a3s.use.plugin-managed-scope.v1";
 pub const PLUGIN_HOST_CAPABILITIES_SCHEMA: &str = "a3s.use.plugin-host-capabilities.v1";
 pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V2: &str = "a3s.use.plugin-host-capabilities.v2";
+pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V3: &str = "a3s.use.plugin-host-capabilities.v3";
 pub const PLUGIN_HOST_PROTOCOL_LEVEL: u32 = 1;
 pub const PLUGIN_HOST_PROTOCOL_LEVEL_V2: u32 = 2;
+pub const PLUGIN_HOST_PROTOCOL_LEVEL_V3: u32 = 3;
 
 const MANAGED_SCOPE_ERROR: &str = "use.plugin.managed_scope_invalid";
 const HOST_CAPABILITIES_ERROR: &str = "use.plugin.host_capabilities_invalid";
@@ -188,6 +191,42 @@ impl PluginHostCapabilities {
         Ok(capabilities)
     }
 
+    pub fn v3(
+        host_id: impl Into<String>,
+        manager_version: impl Into<String>,
+        manager_build_id: impl Into<String>,
+    ) -> UseResult<Self> {
+        let capabilities = Self {
+            schema: PLUGIN_HOST_CAPABILITIES_SCHEMA_V3.to_owned(),
+            protocol_level: PLUGIN_HOST_PROTOCOL_LEVEL_V3,
+            host_id: host_id.into(),
+            manager_version: manager_version.into(),
+            manager_build_id: manager_build_id.into(),
+            contract_schemas: v3_contract_schemas(),
+            catalog_schemas: vec![
+                PLUGIN_CATALOG_SCHEMA.to_owned(),
+                PLUGIN_CATALOG_SCHEMA_V2.to_owned(),
+                PLUGIN_CATALOG_SCHEMA_V3.to_owned(),
+            ],
+            plan_schemas: vec![
+                PLUGIN_OPERATION_PLAN_SCHEMA.to_owned(),
+                PLUGIN_OPERATION_PLAN_SCHEMA_V2.to_owned(),
+                PLUGIN_OPERATION_PLAN_SCHEMA_V3.to_owned(),
+            ],
+            surface_kinds: vec![
+                PluginSurfaceKind::Flow,
+                PluginSurfaceKind::Mcp,
+                PluginSurfaceKind::Okf,
+                PluginSurfaceKind::Skill,
+                PluginSurfaceKind::Tool,
+                PluginSurfaceKind::Ui,
+            ],
+            exclusive_managed_scope_mutation: true,
+        };
+        capabilities.validate()?;
+        Ok(capabilities)
+    }
+
     pub fn from_json(input: &[u8]) -> UseResult<Self> {
         parse_contract(
             input,
@@ -200,12 +239,16 @@ impl PluginHostCapabilities {
     pub fn validate(&self) -> UseResult<()> {
         let canonical_version = Version::parse(&self.manager_version)
             .is_ok_and(|version| version.to_string() == self.manager_version);
-        let (contract_schemas, surface_kinds) = match self.schema.as_str() {
+        let (contract_schemas, plan_schemas, surface_kinds) = match self.schema.as_str() {
             PLUGIN_HOST_CAPABILITIES_SCHEMA
                 if self.protocol_level == PLUGIN_HOST_PROTOCOL_LEVEL =>
             {
                 (
                     v1_contract_schemas(),
+                    vec![
+                        PLUGIN_OPERATION_PLAN_SCHEMA.to_owned(),
+                        PLUGIN_OPERATION_PLAN_SCHEMA_V2.to_owned(),
+                    ],
                     vec![
                         PluginSurfaceKind::Mcp,
                         PluginSurfaceKind::Okf,
@@ -220,6 +263,30 @@ impl PluginHostCapabilities {
             {
                 (
                     v2_contract_schemas(),
+                    vec![
+                        PLUGIN_OPERATION_PLAN_SCHEMA.to_owned(),
+                        PLUGIN_OPERATION_PLAN_SCHEMA_V2.to_owned(),
+                    ],
+                    vec![
+                        PluginSurfaceKind::Flow,
+                        PluginSurfaceKind::Mcp,
+                        PluginSurfaceKind::Okf,
+                        PluginSurfaceKind::Skill,
+                        PluginSurfaceKind::Tool,
+                        PluginSurfaceKind::Ui,
+                    ],
+                )
+            }
+            PLUGIN_HOST_CAPABILITIES_SCHEMA_V3
+                if self.protocol_level == PLUGIN_HOST_PROTOCOL_LEVEL_V3 =>
+            {
+                (
+                    v3_contract_schemas(),
+                    vec![
+                        PLUGIN_OPERATION_PLAN_SCHEMA.to_owned(),
+                        PLUGIN_OPERATION_PLAN_SCHEMA_V2.to_owned(),
+                        PLUGIN_OPERATION_PLAN_SCHEMA_V3.to_owned(),
+                    ],
                     vec![
                         PluginSurfaceKind::Flow,
                         PluginSurfaceKind::Mcp,
@@ -246,11 +313,7 @@ impl PluginHostCapabilities {
                     PLUGIN_CATALOG_SCHEMA_V2,
                     PLUGIN_CATALOG_SCHEMA_V3,
                 ]
-            || self.plan_schemas
-                != [
-                    PLUGIN_OPERATION_PLAN_SCHEMA,
-                    PLUGIN_OPERATION_PLAN_SCHEMA_V2,
-                ]
+            || self.plan_schemas != plan_schemas
             || self.surface_kinds != surface_kinds
             || !self.exclusive_managed_scope_mutation
         {
@@ -268,6 +331,12 @@ impl PluginHostCapabilities {
 
     pub fn descriptor_digest(&self) -> UseResult<String> {
         Ok(canonical_digest(&self.canonical_bytes()?))
+    }
+
+    pub fn supports_plan_schema(&self, schema: &str) -> bool {
+        self.plan_schemas
+            .iter()
+            .any(|supported| supported == schema)
     }
 }
 
@@ -323,6 +392,19 @@ fn v2_contract_schemas() -> Vec<String> {
         .collect()
 }
 
+fn v3_contract_schemas() -> Vec<String> {
+    v2_contract_schemas()
+        .into_iter()
+        .map(|schema| {
+            if schema == PLUGIN_HOST_CAPABILITIES_SCHEMA_V2 {
+                PLUGIN_HOST_CAPABILITIES_SCHEMA_V3.to_owned()
+            } else {
+                schema
+            }
+        })
+        .collect()
+}
+
 pub(super) fn validate_request_identity(
     request_id: &str,
     assignment_generation: u64,
@@ -359,6 +441,20 @@ pub(super) fn verify_capabilities(
     Ok(())
 }
 
+pub(super) fn verify_supported_plan_schema(
+    capabilities: &PluginHostCapabilities,
+    plan_schema: &str,
+) -> UseResult<()> {
+    capabilities.validate()?;
+    if !capabilities.supports_plan_schema(plan_schema) {
+        return Err(UseError::new(
+            "use.plugin.host_plan_schema_unsupported",
+            "The plugin operation plan schema is not supported by the selected host protocol.",
+        ));
+    }
+    Ok(())
+}
+
 fn valid_opaque_id(value: &str) -> bool {
     valid_machine_id(value) && !value.contains('/')
 }
@@ -369,4 +465,21 @@ fn managed_scope_error(message: impl Into<String>) -> UseError {
 
 fn host_capabilities_error(message: impl Into<String>) -> UseError {
     contract_error(HOST_CAPABILITIES_ERROR, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn negotiated_host_protocol_rejects_unadvertised_operation_plan_schemas() {
+        let v2 =
+            PluginHostCapabilities::v2("host:node-01", "0.3.0", "use:0.3.0:linux-x86_64").unwrap();
+        let error = verify_supported_plan_schema(&v2, PLUGIN_OPERATION_PLAN_SCHEMA_V3).unwrap_err();
+        assert_eq!(error.code, "use.plugin.host_plan_schema_unsupported");
+
+        let v3 =
+            PluginHostCapabilities::v3("host:node-01", "0.3.0", "use:0.3.0:linux-x86_64").unwrap();
+        verify_supported_plan_schema(&v3, PLUGIN_OPERATION_PLAN_SCHEMA_V3).unwrap();
+    }
 }

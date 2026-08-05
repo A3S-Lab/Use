@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
     CatalogAvailability, PluginPackageLock, PluginPackageLockHost, PluginPackageResolver,
@@ -71,9 +71,35 @@ pub async fn download_locked_remote_packages(
     package_lock: &PluginPackageLock,
     registries: &[TrustedRegistry],
 ) -> UseResult<Vec<DownloadedRemotePackage>> {
+    let selected = package_lock
+        .packages
+        .iter()
+        .map(|package| package.package_id().to_string())
+        .collect();
+    download_selected_locked_remote_packages(package_lock, registries, &selected).await
+}
+
+/// Revalidate the complete lock before downloading only the selected package
+/// payloads. Retained shared nodes still receive exact Registry/TUF metadata
+/// verification, but their immutable archives are not fetched again.
+pub async fn download_selected_locked_remote_packages(
+    package_lock: &PluginPackageLock,
+    registries: &[TrustedRegistry],
+    selected_package_ids: &BTreeSet<String>,
+) -> UseResult<Vec<DownloadedRemotePackage>> {
     package_lock.validate()?;
+    if selected_package_ids.len() > package_lock.packages.len()
+        || selected_package_ids
+            .iter()
+            .any(|package_id| package_lock.package(package_id).is_none())
+    {
+        return Err(package_graph_error(
+            "use.plugin.package_download_selection_invalid",
+            "The selected download set contains a package outside the exact dependency lock.",
+        ));
+    }
     let registries = registry_map(registries)?;
-    let mut prepared = Vec::<PreparedRemotePackage>::with_capacity(package_lock.packages.len());
+    let mut prepared = Vec::<PreparedRemotePackage>::with_capacity(selected_package_ids.len());
     for locked in package_lock.install_order()? {
         let provenance = &locked.catalog.provenance;
         let registry = registries
@@ -109,7 +135,9 @@ pub async fn download_locked_remote_packages(
                 ),
             ));
         }
-        prepared.push(candidate);
+        if selected_package_ids.contains(locked.package_id()) {
+            prepared.push(candidate);
+        }
     }
 
     let mut downloaded = Vec::with_capacity(prepared.len());
