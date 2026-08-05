@@ -5,21 +5,22 @@ use std::sync::Arc;
 
 use a3s_use::cognitive_package::{
     CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider,
-    ReviewedCognitivePackageAuthorizationProvider,
+    ReviewedCognitivePackageAuthorizationProvider, StandaloneCognitivePackageLifecycleFactory,
 };
 use a3s_use_core::{
     CatalogPlanningTarget, ExecutablePlanningSurface, PlanActor, PlanAuthority, PlanPolicyDecision,
-    PlanningArtifactRef, PlanningSurfaceActivation, PluginOperationConfirmation,
-    PluginOperationPlan, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
-    PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle, PluginWorkspaceGrantChangeSet,
-    ToolReleaseDescriptor, ToolWorkloadClass, UseResult, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
-    PLUGIN_PLANNING_BUNDLE_SCHEMA,
+    PlanScope, PlanScopeKind, PlanningArtifactRef, PlanningSurfaceActivation,
+    PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanDraft,
+    PluginOperationPlanEnvelope, PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle,
+    PluginWorkspaceGrantChangeSet, ToolReleaseDescriptor, ToolWorkloadClass, UseResult,
+    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
 use a3s_use_extension::{StoredWorkspaceGrant, WorkspaceGrantStore};
 use async_trait::async_trait;
 
 const POLICY_DIGEST: &str =
     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const MANAGED_SCOPE_ID: &str = "workspace:research";
 const PERMISSIONS: &[u8] =
     include_bytes!("../../crates/core/fixtures/plugins/permission-ceiling-v1.json");
 
@@ -93,13 +94,20 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     let extension_registry =
         ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
     let authorization_count = Arc::new(AtomicUsize::new(0));
-    let manager = CognitivePackageManager::with_authorization(
+    let managed_scope = PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: MANAGED_SCOPE_ID.to_string(),
+    };
+    let manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         extension_registry.clone(),
+        managed_scope.clone(),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory),
         Arc::new(ConfirmAllPlans {
             authorization_count: authorization_count.clone(),
         }),
     )
     .unwrap();
+    assert_eq!(manager.scope(), &managed_scope);
 
     let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
     let interrupted = manager
@@ -118,9 +126,34 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     FileExt::unlock(&registry_lock).unwrap();
     drop(registry_lock);
 
+    let wrong_scope_manager = CognitivePackageManager::with_scope_lifecycle_and_authorization(
+        extension_registry.clone(),
+        MANAGED_SCOPE_ID,
+        Arc::new(StandaloneCognitivePackageLifecycleFactory),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: authorization_count.clone(),
+        }),
+    )
+    .unwrap();
+    let scope_error = wrong_scope_manager
+        .install_remote(
+            &registry,
+            &[],
+            "acme/worker",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(scope_error.code, "use.plugin.package_graph_busy");
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
+
     let pending_path = home.join("state/operations/package-graphs/install/acme/worker.json");
     let pending_bytes = std::fs::read(&pending_path).unwrap();
     let pending: serde_json::Value = serde_json::from_slice(&pending_bytes).unwrap();
+    assert_eq!(pending["envelope"]["plan"]["scope"]["kind"], "workspace");
+    assert_eq!(pending["envelope"]["plan"]["scope"]["id"], MANAGED_SCOPE_ID);
     let mut tampered = Vec::new();
 
     let mut missing_resolved = pending.clone();
@@ -218,10 +251,12 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
     let install_plan = installed.plan.as_ref().unwrap();
     assert_eq!(install_plan.plan.authority, test_authority());
+    assert_eq!(install_plan.plan.scope, managed_scope);
     assert_eq!(install_plan.plan.workspace_impacts.len(), 1);
     let first_state = install_plan.plan.packages[0].after.as_ref().unwrap();
     assert_granted(
         &home,
+        MANAGED_SCOPE_ID,
         &first_state.release.package_sha256,
         &first_state.permissions,
     )
@@ -241,12 +276,14 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     assert!(upgraded.changed);
     assert_eq!(authorization_count.load(Ordering::SeqCst), 2);
     let upgrade_plan = upgraded.plan.as_ref().unwrap();
+    assert_eq!(upgrade_plan.plan.scope, managed_scope);
     let transition = &upgrade_plan.plan.packages[0];
     let prior = transition.before.as_ref().unwrap();
     let candidate = transition.after.as_ref().unwrap();
-    assert_revoked(&home, &prior.release.package_sha256).await;
+    assert_revoked(&home, MANAGED_SCOPE_ID, &prior.release.package_sha256).await;
     assert_granted(
         &home,
+        MANAGED_SCOPE_ID,
         &candidate.release.package_sha256,
         &candidate.permissions,
     )
@@ -254,8 +291,9 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
 
     let uninstalled = manager.uninstall("acme/worker").await.unwrap();
     assert!(uninstalled.changed);
+    assert_eq!(uninstalled.plan.plan.scope, managed_scope);
     assert_eq!(authorization_count.load(Ordering::SeqCst), 3);
-    assert_revoked(&home, &candidate.release.package_sha256).await;
+    assert_revoked(&home, MANAGED_SCOPE_ID, &candidate.release.package_sha256).await;
     assert!(!home
         .join("state/operations/package-graphs/install/acme/worker.json")
         .exists());
@@ -293,11 +331,17 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         source_home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let source_manager = CognitivePackageManager::with_authorization(
+    let reviewed_scope = PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: MANAGED_SCOPE_ID.to_string(),
+    };
+    let source_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         ExtensionRegistry::new(ExtensionPaths::new(
             source_home.join("data"),
             source_home.join("state"),
         )),
+        reviewed_scope.clone(),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory),
         Arc::new(ConfirmAllPlans {
             authorization_count: Arc::new(AtomicUsize::new(0)),
         }),
@@ -316,6 +360,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         .unwrap();
     let reviewed = source_result.plan.unwrap();
     assert!(reviewed.package_lock.is_some());
+    assert_eq!(reviewed.plan.scope, reviewed_scope);
     assert_eq!(reviewed.plan.workspace_impacts.len(), 1);
     let confirmation = PluginOperationConfirmation {
         schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_string(),
@@ -344,8 +389,10 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         target_home.join("data"),
         target_home.join("state"),
     ));
-    let target_manager = CognitivePackageManager::with_authorization(
+    let target_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         target_extension_registry.clone(),
+        reviewed_scope.clone(),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory),
         Arc::new(
             ReviewedCognitivePackageAuthorizationProvider::new(
                 reviewed.clone(),
@@ -394,8 +441,10 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         confirmed_by: PlanActor::User,
         confirmed_at_ms: confirmation.confirmed_at_ms,
     };
-    let drifted_manager = CognitivePackageManager::with_authorization(
+    let drifted_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         target_extension_registry.clone(),
+        reviewed_scope.clone(),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory),
         Arc::new(
             ReviewedCognitivePackageAuthorizationProvider::new(drifted, Some(drifted_confirmation))
                 .unwrap(),
@@ -418,8 +467,10 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         "use.plugin.package_reviewed_plan_mismatch"
     );
 
-    let replay_manager = CognitivePackageManager::with_authorization(
+    let replay_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         target_extension_registry,
+        reviewed_scope,
+        Arc::new(StandaloneCognitivePackageLifecycleFactory),
         Arc::new(
             ReviewedCognitivePackageAuthorizationProvider::new(
                 reviewed.clone(),
@@ -446,6 +497,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
     let installed = reviewed.plan.packages[0].after.as_ref().unwrap();
     assert_granted(
         &target_home,
+        MANAGED_SCOPE_ID,
         &installed.release.package_sha256,
         &installed.permissions,
     )
@@ -578,11 +630,12 @@ fn cognitive_tool_targets_version(
 
 async fn assert_granted(
     home: &std::path::Path,
+    scope_id: &str,
     package_digest: &str,
     ceiling: &PluginPermissionCeiling,
 ) {
     let record = WorkspaceGrantStore::new(home.join("state"))
-        .observe("user/current", "acme/worker", package_digest)
+        .observe(scope_id, "acme/worker", package_digest)
         .await
         .unwrap()
         .unwrap();
@@ -594,9 +647,9 @@ async fn assert_granted(
     assert!(receipt.grant.authority.confirmation_digest.is_some());
 }
 
-async fn assert_revoked(home: &std::path::Path, package_digest: &str) {
+async fn assert_revoked(home: &std::path::Path, scope_id: &str, package_digest: &str) {
     let record = WorkspaceGrantStore::new(home.join("state"))
-        .observe("user/current", "acme/worker", package_digest)
+        .observe(scope_id, "acme/worker", package_digest)
         .await
         .unwrap()
         .unwrap();

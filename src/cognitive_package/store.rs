@@ -872,9 +872,9 @@ mod tests {
     use super::*;
     use crate::cognitive_package::{InstallDisposition, UninstallDisposition, UpgradeDisposition};
     use a3s_use_core::{
-        CatalogAvailability, PluginCatalogRecord, PluginPackageLockHost, PluginPackageResolver,
-        PluginWorkspaceGrantSnapshot, SurfaceChangeKind, VerifiedCatalogProvenance,
-        VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3,
+        CatalogAvailability, PlanScope, PlanScopeKind, PluginCatalogRecord, PluginPackageLockHost,
+        PluginPackageResolver, PluginWorkspaceGrantSnapshot, SurfaceChangeKind,
+        VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3,
         PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
     };
 
@@ -932,6 +932,13 @@ mod tests {
         }
     }
 
+    fn scope() -> PlanScope {
+        PlanScope {
+            kind: PlanScopeKind::User,
+            id: "current".to_string(),
+        }
+    }
+
     fn install_pending(lock: &PluginPackageLock) -> PendingPackageGraphOperation {
         let package_id = lock.root_package_id.clone();
         let manifests =
@@ -942,7 +949,7 @@ mod tests {
             &dispositions,
             &manifests,
             1,
-            "current",
+            &scope(),
             10,
             &grant_snapshot(2),
             &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
@@ -970,7 +977,7 @@ mod tests {
             generations,
             digest('9'),
             1,
-            "current",
+            &scope(),
             10,
             &grant_snapshot(2),
             &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
@@ -1007,7 +1014,7 @@ mod tests {
             &prior_generations,
             digest('9'),
             8,
-            "current",
+            &scope(),
             10,
             &grant_snapshot(9),
             &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,

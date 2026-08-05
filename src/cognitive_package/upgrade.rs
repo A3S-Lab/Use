@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
-    PlanPackageChangeKind, PluginOperationAction, PluginPackageLockHost, PluginReleaseChannel,
-    UseResult,
+    PlanPackageChangeKind, PlanScope, PluginOperationAction, PluginPackageLockHost,
+    PluginReleaseChannel, UseResult,
 };
 use a3s_use_extension::{
     download_selected_locked_remote_packages, resolve_remote_package_lock,
@@ -68,7 +68,7 @@ impl CognitivePackageManager {
                     pending,
                     &candidate_lock,
                     graph.as_ref(),
-                    &self.scope_id,
+                    &self.scope,
                 )?;
                 pending.prior_package_lock.clone().ok_or_else(|| {
                     package_manager_error(
@@ -181,7 +181,7 @@ impl CognitivePackageManager {
                 &pending,
                 &candidate_lock,
                 existing_graph.as_ref(),
-                &self.scope_id,
+                &self.scope,
             )?;
             for (package_id, prepared) in &prepared {
                 if pending.manifests.get(package_id) != Some(&prepared.manifest) {
@@ -331,7 +331,7 @@ impl CognitivePackageManager {
             let snapshot = self.registry.snapshot().await?;
             let grant_snapshot = self
                 .grant_store()
-                .snapshot_scope(&self.scope_id, package_state_revision(snapshot.generation)?)
+                .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
                 .await?;
             let generated = upgrade_operation(
                 &candidate_lock,
@@ -341,7 +341,7 @@ impl CognitivePackageManager {
                 &prior_generations,
                 root.receipt.descriptor_digest()?,
                 snapshot.generation,
-                &self.scope_id,
+                &self.scope,
                 now_ms()?,
                 &grant_snapshot,
                 self.authorization.as_ref(),
@@ -420,7 +420,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope_id: self.scope_id.clone(),
+                    scope_id: self.scope.id.clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),
@@ -509,7 +509,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope_id: self.scope_id.clone(),
+                    scope_id: self.scope.id.clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),
@@ -998,7 +998,7 @@ fn validate_pending_upgrade(
     pending: &PendingPackageGraphOperation,
     candidate_lock: &a3s_use_core::PluginPackageLock,
     graph: Option<&super::store::InstalledPackageGraph>,
-    scope_id: &str,
+    scope: &PlanScope,
 ) -> UseResult<()> {
     pending.validate()?;
     let prior = pending.prior_package_lock.as_ref().ok_or_else(|| {
@@ -1021,7 +1021,7 @@ fn validate_pending_upgrade(
             .iter()
             .any(|transition| transition.change == PlanPackageChangeKind::Remove)
             && pending.envelope.prior_package_lock.as_ref() != Some(prior)
-        || pending.envelope.plan.scope.id != scope_id
+        || &pending.envelope.plan.scope != scope
         || graph.is_none_or(|graph| {
             graph.package_lock != *prior && graph.package_lock != *candidate_lock
         })

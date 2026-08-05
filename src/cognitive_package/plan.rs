@@ -3,8 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
     LockedPluginPackage, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
-    PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOperationImpact,
-    PlannedPackageTransition, PlannedProviderEvidence, PlannedStateEvidence, PluginOperationAction,
+    PlanQualifiedSurfaceRef, PlanScope, PlannedOperationImpact, PlannedPackageTransition,
+    PlannedProviderEvidence, PlannedStateEvidence, PluginOperationAction,
     PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
     PluginPackageLock, PluginSurfaceKind, PluginWorkspaceGrantSnapshot, UseResult,
 };
@@ -32,7 +32,7 @@ pub(super) fn install_operation(
     dispositions: &BTreeMap<String, InstallDisposition>,
     manifests: &BTreeMap<String, ExtensionManifest>,
     registry_generation: u64,
-    scope_id: &str,
+    scope: &PlanScope,
     created_at_ms: u64,
     grant_snapshot: &PluginWorkspaceGrantSnapshot,
     authorization: &dyn CognitivePackageAuthorizationProvider,
@@ -84,7 +84,7 @@ pub(super) fn install_operation(
     let binding = authorized_binding(
         PluginOperationAction::Install,
         &lock_digest,
-        scope_id,
+        scope,
         created_at_ms,
         &draft,
         authorization,
@@ -168,7 +168,7 @@ pub(super) fn uninstall_operation(
     generations: BTreeMap<String, u64>,
     root_receipt_digest: String,
     registry_generation: u64,
-    scope_id: &str,
+    scope: &PlanScope,
     created_at_ms: u64,
     grant_snapshot: &PluginWorkspaceGrantSnapshot,
     authorization: &dyn CognitivePackageAuthorizationProvider,
@@ -248,7 +248,7 @@ pub(super) fn uninstall_operation(
     let binding = authorized_binding(
         PluginOperationAction::Uninstall,
         &lock_digest,
-        scope_id,
+        scope,
         created_at_ms,
         &draft,
         authorization,
@@ -271,7 +271,7 @@ pub(super) fn upgrade_operation(
     prior_generations: &BTreeMap<String, u64>,
     root_receipt_digest: String,
     registry_generation: u64,
-    scope_id: &str,
+    scope: &PlanScope,
     created_at_ms: u64,
     grant_snapshot: &PluginWorkspaceGrantSnapshot,
     authorization: &dyn CognitivePackageAuthorizationProvider,
@@ -477,7 +477,7 @@ pub(super) fn upgrade_operation(
     let binding = authorized_binding(
         PluginOperationAction::Upgrade,
         &upgrade_identity_digest,
-        scope_id,
+        scope,
         created_at_ms,
         &draft,
         authorization,
@@ -572,7 +572,7 @@ pub(super) fn package_state_revision(registry_generation: u64) -> UseResult<u64>
 fn authorized_binding(
     action: PluginOperationAction,
     lock_digest: &str,
-    scope_id: &str,
+    scope: &PlanScope,
     created_at_ms: u64,
     draft: &PluginOperationPlanDraft,
     authorization: &dyn CognitivePackageAuthorizationProvider,
@@ -594,10 +594,7 @@ fn authorized_binding(
         operation_id: format!("{operation}:package-graph:{identity}"),
         created_at_ms,
         expires_at_ms,
-        scope: PlanScope {
-            kind: PlanScopeKind::User,
-            id: scope_id.to_string(),
-        },
+        scope: scope.clone(),
         authority,
     };
     authorization.bind_operation(draft, default_binding)

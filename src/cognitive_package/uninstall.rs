@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{PlanPackageChangeKind, PluginOperationAction, UseResult};
+use a3s_use_core::{PlanPackageChangeKind, PlanScope, PluginOperationAction, UseResult};
 use a3s_use_extension::{ExtensionLifecycleIdentity, ExtensionManifest, InstalledExtension};
 
 use crate::plugin_lifecycle::{
@@ -43,7 +43,7 @@ impl CognitivePackageManager {
         let graph = graph_store.get(root_package_id).await?;
         let (lock, lock_digest) = match (&graph, &existing_pending) {
             (Some(graph), Some(pending)) => {
-                validate_pending_lock(pending, &graph.package_lock)?;
+                validate_pending_lock(pending, &graph.package_lock, &self.scope)?;
                 (
                     graph.package_lock.clone(),
                     graph.package_lock_digest.clone(),
@@ -83,7 +83,7 @@ impl CognitivePackageManager {
 
         let mut installed = self.installed_lock_nodes(&lock).await?;
         let pending = if let Some(pending) = existing_pending {
-            validate_pending_lock(&pending, &lock)?;
+            validate_pending_lock(&pending, &lock, &self.scope)?;
             pending
         } else {
             let exact = require_fresh_installed_closure(&lock, &installed)?;
@@ -125,7 +125,7 @@ impl CognitivePackageManager {
             let snapshot = self.registry.snapshot().await?;
             let grant_snapshot = self
                 .grant_store()
-                .snapshot_scope(&self.scope_id, package_state_revision(snapshot.generation)?)
+                .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
                 .await?;
             let generated = uninstall_operation(
                 &lock,
@@ -133,7 +133,7 @@ impl CognitivePackageManager {
                 generations,
                 root.receipt.descriptor_digest()?,
                 snapshot.generation,
-                &self.scope_id,
+                &self.scope,
                 now_ms()?,
                 &grant_snapshot,
                 self.authorization.as_ref(),
@@ -199,7 +199,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope_id: self.scope_id.clone(),
+                    scope_id: self.scope.id.clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),
@@ -446,10 +446,12 @@ fn pending_dispositions(
 fn validate_pending_lock(
     pending: &PendingPackageGraphOperation,
     lock: &a3s_use_core::PluginPackageLock,
+    scope: &PlanScope,
 ) -> UseResult<()> {
     pending.validate()?;
     if pending.envelope.plan.action != PluginOperationAction::Uninstall
         || pending.envelope.package_lock.as_ref() != Some(lock)
+        || &pending.envelope.plan.scope != scope
     {
         return Err(package_manager_error(
             "use.plugin.package_graph_busy",
