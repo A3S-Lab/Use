@@ -157,8 +157,7 @@ impl CognitivePackageManager {
             pending
         };
         if pending.requires_authority_revalidation() {
-            self.authorization
-                .verify_authority(&pending.envelope.plan)?;
+            self.authorization.verify_plan(&pending.envelope)?;
         }
         for manifest in pending.manifests.values() {
             self.lifecycle.validate_manifest(manifest)?;

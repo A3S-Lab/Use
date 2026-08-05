@@ -56,8 +56,11 @@ available for automation, embedding, and diagnostics.
 > standalone manager now binds trusted policy authority, exact confirmation,
 > canonical Grant changes, resolved Grants, and signed ceilings into durable
 > replay evidence, then selects the Grant-aware path for every permission-bearing
-> graph mutation. Production Knowledge, Service/HTTP hosts, umbrella and
-> managed-host Grant-authority forwarding, distributed Flow
+> graph mutation. A reviewed-host authorization provider also preserves an
+> externally reviewed operation ID, lifetime, scope, policy, complete lock-bound
+> envelope, and confirmation without regenerating child authority; planner,
+> lock, policy, or replay drift fails closed. Production Knowledge,
+> Service/HTTP hosts, umbrella and managed-host adapter wiring, distributed Flow
 > scheduling/resumption, and complete real-process cross-platform E2E remain
 > release gates.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
@@ -453,9 +456,12 @@ standalone manager derives canonical proposals, change sets, resolved Grants,
 and candidate ceilings from the final plan, persists the complete authorization
 bundle, revalidates injected authority on replay, and uses a grant-free path
 only when the immutable plan contains no Grant-bearing package transition. The
-umbrella Plugin Manager and managed-host adapters still need to forward the
-same exact Use authority and confirmation evidence; production Knowledge,
-Service, and Gateway composition is also still being wired.
+public reviewed-host provider now accepts only the same complete envelope and
+exact confirmation, reproduces the signed dependency lock in a clean
+workspace, and rejects policy drift during interrupted replay. The umbrella
+Plugin Manager and managed-host adapters still need to invoke that provider;
+production Knowledge, Service, and Gateway composition is also still being
+wired.
 The storage layer preserves exact package and Runtime generations across
 candidate preparation, cutover, drain, rollback, and receipt-owned removal.
 Required surfaces fail closed when their owning adapter is absent: Runtime
@@ -512,10 +518,10 @@ do not share one database transaction. The boundaries are frozen in
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
-| Workspace Grant graph saga | Graph saga and standalone product wiring implemented: injected host authority, exact confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, tamper rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host authority forwarding remains pending |
+| Workspace Grant graph saga | Graph saga, standalone wiring, and the reviewed-host forwarding provider are implemented: exact external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host adapters still need to invoke the provider |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
-| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone Grant plan/apply selection is wired, while production providers and umbrella/managed-host authority forwarding remain release gates |
+| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone and reviewed-host Grant plan/apply selection are wired, while production providers and umbrella/managed-host adapter invocation remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,
 Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages

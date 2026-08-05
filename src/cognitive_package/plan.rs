@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    LockedPluginPackage, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind,
-    PlanPackageRole, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOperationImpact,
+    LockedPluginPackage, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
+    PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOperationImpact,
     PlannedPackageTransition, PlannedProviderEvidence, PlannedStateEvidence, PluginOperationAction,
     PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
     PluginPackageLock, PluginSurfaceKind, PluginWorkspaceGrantSnapshot, UseResult,
@@ -81,12 +81,13 @@ pub(super) fn install_operation(
             receipt_digest: None,
         },
     )?;
-    let binding = binding(
+    let binding = authorized_binding(
         PluginOperationAction::Install,
         &lock_digest,
         scope_id,
         created_at_ms,
-        authorization.bind_authority(&draft)?,
+        &draft,
+        authorization,
     )?;
     let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, false, true)?;
     let plan = draft.bind(binding)?;
@@ -244,12 +245,13 @@ pub(super) fn uninstall_operation(
             receipt_digest: Some(root_receipt_digest),
         },
     )?;
-    let binding = binding(
+    let binding = authorized_binding(
         PluginOperationAction::Uninstall,
         &lock_digest,
         scope_id,
         created_at_ms,
-        authorization.bind_authority(&draft)?,
+        &draft,
+        authorization,
     )?;
     let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, true, false)?;
     let plan = draft.bind(binding)?;
@@ -472,12 +474,13 @@ pub(super) fn upgrade_operation(
             receipt_digest: Some(root_receipt_digest),
         },
     )?;
-    let binding = binding(
+    let binding = authorized_binding(
         PluginOperationAction::Upgrade,
         &upgrade_identity_digest,
         scope_id,
         created_at_ms,
-        authorization.bind_authority(&draft)?,
+        &draft,
+        authorization,
     )?;
     let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, true, true)?;
     let plan = draft.bind(binding)?;
@@ -566,13 +569,15 @@ pub(super) fn package_state_revision(registry_generation: u64) -> UseResult<u64>
     })
 }
 
-fn binding(
+fn authorized_binding(
     action: PluginOperationAction,
     lock_digest: &str,
     scope_id: &str,
     created_at_ms: u64,
-    authority: PlanAuthority,
+    draft: &PluginOperationPlanDraft,
+    authorization: &dyn CognitivePackageAuthorizationProvider,
 ) -> UseResult<PluginOperationPlanBinding> {
+    let authority = authorization.bind_authority(draft)?;
     let expires_at_ms = created_at_ms.checked_add(PLAN_LIFETIME_MS).ok_or_else(|| {
         package_manager_error(
             "use.plugin.package_clock_invalid",
@@ -585,7 +590,7 @@ fn binding(
         PluginOperationAction::Upgrade => "upgrade",
     };
     let identity = lock_digest.strip_prefix("sha256:").unwrap_or(lock_digest);
-    Ok(PluginOperationPlanBinding {
+    let default_binding = PluginOperationPlanBinding {
         operation_id: format!("{operation}:package-graph:{identity}"),
         created_at_ms,
         expires_at_ms,
@@ -594,7 +599,8 @@ fn binding(
             id: scope_id.to_string(),
         },
         authority,
-    })
+    };
+    authorization.bind_operation(draft, default_binding)
 }
 
 pub(super) fn static_provider_evidence<'a>(
