@@ -8,7 +8,7 @@ use crate::extension_cli::{
     extension_planning_evidence, extension_snapshot, extension_watch, external_component_value,
     external_package_id, external_route, install_extension, install_release_bundle_extension,
     install_remote_extension, installed_extension_for_id, installed_extensions,
-    release_bundle_catalog, uninstall_extension,
+    release_bundle_catalog, uninstall_extension, upgrade_remote_extension,
 };
 use std::time::Duration;
 
@@ -54,6 +54,7 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "capability" => capability(&args[1..]).await,
         "doctor" => doctor(args.get(1).map(String::as_str)).await,
         "install" => package_command_alias("install", &args[1..]).await,
+        "upgrade" => package_command_alias("upgrade", &args[1..]).await,
         "uninstall" => package_command_alias("uninstall", &args[1..]).await,
         "component" => component(&args[1..]).await,
         "browser" => browser(&args[1..]).await,
@@ -117,8 +118,9 @@ fn help() -> CommandOutput {
             "  a3s-use capability watch [--after-generation <n>] [--after-revision <sha256>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use doctor [browser|box|ocr] [--json]\n",
             "  a3s-use install <publisher/name> [registry options] [--json]\n",
+            "  a3s-use upgrade <publisher/name> [registry options] [--json]\n",
             "  a3s-use uninstall <publisher/name> [--json]\n",
-            "  a3s-use component list|status|install|uninstall [args] [--json]\n",
+            "  a3s-use component list|status|install|upgrade|uninstall [args] [--json]\n",
             "  a3s-use browser doctor [--json]\n",
             "  a3s-use browser render <url> [--output <path>] [--screenshot <path>] [--json]\n",
             "  a3s-use browser open|list|navigate|snapshot|click|type|press|select|scroll|screenshot|close [args] [--json]\n",
@@ -141,6 +143,7 @@ fn help() -> CommandOutput {
                 "capability",
                 "doctor",
                 "install",
+                "upgrade",
                 "uninstall",
                 "component",
                 "browser",
@@ -281,10 +284,9 @@ async fn doctor(domain: Option<&str>) -> UseResult<CommandOutput> {
 }
 
 async fn component(args: &[String]) -> UseResult<CommandOutput> {
-    let command = args
-        .first()
-        .map(String::as_str)
-        .ok_or_else(|| usage_error("component requires list, status, install, or uninstall"))?;
+    let command = args.first().map(String::as_str).ok_or_else(|| {
+        usage_error("component requires list, status, install, upgrade, or uninstall")
+    })?;
     match command {
         "list" => component_list().await,
         "status" => {
@@ -292,12 +294,97 @@ async fn component(args: &[String]) -> UseResult<CommandOutput> {
             component_status(id).await
         }
         "install" => component_install(args).await,
+        "upgrade" => component_upgrade(args).await,
         "uninstall" => {
             let id = value_argument(args, 1, "component uninstall requires an ID")?;
             component_uninstall(id).await
         }
         value => Err(usage_error(format!("unknown component command '{value}'"))),
     }
+}
+
+async fn component_upgrade(args: &[String]) -> UseResult<CommandOutput> {
+    let id = value_argument(args, 1, "component upgrade requires an ID")?;
+    validate_component_upgrade_options(args)?;
+    if builtin_diagnostic(id).is_some() {
+        return Err(UseError::new(
+            "use.plugin.package_upgrade_unsupported",
+            format!("Built-in component '{id}' is not a cognitive package graph."),
+        ));
+    }
+    let resolved = installed_extension_for_id(id).await?;
+    let package_id = external_package_id(id).or_else(|| {
+        resolved
+            .as_ref()
+            .map(|extension| extension.package_id.as_str())
+    });
+    let package_id = package_id.ok_or_else(|| {
+        UseError::new(
+            "use.component_unknown",
+            format!("Unknown cognitive package '{id}'."),
+        )
+    })?;
+    let registry_name = option_argument(args, "--registry-name")?
+        .ok_or_else(|| usage_error("remote cognitive-package upgrade requires --registry-name"))?;
+    let registry_url = option_argument(args, "--registry-url")?
+        .ok_or_else(|| usage_error("remote cognitive-package upgrade requires --registry-url"))?;
+    let trust_root = option_argument(args, "--trust-root")?
+        .ok_or_else(|| usage_error("remote cognitive-package upgrade requires --trust-root"))?;
+    let trusted_root = option_argument(args, "--trusted-root")?
+        .map(|path| {
+            let path = std::path::PathBuf::from(path);
+            if path.is_absolute() {
+                Ok(path)
+            } else {
+                std::env::current_dir()
+                    .map(|directory| directory.join(path))
+                    .map_err(|error| {
+                        UseError::new(
+                            "use.extension.registry_path_invalid",
+                            format!("Failed to resolve the trusted root path: {error}"),
+                        )
+                    })
+            }
+        })
+        .transpose()?;
+    let version = option_argument(args, "--version")?;
+    let channel = option_argument(args, "--channel")?.unwrap_or("stable");
+    let expected_plan = option_argument(args, "--registry-plan-digest")?;
+    let expected_lock = option_argument(args, "--package-lock-digest")?;
+    if expected_plan.is_some() && expected_lock.is_some() {
+        return Err(usage_error(
+            "--registry-plan-digest and --package-lock-digest are mutually exclusive",
+        ));
+    }
+    let result = upgrade_remote_extension(
+        package_id,
+        registry_name,
+        registry_url,
+        trust_root,
+        trusted_root.as_deref(),
+        version,
+        channel,
+        expected_lock.or(expected_plan),
+    )
+    .await?;
+    Ok(CommandOutput::success(
+        if result.changed {
+            format!(
+                "Upgraded cognitive package '{}'.",
+                result.extension.package_id
+            )
+        } else {
+            format!(
+                "Cognitive package '{}' already matches the resolved graph.",
+                result.extension.package_id
+            )
+        },
+        serde_json::json!({
+            "component": external_component_value(&result.extension, id.starts_with("use/")),
+            "changed": result.changed,
+            "packageGraph": result.package_graph
+        }),
+    ))
 }
 
 async fn component_list() -> UseResult<CommandOutput> {
@@ -1119,6 +1206,34 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
             value => {
                 return Err(usage_error(format!(
                     "unknown component install option '{value}'"
+                )))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_component_upgrade_options(args: &[String]) -> UseResult<()> {
+    let mut index = 2;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--json" => index += 1,
+            "--registry-name"
+            | "--registry-url"
+            | "--trust-root"
+            | "--trusted-root"
+            | "--version"
+            | "--channel"
+            | "--registry-plan-digest"
+            | "--package-lock-digest" => {
+                if args.get(index + 1).is_none() {
+                    return Err(usage_error(format!("{} requires a value", args[index])));
+                }
+                index += 2;
+            }
+            value => {
+                return Err(usage_error(format!(
+                    "unknown component upgrade option '{value}'"
                 )))
             }
         }

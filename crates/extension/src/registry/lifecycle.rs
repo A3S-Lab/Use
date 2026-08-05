@@ -136,6 +136,14 @@ pub struct ExtensionLifecycleResult {
     pub registry_generation: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionLifecycleRollbackResult {
+    pub package_id: String,
+    pub changed: bool,
+    pub registry_generation: u64,
+}
+
 impl ExtensionRegistry {
     pub fn lifecycle_package_root(&self, identity: &ExtensionLifecycleIdentity) -> PathBuf {
         lifecycle_root(&self.paths, identity)
@@ -152,7 +160,6 @@ impl ExtensionRegistry {
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let mut retained_created = None;
         let mut retained_candidate = None;
-        let mut upgrade_candidate = false;
         if let Some(current) = self.get(identity.package_id()).await? {
             if current.receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 {
                 if exact_receipt(identity, &current.receipt).is_ok()
@@ -167,12 +174,18 @@ impl ExtensionRegistry {
                     let retained = self
                         .retained_lifecycle_extensions(identity.package_id())
                         .await?;
-                    let snapshot = if retained.is_empty() {
-                        let installed = self.list().await?;
-                        self.publish_snapshot_locked(&installed).await?
+                    let snapshot =
+                        read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+                    if retained.is_empty() {
+                        if snapshot.routes.iter().any(|binding| {
+                            binding.enabled
+                                && binding_matches_identity(&self.paths, binding, identity)
+                        }) {
+                            return Err(lifecycle_state_error(
+                                "A replayed install candidate is already published.",
+                            ));
+                        }
                     } else if retained.len() == 1 {
-                        let snapshot =
-                            read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
                         let package_routes = snapshot
                             .routes
                             .iter()
@@ -185,12 +198,11 @@ impl ExtensionRegistry {
                                 "A replayed upgrade candidate must preserve the exact retained generation as the Registry snapshot commit point.",
                             ));
                         }
-                        snapshot
                     } else {
                         return Err(lifecycle_state_error(
                             "A replayed upgrade candidate has ambiguous retained package generations.",
                         ));
-                    };
+                    }
                     return Ok(ExtensionLifecycleResult {
                         changed: false,
                         extension: current,
@@ -231,7 +243,6 @@ impl ExtensionRegistry {
                     ));
                 }
                 let current_identity = identity_from_receipt(&current.receipt)?;
-                upgrade_candidate = true;
                 retained_candidate = Some((current_identity, current.receipt));
             } else {
                 return Err(UseError::new(
@@ -310,12 +321,11 @@ impl ExtensionRegistry {
             }
         }
 
-        let snapshot = if upgrade_candidate {
-            read_registry_snapshot(&self.paths.registry_snapshot_path()).await?
-        } else {
-            let current = self.list().await?;
-            self.publish_snapshot_locked(&current).await?
-        };
+        // Candidate commit is staging, not publication. Keeping every new
+        // generation out of the immutable route snapshot prevents a later
+        // graph node from replacing the prior closure before the one atomic
+        // dependency-graph cutover.
+        let snapshot = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
         Ok(ExtensionLifecycleResult {
             changed: true,
             extension: InstalledExtension {

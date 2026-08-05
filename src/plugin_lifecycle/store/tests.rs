@@ -182,6 +182,95 @@ async fn rejects_out_of_order_and_required_optional_failure_checkpoints() {
 }
 
 #[tokio::test]
+async fn rolling_back_and_rolled_back_states_round_trip_and_replay_exactly() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let intent = intent("install:acme-guide:rollback");
+    store.begin(&intent).await.unwrap();
+
+    let rolling_back = store.start_rollback(&intent).await.unwrap();
+    assert_eq!(
+        rolling_back.status,
+        PluginLifecycleOperationStatus::RollingBack
+    );
+    assert_eq!(store.start_rollback(&intent).await.unwrap(), rolling_back);
+    let serialized = serde_json::to_value(&rolling_back).unwrap();
+    assert_eq!(serialized["status"], "rolling-back");
+    assert!(serialized.get("completedAtMs").is_none());
+    assert!(serialized.get("rollbackEvidenceDigest").is_none());
+
+    let rolled_back = store.roll_back(&intent, evidence('e'), 20).await.unwrap();
+    assert_eq!(
+        rolled_back.status,
+        PluginLifecycleOperationStatus::RolledBack
+    );
+    assert_eq!(rolled_back.rollback_evidence_digest, Some(evidence('e')));
+    assert_eq!(rolled_back.completed_at_ms, Some(20));
+    assert_eq!(
+        store.roll_back(&intent, evidence('e'), 30).await.unwrap(),
+        rolled_back
+    );
+    assert_eq!(
+        store
+            .load_active("workspace:guide", "acme/guide")
+            .await
+            .unwrap(),
+        Some(rolled_back)
+    );
+}
+
+#[tokio::test]
+async fn rollback_states_reject_forward_progress_and_changed_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let intent = intent("install:acme-guide:rollback-conflict");
+    let applying = store.begin(&intent).await.unwrap();
+    assert_eq!(
+        store
+            .roll_back(&intent, evidence('e'), 10)
+            .await
+            .unwrap_err()
+            .code,
+        "use.plugin.lifecycle_operation_conflict"
+    );
+
+    let rolling_back = store.start_rollback(&intent).await.unwrap();
+    assert_eq!(
+        store
+            .record_checkpoint(
+                &intent,
+                &applying.next_checkpoint().unwrap().idempotency_key,
+                PluginLifecycleCheckpointOutcome::Applied,
+                evidence('a'),
+                None,
+                10,
+            )
+            .await
+            .unwrap_err()
+            .code,
+        "use.plugin.lifecycle_operation_conflict"
+    );
+    assert_eq!(
+        store.complete(&intent, 10).await.unwrap_err().code,
+        "use.plugin.lifecycle_operation_conflict"
+    );
+    assert_eq!(
+        rolling_back.status,
+        PluginLifecycleOperationStatus::RollingBack
+    );
+
+    store.roll_back(&intent, evidence('e'), 20).await.unwrap();
+    assert_eq!(
+        store
+            .roll_back(&intent, evidence('f'), 30)
+            .await
+            .unwrap_err()
+            .code,
+        "use.plugin.lifecycle_operation_conflict"
+    );
+}
+
+#[tokio::test]
 async fn tampered_active_record_fails_closed() {
     let temp = tempfile::tempdir().unwrap();
     let store = PluginLifecycleJournalStore::new(temp.path().join("state"));

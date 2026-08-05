@@ -10,7 +10,9 @@ pub const PLUGIN_LIFECYCLE_OPERATION_SCHEMA: &str = "a3s.use.plugin-lifecycle-op
 #[serde(rename_all = "kebab-case")]
 pub enum PluginLifecycleOperationStatus {
     Applying,
+    RollingBack,
     Completed,
+    RolledBack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +56,8 @@ pub struct PluginLifecycleOperationRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_failure: Option<PluginLifecycleFailure>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub rollback_evidence_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub completed_at_ms: Option<u64>,
 }
 
@@ -67,6 +71,7 @@ impl PluginLifecycleOperationRecord {
             status: PluginLifecycleOperationStatus::Applying,
             receipts: Vec::new(),
             last_failure: None,
+            rollback_evidence_digest: None,
             completed_at_ms: None,
         };
         record.validate()?;
@@ -112,8 +117,12 @@ impl PluginLifecycleOperationRecord {
             let checkpoint = self.next_checkpoint().ok_or_else(|| {
                 operation_error("A completed checkpoint sequence cannot retain a failure.")
             })?;
-            if self.status != PluginLifecycleOperationStatus::Applying
-                || failure.sequence != checkpoint.sequence
+            if !matches!(
+                self.status,
+                PluginLifecycleOperationStatus::Applying
+                    | PluginLifecycleOperationStatus::RollingBack
+                    | PluginLifecycleOperationStatus::RolledBack
+            ) || failure.sequence != checkpoint.sequence
                 || failure.idempotency_key != checkpoint.idempotency_key
                 || !valid_error_code(&failure.error_code)
                 || !valid_sha256(&failure.evidence_digest)
@@ -127,13 +136,32 @@ impl PluginLifecycleOperationRecord {
         }
 
         match self.status {
-            PluginLifecycleOperationStatus::Applying if self.completed_at_ms.is_none() => {}
+            PluginLifecycleOperationStatus::Applying
+                if self.completed_at_ms.is_none() && self.rollback_evidence_digest.is_none() => {}
+            PluginLifecycleOperationStatus::RollingBack
+                if self.completed_at_ms.is_none() && self.rollback_evidence_digest.is_none() => {}
             PluginLifecycleOperationStatus::Completed
                 if self.receipts.len() == self.intent.checkpoints.len()
                     && self.last_failure.is_none()
+                    && self.rollback_evidence_digest.is_none()
                     && self
                         .completed_at_ms
                         .is_some_and(|time| time >= previous_time && time > 0) => {}
+            PluginLifecycleOperationStatus::RolledBack
+                if self.receipts.len() < self.intent.checkpoints.len()
+                    && self
+                        .rollback_evidence_digest
+                        .as_deref()
+                        .is_some_and(valid_sha256)
+                    && self.completed_at_ms.is_some_and(|time| {
+                        time >= previous_time
+                            && time
+                                >= self
+                                    .last_failure
+                                    .as_ref()
+                                    .map_or(0, |failure| failure.failed_at_ms)
+                            && time > 0
+                    }) => {}
             _ => {
                 return Err(operation_error(
                     "The lifecycle operation status does not match its durable checkpoints.",
@@ -156,6 +184,11 @@ impl PluginLifecycleOperationRecord {
         completed_at_ms: u64,
     ) -> UseResult<bool> {
         self.validate()?;
+        if self.status != PluginLifecycleOperationStatus::Applying {
+            return Err(operation_conflict(
+                "A non-applying lifecycle operation cannot record forward progress.",
+            ));
+        }
         let evidence_digest = evidence_digest.into();
         if let Some(receipt) = self
             .receipts
@@ -204,6 +237,11 @@ impl PluginLifecycleOperationRecord {
         failed_at_ms: u64,
     ) -> UseResult<()> {
         self.validate()?;
+        if self.status != PluginLifecycleOperationStatus::Applying {
+            return Err(operation_conflict(
+                "A non-applying lifecycle operation cannot record a forward failure.",
+            ));
+        }
         let checkpoint = self.next_checkpoint().ok_or_else(|| {
             operation_conflict("The lifecycle operation has no pending checkpoint.")
         })?;
@@ -230,13 +268,67 @@ impl PluginLifecycleOperationRecord {
         if self.status == PluginLifecycleOperationStatus::Completed {
             return Ok(false);
         }
-        if self.next_checkpoint().is_some() || self.last_failure.is_some() {
+        if self.status != PluginLifecycleOperationStatus::Applying
+            || self.next_checkpoint().is_some()
+            || self.last_failure.is_some()
+        {
             return Err(operation_conflict(
                 "A lifecycle operation cannot complete before every checkpoint succeeds or records an optional failure.",
             ));
         }
         let mut candidate = self.clone();
         candidate.status = PluginLifecycleOperationStatus::Completed;
+        candidate.completed_at_ms = Some(completed_at_ms);
+        candidate.validate()?;
+        *self = candidate;
+        Ok(true)
+    }
+
+    pub fn start_rollback(&mut self) -> UseResult<bool> {
+        self.validate()?;
+        if self.status == PluginLifecycleOperationStatus::RollingBack {
+            return Ok(false);
+        }
+        if self.status != PluginLifecycleOperationStatus::Applying
+            || self.receipts.len() == self.intent.checkpoints.len()
+        {
+            return Err(operation_conflict(
+                "Only an unpublished applying lifecycle operation can start rollback.",
+            ));
+        }
+        let mut candidate = self.clone();
+        candidate.status = PluginLifecycleOperationStatus::RollingBack;
+        candidate.validate()?;
+        *self = candidate;
+        Ok(true)
+    }
+
+    pub fn roll_back(
+        &mut self,
+        evidence_digest: impl Into<String>,
+        completed_at_ms: u64,
+    ) -> UseResult<bool> {
+        self.validate()?;
+        let evidence_digest = evidence_digest.into();
+        if self.status == PluginLifecycleOperationStatus::RolledBack {
+            if self.rollback_evidence_digest.as_deref() == Some(&evidence_digest) {
+                return Ok(false);
+            }
+            return Err(operation_conflict(
+                "A rolled-back lifecycle operation was replayed with different evidence.",
+            ));
+        }
+        if self.status != PluginLifecycleOperationStatus::RollingBack
+            || self.receipts.len() == self.intent.checkpoints.len()
+            || !valid_sha256(&evidence_digest)
+        {
+            return Err(operation_conflict(
+                "Only an unpublished rolling-back lifecycle operation can complete rollback.",
+            ));
+        }
+        let mut candidate = self.clone();
+        candidate.status = PluginLifecycleOperationStatus::RolledBack;
+        candidate.rollback_evidence_digest = Some(evidence_digest);
         candidate.completed_at_ms = Some(completed_at_ms);
         candidate.validate()?;
         *self = candidate;

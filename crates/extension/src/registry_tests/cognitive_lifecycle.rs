@@ -561,6 +561,7 @@ async fn lifecycle_generation_binding_fails_closed_and_snapshot_repairs_tampered
         .await
         .unwrap();
 
+    registry.snapshot().await.unwrap();
     let snapshot_path = registry.paths().registry_snapshot_path();
     let mut snapshot: serde_json::Value =
         serde_json::from_slice(&fs::read(&snapshot_path).await.unwrap()).unwrap();
@@ -619,6 +620,7 @@ async fn lifecycle_commit_repairs_crashes_after_root_or_receipt_commit() {
 
     // Model a second crash after receipt replacement but before snapshot
     // publication. Replaying the same checkpoint repairs only the projection.
+    registry.snapshot().await.unwrap();
     let snapshot_path = registry.paths().registry_snapshot_path();
     let mut snapshot: serde_json::Value =
         serde_json::from_slice(&fs::read(&snapshot_path).await.unwrap()).unwrap();
@@ -817,6 +819,108 @@ async fn lifecycle_upgrade_candidate_can_roll_back_before_capability_cutover() {
         registry.snapshot().await.unwrap().routes[0].lifecycle_generation,
         Some(21)
     );
+}
+
+#[tokio::test]
+async fn lifecycle_graph_rollback_atomically_restores_replacements_and_discards_additions() {
+    let temp = tempfile::tempdir().unwrap();
+    let root_source = temp.path().join("root");
+    let added_source = temp.path().join("added");
+    cognitive_package_with_dependencies(&root_source, "acme/root", "root", &[]).await;
+    cognitive_package_with_dependencies(&added_source, "acme/added", "added", &[]).await;
+    let root = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/root",
+        &root_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let added = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/added",
+        &added_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let prior = lifecycle_identity(&root, 41);
+    let replacement = lifecycle_identity(&root, 42);
+    let addition = lifecycle_identity(&added, 43);
+    let registry = registry(temp.path());
+    registry
+        .commit_lifecycle_package(&prior, &root)
+        .await
+        .unwrap();
+    registry
+        .publish_lifecycle_package_for_host_version(&prior, "0.3.0")
+        .await
+        .unwrap();
+    let published_before = registry.snapshot().await.unwrap();
+
+    registry
+        .commit_lifecycle_package(&replacement, &root)
+        .await
+        .unwrap();
+    registry
+        .commit_lifecycle_package(&addition, &added)
+        .await
+        .unwrap();
+    let staged = registry.snapshot().await.unwrap();
+    assert_eq!(staged, published_before);
+    assert_eq!(staged.routes.len(), 1);
+    assert_eq!(staged.routes[0].lifecycle_generation, Some(41));
+
+    let results = registry
+        .rollback_lifecycle_package_graph(
+            &[addition.clone(), replacement.clone()],
+            std::slice::from_ref(&prior),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result.package_id.as_str())
+            .collect::<Vec<_>>(),
+        ["acme/added", "acme/root"]
+    );
+    assert!(results.iter().all(|result| result.changed));
+    let restored = registry.snapshot().await.unwrap();
+    assert_eq!(restored.routes.len(), 1);
+    assert_eq!(restored.routes[0].lifecycle_generation, Some(41));
+    assert!(restored.routes[0].enabled);
+    assert_eq!(
+        registry
+            .get("acme/root")
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt
+            .lifecycle_generation,
+        Some(41)
+    );
+    assert!(registry.get("acme/added").await.unwrap().is_none());
+    assert!(registry
+        .get_lifecycle_generation(&replacement)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(!registry.lifecycle_package_root(&replacement).exists());
+    assert!(!registry.lifecycle_package_root(&addition).exists());
+
+    let replay = registry
+        .rollback_lifecycle_package_graph(
+            &[addition.clone(), replacement.clone()],
+            std::slice::from_ref(&prior),
+        )
+        .await
+        .unwrap();
+    assert!(replay.iter().all(|result| !result.changed));
+    assert!(replay
+        .iter()
+        .all(|result| result.registry_generation == restored.generation));
+    assert_eq!(registry.snapshot().await.unwrap(), restored);
 }
 
 #[tokio::test]

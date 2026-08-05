@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{UseError, UseResult};
@@ -5,7 +6,7 @@ use tokio::fs;
 
 use super::{
     exact_receipt, lifecycle_identity_error, lifecycle_root, lifecycle_state_error,
-    ExtensionLifecycleIdentity, ExtensionLifecycleResult,
+    ExtensionLifecycleIdentity, ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
 };
 use crate::package::{io_error, sync_parent_directory, write_receipt};
 use crate::registry::{
@@ -19,6 +20,202 @@ const MAX_RETAINED_RECEIPT_ENTRIES: usize = 64;
 const MAX_RETAINED_RECEIPT_BYTES: u64 = 1024 * 1024;
 
 impl ExtensionRegistry {
+    /// Restore all exact prior receipts and discard every unpublished graph
+    /// candidate through one Registry snapshot update. Replacements list a
+    /// prior identity; additions intentionally do not.
+    pub async fn rollback_lifecycle_package_graph(
+        &self,
+        candidates: &[ExtensionLifecycleIdentity],
+        priors: &[ExtensionLifecycleIdentity],
+    ) -> UseResult<Vec<ExtensionLifecycleRollbackResult>> {
+        if candidates.is_empty() || candidates.len() > a3s_use_core::MAX_PLUGIN_PLAN_ITEMS {
+            return Err(lifecycle_identity_error(
+                "A lifecycle graph rollback requires a bounded non-empty candidate set.",
+            ));
+        }
+        let candidate_ids = candidates
+            .iter()
+            .map(ExtensionLifecycleIdentity::package_id)
+            .collect::<BTreeSet<_>>();
+        let prior_by_package = priors
+            .iter()
+            .map(|prior| (prior.package_id(), prior))
+            .collect::<BTreeMap<_, _>>();
+        if candidate_ids.len() != candidates.len()
+            || prior_by_package.len() != priors.len()
+            || prior_by_package.iter().any(|(package_id, prior)| {
+                !candidate_ids.contains(package_id)
+                    || candidates.iter().any(|candidate| {
+                        candidate.package_id() == *package_id
+                            && candidate.generation() <= prior.generation()
+                    })
+            })
+        {
+            return Err(lifecycle_identity_error(
+                "A lifecycle graph rollback contains duplicate or inconsistent generation identities.",
+            ));
+        }
+
+        let _lock = crate::package::RegistryLock::acquire(&self.paths().registry_lock_path())?;
+        let snapshot_before =
+            crate::registry_io::read_registry_snapshot(&self.paths().registry_snapshot_path())
+                .await?;
+        let mut changed = candidates
+            .iter()
+            .map(|candidate| (candidate.package_id(), false))
+            .collect::<BTreeMap<_, _>>();
+        let mut mutations = Vec::new();
+
+        for candidate in candidates {
+            if snapshot_before.routes.iter().any(|binding| {
+                binding.enabled && binding_matches_identity(self.paths(), binding, candidate)
+            }) {
+                return Err(lifecycle_state_error(
+                    "A published lifecycle candidate cannot use pre-cutover graph rollback.",
+                ));
+            }
+            let selected = self.get(candidate.package_id()).await?;
+            match prior_by_package.get(candidate.package_id()).copied() {
+                Some(prior) => {
+                    if !snapshot_before.routes.iter().any(|binding| {
+                        binding.enabled && binding_matches_identity(self.paths(), binding, prior)
+                    }) {
+                        return Err(lifecycle_state_error(
+                            "The exact prior graph is no longer the Registry snapshot commit point.",
+                        ));
+                    }
+                    match selected {
+                        Some(extension) if exact_receipt(candidate, &extension.receipt).is_ok() => {
+                            let prior_extension = self
+                                .get_lifecycle_generation(prior)
+                                .await?
+                                .ok_or_else(|| {
+                                    lifecycle_state_error(
+                                        "A prior lifecycle receipt is missing during graph rollback.",
+                                    )
+                                })?;
+                            mutations.push((
+                                candidate,
+                                extension.receipt,
+                                Some(prior_extension.receipt),
+                            ));
+                        }
+                        Some(extension) if exact_receipt(prior, &extension.receipt).is_ok() => {}
+                        _ => {
+                            return Err(lifecycle_state_error(
+                                "A replacement receipt is neither its candidate nor exact prior generation.",
+                            ))
+                        }
+                    }
+                }
+                None => {
+                    match selected {
+                        Some(extension) if exact_receipt(candidate, &extension.receipt).is_ok() => {
+                            if extension.receipt.enabled {
+                                return Err(lifecycle_state_error(
+                                    "An added candidate became enabled before graph rollback.",
+                                ));
+                            }
+                            mutations.push((candidate, extension.receipt, None));
+                        }
+                        None => {}
+                        _ => return Err(lifecycle_state_error(
+                            "An added graph candidate conflicts with another selected generation.",
+                        )),
+                    }
+                }
+            }
+        }
+
+        let mutation_result: UseResult<()> = async {
+            for (candidate, _, replacement) in &mutations {
+                let receipt_path = self.paths().receipt_path(candidate.package_id());
+                if let Some(replacement) = replacement {
+                    write_receipt(&receipt_path, replacement).await?;
+                } else {
+                    fs::remove_file(&receipt_path).await.map_err(|error| {
+                        io_error("remove graph candidate receipt", &receipt_path, error)
+                    })?;
+                    sync_parent_directory(
+                        receipt_path.parent().ok_or_else(path_identity_error)?,
+                        "graph candidate receipt",
+                    )
+                    .await?;
+                }
+            }
+            Ok(())
+        }
+        .await;
+        if let Err(error) = mutation_result {
+            for (_, original, _) in mutations.iter().rev() {
+                write_receipt(&self.paths().receipt_path(&original.package_id), original).await?;
+            }
+            return Err(error);
+        }
+        for (candidate, _, _) in &mutations {
+            changed.insert(candidate.package_id(), true);
+        }
+
+        let installed = match self.list().await {
+            Ok(installed) => installed,
+            Err(error) => {
+                for (_, original, _) in mutations.iter().rev() {
+                    write_receipt(&self.paths().receipt_path(&original.package_id), original)
+                        .await?;
+                }
+                return Err(error);
+            }
+        };
+        let snapshot = match self.publish_snapshot_locked(&installed).await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                for (_, original, _) in mutations.iter().rev() {
+                    write_receipt(&self.paths().receipt_path(&original.package_id), original)
+                        .await?;
+                }
+                return Err(error);
+            }
+        };
+        for candidate in candidates {
+            if snapshot
+                .routes
+                .iter()
+                .any(|binding| binding_matches_identity(self.paths(), binding, candidate))
+            {
+                return Err(lifecycle_state_error(
+                    "A discarded graph candidate remains in the Registry snapshot.",
+                ));
+            }
+            if let Some(prior) = prior_by_package.get(candidate.package_id()).copied() {
+                if !snapshot.routes.iter().any(|binding| {
+                    binding.enabled && binding_matches_identity(self.paths(), binding, prior)
+                }) {
+                    return Err(lifecycle_state_error(
+                        "Graph rollback did not restore an exact prior snapshot route.",
+                    ));
+                }
+                if self.remove_retained_receipt(prior).await? {
+                    changed.insert(candidate.package_id(), true);
+                }
+            }
+            if super::remove_exact_root(&self.lifecycle_package_root(candidate)).await? {
+                changed.insert(candidate.package_id(), true);
+            }
+        }
+
+        Ok(candidates
+            .iter()
+            .map(|candidate| ExtensionLifecycleRollbackResult {
+                package_id: candidate.package_id().to_string(),
+                changed: changed
+                    .get(candidate.package_id())
+                    .copied()
+                    .unwrap_or(false),
+                registry_generation: snapshot.generation,
+            })
+            .collect())
+    }
+
     /// Load one exact active or retained package generation.
     ///
     /// The primary receipt is the current candidate/selected generation. A

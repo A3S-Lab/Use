@@ -24,7 +24,7 @@ pub use coordinator::{
 };
 pub use graph::{
     PluginGraphCapabilityLifecycleHost, PluginPackageGraphLifecycleCoordinator,
-    PluginPackageLifecycleUnit, PluginPackagePublicationEvidence,
+    PluginPackageLifecycleUnit, PluginPackagePublicationEvidence, PluginPackageRollbackEvidence,
 };
 pub use journal::{
     PluginLifecycleCheckpointOutcome, PluginLifecycleCheckpointReceipt, PluginLifecycleFailure,

@@ -30,6 +30,13 @@ const MANIFEST: &str =
 #[derive(Default)]
 struct RecordingHost {
     calls: Mutex<Vec<String>>,
+    fail_once: Mutex<Option<String>>,
+    publication_fault: Mutex<Option<PublicationFault>>,
+}
+
+#[derive(Clone, Copy)]
+enum PublicationFault {
+    ReverseEvidence,
 }
 
 impl RecordingHost {
@@ -39,10 +46,16 @@ impl RecordingHost {
         intent: &PluginLifecycleIntent,
         key: &str,
     ) -> UseResult<PluginLifecycleEvidence> {
-        self.calls
-            .lock()
-            .await
-            .push(format!("{}:{label}", intent.package_id));
+        let call = format!("{}:{label}", intent.package_id);
+        self.calls.lock().await.push(call.clone());
+        let mut failure = self.fail_once.lock().await;
+        if failure.as_deref() == Some(&call) {
+            *failure = None;
+            return Err(UseError::new(
+                "use.plugin.test_injected_failure",
+                "The lifecycle test host injected a candidate preparation failure.",
+            ));
+        }
         PluginLifecycleEvidence::new(format!(
             "sha256:{:x}",
             Sha256::digest(format!("{}\n{label}\n{key}", intent.package_id).as_bytes())
@@ -280,7 +293,7 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
                 .collect::<Vec<_>>()
                 .join(",")
         ));
-        intents
+        let mut evidence = intents
             .iter()
             .map(|intent| {
                 let evidence = PluginLifecycleEvidence::new(format!(
@@ -289,7 +302,45 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
                 ))?;
                 PluginPackagePublicationEvidence::new(&intent.package_id, evidence)
             })
-            .collect()
+            .collect::<UseResult<Vec<_>>>()?;
+        if matches!(
+            self.publication_fault.lock().await.take(),
+            Some(PublicationFault::ReverseEvidence)
+        ) {
+            evidence.reverse();
+        }
+        Ok(evidence)
+    }
+
+    async fn rollback_candidates(
+        &self,
+        candidate_lock: &a3s_use_core::PluginPackageLock,
+        intents: &[PluginLifecycleIntent],
+        _prior_intents: &[PluginLifecycleIntent],
+        key: &str,
+    ) -> UseResult<Vec<PluginPackageRollbackEvidence>> {
+        let by_package = intents
+            .iter()
+            .map(|intent| (intent.package_id.as_str(), intent))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut evidence = Vec::new();
+        for package in candidate_lock.removal_order()? {
+            let Some(intent) = by_package.get(package.package_id()).copied() else {
+                continue;
+            };
+            self.calls
+                .lock()
+                .await
+                .push(format!("{}:candidate-rollback", intent.package_id));
+            evidence.push(PluginPackageRollbackEvidence::new(
+                &intent.package_id,
+                PluginLifecycleEvidence::new(format!(
+                    "sha256:{:x}",
+                    Sha256::digest(format!("{}\n{key}\nrollback", intent.package_id).as_bytes())
+                ))?,
+            )?);
+        }
+        Ok(evidence)
     }
 }
 
@@ -306,16 +357,26 @@ fn catalog(
     dependencies: Vec<PluginPackageDependency>,
     seed: char,
 ) -> VerifiedPluginCatalogRecord {
+    catalog_version(package_id, dependencies, "1.0.0", seed)
+}
+
+fn catalog_version(
+    package_id: &str,
+    dependencies: Vec<PluginPackageDependency>,
+    version: &str,
+    seed: char,
+) -> VerifiedPluginCatalogRecord {
     let mut record = PluginCatalogRecord::from_json(CATALOG).unwrap();
     let (publisher, name) = package_id.split_once('/').unwrap();
     record.package_id = package_id.to_string();
     record.publisher = publisher.to_string();
     record.display_name = format!("{publisher} {name}");
     record.description = format!("Graph fixture for {package_id}.");
+    record.version = version.to_string();
     record.dependencies = dependencies;
     record.repository = format!("https://github.com/{publisher}/{name}");
     record.archive.target_name = format!(
-        "extensions/{package_id}/1.0.0/stable/linux-x86_64/{publisher}-{name}-1.0.0.tar.gz"
+        "extensions/{package_id}/{version}/stable/linux-x86_64/{publisher}-{name}-{version}.tar.gz"
     );
     record.archive.sha256 = digest(seed);
     record.package.sha256 = Some(digest(seed));
@@ -340,11 +401,25 @@ fn catalog(
 }
 
 fn manifest(package_id: &str, dependency: Option<&str>) -> ExtensionManifest {
+    manifest_version(package_id, dependency, "1.0.0")
+}
+
+fn manifest_version(
+    package_id: &str,
+    dependency: Option<&str>,
+    version: &str,
+) -> ExtensionManifest {
     let name = package_id.split_once('/').unwrap().1;
-    let mut input = MANIFEST.replace("acme/knowledge", package_id).replace(
-        "route          = \"knowledge\"",
-        &format!("route          = \"{name}\""),
-    );
+    let mut input = MANIFEST
+        .replace("acme/knowledge", package_id)
+        .replace(
+            "route          = \"knowledge\"",
+            &format!("route          = \"{name}\""),
+        )
+        .replace(
+            "version        = \"1.0.0\"",
+            &format!("version        = \"{version}\""),
+        );
     if let Some(dependency) = dependency {
         input = input.replace(
             "  repository {",
@@ -513,6 +588,180 @@ fn install_graph_fixture(retain_base: bool) -> InstallGraphFixture {
     }
 }
 
+struct UpgradeGraphFixture {
+    _temp: tempfile::TempDir,
+    envelope: PluginOperationPlanEnvelope,
+    prior_lock: a3s_use_core::PluginPackageLock,
+    candidates: Vec<PluginPackageLifecycleUnit>,
+    retirements: Vec<PluginPackageLifecycleUnit>,
+    host: Arc<RecordingHost>,
+}
+
+fn upgrade_graph_fixture() -> UpgradeGraphFixture {
+    let old_root = catalog_version("acme/root", vec![dependency("acme/base")], "1.0.0", 'c');
+    let old_base = catalog_version("acme/base", Vec::new(), "1.0.0", 'd');
+    let prior_lock =
+        PluginPackageResolver::new(PluginPackageLockHost::new("linux-x86_64", "0.3.0").unwrap())
+            .resolve(old_root, vec![old_base])
+            .unwrap();
+    let next_root = catalog_version("acme/root", vec![dependency("acme/base")], "1.1.0", 'a');
+    let next_base = catalog_version("acme/base", Vec::new(), "1.1.0", 'b');
+    let next_lock =
+        PluginPackageResolver::new(PluginPackageLockHost::new("linux-x86_64", "0.3.0").unwrap())
+            .resolve(next_root, vec![next_base])
+            .unwrap();
+    let mut transitions = next_lock
+        .packages
+        .iter()
+        .map(|package| {
+            let prior = prior_lock.package(package.package_id()).unwrap();
+            let role = if package.package_id() == next_lock.root_package_id {
+                PlanPackageRole::Root
+            } else {
+                PlanPackageRole::Dependency
+            };
+            package
+                .catalog
+                .replace_transition(&prior.catalog, role, &[], &[])
+        })
+        .collect::<UseResult<Vec<_>>>()
+        .unwrap();
+    transitions.sort_by(|left, right| left.package_id.cmp(&right.package_id));
+    let plan = PluginOperationPlanDraft::new(
+        PluginOperationAction::Upgrade,
+        "acme/root",
+        "runtime:local",
+        transitions,
+        Vec::new(),
+        Vec::new(),
+        PlannedOperationImpact {
+            download_bytes: next_lock
+                .packages
+                .iter()
+                .map(|package| package.catalog.record.archive.length)
+                .sum(),
+            installed_bytes_after: next_lock
+                .packages
+                .iter()
+                .map(|package| package.catalog.record.package.expanded_bytes)
+                .sum(),
+            reclaimed_bytes: 1,
+            drain_required: false,
+            retained_data: false,
+            okf_changes: Vec::new(),
+        },
+        PlannedStateEvidence {
+            state_revision: 2,
+            capability_generation: 2,
+            receipt_digest: Some(digest('8')),
+        },
+    )
+    .unwrap()
+    .bind(PluginOperationPlanBinding {
+        operation_id: "upgrade:acme-root:graph-2".to_string(),
+        created_at_ms: 1,
+        expires_at_ms: 2,
+        scope: PlanScope {
+            kind: PlanScopeKind::User,
+            id: "current".to_string(),
+        },
+        authority: PlanAuthority {
+            actor: PlanActor::User,
+            decision: PlanPolicyDecision::Ask,
+            policy_digest: digest('9'),
+            confirmation_required: true,
+        },
+    })
+    .unwrap();
+    let envelope =
+        PluginOperationPlanEnvelope::new_with_package_lock(plan, next_lock.clone()).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let host = Arc::new(RecordingHost::default());
+    let package_root = |package_id: &str| temp.path().join(package_id.replace('/', "-"));
+    let candidates = next_lock
+        .install_order()
+        .unwrap()
+        .into_iter()
+        .enumerate()
+        .map(|(index, package)| {
+            let dependency = (package.package_id() == "acme/root").then_some("acme/base");
+            let manifest = manifest_version(package.package_id(), dependency, "1.1.0");
+            let transition = envelope
+                .plan
+                .packages
+                .iter()
+                .find(|transition| transition.package_id == package.package_id())
+                .unwrap();
+            let state = transition.after.as_ref().unwrap();
+            let intent = PluginLifecycleIntent::from_manifest(
+                PluginLifecycleIntentSpec {
+                    operation_id: envelope.plan.operation_id.clone(),
+                    plan_digest: envelope.plan_digest.clone(),
+                    scope_id: envelope.plan.scope.id.clone(),
+                    package_id: package.package_id().to_string(),
+                    package_digest: state.release.package_sha256.clone(),
+                    manifest_digest: state.release.manifest_sha256.clone(),
+                    generation: index as u64 + 11,
+                    action: PluginLifecycleAction::Upgrade,
+                },
+                &manifest,
+            )
+            .unwrap();
+            PluginPackageLifecycleUnit::new(
+                coordinator(&package_root(package.package_id()), host.clone()),
+                intent,
+                manifest,
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let retirements = prior_lock
+        .removal_order()
+        .unwrap()
+        .into_iter()
+        .enumerate()
+        .map(|(index, package)| {
+            let dependency = (package.package_id() == "acme/root").then_some("acme/base");
+            let manifest = manifest_version(package.package_id(), dependency, "1.0.0");
+            let transition = envelope
+                .plan
+                .packages
+                .iter()
+                .find(|transition| transition.package_id == package.package_id())
+                .unwrap();
+            let state = transition.before.as_ref().unwrap();
+            let intent = PluginLifecycleIntent::from_manifest(
+                PluginLifecycleIntentSpec {
+                    operation_id: envelope.plan.operation_id.clone(),
+                    plan_digest: envelope.plan_digest.clone(),
+                    scope_id: envelope.plan.scope.id.clone(),
+                    package_id: package.package_id().to_string(),
+                    package_digest: state.release.package_sha256.clone(),
+                    manifest_digest: state.release.manifest_sha256.clone(),
+                    generation: 2_u64.saturating_sub(index as u64),
+                    action: PluginLifecycleAction::Uninstall,
+                },
+                &manifest,
+            )
+            .unwrap();
+            PluginPackageLifecycleUnit::new(
+                coordinator(&package_root(package.package_id()), host.clone()),
+                intent,
+                manifest,
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    UpgradeGraphFixture {
+        _temp: temp,
+        envelope,
+        prior_lock,
+        candidates,
+        retirements,
+        host,
+    }
+}
+
 #[tokio::test]
 async fn dependency_closure_prepares_forward_then_publishes_once() {
     let fixture = install_graph_fixture(false);
@@ -560,3 +809,42 @@ async fn dependency_closure_reuses_a_reviewed_retained_dependency() {
         ]
     );
 }
+
+#[tokio::test]
+async fn publication_identity_mismatch_stays_replayable_without_repreparing_packages() {
+    let fixture = install_graph_fixture(false);
+    *fixture.host.publication_fault.lock().await = Some(PublicationFault::ReverseEvidence);
+    let graph = PluginPackageGraphLifecycleCoordinator::new(fixture.host.clone());
+
+    let error = graph
+        .apply_install(&fixture.envelope, &fixture.units, || 1)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.package_graph_invalid");
+    assert!(error.message.contains("order or identity"));
+
+    let records = graph
+        .apply_install(&fixture.envelope, &fixture.units, || 2)
+        .await
+        .unwrap();
+    assert!(records
+        .iter()
+        .all(|record| record.status == PluginLifecycleOperationStatus::Completed));
+    let calls = fixture.host.calls.lock().await;
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| call.as_str() == "batch:acme/base,acme/root")
+            .count(),
+        2
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| call.ends_with(":commit"))
+            .count(),
+        2
+    );
+}
+
+mod upgrade;

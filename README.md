@@ -44,9 +44,12 @@ available for automation, embedding, and diagnostics.
 > TypeScript host. CLI, TUI, and Web resolve the same strict `flow.json`
 > identity and share workspace-local durable execution/history; Web verifies
 > install, run, exact-generation upgrade, uninstall, and process-restart
-> recovery. Production Knowledge, Service/HTTP hosts, distributed Flow
-> scheduling/resumption, graph-coordinated automatic rollback/retirement/GC,
-> and complete real-process cross-platform E2E remain release gates.
+> recovery. Dependency-graph upgrade now stages Add/Replace candidates
+> dependency-first, cuts over once, automatically rolls back before cutover,
+> retires replaced generations in reverse order, and resumes either path after
+> a crash. Production Knowledge, Service/HTTP hosts, grant composition,
+> dependency-removal graph GC, distributed Flow scheduling/resumption, and
+> complete real-process cross-platform E2E remain release gates.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 ## Proof in the codebase
@@ -116,6 +119,12 @@ a3s-use install acme/research \
   --registry-url https://packages.example.org/a3s/ \
   --trust-root sha256:<64-hex-digits> \
   --version 2.0.0 \
+  --json
+
+a3s-use upgrade acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
   --json
 
 a3s-use uninstall acme/research --json
@@ -408,10 +417,15 @@ a3s-use extension enable acme/calendar --json
 a3s-use component uninstall calendar --json
 ```
 
-Production grant/Knowledge/Service/Gateway composition and the graph-level
-upgrade/rollback/garbage-collection coordinator are still being wired. The
-storage layer already preserves exact package and Runtime generations across
-candidate preparation, cutover, drain, rollback, and receipt-owned removal.
+The graph coordinator now resolves exact Add/Replace/Retain transitions,
+prepares candidates dependency-first, publishes the changed closure once,
+automatically restores the prior graph after a pre-cutover failure, and retires
+replaced generations in reverse order with durable crash replay. Upgrades that
+remove dependency nodes fail closed until a separately reviewed graph-GC
+operation exists. Production grant/Knowledge/Service/Gateway composition is
+still being wired. The storage layer preserves exact package and Runtime
+generations across candidate preparation, cutover, drain, rollback, and
+receipt-owned removal.
 Required surfaces fail closed when their owning adapter is absent: Runtime
 Service and HTTP MCP need Runtime/Gateway, OKF needs Knowledge, and Flow needs
 the `a3s-flow` lifecycle host. No path silently falls back to a different
@@ -458,7 +472,7 @@ do not share one database transaction. The boundaries are frozen in
 | --- | --- |
 | Native package foundation | Available: bounded local/archive install, release bundles, TUF targets, receipts, atomic schema-v1/v2 lifecycle, snapshots, and watch |
 | Schema-v3 package format | Implemented: Tool, MCP, OKF, A3S Flow, Skill, UI, required README, typed dependencies, and readiness graph |
-| Dependency graph install | Available for signed remote packages: deterministic resolve, exact lock, forward install, shared retention, one publication, reverse uninstall, and replay |
+| Dependency graph lifecycle | Available for signed remote packages: deterministic resolve, exact prior/candidate locks, forward install and upgrade preparation, shared retention, one publication, automatic pre-cutover rollback, reverse retirement/uninstall, and replay; dependency-removal GC remains pending |
 | Replaceable Registry input | Available in the package engine; host-selected URL/trust root and bounded dependency source set, with no compiled endpoint |
 | Umbrella Registry management | Available: add/list/show/refresh, stable-name replace, enable/disable, and remove; disabled sources stay visible but are excluded from browsing and resolution |
 | Tool/MCP runtime lifecycle | Typed adapters plus bounded exact-generation N/N+1 Runtime binding storage and observation implemented; standalone supports executable Tool Tasks and stdio MCP, while Services/HTTP require injected providers |
@@ -468,7 +482,7 @@ do not share one database transaction. The boundaries are frozen in
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
-| Upgrade/rollback | Package and Runtime N/N+1 retention, snapshot-selected routing, pre-cutover rollback, exact drain/removal, and crash replay implemented; graph-coordinated automatic rollback, retirement, and garbage collection remain release gates |
+| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Retain planning, package and Runtime N/N+1 retention, one graph cutover, automatic pre-cutover rollback, reverse prior-generation retirement, exact drain/removal, and crash replay implemented; dependency-removal graph GC and production provider/grant composition remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,
 Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages

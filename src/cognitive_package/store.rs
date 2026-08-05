@@ -8,9 +8,10 @@ use a3s_use_core::{
     PlanPackageChangeKind, PluginOperationAction, PluginOperationPlanEnvelope, PluginPackageId,
     PluginPackageLock, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS,
 };
-use a3s_use_extension::ExtensionManifest;
+use a3s_use_extension::{validate_catalog_manifest_binding, ExtensionManifest};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
@@ -63,6 +64,15 @@ pub(super) struct PendingPackageGraphOperation {
     pub admitted_at_ms: u64,
     pub generations: BTreeMap<String, u64>,
     pub manifests: BTreeMap<String, ExtensionManifest>,
+    pub manifest_digests: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prior_package_lock: Option<PluginPackageLock>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub prior_generations: BTreeMap<String, u64>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub prior_manifests: BTreeMap<String, ExtensionManifest>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub prior_manifest_digests: BTreeMap<String, String>,
 }
 
 impl PendingPackageGraphOperation {
@@ -72,12 +82,46 @@ impl PendingPackageGraphOperation {
         generations: BTreeMap<String, u64>,
         manifests: BTreeMap<String, ExtensionManifest>,
     ) -> UseResult<Self> {
+        let manifest_digests = manifest_record_digests(&manifests)?;
         let operation = Self {
             schema: PENDING_GRAPH_SCHEMA.to_string(),
             envelope,
             admitted_at_ms,
             generations,
             manifests,
+            manifest_digests,
+            prior_package_lock: None,
+            prior_generations: BTreeMap::new(),
+            prior_manifests: BTreeMap::new(),
+            prior_manifest_digests: BTreeMap::new(),
+        };
+        operation.validate()?;
+        Ok(operation)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_upgrade(
+        envelope: PluginOperationPlanEnvelope,
+        admitted_at_ms: u64,
+        generations: BTreeMap<String, u64>,
+        manifests: BTreeMap<String, ExtensionManifest>,
+        prior_package_lock: PluginPackageLock,
+        prior_generations: BTreeMap<String, u64>,
+        prior_manifests: BTreeMap<String, ExtensionManifest>,
+    ) -> UseResult<Self> {
+        let manifest_digests = manifest_record_digests(&manifests)?;
+        let prior_manifest_digests = manifest_record_digests(&prior_manifests)?;
+        let operation = Self {
+            schema: PENDING_GRAPH_SCHEMA.to_string(),
+            envelope,
+            admitted_at_ms,
+            generations,
+            manifests,
+            manifest_digests,
+            prior_package_lock: Some(prior_package_lock),
+            prior_generations,
+            prior_manifests,
+            prior_manifest_digests,
         };
         operation.validate()?;
         Ok(operation)
@@ -96,7 +140,14 @@ impl PendingPackageGraphOperation {
             .plan
             .packages
             .iter()
-            .filter(|package| package.change != PlanPackageChangeKind::Retain)
+            .filter(|package| match self.envelope.plan.action {
+                PluginOperationAction::Install => package.change == PlanPackageChangeKind::Add,
+                PluginOperationAction::Upgrade => matches!(
+                    package.change,
+                    PlanPackageChangeKind::Add | PlanPackageChangeKind::Replace
+                ),
+                PluginOperationAction::Uninstall => package.change == PlanPackageChangeKind::Remove,
+            })
             .map(|package| package.package_id.as_str())
             .collect::<std::collections::BTreeSet<_>>();
         let generations = self
@@ -112,10 +163,84 @@ impl PendingPackageGraphOperation {
                     .then_some(package_id.as_str())
             })
             .collect::<std::collections::BTreeSet<_>>();
+        let replaced = self
+            .envelope
+            .plan
+            .packages
+            .iter()
+            .filter(|package| package.change == PlanPackageChangeKind::Replace)
+            .map(|package| package.package_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let prior_generations = self
+            .prior_generations
+            .iter()
+            .filter_map(|(package_id, generation)| (*generation > 0).then_some(package_id.as_str()))
+            .collect::<std::collections::BTreeSet<_>>();
+        let prior_manifests = self
+            .prior_manifests
+            .iter()
+            .filter_map(|(package_id, manifest)| {
+                (manifest.schema_version == 3 && manifest.package_id == *package_id)
+                    .then_some(package_id.as_str())
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let upgrade_evidence_valid = match self.envelope.plan.action {
+            PluginOperationAction::Upgrade => {
+                self.prior_package_lock.as_ref().is_some_and(|prior| {
+                    prior.validate().is_ok()
+                        && self
+                            .envelope
+                            .package_lock
+                            .as_ref()
+                            .is_some_and(|candidate| {
+                                prior.root_package_id == candidate.root_package_id
+                                    && prior.host == candidate.host
+                            })
+                        && replaced == prior_generations
+                        && replaced == prior_manifests
+                })
+            }
+            _ => {
+                self.prior_package_lock.is_none()
+                    && self.prior_generations.is_empty()
+                    && self.prior_manifests.is_empty()
+                    && replaced.is_empty()
+            }
+        };
+        let candidate_manifests_valid = self
+            .envelope
+            .package_lock
+            .as_ref()
+            .is_some_and(|lock| manifests_match_lock(&self.manifests, lock));
+        let prior_manifests_valid = self
+            .prior_package_lock
+            .as_ref()
+            .map_or(self.prior_manifests.is_empty(), |lock| {
+                manifests_match_lock(&self.prior_manifests, lock)
+            });
+        let replacement_generations_advance = replaced.iter().all(|package_id| {
+            self.generations
+                .get(*package_id)
+                .zip(self.prior_generations.get(*package_id))
+                .is_some_and(|(candidate, prior)| candidate > prior)
+        });
+        let manifest_digests_valid = manifest_record_digests(&self.manifests)
+            .is_ok_and(|digests| digests == self.manifest_digests);
+        let prior_manifest_digests_valid = manifest_record_digests(&self.prior_manifests)
+            .is_ok_and(|digests| digests == self.prior_manifest_digests);
         if self.schema != PENDING_GRAPH_SCHEMA
             || changed != generations
             || changed != manifests
+            || !upgrade_evidence_valid
+            || !candidate_manifests_valid
+            || !prior_manifests_valid
+            || !replacement_generations_advance
+            || !manifest_digests_valid
+            || !prior_manifest_digests_valid
             || self.generations.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self.prior_generations.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self.manifest_digests.len() > MAX_PLUGIN_PLAN_ITEMS
+            || self.prior_manifest_digests.len() > MAX_PLUGIN_PLAN_ITEMS
         {
             return Err(store_error(
                 "A pending cognitive-package graph operation is invalid.",
@@ -131,6 +256,33 @@ impl PendingPackageGraphOperation {
     pub fn root_package_id(&self) -> &str {
         &self.envelope.plan.package_id
     }
+}
+
+fn manifests_match_lock(
+    manifests: &BTreeMap<String, ExtensionManifest>,
+    package_lock: &PluginPackageLock,
+) -> bool {
+    manifests.iter().all(|(package_id, manifest)| {
+        package_lock.package(package_id).is_some_and(|package| {
+            validate_catalog_manifest_binding(&package.catalog.record, manifest).is_ok()
+        })
+    })
+}
+
+fn manifest_record_digests(
+    manifests: &BTreeMap<String, ExtensionManifest>,
+) -> UseResult<BTreeMap<String, String>> {
+    manifests
+        .iter()
+        .map(|(package_id, manifest)| {
+            let bytes = serde_json::to_vec(manifest)
+                .map_err(|_| store_error("Failed to encode a pending package manifest."))?;
+            Ok((
+                package_id.clone(),
+                format!("sha256:{:x}", Sha256::digest(bytes)),
+            ))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -191,6 +343,45 @@ impl InstalledPackageGraphStore {
             }
         }
         Ok(value)
+    }
+
+    pub async fn replace(
+        &self,
+        root_package_id: &str,
+        expected_digest: &str,
+        replacement: &PluginPackageLock,
+        installed_at_ms: u64,
+    ) -> UseResult<bool> {
+        if replacement.root_package_id != root_package_id {
+            return Err(store_error(
+                "A replacement graph does not own the requested root package.",
+            ));
+        }
+        let record = InstalledPackageGraph::new(replacement.clone(), installed_at_ms)?;
+        let _guard = acquire_lock(&self.state_root).await?;
+        let path = package_record_path(&self.root, root_package_id)?;
+        let parent = path.parent().ok_or_else(path_identity_error)?;
+        if !validate_existing_directory_chain(&self.state_root, parent).await? {
+            return Err(store_error(
+                "The installed package graph disappeared before replacement.",
+            ));
+        }
+        let current = read_optional::<InstalledPackageGraph>(&path)
+            .await?
+            .ok_or_else(|| {
+                store_error("The installed package graph disappeared before replacement.")
+            })?;
+        current.validate()?;
+        if current.package_lock == record.package_lock {
+            return Ok(false);
+        }
+        if current.package_lock_digest != expected_digest {
+            return Err(store_error(
+                "The installed package graph changed before replacement.",
+            ));
+        }
+        write_new(&self.state_root, &path, &record).await?;
+        Ok(true)
     }
 
     pub async fn list(&self) -> UseResult<Vec<InstalledPackageGraph>> {
@@ -315,15 +506,25 @@ impl PendingPackageGraphStore {
     pub async fn put(&self, value: &PendingPackageGraphOperation) -> UseResult<bool> {
         value.validate()?;
         let _guard = acquire_lock(&self.state_root).await?;
-        let path = pending_record_path(&self.root, value.action(), value.root_package_id())?;
-        let parent = path.parent().ok_or_else(path_identity_error)?;
-        let current = if validate_existing_directory_chain(&self.state_root, parent).await? {
-            read_optional::<PendingPackageGraphOperation>(&path).await?
-        } else {
-            None
-        };
-        if let Some(current) = current {
+        for action in [
+            PluginOperationAction::Install,
+            PluginOperationAction::Upgrade,
+            PluginOperationAction::Uninstall,
+        ] {
+            let path = pending_record_path(&self.root, action, value.root_package_id())?;
+            let parent = path.parent().ok_or_else(path_identity_error)?;
+            if !validate_existing_directory_chain(&self.state_root, parent).await? {
+                continue;
+            }
+            let Some(current) = read_optional::<PendingPackageGraphOperation>(&path).await? else {
+                continue;
+            };
             current.validate()?;
+            if current.action() != action || current.root_package_id() != value.root_package_id() {
+                return Err(store_error(
+                    "A pending graph operation does not match its owned path.",
+                ));
+            }
             if current == *value {
                 return Ok(false);
             }
@@ -331,11 +532,12 @@ impl PendingPackageGraphStore {
                 "use.plugin.package_graph_busy",
                 format!(
                     "Another '{}' graph operation is pending for cognitive package '{}'.",
-                    action_name(value.action()),
+                    action_name(current.action()),
                     value.root_package_id()
                 ),
             ));
         }
+        let path = pending_record_path(&self.root, value.action(), value.root_package_id())?;
         write_new(&self.state_root, &path, value).await?;
         Ok(true)
     }
@@ -463,14 +665,38 @@ async fn write_new<T: Serialize>(state_root: &Path, path: &Path, value: &T) -> U
         file.write_all(&bytes).await?;
         file.write_all(b"\n").await?;
         file.sync_all().await?;
-        fs::rename(&temporary, path).await
+        Ok::<_, std::io::Error>(())
     }
     .await
     {
         let _ = fs::remove_file(&temporary).await;
         return Err(path_error("commit package graph record", path, error));
     }
+    drop(file);
+    if let Err(error) = activate_temporary_file(temporary.clone(), path.to_path_buf()).await {
+        let _ = fs::remove_file(&temporary).await;
+        return Err(error);
+    }
     sync_parent(parent).await
+}
+
+async fn activate_temporary_file(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
+    let error_target = target.clone();
+    tokio::task::spawn_blocking(move || {
+        let temporary = tempfile::TempPath::try_from_path(temporary)?;
+        temporary.persist(target).map_err(|error| error.error)
+    })
+    .await
+    .map_err(|error| {
+        package_manager_error(
+            "use.plugin.package_graph_io",
+            format!(
+                "Failed to commit package graph record '{}': atomic replacement task failed: {error}",
+                error_target.display()
+            ),
+        )
+    })?
+    .map_err(|error| path_error("commit package graph record", &error_target, error))
 }
 
 async fn acquire_lock(state_root: &Path) -> UseResult<StdFile> {
@@ -602,48 +828,139 @@ fn store_error(message: impl Into<String>) -> UseError {
     package_manager_error("use.plugin.package_graph_store_invalid", message)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
-    use std::os::unix::fs::symlink;
+    use std::collections::BTreeMap;
 
     use super::*;
+    use crate::cognitive_package::{InstallDisposition, UninstallDisposition, UpgradeDisposition};
+    use a3s_use_core::{
+        CatalogAvailability, PluginCatalogRecord, PluginPackageLockHost, PluginPackageResolver,
+        SurfaceChangeKind, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+        PLUGIN_CATALOG_SCHEMA_V3,
+    };
 
-    #[tokio::test]
-    async fn installed_graph_reads_reject_a_symlinked_publisher_directory() {
-        let temp = tempfile::tempdir().unwrap();
-        let state_root = temp.path().join("state");
-        let external = temp.path().join("external");
-        fs::create_dir_all(&external).await.unwrap();
-        fs::write(external.join("root.json"), b"{}").await.unwrap();
-        let graph_root = state_root.join("package-graphs");
-        fs::create_dir_all(&graph_root).await.unwrap();
-        symlink(&external, graph_root.join("acme")).unwrap();
+    const CATALOG: &[u8] =
+        include_bytes!("../../crates/core/fixtures/plugins/catalog-record-okf-v3.json");
+    const MANIFEST: &str =
+        include_str!("../../crates/extension/fixtures/manifests/plugin-v3-okf.acl");
 
-        let error = InstalledPackageGraphStore::new(&state_root)
-            .get("acme/root")
-            .await
-            .unwrap_err();
-        assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
+    fn digest(seed: char) -> String {
+        format!("sha256:{}", seed.to_string().repeat(64))
     }
 
-    #[tokio::test]
-    async fn pending_graph_reads_reject_a_symlinked_publisher_directory() {
-        let temp = tempfile::tempdir().unwrap();
-        let state_root = temp.path().join("state");
-        let external = temp.path().join("external");
-        fs::create_dir_all(&external).await.unwrap();
-        fs::write(external.join("root.json"), b"{}").await.unwrap();
-        let operation_root = state_root
-            .join("operations")
-            .join("package-graphs")
-            .join("uninstall");
-        fs::create_dir_all(&operation_root).await.unwrap();
-        symlink(&external, operation_root.join("acme")).unwrap();
-
-        let error = PendingPackageGraphStore::new(&state_root)
-            .get(PluginOperationAction::Uninstall, "acme/root")
-            .await
-            .unwrap_err();
-        assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
+    fn manifest(version: &str) -> ExtensionManifest {
+        let mut manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
+        manifest.version = version.to_string();
+        manifest
     }
+
+    fn package_lock(version: &str, seed: char) -> PluginPackageLock {
+        let mut record = PluginCatalogRecord::from_json(CATALOG).unwrap();
+        record.schema = PLUGIN_CATALOG_SCHEMA_V3.to_string();
+        record.version = version.to_string();
+        record.archive.target_name = format!(
+            "extensions/acme/knowledge/{version}/stable/linux-x86_64/acme-knowledge-{version}.tar.gz"
+        );
+        record.archive.sha256 = digest(seed);
+        record.package.sha256 = Some(digest(seed));
+        record.package.manifest_sha256 = Some(digest(seed));
+        record.availability = CatalogAvailability::Available;
+        record.validate().unwrap();
+        let provenance = VerifiedCatalogProvenance {
+            registry_name: "packages".to_string(),
+            registry_url: "https://packages.example.test/a3s/".to_string(),
+            root_sha256: digest('f'),
+            root_version: 1,
+            timestamp_version: 1,
+            snapshot_version: 1,
+            targets_version: 1,
+            catalog_record_digest: record.descriptor_digest().unwrap(),
+        };
+        let verified = VerifiedPluginCatalogRecord::new(record, provenance).unwrap();
+        PluginPackageResolver::new(
+            PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap(),
+        )
+        .resolve(verified, Vec::new())
+        .unwrap()
+    }
+
+    fn install_pending(lock: &PluginPackageLock) -> PendingPackageGraphOperation {
+        let package_id = lock.root_package_id.clone();
+        let manifests =
+            BTreeMap::from([(package_id.clone(), manifest(lock.packages[0].version()))]);
+        let dispositions = BTreeMap::from([(package_id, InstallDisposition::Add)]);
+        let generated = crate::cognitive_package::plan::install_operation(
+            lock,
+            &dispositions,
+            &manifests,
+            1,
+            "current",
+            10,
+        )
+        .unwrap();
+        PendingPackageGraphOperation::new(generated.envelope, 10, generated.generations, manifests)
+            .unwrap()
+    }
+
+    fn uninstall_pending(lock: &PluginPackageLock) -> PendingPackageGraphOperation {
+        let package_id = lock.root_package_id.clone();
+        let manifests =
+            BTreeMap::from([(package_id.clone(), manifest(lock.packages[0].version()))]);
+        let dispositions = BTreeMap::from([(package_id.clone(), UninstallDisposition::Remove)]);
+        let generations = BTreeMap::from([(package_id, 7)]);
+        let generated = crate::cognitive_package::plan::uninstall_operation(
+            lock,
+            &dispositions,
+            generations,
+            digest('9'),
+            1,
+            "current",
+            10,
+        )
+        .unwrap();
+        PendingPackageGraphOperation::new(generated.envelope, 10, generated.generations, manifests)
+            .unwrap()
+    }
+
+    fn upgrade_pending(
+        prior: &PluginPackageLock,
+        candidate: &PluginPackageLock,
+    ) -> PendingPackageGraphOperation {
+        let package_id = candidate.root_package_id.clone();
+        let manifests = BTreeMap::from([(
+            package_id.clone(),
+            manifest(candidate.packages[0].version()),
+        )]);
+        let prior_manifests =
+            BTreeMap::from([(package_id.clone(), manifest(prior.packages[0].version()))]);
+        let dispositions = BTreeMap::from([(package_id.clone(), UpgradeDisposition::Replace)]);
+        let prior_generations = BTreeMap::from([(package_id, 7)]);
+        let generated = crate::cognitive_package::plan::upgrade_operation(
+            candidate,
+            prior,
+            &dispositions,
+            &manifests,
+            &prior_generations,
+            digest('9'),
+            8,
+            "current",
+            10,
+        )
+        .unwrap();
+        PendingPackageGraphOperation::new_upgrade(
+            generated.envelope,
+            10,
+            generated.generations,
+            manifests,
+            prior.clone(),
+            prior_generations,
+            prior_manifests,
+        )
+        .unwrap()
+    }
+
+    mod records;
+    #[cfg(unix)]
+    mod symlinks;
 }

@@ -218,6 +218,80 @@ fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
 }
 
 #[test]
+fn schema_v3_cli_upgrade_publishes_the_candidate_graph_and_reports_exact_transitions() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let first = cognitive_skill_target_version(
+        &temp.path().join("first"),
+        "acme/root",
+        "root",
+        "1.0.0",
+        Vec::new(),
+        &target,
+    );
+    let next = cognitive_skill_target_version(
+        &temp.path().join("next"),
+        "acme/root",
+        "root",
+        "1.1.0",
+        vec![PluginPackageDependency::new("acme/added", "^1.0.0").unwrap()],
+        &target,
+    );
+    let added = cognitive_skill_target_version(
+        &temp.path().join("next"),
+        "acme/added",
+        "added",
+        "1.0.0",
+        Vec::new(),
+        &target,
+    );
+    let first_repository = TestRepository::with_targets(vec![first], 47, FUTURE);
+    let next_repository = TestRepository::with_targets(vec![next, added], 53, FUTURE);
+    let first_server = TestServer::start(first_repository.routes.clone());
+    let next_server = TestServer::start(next_repository.routes.clone());
+    let home = temp.path().join("home");
+
+    let installed =
+        cognitive_registry_install(&first_server, &first_repository, &home, "acme/root", &[]);
+    assert!(installed.status.success(), "{installed:?}");
+    let upgraded = cognitive_registry_upgrade(
+        &next_server,
+        &next_repository,
+        &home,
+        "acme/root",
+        "1.1.0",
+        &[],
+    );
+    assert!(upgraded.status.success(), "{upgraded:?}");
+    let upgraded = json(&upgraded);
+    assert_eq!(upgraded["data"]["changed"], true);
+    assert_eq!(upgraded["data"]["component"]["version"], "1.1.0");
+    assert_eq!(
+        upgraded["data"]["packageGraph"]["replacedPackages"],
+        serde_json::json!(["acme/root"])
+    );
+    assert_eq!(
+        upgraded["data"]["packageGraph"]["addedPackages"],
+        serde_json::json!(["acme/added"])
+    );
+    assert_eq!(
+        upgraded["data"]["packageGraph"]["plan"]["plan"]["action"],
+        "upgrade"
+    );
+
+    let replay = cognitive_registry_upgrade(
+        &next_server,
+        &next_repository,
+        &home,
+        "acme/root",
+        "1.1.0",
+        &[],
+    );
+    assert!(replay.status.success(), "{replay:?}");
+    assert_eq!(json(&replay)["data"]["changed"], false);
+}
+
+#[test]
 fn schema_v3_uninstall_retains_a_dependency_owned_by_another_root() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
@@ -345,6 +419,226 @@ async fn schema_v3_manager_resolves_dependencies_from_host_injected_registries()
     );
     assert_eq!(target_request_count(&root_server), 1);
     assert_eq!(target_request_count(&dependency_server), 1);
+}
+
+#[tokio::test]
+async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_generation() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let first_target = cognitive_skill_target_version(
+        &temp.path().join("first"),
+        "acme/root",
+        "root",
+        "1.0.0",
+        vec![PluginPackageDependency::new("acme/base", "^1.0.0").unwrap()],
+        &target,
+    );
+    let base_target = cognitive_skill_target_version(
+        &temp.path().join("first"),
+        "acme/base",
+        "base",
+        "1.0.0",
+        Vec::new(),
+        &target,
+    );
+    let next_target = cognitive_skill_target_version(
+        &temp.path().join("next"),
+        "acme/root",
+        "root",
+        "1.1.0",
+        vec![PluginPackageDependency::new("acme/base", "^1.0.0").unwrap()],
+        &target,
+    );
+    let third_target = cognitive_skill_target_version(
+        &temp.path().join("third"),
+        "acme/root",
+        "root",
+        "1.2.0",
+        vec![PluginPackageDependency::new("acme/base", "^1.0.0").unwrap()],
+        &target,
+    );
+    let first_repository =
+        TestRepository::with_targets(vec![first_target, base_target], 41, FUTURE);
+    let next_repository = TestRepository::with_targets(vec![next_target], 43, FUTURE);
+    let third_repository = TestRepository::with_targets(vec![third_target], 45, FUTURE);
+    let first_server = TestServer::start(first_repository.routes.clone());
+    let next_server = TestServer::start(next_repository.routes.clone());
+    let third_server = TestServer::start(third_repository.routes.clone());
+    let home = temp.path().join("home");
+    let first_registry = TrustedRegistry::new(
+        "first",
+        first_server.base_url(),
+        &first_repository.root_sha256,
+        None,
+        home.join("state/remote-registries/first"),
+    )
+    .unwrap();
+    let next_registry = TrustedRegistry::new(
+        "next",
+        next_server.base_url(),
+        &next_repository.root_sha256,
+        None,
+        home.join("state/remote-registries/next"),
+    )
+    .unwrap();
+    let third_registry = TrustedRegistry::new(
+        "third",
+        third_server.base_url(),
+        &third_repository.root_sha256,
+        None,
+        home.join("state/remote-registries/third"),
+    )
+    .unwrap();
+    let extension_registry =
+        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+    let installed = manager
+        .install_remote(
+            &first_registry,
+            &[],
+            "acme/root",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    let prior_generation = installed.root.receipt.lifecycle_generation.unwrap();
+
+    let upgraded = manager
+        .upgrade_remote(
+            &next_registry,
+            std::slice::from_ref(&first_registry),
+            "acme/root",
+            Some("1.1.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(upgraded.changed);
+    assert_eq!(upgraded.root.manifest.version, "1.1.0");
+    assert_eq!(upgraded.replaced_packages, ["acme/root"]);
+    assert!(upgraded.added_packages.is_empty());
+    assert_eq!(upgraded.retained_packages, ["acme/base"]);
+    assert_eq!(
+        upgraded.plan.as_ref().unwrap().plan.action,
+        a3s_use_core::PluginOperationAction::Upgrade
+    );
+    assert!(
+        upgraded.root.receipt.lifecycle_generation.unwrap() > prior_generation,
+        "the replacement must advance the exact lifecycle generation"
+    );
+    let prior_state = upgraded
+        .prior_package_lock
+        .package("acme/root")
+        .unwrap()
+        .catalog
+        .selected_state(&[])
+        .unwrap();
+    let prior_identity = a3s_use_extension::ExtensionLifecycleIdentity::new(
+        "acme/root",
+        prior_state.release.package_sha256,
+        prior_state.release.manifest_sha256,
+        prior_generation,
+    )
+    .unwrap();
+    assert!(extension_registry
+        .get_lifecycle_generation(&prior_identity)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(!home
+        .join("state/operations/package-graphs/upgrade/acme/root.json")
+        .exists());
+    let graph: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(home.join("state/package-graphs/acme/root.json")).unwrap(),
+    )
+    .unwrap();
+    let root_graph = graph["packageLock"]["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|package| package["catalog"]["record"]["packageId"] == "acme/root")
+        .unwrap();
+    assert_eq!(root_graph["catalog"]["record"]["version"], "1.1.0");
+
+    let replay = manager
+        .upgrade_remote(
+            &next_registry,
+            std::slice::from_ref(&first_registry),
+            "acme/root",
+            Some("1.1.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+    assert!(replay.plan.is_none());
+
+    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let interrupted = manager
+        .upgrade_remote(
+            &third_registry,
+            std::slice::from_ref(&first_registry),
+            "acme/root",
+            Some("1.2.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(interrupted.code, "use.extension.busy");
+    assert_eq!(interrupted.details["rollbackCode"], "use.extension.busy");
+    assert!(home
+        .join("state/operations/package-graphs/upgrade/acme/root.json")
+        .exists());
+    FileExt::unlock(&registry_lock).unwrap();
+    drop(registry_lock);
+
+    let recovered = manager
+        .upgrade_remote(
+            &third_registry,
+            std::slice::from_ref(&first_registry),
+            "acme/root",
+            Some("1.2.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        recovered.code,
+        "use.plugin.package_graph_upgrade_rolled_back"
+    );
+    assert!(!home
+        .join("state/operations/package-graphs/upgrade/acme/root.json")
+        .exists());
+    assert_eq!(
+        extension_registry
+            .get("acme/root")
+            .await
+            .unwrap()
+            .unwrap()
+            .manifest
+            .version,
+        "1.1.0"
+    );
+
+    let third = manager
+        .upgrade_remote(
+            &third_registry,
+            std::slice::from_ref(&first_registry),
+            "acme/root",
+            Some("1.2.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(third.changed);
+    assert_eq!(third.root.manifest.version, "1.2.0");
 }
 
 #[test]
@@ -593,6 +887,34 @@ fn cognitive_uninstall(home: &std::path::Path, package_id: &str) -> Output {
         .unwrap()
 }
 
+fn cognitive_registry_upgrade(
+    server: &TestServer,
+    repository: &TestRepository,
+    home: &std::path::Path,
+    package_id: &str,
+    version: &str,
+    extra: &[&str],
+) -> Output {
+    Command::new(binary())
+        .args([
+            "upgrade",
+            package_id,
+            "--registry-name",
+            "fixture",
+            "--registry-url",
+            server.base_url(),
+            "--trust-root",
+            &repository.root_sha256,
+            "--version",
+            version,
+        ])
+        .args(extra)
+        .arg("--json")
+        .env("A3S_USE_HOME", home)
+        .output()
+        .unwrap()
+}
+
 fn exclusive_lock(path: &std::path::Path) -> File {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let file = OpenOptions::new()
@@ -640,6 +962,24 @@ fn cognitive_skill_target(
     dependencies: Vec<PluginPackageDependency>,
     target: &str,
 ) -> TestTarget {
+    cognitive_skill_target_version(
+        fixture_root,
+        package_id,
+        route,
+        "1.0.0",
+        dependencies,
+        target,
+    )
+}
+
+fn cognitive_skill_target_version(
+    fixture_root: &std::path::Path,
+    package_id: &str,
+    route: &str,
+    version: &str,
+    dependencies: Vec<PluginPackageDependency>,
+    target: &str,
+) -> TestTarget {
     let package_root = fixture_root.join("packages").join(route);
     std::fs::create_dir_all(package_root.join("skills/main")).unwrap();
     let dependency_blocks = dependencies
@@ -652,7 +992,7 @@ fn cognitive_skill_target(
         })
         .collect::<String>();
     let manifest = format!(
-        "extension \"{package_id}\" {{\n  schema_version = 3\n  version = \"1.0.0\"\n  route = \"{route}\"\n  requires_use = \">=0.3.0, <0.4.0\"\n  actions = [\"read\"]\n{dependency_blocks}\n  repository {{\n    url = \"https://github.com/acme/{route}\"\n    revision = \"0123456789abcdef0123456789abcdef01234567\"\n  }}\n\n  skill \"main\" {{\n    path = \"skills/main/SKILL.md\"\n    requires_tool = []\n    requires_mcp = []\n    requires_okf = []\n    optional = false\n  }}\n}}\n"
+        "extension \"{package_id}\" {{\n  schema_version = 3\n  version = \"{version}\"\n  route = \"{route}\"\n  requires_use = \">=0.3.0, <0.4.0\"\n  actions = [\"read\"]\n{dependency_blocks}\n  repository {{\n    url = \"https://github.com/acme/{route}\"\n    revision = \"0123456789abcdef0123456789abcdef01234567\"\n  }}\n\n  skill \"main\" {{\n    path = \"skills/main/SKILL.md\"\n    requires_tool = []\n    requires_mcp = []\n    requires_okf = []\n    optional = false\n  }}\n}}\n"
     );
     std::fs::write(package_root.join("a3s-use-extension.acl"), &manifest).unwrap();
     std::fs::write(
@@ -677,7 +1017,7 @@ fn cognitive_skill_target(
     catalog.publisher = "acme".to_string();
     catalog.keywords = vec!["fixture".to_string()];
     catalog.categories = vec!["test".to_string()];
-    catalog.version = "1.0.0".to_string();
+    catalog.version = version.to_string();
     catalog.channel = PluginReleaseChannel::Stable;
     catalog.requires_use = ">=0.3.0, <0.4.0".to_string();
     catalog.dependencies = dependencies;
@@ -695,8 +1035,9 @@ fn cognitive_skill_target(
     catalog.permission_ceiling.surfaces.clear();
     catalog.permission_ceiling_digest = catalog.permission_ceiling.descriptor_digest().unwrap();
     catalog.planning = None;
-    catalog.archive.target_name =
-        format!("extensions/{package_id}/1.0.0/stable/{target}/{route}-1.0.0-{target}.tar.gz");
+    catalog.archive.target_name = format!(
+        "extensions/{package_id}/{version}/stable/{target}/{route}-{version}-{target}.tar.gz"
+    );
     catalog.archive.length = archive.len() as u64;
     catalog.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&archive));
     catalog.package.expanded_bytes = fingerprint.2;

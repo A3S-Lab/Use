@@ -10,6 +10,7 @@ mod install;
 mod plan;
 mod store;
 mod uninstall;
+mod upgrade;
 
 use a3s_use_core::{
     LockedPluginPackage, PluginOperationPlanEnvelope, PluginPackageLock, PluginReleaseChannel,
@@ -116,6 +117,21 @@ pub struct CognitivePackageUninstallResult {
     pub retained_packages: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CognitivePackageUpgradeResult {
+    pub changed: bool,
+    pub root: InstalledExtension,
+    pub prior_package_lock: PluginPackageLock,
+    pub package_lock: PluginPackageLock,
+    pub package_lock_digest: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan: Option<PluginOperationPlanEnvelope>,
+    pub added_packages: Vec<String>,
+    pub replaced_packages: Vec<String>,
+    pub retained_packages: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InstallDisposition {
     Add,
@@ -125,6 +141,13 @@ pub(super) enum InstallDisposition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum UninstallDisposition {
     Remove,
+    Retain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum UpgradeDisposition {
+    Add,
+    Replace,
     Retain,
 }
 

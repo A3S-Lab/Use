@@ -456,6 +456,71 @@ pub(crate) async fn install_remote_extension(
     })
 }
 
+#[cfg(feature = "extensions")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn upgrade_remote_extension(
+    package_id: &str,
+    registry_name: &str,
+    registry_url: &str,
+    trust_root: &str,
+    trusted_root_path: Option<&Path>,
+    version: Option<&str>,
+    channel: &str,
+    expected_package_lock_digest: Option<&str>,
+) -> UseResult<ExtensionInstallView> {
+    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let registry = a3s_use_extension::TrustedRegistry::new(
+        registry_name,
+        registry_url,
+        trust_root,
+        trusted_root_path.map(Path::to_path_buf),
+        paths.tuf_datastore(registry_name),
+    )?;
+    let release_channel = match channel {
+        "stable" => a3s_use_core::PluginReleaseChannel::Stable,
+        "beta" => a3s_use_core::PluginReleaseChannel::Beta,
+        "nightly" => a3s_use_core::PluginReleaseChannel::Nightly,
+        _ => {
+            return Err(UseError::new(
+                "use.extension.channel_invalid",
+                "The cognitive-package Registry channel is invalid.",
+            ))
+        }
+    };
+    let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
+    if !manager
+        .is_remote_cognitive_package(&registry, package_id, version, release_channel)
+        .await?
+    {
+        return Err(UseError::new(
+            "use.plugin.package_upgrade_unsupported",
+            "The selected Registry target is not a schema-v3 cognitive package.",
+        ));
+    }
+    let result = manager
+        .upgrade_remote(
+            &registry,
+            &[],
+            package_id,
+            version,
+            release_channel,
+            expected_package_lock_digest,
+        )
+        .await?;
+    let extension = extension_view(result.root.clone())?;
+    let package_graph = serde_json::to_value(&result).map_err(|error| {
+        UseError::new(
+            "use.plugin.package_graph_invalid",
+            format!("Failed to encode cognitive-package upgrade evidence: {error}"),
+        )
+    })?;
+    Ok(ExtensionInstallView {
+        changed: result.changed,
+        extension,
+        package_graph: Some(package_graph),
+    })
+}
+
 #[cfg(not(feature = "extensions"))]
 pub(crate) async fn install_extension(
     _package_id: &str,
@@ -488,6 +553,21 @@ pub(crate) async fn install_remote_extension(
     _expected_plan_digest: Option<&str>,
     _expected_package_lock_digest: Option<&str>,
     _force: bool,
+) -> UseResult<ExtensionInstallView> {
+    Err(extensions_disabled())
+}
+
+#[cfg(not(feature = "extensions"))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn upgrade_remote_extension(
+    _package_id: &str,
+    _registry_name: &str,
+    _registry_url: &str,
+    _trust_root: &str,
+    _trusted_root_path: Option<&Path>,
+    _version: Option<&str>,
+    _channel: &str,
+    _expected_package_lock_digest: Option<&str>,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())
 }
