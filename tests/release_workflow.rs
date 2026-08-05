@@ -5,10 +5,20 @@ fn release_publishes_only_use_owned_crates_in_dependency_order() {
     let core_visible = position(workflow, "wait_until_visible a3s-use-core");
     let extension = position(workflow, "publish_once a3s-use-extension");
     let extension_visible = position(workflow, "wait_until_visible a3s-use-extension");
+    let facade = position(workflow, "\n          publish_once a3s-use\n");
+    let facade_visible = position(workflow, "\n          wait_until_visible a3s-use\n");
 
     assert!(
-        core < core_visible && core_visible < extension && extension < extension_visible,
+        core < core_visible
+            && core_visible < extension
+            && extension < extension_visible
+            && extension_visible < facade
+            && facade < facade_visible,
         "release publication order must make every dependency visible before its downstream crate"
+    );
+    assert!(
+        workflow.contains("version=\"$(package_version \"${package}\")\""),
+        "each crate must be checked and awaited using its own package version"
     );
     assert!(
         !workflow.contains("publish_once a3s-use-browser"),
