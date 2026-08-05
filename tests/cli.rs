@@ -980,7 +980,8 @@ fn disable_drains_a_real_delegated_process_before_returning() {
         .env("A3S_USE_HOME", &home)
         .spawn()
         .unwrap();
-    for _ in 0..500 {
+    let start_deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < start_deadline {
         if started.exists() {
             break;
         }

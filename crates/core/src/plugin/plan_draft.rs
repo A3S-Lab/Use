@@ -134,6 +134,7 @@ impl PluginOperationPlanDraft {
             component_id: self.component_id,
             scope: binding.scope,
             package_lock_digest: self.package_lock_digest,
+            prior_package_lock_digest: None,
             packages: self.packages,
             secret_changes,
             providers: self.providers,

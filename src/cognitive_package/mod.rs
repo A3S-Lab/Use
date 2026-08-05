@@ -129,6 +129,7 @@ pub struct CognitivePackageUpgradeResult {
     pub plan: Option<PluginOperationPlanEnvelope>,
     pub added_packages: Vec<String>,
     pub replaced_packages: Vec<String>,
+    pub removed_packages: Vec<String>,
     pub retained_packages: Vec<String>,
 }
 
@@ -148,6 +149,7 @@ pub(super) enum UninstallDisposition {
 pub(super) enum UpgradeDisposition {
     Add,
     Replace,
+    Remove,
     Retain,
 }
 

@@ -6,7 +6,9 @@
   plugin-surface control plane frozen 2026-08-01; managed-host protocol frozen
   2026-08-02; package lifecycle intent/journal and cognitive-package
   dependency/lock contracts frozen 2026-08-03; unified A3S Flow contracts and
-  exact-generation preflight binding foundation frozen 2026-08-04
+  exact-generation preflight binding foundation frozen 2026-08-04; operation
+  plan v3 dual-lock upgrades introduced and host capabilities v3 frozen
+  2026-08-05
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -54,12 +56,14 @@ remain product integration gates.
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v2` | Draft v1 plus an exact derived OKF bundle delta |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
 | Operation plan | `a3s.use.plugin-operation-plan.v2` | Plan v1 plus an exact derived OKF bundle delta |
+| Operation plan | `a3s.use.plugin-operation-plan.v3` | Upgrade plan binding the complete exact prior/candidate lock union, including removed nodes |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
 | Manager toolset | `a3s.use.plugin-manager-tools.v2` | Manager v1 with canonical `okf` search and selection values |
 | Manager toolset | `a3s.use.plugin-manager-tools.v3` | Manager v2 with canonical `flow` search and selection values |
 | Managed scope | `a3s.use.plugin-managed-scope.v1` | Host-derived workspace identity and exclusive mutation fence |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v1` | Exact manager build, protocol level, and frozen supported schema inventory |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v2` | Protocol level 2 with explicit first-class Flow support; v1 remains byte-frozen |
+| Host capabilities | `a3s.use.plugin-host-capabilities.v3` | Protocol level 3 advertising operation plan v3; v1/v2 remain byte-frozen |
 | Host plan | `a3s.use.plugin-host-plan-request/result.v1` | Exact verified selection in and canonical reviewed A3S Use plan out |
 | Host apply | `a3s.use.plugin-host-apply-request/result.v1` | Digest-only apply with exact confirmation and idempotent operation evidence |
 | Host enablement | `a3s.use.plugin-host-enablement-request/result.v1` | Optimistic-generation enable or disable through the same manager |
@@ -146,8 +150,11 @@ pending and substitution reports failure. Stop preserves retained evidence for
 drain, while removal deletes only the exact receipt-owned generation.
 
 Host-capabilities v1 remains frozen without Flow. V2 uses protocol level 2 and
-advertises it explicitly. Manager-toolset v1/v2 also remain frozen; v3 adds the
-canonical `flow` selection value. Compilation, preflight, durable execution,
+advertises it explicitly. V3 uses protocol level 3 and adds only operation
+plan v3 to the advertised plan inventory, so a managed host cannot accept a
+dual-lock removal plan without negotiating support. Manager-toolset v1/v2 also
+remain frozen; v3 adds the canonical `flow` selection value. Compilation,
+preflight, durable execution,
 replay, and storage belong to the typed `a3s-flow` host adapter. `flow.json` is
 a design/deployment document that must map to the same Flow identity; it does
 not create a second engine or package lifecycle.
@@ -166,20 +173,24 @@ in reverse, and only then removes the package. The operation journal is
 bounded, strict, atomic, cross-process locked, and rejects reordered,
 substituted, or tampered receipts. Exact package/Runtime N/N+1 storage,
 snapshot-selected routing, and receipt-owned prior removal are implemented.
-The graph coordinator now adds or replaces candidates dependency-first,
-publishes the closure once, automatically rolls back before cutover, retires
-replaced generations in reverse order, and durably replays both outcomes.
-Production provider/grant composition and dependency-removal garbage
-collection remain outside the completed contract foundation.
+The graph coordinator classifies Add/Replace/Remove/Retain, downloads and
+prepares only changed candidates dependency-first, publishes candidates and
+removed routes once, automatically rolls back before cutover, retires replaced
+or unreferenced generations in reverse order, and durably replays every
+outcome. Production provider/grant composition remains outside the completed
+contract foundation.
 
 Package ownership also applies above one manifest. A schema-v3 package may
 declare canonical package ID plus SemVer dependency blocks. The package lock
 binds the complete transitive closure; the plan classifies each locked node as
-root or dependency and as Add, Remove, Replace, or Retain. The graph coordinator
-requires lifecycle units only for changed nodes, installs them in dependency
-order, verifies exact already-published retained nodes, publishes changed nodes
-in one snapshot cutover, and removes changed nodes in reverse order. Direct
-removal is rejected while an installed manifest still depends on the package.
+root or dependency and as Add, Remove, Replace, or Retain. Operation plan v3
+binds both lock digests and embeds both complete locks so removed nodes remain
+reviewable after they disappear from the candidate closure. The graph
+coordinator requires lifecycle units only for changed nodes, installs them in
+dependency order, verifies exact already-published retained nodes, publishes
+changed and removed nodes in one snapshot cutover, and removes changed nodes in
+reverse order. Direct removal is rejected while another installed graph or
+manifest still depends on the package.
 
 All JSON contracts:
 
@@ -766,9 +777,10 @@ Canonical interoperability fixtures live under
 - `manager-toolset-v1.json`;
 - `host-capabilities-v1.json`;
 - `catalog-record-okf-v3.json`;
-- `operation-plan-install-okf-v2.json`; and
+- `operation-plan-install-okf-v2.json`;
 - `manager-toolset-v2.json`;
-- `host-capabilities-v2.json`; and
+- `host-capabilities-v2.json`;
+- `host-capabilities-v3.json`;
 - `manager-toolset-v3.json`.
 
 Canonical OKF fixtures under `crates/core/fixtures/okf/` include the bundle

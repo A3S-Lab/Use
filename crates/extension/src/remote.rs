@@ -37,7 +37,10 @@ pub use catalog::{
     VerifiedRegistryCatalog, VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES,
     MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
-pub use package_graph::{download_locked_remote_packages, resolve_remote_package_lock};
+pub use package_graph::{
+    download_locked_remote_packages, download_selected_locked_remote_packages,
+    resolve_remote_package_lock,
+};
 use target::{
     decode_registry_target_metadata, resolved_remote_package, target_metadata_from_receipt,
     validate_target_metadata, validate_target_name, RegistryTargetMetadata,

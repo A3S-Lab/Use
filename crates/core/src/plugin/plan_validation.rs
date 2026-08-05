@@ -14,14 +14,16 @@ use super::validation::{
 };
 use super::{
     PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA,
-    PLUGIN_OPERATION_PLAN_SCHEMA_V2,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V2, PLUGIN_OPERATION_PLAN_SCHEMA_V3,
 };
 
 impl PluginOperationPlan {
     pub fn validate(&self) -> UseResult<()> {
         if !matches!(
             self.schema.as_str(),
-            PLUGIN_OPERATION_PLAN_SCHEMA | PLUGIN_OPERATION_PLAN_SCHEMA_V2
+            PLUGIN_OPERATION_PLAN_SCHEMA
+                | PLUGIN_OPERATION_PLAN_SCHEMA_V2
+                | PLUGIN_OPERATION_PLAN_SCHEMA_V3
         ) || Self::validate_operation_id(&self.operation_id).is_err()
             || !valid_package_id(&self.package_id)
             || !valid_machine_id(&self.component_id)
@@ -29,6 +31,15 @@ impl PluginOperationPlan {
                 .package_lock_digest
                 .as_deref()
                 .is_some_and(|value| !valid_sha256(value))
+            || self
+                .prior_package_lock_digest
+                .as_deref()
+                .is_some_and(|value| !valid_sha256(value))
+            || self.prior_package_lock_digest.is_some()
+                != (self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V3)
+            || self.prior_package_lock_digest.is_some()
+                && (self.action != PluginOperationAction::Upgrade
+                    || self.package_lock_digest.is_none())
             || self.created_at_ms == 0
             || self.expires_at_ms <= self.created_at_ms
             || self.expires_at_ms - self.created_at_ms > MAX_PLAN_LIFETIME_MS
@@ -260,7 +271,9 @@ impl PluginOperationPlan {
             ) && package.before.as_ref().is_some_and(has_private_service)
         });
         let okf_changes = planned_okf_changes(&self.packages)?;
-        let schema_matches = if okf_changes.is_empty() {
+        let schema_matches = if self.prior_package_lock_digest.is_some() {
+            self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V3
+        } else if okf_changes.is_empty() {
             self.schema == PLUGIN_OPERATION_PLAN_SCHEMA
         } else {
             self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V2

@@ -246,6 +246,103 @@ impl PluginPackageLock {
         Ok(())
     }
 
+    /// Verify one immutable upgrade plan against the union of its exact prior
+    /// and candidate dependency locks. Candidate-only nodes are additions,
+    /// prior-only nodes are removals, and shared nodes are either exact
+    /// retentions or replacements. This keeps the existing single-lock plan
+    /// validation strict while making graph garbage collection reviewable.
+    pub fn validate_upgrade_plan(
+        prior: &Self,
+        candidate: &Self,
+        plan: &PluginOperationPlan,
+    ) -> UseResult<()> {
+        prior.validate()?;
+        candidate.validate()?;
+        plan.validate()?;
+        if plan.action != super::PluginOperationAction::Upgrade
+            || plan.package_id != candidate.root_package_id
+            || prior.root_package_id != candidate.root_package_id
+            || prior.host != candidate.host
+        {
+            return Err(lock_error(
+                "The upgrade plan and package locks belong to different actions, roots, or hosts.",
+            ));
+        }
+
+        let package_ids = prior
+            .packages
+            .iter()
+            .chain(&candidate.packages)
+            .map(|package| package.package_id())
+            .collect::<BTreeSet<_>>();
+        if package_ids.len() != plan.packages.len() {
+            return Err(lock_error(
+                "The upgrade plan does not cover the exact prior/candidate package-lock union.",
+            ));
+        }
+        let transitions = plan
+            .packages
+            .iter()
+            .map(|transition| (transition.package_id.as_str(), transition))
+            .collect::<BTreeMap<_, _>>();
+        if transitions.len() != plan.packages.len() {
+            return Err(lock_error(
+                "An upgrade package transition appears more than once.",
+            ));
+        }
+
+        for package_id in package_ids {
+            let transition = transitions.get(package_id).ok_or_else(|| {
+                lock_error("A prior or candidate package is absent from the upgrade plan.")
+            })?;
+            let expected_role = if package_id == candidate.root_package_id {
+                PlanPackageRole::Root
+            } else {
+                PlanPackageRole::Dependency
+            };
+            if transition.role != expected_role {
+                return Err(lock_error(
+                    "An upgrade package role does not match its resolved dependency graph.",
+                ));
+            }
+
+            match (prior.package(package_id), candidate.package(package_id)) {
+                (None, Some(after)) if transition.change == PlanPackageChangeKind::Add => {
+                    validate_candidate_transition(after, transition)?;
+                }
+                (None, Some(after)) if transition.change == PlanPackageChangeKind::Retain => {
+                    validate_prior_state(after, transition)?;
+                    validate_candidate_state(after, transition)?;
+                }
+                (Some(before), None) if transition.change == PlanPackageChangeKind::Remove => {
+                    validate_prior_state(before, transition)?;
+                }
+                (Some(before), None) if transition.change == PlanPackageChangeKind::Retain => {
+                    validate_prior_state(before, transition)?;
+                    validate_candidate_state(before, transition)?;
+                }
+                (Some(before), Some(after))
+                    if before.catalog == after.catalog
+                        && transition.change == PlanPackageChangeKind::Retain =>
+                {
+                    validate_prior_state(before, transition)?;
+                    validate_candidate_state(after, transition)?;
+                }
+                (Some(before), Some(after))
+                    if before.catalog != after.catalog
+                        && transition.change == PlanPackageChangeKind::Replace =>
+                {
+                    validate_prior_state(before, transition)?;
+                    validate_candidate_transition(after, transition)?;
+                }
+                _ => return Err(lock_error(
+                    "An upgrade transition does not match the exact prior/candidate lock delta.",
+                )),
+            }
+        }
+        Ok(())
+    }
+
     pub fn install_order(&self) -> UseResult<Vec<&LockedPluginPackage>> {
         self.validate()?;
         let by_id = self
@@ -402,6 +499,43 @@ fn validate_locked_transition(
                 ));
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_prior_state(
+    locked: &LockedPluginPackage,
+    transition: &PlannedPackageTransition,
+) -> UseResult<()> {
+    let state = transition.before.as_ref().ok_or_else(|| {
+        lock_error("A prior locked package transition omitted its selected package state.")
+    })?;
+    validate_locked_state(locked, state)
+}
+
+fn validate_candidate_state(
+    locked: &LockedPluginPackage,
+    transition: &PlannedPackageTransition,
+) -> UseResult<()> {
+    let state = transition.after.as_ref().ok_or_else(|| {
+        lock_error("A candidate locked package transition omitted its selected package state.")
+    })?;
+    validate_locked_state(locked, state)
+}
+
+fn validate_candidate_transition(
+    locked: &LockedPluginPackage,
+    transition: &PlannedPackageTransition,
+) -> UseResult<()> {
+    validate_candidate_state(locked, transition)?;
+    let expected = PluginPlanSource::Registry {
+        provenance: locked.catalog.provenance.clone(),
+        archive: locked.catalog.record.archive.clone(),
+    };
+    if transition.source.as_ref() != Some(&expected) {
+        return Err(lock_error(
+            "A candidate package source does not match its locked Registry and TUF evidence.",
+        ));
     }
     Ok(())
 }

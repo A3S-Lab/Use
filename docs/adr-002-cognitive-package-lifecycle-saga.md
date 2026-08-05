@@ -130,11 +130,12 @@ or retire the other generation.
 The package manager now drives those primitives as one durable
 dependency-closure upgrade. It binds exact prior and candidate locks, prepares
 Add/Replace generations dependency-first, performs one capability cutover,
-automatically rolls back unpublished candidates, and retires replaced prior
-generations in reverse order. Production blue/green completion still requires
-the umbrella saga to compose candidate grants, Runtime Service, Gateway,
-Knowledge, and projections, plus a separately reviewed dependency-removal and
-garbage-collection operation.
+automatically rolls back unpublished candidates, atomically removes
+prior-only routes, and retires replaced or unreferenced prior generations in
+reverse order. Operation plan v3 binds both exact locks and host capabilities
+v3 gates managed-host acceptance. Production blue/green completion still
+requires the umbrella saga to compose candidate grants, Runtime Service,
+Gateway, Knowledge, and projections.
 
 ## Implementation State
 
@@ -171,8 +172,6 @@ Remaining before the product can claim complete cognitive-package lifecycle:
   hosts plus grant composition by the umbrella Plugin Manager;
 - management MCP and managed-host lifecycle-factory mutation wiring into this
   coordinator, while preserving the existing Code TUI/Web baseline;
-- dependency-removal graph planning and garbage collection during blue/green
-  upgrade; and
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
 
 ## Consequences

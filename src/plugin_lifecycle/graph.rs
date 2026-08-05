@@ -128,6 +128,26 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
         idempotency_key: &str,
     ) -> UseResult<Vec<PluginPackagePublicationEvidence>>;
 
+    /// Publish candidate generations and hide prior-only removed generations
+    /// in one capability snapshot. Existing hosts remain source-compatible for
+    /// upgrades without removals; hosts supporting graph GC must override this
+    /// method with an atomic implementation.
+    async fn publish_upgrade_capabilities(
+        &self,
+        package_lock: &PluginPackageLock,
+        candidate_intents: &[PluginLifecycleIntent],
+        removed_intents: &[PluginLifecycleIntent],
+        idempotency_key: &str,
+    ) -> UseResult<Vec<PluginPackagePublicationEvidence>> {
+        if !removed_intents.is_empty() {
+            return Err(graph_error(
+                "The capability host does not support atomic dependency-removal publication.",
+            ));
+        }
+        self.publish_capabilities(package_lock, candidate_intents, idempotency_key)
+            .await
+    }
+
     /// Discard a bounded set of candidates while the exact prior graph is
     /// still the Registry snapshot commit point. `prior_intents` contains one
     /// exact prior generation for every replacement and none for additions.
@@ -374,9 +394,28 @@ impl PluginPackageGraphLifecycleCoordinator {
             .iter()
             .map(|unit| unit.intent.clone())
             .collect::<Vec<_>>();
+        let removed_intents = prior_lock
+            .removal_order()?
+            .into_iter()
+            .filter_map(|package| {
+                envelope
+                    .plan
+                    .packages
+                    .iter()
+                    .find(|transition| transition.package_id == package.package_id())
+                    .filter(|transition| transition.change == PlanPackageChangeKind::Remove)
+                    .and_then(|_| retirements.get(package.package_id()))
+                    .map(|unit| unit.intent.clone())
+            })
+            .collect::<Vec<_>>();
         let evidence = match self
             .publication
-            .publish_capabilities(candidate_lock, &intents, &publication_key(envelope)?)
+            .publish_upgrade_capabilities(
+                candidate_lock,
+                &intents,
+                &removed_intents,
+                &publication_key(envelope)?,
+            )
             .await
         {
             Ok(evidence) => evidence,
@@ -429,7 +468,10 @@ impl PluginPackageGraphLifecycleCoordinator {
             else {
                 continue;
             };
-            if transition.change != PlanPackageChangeKind::Replace {
+            if !matches!(
+                transition.change,
+                PlanPackageChangeKind::Replace | PlanPackageChangeKind::Remove
+            ) {
                 continue;
             }
             let unit = *retirements.get(package.package_id()).ok_or_else(|| {
@@ -573,6 +615,15 @@ fn validate_upgrade_graph<'a>(
         graph_error("A package-graph upgrade requires an exact candidate package lock.")
     })?;
     prior_lock.validate()?;
+    if envelope
+        .prior_package_lock
+        .as_ref()
+        .is_some_and(|bound| bound != prior_lock)
+    {
+        return Err(graph_error(
+            "The package-graph upgrade prior lock changed after review.",
+        ));
+    }
     if prior_lock.root_package_id != candidate_lock.root_package_id
         || prior_lock.host != candidate_lock.host
     {
@@ -597,15 +648,29 @@ fn validate_upgrade_graph<'a>(
                 validate_prior_transition(prior, transition)?;
             }
             PlanPackageChangeKind::Retain => {
-                let prior = prior_lock.package(&transition.package_id).ok_or_else(|| {
-                    graph_error("A retained package is absent from the prior package lock.")
-                })?;
-                validate_prior_transition(prior, transition)?;
+                let retained = prior_lock
+                    .package(&transition.package_id)
+                    .or_else(|| candidate_lock.package(&transition.package_id))
+                    .ok_or_else(|| {
+                        graph_error(
+                            "A retained package is absent from both exact dependency locks.",
+                        )
+                    })?;
+                validate_prior_transition(retained, transition)?;
             }
             PlanPackageChangeKind::Remove => {
-                return Err(graph_error(
-                    "Upgrade plans with removed dependency nodes require a separately reviewed garbage-collection operation.",
-                ))
+                expected_retirements.insert(transition.package_id.as_str());
+                let prior = prior_lock.package(&transition.package_id).ok_or_else(|| {
+                    graph_error("A removed package is absent from the prior package lock.")
+                })?;
+                validate_prior_transition(prior, transition)?;
+                if candidate_lock.package(&transition.package_id).is_some()
+                    || envelope.prior_package_lock.as_ref() != Some(prior_lock)
+                {
+                    return Err(graph_error(
+                        "A removed dependency requires exact reviewed prior/candidate package locks.",
+                    ));
+                }
             }
         }
     }
@@ -613,6 +678,15 @@ fn validate_upgrade_graph<'a>(
     validate_unit_set(candidate_units, &expected_candidates, "candidate")?;
     validate_unit_set(retirement_units, &expected_retirements, "retirement")?;
     for package_id in &expected_retirements {
+        if envelope
+            .plan
+            .packages
+            .iter()
+            .find(|transition| transition.package_id == **package_id)
+            .is_some_and(|transition| transition.change == PlanPackageChangeKind::Remove)
+        {
+            continue;
+        }
         let candidate = candidate_units
             .iter()
             .find(|unit| unit.intent.package_id == *package_id)
