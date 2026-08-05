@@ -44,11 +44,28 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
     install_task_binding(&store, &mut providers).await;
     let service_runtime = install_tool_service_binding(&store, &mut providers).await;
     install_mcp_service_binding(&store, &mut providers).await;
+    let task = a3s_use_core::PlanQualifiedSurfaceRef {
+        package_id: "acme/research".to_string(),
+        surface: surface(PluginSurfaceKind::Tool, "convert"),
+    };
+    let mut candidate = store
+        .get_generation("workspace-01", &task, 7)
+        .await
+        .unwrap()
+        .unwrap();
+    let RuntimeBindingReceipt::Task(candidate) = &mut candidate else {
+        panic!("convert should have a Runtime Task binding");
+    };
+    candidate.generation = 8;
+    store
+        .put(&RuntimeBindingReceipt::Task(candidate.clone()))
+        .await
+        .unwrap();
     let manifest = release_task_manifest();
     let observer = RuntimeSurfaceObserver::new(&store, &providers);
 
     let snapshot = observer
-        .observe_manifest("workspace-01", DIGEST_A, &manifest)
+        .observe_manifest("workspace-01", DIGEST_A, 7, &manifest)
         .await
         .unwrap();
     assert_eq!(snapshot.surfaces().len(), 3);
@@ -68,6 +85,10 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
         .surfaces()
         .iter()
         .all(|surface| surface.surface().id != "local-library"));
+    assert!(snapshot
+        .surfaces()
+        .iter()
+        .all(|surface| surface.generation() == Some(7)));
 
     let host_observations = SurfaceObservations::from([
         (
@@ -121,7 +142,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
     };
     service.base_path = "/v2".to_string();
     let contract_error = observer
-        .observe_manifest("workspace-01", DIGEST_A, &changed_contract)
+        .observe_manifest("workspace-01", DIGEST_A, 7, &changed_contract)
         .await
         .unwrap_err();
     assert_eq!(
@@ -131,7 +152,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
 
     service_runtime.restart_service(1_050, 1_100);
     let stale = observer
-        .observe_manifest("workspace-01", DIGEST_A, &manifest)
+        .observe_manifest("workspace-01", DIGEST_A, 7, &manifest)
         .await
         .unwrap();
     assert_eq!(
@@ -150,7 +171,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
     assert!(!broken.capability_ready);
 
     let mismatched = observer
-        .observe_manifest("workspace-01", OTHER_PACKAGE_DIGEST, &manifest)
+        .observe_manifest("workspace-01", OTHER_PACKAGE_DIGEST, 7, &manifest)
         .await
         .unwrap_err();
     assert_eq!(
@@ -170,7 +191,7 @@ async fn unbound_surfaces_remain_pending_without_a_default_provider() {
     .unwrap();
 
     let snapshot = RuntimeSurfaceObserver::new(&store, &providers)
-        .observe_manifest("workspace-01", DIGEST_A, &manifest)
+        .observe_manifest("workspace-01", DIGEST_A, 7, &manifest)
         .await
         .unwrap();
     assert_eq!(snapshot.surfaces().len(), 2);

@@ -297,15 +297,13 @@ impl RuntimePluginSurfaceLifecycleHost {
         file_digest: &str,
     ) -> UseResult<Option<PluginLifecycleEvidence>> {
         let qualified = selected.plan().surface();
-        let Some(receipt) = self.store.get(&intent.scope_id, &qualified).await? else {
+        let Some(receipt) = self
+            .store
+            .get_generation(&intent.scope_id, &qualified, intent.generation)
+            .await?
+        else {
             return Ok(None);
         };
-        if receipt.generation() != intent.generation {
-            return Err(runtime_lifecycle_error(
-                "use.plugin.runtime_generation_retirement_required",
-                "A prior Runtime binding generation must be retired with its original provider evidence before preparing the replacement.",
-            ));
-        }
         validate_selected_receipt(intent, selected, &receipt)?;
         let observation = selected.client().observe_binding(&receipt).await?;
         let ready = matches!(
@@ -344,7 +342,11 @@ impl RuntimePluginSurfaceLifecycleHost {
     ) -> UseResult<PluginLifecycleEvidence> {
         validate_surface(intent, kind, surface_id)?;
         let qualified = qualified_surface(intent, kind, surface_id);
-        let Some(receipt) = self.store.get(&intent.scope_id, &qualified).await? else {
+        let Some(receipt) = self
+            .store
+            .get_generation(&intent.scope_id, &qualified, intent.generation)
+            .await?
+        else {
             return missing_runtime_evidence(label, intent, surface_id, idempotency_key);
         };
         if receipt.generation() != intent.generation

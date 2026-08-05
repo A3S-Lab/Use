@@ -210,6 +210,99 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     assert_eq!(mcp_runtime.remove_count.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test]
+async fn runtime_lifecycle_prepares_next_generation_and_retires_only_the_prior_generation() {
+    let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
+    let prior_intent = intent_generation(&manifest, 19, PluginLifecycleAction::Install);
+    let next_intent = intent_generation(&manifest, 20, PluginLifecycleAction::Upgrade);
+    let tool = manifest
+        .tools
+        .iter()
+        .find(|surface| matches!(&surface.workload, ToolWorkload::Service(_)))
+        .unwrap();
+    let prior_plan = tool_plan(&prior_intent, tool);
+    let next_plan = tool_plan(&next_intent, tool);
+    let prior_runtime = Arc::new(FakeRuntime::new(capabilities(&prior_plan, "tool-runtime")));
+    let next_runtime = Arc::new(FakeRuntime::new(capabilities(&next_plan, "tool-runtime")));
+    let prior_unused_mcp = Arc::new(FakeRuntime::new(capabilities(&prior_plan, "mcp-runtime")));
+    let next_unused_mcp = Arc::new(FakeRuntime::new(capabilities(&next_plan, "mcp-runtime")));
+    let prior_selection = selection(
+        vec![prior_plan.clone()],
+        prior_runtime.clone(),
+        prior_unused_mcp,
+    )
+    .await;
+    let next_selection = selection(
+        vec![next_plan.clone()],
+        next_runtime.clone(),
+        next_unused_mcp,
+    )
+    .await;
+    let temporary = tempfile::tempdir().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let readiness = Arc::new(RecordingReadiness::default());
+    let prior_host = RuntimePluginSurfaceLifecycleHost::new(
+        package_root(),
+        prior_selection,
+        store.clone(),
+        readiness.clone(),
+    );
+    let next_host = RuntimePluginSurfaceLifecycleHost::new(
+        package_root(),
+        next_selection,
+        store.clone(),
+        readiness,
+    );
+
+    prior_host
+        .prepare_tool(
+            &prior_intent,
+            tool,
+            key(&prior_intent, PluginSurfaceKind::Tool, &tool.id),
+        )
+        .await
+        .unwrap();
+    next_host
+        .prepare_tool(
+            &next_intent,
+            tool,
+            key(&next_intent, PluginSurfaceKind::Tool, &tool.id),
+        )
+        .await
+        .unwrap();
+
+    let qualified = prior_plan.surface();
+    assert!(store
+        .get_generation(&prior_intent.scope_id, &qualified, prior_intent.generation)
+        .await
+        .unwrap()
+        .is_some());
+    assert!(store
+        .get_generation(&next_intent.scope_id, &qualified, next_intent.generation)
+        .await
+        .unwrap()
+        .is_some());
+    prior_host
+        .remove_tool(&prior_intent, tool, "retire-prior-tool")
+        .await
+        .unwrap();
+
+    assert!(store
+        .get_generation(&prior_intent.scope_id, &qualified, prior_intent.generation)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(store
+        .get_generation(&next_intent.scope_id, &qualified, next_intent.generation)
+        .await
+        .unwrap()
+        .is_some());
+    assert_eq!(prior_runtime.stop_count.load(Ordering::SeqCst), 1);
+    assert_eq!(prior_runtime.remove_count.load(Ordering::SeqCst), 1);
+    assert_eq!(next_runtime.stop_count.load(Ordering::SeqCst), 0);
+    assert_eq!(next_runtime.remove_count.load(Ordering::SeqCst), 0);
+}
+
 #[derive(Default)]
 struct RecordingReadiness {
     calls: AtomicUsize,
@@ -521,16 +614,24 @@ fn package_root() -> PathBuf {
 }
 
 fn intent(manifest: &ExtensionManifest) -> PluginLifecycleIntent {
+    intent_generation(manifest, 9, PluginLifecycleAction::Install)
+}
+
+fn intent_generation(
+    manifest: &ExtensionManifest,
+    generation: u64,
+    action: PluginLifecycleAction,
+) -> PluginLifecycleIntent {
     PluginLifecycleIntent::from_manifest(
         PluginLifecycleIntentSpec {
-            operation_id: "runtime-install".to_string(),
+            operation_id: format!("runtime-generation-{generation}"),
             plan_digest: format!("sha256:{}", "1".repeat(64)),
             scope_id: "workspace:research".to_string(),
             package_id: manifest.package_id.clone(),
             package_digest: PACKAGE_DIGEST.trim().to_string(),
             manifest_digest: format!("sha256:{:x}", Sha256::digest(MANIFEST.as_bytes())),
-            generation: 9,
-            action: PluginLifecycleAction::Install,
+            generation,
+            action,
         },
         manifest,
     )

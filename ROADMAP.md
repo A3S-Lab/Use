@@ -9,7 +9,8 @@
   and exact-generation preflight binding foundation accepted 2026-08-04;
   stable-name Registry controls plus A3S Code TUI/Web Flow and hot-plug host
   integration accepted 2026-08-04; exact `flow.json` identity plus shared
-  workspace-local durable execution/observation accepted 2026-08-04
+  workspace-local durable execution/observation accepted 2026-08-04; bounded
+  exact-generation package/route and Runtime N/N+1 storage accepted 2026-08-05
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -106,6 +107,10 @@ The following foundations are implemented:
   non-root OCI image by Registry manifest digest and proves health, standard
   initialization/request, bounded SIGTERM shutdown, cleanup, and restart;
 - immutable package generations and receipt-owned installation roots;
+- bounded, symlink-safe package and Runtime generation stores that preserve N
+  while N+1 is prepared, resolve the exact snapshot-selected receipt, retain
+  generation-specific route leases, and remove only receipt-owned N after
+  cutover and drain;
 - install, upgrade, enable, disable, uninstall, watch, and route draining;
 - reviewed local packages, release bundles, and TUF-verified remote packages;
 - exact registry target selection with version, channel, target, length, and
@@ -203,6 +208,10 @@ The main gaps are:
   Use; Code TUI/Web now inject their supported host set through the public
   lifecycle factory, while management MCP and managed-host mutation still need
   the same composition;
+- package and Runtime storage now support exact N/N+1 coexistence, candidate
+  commit replay, pre-cutover rollback, and exact prior-generation retirement;
+  the parent dependency-closure coordinator still needs durable automatic
+  rollback, post-cutover retirement, and garbage-collection orchestration;
 - A3S Use supplies the production `a3s-flow` preflight host and retained
   binding evidence, and A3S Code injects it and exposes the typed live Flow
   catalog; Code now resolves strict `flow.json` identities and provides local
@@ -579,7 +588,8 @@ Implementation status (2026-08-03):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; grant sub-saga composition; prior Runtime generation retirement;
+  injection; grant sub-saga composition; graph-coordinated package/Runtime
+  automatic rollback, prior-generation retirement, and garbage collection;
   real signed cross-platform lifecycle E2E; and the published managed-host port
   required before a Cloud adapter can enable mutation. Hosts must not add a
   parallel implementation.
@@ -923,17 +933,18 @@ Implementation status (in progress 2026-07-30):
   Tool launchers, Runtime Tasks, Runtime Tool Services, stdio MCP launchers,
   and Streamable HTTP MCP Services; it requires explicit provider selections,
   Gateway endpoint evidence, MCP initialize evidence, durable bindings, and
-  idempotent stop/removal. It fails closed instead of overwriting an older
-  Runtime-generation receipt during upgrade;
+  idempotent stop/removal. Its bounded exact-generation store retains N and
+  N+1 concurrently, observes and removes the intent-selected generation, and
+  rejects moved, tampered, symlinked, or over-limit receipts;
 - pending: inject that Runtime Broker into the shared Plugin Manager, assemble
   canonical workspace grant changes and explicit provider assignments for Tool
   and MCP drafts, then complete
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,
-  filesystem/network/child-process enforcement, prior-generation Runtime
-  retirement, streaming/file-backed large Task output, the production MCP
-  initialize client adapter, stdio supervision, Gateway route revocation, and
-  scope-aware capability/session snapshot wiring.
+  filesystem/network/child-process enforcement, graph-coordinated
+  prior-generation Runtime retirement, streaming/file-backed large Task
+  output, the production MCP initialize client adapter, stdio supervision,
+  Gateway route revocation, and scope-aware capability/session snapshot wiring.
 
 Deliverables:
 

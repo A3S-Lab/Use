@@ -10,18 +10,21 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::fs;
 
+mod generations;
+mod package;
+
+use generations::{binding_matches_identity, identity_from_receipt};
+use package::{commit_candidate_root, validate_candidate_source};
+
 use super::{
     ensure_no_installed_dependents, normalize_package_id, published_binding_matches_extension,
     verify_package_integrity, ExtensionReceipt, ExtensionRegistry, ExtensionTrust,
     InstalledExtension, UninstallResult, RECEIPT_SCHEMA_VERSION_V3,
 };
-use crate::package::{
-    copy_package, io_error, read_manifest, sha256, unix_timestamp, validate_surface_files,
-    write_receipt, RegistryLock,
-};
-use crate::registry_io::read_registry_snapshot;
-use crate::remote::{DownloadedRemotePackage, ResolvedRemotePackage};
-use crate::source::{prepare_package_source, PreparedPackageSource};
+use crate::package::{io_error, unix_timestamp, write_receipt, RegistryLock};
+use crate::registry_io::{read_registry_snapshot, write_registry_snapshot};
+use crate::remote::ResolvedRemotePackage;
+use crate::source::PreparedPackageSource;
 use crate::{ExtensionManifest, ExtensionPaths};
 
 /// Exact package identity owned by one schema-v3 lifecycle operation.
@@ -125,208 +128,6 @@ pub struct ExtensionLifecyclePackage {
     verified_catalog: Option<VerifiedPluginCatalogRecord>,
 }
 
-impl ExtensionLifecyclePackage {
-    pub async fn prepare_local(
-        expected_package_id: &str,
-        source: &Path,
-        allow_unsigned: bool,
-    ) -> UseResult<Self> {
-        Self::prepare_local_for_host(
-            expected_package_id,
-            source,
-            allow_unsigned,
-            env!("CARGO_PKG_VERSION"),
-        )
-        .await
-    }
-
-    async fn prepare_local_for_host(
-        expected_package_id: &str,
-        source: &Path,
-        allow_unsigned: bool,
-        host_version: &str,
-    ) -> UseResult<Self> {
-        if !allow_unsigned {
-            return Err(UseError::new(
-                "use.extension.trust_required",
-                "Unsigned local cognitive packages require explicit trust approval.",
-            )
-            .with_suggestion("Rerun the explicit install with --allow-unsigned."));
-        }
-        let source = prepare_package_source(source).await?;
-        Self::prepare(
-            expected_package_id,
-            source,
-            ExtensionTrust::LocalExplicit,
-            None,
-            None,
-            host_version,
-        )
-        .await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn prepare_local_for_host_version(
-        expected_package_id: &str,
-        source: &Path,
-        allow_unsigned: bool,
-        host_version: &str,
-    ) -> UseResult<Self> {
-        Self::prepare_local_for_host(expected_package_id, source, allow_unsigned, host_version)
-            .await
-    }
-
-    pub async fn prepare_release_bundle(
-        expected_package_id: &str,
-        source: &Path,
-        expected_package_sha256: &str,
-    ) -> UseResult<Self> {
-        let expected_package_id = normalize_package_id(expected_package_id)?;
-        let bundle = crate::inspect_release_bundle(source).await?;
-        if bundle.package_id != expected_package_id
-            || bundle.package_sha256 != expected_package_sha256
-        {
-            return Err(UseError::new(
-                "use.extension.release_bundle_changed",
-                format!(
-                    "Release bundle '{}' changed after its lifecycle plan was reviewed.",
-                    expected_package_id
-                ),
-            ));
-        }
-        let source = prepare_package_source(source).await?;
-        Self::prepare(
-            &expected_package_id,
-            source,
-            ExtensionTrust::ReleaseBundle,
-            None,
-            None,
-            env!("CARGO_PKG_VERSION"),
-        )
-        .await
-    }
-
-    pub async fn prepare_remote(
-        expected_package_id: &str,
-        downloaded: DownloadedRemotePackage,
-    ) -> UseResult<Self> {
-        let registry = downloaded.resolved().clone();
-        let verified_catalog = downloaded
-            .verified_catalog()
-            .filter(|catalog| catalog.record.is_package_plan_ready())
-            .cloned();
-        let source = prepare_package_source(downloaded.path()).await?;
-        Self::prepare(
-            expected_package_id,
-            source,
-            ExtensionTrust::RegistryTuf,
-            Some(registry),
-            verified_catalog,
-            env!("CARGO_PKG_VERSION"),
-        )
-        .await
-    }
-
-    async fn prepare(
-        expected_package_id: &str,
-        source: PreparedPackageSource,
-        trust: ExtensionTrust,
-        registry: Option<ResolvedRemotePackage>,
-        verified_catalog: Option<VerifiedPluginCatalogRecord>,
-        host_version: &str,
-    ) -> UseResult<Self> {
-        let expected_package_id = normalize_package_id(expected_package_id)?;
-        validate_provenance(trust, registry.as_ref(), verified_catalog.as_ref())?;
-        let (manifest, manifest_bytes) = read_manifest(source.root()).await?;
-        if manifest.package_id != expected_package_id {
-            return Err(UseError::new(
-                "use.extension.identity_mismatch",
-                format!(
-                    "Requested cognitive package '{}' but the package declares '{}'.",
-                    expected_package_id, manifest.package_id
-                ),
-            ));
-        }
-        if manifest.schema_version != 3 {
-            return Err(UseError::new(
-                "use.extension.lifecycle_required",
-                "Only schema-v3 cognitive packages use the package lifecycle coordinator.",
-            ));
-        }
-        if !manifest.supports_use_version(host_version)? {
-            return Err(UseError::new(
-                "use.extension.host_incompatible",
-                format!(
-                    "Cognitive package '{}' {} does not support A3S Use {}.",
-                    manifest.package_id, manifest.version, host_version
-                ),
-            )
-            .with_detail("requiresUse", manifest.requires_use.clone())
-            .with_detail("hostVersion", host_version));
-        }
-        if let Some(registry) = &registry {
-            if registry.package_id != manifest.package_id || registry.version != manifest.version {
-                return Err(UseError::new(
-                    "use.extension.registry_identity_mismatch",
-                    "The signed registry target does not match the cognitive package manifest.",
-                ));
-            }
-        }
-        validate_surface_files(&manifest, source.root()).await?;
-        let package_sha256 = crate::digest::package_sha256(source.root()).await?;
-        super::validate_catalog_package(
-            verified_catalog.as_ref(),
-            registry.as_ref(),
-            &manifest,
-            &manifest_bytes,
-            &package_sha256,
-        )?;
-        Ok(Self {
-            source,
-            manifest,
-            package_digest: format!("sha256:{package_sha256}"),
-            manifest_digest: format!("sha256:{}", sha256(&manifest_bytes)),
-            trust,
-            registry,
-            verified_catalog,
-        })
-    }
-
-    pub fn package_id(&self) -> &str {
-        &self.manifest.package_id
-    }
-
-    pub fn package_digest(&self) -> &str {
-        &self.package_digest
-    }
-
-    pub fn manifest_digest(&self) -> &str {
-        &self.manifest_digest
-    }
-
-    pub fn manifest(&self) -> &ExtensionManifest {
-        &self.manifest
-    }
-
-    fn validate_identity(&self, identity: &ExtensionLifecycleIdentity) -> UseResult<()> {
-        if self.package_id() != identity.package_id
-            || self.package_digest != identity.package_digest
-            || self.manifest_digest != identity.manifest_digest
-        {
-            return Err(lifecycle_identity_error(
-                "The prepared cognitive package does not match the lifecycle identity.",
-            ));
-        }
-        Ok(())
-    }
-
-    fn matches_provenance(&self, receipt: &ExtensionReceipt) -> bool {
-        receipt.trust == self.trust
-            && receipt.registry == self.registry
-            && receipt.verified_catalog == self.verified_catalog
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionLifecycleResult {
@@ -349,6 +150,9 @@ impl ExtensionRegistry {
     ) -> UseResult<ExtensionLifecycleResult> {
         candidate.validate_identity(identity)?;
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let mut retained_created = None;
+        let mut retained_candidate = None;
+        let mut upgrade_candidate = false;
         if let Some(current) = self.get(identity.package_id()).await? {
             if current.receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 {
                 if exact_receipt(identity, &current.receipt).is_ok()
@@ -360,23 +164,81 @@ impl ExtensionRegistry {
                         ));
                     }
                     verify_package_integrity(&current).await?;
-                    let installed = self.list().await?;
-                    let snapshot = self.publish_snapshot_locked(&installed).await?;
+                    let retained = self
+                        .retained_lifecycle_extensions(identity.package_id())
+                        .await?;
+                    let snapshot = if retained.is_empty() {
+                        let installed = self.list().await?;
+                        self.publish_snapshot_locked(&installed).await?
+                    } else if retained.len() == 1 {
+                        let snapshot =
+                            read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+                        let package_routes = snapshot
+                            .routes
+                            .iter()
+                            .filter(|binding| binding.package_id == identity.package_id())
+                            .collect::<Vec<_>>();
+                        if package_routes.len() != 1
+                            || !published_binding_matches_extension(package_routes[0], &retained[0])
+                        {
+                            return Err(lifecycle_state_error(
+                                "A replayed upgrade candidate must preserve the exact retained generation as the Registry snapshot commit point.",
+                            ));
+                        }
+                        snapshot
+                    } else {
+                        return Err(lifecycle_state_error(
+                            "A replayed upgrade candidate has ambiguous retained package generations.",
+                        ));
+                    };
                     return Ok(ExtensionLifecycleResult {
                         changed: false,
                         extension: current,
                         registry_generation: snapshot.generation,
                     });
                 }
+                let current_generation = current.receipt.lifecycle_generation.ok_or_else(|| {
+                    lifecycle_state_error(
+                        "The current cognitive-package receipt omitted its lifecycle generation.",
+                    )
+                })?;
+                if identity.generation() <= current_generation {
+                    return Err(UseError::new(
+                        "use.extension.lifecycle_generation_stale",
+                        "A candidate cognitive-package generation must be newer than the selected generation.",
+                    ));
+                }
+                verify_package_integrity(&current).await?;
+                let published =
+                    read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+                if !published
+                    .routes
+                    .iter()
+                    .any(|binding| published_binding_matches_extension(binding, &current))
+                {
+                    return Err(UseError::new(
+                        "use.extension.lifecycle_generation_unpublished",
+                        "The selected cognitive-package generation must reach its exact snapshot commit before an upgrade candidate is staged.",
+                    ));
+                }
+                let retained = self
+                    .retained_lifecycle_extensions(identity.package_id())
+                    .await?;
+                if retained.iter().any(|generation| generation != &current) {
+                    return Err(UseError::new(
+                        "use.extension.lifecycle_generation_retirement_required",
+                        "A prior cognitive-package generation is still retained and must finish retirement before another candidate is staged.",
+                    ));
+                }
+                let current_identity = identity_from_receipt(&current.receipt)?;
+                upgrade_candidate = true;
+                retained_candidate = Some((current_identity, current.receipt));
+            } else {
                 return Err(UseError::new(
-                    "use.extension.lifecycle_generation_retirement_required",
-                    "A different cognitive-package generation is retained and must be retired before replacement.",
+                    "use.extension.lifecycle_legacy_conflict",
+                    "A legacy extension receipt already owns this cognitive package ID.",
                 ));
             }
-            return Err(UseError::new(
-                "use.extension.lifecycle_legacy_conflict",
-                "A legacy extension receipt already owns this cognitive package ID.",
-            ));
         }
 
         let installed = self.list().await?;
@@ -396,6 +258,23 @@ impl ExtensionRegistry {
         validate_candidate_source(candidate).await?;
         let target = self.lifecycle_package_root(identity);
         let target_created = commit_candidate_root(candidate, &target).await?;
+        if let Some((retained_identity, receipt)) = retained_candidate {
+            let retained = self
+                .retain_lifecycle_receipt(&retained_identity, &receipt)
+                .await;
+            let created = match retained {
+                Ok(retained) => retained,
+                Err(error) => {
+                    if target_created {
+                        let _ = remove_exact_root(&target).await;
+                    }
+                    return Err(error);
+                }
+            };
+            if created {
+                retained_created = Some(retained_identity);
+            }
+        }
         let receipt = ExtensionReceipt {
             schema_version: RECEIPT_SCHEMA_VERSION_V3,
             package_id: identity.package_id.clone(),
@@ -424,12 +303,19 @@ impl ExtensionRegistry {
                 if target_created {
                     let _ = remove_exact_root(&target).await;
                 }
+                if let Some(identity) = retained_created {
+                    let _ = self.remove_retained_receipt(&identity).await;
+                }
                 return Err(error);
             }
         }
 
-        let current = self.list().await?;
-        let snapshot = self.publish_snapshot_locked(&current).await?;
+        let snapshot = if upgrade_candidate {
+            read_registry_snapshot(&self.paths.registry_snapshot_path()).await?
+        } else {
+            let current = self.list().await?;
+            self.publish_snapshot_locked(&current).await?
+        };
         Ok(ExtensionLifecycleResult {
             changed: true,
             extension: InstalledExtension {
@@ -503,7 +389,9 @@ impl ExtensionRegistry {
         let installed = self.list().await?;
         let snapshot = self.publish_snapshot_locked(&installed).await?;
         let _drain = crate::route_lock::acquire_drain_lock(
-            &self.paths.package_lock_path(identity.package_id()),
+            &self
+                .paths
+                .lifecycle_package_lock_path(identity.package_id(), identity.generation()),
             timeout,
         )
         .await?;
@@ -522,31 +410,99 @@ impl ExtensionRegistry {
         crate::route_lock::deadline_after(timeout)?;
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let target = self.lifecycle_package_root(identity);
-        let Some(extension) = self.get(identity.package_id()).await? else {
-            let installed = self.list().await?;
-            self.publish_snapshot_locked(&installed).await?;
+        let selected = self.get(identity.package_id()).await?;
+        let selected_is_exact = selected
+            .as_ref()
+            .is_some_and(|extension| exact_receipt(identity, &extension.receipt).is_ok());
+        if !selected_is_exact {
+            let retained = self.get_lifecycle_generation(identity).await?;
+            let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+            let published_binding = published
+                .routes
+                .iter()
+                .find(|binding| binding_matches_identity(&self.paths, binding, identity));
+            if published_binding.is_some_and(|binding| binding.enabled) {
+                return Err(lifecycle_state_error(format!(
+                    "Published cognitive-package generation '{}#{}' cannot be retired without an exact selected receipt.",
+                    identity.package_id(),
+                    identity.generation()
+                )));
+            }
+            let repair_missing_selected_snapshot =
+                published_binding.is_some() && selected.is_none() && retained.is_none();
+            if published_binding.is_some() && !repair_missing_selected_snapshot {
+                return Err(lifecycle_state_error(
+                    "A retained cognitive-package generation is still present in the Registry snapshot.",
+                ));
+            }
+            if retained
+                .as_ref()
+                .is_some_and(|extension| extension.receipt.enabled)
+            {
+                return Err(lifecycle_state_error(
+                    "The retained cognitive-package generation must be hidden before removal.",
+                ));
+            }
             let _drain = crate::route_lock::acquire_drain_lock(
-                &self.paths.package_lock_path(identity.package_id()),
+                &self
+                    .paths
+                    .lifecycle_package_lock_path(identity.package_id(), identity.generation()),
                 timeout,
             )
             .await?;
-            let changed = remove_exact_root(&target).await?;
+            let mut changed = false;
+            if repair_missing_selected_snapshot {
+                let installed = self.list().await?;
+                let repaired = self.publish_snapshot_locked(&installed).await?;
+                if repaired
+                    .routes
+                    .iter()
+                    .any(|binding| binding_matches_identity(&self.paths, binding, identity))
+                {
+                    return Err(lifecycle_state_error(
+                        "The missing lifecycle receipt could not be removed from the Registry snapshot.",
+                    ));
+                }
+                changed = true;
+            }
+            if retained.is_some() {
+                self.remove_retained_receipt(identity).await?;
+                changed = true;
+            }
+            if remove_exact_root(&target).await? {
+                changed = true;
+            }
             return Ok(UninstallResult {
                 package_id: identity.package_id.clone(),
                 changed,
             });
-        };
+        }
+        let extension = selected.ok_or_else(|| {
+            lifecycle_state_error("The exact selected lifecycle receipt disappeared.")
+        })?;
         exact_receipt(identity, &extension.receipt)?;
         verify_package_integrity(&extension).await?;
         let installed = self.list().await?;
         ensure_no_installed_dependents(&installed, identity.package_id())?;
+        if !self
+            .retained_lifecycle_extensions(identity.package_id())
+            .await?
+            .is_empty()
+        {
+            return Err(UseError::new(
+                "use.extension.lifecycle_generation_retirement_required",
+                "Retained prior generations must finish exact retirement before the selected package is removed.",
+            ));
+        }
         if extension.receipt.enabled {
             return Err(lifecycle_state_error(
                 "The cognitive package must be hidden before its immutable generation is removed.",
             ));
         }
         let _drain = crate::route_lock::acquire_drain_lock(
-            &self.paths.package_lock_path(identity.package_id()),
+            &self
+                .paths
+                .lifecycle_package_lock_path(identity.package_id(), identity.generation()),
             timeout,
         )
         .await?;
@@ -570,7 +526,28 @@ impl ExtensionRegistry {
         host_version: &str,
     ) -> UseResult<ExtensionLifecycleResult> {
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
-        let mut extension = self.exact_lifecycle_extension(identity).await?;
+        let selected = self.get(identity.package_id()).await?;
+        let selected_is_exact = selected
+            .as_ref()
+            .is_some_and(|extension| exact_receipt(identity, &extension.receipt).is_ok());
+        let mut extension = if selected_is_exact {
+            selected.ok_or_else(|| {
+                lifecycle_state_error("The exact selected lifecycle receipt disappeared.")
+            })?
+        } else {
+            self.get_lifecycle_generation(identity)
+                .await?
+                .ok_or_else(|| {
+                    UseError::new(
+                        "use.extension.not_installed",
+                        format!(
+                            "Cognitive package generation '{}#{}' is not installed.",
+                            identity.package_id(),
+                            identity.generation()
+                        ),
+                    )
+                })?
+        };
         if enabled && !extension.supports_use_version(host_version) {
             return Err(UseError::new(
                 "use.extension.host_incompatible",
@@ -580,17 +557,42 @@ impl ExtensionRegistry {
                 ),
             ));
         }
+        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let published_exact = published
+            .routes
+            .iter()
+            .any(|binding| binding_matches_identity(&self.paths, binding, identity));
+        if !selected_is_exact && (enabled || published_exact) {
+            return Err(lifecycle_state_error(
+                "A retained generation can be hidden only after atomic capability cutover selected its replacement.",
+            ));
+        }
+        if selected_is_exact && !enabled && !published_exact {
+            return Err(lifecycle_state_error(
+                "An unpublished upgrade candidate cannot hide or replace the still-published prior generation.",
+            ));
+        }
         let changed = extension.receipt.enabled != enabled;
         if changed {
+            let previous = extension.receipt.clone();
             extension.receipt.enabled = enabled;
-            write_receipt(
-                &self.paths.receipt_path(identity.package_id()),
-                &extension.receipt,
-            )
-            .await?;
+            if selected_is_exact {
+                write_receipt(
+                    &self.paths.receipt_path(identity.package_id()),
+                    &extension.receipt,
+                )
+                .await?;
+            } else {
+                self.update_retained_lifecycle_receipt(identity, &previous, &extension.receipt)
+                    .await?;
+            }
         }
-        let installed = self.list().await?;
-        let snapshot = self.publish_snapshot_locked(&installed).await?;
+        let snapshot = if selected_is_exact {
+            let installed = self.list().await?;
+            self.publish_snapshot_locked(&installed).await?
+        } else {
+            published
+        };
         Ok(ExtensionLifecycleResult {
             changed,
             extension,
@@ -619,6 +621,7 @@ impl ExtensionRegistry {
         }
 
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let snapshot_before = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
         if let Some(package_lock) = package_lock {
             package_lock.validate()?;
             if package_lock.host.use_version != host_version {
@@ -633,7 +636,6 @@ impl ExtensionRegistry {
                     ));
                 }
             }
-            let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
             for locked in &package_lock.packages {
                 if package_ids.contains(locked.package_id()) {
                     continue;
@@ -645,7 +647,7 @@ impl ExtensionRegistry {
                 })?;
                 validate_locked_extension(locked, &retained, host_version)?;
                 if !retained.receipt.enabled
-                    || !published.routes.iter().any(|binding| {
+                    || !snapshot_before.routes.iter().any(|binding| {
                         binding.enabled && published_binding_matches_extension(binding, &retained)
                     })
                 {
@@ -715,9 +717,8 @@ impl ExtensionRegistry {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 self.restore_lifecycle_receipts(&originals).await?;
-                if let Ok(installed) = self.list().await {
-                    let _ = self.publish_snapshot_locked(&installed).await;
-                }
+                write_registry_snapshot(&self.paths.registry_snapshot_path(), &snapshot_before)
+                    .await?;
                 return Err(error);
             }
         };
@@ -794,18 +795,18 @@ impl ExtensionRegistry {
         &self,
         identity: &ExtensionLifecycleIdentity,
     ) -> UseResult<InstalledExtension> {
-        let extension = self.get(identity.package_id()).await?.ok_or_else(|| {
-            UseError::new(
-                "use.extension.not_installed",
-                format!(
-                    "Cognitive package '{}' is not installed.",
-                    identity.package_id
-                ),
-            )
-        })?;
-        exact_receipt(identity, &extension.receipt)?;
-        verify_package_integrity(&extension).await?;
-        Ok(extension)
+        self.get_lifecycle_generation(identity)
+            .await?
+            .ok_or_else(|| {
+                UseError::new(
+                    "use.extension.not_installed",
+                    format!(
+                        "Cognitive package generation '{}#{}' is not installed.",
+                        identity.package_id(),
+                        identity.generation()
+                    ),
+                )
+            })
     }
 }
 
@@ -834,86 +835,6 @@ fn exact_receipt(
     Ok(())
 }
 
-async fn validate_candidate_source(candidate: &ExtensionLifecyclePackage) -> UseResult<()> {
-    let (manifest, manifest_bytes) = read_manifest(candidate.source.root()).await?;
-    validate_surface_files(&manifest, candidate.source.root()).await?;
-    let package_sha256 = crate::digest::package_sha256(candidate.source.root()).await?;
-    if manifest != candidate.manifest
-        || format!("sha256:{}", sha256(&manifest_bytes)) != candidate.manifest_digest
-        || format!("sha256:{package_sha256}") != candidate.package_digest
-    {
-        return Err(UseError::new(
-            "use.extension.package_changed",
-            "The cognitive package changed after lifecycle preparation.",
-        ));
-    }
-    Ok(())
-}
-
-async fn commit_candidate_root(
-    candidate: &ExtensionLifecyclePackage,
-    target: &Path,
-) -> UseResult<bool> {
-    match fs::symlink_metadata(target).await {
-        Ok(_) => {
-            validate_committed_root(candidate, target).await?;
-            return Ok(false);
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(io_error("inspect lifecycle package", target, error)),
-    }
-    let parent = target.parent().ok_or_else(|| {
-        lifecycle_state_error("The lifecycle package root has no owned parent directory.")
-    })?;
-    fs::create_dir_all(parent)
-        .await
-        .map_err(|error| io_error("create lifecycle package directory", parent, error))?;
-    let staging = tempfile::Builder::new()
-        .prefix(".lifecycle-staging-")
-        .tempdir_in(parent)
-        .map_err(|error| io_error("create lifecycle package staging", parent, error))?;
-    copy_package(candidate.source.root(), staging.path()).await?;
-    validate_committed_root(candidate, staging.path()).await?;
-    let staging = staging.keep();
-    if let Err(error) = fs::rename(&staging, target).await {
-        let _ = fs::remove_dir_all(&staging).await;
-        return Err(io_error(
-            "commit lifecycle package generation",
-            target,
-            error,
-        ));
-    }
-    Ok(true)
-}
-
-async fn validate_committed_root(
-    candidate: &ExtensionLifecyclePackage,
-    root: &Path,
-) -> UseResult<()> {
-    let metadata = fs::symlink_metadata(root)
-        .await
-        .map_err(|error| io_error("inspect lifecycle package", root, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err(UseError::new(
-            "use.extension.ownership_invalid",
-            "The lifecycle package root must be an owned directory.",
-        ));
-    }
-    let (manifest, manifest_bytes) = read_manifest(root).await?;
-    validate_surface_files(&manifest, root).await?;
-    let package_sha256 = crate::digest::package_sha256(root).await?;
-    if manifest != candidate.manifest
-        || format!("sha256:{}", sha256(&manifest_bytes)) != candidate.manifest_digest
-        || format!("sha256:{package_sha256}") != candidate.package_digest
-    {
-        return Err(UseError::new(
-            "use.extension.package_changed",
-            "The committed lifecycle package does not match its prepared bytes.",
-        ));
-    }
-    Ok(())
-}
-
 async fn remove_exact_root(path: &Path) -> UseResult<bool> {
     let metadata = match fs::symlink_metadata(path).await {
         Ok(metadata) => metadata,
@@ -933,30 +854,6 @@ async fn remove_exact_root(path: &Path) -> UseResult<bool> {
         .await
         .map_err(|error| io_error("remove lifecycle package generation", path, error))?;
     Ok(true)
-}
-
-fn validate_provenance(
-    trust: ExtensionTrust,
-    registry: Option<&ResolvedRemotePackage>,
-    verified_catalog: Option<&VerifiedPluginCatalogRecord>,
-) -> UseResult<()> {
-    match (trust, registry, verified_catalog) {
-        (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None) => Ok(()),
-        (ExtensionTrust::RegistryTuf, Some(registry), catalog) => {
-            registry.validate_provenance()?;
-            if catalog.is_some_and(|catalog| !catalog.record.is_package_plan_ready()) {
-                return Err(UseError::new(
-                    "use.extension.trust_invalid",
-                    "Lifecycle registry evidence is not package-plan ready.",
-                ));
-            }
-            Ok(())
-        }
-        _ => Err(UseError::new(
-            "use.extension.trust_invalid",
-            "Cognitive-package lifecycle provenance is internally inconsistent.",
-        )),
-    }
 }
 
 fn validate_locked_extension(

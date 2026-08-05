@@ -442,6 +442,33 @@ impl ExtensionRegistry {
         }
     }
 
+    /// Resolve the exact receipt selected by one immutable Registry snapshot
+    /// binding. During blue-green preparation this may be a retained prior
+    /// generation rather than the primary candidate receipt.
+    pub async fn get_snapshot_binding(
+        &self,
+        binding: &ExtensionRouteBinding,
+    ) -> UseResult<Option<InstalledExtension>> {
+        let extension = if let Some(generation) = binding.lifecycle_generation {
+            let package_sha256 = binding.package_sha256.as_deref().ok_or_else(|| {
+                UseError::new(
+                    "use.extension.lifecycle_binding_invalid",
+                    "A lifecycle snapshot binding omitted its package digest.",
+                )
+            })?;
+            let identity = ExtensionLifecycleIdentity::new(
+                &binding.package_id,
+                format!("sha256:{package_sha256}"),
+                format!("sha256:{}", binding.manifest_sha256),
+                generation,
+            )?;
+            self.get_lifecycle_generation(&identity).await?
+        } else {
+            self.get(&binding.package_id).await?
+        };
+        Ok(extension.filter(|extension| published_binding_matches_extension(binding, extension)))
+    }
+
     /// Return installed packages whose admitted manifests directly require
     /// `package_id`. The sorted result is suitable for uninstall review and
     /// is recomputed from authoritative receipts instead of a mutable index.
@@ -469,7 +496,7 @@ impl ExtensionRegistry {
         else {
             return Ok(None);
         };
-        let Some(extension) = self.get(&binding.package_id).await? else {
+        let Some(extension) = self.get_snapshot_binding(binding).await? else {
             return Ok(None);
         };
         Ok((extension.receipt.enabled
@@ -493,16 +520,19 @@ impl ExtensionRegistry {
         &self,
         package_id: &str,
     ) -> UseResult<Option<ExtensionRouteLease>> {
-        let Some(candidate) = self.get(package_id).await? else {
+        let package_id = normalize_package_id(package_id)?;
+        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let Some(binding) = published
+            .routes
+            .iter()
+            .find(|binding| binding.enabled && binding.package_id == package_id)
+        else {
             return Ok(None);
         };
-        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
-        let published = published.routes.iter().any(|binding| {
-            binding.enabled && published_binding_matches_extension(binding, &candidate)
-        });
-        if !published
-            || !candidate.receipt.enabled
-            || !candidate.supports_use_version(env!("CARGO_PKG_VERSION"))
+        let Some(candidate) = self.get_snapshot_binding(binding).await? else {
+            return Ok(None);
+        };
+        if !candidate.receipt.enabled || !candidate.supports_use_version(env!("CARGO_PKG_VERSION"))
         {
             return Ok(None);
         }
@@ -1019,7 +1049,7 @@ impl ExtensionRegistry {
         expected_route: Option<&str>,
         host_version: &str,
     ) -> UseResult<Option<ExtensionRouteLease>> {
-        let path = self.paths.package_lock_path(&candidate.receipt.package_id);
+        let path = lifecycle_route_lock_path(&self.paths, &candidate.receipt)?;
         let file = open_route_lock(&path)?;
         match FileExt::try_lock_shared(&file) {
             Ok(()) => {}
@@ -1029,16 +1059,18 @@ impl ExtensionRegistry {
 
         // Re-read after locking so a concurrent disable cannot admit a call
         // using stale route metadata.
-        let Some(extension) = self.get(&candidate.receipt.package_id).await? else {
+        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let Some(binding) = published.routes.iter().find(|binding| {
+            binding.enabled && published_binding_matches_extension(binding, &candidate)
+        }) else {
             let _ = FileExt::unlock(&file);
             return Ok(None);
         };
-        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
-        let published = published.routes.iter().any(|binding| {
-            binding.enabled && published_binding_matches_extension(binding, &extension)
-        });
-        if !published
-            || !extension.receipt.enabled
+        let Some(extension) = self.get_snapshot_binding(binding).await? else {
+            let _ = FileExt::unlock(&file);
+            return Ok(None);
+        };
+        if !extension.receipt.enabled
             || !extension.supports_use_version(host_version)
             || expected_route.is_some_and(|route| extension.receipt.route != route)
         {
@@ -1324,6 +1356,28 @@ fn published_binding_matches_extension(
     extension: &InstalledExtension,
 ) -> bool {
     binding == &route_bindings(std::slice::from_ref(extension))[0]
+}
+
+fn lifecycle_route_lock_path(
+    paths: &ExtensionPaths,
+    receipt: &ExtensionReceipt,
+) -> UseResult<PathBuf> {
+    match receipt.lifecycle_generation {
+        Some(generation) if receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 => {
+            Ok(paths.lifecycle_package_lock_path(&receipt.package_id, generation))
+        }
+        None if matches!(
+            receipt.schema_version,
+            RECEIPT_SCHEMA_VERSION_V1 | RECEIPT_SCHEMA_VERSION_V2
+        ) =>
+        {
+            Ok(paths.package_lock_path(&receipt.package_id))
+        }
+        _ => Err(UseError::new(
+            "use.extension.lifecycle_receipt_invalid",
+            "An extension receipt has inconsistent route-lease generation evidence.",
+        )),
+    }
 }
 
 fn reject_lifecycle_managed(receipt: &ExtensionReceipt) -> UseResult<()> {

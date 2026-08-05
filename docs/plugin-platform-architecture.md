@@ -47,10 +47,11 @@ stage request, evidence-checking client, durable bounded generation store, and
 a package-saga OKF adapter. The package-level intent, journal, coordinator,
 typed Runtime/static adapters, and P0 package/capability hosts are implemented.
 Schema-v3 receipt generation binding, deterministic immutable roots, atomic
-publish/hide, and route-lease drain now enforce the package boundary. Umbrella
-manager composition, prior Runtime generation retirement, the A3S Knowledge
-index backend, and scoped cited retrieval remain to be implemented; missing
-promoted evidence therefore stays explicitly unpublished.
+publish/hide, generation-specific route leases, and bounded package/Runtime
+N/N+1 receipt storage now enforce the package boundary. Umbrella manager
+composition, graph-coordinated automatic retirement/rollback/GC, the A3S
+Knowledge index backend, and scoped cited retrieval remain to be implemented;
+missing promoted evidence therefore stays explicitly unpublished.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use
@@ -562,9 +563,10 @@ preflight host, and immutable Skill/UI projection through this factory. Its TUI
 and Web adapters consume one exact-generation watcher, including a typed live
 Flow catalog and install/upgrade/uninstall hot-plug coverage. Production
 Knowledge, Runtime Service, Gateway/HTTP MCP, grant, management-MCP, and
-managed-host composition remain pending. The production package host also
-rejects upgrade before mutation until blue/green dual-generation retirement is
-implemented; it never overwrites the only retained generation.
+managed-host composition remain pending. The production package host still
+rejects graph upgrade before mutation until its parent saga consumes the
+implemented package/Runtime dual-generation primitives; storage never
+overwrites the snapshot-selected retained generation.
 
 ## Surface Reconciliation
 
@@ -919,10 +921,10 @@ checkpoints. It revalidates immutable Tool/MCP files, requires the exact
 selected Task or Service plan, obtains a typed Gateway endpoint for Services,
 requires standard initialize evidence for HTTP MCP, persists the resulting
 binding, and idempotently stops and removes only that receipt-owned resource.
-Native Tool executables and stdio MCP remain static launchers. A retained
-binding from another generation fails with
-`use.plugin.runtime_generation_retirement_required` until dual-generation
-retirement is available.
+Native Tool executables and stdio MCP remain static launchers. Runtime Task and
+Service receipts retain up to 32 exact generations per surface. Preparation,
+observation, and cleanup select the lifecycle intent's generation, so N remains
+available while N+1 is prepared and retirement cannot remove the replacement.
 
 Flow sits above its Tool/MCP/OKF dependencies and below Skill/UI consumers.
 The package adapter revalidates and digests its bounded UTF-8 TypeScript source;

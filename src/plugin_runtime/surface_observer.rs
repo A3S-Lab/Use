@@ -68,9 +68,15 @@ impl<'a> RuntimeSurfaceObserver<'a> {
         &self,
         scope_id: &str,
         package_digest: &str,
+        generation: u64,
         manifest: &ExtensionManifest,
     ) -> UseResult<RuntimeSurfaceObservationSnapshot> {
         validate_scope_and_digest(scope_id, package_digest)?;
+        if generation == 0 {
+            return Err(runtime_input_error(
+                "Runtime surface observation requires an exact positive package generation.",
+            ));
+        }
         let expectations = runtime_surface_expectations(manifest)?;
         let mut clients = BTreeMap::<String, PluginRuntimeClient>::new();
         let mut surfaces = Vec::with_capacity(expectations.len());
@@ -80,7 +86,11 @@ impl<'a> RuntimeSurfaceObserver<'a> {
                 package_id: manifest.package_id.clone(),
                 surface: surface.clone(),
             };
-            let Some(receipt) = self.store.get(scope_id, &qualified).await? else {
+            let Some(receipt) = self
+                .store
+                .get_generation(scope_id, &qualified, generation)
+                .await?
+            else {
                 surfaces.push(RuntimeSurfaceObservation {
                     surface,
                     state: RuntimeSurfaceObservedState::Unbound,

@@ -164,8 +164,10 @@ Install/enable prepares forward and publishes once. Disable hides, drains, and
 stops in reverse. Uninstall hides, drains, removes receipt-owned contributions
 in reverse, and only then removes the package. The operation journal is
 bounded, strict, atomic, cross-process locked, and rejects reordered,
-substituted, or tampered receipts. Production host injection and blue/green
-prior-generation retirement remain outside the completed contract foundation.
+substituted, or tampered receipts. Exact package/Runtime N/N+1 storage,
+snapshot-selected routing, and receipt-owned prior removal are implemented.
+Production host injection and parent-saga automatic rollback, retirement, and
+garbage collection remain outside the completed contract foundation.
 
 Package ownership also applies above one manifest. A schema-v3 package may
 declare canonical package ID plus SemVer dependency blocks. The package lock

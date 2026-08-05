@@ -599,7 +599,7 @@ async fn project_extensions(
             // duplicate the release-matched built-in MCP/Skill projection.
             continue;
         }
-        let Some(extension) = crate::extension_host::get(&route.package_id).await? else {
+        let Some(extension) = crate::extension_host::get_snapshot_binding(route).await? else {
             return Ok(None);
         };
         let receipt = &extension.receipt;
