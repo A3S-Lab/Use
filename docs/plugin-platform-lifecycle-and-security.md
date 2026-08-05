@@ -553,6 +553,12 @@ Grant candidates. The parent package manager carries the complete User or
 Workspace plan scope through every checkpoint; replay rejects a caller that
 keeps the scope ID but changes its kind.
 
+A Workspace-scoped operation always records one exact activation impact. When
+the selected package graph has no permission ceilings, both Grant digests stay
+absent and only the action-derived enablement transition changes. This keeps
+the Workspace scope structurally bound without creating a fictitious Grant or
+entering the Grant sub-saga.
+
 An added permission, secret request, provider requirement, external
 dependency, command alias, or public interface is plan drift and requires a
 new grant or confirmation.

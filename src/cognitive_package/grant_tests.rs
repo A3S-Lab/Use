@@ -115,6 +115,82 @@ async fn standalone_policy_requires_exact_confirmation_and_rejects_grant_free_by
 }
 
 #[tokio::test]
+async fn permission_free_workspace_plan_still_binds_exact_enablement_impact() {
+    let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
+    let source_transition = source.packages[0].clone();
+    let mut after = source_transition.after.unwrap();
+    after
+        .release
+        .surfaces
+        .retain(|surface| surface.kind == a3s_use_core::PluginSurfaceKind::Skill);
+    after.permissions.surfaces.clear();
+    after.release.permission_ceiling_digest = after.permissions.descriptor_digest().unwrap();
+    let transition = PlannedPackageTransition::resolved(
+        source.package_id.clone(),
+        PlanPackageRole::Root,
+        PlanPackageChangeKind::Add,
+        None,
+        Some(after),
+        source_transition.source,
+    )
+    .unwrap();
+    let mut draft = PluginOperationPlanDraft::new(
+        source.action,
+        source.package_id,
+        source.component_id,
+        vec![transition],
+        Vec::new(),
+        Vec::new(),
+        source.impact,
+        source.state,
+    )
+    .unwrap();
+    let binding = binding(
+        &source.scope,
+        &draft,
+        &StandaloneCognitivePackageAuthorizationProvider,
+        "install:test:permission-free-workspace",
+        1_710_000_000_000,
+    );
+    let snapshot = empty_snapshot(&source.scope.id, draft.state.state_revision);
+
+    let planned = plan_workspace_grants(&mut draft, &binding, &snapshot, false, true).unwrap();
+    assert!(planned.is_none());
+    assert_eq!(draft.workspace_impacts.len(), 1);
+    assert_eq!(draft.workspace_impacts[0].scope_id, source.scope.id);
+    assert!(draft.workspace_impacts[0].grant_before_digest.is_none());
+    assert!(draft.workspace_impacts[0].grant_after_digest.is_none());
+    assert!(!draft.workspace_impacts[0].enabled_before);
+    assert!(draft.workspace_impacts[0].enabled_after);
+
+    let envelope = PluginOperationPlanEnvelope::new(draft.bind(binding).unwrap()).unwrap();
+    let admitted_at_ms = envelope.plan.created_at_ms + 100;
+    let authorization = authorize_planned_operation(
+        &StandaloneCognitivePackageAuthorizationProvider,
+        &envelope,
+        None,
+        admitted_at_ms,
+    )
+    .await
+    .unwrap();
+    authorization
+        .validate_against(&envelope, admitted_at_ms)
+        .unwrap();
+    assert!(authorization.resolved_grants.is_none());
+    assert!(authorization.grant_ceilings.is_empty());
+
+    let mut drifted = envelope;
+    drifted.plan.workspace_impacts[0].enabled_before = true;
+    assert_eq!(
+        authorization
+            .validate_against(&drifted, admitted_at_ms)
+            .unwrap_err()
+            .code,
+        "use.plugin.plan_invalid"
+    );
+}
+
+#[tokio::test]
 async fn confirmed_install_persists_replay_stable_plan_bound_grants_and_ceilings() {
     let (envelope, planned) = install_plan(&ConfirmAll);
     let admitted_at_ms = envelope.plan.created_at_ms + 100;

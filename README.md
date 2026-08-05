@@ -62,6 +62,9 @@ available for automation, embedding, and diagnostics.
 > lock, policy, or replay drift fails closed. The Grant-aware package manager
 > retains the complete User or Workspace plan scope and rejects
 > pending-operation replay when only the scope kind changes under the same ID.
+> A permission-free Workspace plan still binds its exact enablement transition
+> without inventing Grant digests, so scope validation remains complete for
+> static Skill/UI packages.
 > Production Knowledge,
 > Service/HTTP hosts, umbrella and managed-host adapter wiring, distributed Flow
 > scheduling/resumption, and complete real-process cross-platform E2E remain
@@ -523,7 +526,7 @@ do not share one database transaction. The boundaries are frozen in
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
-| Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, and exact User/Workspace scope retention are implemented: external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host adapters still need to invoke the provider |
+| Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, exact User/Workspace scope retention, and permission-free Workspace enablement impacts are implemented: external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host adapters still need to invoke the provider |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
 | Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone and reviewed-host Grant plan/apply selection are wired, while production providers and umbrella/managed-host adapter invocation remain release gates |
