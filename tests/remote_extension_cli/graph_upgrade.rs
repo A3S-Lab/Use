@@ -1,5 +1,89 @@
 use super::*;
 
+#[tokio::test]
+async fn schema_v3_upgrade_advances_enablement_state_without_reusing_artifact_generation() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let first = cognitive_skill_target_version(
+        &temp.path().join("first"),
+        "acme/root",
+        "root",
+        "1.0.0",
+        Vec::new(),
+        &target,
+    );
+    let next = cognitive_skill_target_version(
+        &temp.path().join("next"),
+        "acme/root",
+        "root",
+        "1.1.0",
+        Vec::new(),
+        &target,
+    );
+    let repository = TestRepository::with_targets(vec![first, next], 43, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+    let trusted = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        &repository.root_sha256,
+        None,
+        home.join("state/remote-registries/fixture"),
+    )
+    .unwrap();
+    let extension_registry =
+        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+    manager
+        .install_remote(
+            &trusted,
+            &[],
+            "acme/root",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let installed = manager.observe_package("acme/root").await.unwrap();
+    let disable = CognitivePackageEnablementRequest::new(
+        "enablement:upgrade:disable:0001",
+        "acme/root",
+        installed.package_generation.unwrap(),
+        false,
+    )
+    .unwrap();
+    let disabled = manager.set_enablement(&disable).await.unwrap();
+    let enable = CognitivePackageEnablementRequest::new(
+        "enablement:upgrade:enable:0002",
+        "acme/root",
+        disabled.state.package_generation.unwrap(),
+        true,
+    )
+    .unwrap();
+    let before_upgrade = manager.set_enablement(&enable).await.unwrap();
+    let state_generation_before = before_upgrade.state.package_generation.unwrap();
+
+    manager
+        .upgrade_remote(
+            &trusted,
+            &[],
+            "acme/root",
+            Some("1.1.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    let upgraded_receipt = extension_registry.get("acme/root").await.unwrap().unwrap();
+    assert_eq!(upgraded_receipt.receipt.version, "1.1.0");
+    let upgraded = manager.observe_package("acme/root").await.unwrap();
+    assert!(upgraded.package_generation.unwrap() > state_generation_before);
+    assert_eq!(upgraded.version.as_deref(), Some("1.1.0"));
+    assert_eq!(upgraded.desired, PluginDesiredState::Enabled);
+}
+
 #[test]
 fn schema_v3_cli_upgrade_publishes_the_candidate_graph_and_reports_exact_transitions() {
     let temp = tempfile::tempdir().unwrap();

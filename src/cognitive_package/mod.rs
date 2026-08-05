@@ -5,6 +5,8 @@
 //! composition; Tool, MCP, Skill, UI, and OKF remain contributions inside one
 //! immutable package generation.
 
+mod enablement;
+mod enablement_store;
 mod grant;
 mod hosts;
 mod install;
@@ -29,6 +31,10 @@ use std::sync::Arc;
 use crate::plugin_lifecycle::PluginLifecycleCoordinator;
 use store::{InstalledPackageGraphStore, PendingPackageGraphStore};
 
+pub use enablement::{
+    CognitivePackageEnablementRequest, CognitivePackageEnablementResult,
+    COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA, COGNITIVE_PACKAGE_ENABLEMENT_RESULT_SCHEMA,
+};
 pub use grant::{
     CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider,
     StandaloneCognitivePackageAuthorizationProvider,
@@ -99,6 +105,19 @@ pub trait CognitivePackageLifecycleFactory: Send + Sync {
         registry: ExtensionRegistry,
         package_root: PathBuf,
     ) -> UseResult<PluginLifecycleCoordinator>;
+
+    /// Compose enable/disable over an already committed immutable generation.
+    ///
+    /// Enablement has no package commit or removal checkpoint, but it must use
+    /// the exact same Runtime, Gateway, Knowledge, Flow, Skill, UI, and
+    /// capability hosts as install and uninstall.
+    fn enablement_coordinator(
+        &self,
+        registry: ExtensionRegistry,
+        package_root: PathBuf,
+    ) -> UseResult<PluginLifecycleCoordinator> {
+        self.published_install_coordinator(registry, package_root)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -314,6 +333,10 @@ impl CognitivePackageManager {
 
     fn grant_store(&self) -> a3s_use_extension::WorkspaceGrantStore {
         a3s_use_extension::WorkspaceGrantStore::from_extension_paths(self.registry.paths())
+    }
+
+    fn enablement_store(&self) -> enablement_store::CognitivePackageEnablementStore {
+        enablement_store::CognitivePackageEnablementStore::new(self.registry.paths().state_root())
     }
 }
 
