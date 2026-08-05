@@ -6,10 +6,13 @@ use a3s_use_core::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::workspace_grant::{valid_sha256, WorkspaceGrantReceipt, WorkspaceGrantStore};
+use super::workspace_grant::{
+    valid_sha256, StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantStore,
+};
 
 pub const WORKSPACE_GRANT_OPERATION_SCHEMA: &str = "a3s.use.plugin-workspace-grant-operation.v1";
 pub const WORKSPACE_GRANT_CUTOVER_SCHEMA: &str = "a3s.use.plugin-workspace-grant-cutover.v1";
+pub const WORKSPACE_GRANT_ROLLBACK_SCHEMA: &str = "a3s.use.plugin-workspace-grant-rollback.v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -20,6 +23,8 @@ pub enum WorkspaceGrantLifecyclePhase {
     CutoverCommitted,
     Retiring,
     Completed,
+    RollingBack,
+    RolledBack,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +40,8 @@ pub struct WorkspaceGrantPreparedCandidate {
     pub proposal_digest: String,
     pub receipt: WorkspaceGrantReceipt,
     pub ceiling: PluginPermissionCeiling,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior_record: Option<StoredWorkspaceGrant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,6 +83,14 @@ pub struct WorkspaceGrantCutoverEvidence {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceGrantRollbackEvidence {
+    pub schema: String,
+    pub evidence_digest: String,
+    pub rolled_back_at_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkspaceGrantOperationJournal {
     pub schema: String,
     pub intent_digest: String,
@@ -83,6 +98,8 @@ pub struct WorkspaceGrantOperationJournal {
     pub phase: WorkspaceGrantLifecyclePhase,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cutover: Option<WorkspaceGrantCutoverEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rollback: Option<WorkspaceGrantRollbackEvidence>,
 }
 
 impl WorkspaceGrantCandidateCeiling {
@@ -119,7 +136,20 @@ impl WorkspaceGrantPreparedCandidate {
                 operation_error(
                     "A prepared workspace grant candidate exceeds its ceiling or is inactive.",
                 )
-            })
+            })?;
+        if let Some(prior) = &self.prior_record {
+            prior.validate()?;
+            if prior.scope_id() != scope_id
+                || prior.package_id() != self.receipt.grant.package_id
+                || prior.package_digest() != self.receipt.grant.package_digest
+                || prior.revision() >= revision
+            {
+                return Err(operation_error(
+                    "A prepared workspace grant candidate has invalid rollback ownership evidence.",
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn package_id(&self) -> &str {
@@ -159,7 +189,6 @@ impl WorkspaceGrantOperationIntent {
             || !valid_sha256(&self.change_set_digest)
             || self.state_revision_before == 0
             || self.state_revision_before.checked_add(1) != Some(self.revision)
-            || self.capability_generation_before == 0
             || self.capability_generation_before.checked_add(1)
                 != Some(self.capability_generation_after)
             || self
@@ -187,6 +216,17 @@ impl WorkspaceGrantOperationIntent {
         }
         for candidate in &self.candidates {
             candidate.validate(&self.scope_id, self.revision, self.transitioned_at_ms)?;
+            if let Some(StoredWorkspaceGrant::Granted(prior)) = &candidate.prior_record {
+                let exact_retirement = self
+                    .retirements
+                    .iter()
+                    .any(|retirement| retirement.prior_receipt == *prior);
+                if !exact_retirement {
+                    return Err(operation_error(
+                        "A candidate replacing an active same-generation grant omitted its exact retirement evidence.",
+                    ));
+                }
+            }
         }
         for retirement in &self.retirements {
             retirement.validate(&self.scope_id, self.state_revision_before)?;
@@ -221,6 +261,20 @@ impl WorkspaceGrantCutoverEvidence {
     }
 }
 
+impl WorkspaceGrantRollbackEvidence {
+    pub fn validate_against(&self, intent: &WorkspaceGrantOperationIntent) -> UseResult<()> {
+        if self.schema != WORKSPACE_GRANT_ROLLBACK_SCHEMA
+            || !valid_sha256(&self.evidence_digest)
+            || self.rolled_back_at_ms < intent.transitioned_at_ms
+        {
+            return Err(operation_error(
+                "Candidate rollback evidence does not bind the prepared grant operation.",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl WorkspaceGrantOperationJournal {
     pub(super) fn new(intent: WorkspaceGrantOperationIntent) -> UseResult<Self> {
         let intent_digest = intent.descriptor_digest()?;
@@ -230,6 +284,7 @@ impl WorkspaceGrantOperationJournal {
             intent,
             phase: WorkspaceGrantLifecyclePhase::IntentRecorded,
             cutover: None,
+            rollback: None,
         };
         journal.validate()?;
         Ok(journal)
@@ -243,10 +298,16 @@ impl WorkspaceGrantOperationJournal {
                 | WorkspaceGrantLifecyclePhase::Retiring
                 | WorkspaceGrantLifecyclePhase::Completed
         );
+        let rollback_required = matches!(
+            self.phase,
+            WorkspaceGrantLifecyclePhase::RollingBack | WorkspaceGrantLifecyclePhase::RolledBack
+        );
         if self.schema != WORKSPACE_GRANT_OPERATION_SCHEMA
             || !valid_sha256(&self.intent_digest)
             || self.intent.descriptor_digest()? != self.intent_digest
             || cutover_required != self.cutover.is_some()
+            || rollback_required != self.rollback.is_some()
+            || self.cutover.is_some() && self.rollback.is_some()
         {
             return Err(operation_error(
                 "A workspace grant operation journal has invalid schema, digest, or phase evidence.",
@@ -254,6 +315,9 @@ impl WorkspaceGrantOperationJournal {
         }
         if let Some(cutover) = &self.cutover {
             cutover.validate_against(&self.intent)?;
+        }
+        if let Some(rollback) = &self.rollback {
+            rollback.validate_against(&self.intent)?;
         }
         Ok(())
     }

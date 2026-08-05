@@ -74,7 +74,6 @@ impl PluginOperationPlan {
             || self.authority.confirmation_required
                 != (self.authority.decision == PlanPolicyDecision::Ask)
             || self.state.state_revision == 0
-            || self.state.capability_generation == 0
             || self
                 .state
                 .receipt_digest

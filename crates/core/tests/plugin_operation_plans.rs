@@ -185,6 +185,13 @@ fn canonical_install_plan_fixture_binds_the_complete_resolved_delta() {
 }
 
 #[test]
+fn an_empty_host_can_plan_from_capability_generation_zero() {
+    let mut plan = install_plan();
+    plan.state.capability_generation = 0;
+    plan.validate().unwrap();
+}
+
+#[test]
 fn apply_requires_the_reviewed_digest_and_valid_time_window() {
     let envelope = PluginOperationPlanEnvelope::new(install_plan()).unwrap();
     envelope

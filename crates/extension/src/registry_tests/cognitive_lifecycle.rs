@@ -181,6 +181,73 @@ async fn lifecycle_graph_publication_is_one_cutover_and_recovers_partial_receipt
 }
 
 #[tokio::test]
+async fn lifecycle_graph_hide_returns_exact_stable_snapshot_evidence_in_one_cutover() {
+    let temp = tempfile::tempdir().unwrap();
+    let base_source = temp.path().join("base-hide");
+    let root_source = temp.path().join("root-hide");
+    cognitive_package_with_dependencies(&base_source, "acme/base", "base", &[]).await;
+    cognitive_package_with_dependencies(
+        &root_source,
+        "acme/root",
+        "root",
+        &[("acme/base", "^1.0.0")],
+    )
+    .await;
+    let base = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/base",
+        &base_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let root = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/root",
+        &root_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let base_identity = lifecycle_identity(&base, 41);
+    let root_identity = lifecycle_identity(&root, 42);
+    let identities = [base_identity.clone(), root_identity.clone()];
+    let registry = registry(temp.path());
+    for (identity, candidate) in [(&base_identity, &base), (&root_identity, &root)] {
+        registry
+            .commit_lifecycle_package(identity, candidate)
+            .await
+            .unwrap();
+    }
+    registry
+        .publish_lifecycle_packages_for_test_host_version(&identities, "0.3.0")
+        .await
+        .unwrap();
+    let before = registry.snapshot().await.unwrap();
+    assert!(before.routes.iter().all(|route| route.enabled));
+
+    let hidden = registry
+        .hide_lifecycle_package_graph_with_evidence(&identities)
+        .await
+        .unwrap();
+    let after = registry.snapshot().await.unwrap();
+    assert_eq!(hidden.registry_generation, before.generation + 1);
+    assert_eq!(hidden.registry_generation, after.generation);
+    assert_eq!(
+        hidden.registry_snapshot_digest,
+        after.descriptor_digest().unwrap()
+    );
+    assert!(after.routes.is_empty());
+
+    let replay = registry
+        .hide_lifecycle_package_graph_with_evidence(&identities)
+        .await
+        .unwrap();
+    assert_eq!(replay, hidden);
+    assert_eq!(registry.snapshot().await.unwrap(), after);
+}
+
+#[tokio::test]
 async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_removed_nodes() {
     let temp = tempfile::tempdir().unwrap();
     let base_source = temp.path().join("base");

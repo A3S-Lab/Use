@@ -52,10 +52,13 @@ N/N+1 receipt storage now enforce the package boundary. The dependency-graph
 coordinator binds exact prior/candidate locks, implements one
 Add/Replace/Remove cutover, preserves shared Retain nodes, automatically rolls
 back before cutover, retires unreferenced prior generations in reverse order,
-and replays every GC boundary without generation inflation. Umbrella
-production provider/grant composition, the A3S Knowledge index backend, and
-scoped cited retrieval remain to be implemented; missing promoted evidence
-therefore stays explicitly unpublished.
+and replays every GC boundary without generation inflation. Grant-aware graph
+paths now persist candidate Grants before package preparation, bind exact
+Registry cutover evidence, jointly roll back candidates before cutover, and
+drain accepted prior calls before Grant retirement. Standalone and umbrella
+product-level Grant planning/apply selection, production provider composition,
+the A3S Knowledge index backend, and scoped cited retrieval remain to be
+implemented; missing promoted evidence therefore stays explicitly unpublished.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use

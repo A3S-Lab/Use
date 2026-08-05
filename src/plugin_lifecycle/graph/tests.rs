@@ -12,6 +12,7 @@ use a3s_use_extension::{
     ExtensionManifest, PluginFlowSurface, PluginMcpSurface, PluginOkfSurface, PluginSkillSurface,
     PluginUiSurface, ToolSurface,
 };
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
 use super::*;
@@ -32,6 +33,9 @@ struct RecordingHost {
     calls: Mutex<Vec<String>>,
     fail_once: Mutex<Option<String>>,
     publication_fault: Mutex<Option<PublicationFault>>,
+    fail_exact_publication_once: Mutex<bool>,
+    drift_cutover_generation_once: Mutex<bool>,
+    cutover_generation_before: AtomicU64,
 }
 
 #[derive(Clone, Copy)]
@@ -312,6 +316,96 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
         Ok(evidence)
     }
 
+    async fn publish_capabilities_with_cutover(
+        &self,
+        package_lock: &a3s_use_core::PluginPackageLock,
+        intents: &[PluginLifecycleIntent],
+        key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        let mut fail = self.fail_exact_publication_once.lock().await;
+        if *fail {
+            *fail = false;
+            return Err(UseError::new(
+                "use.plugin.test_publication_failure",
+                "The lifecycle test host rejected capability publication.",
+            ));
+        }
+        drop(fail);
+        let packages = self
+            .publish_capabilities(package_lock, intents, key)
+            .await?;
+        let mut drift = self.drift_cutover_generation_once.lock().await;
+        let configured = self.cutover_generation_before.load(Ordering::Relaxed);
+        let mut generation_before = configured.max(1);
+        if *drift {
+            generation_before = generation_before.saturating_add(1);
+        }
+        *drift = false;
+        Ok(PluginGraphCapabilityPublication::new(
+            packages,
+            PluginCapabilityCutoverEvidence::new(
+                generation_before,
+                generation_before + 1,
+                digest('6'),
+            )?,
+        ))
+    }
+
+    async fn publish_upgrade_capabilities_with_cutover(
+        &self,
+        package_lock: &a3s_use_core::PluginPackageLock,
+        candidate_intents: &[PluginLifecycleIntent],
+        removed_intents: &[PluginLifecycleIntent],
+        key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        if !removed_intents.is_empty() {
+            return Err(UseError::new(
+                "use.plugin.test_removed_cutover_unsupported",
+                "The lifecycle test host does not model removed-only cutover here.",
+            ));
+        }
+        self.publish_capabilities_with_cutover(package_lock, candidate_intents, key)
+            .await
+    }
+
+    async fn hide_capabilities_with_cutover(
+        &self,
+        _package_lock: &a3s_use_core::PluginPackageLock,
+        intents: &[PluginLifecycleIntent],
+        key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        self.calls.lock().await.push(format!(
+            "hide-batch:{}",
+            intents
+                .iter()
+                .map(|intent| intent.package_id.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+        let packages = intents
+            .iter()
+            .map(|intent| {
+                PluginPackagePublicationEvidence::new(
+                    &intent.package_id,
+                    PluginLifecycleEvidence::new(format!(
+                        "sha256:{:x}",
+                        Sha256::digest(format!("{}\n{key}\nhide", intent.package_id).as_bytes())
+                    ))?,
+                )
+            })
+            .collect::<UseResult<Vec<_>>>()?;
+        let configured = self.cutover_generation_before.load(Ordering::Relaxed);
+        let generation_before = configured.max(1);
+        Ok(PluginGraphCapabilityPublication::new(
+            packages,
+            PluginCapabilityCutoverEvidence::new(
+                generation_before,
+                generation_before + 1,
+                digest('6'),
+            )?,
+        ))
+    }
+
     async fn rollback_candidates(
         &self,
         candidate_lock: &a3s_use_core::PluginPackageLock,
@@ -343,6 +437,8 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
         Ok(evidence)
     }
 }
+
+mod grant;
 
 fn digest(seed: char) -> String {
     format!("sha256:{}", seed.to_string().repeat(64))

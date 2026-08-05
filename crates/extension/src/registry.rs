@@ -27,8 +27,8 @@ use super::{ExtensionManifest, ExtensionPaths, McpTransport};
 mod lifecycle;
 
 pub use lifecycle::{
-    ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionLifecycleResult,
-    ExtensionLifecycleRollbackResult,
+    ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
+    ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
 };
 
 const RECEIPT_SCHEMA_VERSION_V1: u32 = 1;
@@ -240,6 +240,32 @@ impl Default for ExtensionRegistrySnapshot {
             generation: 0,
             routes: Vec::new(),
         }
+    }
+}
+
+impl ExtensionRegistrySnapshot {
+    /// Canonical digest of the exact capability projection selected by one
+    /// Registry generation.
+    pub fn descriptor_digest(&self) -> UseResult<String> {
+        if self.schema_version != REGISTRY_SCHEMA_VERSION {
+            return Err(UseError::new(
+                "use.extension.registry_incompatible",
+                format!(
+                    "Extension registry schema {} is not supported.",
+                    self.schema_version
+                ),
+            ));
+        }
+        let mut bytes = Vec::new();
+        let mut serializer =
+            serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
+        self.serialize(&mut serializer).map_err(|error| {
+            UseError::new(
+                "use.extension.registry_invalid",
+                format!("Failed to encode the canonical extension Registry snapshot: {error}"),
+            )
+        })?;
+        Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
     }
 }
 

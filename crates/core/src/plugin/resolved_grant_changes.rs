@@ -35,7 +35,6 @@ impl ResolvedWorkspaceGrantChangeSet {
             || !valid_machine_id(&self.scope_id)
             || self.state_revision_before == 0
             || self.state_revision_before.checked_add(1) != Some(self.revision)
-            || self.capability_generation_before == 0
             || self.capability_generation_before.checked_add(1)
                 != Some(self.capability_generation_after)
             || self

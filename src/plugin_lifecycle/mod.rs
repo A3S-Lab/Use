@@ -6,6 +6,7 @@
 //! independently installable packages.
 
 mod coordinator;
+mod grant;
 mod graph;
 mod journal;
 mod model;
@@ -22,9 +23,11 @@ pub use coordinator::{
     PluginPackageLifecycleHost, PluginSkillLifecycleHost, PluginToolLifecycleHost,
     PluginUiLifecycleHost,
 };
+pub use grant::{PluginCapabilityCutoverEvidence, PluginGrantLifecycleUnit};
 pub use graph::{
-    PluginGraphCapabilityLifecycleHost, PluginPackageGraphLifecycleCoordinator,
-    PluginPackageLifecycleUnit, PluginPackagePublicationEvidence, PluginPackageRollbackEvidence,
+    PluginGraphCapabilityLifecycleHost, PluginGraphCapabilityPublication,
+    PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
+    PluginPackagePublicationEvidence, PluginPackageRollbackEvidence,
 };
 pub use journal::{
     PluginLifecycleCheckpointOutcome, PluginLifecycleCheckpointReceipt, PluginLifecycleFailure,

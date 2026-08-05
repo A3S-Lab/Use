@@ -40,11 +40,11 @@ pub use plugin_manifest::{
     ToolSurface, ToolTaskSource, ToolTaskSurface, ToolWorkload,
 };
 pub use registry::{
-    validate_catalog_manifest_binding, ActivationResult, ExtensionLifecycleIdentity,
-    ExtensionLifecyclePackage, ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
-    ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot, ExtensionRouteBinding,
-    ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult, InstalledExtension,
-    UninstallResult,
+    validate_catalog_manifest_binding, ActivationResult, ExtensionLifecycleGraphPublication,
+    ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionLifecycleResult,
+    ExtensionLifecycleRollbackResult, ExtensionReceipt, ExtensionRegistry,
+    ExtensionRegistrySnapshot, ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust,
+    InstallOptions, InstallResult, InstalledExtension, UninstallResult,
 };
 pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
@@ -71,7 +71,8 @@ pub use workspace_grant::{
 pub use workspace_grant_operation::{
     WorkspaceGrantCandidateCeiling, WorkspaceGrantCutoverEvidence, WorkspaceGrantLifecyclePhase,
     WorkspaceGrantOperationIntent, WorkspaceGrantOperationJournal, WorkspaceGrantPreparedCandidate,
-    WorkspaceGrantRetirement, WORKSPACE_GRANT_CUTOVER_SCHEMA, WORKSPACE_GRANT_OPERATION_SCHEMA,
+    WorkspaceGrantRetirement, WorkspaceGrantRollbackEvidence, WORKSPACE_GRANT_CUTOVER_SCHEMA,
+    WORKSPACE_GRANT_OPERATION_SCHEMA, WORKSPACE_GRANT_ROLLBACK_SCHEMA,
 };
 
 const RESERVED_ROUTES: &[&str] = &[

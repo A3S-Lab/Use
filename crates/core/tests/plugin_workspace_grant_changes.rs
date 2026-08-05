@@ -74,6 +74,24 @@ fn multi_package_install_finalizes_every_planned_grant_in_order() {
 }
 
 #[test]
+fn first_capability_cutover_resolves_generation_zero_to_one() {
+    let (mut plan, changes) = multi_package_install();
+    plan.state.capability_generation = 0;
+    let plan_digest = plan.descriptor_digest().unwrap();
+    let resolved = changes
+        .finalize_against_plan(
+            &plan,
+            None,
+            Some(&operation_confirmation(&plan)),
+            &confirmations(&changes, &plan_digest),
+            plan.created_at_ms + 200,
+        )
+        .unwrap();
+    assert_eq!(resolved.capability_generation_before, 0);
+    assert_eq!(resolved.capability_generation_after, 1);
+}
+
+#[test]
 fn change_set_rejects_plan_drift_extra_packages_and_missing_confirmation() {
     let (plan, changes) = multi_package_install();
     let mut drifted = changes.clone();

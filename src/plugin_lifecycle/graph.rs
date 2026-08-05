@@ -2,16 +2,20 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use a3s_use_core::{
-    PlanPackageChangeKind, PlannedPackageTransition, PluginOperationAction,
-    PluginOperationPlanEnvelope, PluginPackageId, PluginPackageLock, UseError, UseResult,
+    PlanPackageChangeKind, PluginOperationAction, PluginOperationPlanEnvelope, PluginPackageId,
+    PluginPackageLock, UseError, UseResult,
 };
 use a3s_use_extension::ExtensionManifest;
 use async_trait::async_trait;
-use sha2::{Digest, Sha256};
+
+mod validation;
+
+use validation::*;
 
 use super::{
-    PluginLifecycleAction, PluginLifecycleCoordinator, PluginLifecycleEvidence,
-    PluginLifecycleIntent, PluginLifecycleOperationRecord,
+    PluginCapabilityCutoverEvidence, PluginGrantLifecycleUnit, PluginLifecycleAction,
+    PluginLifecycleCoordinator, PluginLifecycleEvidence, PluginLifecycleIntent,
+    PluginLifecycleOperationRecord,
 };
 
 /// One package-specific coordinator, intent, and admitted manifest belonging
@@ -68,6 +72,31 @@ pub struct PluginPackagePublicationEvidence {
 pub struct PluginPackageRollbackEvidence {
     package_id: String,
     evidence: PluginLifecycleEvidence,
+}
+
+/// Package receipts plus the exact capability snapshot selected by one atomic
+/// graph cutover.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginGraphCapabilityPublication {
+    packages: Vec<PluginPackagePublicationEvidence>,
+    cutover: PluginCapabilityCutoverEvidence,
+}
+
+impl PluginGraphCapabilityPublication {
+    pub fn new(
+        packages: Vec<PluginPackagePublicationEvidence>,
+        cutover: PluginCapabilityCutoverEvidence,
+    ) -> Self {
+        Self { packages, cutover }
+    }
+
+    pub fn packages(&self) -> &[PluginPackagePublicationEvidence] {
+        &self.packages
+    }
+
+    pub fn cutover(&self) -> &PluginCapabilityCutoverEvidence {
+        &self.cutover
+    }
 }
 
 impl PluginPackageRollbackEvidence {
@@ -128,6 +157,17 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
         idempotency_key: &str,
     ) -> UseResult<Vec<PluginPackagePublicationEvidence>>;
 
+    /// Publish and return exact immutable capability snapshot evidence. Hosts
+    /// that cannot prove this boundary must fail before mutation.
+    async fn publish_capabilities_with_cutover(
+        &self,
+        _package_lock: &PluginPackageLock,
+        _intents: &[PluginLifecycleIntent],
+        _idempotency_key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        Err(cutover_evidence_required())
+    }
+
     /// Publish candidate generations and hide prior-only removed generations
     /// in one capability snapshot. Existing hosts remain source-compatible for
     /// upgrades without removals; hosts supporting graph GC must override this
@@ -146,6 +186,28 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
         }
         self.publish_capabilities(package_lock, candidate_intents, idempotency_key)
             .await
+    }
+
+    async fn publish_upgrade_capabilities_with_cutover(
+        &self,
+        _package_lock: &PluginPackageLock,
+        _candidate_intents: &[PluginLifecycleIntent],
+        _removed_intents: &[PluginLifecycleIntent],
+        _idempotency_key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        Err(cutover_evidence_required())
+    }
+
+    /// Atomically hide an uninstall closure and return one route-snapshot
+    /// cutover. Package-specific hide checkpoints use the returned evidence;
+    /// drain and exact removal continue through their typed hosts.
+    async fn hide_capabilities_with_cutover(
+        &self,
+        _package_lock: &PluginPackageLock,
+        _intents: &[PluginLifecycleIntent],
+        _idempotency_key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        Err(cutover_evidence_required())
     }
 
     /// Discard a bounded set of candidates while the exact prior graph is
@@ -180,7 +242,33 @@ impl PluginPackageGraphLifecycleCoordinator {
         units: &[PluginPackageLifecycleUnit],
         completed_at_ms: impl Fn() -> u64,
     ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
+        self.apply_install_inner(envelope, units, None, completed_at_ms)
+            .await
+    }
+
+    pub async fn apply_install_with_grants(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        units: &[PluginPackageLifecycleUnit],
+        grants: &PluginGrantLifecycleUnit,
+        completed_at_ms: impl Fn() -> u64,
+    ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
+        self.apply_install_inner(envelope, units, Some(grants), completed_at_ms)
+            .await
+    }
+
+    async fn apply_install_inner(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        units: &[PluginPackageLifecycleUnit],
+        grants: Option<&PluginGrantLifecycleUnit>,
+        completed_at_ms: impl Fn() -> u64,
+    ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
         let lock = validate_graph(envelope, units, PluginOperationAction::Install)?;
+        if let Some(grants) = grants {
+            grants.validate_envelope(envelope)?;
+            grants.prepare(completed_at_ms()).await?;
+        }
         let units = units_by_package(units)?;
         let mut ordered = Vec::with_capacity(units.len());
         for package in lock.install_order()? {
@@ -212,10 +300,20 @@ impl PluginPackageGraphLifecycleCoordinator {
             .iter()
             .map(|unit| unit.intent.clone())
             .collect::<Vec<_>>();
-        let evidence = self
-            .publication
-            .publish_capabilities(lock, &intents, &publication_key(envelope)?)
-            .await?;
+        let (evidence, cutover) = if grants.is_some() {
+            let publication = self
+                .publication
+                .publish_capabilities_with_cutover(lock, &intents, &publication_key(envelope)?)
+                .await?;
+            (publication.packages, Some(publication.cutover))
+        } else {
+            (
+                self.publication
+                    .publish_capabilities(lock, &intents, &publication_key(envelope)?)
+                    .await?,
+                None,
+            )
+        };
         if evidence.len() != ordered.len() {
             return Err(graph_error(
                 "Package-graph publication omitted capability evidence.",
@@ -239,6 +337,13 @@ impl PluginPackageGraphLifecycleCoordinator {
                     )
                     .await?,
             );
+        }
+        if let (Some(grants), Some(cutover)) = (grants, cutover.as_ref()) {
+            let committed_at_ms = completed_at_ms();
+            grants
+                .commit_cutover(cutover, committed_at_ms, committed_at_ms)
+                .await?;
+            grants.retire().await?;
         }
         Ok(records)
     }
@@ -280,6 +385,92 @@ impl PluginPackageGraphLifecycleCoordinator {
         Ok(records)
     }
 
+    pub async fn apply_uninstall_with_grants(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        units: &[PluginPackageLifecycleUnit],
+        grants: &PluginGrantLifecycleUnit,
+        completed_at_ms: impl Fn() -> u64,
+    ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
+        let lock = validate_graph(envelope, units, PluginOperationAction::Uninstall)?;
+        grants.validate_envelope(envelope)?;
+        grants.prepare(completed_at_ms()).await?;
+        let units_by_id = units_by_package(units)?;
+        let mut ordered = Vec::with_capacity(units.len());
+        for package in lock.removal_order()? {
+            let transition = transition_for(envelope, package.package_id())?;
+            if transition.change == PlanPackageChangeKind::Retain {
+                continue;
+            }
+            if transition.change != PlanPackageChangeKind::Remove {
+                return Err(graph_error(
+                    "Package-graph uninstall supports only removed or retained dependency generations.",
+                ));
+            }
+            let unit = *units_by_id.get(package.package_id()).ok_or_else(|| {
+                graph_error("A locked dependency has no uninstall lifecycle unit.")
+            })?;
+            validate_unit(
+                envelope,
+                unit,
+                package.package_id(),
+                PluginLifecycleAction::Uninstall,
+            )?;
+            ordered.push(unit);
+        }
+
+        let intents = ordered
+            .iter()
+            .map(|unit| unit.intent.clone())
+            .collect::<Vec<_>>();
+        let publication = self
+            .publication
+            .hide_capabilities_with_cutover(lock, &intents, &hide_key(envelope)?)
+            .await?;
+        if publication.packages.len() != ordered.len() {
+            return Err(graph_error(
+                "Package-graph hiding omitted capability evidence.",
+            ));
+        }
+        for (unit, evidence) in ordered.iter().zip(&publication.packages) {
+            if evidence.package_id != unit.intent.package_id {
+                return Err(graph_error(
+                    "Package-graph hide evidence changed package order or identity.",
+                ));
+            }
+            unit.coordinator
+                .record_graph_capability_hidden(
+                    &unit.intent,
+                    &unit.manifest,
+                    &evidence.evidence,
+                    &completed_at_ms,
+                )
+                .await?;
+        }
+
+        let committed_at_ms = completed_at_ms();
+        grants
+            .commit_cutover(&publication.cutover, committed_at_ms, committed_at_ms)
+            .await?;
+
+        for unit in &ordered {
+            unit.coordinator
+                .drain_graph_retirement(&unit.intent, &unit.manifest, &completed_at_ms)
+                .await?;
+        }
+        grants.retire().await?;
+
+        let mut records = Vec::with_capacity(ordered.len());
+        for unit in ordered {
+            records.push(
+                unit.coordinator
+                    .apply(&unit.intent, &unit.manifest, &completed_at_ms)
+                    .await?,
+            );
+        }
+        Ok(records)
+    }
+
     /// Prepare every added or replaced package generation in dependency order,
     /// atomically publish the candidate closure, and only then retire replaced
     /// generations in the prior graph's reverse dependency order.
@@ -296,8 +487,51 @@ impl PluginPackageGraphLifecycleCoordinator {
         retirement_units: &[PluginPackageLifecycleUnit],
         completed_at_ms: impl Fn() -> u64,
     ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
+        self.apply_upgrade_inner(
+            envelope,
+            prior_lock,
+            candidate_units,
+            retirement_units,
+            None,
+            completed_at_ms,
+        )
+        .await
+    }
+
+    pub async fn apply_upgrade_with_grants(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        prior_lock: &PluginPackageLock,
+        candidate_units: &[PluginPackageLifecycleUnit],
+        retirement_units: &[PluginPackageLifecycleUnit],
+        grants: &PluginGrantLifecycleUnit,
+        completed_at_ms: impl Fn() -> u64,
+    ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
+        self.apply_upgrade_inner(
+            envelope,
+            prior_lock,
+            candidate_units,
+            retirement_units,
+            Some(grants),
+            completed_at_ms,
+        )
+        .await
+    }
+
+    async fn apply_upgrade_inner(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        prior_lock: &PluginPackageLock,
+        candidate_units: &[PluginPackageLifecycleUnit],
+        retirement_units: &[PluginPackageLifecycleUnit],
+        grants: Option<&PluginGrantLifecycleUnit>,
+        completed_at_ms: impl Fn() -> u64,
+    ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
         let candidate_lock =
             validate_upgrade_graph(envelope, prior_lock, candidate_units, retirement_units)?;
+        if let Some(grants) = grants {
+            grants.validate_envelope(envelope)?;
+        }
         let candidates = units_by_package(candidate_units)?;
         let retirements = units_by_package(retirement_units)?;
         let mut ordered_candidates = Vec::with_capacity(candidates.len());
@@ -334,10 +568,12 @@ impl PluginPackageGraphLifecycleCoordinator {
                 "The interrupted candidate rollback was completed; create and review a fresh upgrade plan.",
             );
             return match self
-                .rollback_upgrade_candidates(
+                .rollback_upgrade_operation(
+                    envelope,
                     candidate_lock,
                     &interrupted_rollback,
                     &retirements,
+                    grants,
                     &completed_at_ms,
                 )
                 .await
@@ -347,10 +583,33 @@ impl PluginPackageGraphLifecycleCoordinator {
             };
         }
         if saw_rolled_back {
-            return Err(UseError::new(
+            let replay_error = UseError::new(
                 "use.plugin.package_graph_upgrade_rolled_back",
                 "This candidate graph was rolled back; create and review a fresh upgrade plan.",
-            ));
+            );
+            if let Some(grants) = grants {
+                let rolled_back_at_ms = completed_at_ms();
+                if let Err(rollback) = grants
+                    .rollback(
+                        grant_rollback_key(envelope)?,
+                        rolled_back_at_ms,
+                        rolled_back_at_ms,
+                    )
+                    .await
+                {
+                    return Err(attach_rollback_error(replay_error, rollback));
+                }
+            }
+            return Err(replay_error);
+        }
+        if let Some(grants) = grants {
+            if grants.is_rolled_back().await? {
+                return Err(UseError::new(
+                    "use.plugin.package_graph_upgrade_rolled_back",
+                    "This candidate graph grant operation was rolled back; create and review a fresh upgrade plan.",
+                ));
+            }
+            grants.prepare(completed_at_ms()).await?;
         }
 
         for package in candidate_lock.install_order()? {
@@ -376,10 +635,12 @@ impl PluginPackageGraphLifecycleCoordinator {
                 .await
             {
                 return match self
-                    .rollback_upgrade_candidates(
+                    .rollback_upgrade_operation(
+                        envelope,
                         candidate_lock,
                         &ordered_candidates,
                         &retirements,
+                        grants,
                         &completed_at_ms,
                     )
                     .await
@@ -408,23 +669,44 @@ impl PluginPackageGraphLifecycleCoordinator {
                     .map(|unit| unit.intent.clone())
             })
             .collect::<Vec<_>>();
-        let evidence = match self
-            .publication
-            .publish_upgrade_capabilities(
-                candidate_lock,
-                &intents,
-                &removed_intents,
-                &publication_key(envelope)?,
-            )
-            .await
-        {
-            Ok(evidence) => evidence,
+        let grant_has_cutover = match grants {
+            Some(grants) => grants.has_cutover().await?,
+            None => false,
+        };
+        let publication = if grants.is_some() {
+            self.publication
+                .publish_upgrade_capabilities_with_cutover(
+                    candidate_lock,
+                    &intents,
+                    &removed_intents,
+                    &publication_key(envelope)?,
+                )
+                .await
+                .map(|publication| (publication.packages, Some(publication.cutover)))
+        } else {
+            self.publication
+                .publish_upgrade_capabilities(
+                    candidate_lock,
+                    &intents,
+                    &removed_intents,
+                    &publication_key(envelope)?,
+                )
+                .await
+                .map(|evidence| (evidence, None))
+        };
+        let (evidence, cutover) = match publication {
+            Ok(publication) => publication,
             Err(error) => {
+                if grant_has_cutover {
+                    return Err(error);
+                }
                 return match self
-                    .rollback_upgrade_candidates(
+                    .rollback_upgrade_operation(
+                        envelope,
                         candidate_lock,
                         &ordered_candidates,
                         &retirements,
+                        grants,
                         &completed_at_ms,
                     )
                     .await
@@ -459,6 +741,45 @@ impl PluginPackageGraphLifecycleCoordinator {
             );
         }
 
+        if let (Some(grants), Some(cutover)) = (grants, cutover.as_ref()) {
+            let committed_at_ms = completed_at_ms();
+            grants
+                .commit_cutover(cutover, committed_at_ms, committed_at_ms)
+                .await?;
+        }
+
+        if let Some(grants) = grants {
+            for package in prior_lock.removal_order()? {
+                let Some(transition) = envelope
+                    .plan
+                    .packages
+                    .iter()
+                    .find(|transition| transition.package_id == package.package_id())
+                else {
+                    continue;
+                };
+                if !matches!(
+                    transition.change,
+                    PlanPackageChangeKind::Replace | PlanPackageChangeKind::Remove
+                ) {
+                    continue;
+                }
+                let unit = *retirements.get(package.package_id()).ok_or_else(|| {
+                    graph_error("A replaced dependency has no prior-generation retirement unit.")
+                })?;
+                validate_unit(
+                    envelope,
+                    unit,
+                    package.package_id(),
+                    PluginLifecycleAction::Uninstall,
+                )?;
+                unit.coordinator
+                    .drain_graph_retirement(&unit.intent, &unit.manifest, &completed_at_ms)
+                    .await?;
+            }
+            grants.retire().await?;
+        }
+
         for package in prior_lock.removal_order()? {
             let Some(transition) = envelope
                 .plan
@@ -490,6 +811,40 @@ impl PluginPackageGraphLifecycleCoordinator {
             );
         }
         Ok(records)
+    }
+
+    async fn rollback_upgrade_operation(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        candidate_lock: &PluginPackageLock,
+        candidates: &[&PluginPackageLifecycleUnit],
+        retirements: &BTreeMap<&str, &PluginPackageLifecycleUnit>,
+        grants: Option<&PluginGrantLifecycleUnit>,
+        completed_at_ms: &impl Fn() -> u64,
+    ) -> UseResult<()> {
+        let package_rollback = self
+            .rollback_upgrade_candidates(candidate_lock, candidates, retirements, completed_at_ms)
+            .await;
+        let grant_rollback = match grants {
+            Some(grants) => {
+                let rolled_back_at_ms = completed_at_ms();
+                grants
+                    .rollback(
+                        grant_rollback_key(envelope)?,
+                        rolled_back_at_ms,
+                        rolled_back_at_ms,
+                    )
+                    .await
+                    .map(drop)
+            }
+            None => Ok(()),
+        };
+        match (package_rollback, grant_rollback) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(package), Ok(())) => Err(package),
+            (Ok(()), Err(grant)) => Err(grant),
+            (Err(package), Err(grant)) => Err(attach_rollback_error(package, grant)),
+        }
     }
 
     async fn rollback_upgrade_candidates(
@@ -597,302 +952,6 @@ impl PluginPackageGraphLifecycleCoordinator {
         }
         Ok(())
     }
-}
-
-fn validate_upgrade_graph<'a>(
-    envelope: &'a PluginOperationPlanEnvelope,
-    prior_lock: &PluginPackageLock,
-    candidate_units: &[PluginPackageLifecycleUnit],
-    retirement_units: &[PluginPackageLifecycleUnit],
-) -> UseResult<&'a PluginPackageLock> {
-    envelope.validate()?;
-    if envelope.plan.action != PluginOperationAction::Upgrade {
-        return Err(graph_error(
-            "The package-graph lifecycle action is not an upgrade.",
-        ));
-    }
-    let candidate_lock = envelope.package_lock.as_ref().ok_or_else(|| {
-        graph_error("A package-graph upgrade requires an exact candidate package lock.")
-    })?;
-    prior_lock.validate()?;
-    if envelope
-        .prior_package_lock
-        .as_ref()
-        .is_some_and(|bound| bound != prior_lock)
-    {
-        return Err(graph_error(
-            "The package-graph upgrade prior lock changed after review.",
-        ));
-    }
-    if prior_lock.root_package_id != candidate_lock.root_package_id
-        || prior_lock.host != candidate_lock.host
-    {
-        return Err(graph_error(
-            "Prior and candidate package locks belong to different roots or hosts.",
-        ));
-    }
-
-    let mut expected_candidates = std::collections::BTreeSet::new();
-    let mut expected_retirements = std::collections::BTreeSet::new();
-    for transition in &envelope.plan.packages {
-        match transition.change {
-            PlanPackageChangeKind::Add => {
-                expected_candidates.insert(transition.package_id.as_str());
-            }
-            PlanPackageChangeKind::Replace => {
-                expected_candidates.insert(transition.package_id.as_str());
-                expected_retirements.insert(transition.package_id.as_str());
-                let prior = prior_lock.package(&transition.package_id).ok_or_else(|| {
-                    graph_error("A replaced package is absent from the prior package lock.")
-                })?;
-                validate_prior_transition(prior, transition)?;
-            }
-            PlanPackageChangeKind::Retain => {
-                let retained = prior_lock
-                    .package(&transition.package_id)
-                    .or_else(|| candidate_lock.package(&transition.package_id))
-                    .ok_or_else(|| {
-                        graph_error(
-                            "A retained package is absent from both exact dependency locks.",
-                        )
-                    })?;
-                validate_prior_transition(retained, transition)?;
-            }
-            PlanPackageChangeKind::Remove => {
-                expected_retirements.insert(transition.package_id.as_str());
-                let prior = prior_lock.package(&transition.package_id).ok_or_else(|| {
-                    graph_error("A removed package is absent from the prior package lock.")
-                })?;
-                validate_prior_transition(prior, transition)?;
-                if candidate_lock.package(&transition.package_id).is_some()
-                    || envelope.prior_package_lock.as_ref() != Some(prior_lock)
-                {
-                    return Err(graph_error(
-                        "A removed dependency requires exact reviewed prior/candidate package locks.",
-                    ));
-                }
-            }
-        }
-    }
-
-    validate_unit_set(candidate_units, &expected_candidates, "candidate")?;
-    validate_unit_set(retirement_units, &expected_retirements, "retirement")?;
-    for package_id in &expected_retirements {
-        if envelope
-            .plan
-            .packages
-            .iter()
-            .find(|transition| transition.package_id == **package_id)
-            .is_some_and(|transition| transition.change == PlanPackageChangeKind::Remove)
-        {
-            continue;
-        }
-        let candidate = candidate_units
-            .iter()
-            .find(|unit| unit.intent.package_id == *package_id)
-            .ok_or_else(|| graph_error("A replaced package lost its candidate unit."))?;
-        let prior = retirement_units
-            .iter()
-            .find(|unit| unit.intent.package_id == *package_id)
-            .ok_or_else(|| graph_error("A replaced package lost its retirement unit."))?;
-        if candidate.intent.generation <= prior.intent.generation {
-            return Err(graph_error(
-                "A replacement candidate generation must be newer than its exact prior generation.",
-            ));
-        }
-    }
-    Ok(candidate_lock)
-}
-
-fn validate_unit_set(
-    units: &[PluginPackageLifecycleUnit],
-    expected: &std::collections::BTreeSet<&str>,
-    label: &str,
-) -> UseResult<()> {
-    let provided = units
-        .iter()
-        .map(|unit| unit.intent.package_id.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
-    if provided.len() != units.len() || &provided != expected {
-        return Err(graph_error(format!(
-            "The package-graph {label} unit set does not equal the reviewed upgrade transitions.",
-        )));
-    }
-    Ok(())
-}
-
-fn validate_prior_transition(
-    prior: &a3s_use_core::LockedPluginPackage,
-    transition: &PlannedPackageTransition,
-) -> UseResult<()> {
-    let before = transition.before.as_ref().ok_or_else(|| {
-        graph_error("A retained or replaced package omitted its reviewed prior state.")
-    })?;
-    let selected_surfaces = before
-        .release
-        .surfaces
-        .iter()
-        .map(|surface| surface.reference())
-        .collect::<Vec<_>>();
-    let expected = prior.catalog.selected_state(&selected_surfaces)?;
-    if expected != *before {
-        return Err(graph_error(
-            "A prior package generation drifted from the reviewed upgrade plan.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_graph<'a>(
-    envelope: &'a PluginOperationPlanEnvelope,
-    units: &[PluginPackageLifecycleUnit],
-    action: PluginOperationAction,
-) -> UseResult<&'a a3s_use_core::PluginPackageLock> {
-    envelope.validate()?;
-    if envelope.plan.action != action {
-        return Err(graph_error(
-            "The package-graph lifecycle action does not match the reviewed plan.",
-        ));
-    }
-    let lock = envelope.package_lock.as_ref().ok_or_else(|| {
-        graph_error("A package-graph lifecycle operation requires a reviewed package lock.")
-    })?;
-    let mut expected = std::collections::BTreeSet::new();
-    for transition in &envelope.plan.packages {
-        match (action, transition.change) {
-            (PluginOperationAction::Install, PlanPackageChangeKind::Add)
-            | (PluginOperationAction::Uninstall, PlanPackageChangeKind::Remove) => {
-                expected.insert(transition.package_id.as_str());
-            }
-            (_, PlanPackageChangeKind::Retain) => {}
-            _ => return Err(graph_error(
-                "The reviewed package transitions are unsupported by this graph lifecycle action.",
-            )),
-        }
-    }
-    let provided = units
-        .iter()
-        .map(|unit| unit.intent.package_id.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
-    if expected.len() != units.len() || expected != provided {
-        return Err(graph_error(
-            "The lifecycle unit set does not equal the changed package generations in the reviewed dependency closure.",
-        ));
-    }
-    Ok(lock)
-}
-
-fn transition_for<'a>(
-    envelope: &'a PluginOperationPlanEnvelope,
-    package_id: &str,
-) -> UseResult<&'a PlannedPackageTransition> {
-    envelope
-        .plan
-        .packages
-        .iter()
-        .find(|transition| transition.package_id == package_id)
-        .ok_or_else(|| graph_error("A locked package is absent from the operation plan."))
-}
-
-fn units_by_package(
-    units: &[PluginPackageLifecycleUnit],
-) -> UseResult<BTreeMap<&str, &PluginPackageLifecycleUnit>> {
-    let mut result = BTreeMap::new();
-    for unit in units {
-        if result
-            .insert(unit.intent.package_id.as_str(), unit)
-            .is_some()
-        {
-            return Err(graph_error(
-                "A package lifecycle unit appears more than once.",
-            ));
-        }
-    }
-    Ok(result)
-}
-
-fn validate_unit(
-    envelope: &PluginOperationPlanEnvelope,
-    unit: &PluginPackageLifecycleUnit,
-    package_id: &str,
-    action: PluginLifecycleAction,
-) -> UseResult<()> {
-    unit.intent.validate()?;
-    if unit.intent.action != action
-        || unit.intent.operation_id != envelope.plan.operation_id
-        || unit.intent.plan_digest != envelope.plan_digest
-        || unit.intent.scope_id != envelope.plan.scope.id
-        || unit.intent.package_id != package_id
-        || unit.manifest.package_id != package_id
-    {
-        return Err(graph_error(
-            "A package lifecycle unit does not bind the exact reviewed operation.",
-        ));
-    }
-    let transition = transition_for(envelope, package_id)?;
-    validate_generation_binding(unit, transition, action)
-}
-
-fn validate_generation_binding(
-    unit: &PluginPackageLifecycleUnit,
-    transition: &PlannedPackageTransition,
-    action: PluginLifecycleAction,
-) -> UseResult<()> {
-    let state = match action {
-        PluginLifecycleAction::Install | PluginLifecycleAction::Upgrade => {
-            transition.after.as_ref()
-        }
-        PluginLifecycleAction::Uninstall => transition.before.as_ref(),
-        _ => None,
-    }
-    .ok_or_else(|| graph_error("A package lifecycle unit has no planned generation state."))?;
-    if unit.intent.package_digest != state.release.package_sha256
-        || unit.intent.manifest_digest != state.release.manifest_sha256
-        || unit.manifest.version != state.release.version
-    {
-        return Err(graph_error(
-            "A lifecycle package generation drifted from the reviewed plan.",
-        ));
-    }
-    Ok(())
-}
-
-fn publication_key(envelope: &PluginOperationPlanEnvelope) -> UseResult<String> {
-    let lock_digest = envelope
-        .plan
-        .package_lock_digest
-        .as_deref()
-        .ok_or_else(|| graph_error("The package graph omitted its lock digest."))?;
-    let identity = format!(
-        "{}\n{}\npackage-graph-publish",
-        envelope.plan_digest, lock_digest
-    );
-    Ok(format!("sha256:{:x}", Sha256::digest(identity.as_bytes())))
-}
-
-fn rollback_key(
-    candidate_lock: &PluginPackageLock,
-    candidate_intents: &[PluginLifecycleIntent],
-) -> UseResult<String> {
-    let mut identity = format!(
-        "{}\npackage-graph-candidate-rollback",
-        candidate_lock.descriptor_digest()?
-    );
-    for intent in candidate_intents {
-        identity.push('\n');
-        identity.push_str(&intent.descriptor_digest()?);
-    }
-    Ok(format!("sha256:{:x}", Sha256::digest(identity.as_bytes())))
-}
-
-fn attach_rollback_error(primary: UseError, rollback: UseError) -> UseError {
-    primary
-        .with_detail("rollbackCode", rollback.code)
-        .with_detail("rollbackMessage", rollback.message)
-}
-
-fn graph_error(message: impl Into<String>) -> UseError {
-    UseError::new("use.plugin.package_graph_invalid", message)
 }
 
 #[cfg(test)]

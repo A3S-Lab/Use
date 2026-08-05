@@ -9,7 +9,8 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
 use super::{
-    PluginCapabilityLifecycleHost, PluginGraphCapabilityLifecycleHost, PluginLifecycleAction,
+    PluginCapabilityCutoverEvidence, PluginCapabilityLifecycleHost,
+    PluginGraphCapabilityLifecycleHost, PluginGraphCapabilityPublication, PluginLifecycleAction,
     PluginLifecycleEvidence, PluginLifecycleIntent, PluginPackageLifecycleHost,
     PluginPackagePublicationEvidence, PluginPackageRollbackEvidence,
 };
@@ -168,6 +169,33 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
             .collect()
     }
 
+    async fn publish_capabilities_with_cutover(
+        &self,
+        package_lock: &a3s_use_core::PluginPackageLock,
+        intents: &[PluginLifecycleIntent],
+        idempotency_key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        let identities = intents
+            .iter()
+            .map(lifecycle_identity)
+            .collect::<UseResult<Vec<_>>>()?;
+        let publication = self
+            .registry
+            .publish_lifecycle_package_graph_with_evidence(package_lock, &identities)
+            .await?;
+        let packages = publication_evidence(
+            intents,
+            publication.packages,
+            idempotency_key,
+            "package-graph-capability-published",
+        )?;
+        let cutover = registry_cutover_evidence(
+            publication.registry_generation,
+            publication.registry_snapshot_digest,
+        )?;
+        Ok(PluginGraphCapabilityPublication::new(packages, cutover))
+    }
+
     async fn publish_upgrade_capabilities(
         &self,
         package_lock: &a3s_use_core::PluginPackageLock,
@@ -206,6 +234,75 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
                 PluginPackagePublicationEvidence::new(&intent.package_id, evidence)
             })
             .collect()
+    }
+
+    async fn publish_upgrade_capabilities_with_cutover(
+        &self,
+        package_lock: &a3s_use_core::PluginPackageLock,
+        candidate_intents: &[PluginLifecycleIntent],
+        removed_intents: &[PluginLifecycleIntent],
+        idempotency_key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        let candidates = candidate_intents
+            .iter()
+            .map(lifecycle_identity)
+            .collect::<UseResult<Vec<_>>>()?;
+        let removed = removed_intents
+            .iter()
+            .map(lifecycle_identity)
+            .collect::<UseResult<Vec<_>>>()?;
+        let publication = self
+            .registry
+            .publish_lifecycle_package_graph_transition_with_evidence(
+                package_lock,
+                &candidates,
+                &removed,
+            )
+            .await?;
+        let packages = publication_evidence(
+            candidate_intents,
+            publication.packages,
+            idempotency_key,
+            "package-graph-capability-published",
+        )?;
+        let cutover = registry_cutover_evidence(
+            publication.registry_generation,
+            publication.registry_snapshot_digest,
+        )?;
+        Ok(PluginGraphCapabilityPublication::new(packages, cutover))
+    }
+
+    async fn hide_capabilities_with_cutover(
+        &self,
+        _package_lock: &a3s_use_core::PluginPackageLock,
+        intents: &[PluginLifecycleIntent],
+        idempotency_key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        let identities = intents
+            .iter()
+            .map(lifecycle_identity)
+            .collect::<UseResult<Vec<_>>>()?;
+        let publication = self
+            .registry
+            .hide_lifecycle_package_graph_with_evidence(&identities)
+            .await?;
+        let packages = intents
+            .iter()
+            .map(|intent| {
+                let evidence = checkpoint_evidence(
+                    "package-graph-capability-hidden",
+                    intent,
+                    idempotency_key,
+                    &publication.registry_snapshot_digest,
+                )?;
+                PluginPackagePublicationEvidence::new(&intent.package_id, evidence)
+            })
+            .collect::<UseResult<Vec<_>>>()?;
+        let cutover = registry_cutover_evidence(
+            publication.registry_generation,
+            publication.registry_snapshot_digest,
+        )?;
+        Ok(PluginGraphCapabilityPublication::new(packages, cutover))
     }
 
     async fn rollback_candidates(
@@ -293,6 +390,74 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
                 PluginPackageRollbackEvidence::new(result.package_id, evidence)
             })
             .collect()
+    }
+}
+
+fn publication_evidence(
+    intents: &[PluginLifecycleIntent],
+    results: Vec<a3s_use_extension::ExtensionLifecycleResult>,
+    idempotency_key: &str,
+    label: &str,
+) -> UseResult<Vec<PluginPackagePublicationEvidence>> {
+    if results.len() != intents.len() {
+        return Err(UseError::new(
+            "use.plugin.package_graph_publication_invalid",
+            "The Registry omitted a package from dependency-graph capability publication.",
+        ));
+    }
+    intents
+        .iter()
+        .zip(results)
+        .map(|(intent, result)| {
+            if result.extension.receipt.package_id != intent.package_id {
+                return Err(UseError::new(
+                    "use.plugin.package_graph_publication_invalid",
+                    "The Registry changed package order in capability publication evidence.",
+                ));
+            }
+            let evidence = checkpoint_evidence(
+                label,
+                intent,
+                idempotency_key,
+                &result.extension.receipt.descriptor_digest()?,
+            )?;
+            PluginPackagePublicationEvidence::new(&intent.package_id, evidence)
+        })
+        .collect()
+}
+
+fn registry_cutover_evidence(
+    registry_generation_after: u64,
+    registry_snapshot_digest: String,
+) -> UseResult<PluginCapabilityCutoverEvidence> {
+    let registry_generation_before = registry_generation_after
+        .checked_sub(1)
+        .ok_or_else(capability_generation_invalid)?;
+    PluginCapabilityCutoverEvidence::new(
+        registry_generation_before,
+        registry_generation_after,
+        registry_snapshot_digest,
+    )
+}
+
+fn capability_generation_invalid() -> UseError {
+    UseError::new(
+        "use.plugin.package_graph_generation_invalid",
+        "Registry cutover did not produce a positive next capability generation.",
+    )
+}
+
+#[cfg(test)]
+mod cutover_tests {
+    use super::*;
+
+    #[test]
+    fn first_registry_cutover_preserves_the_exact_zero_to_one_generation() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let evidence = registry_cutover_evidence(1, digest.clone()).unwrap();
+        assert_eq!(evidence.capability_generation_before(), 0);
+        assert_eq!(evidence.capability_generation_after(), 1);
+        assert_eq!(evidence.capability_snapshot_digest(), digest);
     }
 }
 

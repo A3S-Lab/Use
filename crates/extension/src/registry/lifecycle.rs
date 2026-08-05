@@ -1,157 +1,34 @@
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
-use a3s_use_core::{
-    LockedPluginPackage, PluginPackageLock, UseError, UseResult, VerifiedPluginCatalogRecord,
-};
-use olpc_cjson::CanonicalFormatter;
-use serde::Serialize;
-use sha2::{Digest, Sha256};
+use a3s_use_core::{PluginPackageLock, UseError, UseResult};
 use tokio::fs;
 
 mod generations;
+mod model;
 mod package;
 
 use generations::{binding_matches_identity, identity_from_receipt};
+use model::{
+    exact_receipt, lifecycle_graph_error, lifecycle_identity_error, lifecycle_root,
+    lifecycle_state_error, remove_exact_root, validate_locked_extension, RemovedLifecyclePackage,
+};
+pub use model::{
+    ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
+    ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
+};
 use package::{commit_candidate_root, validate_candidate_source};
 
 use super::{
-    ensure_no_installed_dependents, normalize_package_id, published_binding_matches_extension,
-    verify_package_integrity, ExtensionReceipt, ExtensionRegistry, ExtensionTrust,
-    InstalledExtension, UninstallResult, RECEIPT_SCHEMA_VERSION_V3,
+    ensure_no_installed_dependents, published_binding_matches_extension, verify_package_integrity,
+    ExtensionReceipt, ExtensionRegistry, InstalledExtension, UninstallResult,
+    RECEIPT_SCHEMA_VERSION_V3,
 };
 use crate::package::{
     io_error, sync_parent_directory, unix_timestamp, write_receipt, RegistryLock,
 };
 use crate::registry_io::{read_registry_snapshot, write_registry_snapshot};
-use crate::remote::ResolvedRemotePackage;
-use crate::source::PreparedPackageSource;
-use crate::{ExtensionManifest, ExtensionPaths};
-
-/// Exact package identity owned by one schema-v3 lifecycle operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionLifecycleIdentity {
-    package_id: String,
-    package_digest: String,
-    manifest_digest: String,
-    generation: u64,
-    #[serde(skip)]
-    package_sha256: String,
-    #[serde(skip)]
-    manifest_sha256: String,
-}
-
-impl ExtensionLifecycleIdentity {
-    pub fn new(
-        package_id: impl AsRef<str>,
-        package_digest: impl Into<String>,
-        manifest_digest: impl Into<String>,
-        generation: u64,
-    ) -> UseResult<Self> {
-        let package_id = normalize_package_id(package_id.as_ref())?;
-        let package_digest = canonical_sha256(package_digest.into(), "package")?;
-        let manifest_digest = canonical_sha256(manifest_digest.into(), "manifest")?;
-        let package_sha256 = package_digest
-            .strip_prefix("sha256:")
-            .ok_or_else(|| lifecycle_identity_error("The package digest prefix is invalid."))?
-            .to_string();
-        let manifest_sha256 = manifest_digest
-            .strip_prefix("sha256:")
-            .ok_or_else(|| lifecycle_identity_error("The manifest digest prefix is invalid."))?
-            .to_string();
-        if generation == 0 {
-            return Err(lifecycle_identity_error(
-                "A lifecycle package generation must be positive.",
-            ));
-        }
-        Ok(Self {
-            package_id,
-            package_digest,
-            manifest_digest,
-            generation,
-            package_sha256,
-            manifest_sha256,
-        })
-    }
-
-    pub fn package_id(&self) -> &str {
-        &self.package_id
-    }
-
-    pub fn package_digest(&self) -> &str {
-        &self.package_digest
-    }
-
-    pub fn manifest_digest(&self) -> &str {
-        &self.manifest_digest
-    }
-
-    pub fn generation(&self) -> u64 {
-        self.generation
-    }
-
-    pub fn descriptor_digest(&self) -> UseResult<String> {
-        let mut bytes = Vec::new();
-        let mut serializer =
-            serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
-        self.serialize(&mut serializer).map_err(|error| {
-            lifecycle_identity_error(format!(
-                "Failed to encode the lifecycle package identity: {error}"
-            ))
-        })?;
-        Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
-    }
-
-    fn package_sha256(&self) -> &str {
-        &self.package_sha256
-    }
-
-    fn manifest_sha256(&self) -> &str {
-        &self.manifest_sha256
-    }
-}
-
-/// Validated schema-v3 package bytes retained until immutable commit.
-///
-/// Constructors preserve the same trust boundaries as the legacy installer:
-/// local packages require explicit approval, release bundles recheck their
-/// reviewed digest, and remote packages can only originate from a verified
-/// TUF download object.
-#[derive(Debug)]
-pub struct ExtensionLifecyclePackage {
-    source: PreparedPackageSource,
-    manifest: ExtensionManifest,
-    package_digest: String,
-    manifest_digest: String,
-    trust: ExtensionTrust,
-    registry: Option<ResolvedRemotePackage>,
-    verified_catalog: Option<VerifiedPluginCatalogRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionLifecycleResult {
-    pub changed: bool,
-    pub extension: InstalledExtension,
-    pub registry_generation: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionLifecycleRollbackResult {
-    pub package_id: String,
-    pub changed: bool,
-    pub registry_generation: u64,
-}
-
-#[derive(Debug, Clone)]
-struct RemovedLifecyclePackage {
-    identity: ExtensionLifecycleIdentity,
-    extension: InstalledExtension,
-    selected: bool,
-}
 
 impl ExtensionRegistry {
     pub fn lifecycle_package_root(&self, identity: &ExtensionLifecycleIdentity) -> PathBuf {
@@ -360,13 +237,15 @@ impl ExtensionRegistry {
         &self,
         identities: &[ExtensionLifecycleIdentity],
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
-        self.publish_lifecycle_packages_for_host_version(
-            identities,
-            &[],
-            env!("CARGO_PKG_VERSION"),
-            None,
-        )
-        .await
+        Ok(self
+            .publish_lifecycle_packages_for_host_version(
+                identities,
+                &[],
+                env!("CARGO_PKG_VERSION"),
+                None,
+            )
+            .await?
+            .packages)
     }
 
     /// Publish changed nodes from one reviewed dependency graph while proving
@@ -377,6 +256,17 @@ impl ExtensionRegistry {
         package_lock: &PluginPackageLock,
         identities: &[ExtensionLifecycleIdentity],
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+        Ok(self
+            .publish_lifecycle_package_graph_with_evidence(package_lock, identities)
+            .await?
+            .packages)
+    }
+
+    pub async fn publish_lifecycle_package_graph_with_evidence(
+        &self,
+        package_lock: &PluginPackageLock,
+        identities: &[ExtensionLifecycleIdentity],
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
         self.publish_lifecycle_packages_for_host_version(
             identities,
             &[],
@@ -395,11 +285,43 @@ impl ExtensionRegistry {
         identities: &[ExtensionLifecycleIdentity],
         removed: &[ExtensionLifecycleIdentity],
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+        Ok(self
+            .publish_lifecycle_package_graph_transition_with_evidence(
+                package_lock,
+                identities,
+                removed,
+            )
+            .await?
+            .packages)
+    }
+
+    pub async fn publish_lifecycle_package_graph_transition_with_evidence(
+        &self,
+        package_lock: &PluginPackageLock,
+        identities: &[ExtensionLifecycleIdentity],
+        removed: &[ExtensionLifecycleIdentity],
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
         self.publish_lifecycle_packages_for_host_version(
             identities,
             removed,
             env!("CARGO_PKG_VERSION"),
             Some(package_lock),
+        )
+        .await
+    }
+
+    /// Hide an exact dependency closure through one Registry snapshot. A
+    /// replay after later package cleanup returns the same route-free
+    /// snapshot evidence without incrementing the generation.
+    pub async fn hide_lifecycle_package_graph_with_evidence(
+        &self,
+        identities: &[ExtensionLifecycleIdentity],
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        self.publish_lifecycle_packages_for_host_version(
+            &[],
+            identities,
+            env!("CARGO_PKG_VERSION"),
+            None,
         )
         .await
     }
@@ -661,7 +583,7 @@ impl ExtensionRegistry {
         removed: &[ExtensionLifecycleIdentity],
         host_version: &str,
         package_lock: Option<&PluginPackageLock>,
-    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
         if identities.is_empty() && removed.is_empty()
             || identities.len().saturating_add(removed.len()) > a3s_use_core::MAX_PLUGIN_PLAN_ITEMS
         {
@@ -805,8 +727,14 @@ impl ExtensionRegistry {
                         binding.enabled
                             && binding_matches_identity(self.paths(), binding, identity)
                     });
+                    let route_free_uninstall_replay = package_lock.is_none()
+                        && !selected_is_exact
+                        && package_routes.is_empty();
                     if extension.receipt.enabled {
-                        if !exact_published && !candidate_snapshot_complete {
+                        if !exact_published
+                            && !candidate_snapshot_complete
+                            && !route_free_uninstall_replay
+                        {
                             return Err(lifecycle_graph_error(
                                 "An enabled removed dependency is absent before candidate graph cutover.",
                             ));
@@ -822,7 +750,10 @@ impl ExtensionRegistry {
                         selected: selected_is_exact,
                     });
                 }
-                None if package_routes.is_empty() && candidate_snapshot_complete => {
+                None
+                    if package_routes.is_empty()
+                        && (candidate_snapshot_complete || package_lock.is_none()) =>
+                {
                     // A crash may occur after the exact removal journal deletes
                     // the retained receipt but before the parent graph record
                     // advances.
@@ -891,7 +822,7 @@ impl ExtensionRegistry {
                 return Err(error);
             }
         };
-        Ok(extensions
+        let packages = extensions
             .into_iter()
             .zip(changed)
             .map(|(extension, changed)| ExtensionLifecycleResult {
@@ -899,7 +830,12 @@ impl ExtensionRegistry {
                 extension,
                 registry_generation: snapshot.generation,
             })
-            .collect())
+            .collect();
+        Ok(ExtensionLifecycleGraphPublication {
+            packages,
+            registry_generation: snapshot.generation,
+            registry_snapshot_digest: snapshot.descriptor_digest()?,
+        })
     }
 
     async fn retain_removed_lifecycle_packages(
@@ -978,8 +914,10 @@ impl ExtensionRegistry {
         identities: &[ExtensionLifecycleIdentity],
         host_version: &str,
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
-        self.publish_lifecycle_packages_for_host_version(identities, &[], host_version, None)
-            .await
+        Ok(self
+            .publish_lifecycle_packages_for_host_version(identities, &[], host_version, None)
+            .await?
+            .packages)
     }
 
     #[cfg(test)]
@@ -989,13 +927,15 @@ impl ExtensionRegistry {
         identities: &[ExtensionLifecycleIdentity],
         host_version: &str,
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
-        self.publish_lifecycle_packages_for_host_version(
-            identities,
-            &[],
-            host_version,
-            Some(package_lock),
-        )
-        .await
+        Ok(self
+            .publish_lifecycle_packages_for_host_version(
+                identities,
+                &[],
+                host_version,
+                Some(package_lock),
+            )
+            .await?
+            .packages)
     }
 
     #[cfg(test)]
@@ -1031,109 +971,4 @@ impl ExtensionRegistry {
                 )
             })
     }
-}
-
-fn lifecycle_root(paths: &ExtensionPaths, identity: &ExtensionLifecycleIdentity) -> PathBuf {
-    paths.lifecycle_package_root(
-        identity.package_id(),
-        identity.generation(),
-        identity.package_sha256(),
-    )
-}
-
-fn exact_receipt(
-    identity: &ExtensionLifecycleIdentity,
-    receipt: &ExtensionReceipt,
-) -> UseResult<()> {
-    if receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3
-        || receipt.package_id != identity.package_id
-        || receipt.lifecycle_generation != Some(identity.generation)
-        || receipt.package_sha256.as_deref() != Some(identity.package_sha256())
-        || receipt.manifest_sha256 != identity.manifest_sha256()
-    {
-        return Err(lifecycle_identity_error(
-            "The installed cognitive package does not match the exact lifecycle generation.",
-        ));
-    }
-    Ok(())
-}
-
-async fn remove_exact_root(path: &Path) -> UseResult<bool> {
-    let metadata = match fs::symlink_metadata(path).await {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(io_error("inspect lifecycle package", path, error)),
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err(UseError::new(
-            "use.extension.ownership_invalid",
-            format!(
-                "Refusing to remove invalid lifecycle package root '{}'.",
-                path.display()
-            ),
-        ));
-    }
-    fs::remove_dir_all(path)
-        .await
-        .map_err(|error| io_error("remove lifecycle package generation", path, error))?;
-    Ok(true)
-}
-
-fn validate_locked_extension(
-    locked: &LockedPluginPackage,
-    extension: &InstalledExtension,
-    host_version: &str,
-) -> UseResult<()> {
-    let record = &locked.catalog.record;
-    let package_sha256 = record
-        .package
-        .sha256
-        .as_deref()
-        .and_then(|digest| digest.strip_prefix("sha256:"));
-    let manifest_sha256 = record
-        .package
-        .manifest_sha256
-        .as_deref()
-        .and_then(|digest| digest.strip_prefix("sha256:"));
-    if extension.receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3
-        || extension.receipt.trust != ExtensionTrust::RegistryTuf
-        || extension.receipt.package_id != record.package_id
-        || extension.receipt.version != record.version
-        || extension.receipt.package_sha256.as_deref() != package_sha256
-        || Some(extension.receipt.manifest_sha256.as_str()) != manifest_sha256
-        || extension.plan_ready_catalog()? != &locked.catalog
-        || !extension.supports_use_version(host_version)
-    {
-        return Err(lifecycle_graph_error(
-            "An installed cognitive package does not match its reviewed dependency-lock node.",
-        ));
-    }
-    Ok(())
-}
-
-fn canonical_sha256(value: String, label: &str) -> UseResult<String> {
-    let valid = value.strip_prefix("sha256:").is_some_and(|digest| {
-        digest.len() == 64
-            && digest
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-    });
-    if !valid {
-        return Err(lifecycle_identity_error(format!(
-            "The lifecycle {label} digest must be canonical SHA-256."
-        )));
-    }
-    Ok(value)
-}
-
-fn lifecycle_identity_error(message: impl Into<String>) -> UseError {
-    UseError::new("use.extension.lifecycle_identity_mismatch", message)
-}
-
-fn lifecycle_state_error(message: impl Into<String>) -> UseError {
-    UseError::new("use.extension.lifecycle_state_invalid", message)
-}
-
-fn lifecycle_graph_error(message: impl Into<String>) -> UseError {
-    UseError::new("use.extension.lifecycle_package_graph_invalid", message)
 }
