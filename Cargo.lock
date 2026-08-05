@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-trait",
  "olpc-cjson",
@@ -137,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-mcp-release-fixture"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "a3s-use-core",
  "anyhow",
@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-science"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "a3s-use-core",
  "a3s-use-extension",
