@@ -373,6 +373,82 @@ impl PluginLifecycleCoordinator {
         self.journal.complete(intent, completed_at_ms()).await
     }
 
+    pub(super) async fn record_graph_capability_hidden(
+        &self,
+        intent: &PluginLifecycleIntent,
+        manifest: &ExtensionManifest,
+        evidence: &PluginLifecycleEvidence,
+        completed_at_ms: &impl Fn() -> u64,
+    ) -> UseResult<PluginLifecycleOperationRecord> {
+        validate_manifest_binding(intent, manifest)?;
+        if intent.action != super::PluginLifecycleAction::Uninstall {
+            return Err(coordinator_error(
+                "Only uninstall operations can record an atomic graph hide.",
+            ));
+        }
+        if let Some(record) = self.load_exact_record(intent).await? {
+            if record.status == PluginLifecycleOperationStatus::Completed {
+                return Ok(record);
+            }
+        }
+        let record = self.journal.begin(intent).await?;
+        let Some(checkpoint) = record.next_checkpoint().cloned() else {
+            return Ok(record);
+        };
+        if checkpoint.kind != PluginLifecycleCheckpointKind::CapabilityHidden {
+            return Ok(record);
+        }
+        self.journal
+            .record_checkpoint(
+                intent,
+                &checkpoint.idempotency_key,
+                PluginLifecycleCheckpointOutcome::Applied,
+                evidence.digest.clone(),
+                None,
+                completed_at_ms(),
+            )
+            .await
+    }
+
+    /// Advance an uninstall operation through hide and accepted-call drain,
+    /// but stop before any surface or package cleanup. The graph coordinator
+    /// uses this boundary so prior authorization remains valid for calls that
+    /// acquired the old capability generation before atomic cutover.
+    pub(super) async fn drain_graph_retirement(
+        &self,
+        intent: &PluginLifecycleIntent,
+        manifest: &ExtensionManifest,
+        completed_at_ms: &impl Fn() -> u64,
+    ) -> UseResult<PluginLifecycleOperationRecord> {
+        validate_manifest_binding(intent, manifest)?;
+        if intent.action != super::PluginLifecycleAction::Uninstall {
+            return Err(coordinator_error(
+                "Only uninstall operations can drain a graph retirement.",
+            ));
+        }
+        if let Some(record) = self.load_exact_record(intent).await? {
+            if record.status == PluginLifecycleOperationStatus::Completed {
+                return Ok(record);
+            }
+        }
+        let mut record = self.journal.begin(intent).await?;
+        loop {
+            let Some(checkpoint) = record.next_checkpoint().cloned() else {
+                return Ok(record);
+            };
+            if !matches!(
+                checkpoint.kind,
+                PluginLifecycleCheckpointKind::CapabilityHidden
+                    | PluginLifecycleCheckpointKind::CallsDrained
+            ) {
+                return Ok(record);
+            }
+            record = self
+                .execute_and_record(intent, manifest, &checkpoint, completed_at_ms)
+                .await?;
+        }
+    }
+
     /// Remove every candidate surface that may have been prepared before a
     /// dependency-closure cutover failed. The next unrecorded surface is also
     /// cleaned because a host side effect may have succeeded before its

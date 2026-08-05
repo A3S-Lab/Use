@@ -7,8 +7,8 @@
   2026-08-02; package lifecycle intent/journal and cognitive-package
   dependency/lock contracts frozen 2026-08-03; unified A3S Flow contracts and
   exact-generation preflight binding foundation frozen 2026-08-04; operation
-  plan v3 dual-lock upgrades introduced and host capabilities v3 frozen
-  2026-08-05
+  plan v3 dual-lock upgrades, host capabilities v3, and Grant-aware graph saga
+  foundation frozen 2026-08-05
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -18,7 +18,8 @@ This document records the machine-readable plugin contracts implemented in
 store implemented in `a3s-use-extension`, plus the package lifecycle contracts
 implemented in `a3s-use`. It does not claim that production Plugin Manager
 wiring, Knowledge, Gateway, or Runtime generation retirement are complete. The
-package/capability and dependency-graph hosts are implemented foundations.
+package/capability, dependency-graph, and Grant-aware graph hosts are
+implemented foundations.
 Signed remote schema-v3 records enter that graph from `a3s-use install` and
 the compatible `component install` command. A3S Code TUI/Web now composes the
 supported Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production
@@ -43,6 +44,7 @@ remain product integration gates.
 | Workspace grant changes | `a3s.use.plugin-workspace-grant-changes.v1` | Sorted root/dependency grant and revoke transition set |
 | Workspace grant operation | `a3s.use.plugin-workspace-grant-operation.v1` | Durable immutable intent and resumable grant lifecycle phase |
 | Workspace grant cutover | `a3s.use.plugin-workspace-grant-cutover.v1` | Evidence that capability publication selected the prepared generation |
+| Workspace grant rollback | `a3s.use.plugin-workspace-grant-rollback.v1` | Evidence for restoring exact candidate paths before capability cutover |
 | Workspace grant | `a3s.use.plugin-workspace-grant.v1` | Scope-bound resolved authority within a signed ceiling |
 | Catalog record | `a3s.use.plugin-catalog.v1` | Compatible search and review metadata without package download |
 | Catalog record | `a3s.use.plugin-catalog.v2` | Plan-ready manifest evidence and surface dependency closure |
@@ -177,8 +179,11 @@ The graph coordinator classifies Add/Replace/Remove/Retain, downloads and
 prepares only changed candidates dependency-first, publishes candidates and
 removed routes once, automatically rolls back before cutover, retires replaced
 or unreferenced generations in reverse order, and durably replays every
-outcome. Production provider/grant composition remains outside the completed
-contract foundation.
+outcome. Its Grant-aware entry points persist plan-bound candidate Grants before
+package preparation, require exact snapshot/generation cutover evidence,
+restore package and Grant candidates together before cutover, and drain prior
+calls before revocation. Product-level Grant planning/apply selection and
+production provider composition remain outside the completed foundation.
 
 Package ownership also applies above one manifest. A schema-v3 package may
 declare canonical package ID plus SemVer dependency blocks. The package lock
@@ -466,15 +471,30 @@ intent under
 - exact candidate receipts, proposal digests, and signed ceilings; and
 - exact prior receipts plus revocation authority.
 
-The phase sequence is `intent-recorded`, `preparing`, `prepared`,
-`cutover-committed`, `retiring`, and `completed`. Every journal replacement is
-bounded, atomic, symlink-checked, and serialized with grant records under the
+The success phase sequence is `intent-recorded`, `preparing`, `prepared`,
+`cutover-committed`, `retiring`, and `completed`. Before cutover, a failed
+candidate can instead enter `rolling-back` and finish `rolled-back` with
+`a3s.use.plugin-workspace-grant-rollback.v1` evidence. Every journal replacement
+is bounded, atomic, symlink-checked, and serialized with grant records under the
 same cross-process lock. `prepared` is reached only after all candidate writes
-converge. `WorkspaceGrantCutoverEvidence` must bind the expected generation
-transition, an immutable capability-snapshot digest, and a non-future commit
-time. Retirement cannot begin without it. A retry reuses the same immutable
-receipts and cutover time, so a crash between record and checkpoint writes
-converges instead of inventing new evidence.
+converge. Rollback restores the exact previously observed Grant or tombstone at
+each candidate path; when no prior record existed it removes only the prepared
+candidate. Rollback after cutover is rejected.
+
+`WorkspaceGrantCutoverEvidence` must bind the expected generation transition,
+an immutable capability-snapshot digest, and a non-future commit time.
+Retirement cannot begin without it. A retry reuses the durable cutover or
+rollback time and immutable records, so a crash between record and checkpoint
+writes converges instead of inventing new evidence. Capability generation zero
+is valid only as the observed before-state of the initial exact 0 -> 1 cutover.
+
+The Grant-aware package-graph entry points bind this journal to the exact
+reviewed envelope and signed ceilings. They persist candidates before package
+or Runtime preparation, commit only Registry-returned exact cutover evidence,
+drain calls admitted by the prior snapshot, and then retire prior Grants before
+surface/package cleanup. The standalone and umbrella Plugin Managers still
+need to derive these inputs after policy/confirmation and select the Grant-aware
+entry point; the grant-free compatibility methods do not provide authorization.
 
 An observed record is evidence, not executable authority. Callers must use the
 active resolver, which rechecks the path identity, exact package digest,

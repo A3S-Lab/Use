@@ -4,12 +4,14 @@ use super::workspace_grant::{
     StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,
 };
 use super::workspace_grant_io::{
-    acquire_lock, ensure_owned_directory, validate_existing_directory_chain,
+    acquire_lock, ensure_owned_directory, sync_parent_directory, validate_existing_directory_chain,
+    write_record,
 };
 use super::workspace_grant_operation::{
     operation_state_error, validate_resolved, WorkspaceGrantCandidateCeiling,
     WorkspaceGrantCutoverEvidence, WorkspaceGrantLifecyclePhase, WorkspaceGrantOperationIntent,
     WorkspaceGrantOperationJournal, WorkspaceGrantPreparedCandidate, WorkspaceGrantRetirement,
+    WorkspaceGrantRollbackEvidence, WORKSPACE_GRANT_ROLLBACK_SCHEMA,
 };
 use super::workspace_grant_operation_io::{read_optional_operation, write_operation};
 
@@ -21,7 +23,7 @@ impl WorkspaceGrantStore {
         ceilings: &[WorkspaceGrantCandidateCeiling],
     ) -> UseResult<WorkspaceGrantOperationJournal> {
         validate_resolved(resolved)?;
-        let candidates = build_candidates(resolved, ceilings)?;
+        let mut candidates = build_candidates(resolved, ceilings)?;
         let _lock = acquire_lock(self.state_root(), self.root()).await?;
         let path = self.operation_path(&resolved.operation_id)?;
         ensure_owned_directory(self.root(), path.parent()).await?;
@@ -68,6 +70,16 @@ impl WorkspaceGrantStore {
             });
         }
 
+        for candidate in &mut candidates {
+            candidate.prior_record = self
+                .observe_record(
+                    &resolved.scope_id,
+                    &candidate.receipt.grant.package_id,
+                    &candidate.receipt.grant.package_digest,
+                )
+                .await?;
+        }
+
         let intent = WorkspaceGrantOperationIntent {
             operation_id: resolved.operation_id.clone(),
             plan_digest: resolved.plan_digest.clone(),
@@ -107,6 +119,8 @@ impl WorkspaceGrantStore {
             WorkspaceGrantLifecyclePhase::CutoverCommitted
             | WorkspaceGrantLifecyclePhase::Retiring
             | WorkspaceGrantLifecyclePhase::Completed => return Ok(journal),
+            WorkspaceGrantLifecyclePhase::RollingBack
+            | WorkspaceGrantLifecyclePhase::RolledBack => return Err(operation_rolled_back()),
         }
 
         for candidate in &journal.intent.candidates {
@@ -158,6 +172,8 @@ impl WorkspaceGrantStore {
                 "use.plugin.grant_operation.not_prepared",
                 "Capability cutover cannot be committed before every candidate grant is prepared.",
             )),
+            WorkspaceGrantLifecyclePhase::RollingBack
+            | WorkspaceGrantLifecyclePhase::RolledBack => Err(operation_rolled_back()),
         }
     }
 
@@ -184,6 +200,8 @@ impl WorkspaceGrantStore {
                     "Prior grants cannot be retired before durable capability cutover evidence.",
                 ));
             }
+            WorkspaceGrantLifecyclePhase::RollingBack
+            | WorkspaceGrantLifecyclePhase::RolledBack => return Err(operation_rolled_back()),
         }
 
         self.verify_candidates(&journal.intent, None).await?;
@@ -216,6 +234,71 @@ impl WorkspaceGrantStore {
                 .await?;
         }
         journal.phase = WorkspaceGrantLifecyclePhase::Completed;
+        write_operation(&path, &journal).await?;
+        Ok(journal)
+    }
+
+    /// Restores every exact candidate path to its state before preparation.
+    ///
+    /// This is valid only before capability cutover. The rollback phase and
+    /// evidence are persisted first, so a crash while restoring candidate
+    /// records can resume without deleting or overwriting unrelated grants.
+    pub async fn rollback_change_set(
+        &self,
+        operation_id: &str,
+        evidence_digest: impl Into<String>,
+        rolled_back_at_ms: u64,
+        now_ms: u64,
+    ) -> UseResult<WorkspaceGrantOperationJournal> {
+        let _lock = acquire_lock(self.state_root(), self.root()).await?;
+        let path = self.operation_path(operation_id)?;
+        let mut journal = self.load_operation(&path, operation_id).await?;
+        let rollback = WorkspaceGrantRollbackEvidence {
+            schema: WORKSPACE_GRANT_ROLLBACK_SCHEMA.to_string(),
+            evidence_digest: evidence_digest.into(),
+            rolled_back_at_ms,
+        };
+        rollback.validate_against(&journal.intent)?;
+        if rolled_back_at_ms > now_ms {
+            return Err(operation_state_error(
+                "use.plugin.grant_operation.rollback_in_future",
+                "Candidate rollback evidence cannot be committed from the future.",
+            ));
+        }
+
+        match journal.phase {
+            WorkspaceGrantLifecyclePhase::IntentRecorded
+            | WorkspaceGrantLifecyclePhase::Preparing
+            | WorkspaceGrantLifecyclePhase::Prepared => {
+                journal.phase = WorkspaceGrantLifecyclePhase::RollingBack;
+                journal.rollback = Some(rollback.clone());
+                write_operation(&path, &journal).await?;
+            }
+            WorkspaceGrantLifecyclePhase::RollingBack => {
+                if journal.rollback.as_ref() != Some(&rollback) {
+                    return Err(operation_conflict());
+                }
+            }
+            WorkspaceGrantLifecyclePhase::RolledBack => {
+                if journal.rollback.as_ref() != Some(&rollback) {
+                    return Err(operation_conflict());
+                }
+                return Ok(journal);
+            }
+            WorkspaceGrantLifecyclePhase::CutoverCommitted
+            | WorkspaceGrantLifecyclePhase::Retiring
+            | WorkspaceGrantLifecyclePhase::Completed => {
+                return Err(operation_state_error(
+                    "use.plugin.grant_operation.cutover_committed",
+                    "A cutover-committed workspace grant operation cannot roll back candidates.",
+                ));
+            }
+        }
+
+        for candidate in journal.intent.candidates.iter().rev() {
+            self.restore_candidate_record(candidate).await?;
+        }
+        journal.phase = WorkspaceGrantLifecyclePhase::RolledBack;
         write_operation(&path, &journal).await?;
         Ok(journal)
     }
@@ -285,6 +368,54 @@ impl WorkspaceGrantStore {
         }
         Ok(())
     }
+
+    async fn restore_candidate_record(
+        &self,
+        candidate: &WorkspaceGrantPreparedCandidate,
+    ) -> UseResult<()> {
+        let current = self
+            .observe_record(
+                &candidate.receipt.grant.scope_id,
+                &candidate.receipt.grant.package_id,
+                &candidate.receipt.grant.package_digest,
+            )
+            .await?;
+        let prepared = Some(StoredWorkspaceGrant::Granted(candidate.receipt.clone()));
+        if current == candidate.prior_record {
+            return Ok(());
+        }
+        if current != prepared {
+            return Err(operation_state_error(
+                "use.plugin.grant_operation.candidate_changed",
+                "A prepared candidate grant changed before pre-cutover rollback.",
+            ));
+        }
+
+        let path = self.record_path(
+            &candidate.receipt.grant.scope_id,
+            &candidate.receipt.grant.package_id,
+            &candidate.receipt.grant.package_digest,
+        )?;
+        if let Some(prior) = &candidate.prior_record {
+            write_record(&path, prior).await?;
+        } else {
+            match tokio::fs::remove_file(&path).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(operation_state_error(
+                        "use.plugin.grant_operation.io",
+                        format!(
+                            "Failed to remove rolled-back workspace grant candidate '{}': {error}",
+                            path.display()
+                        ),
+                    ));
+                }
+            }
+            sync_parent_directory(path.parent(), "rolled-back candidate grant").await?;
+        }
+        Ok(())
+    }
 }
 
 fn build_candidates(
@@ -320,6 +451,7 @@ fn build_candidates(
                 proposal_digest: candidate.proposal_digest.clone(),
                 receipt,
                 ceiling: ceiling.ceiling.clone(),
+                prior_record: None,
             })
         })
         .collect()
@@ -341,7 +473,16 @@ fn intent_matches_resolved(
         && intent.before_snapshot_digest == resolved.before_snapshot_digest
         && intent.transitioned_at_ms == resolved.transitioned_at_ms
         && intent.revocation_authority == resolved.revocation_authority
-        && intent.candidates == candidates
+        && intent.candidates.len() == candidates.len()
+        && intent
+            .candidates
+            .iter()
+            .zip(candidates)
+            .all(|(recorded, candidate)| {
+                recorded.proposal_digest == candidate.proposal_digest
+                    && recorded.receipt == candidate.receipt
+                    && recorded.ceiling == candidate.ceiling
+            })
         && intent
             .retirements
             .iter()
@@ -414,5 +555,12 @@ fn operation_corrupt() -> a3s_use_core::UseError {
     operation_state_error(
         "use.plugin.grant_operation.invalid",
         "The workspace grant operation journal is internally inconsistent.",
+    )
+}
+
+fn operation_rolled_back() -> a3s_use_core::UseError {
+    operation_state_error(
+        "use.plugin.grant_operation.rolled_back",
+        "The workspace grant operation was rolled back and requires a fresh reviewed plan.",
     )
 }

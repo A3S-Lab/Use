@@ -49,10 +49,13 @@ available for automation, embedding, and diagnostics.
 > changed candidates, cuts over additions/replacements/removals once, preserves
 > shared dependencies, and retires unreferenced prior generations in reverse
 > order with crash-safe replay. Managed hosts negotiate this contract through
-> host capabilities v3; v1/v2 remain frozen. Production Knowledge,
-> Service/HTTP hosts, grant composition, distributed Flow
-> scheduling/resumption, and complete real-process cross-platform E2E remain
-> release gates.
+> host capabilities v3; v1/v2 remain frozen. Grant-aware graph paths now
+> persist candidate Workspace Grants before package preparation, bind the exact
+> Registry snapshot cutover, drain accepted calls before revoking prior grants,
+> and roll back package and Grant candidates together before cutover. Production
+> Knowledge, Service/HTTP hosts, product-level Grant planning/apply wiring,
+> distributed Flow scheduling/resumption, and complete real-process
+> cross-platform E2E remain release gates.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 ## Proof in the codebase
@@ -74,6 +77,11 @@ The package model is exercised as code, not only described in prose:
   dependency closure forward, reuses exact shared nodes, publishes graph
   additions, replacements, and removals once, and retires only unreferenced
   packages in reverse dependency order.
+- [`PluginGrantLifecycleUnit`](src/plugin_lifecycle/grant.rs) binds one reviewed
+  package plan to its exact Workspace Grant changes and signed ceilings. The
+  grant-aware graph paths persist candidates before package preparation,
+  checkpoint exact cutover evidence, and delay prior-grant revocation until
+  accepted calls drain.
 - [`capability watch`](src/capability_registry.rs) lets resident hosts observe
   package and projection changes without restarting.
 - A3S Code's
@@ -403,7 +411,8 @@ resolve signed dependency graph
     → verify and stage dependencies before dependents
     → prepare grants, Runtime, A3S Flow, static surfaces, and OKF
     → publish the changed closure in one capability generation
-    → hide and drain the superseded generation
+    → checkpoint the exact cutover and drain accepted prior calls
+    → revoke superseded grants
     → remove unused packages in reverse dependency order
 ```
 
@@ -429,7 +438,13 @@ dependency-first, removes unreferenced routes in the same snapshot cutover,
 automatically restores the prior graph after a pre-cutover failure, and retires
 prior generations in reverse order with durable crash replay. Shared exact
 dependencies remain selected and are neither downloaded nor rewritten.
-Production grant/Knowledge/Service/Gateway composition is still being wired.
+The grant-aware graph coordinator persists candidate grants before package or
+Runtime preparation, requires exact Registry generation and snapshot evidence
+at cutover, restores package and Grant candidates together after a pre-cutover
+upgrade failure, and drains prior calls before revoking prior grants. The
+standalone manager and umbrella Plugin Manager still need to derive the
+plan-bound Grant inputs and select these grant-aware apply paths; production
+Knowledge, Service, and Gateway composition is also still being wired.
 The storage layer preserves exact package and Runtime generations across
 candidate preparation, cutover, drain, rollback, and receipt-owned removal.
 Required surfaces fail closed when their owning adapter is absent: Runtime
@@ -455,8 +470,8 @@ The ownership boundaries are deliberate:
 - **The shared Plugin Manager** is the only lifecycle application service for
   CLI, Web, management MCP, and remote managed-host adapters.
 - **A3S Use** owns package validation, exact versions, immutable generations,
-  operation journals, receipts, route leases, binding evidence, and capability
-  reconciliation.
+  operation journals, Workspace Grant prepare/cutover/rollback evidence,
+  receipts, route leases, binding evidence, and capability reconciliation.
 - **Runtime, A3S Flow, Gateway, and A3S Knowledge adapters** own execution,
   serving, preflight, and indexing. Their typed evidence is required before
   publication.
@@ -486,9 +501,10 @@ do not share one database transaction. The boundaries are frozen in
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
+| Workspace Grant graph saga | Foundation implemented: plan/ceiling binding, candidate-first persistence, exact Registry cutover evidence, pre-cutover candidate restoration, drain-before-revoke retirement, fail-closed generation-drift handling, and crash replay; standalone and umbrella product planning/apply wiring remains pending |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
-| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, automatic pre-cutover rollback, reverse prior-generation retirement, exact drain/removal, dependency GC, and generation-stable crash replay implemented; production provider/grant composition remains a release gate |
+| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented in the graph layer; production providers and product-level Grant plan/apply selection remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,
 Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages

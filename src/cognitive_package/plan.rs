@@ -66,10 +66,10 @@ pub(super) fn install_operation(
         ));
     }
 
-    let capability_generation = registry_generation.checked_add(1).ok_or_else(|| {
+    let state_revision = registry_generation.checked_add(1).ok_or_else(|| {
         package_manager_error(
             "use.plugin.package_generation_exhausted",
-            "The package capability generation counter is exhausted.",
+            "The package state revision counter is exhausted.",
         )
     })?;
     let lock_digest = lock.descriptor_digest()?;
@@ -102,8 +102,8 @@ pub(super) fn install_operation(
         Vec::new(),
         impact,
         PlannedStateEvidence {
-            state_revision: capability_generation,
-            capability_generation,
+            state_revision,
+            capability_generation: registry_generation,
             receipt_digest: None,
         },
     )?;
@@ -125,7 +125,7 @@ pub(super) fn install_operation(
                 "The dependency graph generation offset is too large.",
             )
         })?;
-        let generation = capability_generation.checked_add(offset).ok_or_else(|| {
+        let generation = state_revision.checked_add(offset).ok_or_else(|| {
             package_manager_error(
                 "use.plugin.package_generation_exhausted",
                 "The package lifecycle generation counter is exhausted.",
@@ -192,7 +192,7 @@ pub(super) fn uninstall_operation(
     let state_revision = registry_generation.checked_add(1).ok_or_else(|| {
         package_manager_error(
             "use.plugin.package_generation_exhausted",
-            "The package capability generation counter is exhausted.",
+            "The package state revision counter is exhausted.",
         )
     })?;
     let lock_digest = lock.descriptor_digest()?;
@@ -221,7 +221,7 @@ pub(super) fn uninstall_operation(
         impact,
         PlannedStateEvidence {
             state_revision,
-            capability_generation: state_revision,
+            capability_generation: registry_generation,
             receipt_digest: Some(root_receipt_digest),
         },
     )?;
@@ -385,10 +385,10 @@ pub(super) fn upgrade_operation(
         })
     });
 
-    let capability_generation = registry_generation.checked_add(1).ok_or_else(|| {
+    let state_revision = registry_generation.checked_add(1).ok_or_else(|| {
         package_manager_error(
             "use.plugin.package_generation_exhausted",
-            "The package capability generation counter is exhausted.",
+            "The package state revision counter is exhausted.",
         )
     })?;
     let lock_digest = candidate_lock.descriptor_digest()?;
@@ -447,8 +447,8 @@ pub(super) fn upgrade_operation(
         Vec::new(),
         impact,
         PlannedStateEvidence {
-            state_revision: capability_generation,
-            capability_generation,
+            state_revision,
+            capability_generation: registry_generation,
             receipt_digest: Some(root_receipt_digest),
         },
     )?;
@@ -487,7 +487,7 @@ pub(super) fn upgrade_operation(
                 "The dependency graph generation offset is too large.",
             )
         })?;
-        let mut generation = capability_generation.checked_add(offset).ok_or_else(|| {
+        let mut generation = state_revision.checked_add(offset).ok_or_else(|| {
             package_manager_error(
                 "use.plugin.package_generation_exhausted",
                 "The package lifecycle generation counter is exhausted.",

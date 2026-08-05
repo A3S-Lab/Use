@@ -110,8 +110,7 @@ pub struct PluginHostObservationResult {
 
 impl PluginHostPackageState {
     pub fn validate(&self) -> UseResult<()> {
-        if self.capability_generation == 0
-            || !valid_sha256(&self.capability_revision)
+        if !valid_sha256(&self.capability_revision)
             || self.selected_surfaces.len() > MAX_PLUGIN_PLAN_ITEMS
             || !strictly_sorted_unique(&self.selected_surfaces)
         {

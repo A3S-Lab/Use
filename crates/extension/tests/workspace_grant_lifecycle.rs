@@ -378,6 +378,153 @@ async fn same_generation_grant_replacement_is_not_revoked_after_cutover() {
 }
 
 #[tokio::test]
+async fn pre_cutover_rollback_removes_new_candidates_and_preserves_prior_grants() {
+    let temporary = TempDir::new().unwrap();
+    let store = WorkspaceGrantStore::new(temporary.path());
+    let fixture = upgrade_fixture();
+    for prior in &fixture.priors {
+        store.put(prior, &fixture.ceiling, 1_000).await.unwrap();
+    }
+    store
+        .begin_change_set(&fixture.resolved, &fixture.ceilings)
+        .await
+        .unwrap();
+    let prepared = store
+        .prepare_change_set(&fixture.resolved.operation_id, 1_250)
+        .await
+        .unwrap();
+    assert_eq!(prepared.phase, WorkspaceGrantLifecyclePhase::Prepared);
+
+    drop(store);
+    let store = WorkspaceGrantStore::new(temporary.path());
+    let rollback_digest = digest('7');
+    let rolled_back = store
+        .rollback_change_set(
+            &fixture.resolved.operation_id,
+            rollback_digest.clone(),
+            1_275,
+            1_275,
+        )
+        .await
+        .unwrap();
+    assert_eq!(rolled_back.phase, WorkspaceGrantLifecyclePhase::RolledBack);
+    assert_eq!(
+        store
+            .rollback_change_set(
+                &fixture.resolved.operation_id,
+                rollback_digest,
+                1_275,
+                1_300,
+            )
+            .await
+            .unwrap(),
+        rolled_back
+    );
+
+    for candidate in &rolled_back.intent.candidates {
+        assert_eq!(
+            store
+                .observe(
+                    &fixture.resolved.scope_id,
+                    &candidate.receipt.grant.package_id,
+                    &candidate.receipt.grant.package_digest,
+                )
+                .await
+                .unwrap(),
+            None
+        );
+    }
+    for prior in &fixture.priors {
+        assert_eq!(
+            store
+                .observe(
+                    &fixture.resolved.scope_id,
+                    &prior.grant.package_id,
+                    &prior.grant.package_digest,
+                )
+                .await
+                .unwrap(),
+            Some(StoredWorkspaceGrant::Granted(prior.clone()))
+        );
+    }
+    assert_eq!(
+        store
+            .prepare_change_set(&fixture.resolved.operation_id, 1_300)
+            .await
+            .unwrap_err()
+            .code,
+        "use.plugin.grant_operation.rolled_back"
+    );
+}
+
+#[tokio::test]
+async fn pre_cutover_rollback_restores_an_exact_same_generation_prior_record() {
+    let temporary = TempDir::new().unwrap();
+    let store = WorkspaceGrantStore::new(temporary.path());
+    let fixture = in_place_fixture();
+    let prior = fixture.priors[0].clone();
+    store.put(&prior, &fixture.ceiling, 1_000).await.unwrap();
+    store
+        .begin_change_set(&fixture.resolved, &fixture.ceilings)
+        .await
+        .unwrap();
+    store
+        .prepare_change_set(&fixture.resolved.operation_id, 1_250)
+        .await
+        .unwrap();
+
+    let rolled_back = store
+        .rollback_change_set(&fixture.resolved.operation_id, digest('8'), 1_275, 1_275)
+        .await
+        .unwrap();
+    assert_eq!(rolled_back.phase, WorkspaceGrantLifecyclePhase::RolledBack);
+    assert_eq!(
+        store
+            .observe(
+                &fixture.resolved.scope_id,
+                &prior.grant.package_id,
+                &prior.grant.package_digest,
+            )
+            .await
+            .unwrap(),
+        Some(StoredWorkspaceGrant::Granted(prior))
+    );
+}
+
+#[tokio::test]
+async fn cutover_committed_grants_cannot_use_candidate_rollback() {
+    let temporary = TempDir::new().unwrap();
+    let store = WorkspaceGrantStore::new(temporary.path());
+    let fixture = install_fixture();
+    store
+        .begin_change_set(&fixture.resolved, &fixture.ceilings)
+        .await
+        .unwrap();
+    store
+        .prepare_change_set(&fixture.resolved.operation_id, 1_250)
+        .await
+        .unwrap();
+    let cutover = cutover(&fixture.resolved);
+    store
+        .commit_change_set_cutover(
+            &fixture.resolved.operation_id,
+            cutover.clone(),
+            cutover.committed_at_ms,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        store
+            .rollback_change_set(&fixture.resolved.operation_id, digest('9'), 1_350, 1_350,)
+            .await
+            .unwrap_err()
+            .code,
+        "use.plugin.grant_operation.cutover_committed"
+    );
+}
+
+#[tokio::test]
 async fn operation_journal_fails_closed_on_unknown_privileged_fields() {
     let temporary = TempDir::new().unwrap();
     let store = WorkspaceGrantStore::new(temporary.path());

@@ -479,11 +479,11 @@ Exit criteria:
 - offline search uses only the last verified snapshot and reports its age;
 - catalog search has deterministic fixtures and output-size bounds.
 
-### M2 — Shared Plugin Manager application service (in progress 2026-08-03)
+### M2 — Shared Plugin Manager application service (in progress 2026-08-05)
 
 Estimated effort: 2–3 weeks
 
-Implementation status (2026-08-03):
+Implementation status (2026-08-05):
 
 - completed in `a3s-use-core`: one object-safe `PluginHostManager` port and
   canonical v1 managed-host capability, scope-fence, plan, digest-only apply,
@@ -579,6 +579,14 @@ Implementation status (2026-08-03):
   union, host capabilities v3 advertises that schema without changing v1/v2,
   dependency removal shares the candidate cutover, and retained receipts let
   reverse-order GC resume after every cutover/drain/removal crash boundary;
+- completed in A3S Use: grant-aware graph install, upgrade, and uninstall paths
+  bind one reviewed plan to exact candidate and retirement Grants, persist
+  candidate authorization before package preparation, and require the Registry
+  host to return exact snapshot digest plus generation cutover evidence;
+- completed in A3S Use: pre-cutover upgrade failure restores both package and
+  Grant candidates, successful upgrade and uninstall drain accepted prior calls
+  before revoking old Grants, and generation drift or cutover replay fails
+  closed without inventing new evidence;
 - completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
   embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
   Knowledge adapters; the standalone factory does not invent fallback hosts;
@@ -595,8 +603,9 @@ Implementation status (2026-08-03):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; grant sub-saga composition; real signed cross-platform lifecycle
-  E2E; and the published
+  injection; standalone and umbrella generation of canonical Grant inputs plus
+  selection of the grant-aware apply paths; real signed cross-platform
+  lifecycle E2E; and the published
   managed-host port required before a Cloud adapter can enable mutation. Hosts
   must not add a parallel implementation.
 
@@ -822,6 +831,19 @@ Implementation status (in progress 2026-07-30):
   instances, reject stale snapshots, operation-ID conflict, ceiling
   substitution, candidate drift, and unknown journal fields, and preserve
   same-generation grant replacement instead of tombstoning the new grant;
+- completed M5I-C: add a plan-bound `PluginGrantLifecycleUnit` and grant-aware
+  package-graph install, upgrade, and uninstall entry points that persist Grant
+  candidates before package/Runtime prepare and accept only exact Registry
+  snapshot digest plus N -> N+1 generation evidence, including the initial
+  0 -> 1 cutover;
+- completed M5I-C: persist rolling-back/rolled-back evidence and exact prior
+  Grant records so a pre-cutover failure restores overwritten records or
+  removes only the operation-owned candidate while package rollback converges
+  independently;
+- completed M5I-C: checkpoint cutover before retirement, drain calls admitted
+  by the prior capability generation before revoking its Grants, reuse durable
+  cutover/rollback timestamps on replay, and reject generation drift without
+  retiring prior authorization;
 - completed M5J-A in the umbrella CLI: define and strictly parse the host-owned
   `a3s.plugin-policy.v1` ACL contract with normalized registry, publisher,
   source, package-size, surface, workspace, filesystem, network, resource,
@@ -943,10 +965,10 @@ Implementation status (in progress 2026-07-30):
   N+1 concurrently, observes and removes the intent-selected generation, and
   rejects moved, tampered, symlinked, or over-limit receipts;
 - pending: inject that Runtime Broker into the shared Plugin Manager, assemble
-  canonical workspace grant changes and explicit provider assignments for Tool
-  and MCP drafts, then complete
-  package/Runtime/capability saga wiring for the durable grant journal,
-  secret-reference adapters,
+  canonical workspace Grant changes and explicit provider assignments for Tool
+  and MCP drafts, then construct `PluginGrantLifecycleUnit` and select the
+  grant-aware graph apply path from standalone and umbrella product entry
+  points; add secret-reference adapters,
   filesystem/network/child-process enforcement, production-provider-backed
   prior-generation Runtime retirement, streaming/file-backed large Task
   output, the production MCP initialize client adapter, stdio supervision,

@@ -89,9 +89,11 @@ receipt/projection, and host-observation contracts. M0K-C-A adds the injected
 Knowledge port, exact-byte stage request, checked adapter client, and durable
 generation store. A package-level intent/journal/coordinator, typed Runtime,
 Flow/Skill/UI, and OKF adapters, and P0 package/capability hosts now provide the
-in-crate lifecycle foundation. Production publication still requires umbrella
-Plugin Manager host composition and a real A3S Knowledge backend to supply
-exact promoted evidence.
+in-crate lifecycle foundation. Grant-aware graph paths additionally compose
+durable Grant prepare, exact cutover, pre-cutover rollback, drain, and
+retirement around that package graph. Production publication still requires
+standalone and umbrella product wiring for policy/confirmation-driven Grant
+inputs, typed provider composition, and a real A3S Knowledge backend.
 
 Flow uses one product model. `engine = "a3s-flow"` is fixed; `native-ts` is the
 first admitted execution adapter. Use owns package integrity, dependency
@@ -235,14 +237,15 @@ Implemented as of the planning baseline:
 Remaining on the critical path:
 
 - inject the host Runtime Broker into the shared Plugin Manager;
-- assemble workspace grant proposals/change sets before final draft binding;
+- assemble workspace Grant proposals/change sets before final draft binding and
+  construct the plan-bound Grant lifecycle unit after confirmation;
 - inject the implemented package/capability and typed surface hosts into the
   package-level coordinator through one umbrella Plugin Manager composition;
 - transport and apply the implemented dependency lock from the standalone CLI
   through Code Web, TUI, management MCP, and managed-host adapters using the
   public lifecycle factory and the same durable graph records;
-- coordinate the existing grant sub-saga and new package journal through the
-  umbrella Plugin Manager without a parallel lifecycle path;
+- select the implemented grant-aware graph path from the standalone and
+  umbrella Plugin Managers without leaving an authorized grant-free bypass;
 - coordinate the implemented exact package/Runtime N/N+1 storage, cutover,
   rollback, drain, and removal primitives after blue/green cutover; and
 - pass CLI/Web/agent install-use-upgrade-uninstall E2E with production
@@ -261,12 +264,13 @@ earlier ownership or durability gate.
 | P0-U — Dual-generation storage (complete 2026-08-05) | Bounded exact package receipts, snapshot-selected route leases, Runtime generation directories, exact observation, pre-cutover rollback, and receipt-owned removal | N remains callable while N+1 is staged; commit replay preserves N; moved/tampered/symlinked/over-limit state fails closed; Runtime cleanup removes only N |
 | P0-G — Dependency-graph upgrade and GC core (complete 2026-08-05) | Plan-v3 prior/candidate lock binding, Add/Replace/Remove/Retain, selected downloads, shared-node retention, dependency-forward N+1 preparation, one capability cutover including removed routes, automatic unpublished-candidate rollback, reverse N retirement, exact graph CAS, and durable replay | Preparation/publication failure restores N and removes additions; successful cutover retires replacements and unreferenced dependencies exactly once; retained-receipt and applying/rolling-back crash fixtures converge without generation inflation |
 | P1 — Host composition (Code baseline complete; production providers pending) | Keep Code's public lifecycle-factory composition for executable Tool Tasks, stdio MCP, A3S Flow, and Skill/UI; add explicit Runtime Service, Gateway/HTTP MCP, and A3S Knowledge adapters | TUI and Web produce the same intent and supported host set today; unavailable production hosts continue to fail before publication |
-| P2 — Grant composition | Join the existing grant sub-saga to package checkpoints and capability cutover | Candidate grant survives restart; old grant cannot retire before exact cutover evidence |
+| P2-A — Grant graph saga (complete 2026-08-05) | Compose durable Grant prepare, exact Registry cutover, joint pre-cutover rollback, accepted-call drain, and prior-Grant retirement with package graph operations | Candidate Grant survives restart; failed publication restores package and Grant candidates; prior Grant survives until exact cutover and drain |
+| P2-B — Product Grant wiring | Have standalone and umbrella Plugin Managers derive proposals/change sets/ceilings after policy and confirmation, construct the Grant unit, and invoke only the grant-aware path when required | CLI, Web, management MCP, and managed hosts produce identical plan-bound Grant evidence and cannot bypass authorization |
 | P3 — Production blue/green composition (core complete; providers pending) | Compose the implemented graph cutover, rollback, dependency GC, and retirement coordinator with Gateway/Knowledge/grant receipts | Failed N+1 leaves N callable across every production provider; successful N+1 leaks no old Runtime unit or route; provider receipts preserve the core's crash-safe removed-node behavior |
 | P4 — Product adapters (Code baseline complete; MCP/managed hosts pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, and local Flow runtime; add visible Web Flow controls and route management MCP/managed-host mutations through the same path | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history and TUI covers local routing plus watcher readiness; visible Web UX and production hosts must extend the same no-restart proof |
 | P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all six surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
 
-P1, P2, and the remaining provider-composition work in P3 remain release
+P1, P2-B, and the remaining provider-composition work in P3 remain release
 blockers for calling schema-v3 cognitive-package lifecycle production-ready.
 P4 must include dependency-bearing graph operations
 through CLI and Web and is the hot-plug product gate. P5 is the release
@@ -511,10 +515,14 @@ before snapshot is now built by a bounded, locked traversal of exact durable
 grant generations; stale tombstone/grant revisions and ambiguous parallel
 grants fail closed. The grant lifecycle adapter now records immutable intent,
 applies candidate receipts idempotently, checkpoints exact capability cutover,
-and retires prior receipts with crash-safe replay. The remaining integration is
-for the Plugin Manager to compose this sub-saga with the implemented package
-journal, package/capability hosts, Runtime, Gateway, route switch, and lease
-drain.
+and retires prior receipts with crash-safe replay. The graph coordinator now
+persists candidate Grants before package preparation, jointly rolls back
+package and Grant candidates before cutover, requires exact Registry snapshot
+and generation evidence, drains prior accepted calls, and only then retires old
+Grants. The remaining integration is for standalone and umbrella Plugin
+Managers to derive the canonical Grant inputs after policy/confirmation and
+select this grant-aware path while composing production Runtime, Gateway, and
+Knowledge hosts.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still

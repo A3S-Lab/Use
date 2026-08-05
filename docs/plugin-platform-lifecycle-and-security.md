@@ -8,7 +8,8 @@
   six-surface saga, P0 package/capability hosts, and cognitive-package
   dependency/lock foundation frozen 2026-08-03; unified A3S Flow semantics
   plus A3S Code TUI/Web host/catalog integration frozen 2026-08-04,
-  and bounded exact-generation package/Runtime N/N+1 storage frozen 2026-08-05
+  bounded exact-generation package/Runtime N/N+1 storage, and the Grant-aware
+  graph saga foundation frozen 2026-08-05
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -26,8 +27,9 @@ typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
 foundation. P0 package/capability hosts add generation-bound commit,
 publish/hide, lease drain, and exact removal. A3S Code composes the supported
 Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production Knowledge,
-Runtime Service, Gateway/HTTP MCP, grant, and managed-host composition remain
-pending. Without promoted observation, an OKF surface stays unpublished.
+Runtime Service, Gateway/HTTP MCP, product-level Grant planning/apply, and
+managed-host composition remain pending. Without promoted observation, an OKF
+surface stays unpublished.
 
 The dependency foundation adds canonical schema-v3 SemVer edges, a bounded
 deterministic transitive resolver, exact Registry/TUF-bound package locks,
@@ -542,7 +544,11 @@ health-gated blue/green binding. After N+1 is fully ready, one atomic snapshot
 switch routes new work to N+1. Generation N drains, stops, and is collected
 only after all leases release. N and N+1 grants use separate digest-keyed
 records during this interval. A failed N+1 leaves N active and revokes the
-candidate grant unless the durable operation remains resumable.
+candidate Grant unless the durable operation remains resumable. The Grant-aware
+graph path persists N+1 authorization before package preparation, checkpoints
+the exact Registry snapshot transition, drains calls admitted by N, and only
+then revokes N. A pre-cutover publication failure restores both package and
+Grant candidates.
 
 An added permission, secret request, provider requirement, external
 dependency, command alias, or public interface is plan drift and requires a
@@ -556,12 +562,13 @@ and stops eager workloads. The immutable package and retained data remain.
 Uninstall:
 
 1. records desired `absent`;
-2. persists an exact-generation grant tombstone when a current grant exists;
-3. removes new-call routes and session projections;
-4. drains exact-generation leases;
-5. stops and removes Runtime units and Gateway bindings;
-6. removes receipt-owned shims and projections;
-7. removes receipts and unreferenced package generations; and
+2. persists the Grant operation intent and exact prior retirement evidence;
+3. atomically removes new-call routes and session projections;
+4. checkpoints the exact capability cutover;
+5. drains exact-generation leases held by accepted prior calls;
+6. persists exact-generation Grant tombstones;
+7. stops and removes Runtime units, Gateway bindings, receipt-owned shims,
+   projections, receipts, and unreferenced package generations; and
 8. retains plugin data and secrets unless a separate purge is authorized.
 
 For a cascade graph uninstall, these steps run in reverse topological order.
@@ -588,7 +595,7 @@ observations.
 | Some graph receipts enabled, closure snapshot absent | Keep the partial receipts invisible and replay the exact lock-bound batch publication |
 | Closure published, package journals incomplete | Re-publish the exact idempotent lock batch, complete each journal, then commit graph metadata |
 | Root receipt and installed-root graph removed, uninstall pending | Recover the exact lock, manifests, generations, and admission from pending evidence and continue reverse removal |
-| Desired absent, grant still active | Persist the planned exact-generation tombstone before cleanup |
+| Desired absent, cutover committed, Grant still active | Drain accepted prior calls, persist the planned exact-generation tombstone, then continue cleanup |
 | Snapshot removed, workload running | Continue drain and stop |
 | Old generation still referenced | Preserve it and retry garbage collection |
 
@@ -719,13 +726,21 @@ the same store lock and atomic-file discipline:
 5. `retiring` replays exact old-generation tombstones; and
 6. `completed` means all grant-side effects converged.
 
+Before cutover, failure may branch from the first three phases to
+`rolling-back` and then `rolled-back`. The rollback record binds
+`a3s.use.plugin-workspace-grant-rollback.v1` evidence and restores the exact
+prior Grant/tombstone at every candidate path, or removes only the candidate
+when that path did not previously exist. Rollback after cutover is rejected.
+
 Cutover evidence cannot be from the future or bind another capability
 generation. Candidate drift blocks cutover. Retirement without cutover is
 rejected. A same-generation permission replacement is verified as the new
-receipt and is not subsequently tombstoned. The parent Plugin Manager saga
-must still place Runtime readiness and capability publication before the
-cutover checkpoint, then lease drain and provider retirement around the grant
-retirement phase.
+receipt and is not subsequently tombstoned. The Grant-aware graph coordinator
+places candidate persistence before package/Runtime readiness, exact Registry
+publication before the cutover checkpoint, accepted-call drain before Grant
+retirement, and provider/package cleanup afterward. Standalone and umbrella
+Plugin Managers must still derive the canonical inputs after policy and
+confirmation and select this path when Grants are required.
 
 Durable authorization uses two storage schemas:
 `a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision

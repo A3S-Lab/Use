@@ -237,6 +237,13 @@ fn removed_state() -> PluginHostPackageState {
 }
 
 #[test]
+fn an_empty_host_observation_can_report_capability_generation_zero() {
+    let mut state = removed_state();
+    state.capability_generation = 0;
+    state.validate().unwrap();
+}
+
+#[test]
 fn package_identity_is_typed_and_uses_one_validation_rule() {
     let package_id = PluginPackageId::parse("acme/knowledge").unwrap();
     assert_eq!(package_id.as_str(), "acme/knowledge");
