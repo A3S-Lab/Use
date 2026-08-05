@@ -2,13 +2,13 @@ use std::collections::BTreeSet;
 
 use a3s_use_core::{
     PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPolicyDecision,
-    PlannedPackageState, PlannedWorkspaceGrantChange, PluginGrantConfirmation,
-    PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanBinding,
-    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginWorkspaceGrantChangeSet,
-    PluginWorkspaceGrantProposal, PluginWorkspaceGrantSnapshot, ResolvedWorkspaceGrantChangeSet,
-    UseError, UseResult, WorkspaceGrantProposalAuthority, PLUGIN_GRANT_CONFIRMATION_SCHEMA,
-    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA,
-    PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA,
+    PlanScopeKind, PlannedPackageState, PlannedWorkspaceGrantChange, PlannedWorkspaceImpact,
+    PluginGrantConfirmation, PluginOperationConfirmation, PluginOperationPlan,
+    PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
+    PluginWorkspaceGrantChangeSet, PluginWorkspaceGrantProposal, PluginWorkspaceGrantSnapshot,
+    ResolvedWorkspaceGrantChangeSet, UseError, UseResult, WorkspaceGrantProposalAuthority,
+    PLUGIN_GRANT_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA,
 };
 use a3s_use_extension::{WorkspaceGrantCandidateCeiling, WorkspaceGrantStore};
 use async_trait::async_trait;
@@ -269,7 +269,7 @@ impl PackageGraphAuthorization {
                 if self.grant_ceilings.is_empty()
                     && self.grant_confirmations.is_empty()
                     && expected.is_empty()
-                    && envelope.plan.workspace_impacts.is_empty() =>
+                    && permission_free_workspace_impact_matches(&envelope.plan) =>
             {
                 Ok(())
             }
@@ -411,6 +411,16 @@ pub(super) fn plan_workspace_grants(
         });
     }
     if changes.is_empty() {
+        if binding.scope.kind == PlanScopeKind::Workspace {
+            draft.workspace_impacts.push(PlannedWorkspaceImpact {
+                scope_id: binding.scope.id.clone(),
+                grant_before_digest: None,
+                grant_after_digest: None,
+                enabled_before,
+                enabled_after,
+            });
+            draft.validate()?;
+        }
         return Ok(None);
     }
 
@@ -624,6 +634,24 @@ fn expected_enablement(plan: &PluginOperationPlan) -> (bool, bool) {
         a3s_use_core::PluginOperationAction::Install => (false, true),
         a3s_use_core::PluginOperationAction::Upgrade => (true, true),
         a3s_use_core::PluginOperationAction::Uninstall => (true, false),
+    }
+}
+
+fn permission_free_workspace_impact_matches(plan: &PluginOperationPlan) -> bool {
+    match plan.scope.kind {
+        PlanScopeKind::User => plan.workspace_impacts.is_empty(),
+        PlanScopeKind::Workspace => {
+            let (enabled_before, enabled_after) = expected_enablement(plan);
+            matches!(
+                plan.workspace_impacts.as_slice(),
+                [impact]
+                    if impact.scope_id == plan.scope.id
+                        && impact.grant_before_digest.is_none()
+                        && impact.grant_after_digest.is_none()
+                        && impact.enabled_before == enabled_before
+                        && impact.enabled_after == enabled_after
+            )
+        }
     }
 }
 
