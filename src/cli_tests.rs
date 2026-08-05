@@ -104,6 +104,19 @@ async fn component_status_uses_cli_json_contract() {
     assert!(output.json.get("jsonrpc").is_none());
 }
 
+#[tokio::test]
+async fn component_usage_lists_upgrade_as_a_supported_lifecycle_action() {
+    let error = match run(vec!["component".to_string()]).await {
+        Ok(_) => panic!("component without an action must fail"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, "use.cli.invalid_usage");
+    assert_eq!(
+        error.message,
+        "component requires list, status, install, upgrade, or uninstall"
+    );
+}
+
 #[cfg(feature = "browser")]
 #[test]
 fn browser_component_presence_preserves_runtime_ownership() {

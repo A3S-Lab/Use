@@ -48,10 +48,12 @@ a package-saga OKF adapter. The package-level intent, journal, coordinator,
 typed Runtime/static adapters, and P0 package/capability hosts are implemented.
 Schema-v3 receipt generation binding, deterministic immutable roots, atomic
 publish/hide, generation-specific route leases, and bounded package/Runtime
-N/N+1 receipt storage now enforce the package boundary. Umbrella manager
-composition, graph-coordinated automatic retirement/rollback/GC, the A3S
-Knowledge index backend, and scoped cited retrieval remain to be implemented;
-missing promoted evidence therefore stays explicitly unpublished.
+N/N+1 receipt storage now enforce the package boundary. The dependency-graph
+coordinator implements one candidate cutover, automatic pre-cutover rollback,
+reverse prior-generation retirement, and crash replay. Umbrella production
+provider/grant composition, dependency-removal graph GC, the A3S Knowledge
+index backend, and scoped cited retrieval remain to be implemented; missing
+promoted evidence therefore stays explicitly unpublished.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use
@@ -561,12 +563,13 @@ MCP, Flow, or OKF owner is absent.
 A3S Code now composes executable Tool Tasks, stdio MCP, the real `a3s-flow`
 preflight host, and immutable Skill/UI projection through this factory. Its TUI
 and Web adapters consume one exact-generation watcher, including a typed live
-Flow catalog and install/upgrade/uninstall hot-plug coverage. Production
-Knowledge, Runtime Service, Gateway/HTTP MCP, grant, management-MCP, and
-managed-host composition remain pending. The production package host still
-rejects graph upgrade before mutation until its parent saga consumes the
-implemented package/Runtime dual-generation primitives; storage never
-overwrites the snapshot-selected retained generation.
+Flow catalog and install/upgrade/uninstall hot-plug coverage. The standalone
+package manager now drives dependency-bearing upgrade through the shared graph
+coordinator: it prepares Add/Replace candidates, publishes once, automatically
+rolls back before cutover, and retires replaced generations after cutover.
+Production Knowledge, Runtime Service, Gateway/HTTP MCP, grant, management-MCP,
+managed-host composition, and dependency-removal GC remain pending. Storage
+never overwrites the snapshot-selected retained generation.
 
 ## Surface Reconciliation
 
@@ -1037,8 +1040,9 @@ two-pass provider selection, and workspace grant saga are connected.
 The in-crate package lifecycle foundation is separately implemented: canonical
 surface scheduling, durable checkpoint replay, production package/capability
 hosts, typed Runtime/Flow/Skill/UI/OKF adapters, a bounded package resolver and lock,
-dependency-ordered remote closure download, atomic graph publication, and an
-all-six-surface package fixture. Schema-v3 operations use dedicated exact-generation
+dependency-ordered remote closure download, atomic graph install/upgrade
+publication, automatic upgrade rollback/retirement, and an all-six-surface
+package fixture. Schema-v3 operations use dedicated exact-generation
 `ExtensionRegistry` methods and reject legacy mutation bypass. The umbrella
 Plugin Manager does not yet compose these hosts, so P0 alone does not expand
 the current product readiness claim.

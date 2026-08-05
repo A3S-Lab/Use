@@ -156,6 +156,31 @@ impl PluginLifecycleJournalStore {
         .await
     }
 
+    pub async fn roll_back(
+        &self,
+        intent: &PluginLifecycleIntent,
+        evidence_digest: impl Into<String>,
+        completed_at_ms: u64,
+    ) -> UseResult<PluginLifecycleOperationRecord> {
+        let evidence_digest = evidence_digest.into();
+        self.update(intent, |record| {
+            record.roll_back(evidence_digest, completed_at_ms)?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn start_rollback(
+        &self,
+        intent: &PluginLifecycleIntent,
+    ) -> UseResult<PluginLifecycleOperationRecord> {
+        self.update(intent, |record| {
+            record.start_rollback()?;
+            Ok(())
+        })
+        .await
+    }
+
     async fn update(
         &self,
         intent: &PluginLifecycleIntent,

@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{
-    PlanPackageRole, PlannedPackageState, PlannedPackageTransition, PluginSurfaceKind,
-    PluginSurfaceRef, UseError, UseResult, VerifiedPluginCatalogRecord,
+    PlanPackageRole, PlannedPackageState, PlannedPackageTransition, PluginCatalogRecord,
+    PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult, VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -28,6 +28,7 @@ mod lifecycle;
 
 pub use lifecycle::{
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionLifecycleResult,
+    ExtensionLifecycleRollbackResult,
 };
 
 const RECEIPT_SCHEMA_VERSION_V1: u32 = 1;
@@ -1550,6 +1551,7 @@ fn validate_catalog_binding(
         ));
     }
     let record = &catalog.record;
+    validate_catalog_manifest_binding(record, manifest)?;
     let expected_package_digest = record
         .package
         .sha256
@@ -1560,14 +1562,36 @@ fn validate_catalog_binding(
         .manifest_sha256
         .as_deref()
         .and_then(|digest| digest.strip_prefix("sha256:"));
-    if record.package_id != manifest.package_id
-        || record.version != manifest.version
-        || record.dependencies != manifest.dependencies
-        || expected_package_digest != Some(package_digest)
+    if expected_package_digest != Some(package_digest)
         || expected_manifest_digest != Some(manifest_digest)
     {
         return Err(catalog_package_error(
             "The verified catalog does not match the installed package, manifest, or dependency graph.",
+        ));
+    }
+    Ok(())
+}
+
+/// Validate the manifest fields that drive lifecycle side effects against one
+/// signed catalog record. This is intentionally independent of package bytes
+/// so durable operation journals can reject a changed replay manifest before
+/// touching a retained generation.
+pub fn validate_catalog_manifest_binding(
+    record: &PluginCatalogRecord,
+    manifest: &ExtensionManifest,
+) -> UseResult<()> {
+    record.validate().map_err(|error| {
+        catalog_package_error(format!(
+            "The catalog record is invalid during manifest binding: {}",
+            error.message
+        ))
+    })?;
+    if record.package_id != manifest.package_id
+        || record.version != manifest.version
+        || record.dependencies != manifest.dependencies
+    {
+        return Err(catalog_package_error(
+            "The catalog does not match the manifest package, version, or dependency graph.",
         ));
     }
     if manifest.schema_version == 3 {

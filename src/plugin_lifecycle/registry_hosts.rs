@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use super::{
     PluginCapabilityLifecycleHost, PluginGraphCapabilityLifecycleHost, PluginLifecycleAction,
     PluginLifecycleEvidence, PluginLifecycleIntent, PluginPackageLifecycleHost,
-    PluginPackagePublicationEvidence,
+    PluginPackagePublicationEvidence, PluginPackageRollbackEvidence,
 };
 
 const DEFAULT_LIFECYCLE_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -69,12 +69,6 @@ impl PluginPackageLifecycleHost for ExtensionPackageLifecycleHost {
             ],
             "package commit",
         )?;
-        if intent.action == PluginLifecycleAction::Upgrade {
-            return Err(UseError::new(
-                "use.plugin.package_generation_retirement_required",
-                "Cognitive-package upgrade requires dual-generation retirement before candidate commit can be enabled.",
-            ));
-        }
         let candidate = self.candidate.as_ref().ok_or_else(|| {
             UseError::new(
                 "use.plugin.package_candidate_missing",
@@ -170,6 +164,93 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
                     &result.extension.receipt.descriptor_digest()?,
                 )?;
                 PluginPackagePublicationEvidence::new(&intent.package_id, evidence)
+            })
+            .collect()
+    }
+
+    async fn rollback_candidates(
+        &self,
+        candidate_lock: &a3s_use_core::PluginPackageLock,
+        candidate_intents: &[PluginLifecycleIntent],
+        prior_intents: &[PluginLifecycleIntent],
+        idempotency_key: &str,
+    ) -> UseResult<Vec<PluginPackageRollbackEvidence>> {
+        candidate_lock.validate()?;
+        let candidates = candidate_intents
+            .iter()
+            .map(|intent| Ok((intent.package_id.as_str(), lifecycle_identity(intent)?)))
+            .collect::<UseResult<std::collections::BTreeMap<_, _>>>()?;
+        let priors = prior_intents
+            .iter()
+            .map(|intent| Ok((intent.package_id.as_str(), lifecycle_identity(intent)?)))
+            .collect::<UseResult<std::collections::BTreeMap<_, _>>>()?;
+        if candidates.len() != candidate_intents.len()
+            || priors.len() != prior_intents.len()
+            || priors
+                .keys()
+                .any(|package_id| !candidates.contains_key(package_id))
+        {
+            return Err(UseError::new(
+                "use.plugin.package_graph_rollback_invalid",
+                "Candidate rollback contains duplicate or unrelated package identities.",
+            ));
+        }
+        let ordered_candidates = candidate_lock
+            .removal_order()?
+            .into_iter()
+            .filter_map(|package| candidates.get(package.package_id()).cloned())
+            .collect::<Vec<_>>();
+        if ordered_candidates.len() != candidates.len() {
+            return Err(UseError::new(
+                "use.plugin.package_graph_rollback_invalid",
+                "A rollback candidate is absent from its exact dependency lock.",
+            ));
+        }
+        let prior_identities = ordered_candidates
+            .iter()
+            .filter_map(|candidate| priors.get(candidate.package_id()).cloned())
+            .collect::<Vec<_>>();
+        let results = self
+            .registry
+            .rollback_lifecycle_package_graph(&ordered_candidates, &prior_identities)
+            .await?;
+        if results.len() != ordered_candidates.len() {
+            return Err(UseError::new(
+                "use.plugin.package_graph_rollback_invalid",
+                "The Registry omitted a candidate from graph rollback evidence.",
+            ));
+        }
+        ordered_candidates
+            .iter()
+            .zip(results)
+            .map(|(identity, result)| {
+                if result.package_id != identity.package_id() {
+                    return Err(UseError::new(
+                        "use.plugin.package_graph_rollback_invalid",
+                        "The Registry changed candidate rollback evidence order.",
+                    ));
+                }
+                let subject = format!(
+                    "{}\n{}\n{}",
+                    identity.descriptor_digest()?,
+                    result.registry_generation,
+                    result.changed
+                );
+                let evidence = checkpoint_evidence(
+                    "package-graph-candidate-rolled-back",
+                    candidate_intents
+                        .iter()
+                        .find(|intent| intent.package_id == result.package_id)
+                        .ok_or_else(|| {
+                            UseError::new(
+                                "use.plugin.package_graph_rollback_invalid",
+                                "Candidate rollback evidence lost its lifecycle intent.",
+                            )
+                        })?,
+                    idempotency_key,
+                    &format!("sha256:{:x}", Sha256::digest(subject.as_bytes())),
+                )?;
+                PluginPackageRollbackEvidence::new(result.package_id, evidence)
             })
             .collect()
     }
@@ -345,22 +426,61 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upgrade_rejects_before_a_candidate_or_registry_mutation() {
+    async fn upgrade_commits_a_disabled_candidate_while_the_prior_generation_stays_published() {
         let temp = tempfile::tempdir().unwrap();
         let registry = ExtensionRegistry::new(a3s_use_extension::ExtensionPaths::new(
             temp.path().join("data"),
             temp.path().join("state"),
         ));
-        let host = ExtensionPackageLifecycleHost::for_installed(registry.clone());
-        let intent = intent(PluginLifecycleAction::Upgrade);
-        let error = host
-            .commit_package(&intent, &intent.checkpoints[0].idempotency_key)
+        let package_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("crates/extension/fixtures/packages/plugin-v3-cognitive/package");
+        let candidate =
+            ExtensionLifecyclePackage::prepare_local("acme/cognitive", &package_root, true)
+                .await
+                .unwrap();
+        let first = ExtensionLifecycleIdentity::new(
+            candidate.manifest().package_id.clone(),
+            candidate.package_digest().to_string(),
+            candidate.manifest_digest().to_string(),
+            1,
+        )
+        .unwrap();
+        registry
+            .commit_lifecycle_package(&first, &candidate)
             .await
-            .unwrap_err();
+            .unwrap();
+        registry.publish_lifecycle_package(&first).await.unwrap();
+
+        let intent = PluginLifecycleIntent::from_manifest(
+            crate::plugin_lifecycle::PluginLifecycleIntentSpec {
+                operation_id: "upgrade:acme-cognitive:2".to_string(),
+                plan_digest: format!("sha256:{}", "1".repeat(64)),
+                scope_id: "workspace:cognitive".to_string(),
+                package_id: candidate.manifest().package_id.clone(),
+                package_digest: candidate.package_digest().to_string(),
+                manifest_digest: candidate.manifest_digest().to_string(),
+                generation: 2,
+                action: PluginLifecycleAction::Upgrade,
+            },
+            candidate.manifest(),
+        )
+        .unwrap();
+        let host = ExtensionPackageLifecycleHost::new(registry.clone(), candidate);
+        host.commit_package(&intent, &intent.checkpoints[0].idempotency_key)
+            .await
+            .unwrap();
+
+        let selected = registry.get("acme/cognitive").await.unwrap().unwrap();
+        assert_eq!(selected.receipt.lifecycle_generation, Some(2));
+        assert!(!selected.receipt.enabled);
         assert_eq!(
-            error.code,
-            "use.plugin.package_generation_retirement_required"
+            registry.snapshot().await.unwrap().routes[0].lifecycle_generation,
+            Some(1)
         );
-        assert!(registry.list().await.unwrap().is_empty());
+        assert!(registry
+            .get_lifecycle_generation(&first)
+            .await
+            .unwrap()
+            .is_some());
     }
 }

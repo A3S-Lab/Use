@@ -127,13 +127,14 @@ generation-specific route leases keep N callable while N+1 is prepared;
 pre-cutover package rollback and exact Runtime/package removal cannot overwrite
 or retire the other generation.
 
-The shared Plugin Manager does not yet drive those primitives as one durable
-dependency-closure upgrade. Its production package host therefore continues
-to reject that uncoordinated path with
-`use.plugin.package_generation_retirement_required`. Production blue/green
-upgrade still requires the parent saga to compose candidate grants, Runtime,
-Gateway, Knowledge, projections, atomic capability cutover, drain, automatic
-rollback, prior-generation retirement, and garbage collection.
+The package manager now drives those primitives as one durable
+dependency-closure upgrade. It binds exact prior and candidate locks, prepares
+Add/Replace generations dependency-first, performs one capability cutover,
+automatically rolls back unpublished candidates, and retires replaced prior
+generations in reverse order. Production blue/green completion still requires
+the umbrella saga to compose candidate grants, Runtime Service, Gateway,
+Knowledge, and projections, plus a separately reviewed dependency-removal and
+garbage-collection operation.
 
 ## Implementation State
 
@@ -153,6 +154,8 @@ Implemented:
 - a public lifecycle factory for embedding host composition;
 - standalone signed-Registry graph install/uninstall with durable lock,
   admission, manifest, and generation evidence;
+- standalone signed-Registry graph upgrade with exact prior/candidate locks,
+  automatic pre-cutover rollback, reverse prior retirement, and crash replay;
 - stable replay evidence for Runtime preparation and removal;
 - a content-addressed package fixture containing all six contribution kinds;
   and
@@ -164,12 +167,12 @@ Implemented:
 
 Remaining before the product can claim complete cognitive-package lifecycle:
 
-- injection of Runtime, Gateway, stdio MCP, A3S Flow, Skill/UI, and A3S
-  Knowledge hosts by the umbrella Plugin Manager;
-- Code TUI/Web, management MCP, and managed-host lifecycle-factory wiring into
-  this coordinator;
-- graph-coordinated automatic rollback, prior-generation retirement, and
-  garbage collection during blue/green upgrade; and
+- injection of production Runtime Service, Gateway/HTTP MCP, and A3S Knowledge
+  hosts plus grant composition by the umbrella Plugin Manager;
+- management MCP and managed-host lifecycle-factory mutation wiring into this
+  coordinator, while preserving the existing Code TUI/Web baseline;
+- dependency-removal graph planning and garbage collection during blue/green
+  upgrade; and
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
 
 ## Consequences
@@ -186,5 +189,6 @@ Costs:
 
 - every product host must provide typed lifecycle adapters;
 - capability publication requires a multi-resource saga; and
-- Runtime-backed upgrades remain unavailable through the shared Plugin Manager
-  until its parent saga consumes the implemented dual-generation evidence.
+- production-provider-backed upgrades remain unavailable through the umbrella
+  Plugin Manager until its parent saga composes the implemented graph and
+  dual-generation evidence.

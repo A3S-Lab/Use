@@ -489,7 +489,7 @@ fn validate_replay(
     Ok(())
 }
 
-fn verify_expected_lock(actual: &str, expected: Option<&str>) -> UseResult<()> {
+pub(super) fn verify_expected_lock(actual: &str, expected: Option<&str>) -> UseResult<()> {
     let Some(expected) = expected else {
         return Ok(());
     };

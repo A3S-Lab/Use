@@ -166,8 +166,11 @@ in reverse, and only then removes the package. The operation journal is
 bounded, strict, atomic, cross-process locked, and rejects reordered,
 substituted, or tampered receipts. Exact package/Runtime N/N+1 storage,
 snapshot-selected routing, and receipt-owned prior removal are implemented.
-Production host injection and parent-saga automatic rollback, retirement, and
-garbage collection remain outside the completed contract foundation.
+The graph coordinator now adds or replaces candidates dependency-first,
+publishes the closure once, automatically rolls back before cutover, retires
+replaced generations in reverse order, and durably replays both outcomes.
+Production provider/grant composition and dependency-removal garbage
+collection remain outside the completed contract foundation.
 
 Package ownership also applies above one manifest. A schema-v3 package may
 declare canonical package ID plus SemVer dependency blocks. The package lock

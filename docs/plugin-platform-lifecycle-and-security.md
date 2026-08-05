@@ -477,7 +477,7 @@ The implemented package checkpoint schedules are:
 | Action | Canonical order |
 | --- | --- |
 | Install | commit installed-disabled package → prepare surfaces in dependency order → publish one capability generation |
-| Upgrade candidate | retain exact N → commit N+1 disabled → prepare candidate surfaces → publish candidate; storage-level rollback/hide/drain/exact removal is implemented, while parent-saga automatic retirement remains pending |
+| Upgrade candidate | retain exact N → commit N+1 disabled → prepare candidate surfaces → publish the changed closure once → retire replaced N in reverse order; a pre-cutover failure automatically removes candidates and restores N, with durable rollback/retirement replay |
 | Enable | prepare surfaces in dependency order → publish one capability generation |
 | Disable | hide package capability → drain accepted calls → stop surfaces in reverse dependency order |
 | Uninstall | hide package capability → drain accepted calls → remove receipt-owned surfaces in reverse dependency order → remove package |
@@ -490,6 +490,7 @@ The package-graph schedules are:
 | Action | Canonical order |
 | --- | --- |
 | Install | revalidate all locked metadata → download dependencies forward → commit/prepare changed packages forward → verify retained nodes → publish changed closure once |
+| Upgrade | revalidate exact prior/candidate locks → classify Add/Replace/Retain → prepare changed N+1 forward → publish once → on pre-cutover failure roll back candidates and restore N, otherwise retire replaced N in reverse order; dependency-node removal is rejected until reviewed graph GC exists |
 | Uninstall | hide/drain each changed package in reverse lock order → remove dependent before dependency → preserve every Retain node |
 
 Every retained node must still match the lock's version, catalog, package and

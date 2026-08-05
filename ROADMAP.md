@@ -210,8 +210,10 @@ The main gaps are:
   the same composition;
 - package and Runtime storage now support exact N/N+1 coexistence, candidate
   commit replay, pre-cutover rollback, and exact prior-generation retirement;
-  the parent dependency-closure coordinator still needs durable automatic
-  rollback, post-cutover retirement, and garbage-collection orchestration;
+  the dependency-closure coordinator now plans Add/Replace/Retain, prepares
+  N+1 forward, publishes once, automatically rolls back unpublished candidates,
+  retires replaced N generations in reverse order, and replays both paths;
+  dependency-removal graph garbage collection remains pending;
 - A3S Use supplies the production `a3s-flow` preflight host and retained
   binding evidence, and A3S Code injects it and exposes the typed live Flow
   catalog; Code now resolves strict `flow.json` identities and provides local
@@ -588,11 +590,10 @@ Implementation status (2026-08-03):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; grant sub-saga composition; graph-coordinated package/Runtime
-  automatic rollback, prior-generation retirement, and garbage collection;
-  real signed cross-platform lifecycle E2E; and the published managed-host port
-  required before a Cloud adapter can enable mutation. Hosts must not add a
-  parallel implementation.
+  injection; grant sub-saga composition; dependency-removal graph garbage
+  collection; real signed cross-platform lifecycle E2E; and the published
+  managed-host port required before a Cloud adapter can enable mutation. Hosts
+  must not add a parallel implementation.
 
 Deliverables:
 
@@ -941,7 +942,7 @@ Implementation status (in progress 2026-07-30):
   and MCP drafts, then complete
   package/Runtime/capability saga wiring for the durable grant journal,
   secret-reference adapters,
-  filesystem/network/child-process enforcement, graph-coordinated
+  filesystem/network/child-process enforcement, production-provider-backed
   prior-generation Runtime retirement, streaming/file-backed large Task
   output, the production MCP initialize client adapter, stdio supervision,
   Gateway route revocation, and scope-aware capability/session snapshot wiring.

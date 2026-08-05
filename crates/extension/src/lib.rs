@@ -40,10 +40,11 @@ pub use plugin_manifest::{
     ToolSurface, ToolTaskSource, ToolTaskSurface, ToolWorkload,
 };
 pub use registry::{
-    ActivationResult, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
-    ExtensionLifecycleResult, ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot,
-    ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult,
-    InstalledExtension, UninstallResult,
+    validate_catalog_manifest_binding, ActivationResult, ExtensionLifecycleIdentity,
+    ExtensionLifecyclePackage, ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
+    ExtensionReceipt, ExtensionRegistry, ExtensionRegistrySnapshot, ExtensionRouteBinding,
+    ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult, InstalledExtension,
+    UninstallResult,
 };
 pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,

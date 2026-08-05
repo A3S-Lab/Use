@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 
 use super::{
     all_catalog_surfaces, current_host_target, package_manager_error, InstallDisposition,
-    UninstallDisposition,
+    UninstallDisposition, UpgradeDisposition,
 };
 
 const PLAN_LIFETIME_MS: u64 = 60 * 60 * 1000;
@@ -236,6 +236,219 @@ pub(super) fn uninstall_operation(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn upgrade_operation(
+    candidate_lock: &PluginPackageLock,
+    prior_lock: &PluginPackageLock,
+    dispositions: &BTreeMap<String, UpgradeDisposition>,
+    manifests: &BTreeMap<String, ExtensionManifest>,
+    prior_generations: &BTreeMap<String, u64>,
+    root_receipt_digest: String,
+    registry_generation: u64,
+    scope_id: &str,
+    created_at_ms: u64,
+) -> UseResult<PlannedGraphOperation> {
+    if candidate_lock.root_package_id != prior_lock.root_package_id
+        || candidate_lock.host != prior_lock.host
+    {
+        return Err(package_manager_error(
+            "use.plugin.package_graph_invalid",
+            "Prior and candidate cognitive-package locks belong to different roots or hosts.",
+        ));
+    }
+    if prior_lock
+        .packages
+        .iter()
+        .any(|package| candidate_lock.package(package.package_id()).is_none())
+    {
+        return Err(package_manager_error(
+            "use.plugin.package_graph_gc_required",
+            "An upgrade that removes dependency nodes requires a separately reviewed garbage-collection operation.",
+        ));
+    }
+
+    let mut packages = Vec::with_capacity(candidate_lock.packages.len());
+    for candidate in &candidate_lock.packages {
+        let role = package_role(candidate_lock, candidate.package_id());
+        let surfaces = all_catalog_surfaces(candidate);
+        let transition = match dispositions.get(candidate.package_id()) {
+            Some(UpgradeDisposition::Add) => {
+                candidate.catalog.install_transition(role, &surfaces)?
+            }
+            Some(UpgradeDisposition::Replace) => {
+                let prior = prior_lock.package(candidate.package_id()).ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A replacement candidate has no exact prior lock node.",
+                    )
+                })?;
+                candidate.catalog.replace_transition(
+                    &prior.catalog,
+                    role,
+                    &all_catalog_surfaces(prior),
+                    &surfaces,
+                )?
+            }
+            Some(UpgradeDisposition::Retain) => {
+                let prior = prior_lock.package(candidate.package_id()).ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A retained candidate has no exact prior lock node.",
+                    )
+                })?;
+                let before = prior.catalog.selected_state(&all_catalog_surfaces(prior))?;
+                let after = candidate.catalog.selected_state(&surfaces)?;
+                if before != after || prior.catalog != candidate.catalog {
+                    return Err(package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A retained package changed its exact catalog or selected surface state.",
+                    ));
+                }
+                PlannedPackageTransition::resolved(
+                    candidate.package_id(),
+                    role,
+                    PlanPackageChangeKind::Retain,
+                    Some(before.clone()),
+                    Some(before),
+                    None,
+                )?
+            }
+            None => {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "A candidate package has no upgrade disposition.",
+                ))
+            }
+        };
+        packages.push(transition);
+    }
+    packages.sort_by(|left, right| left.package_id.cmp(&right.package_id));
+    if dispositions.get(&candidate_lock.root_package_id) == Some(&UpgradeDisposition::Retain)
+        && dispositions
+            .values()
+            .all(|disposition| *disposition == UpgradeDisposition::Retain)
+    {
+        return Err(package_manager_error(
+            "use.plugin.package_graph_unchanged",
+            "The resolved cognitive-package graph has no upgrade transition.",
+        ));
+    }
+
+    let drain_required = packages.iter().any(|package| {
+        package.change == PlanPackageChangeKind::Replace
+            && package.before.as_ref().is_some_and(|state| {
+                state
+                    .permissions
+                    .surfaces
+                    .iter()
+                    .any(|permission| permission.private_service)
+            })
+    });
+
+    let capability_generation = registry_generation.checked_add(1).ok_or_else(|| {
+        package_manager_error(
+            "use.plugin.package_generation_exhausted",
+            "The package capability generation counter is exhausted.",
+        )
+    })?;
+    let lock_digest = candidate_lock.descriptor_digest()?;
+    let providers = static_provider_evidence(candidate_lock, manifests)?;
+    let impact = PlannedOperationImpact {
+        download_bytes: candidate_lock
+            .packages
+            .iter()
+            .filter(|package| {
+                matches!(
+                    dispositions.get(package.package_id()),
+                    Some(UpgradeDisposition::Add | UpgradeDisposition::Replace)
+                )
+            })
+            .map(|package| package.catalog.record.archive.length)
+            .sum(),
+        installed_bytes_after: candidate_lock
+            .packages
+            .iter()
+            .map(|package| package.catalog.record.package.expanded_bytes)
+            .sum(),
+        reclaimed_bytes: prior_lock
+            .packages
+            .iter()
+            .filter(|package| {
+                dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Replace)
+            })
+            .map(|package| package.catalog.record.package.expanded_bytes)
+            .sum(),
+        drain_required,
+        retained_data: false,
+        okf_changes: Vec::new(),
+    };
+    let draft = PluginOperationPlanDraft::new(
+        PluginOperationAction::Upgrade,
+        candidate_lock.root_package_id.clone(),
+        format!("use/{}", candidate_lock.root_package_id),
+        packages,
+        providers,
+        Vec::new(),
+        impact,
+        PlannedStateEvidence {
+            state_revision: capability_generation,
+            capability_generation,
+            receipt_digest: Some(root_receipt_digest),
+        },
+    )?;
+    let plan = draft.bind(binding(
+        PluginOperationAction::Upgrade,
+        &lock_digest,
+        scope_id,
+        created_at_ms,
+    )?)?;
+    let envelope =
+        PluginOperationPlanEnvelope::new_with_package_lock(plan, candidate_lock.clone())?;
+    let mut generations = BTreeMap::new();
+    for (index, package) in candidate_lock.install_order()?.into_iter().enumerate() {
+        let disposition = dispositions.get(package.package_id()).ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_graph_invalid",
+                "A candidate package lost its upgrade disposition.",
+            )
+        })?;
+        if *disposition == UpgradeDisposition::Retain {
+            continue;
+        }
+        let offset = u64::try_from(index).map_err(|_| {
+            package_manager_error(
+                "use.plugin.package_generation_exhausted",
+                "The dependency graph generation offset is too large.",
+            )
+        })?;
+        let mut generation = capability_generation.checked_add(offset).ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_generation_exhausted",
+                "The package lifecycle generation counter is exhausted.",
+            )
+        })?;
+        if *disposition == UpgradeDisposition::Replace {
+            let prior = prior_generations.get(package.package_id()).ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_generation_changed",
+                    "A replacement package omitted its exact prior lifecycle generation.",
+                )
+            })?;
+            generation = generation.max(prior.checked_add(1).ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_generation_exhausted",
+                    "A prior package lifecycle generation cannot advance.",
+                )
+            })?);
+        }
+        generations.insert(package.package_id().to_string(), generation);
+    }
+    Ok(PlannedGraphOperation {
+        envelope,
+        generations,
+    })
+}
+
 pub(super) fn now_ms() -> UseResult<u64> {
     let value = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -291,7 +504,7 @@ fn binding(
     })
 }
 
-fn static_provider_evidence(
+pub(super) fn static_provider_evidence(
     lock: &PluginPackageLock,
     manifests: &BTreeMap<String, ExtensionManifest>,
 ) -> UseResult<Vec<PlannedProviderEvidence>> {
