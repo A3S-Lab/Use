@@ -27,7 +27,8 @@ pub enum WorkspaceGrantLifecyclePhase {
     RolledBack,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkspaceGrantCandidateCeiling {
     pub package_id: String,
     pub package_digest: String,

@@ -8,7 +8,8 @@ use crate::plugin_lifecycle::{
     PluginLifecycleIntentSpec, PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
 };
 
-use super::plan::{now_ms, uninstall_operation};
+use super::grant::authorize_planned_operation;
+use super::plan::{now_ms, package_state_revision, uninstall_operation};
 use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
 use super::{
     all_catalog_surfaces, installed_matches_lock, package_manager_error, CognitivePackageManager,
@@ -122,6 +123,10 @@ impl CognitivePackageManager {
                 self.lifecycle.validate_manifest(manifest)?;
             }
             let snapshot = self.registry.snapshot().await?;
+            let grant_snapshot = self
+                .grant_store()
+                .snapshot_scope(&self.scope_id, package_state_revision(snapshot.generation)?)
+                .await?;
             let generated = uninstall_operation(
                 &lock,
                 &dispositions,
@@ -130,23 +135,31 @@ impl CognitivePackageManager {
                 snapshot.generation,
                 &self.scope_id,
                 now_ms()?,
+                &grant_snapshot,
+                self.authorization.as_ref(),
             )?;
             let admitted_at_ms = now_ms()?;
-            generated.envelope.verify_confirmed_apply(
-                &generated.envelope.plan.operation_id,
-                &generated.envelope.plan_digest,
-                None,
+            let authorization = authorize_planned_operation(
+                self.authorization.as_ref(),
+                &generated.envelope,
+                generated.grants.as_ref(),
                 admitted_at_ms,
-            )?;
+            )
+            .await?;
             let pending = PendingPackageGraphOperation::new(
                 generated.envelope,
                 admitted_at_ms,
+                authorization,
                 generated.generations,
                 manifests,
             )?;
             pending_store.put(&pending).await?;
             pending
         };
+        if pending.requires_authority_revalidation() {
+            self.authorization
+                .verify_authority(&pending.envelope.plan)?;
+        }
         for manifest in pending.manifests.values() {
             self.lifecycle.validate_manifest(manifest)?;
         }
@@ -211,9 +224,23 @@ impl CognitivePackageManager {
         let coordinator = PluginPackageGraphLifecycleCoordinator::new(std::sync::Arc::new(
             ExtensionGraphCapabilityLifecycleHost::new(self.registry.clone()),
         ));
-        coordinator
-            .apply_uninstall(&pending.envelope, &units, || now_ms().unwrap_or(apply_time))
-            .await?;
+        match pending
+            .authorization
+            .lifecycle_unit(self.grant_store(), &pending.envelope)?
+        {
+            Some(grants) => {
+                coordinator
+                    .apply_uninstall_with_grants(&pending.envelope, &units, &grants, || {
+                        now_ms().unwrap_or(apply_time)
+                    })
+                    .await?;
+            }
+            None => {
+                coordinator
+                    .apply_uninstall(&pending.envelope, &units, || now_ms().unwrap_or(apply_time))
+                    .await?;
+            }
+        }
         graph_store.remove(root_package_id, &lock_digest).await?;
         pending_store.remove(&pending).await?;
         let removed_packages = lock

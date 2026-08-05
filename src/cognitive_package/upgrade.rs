@@ -16,8 +16,9 @@ use crate::plugin_lifecycle::{
     PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
 };
 
+use super::grant::authorize_planned_operation;
 use super::install::verify_expected_lock;
-use super::plan::{now_ms, upgrade_operation};
+use super::plan::{now_ms, package_state_revision, upgrade_operation};
 use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
 use super::{
     current_host_target, installed_matches_lock, package_manager_error, CognitivePackageManager,
@@ -328,6 +329,10 @@ impl CognitivePackageManager {
                 )
             })?;
             let snapshot = self.registry.snapshot().await?;
+            let grant_snapshot = self
+                .grant_store()
+                .snapshot_scope(&self.scope_id, package_state_revision(snapshot.generation)?)
+                .await?;
             let generated = upgrade_operation(
                 &candidate_lock,
                 &prior_lock,
@@ -338,14 +343,17 @@ impl CognitivePackageManager {
                 snapshot.generation,
                 &self.scope_id,
                 now_ms()?,
+                &grant_snapshot,
+                self.authorization.as_ref(),
             )?;
             let admitted_at_ms = now_ms()?;
-            generated.envelope.verify_confirmed_apply(
-                &generated.envelope.plan.operation_id,
-                &generated.envelope.plan_digest,
-                None,
+            let authorization = authorize_planned_operation(
+                self.authorization.as_ref(),
+                &generated.envelope,
+                generated.grants.as_ref(),
                 admitted_at_ms,
-            )?;
+            )
+            .await?;
             let changed_manifests = manifests
                 .into_iter()
                 .filter(|(package_id, _)| {
@@ -355,6 +363,7 @@ impl CognitivePackageManager {
             let pending = PendingPackageGraphOperation::new_upgrade(
                 generated.envelope,
                 admitted_at_ms,
+                authorization,
                 generated.generations,
                 changed_manifests,
                 prior_lock.clone(),
@@ -364,6 +373,10 @@ impl CognitivePackageManager {
             pending_store.put(&pending).await?;
             pending
         };
+        if pending.requires_authority_revalidation() {
+            self.authorization
+                .verify_authority(&pending.envelope.plan)?;
+        }
         for manifest in pending
             .manifests
             .values()
@@ -528,16 +541,35 @@ impl CognitivePackageManager {
         let graph = PluginPackageGraphLifecycleCoordinator::new(std::sync::Arc::new(
             ExtensionGraphCapabilityLifecycleHost::new(self.registry.clone()),
         ));
-        if let Err(error) = graph
-            .apply_upgrade(
-                &pending.envelope,
-                &prior_lock,
-                &candidate_units,
-                &retirement_units,
-                || now_ms().unwrap_or(apply_time),
-            )
-            .await
-        {
+        let grant_unit = pending
+            .authorization
+            .lifecycle_unit(self.grant_store(), &pending.envelope)?;
+        let apply_result = match grant_unit.as_ref() {
+            Some(grants) => {
+                graph
+                    .apply_upgrade_with_grants(
+                        &pending.envelope,
+                        &prior_lock,
+                        &candidate_units,
+                        &retirement_units,
+                        grants,
+                        || now_ms().unwrap_or(apply_time),
+                    )
+                    .await
+            }
+            None => {
+                graph
+                    .apply_upgrade(
+                        &pending.envelope,
+                        &prior_lock,
+                        &candidate_units,
+                        &retirement_units,
+                        || now_ms().unwrap_or(apply_time),
+                    )
+                    .await
+            }
+        };
+        if let Err(error) = apply_result {
             let mut rolled_back = true;
             for unit in &candidate_units {
                 rolled_back &= unit

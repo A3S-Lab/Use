@@ -27,9 +27,10 @@ typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
 foundation. P0 package/capability hosts add generation-bound commit,
 publish/hide, lease drain, and exact removal. A3S Code composes the supported
 Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production Knowledge,
-Runtime Service, Gateway/HTTP MCP, product-level Grant planning/apply, and
-managed-host composition remain pending. Without promoted observation, an OKF
-surface stays unpublished.
+Runtime Service, Gateway/HTTP MCP, umbrella/managed-host Grant-authority
+forwarding, and managed-host composition remain pending. Standalone Grant
+planning/apply is implemented. Without promoted observation, an OKF surface
+stays unpublished.
 
 The dependency foundation adds canonical schema-v3 SemVer edges, a bounded
 deterministic transitive resolver, exact Registry/TUF-bound package locks,

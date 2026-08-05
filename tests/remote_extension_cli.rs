@@ -32,6 +32,8 @@ fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_a3s-use")
 }
 
+#[path = "remote_extension_cli/graph_grants.rs"]
+mod graph_grants;
 #[path = "remote_extension_cli/graph_install.rs"]
 mod graph_install;
 #[path = "remote_extension_cli/graph_upgrade.rs"]

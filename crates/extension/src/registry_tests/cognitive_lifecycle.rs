@@ -238,6 +238,21 @@ async fn lifecycle_graph_hide_returns_exact_stable_snapshot_evidence_in_one_cuto
         after.descriptor_digest().unwrap()
     );
     assert!(after.routes.is_empty());
+    for identity in &identities {
+        assert!(
+            !registry
+                .get_lifecycle_generation(identity)
+                .await
+                .unwrap()
+                .unwrap()
+                .receipt
+                .enabled
+        );
+        registry
+            .drain_lifecycle_package(identity, Duration::from_secs(1))
+            .await
+            .unwrap();
+    }
 
     let replay = registry
         .hide_lifecycle_package_graph_with_evidence(&identities)

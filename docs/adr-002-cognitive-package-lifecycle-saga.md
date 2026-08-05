@@ -1,6 +1,6 @@
 # ADR-002: Cognitive Package Lifecycle Saga
 
-- Status: accepted architecture; P0 hosts and P2-A Grant graph saga implemented, product wiring in progress
+- Status: accepted architecture; P0 hosts, P2-A Grant graph saga, and standalone P2-B wiring implemented; umbrella wiring in progress
 - Decision date: 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -137,9 +137,12 @@ v3 gates managed-host acceptance. The grant-aware graph path persists candidate
 Grants before package preparation, requires exact Registry snapshot and
 generation evidence, restores package and Grant candidates together before
 cutover, drains accepted prior calls after cutover, and only then revokes prior
-Grants. Production blue/green completion still requires standalone and umbrella
-Plugin Managers to derive these Grant inputs after policy/confirmation and to
-compose Runtime Service, Gateway, Knowledge, and projection providers.
+Grants. The standalone manager now binds trusted authority, exact confirmation,
+canonical Grant changes, resolved Grants, and signed ceilings into the pending
+operation and selects this path whenever the plan carries Grants. Production
+blue/green completion still requires umbrella and managed-host adapters to
+forward the same authority and confirmation, and to compose Runtime Service,
+Gateway, Knowledge, and projection providers.
 
 ## Implementation State
 
@@ -164,6 +167,9 @@ Implemented:
 - plan-bound Grant graph install, upgrade, and uninstall entry points with
   candidate-first persistence, exact cutover evidence, durable rollback,
   drain-before-revoke retirement, and generation-stable replay;
+- standalone authorization-provider composition, pending-v2 exact confirmation
+  and Grant evidence, mandatory Grant-aware path selection for permission-bearing
+  operations, authority-stable replay, and tamper/legacy-bypass rejection;
 - stable replay evidence for Runtime preparation and removal;
 - a content-addressed package fixture containing all six contribution kinds;
   and
@@ -176,8 +182,8 @@ Implemented:
 Remaining before the product can claim complete cognitive-package lifecycle:
 
 - injection of production Runtime Service, Gateway/HTTP MCP, and A3S Knowledge
-  hosts plus product-level Grant planning/apply selection by standalone and
-  umbrella Plugin Managers;
+  hosts plus exact Grant authority/confirmation forwarding by umbrella and
+  managed-host Plugin Managers;
 - management MCP and managed-host lifecycle-factory mutation wiring into this
   coordinator, while preserving the existing Code TUI/Web baseline;
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
@@ -197,5 +203,5 @@ Costs:
 - every product host must provide typed lifecycle adapters;
 - capability publication requires a multi-resource saga; and
 - production-provider-backed upgrades remain unavailable through the umbrella
-  Plugin Manager until it constructs the implemented Grant unit, selects the
-  grant-aware graph path, and composes the remaining provider evidence.
+  Plugin Manager until it forwards exact Use Grant authority/confirmation and
+  composes the remaining provider evidence.

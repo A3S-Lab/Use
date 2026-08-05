@@ -417,26 +417,46 @@ impl PluginOperationPlanEnvelope {
         now_ms: u64,
     ) -> UseResult<()> {
         self.validate()?;
-        if operation_id != self.plan.operation_id || plan_digest != self.plan_digest {
-            return Err(UseError::new(
-                "use.plugin.plan_mismatch",
-                "The plugin operation plan changed after review.",
-            ));
-        }
-        if now_ms < self.plan.created_at_ms || now_ms >= self.plan.expires_at_ms {
-            return Err(UseError::new(
-                "use.plugin.plan_expired",
-                "The plugin operation plan is outside its valid time window and must be resolved again.",
-            ));
-        }
-        if self.plan.authority.decision == PlanPolicyDecision::Deny {
-            return Err(UseError::new(
-                "use.plugin.plan_denied",
-                "Policy denies applying the plugin operation plan.",
-            ));
-        }
-        Ok(())
+        verify_plan_apply(
+            &self.plan,
+            &self.plan_digest,
+            operation_id,
+            plan_digest,
+            now_ms,
+        )
     }
+}
+
+pub(super) fn verify_plan_apply(
+    plan: &PluginOperationPlan,
+    expected_plan_digest: &str,
+    operation_id: &str,
+    plan_digest: &str,
+    now_ms: u64,
+) -> UseResult<()> {
+    plan.validate()?;
+    if plan.descriptor_digest()? != expected_plan_digest
+        || operation_id != plan.operation_id
+        || plan_digest != expected_plan_digest
+    {
+        return Err(UseError::new(
+            "use.plugin.plan_mismatch",
+            "The plugin operation plan changed after review.",
+        ));
+    }
+    if now_ms < plan.created_at_ms || now_ms >= plan.expires_at_ms {
+        return Err(UseError::new(
+            "use.plugin.plan_expired",
+            "The plugin operation plan is outside its valid time window and must be resolved again.",
+        ));
+    }
+    if plan.authority.decision == PlanPolicyDecision::Deny {
+        return Err(UseError::new(
+            "use.plugin.plan_denied",
+            "Policy denies applying the plugin operation plan.",
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn plan_error(message: impl Into<String>) -> UseError {

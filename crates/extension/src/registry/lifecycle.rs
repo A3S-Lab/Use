@@ -844,8 +844,10 @@ impl ExtensionRegistry {
     ) -> UseResult<Vec<RemovedLifecyclePackage>> {
         let mut moved = Vec::new();
         for package in removed.iter().filter(|package| package.selected) {
+            let mut hidden = package.extension.receipt.clone();
+            hidden.enabled = false;
             if let Err(error) = self
-                .retain_lifecycle_receipt(&package.identity, &package.extension.receipt)
+                .retain_lifecycle_receipt(&package.identity, &hidden)
                 .await
             {
                 self.restore_removed_lifecycle_packages(&moved).await?;

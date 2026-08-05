@@ -1,10 +1,13 @@
 use crate::UseResult;
 
+use serde::{Deserialize, Serialize};
+
 use super::grant_changes::{change_set_error, WorkspaceGrantEvidence};
 use super::validation::{valid_machine_id, valid_sha256};
 use super::{PluginWorkspaceGrant, WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResolvedWorkspaceGrantChangeSet {
     pub operation_id: String,
     pub plan_digest: String,
@@ -21,7 +24,8 @@ pub struct ResolvedWorkspaceGrantChangeSet {
     pub revocations: Vec<WorkspaceGrantEvidence>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResolvedWorkspaceGrant {
     pub proposal_digest: String,
     pub grant: PluginWorkspaceGrant,
