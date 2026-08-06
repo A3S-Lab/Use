@@ -155,12 +155,13 @@ dependencies = [
 [[package]]
 name = "a3s-use-ocr"
 version = "0.3.2"
-source = "git+https://github.com/A3S-Lab/OCR?rev=9568acf5b58722e767cab7e1470f31c87d49fb9d#9568acf5b58722e767cab7e1470f31c87d49fb9d"
+source = "git+https://github.com/A3S-Lab/OCR?rev=206552a74f87e39ff9c3735fe5018036b88fcab7#206552a74f87e39ff9c3735fe5018036b88fcab7"
 dependencies = [
  "a3s-use-core",
  "async-trait",
  "clap",
  "clipper2",
+ "flate2",
  "fs2",
  "image",
  "imageproc",
