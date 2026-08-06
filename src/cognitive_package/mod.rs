@@ -36,8 +36,8 @@ pub use enablement::{
     COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA, COGNITIVE_PACKAGE_ENABLEMENT_RESULT_SCHEMA,
 };
 pub use grant::{
-    CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider,
-    StandaloneCognitivePackageAuthorizationProvider,
+    bind_cognitive_package_grant_impacts, CognitivePackageAuthorizationEvidence,
+    CognitivePackageAuthorizationProvider, StandaloneCognitivePackageAuthorizationProvider,
 };
 pub use hosts::StandaloneCognitivePackageLifecycleFactory;
 pub use reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
