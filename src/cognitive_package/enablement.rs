@@ -444,7 +444,7 @@ impl CognitivePackageManager {
         project_installed_state(&extension, reconciled.state_generation, &snapshot, None)
     }
 
-    async fn replay_enablement_operation(
+    pub(super) async fn replay_enablement_operation(
         &self,
         store: &CognitivePackageEnablementStore,
         request: &CognitivePackageEnablementRequest,
@@ -501,7 +501,7 @@ impl CognitivePackageManager {
         Ok(())
     }
 
-    async fn complete_pending_enablement(
+    pub(super) async fn complete_pending_enablement(
         &self,
         store: &CognitivePackageEnablementStore,
         current: &StoredCognitivePackageEnablement,
@@ -663,7 +663,7 @@ impl CognitivePackageManager {
         Ok(operation)
     }
 
-    async fn required_enablement_extension(
+    pub(super) async fn required_enablement_extension(
         &self,
         package_id: &PluginPackageId,
     ) -> UseResult<(InstalledExtension, LockedPluginPackage)> {
@@ -720,7 +720,7 @@ impl CognitivePackageManager {
     }
 }
 
-fn reconcile_state(
+pub(super) fn reconcile_state(
     scope: &PlanScope,
     package_id: &PluginPackageId,
     current: Option<&StoredCognitivePackageEnablement>,
@@ -800,7 +800,7 @@ fn artifact_state(extension: &InstalledExtension) -> UseResult<CognitivePackageA
     Ok(artifact)
 }
 
-fn project_installed_state(
+pub(super) fn project_installed_state(
     extension: &InstalledExtension,
     state_generation: u64,
     snapshot: &ExtensionRegistrySnapshot,

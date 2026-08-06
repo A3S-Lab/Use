@@ -6,6 +6,7 @@
 //! immutable package generation.
 
 mod enablement;
+mod enablement_plan;
 mod enablement_store;
 mod grant;
 mod hosts;
@@ -34,6 +35,10 @@ use store::{InstalledPackageGraphStore, PendingPackageGraphStore};
 pub use enablement::{
     CognitivePackageEnablementRequest, CognitivePackageEnablementResult,
     COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA, COGNITIVE_PACKAGE_ENABLEMENT_RESULT_SCHEMA,
+};
+pub use enablement_plan::{
+    CognitivePackageEnablementPlanResult, CognitivePackageEnablementPlanStatus,
+    COGNITIVE_PACKAGE_ENABLEMENT_PLAN_RESULT_SCHEMA,
 };
 pub use grant::{
     bind_cognitive_package_grant_impacts, CognitivePackageAuthorizationEvidence,

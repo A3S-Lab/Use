@@ -382,6 +382,39 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
     )
     .unwrap();
     let unreviewed = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+    let planned = unreviewed.plan_enablement(&request).await.unwrap();
+    assert_eq!(
+        planned.status,
+        CognitivePackageEnablementPlanStatus::Planned
+    );
+    let planned_envelope = planned.plan.as_ref().unwrap();
+    assert_eq!(planned_envelope.plan.operation_id, request.operation_id);
+    assert_eq!(planned_envelope.plan.action, PluginOperationAction::Disable);
+    assert_eq!(
+        planned_envelope.plan.schema,
+        a3s_use_core::PLUGIN_OPERATION_PLAN_SCHEMA_V4
+    );
+    assert_eq!(
+        planned_envelope.plan.authority.decision,
+        PlanPolicyDecision::Ask
+    );
+    assert!(planned_envelope.plan.authority.confirmation_required);
+    assert!(planned.result.is_none());
+    assert_eq!(planned.state, state);
+    assert!(
+        extension_registry
+            .get("acme/worker")
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt
+            .enabled
+    );
+    assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
+
+    // The v1 mutation API remains fail-closed for compatibility, while new
+    // product adapters consume the explicit plan above and inject its exact
+    // confirmation through the reviewed provider.
     let confirmation_required = unreviewed.set_enablement(&request).await.unwrap_err();
     assert_eq!(
         confirmation_required.code,

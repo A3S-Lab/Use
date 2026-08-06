@@ -7,24 +7,28 @@ use crate::{UseError, UseResult};
 use super::validation::{valid_machine_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanScope, PlanScopeKind,
-    PluginHostApplyRequest, PluginHostApplyResult, PluginHostEnablementRequest,
-    PluginHostEnablementResult, PluginHostObservationRequest, PluginHostObservationResult,
-    PluginHostPlanRequest, PluginHostPlanResult, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA,
-    PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_HOST_APPLY_REQUEST_SCHEMA,
-    PLUGIN_HOST_APPLY_RESULT_SCHEMA, PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA,
-    PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
-    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
-    PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA_V2,
-    PLUGIN_OPERATION_PLAN_SCHEMA_V3,
+    PluginHostApplyRequest, PluginHostApplyResult, PluginHostEnablementPlanRequest,
+    PluginHostEnablementPlanResult, PluginHostEnablementRequest, PluginHostEnablementResult,
+    PluginHostObservationRequest, PluginHostObservationResult, PluginHostPlanRequest,
+    PluginHostPlanResult, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA, PLUGIN_CATALOG_SCHEMA_V2,
+    PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA,
+    PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
+    PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V2, PLUGIN_OPERATION_PLAN_SCHEMA_V3,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 pub const PLUGIN_MANAGED_SCOPE_SCHEMA: &str = "a3s.use.plugin-managed-scope.v1";
 pub const PLUGIN_HOST_CAPABILITIES_SCHEMA: &str = "a3s.use.plugin-host-capabilities.v1";
 pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V2: &str = "a3s.use.plugin-host-capabilities.v2";
 pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V3: &str = "a3s.use.plugin-host-capabilities.v3";
+pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V4: &str = "a3s.use.plugin-host-capabilities.v4";
 pub const PLUGIN_HOST_PROTOCOL_LEVEL: u32 = 1;
 pub const PLUGIN_HOST_PROTOCOL_LEVEL_V2: u32 = 2;
 pub const PLUGIN_HOST_PROTOCOL_LEVEL_V3: u32 = 3;
+pub const PLUGIN_HOST_PROTOCOL_LEVEL_V4: u32 = 4;
 
 const MANAGED_SCOPE_ERROR: &str = "use.plugin.managed_scope_invalid";
 const HOST_CAPABILITIES_ERROR: &str = "use.plugin.host_capabilities_invalid";
@@ -227,6 +231,43 @@ impl PluginHostCapabilities {
         Ok(capabilities)
     }
 
+    pub fn v4(
+        host_id: impl Into<String>,
+        manager_version: impl Into<String>,
+        manager_build_id: impl Into<String>,
+    ) -> UseResult<Self> {
+        let capabilities = Self {
+            schema: PLUGIN_HOST_CAPABILITIES_SCHEMA_V4.to_owned(),
+            protocol_level: PLUGIN_HOST_PROTOCOL_LEVEL_V4,
+            host_id: host_id.into(),
+            manager_version: manager_version.into(),
+            manager_build_id: manager_build_id.into(),
+            contract_schemas: v4_contract_schemas(),
+            catalog_schemas: vec![
+                PLUGIN_CATALOG_SCHEMA.to_owned(),
+                PLUGIN_CATALOG_SCHEMA_V2.to_owned(),
+                PLUGIN_CATALOG_SCHEMA_V3.to_owned(),
+            ],
+            plan_schemas: vec![
+                PLUGIN_OPERATION_PLAN_SCHEMA.to_owned(),
+                PLUGIN_OPERATION_PLAN_SCHEMA_V2.to_owned(),
+                PLUGIN_OPERATION_PLAN_SCHEMA_V3.to_owned(),
+                PLUGIN_OPERATION_PLAN_SCHEMA_V4.to_owned(),
+            ],
+            surface_kinds: vec![
+                PluginSurfaceKind::Flow,
+                PluginSurfaceKind::Mcp,
+                PluginSurfaceKind::Okf,
+                PluginSurfaceKind::Skill,
+                PluginSurfaceKind::Tool,
+                PluginSurfaceKind::Ui,
+            ],
+            exclusive_managed_scope_mutation: true,
+        };
+        capabilities.validate()?;
+        Ok(capabilities)
+    }
+
     pub fn from_json(input: &[u8]) -> UseResult<Self> {
         parse_contract(
             input,
@@ -297,6 +338,27 @@ impl PluginHostCapabilities {
                     ],
                 )
             }
+            PLUGIN_HOST_CAPABILITIES_SCHEMA_V4
+                if self.protocol_level == PLUGIN_HOST_PROTOCOL_LEVEL_V4 =>
+            {
+                (
+                    v4_contract_schemas(),
+                    vec![
+                        PLUGIN_OPERATION_PLAN_SCHEMA.to_owned(),
+                        PLUGIN_OPERATION_PLAN_SCHEMA_V2.to_owned(),
+                        PLUGIN_OPERATION_PLAN_SCHEMA_V3.to_owned(),
+                        PLUGIN_OPERATION_PLAN_SCHEMA_V4.to_owned(),
+                    ],
+                    vec![
+                        PluginSurfaceKind::Flow,
+                        PluginSurfaceKind::Mcp,
+                        PluginSurfaceKind::Okf,
+                        PluginSurfaceKind::Skill,
+                        PluginSurfaceKind::Tool,
+                        PluginSurfaceKind::Ui,
+                    ],
+                )
+            }
             _ => {
                 return Err(host_capabilities_error(
                     "The plugin host capability schema and protocol level disagree.",
@@ -353,6 +415,16 @@ pub trait PluginHostManager: Send + Sync {
 
     async fn apply(&self, request: PluginHostApplyRequest) -> UseResult<PluginHostApplyResult>;
 
+    async fn plan_enablement(
+        &self,
+        _request: PluginHostEnablementPlanRequest,
+    ) -> UseResult<PluginHostEnablementPlanResult> {
+        Err(UseError::new(
+            "use.plugin.host_enablement_plan_unsupported",
+            "This Plugin Host Manager does not implement reviewed enablement planning.",
+        ))
+    }
+
     async fn set_enablement(
         &self,
         request: PluginHostEnablementRequest,
@@ -403,6 +475,23 @@ fn v3_contract_schemas() -> Vec<String> {
             }
         })
         .collect()
+}
+
+fn v4_contract_schemas() -> Vec<String> {
+    vec![
+        PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_APPLY_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_CAPABILITIES_SCHEMA_V4.to_owned(),
+        PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_PLAN_RESULT_SCHEMA.to_owned(),
+        PLUGIN_MANAGED_SCOPE_SCHEMA.to_owned(),
+    ]
 }
 
 pub(super) fn validate_request_identity(

@@ -202,6 +202,108 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     assert!(reinstalled.package_generation.unwrap() > state_generation_before_reinstall);
 }
 
+#[tokio::test]
+async fn enablement_planning_distinguishes_planned_no_change_and_completed_outcomes() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let root = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
+    let repository = TestRepository::with_targets(vec![root], 7, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+    let trusted = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        &repository.root_sha256,
+        None,
+        home.join("state/remote-registries/fixture"),
+    )
+    .unwrap();
+    let extension_registry =
+        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+    manager
+        .install_remote(
+            &trusted,
+            &[],
+            "acme/root",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let observed = manager.observe_package("acme/root").await.unwrap();
+    let disable = CognitivePackageEnablementRequest::new(
+        "enablement:plan:disable:0001",
+        "acme/root",
+        observed.package_generation.unwrap(),
+        false,
+    )
+    .unwrap();
+    let planned = manager.plan_enablement(&disable).await.unwrap();
+    assert_eq!(
+        planned.status,
+        CognitivePackageEnablementPlanStatus::Planned
+    );
+    assert_eq!(planned.state, observed);
+    let envelope = planned.plan.as_ref().unwrap();
+    assert_eq!(envelope.plan.action, PluginOperationAction::Disable);
+    assert_eq!(
+        envelope.plan.schema,
+        a3s_use_core::PLUGIN_OPERATION_PLAN_SCHEMA_V4
+    );
+    assert_eq!(envelope.plan.operation_id, disable.operation_id);
+    assert!(planned.result.is_none());
+    let canonical = planned.canonical_bytes().unwrap();
+    assert_eq!(
+        CognitivePackageEnablementPlanResult::from_json(&canonical).unwrap(),
+        planned
+    );
+    assert!(
+        extension_registry
+            .get("acme/root")
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt
+            .enabled
+    );
+
+    let disabled = manager.set_enablement(&disable).await.unwrap();
+    let completed = manager.plan_enablement(&disable).await.unwrap();
+    assert_eq!(
+        completed.status,
+        CognitivePackageEnablementPlanStatus::Completed
+    );
+    assert!(completed.plan.is_some());
+    assert_eq!(
+        completed.result.as_ref(),
+        Some(&{
+            let mut replayed = disabled.clone();
+            replayed.replayed = true;
+            replayed
+        })
+    );
+    assert_eq!(completed.state, disabled.state);
+
+    let no_change = CognitivePackageEnablementRequest::new(
+        "enablement:plan:disable:noop:0002",
+        "acme/root",
+        disabled.state.package_generation.unwrap(),
+        false,
+    )
+    .unwrap();
+    let no_change = manager.plan_enablement(&no_change).await.unwrap();
+    assert_eq!(
+        no_change.status,
+        CognitivePackageEnablementPlanStatus::NoChange
+    );
+    assert!(no_change.plan.is_none());
+    assert!(no_change.result.is_none());
+    assert_eq!(no_change.state, disabled.state);
+}
+
 #[test]
 fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
     let temp = tempfile::tempdir().unwrap();
