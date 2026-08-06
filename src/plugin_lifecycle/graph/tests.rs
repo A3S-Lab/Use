@@ -17,10 +17,11 @@ use tokio::sync::Mutex;
 
 use super::*;
 use crate::plugin_lifecycle::{
-    PluginCapabilityLifecycleHost, PluginFlowLifecycleHost, PluginLifecycleHosts,
-    PluginLifecycleIntentSpec, PluginLifecycleJournalStore, PluginLifecycleOperationStatus,
-    PluginMcpLifecycleHost, PluginOkfLifecycleHost, PluginPackageLifecycleHost,
-    PluginSkillLifecycleHost, PluginToolLifecycleHost, PluginUiLifecycleHost,
+    PluginCapabilityLifecycleHost, PluginCapabilityPublication, PluginFlowLifecycleHost,
+    PluginLifecycleHosts, PluginLifecycleIntentSpec, PluginLifecycleJournalStore,
+    PluginLifecycleOperationStatus, PluginMcpLifecycleHost, PluginOkfLifecycleHost,
+    PluginPackageLifecycleHost, PluginSkillLifecycleHost, PluginToolLifecycleHost,
+    PluginUiLifecycleHost,
 };
 
 const CATALOG: &[u8] =
@@ -34,6 +35,7 @@ struct RecordingHost {
     fail_once: Mutex<Option<String>>,
     publication_fault: Mutex<Option<PublicationFault>>,
     fail_exact_publication_once: Mutex<bool>,
+    fail_cutover_completion_once: Mutex<bool>,
     drift_cutover_generation_once: Mutex<bool>,
     cutover_generation_before: AtomicU64,
 }
@@ -96,12 +98,48 @@ impl PluginCapabilityLifecycleHost for RecordingHost {
         self.evidence("single-publish", intent, key).await
     }
 
+    async fn publish_capability_with_cutover(
+        &self,
+        intent: &PluginLifecycleIntent,
+        key: &str,
+    ) -> UseResult<PluginCapabilityPublication> {
+        let evidence = self.evidence("single-publish", intent, key).await?;
+        let generation_before = self
+            .cutover_generation_before
+            .load(Ordering::Relaxed)
+            .max(1);
+        Ok(PluginCapabilityPublication::new(
+            evidence,
+            PluginCapabilityCutoverEvidence::new(
+                generation_before,
+                generation_before + 1,
+                digest('6'),
+            )?,
+        ))
+    }
+
     async fn hide_capability(
         &self,
         intent: &PluginLifecycleIntent,
         key: &str,
     ) -> UseResult<PluginLifecycleEvidence> {
         self.evidence("hide", intent, key).await
+    }
+
+    async fn complete_capability_cutover(&self, key: &str) -> UseResult<()> {
+        self.calls
+            .lock()
+            .await
+            .push(format!("single-cutover-complete:{key}"));
+        let mut fail = self.fail_cutover_completion_once.lock().await;
+        if *fail {
+            *fail = false;
+            return Err(UseError::new(
+                "use.plugin.test_cutover_completion_failure",
+                "The lifecycle test host interrupted durable cutover acknowledgement.",
+            ));
+        }
+        Ok(())
     }
 
     async fn drain_calls(
@@ -406,6 +444,14 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
         ))
     }
 
+    async fn complete_capability_cutover(&self, key: &str) -> UseResult<()> {
+        self.calls
+            .lock()
+            .await
+            .push(format!("cutover-complete:{key}"));
+        Ok(())
+    }
+
     async fn rollback_candidates(
         &self,
         candidate_lock: &a3s_use_core::PluginPackageLock,
@@ -438,6 +484,7 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
     }
 }
 
+mod enablement;
 mod grant;
 
 fn digest(seed: char) -> String {

@@ -8,8 +8,10 @@ use a3s_use_core::{
 use a3s_use_extension::ExtensionManifest;
 use async_trait::async_trait;
 
+mod recovery;
 mod validation;
 
+use recovery::*;
 use validation::*;
 
 use super::{
@@ -210,6 +212,12 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
         Err(cutover_evidence_required())
     }
 
+    /// Release host-owned replay evidence after durable package and Grant
+    /// journals can resume without invoking the cutover again.
+    async fn complete_capability_cutover(&self, _idempotency_key: &str) -> UseResult<()> {
+        Ok(())
+    }
+
     /// Discard a bounded set of candidates while the exact prior graph is
     /// still the Registry snapshot commit point. `prior_intents` contains one
     /// exact prior generation for every replacement and none for additions.
@@ -300,16 +308,27 @@ impl PluginPackageGraphLifecycleCoordinator {
             .iter()
             .map(|unit| unit.intent.clone())
             .collect::<Vec<_>>();
+        let cutover_key = publication_key(envelope)?;
+        if let Some(grants) = grants {
+            if grants.has_cutover().await? {
+                let records = completed_publication_records(&ordered).await?;
+                grants.retire().await?;
+                self.publication
+                    .complete_capability_cutover(&cutover_key)
+                    .await?;
+                return Ok(records);
+            }
+        }
         let (evidence, cutover) = if grants.is_some() {
             let publication = self
                 .publication
-                .publish_capabilities_with_cutover(lock, &intents, &publication_key(envelope)?)
+                .publish_capabilities_with_cutover(lock, &intents, &cutover_key)
                 .await?;
             (publication.packages, Some(publication.cutover))
         } else {
             (
                 self.publication
-                    .publish_capabilities(lock, &intents, &publication_key(envelope)?)
+                    .publish_capabilities(lock, &intents, &cutover_key)
                     .await?,
                 None,
             )
@@ -344,6 +363,9 @@ impl PluginPackageGraphLifecycleCoordinator {
                 .commit_cutover(cutover, committed_at_ms, committed_at_ms)
                 .await?;
             grants.retire().await?;
+            self.publication
+                .complete_capability_cutover(&cutover_key)
+                .await?;
         }
         Ok(records)
     }
@@ -423,35 +445,40 @@ impl PluginPackageGraphLifecycleCoordinator {
             .iter()
             .map(|unit| unit.intent.clone())
             .collect::<Vec<_>>();
-        let publication = self
-            .publication
-            .hide_capabilities_with_cutover(lock, &intents, &hide_key(envelope)?)
-            .await?;
-        if publication.packages.len() != ordered.len() {
-            return Err(graph_error(
-                "Package-graph hiding omitted capability evidence.",
-            ));
-        }
-        for (unit, evidence) in ordered.iter().zip(&publication.packages) {
-            if evidence.package_id != unit.intent.package_id {
+        let cutover_key = hide_key(envelope)?;
+        if grants.has_cutover().await? {
+            validate_hidden_records(&ordered).await?;
+        } else {
+            let publication = self
+                .publication
+                .hide_capabilities_with_cutover(lock, &intents, &cutover_key)
+                .await?;
+            if publication.packages.len() != ordered.len() {
                 return Err(graph_error(
-                    "Package-graph hide evidence changed package order or identity.",
+                    "Package-graph hiding omitted capability evidence.",
                 ));
             }
-            unit.coordinator
-                .record_graph_capability_hidden(
-                    &unit.intent,
-                    &unit.manifest,
-                    &evidence.evidence,
-                    &completed_at_ms,
-                )
+            for (unit, evidence) in ordered.iter().zip(&publication.packages) {
+                if evidence.package_id != unit.intent.package_id {
+                    return Err(graph_error(
+                        "Package-graph hide evidence changed package order or identity.",
+                    ));
+                }
+                unit.coordinator
+                    .record_graph_capability_hidden(
+                        &unit.intent,
+                        &unit.manifest,
+                        &evidence.evidence,
+                        &completed_at_ms,
+                    )
+                    .await?;
+            }
+
+            let committed_at_ms = completed_at_ms();
+            grants
+                .commit_cutover(&publication.cutover, committed_at_ms, committed_at_ms)
                 .await?;
         }
-
-        let committed_at_ms = completed_at_ms();
-        grants
-            .commit_cutover(&publication.cutover, committed_at_ms, committed_at_ms)
-            .await?;
 
         for unit in &ordered {
             unit.coordinator
@@ -468,6 +495,9 @@ impl PluginPackageGraphLifecycleCoordinator {
                     .await?,
             );
         }
+        self.publication
+            .complete_capability_cutover(&cutover_key)
+            .await?;
         Ok(records)
     }
 
@@ -673,79 +703,80 @@ impl PluginPackageGraphLifecycleCoordinator {
             Some(grants) => grants.has_cutover().await?,
             None => false,
         };
-        let publication = if grants.is_some() {
-            self.publication
-                .publish_upgrade_capabilities_with_cutover(
-                    candidate_lock,
-                    &intents,
-                    &removed_intents,
-                    &publication_key(envelope)?,
-                )
-                .await
-                .map(|publication| (publication.packages, Some(publication.cutover)))
+        let cutover_key = publication_key(envelope)?;
+        let mut records = Vec::with_capacity(candidate_units.len() + retirement_units.len());
+        if grant_has_cutover {
+            records.extend(completed_publication_records(&ordered_candidates).await?);
         } else {
-            self.publication
-                .publish_upgrade_capabilities(
-                    candidate_lock,
-                    &intents,
-                    &removed_intents,
-                    &publication_key(envelope)?,
-                )
-                .await
-                .map(|evidence| (evidence, None))
-        };
-        let (evidence, cutover) = match publication {
-            Ok(publication) => publication,
-            Err(error) => {
-                if grant_has_cutover {
-                    return Err(error);
-                }
-                return match self
-                    .rollback_upgrade_operation(
-                        envelope,
+            let publication = if grants.is_some() {
+                self.publication
+                    .publish_upgrade_capabilities_with_cutover(
                         candidate_lock,
-                        &ordered_candidates,
-                        &retirements,
-                        grants,
-                        &completed_at_ms,
+                        &intents,
+                        &removed_intents,
+                        &cutover_key,
                     )
                     .await
-                {
-                    Ok(()) => Err(error),
-                    Err(rollback) => Err(attach_rollback_error(error, rollback)),
-                };
-            }
-        };
-        if evidence.len() != ordered_candidates.len() {
-            return Err(graph_error(
-                "Package-graph upgrade publication omitted candidate capability evidence.",
-            ));
-        }
-
-        let mut records = Vec::with_capacity(candidate_units.len() + retirement_units.len());
-        for (unit, evidence) in ordered_candidates.into_iter().zip(evidence) {
-            if evidence.package_id != unit.intent.package_id {
+                    .map(|publication| (publication.packages, Some(publication.cutover)))
+            } else {
+                self.publication
+                    .publish_upgrade_capabilities(
+                        candidate_lock,
+                        &intents,
+                        &removed_intents,
+                        &cutover_key,
+                    )
+                    .await
+                    .map(|evidence| (evidence, None))
+            };
+            let (evidence, cutover) = match publication {
+                Ok(publication) => publication,
+                Err(error) => {
+                    return match self
+                        .rollback_upgrade_operation(
+                            envelope,
+                            candidate_lock,
+                            &ordered_candidates,
+                            &retirements,
+                            grants,
+                            &completed_at_ms,
+                        )
+                        .await
+                    {
+                        Ok(()) => Err(error),
+                        Err(rollback) => Err(attach_rollback_error(error, rollback)),
+                    };
+                }
+            };
+            if evidence.len() != ordered_candidates.len() {
                 return Err(graph_error(
-                    "Package-graph upgrade evidence changed candidate order or identity.",
+                    "Package-graph upgrade publication omitted candidate capability evidence.",
                 ));
             }
-            records.push(
-                unit.coordinator
-                    .complete_graph_publication(
-                        &unit.intent,
-                        &unit.manifest,
-                        &evidence.evidence,
-                        &completed_at_ms,
-                    )
-                    .await?,
-            );
-        }
+            for (unit, evidence) in ordered_candidates.iter().copied().zip(evidence) {
+                if evidence.package_id != unit.intent.package_id {
+                    return Err(graph_error(
+                        "Package-graph upgrade evidence changed candidate order or identity.",
+                    ));
+                }
+                records.push(
+                    unit.coordinator
+                        .complete_graph_publication(
+                            &unit.intent,
+                            &unit.manifest,
+                            &evidence.evidence,
+                            &completed_at_ms,
+                        )
+                        .await?,
+                );
+            }
 
-        if let (Some(grants), Some(cutover)) = (grants, cutover.as_ref()) {
-            let committed_at_ms = completed_at_ms();
-            grants
-                .commit_cutover(cutover, committed_at_ms, committed_at_ms)
-                .await?;
+            if let (Some(grants), Some(cutover)) = (grants, cutover.as_ref()) {
+                let committed_at_ms = completed_at_ms();
+                grants
+                    .commit_cutover(cutover, committed_at_ms, committed_at_ms)
+                    .await?;
+            }
         }
 
         if let Some(grants) = grants {
@@ -809,6 +840,11 @@ impl PluginPackageGraphLifecycleCoordinator {
                     .apply(&unit.intent, &unit.manifest, &completed_at_ms)
                     .await?,
             );
+        }
+        if grants.is_some() {
+            self.publication
+                .complete_capability_cutover(&cutover_key)
+                .await?;
         }
         Ok(records)
     }

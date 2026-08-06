@@ -29,9 +29,20 @@ impl PluginLifecycleCoordinator {
             grants,
             PluginOperationAction::Enable,
         )?;
+        let checkpoint = intent
+            .checkpoints
+            .iter()
+            .find(|checkpoint| {
+                checkpoint.kind == PluginLifecycleCheckpointKind::CapabilityPublished
+            })
+            .ok_or_else(|| coordinator_error("Enablement omitted its publication checkpoint."))?;
         if let Some(record) = self.load_exact_record(intent).await? {
             if record.status == PluginLifecycleOperationStatus::Completed {
                 if grants.is_completed().await? {
+                    self.hosts
+                        .capability
+                        .complete_capability_cutover(&checkpoint.idempotency_key)
+                        .await?;
                     return Ok(record);
                 }
                 return Err(coordinator_error(
@@ -43,13 +54,6 @@ impl PluginLifecycleCoordinator {
         let record = self
             .prepare_enablement_for_cutover(intent, manifest, &completed_at_ms)
             .await?;
-        let checkpoint = intent
-            .checkpoints
-            .iter()
-            .find(|checkpoint| {
-                checkpoint.kind == PluginLifecycleCheckpointKind::CapabilityPublished
-            })
-            .ok_or_else(|| coordinator_error("Enablement omitted its publication checkpoint."))?;
         let publication = self
             .hosts
             .capability
@@ -79,7 +83,12 @@ impl PluginLifecycleCoordinator {
             .commit_cutover(publication.cutover(), committed_at_ms, committed_at_ms)
             .await?;
         grants.retire().await?;
-        self.journal.complete(intent, completed_at_ms()).await
+        let record = self.journal.complete(intent, completed_at_ms()).await?;
+        self.hosts
+            .capability
+            .complete_capability_cutover(&checkpoint.idempotency_key)
+            .await?;
+        Ok(record)
     }
 
     /// Atomically hide one permission-bearing package, commit Grant cutover,
@@ -100,9 +109,18 @@ impl PluginLifecycleCoordinator {
             grants,
             PluginOperationAction::Disable,
         )?;
+        let checkpoint = intent
+            .checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.kind == PluginLifecycleCheckpointKind::CapabilityHidden)
+            .ok_or_else(|| coordinator_error("Disablement omitted its hide checkpoint."))?;
         if let Some(record) = self.load_exact_record(intent).await? {
             if record.status == PluginLifecycleOperationStatus::Completed {
                 if grants.is_completed().await? {
+                    self.hosts
+                        .capability
+                        .complete_capability_cutover(&checkpoint.idempotency_key)
+                        .await?;
                     return Ok(record);
                 }
                 return Err(coordinator_error(
@@ -112,11 +130,6 @@ impl PluginLifecycleCoordinator {
         }
         grants.prepare(completed_at_ms()).await?;
         let mut record = self.journal.begin(intent).await?;
-        let checkpoint = intent
-            .checkpoints
-            .iter()
-            .find(|checkpoint| checkpoint.kind == PluginLifecycleCheckpointKind::CapabilityHidden)
-            .ok_or_else(|| coordinator_error("Disablement omitted its hide checkpoint."))?;
         let publication = self
             .hosts
             .capability
@@ -167,7 +180,12 @@ impl PluginLifecycleCoordinator {
             ));
         }
         grants.retire().await?;
-        self.apply(intent, manifest, completed_at_ms).await
+        let record = self.apply(intent, manifest, completed_at_ms).await?;
+        self.hosts
+            .capability
+            .complete_capability_cutover(&checkpoint.idempotency_key)
+            .await?;
+        Ok(record)
     }
 
     async fn prepare_enablement_for_cutover(

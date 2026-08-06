@@ -658,6 +658,12 @@ Implementation status (2026-08-06):
   ceilings, and admission time; recovery revalidates provider authority,
   artifact and receipt evidence, and completed replay neither reauthorizes nor
   inflates the capability generation;
+- completed in A3S Use: Registry publication and hide atomically persist a
+  bounded `a3s.use.registry-cutover.v1` record keyed by the lifecycle
+  checkpoint; replay returns the original request-bound generation and snapshot
+  digest after unrelated Registry mutations, conflicting key reuse fails
+  closed, and journal acknowledgement clears metadata without generation or
+  capability-digest inflation;
 - completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
   embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
   Knowledge adapters; the standalone factory does not invent fallback hosts;
@@ -676,8 +682,6 @@ Implementation status (2026-08-06):
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
   injection; a versioned Code/Web/managed-host enablement adapter that carries
   the immutable plan and exact confirmation for permission-bearing toggles;
-  Registry cutover evidence persisted by idempotency key for recovery across
-  concurrent unrelated Registry mutations;
   real signed cross-platform lifecycle E2E; and the published Cloud adapter
   over the existing fenced managed-host port. Hosts must not add a parallel
   implementation.

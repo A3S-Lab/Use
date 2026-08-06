@@ -461,6 +461,15 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         .await
         .unwrap()
         .is_none());
+    assert_eq!(
+        extension_registry
+            .snapshot()
+            .await
+            .unwrap()
+            .pending_cutovers
+            .len(),
+        1
+    );
 
     interrupted.abort();
     let _ = interrupted.await;
@@ -482,6 +491,12 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         extension_registry.snapshot().await.unwrap().generation,
         disable_cutover_generation.unwrap()
     );
+    assert!(extension_registry
+        .snapshot()
+        .await
+        .unwrap()
+        .pending_cutovers
+        .is_empty());
     assert_revoked(&home, &restarted.scope().id, &package_digest).await;
     assert_eq!(
         grant_store
@@ -535,6 +550,12 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         extension_registry.snapshot().await.unwrap().generation,
         disable_cutover_generation.unwrap() + 1
     );
+    assert!(extension_registry
+        .snapshot()
+        .await
+        .unwrap()
+        .pending_cutovers
+        .is_empty());
     assert_eq!(
         grant_store
             .observe_change_set(&enable.operation_id)

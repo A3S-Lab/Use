@@ -5,7 +5,7 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 use super::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
-use super::registry::{ExtensionRegistrySnapshot, REGISTRY_SCHEMA_VERSION};
+use super::registry::ExtensionRegistrySnapshot;
 
 pub(super) async fn read_registry_snapshot(path: &Path) -> UseResult<ExtensionRegistrySnapshot> {
     let bytes = match fs::read(path).await {
@@ -24,15 +24,7 @@ pub(super) async fn read_registry_snapshot(path: &Path) -> UseResult<ExtensionRe
             ),
         )
     })?;
-    if snapshot.schema_version != REGISTRY_SCHEMA_VERSION {
-        return Err(UseError::new(
-            "use.extension.registry_incompatible",
-            format!(
-                "Extension registry schema {} is not supported.",
-                snapshot.schema_version
-            ),
-        ));
-    }
+    snapshot.validate()?;
     Ok(snapshot)
 }
 

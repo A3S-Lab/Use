@@ -8,6 +8,8 @@ use std::os::unix::fs::PermissionsExt;
 
 use super::*;
 
+#[path = "registry_tests/cutover.rs"]
+mod cutover;
 #[path = "registry_tests/lifecycle_generations.rs"]
 mod lifecycle_generations;
 #[path = "registry_tests/route_recovery.rs"]

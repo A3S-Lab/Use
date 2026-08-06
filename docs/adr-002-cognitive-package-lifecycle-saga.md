@@ -209,6 +209,11 @@ Implemented:
   Grant snapshot/change set, resolved Grants, ceilings, and admission time,
   with provider/artifact/receipt revalidation and authorization-free completed
   replay;
+- bounded `a3s.use.registry-cutover.v1` evidence embedded in the atomic
+  Registry visibility write, with operation-key/request/generation/snapshot
+  binding, replay after unrelated Registry mutation, conflict and capacity
+  rejection before mutation, and acknowledgement without capability identity
+  inflation;
 - stable replay evidence for Runtime preparation and removal;
 - a content-addressed package fixture containing all six contribution kinds;
   and
@@ -225,9 +230,6 @@ Remaining before the product can claim complete cognitive-package lifecycle:
 - a versioned Code/Web/managed-host enablement adapter carrying the immutable
   plan and exact confirmation for permission-bearing toggles, while management
   MCP remains intentionally read-only;
-- Registry cutover evidence persisted by operation idempotency key, proving
-  recovery when a process dies before Grant-journal commit and an unrelated
-  Registry mutation interleaves; and
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
 
 ## Consequences
