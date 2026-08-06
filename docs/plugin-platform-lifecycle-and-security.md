@@ -11,7 +11,8 @@
   bounded exact-generation package/Runtime N/N+1 storage, and the Grant-aware
   graph saga foundation frozen 2026-08-05; public Grant-impact planning and
   umbrella/managed-host authority forwarding plus plan-v4 permission-bearing
-  enablement core connected 2026-08-06
+  enablement core connected 2026-08-06; local A3S Code CLI/Web reviewed
+  enablement and restart replay connected 2026-08-06
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -29,10 +30,11 @@ typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
 foundation. P0 package/capability hosts add generation-bound commit,
 publish/hide, lease drain, and exact removal. A3S Code composes the supported
 Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production Knowledge,
-Runtime Service, Gateway/HTTP MCP, and managed-host permission-bearing
-enablement review forwarding remain pending. Standalone and host-reviewed
-Grant planning/apply are implemented, including exact umbrella/managed-host
-scope, revision, authority, confirmation, and replay binding. The directly
+Runtime Service, and Gateway/HTTP MCP providers remain pending. Standalone and
+host-reviewed Grant planning/apply are implemented, including exact
+umbrella/managed-host scope, revision, authority, confirmation, and replay
+binding; local Code CLI/Web and managed-host reviewed enablement forward that
+same evidence. The directly
 injected Use authorization path now applies the same evidence to
 permission-bearing enable/disable. Without promoted observation, an OKF
 surface stays unpublished.
@@ -792,8 +794,9 @@ select this path when Grants are required; the fenced managed-host path reuses
 the same planner and reviewed provider for graph operations. The Use
 enablement coordinator now applies the same ordering to plan-v4 `Retain`
 transitions when authorization is injected. Managed-host enablement request v1
-cannot carry the plan/confirmation and must be versioned before Code/Web or a
-fenced host exposes permission-bearing toggle review.
+remains permission-free compatibility-only; capability v4 carries a separate
+enablement plan request and reuses digest-only apply so fenced hosts and local
+Code CLI/Web can expose permission-bearing toggle review without changing v1.
 
 Durable authorization uses two storage schemas:
 `a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision

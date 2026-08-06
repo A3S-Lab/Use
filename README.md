@@ -82,10 +82,13 @@ available for automation, embedding, and diagnostics.
 > restart. Managed hosts now persist an explicit enablement planning request
 > and its exact plan-v4 or terminal NoChange result, then reuse the existing
 > digest-only apply request with confirmation. The direct enablement-v1 request
-> remains a compatibility path. Local Code CLI/Web/TUI still need to expose the
-> reviewed planning and apply UX. Production Knowledge, Service/HTTP hosts,
+> remains a compatibility path. Local Code CLI and Web now expose the same
+> User-scoped reviewed plan/apply contract; NoChange has no synthetic mutation
+> identity, and completed apply replays after daemon restart. TUI consumes the
+> resulting hot-plug generations but still needs a package-level review/apply
+> panel. Production Knowledge, Service/HTTP hosts,
 > distributed Flow scheduling/resumption, complete real-process cross-platform
-> E2E, and that local presentation work remain release gates. The A3S Code
+> E2E, and that TUI panel remain release gates. The A3S Code
 > umbrella and managed-host graph paths now
 > invoke the public Grant planner and reviewed provider with exact scope,
 > revision, authority, confirmation, and replay evidence.
@@ -540,8 +543,10 @@ immutable plan before lifecycle mutation. The fenced managed-host adapter now
 uses capability v4 to persist an enablement planning request/result, bind exact
 confirmation to the returned operation ID and plan digest, and apply through
 the existing digest-only request. Direct enablement request v1 remains a
-permission-free compatibility path. Local CLI/Web/TUI package toggles still
-need the same reviewed two-step presentation flow.
+permission-free compatibility path. Local Code CLI and Web now persist and
+display the User-scoped Use plan, collect exact confirmation, and apply only
+its operation ID and canonical digest. The old Web toggle is schema-v1/v2
+compatibility-only; TUI still lacks a package-level mutation panel.
 Registry visibility and the Grant journal are separate durable systems. The
 Registry now embeds a bounded `a3s.use.registry-cutover.v1` record in the same
 atomic `registry.json` write as each Grant-bearing visibility transition. The
@@ -610,11 +615,11 @@ do not share one database transaction. The boundaries are frozen in
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
 | Package enablement core | Implemented for schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, plan-v4 retained-artifact review, stale-generation rejection, durable authorization/checkpoint recovery, exact result replay, atomic capability cutover, Grant-before-publish enable, hide/cutover/drain-before-revoke disable, and non-destructive package/dependency retention |
-| Managed-host enablement | Host capability v4 adds explicit enablement planning with durable plan-v4/NoChange results; confirmed mutation reuses digest-only apply, exact policy/fence checks, the reviewed authorization provider, and the same Use saga. Direct enablement v1 is frozen as compatibility-only; local CLI/Web/TUI reviewed UX remains pending |
+| Reviewed enablement | Host capability v4 adds explicit managed planning with durable plan-v4/NoChange results; local Code CLI/Web use the same User-scoped reviewed plan/apply contract and restart-safe result replay. Confirmed mutation reuses exact operation ID/digest, policy/fence checks where applicable, the reviewed authorization provider, and the same Use saga. Direct enablement v1 and the old Web toggle are compatibility-only; a TUI package-level mutation panel remains pending |
 | Durable Registry cutover | Implemented for package-graph and enablement publication/hide: the atomic Registry snapshot carries bounded operation-keyed request/generation/digest evidence, replay survives unrelated mutations, conflicting key reuse fails closed, and post-journal cleanup causes no capability generation or digest inflation |
 | Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, public manager-owned host impact planning, and umbrella/managed-host invocation are implemented: exact User/Workspace scope and revision snapshots, external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
-| Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
+| Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; a signed schema-v3 Web regression covers reviewed disable, generation-2 withdrawal, daemon restart/replay/NoChange, and generation-3 re-enable restoration; production-provider and complete cross-platform real-process gates remain |
 | Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone, reviewed-host, umbrella, and managed-host Grant plan/apply selection are wired, while production providers remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,

@@ -11,7 +11,9 @@
   CLI/TUI/Web local durable execution and observation accepted 2026-08-04;
   public Grant-impact planning and umbrella/managed-host graph authority
   forwarding, permission-bearing enablement Grant cutover, and
-  host-capabilities-v4 reviewed enablement planning completed 2026-08-06
+  host-capabilities-v4 reviewed enablement planning completed 2026-08-06;
+  local A3S Code CLI/Web reviewed enablement and restart replay completed
+  2026-08-06
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -95,8 +97,8 @@ Flow/Skill/UI, and OKF adapters, and P0 package/capability hosts now provide the
 in-crate lifecycle foundation. Grant-aware graph paths additionally compose
 durable Grant prepare, exact cutover, pre-cutover rollback, drain, and
 retirement around that package graph. Production publication still requires
-typed production Service/Gateway provider composition, local CLI/Web/TUI
-reviewed-enablement presentation, and a real A3S Knowledge backend. Umbrella
+typed production Service/Gateway provider composition, a TUI package-level
+reviewed-enablement panel, and a real A3S Knowledge backend. Umbrella
 graph paths and fenced managed-host graph/enablement paths already invoke Use's
 reviewed-plan authorization provider.
 
@@ -119,8 +121,9 @@ ceilings, and admission time. Host capability v4 adds an explicit enablement
 planning request/result: `NoChange` is terminal, while a changed transition
 returns the exact plan-v4 envelope and reuses digest-only apply with
 confirmation. Direct managed-host enablement request v1 remains a
-permission-free compatibility path. Local CLI/Web/TUI still need to expose the
-same reviewed two-step UX.
+permission-free compatibility path. Local Code CLI and Web now expose the same
+User-scoped reviewed two-step contract and durable replay; TUI consumes the
+resulting generations but still needs a package-level mutation panel.
 
 Flow uses one product model. `engine = "a3s-flow"` is fixed; `native-ts` is the
 first admitted execution adapter. Use owns package integrity, dependency
@@ -287,8 +290,8 @@ Remaining on the critical path:
 - complete schema-v3 graph upgrade/uninstall construction through the shared
   CLI/Web/fenced managed-host Manager using the public lifecycle factory and
   the same durable graph records; management MCP remains read-only;
-- expose the Use-generated immutable enablement plan plus exact confirmation in
-  the local Code CLI/Web/TUI UX using one shared presentation service;
+- add a TUI package-level panel over the completed shared local Code CLI/Web
+  enablement plan, exact confirmation, and digest-bound apply service;
 - coordinate the implemented exact package/Runtime N/N+1 storage, cutover,
   rollback, drain, and removal primitives after blue/green cutover; and
 - pass CLI/Web/agent install-use-upgrade-uninstall E2E with production
@@ -314,12 +317,12 @@ earlier ownership or durability gate.
 | P2-D — Durable Registry cutover (complete 2026-08-06) | Embed bounded lifecycle-checkpoint-keyed request, before/after generation, and capability snapshot evidence in the same atomic Registry write; acknowledge it only after package or Grant journals own the cutover | Post-cutover/pre-journal process death replays the original evidence after unrelated Registry mutation; conflicting key reuse and capacity exhaustion fail before lifecycle mutation; acknowledgement changes neither generation nor capability digest |
 | P2-E — Managed reviewed enablement (complete 2026-08-06) | Add host capability v4 plus enablement-plan request/result v1; persist exact planning evidence and operation index; bind confirmation to operation ID and plan digest; reuse digest-only apply and the existing Use saga | Signed Skill disable/restart/replay/enable succeeds without package or graph mutation; stale generation, request/digest substitution, policy drift, missing confirmation, and missing durable intent fail closed |
 | P3 — Production blue/green composition (core complete; providers pending) | Compose the implemented graph cutover, rollback, dependency GC, and retirement coordinator with Gateway/Knowledge/grant receipts | Failed N+1 leaves N callable across every production provider; successful N+1 leaks no old Runtime unit or route; provider receipts preserve the core's crash-safe removed-node behavior |
-| P4 — Product adapters (Code graph and managed-host reviewed enablement complete; local UX/providers pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, local Flow runtime, Use-owned enablement, and fenced managed-host v4 path; add one shared local reviewed enablement presentation service, visible Web Flow controls, and production provider adapters | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history and TUI covers local routing plus watcher readiness; managed permission-bearing review is restart-safe; local reviewed toggles, visible Web UX, and production hosts must extend the same no-restart proof |
+| P4 — Product adapters (Code graph, managed host, and local CLI/Web reviewed enablement complete; TUI/providers pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, local Flow runtime, Use-owned enablement, and fenced managed-host v4 path; add the TUI package-level reviewed mutation panel, visible Web Flow controls, and production provider adapters | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history plus reviewed disable/restart/replay/NoChange/enable; TUI covers generation withdrawal/restoration and still needs the mutation panel; production hosts must extend the same no-restart proof |
 | P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all six surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
 
-P1, the local Code CLI/Web/TUI reviewed-enablement presentation beyond the
-completed managed-host protocol, and the remaining provider-composition work in
-P3 remain release blockers for calling schema-v3 cognitive-package lifecycle production-ready.
+P1, the TUI package-level reviewed-enablement panel beyond the completed local
+CLI/Web and managed-host protocols, and the remaining provider-composition work
+in P3 remain release blockers for calling schema-v3 cognitive-package lifecycle production-ready.
 P4 must include dependency-bearing graph operations
 through CLI and Web and is the hot-plug product gate. P5 is the release
 promotion gate.
@@ -573,9 +576,9 @@ every permission-bearing operation. Umbrella and managed-host Plugin Managers
 now snapshot the exact scope/revision, bind the same canonical impact after
 policy, and forward the unchanged reviewed authority and confirmation.
 Remaining integration composes production Runtime, Gateway, and Knowledge
-hosts and forwards the same enablement plan/confirmation evidence through one
-shared local Code CLI/Web/TUI presentation service. Fenced managed hosts already
-use the versioned capability-v4 contract.
+hosts and adds a TUI package-level panel over the shared local Code
+plan/confirmation service already used by CLI and Web. Fenced managed hosts
+already use the versioned capability-v4 contract.
 
 Workspace-scoped activation must not duplicate the package payload. Global
 uninstall refuses to proceed while another protected workspace grant still

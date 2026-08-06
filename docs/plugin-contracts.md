@@ -11,7 +11,8 @@
   foundation frozen 2026-08-05; public Grant-impact planning,
   umbrella/managed-host graph authority forwarding, plan-v4
   permission-bearing enablement core, and host-capabilities-v4 reviewed
-  enablement planning connected 2026-08-06
+  enablement planning connected 2026-08-06; local A3S Code CLI/Web reviewed
+  enablement and restart replay connected 2026-08-06
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -26,8 +27,9 @@ implemented foundations.
 Signed remote schema-v3 records enter that graph from `a3s-use install` and
 the compatible `component install` command. A3S Code TUI/Web now composes the
 supported Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production
-Knowledge, Service/HTTP, local CLI/Web/TUI reviewed-enablement presentation,
-and distributed Flow scheduling/retention remain product integration gates. The
+Knowledge, Service/HTTP, a TUI package-level reviewed-enablement panel, and
+distributed Flow scheduling/retention remain product integration gates. Local
+Code CLI/Web already expose User-scoped plan/apply and durable replay. The
 umbrella and fenced managed-host graph paths bind the public Grant planner to
 the exact reviewed provider. A3S Use itself now applies the same reviewed
 authorization model to permission-bearing enable/disable. Host capability v4
@@ -204,8 +206,9 @@ calls before revocation. The standalone manager performs product-level Grant
 planning/apply selection for graph and enablement operations when an exact
 authorization provider is injected. The fenced managed-host adapter now
 forwards reviewed enablement through capability v4; production provider
-composition and local Code/Web/TUI reviewed presentation remain outside the
-completed foundation.
+composition and a TUI package-level reviewed mutation panel remain outside the
+completed foundation. Local Code CLI/Web use the same immutable plan and exact
+confirmation boundary.
 
 Package ownership also applies above one manifest. A schema-v3 package may
 declare canonical package ID plus SemVer dependency blocks. The package lock

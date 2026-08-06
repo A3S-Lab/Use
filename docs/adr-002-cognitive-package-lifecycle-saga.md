@@ -1,6 +1,8 @@
 # ADR-002: Cognitive Package Lifecycle Saga
 
-- Status: accepted architecture; P0 hosts, P2-A Grant graph saga, P2-B graph wiring, and permission-bearing enablement core implemented
+- Status: accepted architecture; P0 hosts, P2-A Grant graph saga, P2-B graph
+  wiring, permission-bearing enablement core, reviewed managed-host protocol,
+  and local Code CLI/Web adapters implemented
 - Decision date: 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -165,8 +167,11 @@ invoke this provider without regenerating identity or confirmation. Production
 blue/green completion still requires Runtime Service, Gateway, Knowledge, and
 projection providers. A3S Use now applies the same authorization provider and
 Grant sub-saga to plan-v4 enable/disable operations. The existing Code/Web and
-managed-host enablement request v1 still lacks plan/confirmation fields, so
-permission-bearing toggle UX requires a versioned adapter.
+managed-host enablement request v1 remains permission-free compatibility-only.
+Host capability v4 adds a separate reviewed planning request and reuses the
+existing digest-only apply; local Code CLI/Web and fenced managed hosts now
+forward the immutable plan and exact confirmation without changing v1. TUI
+still needs a package-level mutation panel over that shared application path.
 
 ## Implementation State
 
@@ -227,9 +232,9 @@ Remaining before the product can claim complete cognitive-package lifecycle:
 
 - injection of production Runtime Service, Gateway/HTTP MCP, and A3S Knowledge
   hosts;
-- a versioned Code/Web/managed-host enablement adapter carrying the immutable
-  plan and exact confirmation for permission-bearing toggles, while management
-  MCP remains intentionally read-only;
+- a TUI package-level reviewed enablement panel over the completed local
+  CLI/Web and managed-host immutable plan/exact confirmation paths, while
+  management MCP remains intentionally read-only;
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
 
 ## Consequences

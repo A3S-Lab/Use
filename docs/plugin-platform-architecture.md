@@ -10,7 +10,8 @@
   preflight binding foundation accepted on 2026-08-04; canonical Grant-impact
   planning and umbrella/managed-host graph authority forwarding accepted
   2026-08-06; plan-v4 permission-bearing enablement, Grant cutover core, and
-  host-capabilities-v4 reviewed enablement planning accepted 2026-08-06
+  host-capabilities-v4 reviewed enablement planning accepted 2026-08-06; local
+  A3S Code CLI/Web reviewed enablement and restart replay accepted 2026-08-06
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -63,11 +64,12 @@ planning/apply selection is implemented, and the umbrella/managed-host paths
 now combine the public canonical impact planner with the exact reviewed-plan
 provider. The fenced managed-host adapter now plans enablement explicitly under
 host capability v4 and applies the reviewed result through the existing
-digest-only request. Production provider composition, local Code CLI/Web/TUI
-reviewed presentation, the A3S Knowledge index backend, and scoped cited
-retrieval remain to be implemented. The remaining enablement item is local
-product UX forwarding, not a parallel lifecycle. Missing promoted evidence
-therefore stays explicitly unpublished.
+digest-only request. Local Code CLI and Web now use the same User-scoped
+reviewed plan/apply contract with durable restart replay. Production provider
+composition, a TUI package-level reviewed mutation panel, the A3S Knowledge
+index backend, and scoped cited retrieval remain to be implemented. The
+remaining enablement item is that TUI presentation, not a parallel lifecycle.
+Missing promoted evidence therefore stays explicitly unpublished.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use
@@ -628,12 +630,12 @@ coordinator: plan v3 binds the complete prior/candidate lock union,
 Add/Replace archives prepare forward, removed routes leave in the same
 publication, and replaced or unreferenced generations retire in reverse order.
 Exact shared dependencies remain selected without download or receipt rewrite.
-Production Knowledge, Runtime Service, Gateway/HTTP MCP, and local Code/Web/TUI
-reviewed enablement presentation remain pending. The fenced managed-host
-adapter already persists plan-v4/NoChange planning evidence and injects the
-reviewed authorization provider during digest-only apply. Management MCP remains
-a bounded read-only adapter, while fenced managed-host graph mutations reuse the
-shared Manager. Storage never
+Production Knowledge, Runtime Service, Gateway/HTTP MCP, and a TUI
+package-level reviewed enablement panel remain pending. Local Code CLI/Web and
+the fenced managed-host adapter already persist plan-v4/NoChange planning
+evidence and inject the reviewed authorization provider during digest-only
+apply. Management MCP remains a bounded read-only adapter, while fenced
+managed-host graph mutations reuse the shared Manager. Storage never
 overwrites the snapshot-selected retained generation.
 
 ## Surface Reconciliation
@@ -1118,8 +1120,9 @@ Plugin Manager composes the supported Tool Task, stdio MCP, A3S Flow, Skill,
 and UI hosts. A3S Use additionally composes plan-v4 permission-bearing
 enablement with exact Grant cutover and recovery when reviewed authority is
 injected. Host capability v4 exposes that path to fenced managed hosts without
-adding another lifecycle. Production Service/Gateway/Knowledge providers,
-local Code/Web/TUI reviewed enablement presentation, complete graph
+adding another lifecycle, and local Code CLI/Web expose the same User-scoped
+review/apply contract. Production Service/Gateway/Knowledge providers, a TUI
+package-level reviewed enablement panel, complete graph
 upgrade/uninstall construction, and cross-platform crash E2E still bound the
 product readiness claim.
 

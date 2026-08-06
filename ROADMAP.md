@@ -12,7 +12,8 @@
   workspace-local durable execution/observation accepted 2026-08-04; bounded
   exact-generation package/route and Runtime N/N+1 storage accepted 2026-08-05;
   operation-plan-v4 permission-bearing enablement, Grant cutover core, and
-  host-capabilities-v4 reviewed enablement planning accepted 2026-08-06
+  host-capabilities-v4 reviewed enablement planning accepted 2026-08-06; local
+  A3S Code CLI/Web reviewed enablement and restart replay accepted 2026-08-06
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -516,15 +517,18 @@ Implementation status (2026-08-06):
   verifies immutable capabilities and a durable enrolled Workspace scope,
   separates remote and local plan/apply authority, observes exact package
   state, and replays byte-equivalent operations after host recreation;
-- completed in A3S Code: local CLI/Web and fenced managed hosts route
-  permission-free schema-v3 enable/disable through the same Use-owned
-  package-state generation and lifecycle factory without legacy fallback;
+- completed in A3S Code: local CLI/Web and fenced managed hosts route schema-v3
+  enable/disable through the same reviewed Use-owned package-state, Grant, and
+  lifecycle saga without legacy fallback;
 - completed in A3S Code managed hosts: capability v4 plans a desired package
   state as exact plan-v4 or terminal NoChange, persists the planning evidence
   and stable operation index, and reuses digest-only apply with exact
   confirmation; host graph-plan request v1 continues to reject enable/disable;
-- pending in A3S Code local CLI/Web/TUI: expose that reviewed two-step flow
-  instead of calling the compatibility toggle directly;
+- completed in A3S Code local CLI/Web: persist and present a User-scoped
+  plan-v4/NoChange result, collect exact confirmation, apply by operation ID
+  and canonical digest, and replay the recorded result after restart;
+- pending in A3S Code TUI: add a package-level review/confirmation panel; its
+  existing watcher already withdraws and restores Skill/MCP/Flow generations;
 - completed in the umbrella CLI: a bounded Marketplace read model joining
   release bundles, complete signed catalog records, legacy TUF records, and an
   immutable installed/enabled snapshot without package downloads;
@@ -690,8 +694,8 @@ Implementation status (2026-08-06):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; one shared local Code CLI/Web/TUI presentation service carrying
-  the immutable plan and exact confirmation for permission-bearing toggles;
+  injection; a TUI package-level reviewed-enablement panel using the shared
+  local Code application service;
   real signed cross-platform lifecycle E2E; and the published Cloud adapter
   over the existing fenced managed-host port. Hosts must not add a parallel
   implementation.
@@ -1074,8 +1078,10 @@ Implementation status (in progress 2026-07-30):
 - completed in `a3s-use-core` and A3S Code managed hosts: negotiate capability
   v4, persist exact plan-v4/NoChange review evidence, and reuse digest-only
   apply with the reviewed authorization provider;
-- pending: add the shared local CLI/Web/TUI enablement plan/confirmation
-  presentation, secret-reference adapters, filesystem/network/child-process
+- completed in A3S Code CLI/Web: add the shared local enablement
+  plan/confirmation presentation and exact digest-bound apply;
+- pending: add the corresponding TUI package panel, secret-reference adapters,
+  filesystem/network/child-process
   enforcement, production-provider-backed prior-generation Runtime retirement,
   streaming/file-backed large Task output, the production MCP initialize client
   adapter, stdio supervision, Gateway route revocation, and scope-aware
