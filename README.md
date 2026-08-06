@@ -142,9 +142,10 @@ a3s use ocr extract ./scan.png --json
 ```
 
 The pinned OCR installer bounds connection setup and stalled reads without a
-total transfer deadline, then verifies the exact model length and SHA-256
-before activation. Healthy slow links therefore remain supported without
-weakening artifact integrity.
+total transfer deadline. Interrupted bodies resume from a validated byte
+offset, while range-ignoring servers restart the staging file. The exact model
+length and SHA-256 still gate activation, so healthy slow links remain
+supported without weakening artifact integrity.
 
 Build the standalone engine from source:
 

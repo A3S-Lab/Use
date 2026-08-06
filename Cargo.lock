@@ -154,8 +154,8 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-ocr"
-version = "0.3.1"
-source = "git+https://github.com/A3S-Lab/OCR?rev=c9ffbec316f060795900bb51e3028831cded4d58#c9ffbec316f060795900bb51e3028831cded4d58"
+version = "0.3.2"
+source = "git+https://github.com/A3S-Lab/OCR?rev=c7579844c4b7b2b598679cf7d424ee8b67912d40#c7579844c4b7b2b598679cf7d424ee8b67912d40"
 dependencies = [
  "a3s-use-core",
  "async-trait",
