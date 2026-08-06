@@ -18,8 +18,8 @@ const TOOL_MANIFEST: &str =
     include_str!("../../../../crates/extension/fixtures/manifests/plugin-v3.acl");
 const PERMISSION_CEILING: &[u8] =
     include_bytes!("../../../../crates/core/fixtures/plugins/permission-ceiling-v1.json");
-const SCOPE_ID: &str = "workspace-01";
-const TRANSITIONED_AT_MS: u64 = 1_200;
+pub(super) const SCOPE_ID: &str = "workspace-01";
+pub(super) const TRANSITIONED_AT_MS: u64 = 1_200;
 
 struct GrantInstallFixture {
     _temp: tempfile::TempDir,
@@ -394,7 +394,14 @@ async fn uninstall_hides_graph_once_drains_then_retires_grant_before_package_rem
             .iter()
             .filter(|call| call.as_str() == "hide-batch:acme/root")
             .count(),
-        2
+        1
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| call.starts_with("cutover-complete:"))
+            .count(),
+        1
     );
     assert!(!calls.iter().any(|call| call == "acme/root:hide"));
     let remove = calls
@@ -773,7 +780,7 @@ fn package_unit(
     PluginPackageLifecycleUnit::new(coordinator(&journal, host), intent, manifest).unwrap()
 }
 
-fn tool_catalog(version: &str, seed: char) -> VerifiedPluginCatalogRecord {
+pub(super) fn tool_catalog(version: &str, seed: char) -> VerifiedPluginCatalogRecord {
     let mut record = PluginCatalogRecord::from_json(CATALOG).unwrap();
     record.package_id = "acme/root".to_string();
     record.publisher = "acme".to_string();
@@ -829,7 +836,7 @@ fn package_lock(catalog: VerifiedPluginCatalogRecord) -> a3s_use_core::PluginPac
         .unwrap()
 }
 
-fn tool_manifest(version: &str) -> ExtensionManifest {
+pub(super) fn tool_manifest(version: &str) -> ExtensionManifest {
     let mut manifest = ExtensionManifest::parse_acl(TOOL_MANIFEST).unwrap();
     manifest.package_id = "acme/root".to_string();
     manifest.version = version.to_string();
@@ -856,7 +863,7 @@ fn permission_ceiling() -> PluginPermissionCeiling {
     ceiling
 }
 
-fn provider_evidence() -> Vec<PlannedProviderEvidence> {
+pub(super) fn provider_evidence() -> Vec<PlannedProviderEvidence> {
     vec![PlannedProviderEvidence {
         surface: PlanQualifiedSurfaceRef {
             package_id: "acme/root".to_string(),
@@ -873,7 +880,7 @@ fn provider_evidence() -> Vec<PlannedProviderEvidence> {
     }]
 }
 
-fn workspace_grant(
+pub(super) fn workspace_grant(
     ceiling: &PluginPermissionCeiling,
     package_digest: &str,
     granted_at_ms: u64,
@@ -892,7 +899,7 @@ fn workspace_grant(
     }
 }
 
-fn authority() -> WorkspaceGrantAuthority {
+pub(super) fn authority() -> WorkspaceGrantAuthority {
     WorkspaceGrantAuthority {
         actor: PlanActor::User,
         decision: PlanPolicyDecision::Ask,
@@ -901,7 +908,7 @@ fn authority() -> WorkspaceGrantAuthority {
     }
 }
 
-fn candidate_ceiling(
+pub(super) fn candidate_ceiling(
     grant: &PluginWorkspaceGrant,
     ceiling: &PluginPermissionCeiling,
 ) -> WorkspaceGrantCandidateCeiling {

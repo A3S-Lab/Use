@@ -181,7 +181,11 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
             .collect::<UseResult<Vec<_>>>()?;
         let publication = self
             .registry
-            .publish_lifecycle_package_graph_with_evidence(package_lock, &identities)
+            .publish_lifecycle_package_graph_with_durable_cutover(
+                package_lock,
+                &identities,
+                idempotency_key,
+            )
             .await?;
         let packages = publication_evidence(
             intents,
@@ -253,10 +257,11 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
             .collect::<UseResult<Vec<_>>>()?;
         let publication = self
             .registry
-            .publish_lifecycle_package_graph_transition_with_evidence(
+            .publish_lifecycle_package_graph_transition_with_durable_cutover(
                 package_lock,
                 &candidates,
                 &removed,
+                idempotency_key,
             )
             .await?;
         let packages = publication_evidence(
@@ -274,7 +279,7 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
 
     async fn hide_capabilities_with_cutover(
         &self,
-        _package_lock: &a3s_use_core::PluginPackageLock,
+        package_lock: &a3s_use_core::PluginPackageLock,
         intents: &[PluginLifecycleIntent],
         idempotency_key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication> {
@@ -284,7 +289,11 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
             .collect::<UseResult<Vec<_>>>()?;
         let publication = self
             .registry
-            .hide_lifecycle_package_graph_with_evidence(&identities)
+            .hide_lifecycle_package_graph_with_durable_cutover(
+                package_lock,
+                &identities,
+                idempotency_key,
+            )
             .await?;
         let packages = intents
             .iter()
@@ -303,6 +312,12 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
             publication.registry_snapshot_digest,
         )?;
         Ok(PluginGraphCapabilityPublication::new(packages, cutover))
+    }
+
+    async fn complete_capability_cutover(&self, idempotency_key: &str) -> UseResult<()> {
+        self.registry
+            .complete_lifecycle_cutover(idempotency_key)
+            .await
     }
 
     async fn rollback_candidates(
@@ -513,7 +528,7 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
         let identity = lifecycle_identity(intent)?;
         let publication = self
             .registry
-            .publish_lifecycle_package_with_evidence(&identity)
+            .publish_lifecycle_package_with_durable_cutover(&identity, idempotency_key)
             .await?;
         single_package_cutover_publication(
             intent,
@@ -554,7 +569,7 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
         let identity = lifecycle_identity(intent)?;
         let publication = self
             .registry
-            .hide_lifecycle_package_with_evidence(&identity)
+            .hide_lifecycle_package_with_durable_cutover(&identity, idempotency_key)
             .await?;
         single_package_cutover_publication(
             intent,
@@ -562,6 +577,12 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
             "capability-hidden",
             publication,
         )
+    }
+
+    async fn complete_capability_cutover(&self, idempotency_key: &str) -> UseResult<()> {
+        self.registry
+            .complete_lifecycle_cutover(idempotency_key)
+            .await
     }
 
     async fn drain_calls(

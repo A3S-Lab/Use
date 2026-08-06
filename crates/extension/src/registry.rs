@@ -24,8 +24,13 @@ use super::route_lock::{acquire_drain_lock, deadline_after, open_route_lock};
 use super::source::prepare_package_source;
 use super::{ExtensionManifest, ExtensionPaths, McpTransport};
 
+mod cutover;
 mod lifecycle;
 
+pub use cutover::{
+    ExtensionRegistryCutoverRecord, EXTENSION_REGISTRY_CUTOVER_SCHEMA,
+    MAX_PENDING_REGISTRY_CUTOVERS,
+};
 pub use lifecycle::{
     ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
     ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
@@ -231,6 +236,8 @@ pub struct ExtensionRegistrySnapshot {
     pub schema_version: u32,
     pub generation: u64,
     pub routes: Vec<ExtensionRouteBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_cutovers: Vec<ExtensionRegistryCutoverRecord>,
 }
 
 impl Default for ExtensionRegistrySnapshot {
@@ -239,27 +246,34 @@ impl Default for ExtensionRegistrySnapshot {
             schema_version: REGISTRY_SCHEMA_VERSION,
             generation: 0,
             routes: Vec::new(),
+            pending_cutovers: Vec::new(),
         }
     }
 }
 
 impl ExtensionRegistrySnapshot {
     /// Canonical digest of the exact capability projection selected by one
-    /// Registry generation.
+    /// Registry generation. Pending operation metadata is deliberately
+    /// excluded, so acknowledging a durable cutover cannot change capability
+    /// identity or advance its generation.
     pub fn descriptor_digest(&self) -> UseResult<String> {
-        if self.schema_version != REGISTRY_SCHEMA_VERSION {
-            return Err(UseError::new(
-                "use.extension.registry_incompatible",
-                format!(
-                    "Extension registry schema {} is not supported.",
-                    self.schema_version
-                ),
-            ));
+        self.validate()?;
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct CapabilityProjection<'a> {
+            schema_version: u32,
+            generation: u64,
+            routes: &'a [ExtensionRouteBinding],
         }
+        let projection = CapabilityProjection {
+            schema_version: self.schema_version,
+            generation: self.generation,
+            routes: &self.routes,
+        };
         let mut bytes = Vec::new();
         let mut serializer =
             serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
-        self.serialize(&mut serializer).map_err(|error| {
+        projection.serialize(&mut serializer).map_err(|error| {
             UseError::new(
                 "use.extension.registry_invalid",
                 format!("Failed to encode the canonical extension Registry snapshot: {error}"),
@@ -1127,6 +1141,7 @@ impl ExtensionRegistry {
                 )
             })?,
             routes,
+            pending_cutovers: current.pending_cutovers,
         };
         write_registry_snapshot(&path, &snapshot).await?;
         Ok(snapshot)

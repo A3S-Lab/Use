@@ -270,7 +270,11 @@ Implemented as of the planning baseline:
 - schema-v3 enablement through the Use-owned package-state coordinator,
   including plan-v4 permission-bearing Grant cutover when exact reviewed
   authorization is injected; permission-free toggles remain available through
-  the shared CLI/Web/managed-host Manager.
+  the shared CLI/Web/managed-host Manager; and
+- bounded operation-keyed Registry cutover records embedded in the atomic
+  capability snapshot, including request/generation/digest binding, replay
+  after unrelated Registry mutation, conflict/capacity rejection before
+  mutation, and acknowledgement without capability generation inflation.
 
 Remaining on the critical path:
 
@@ -282,9 +286,6 @@ Remaining on the critical path:
 - version the Code/Web/fenced managed-host enablement contract and UX to carry
   the Use-generated immutable plan plus exact confirmation for
   permission-bearing packages;
-- persist Registry cutover evidence by operation idempotency key and prove the
-  post-cutover/pre-Grant-journal crash window while unrelated Registry
-  mutations are interleaved;
 - coordinate the implemented exact package/Runtime N/N+1 storage, cutover,
   rollback, drain, and removal primitives after blue/green cutover; and
 - pass CLI/Web/agent install-use-upgrade-uninstall E2E with production
@@ -307,6 +308,7 @@ earlier ownership or durability gate.
 | P2-A — Grant graph saga (complete 2026-08-05) | Compose durable Grant prepare, exact Registry cutover, joint pre-cutover rollback, accepted-call drain, and prior-Grant retirement with package graph operations | Candidate Grant survives restart; failed publication restores package and Grant candidates; prior Grant survives until exact cutover and drain |
 | P2-B — Product Grant wiring (complete for graph mutation 2026-08-06) | Standalone derives canonical proposals/change sets/resolved Grants/ceilings after injected policy authority and exact confirmation; the reviewed-host provider preserves an external operation identity, policy, lock-bound envelope, confirmation, and User/Workspace scope across apply/replay; umbrella and managed hosts snapshot the exact scope/revision and invoke the same canonical impact planner before forwarding the reviewed envelope | Standalone, reviewed-provider, umbrella, and fenced managed-host graph paths cannot bypass or regenerate authorization, substitute scope kind/revision/authority, or launch the legacy child mutation; a signed permission-bearing Tool Task persists the exact Grant receipt |
 | P2-C — Permission-bearing enablement core (complete 2026-08-06) | Represent enable/disable as immutable plan-v4 `Retain` transitions; persist exact authorization evidence; prepare Grant before enable publication; atomically hide and checkpoint cutover before disable drain and revocation | Missing confirmation causes zero lifecycle mutation and returns the immutable plan; cutover interruption recovers without early revocation or generation inflation; completed replay does not reauthorize; capability hosts without cutover evidence fail closed before mutation |
+| P2-D — Durable Registry cutover (complete 2026-08-06) | Embed bounded lifecycle-checkpoint-keyed request, before/after generation, and capability snapshot evidence in the same atomic Registry write; acknowledge it only after package or Grant journals own the cutover | Post-cutover/pre-journal process death replays the original evidence after unrelated Registry mutation; conflicting key reuse and capacity exhaustion fail before lifecycle mutation; acknowledgement changes neither generation nor capability digest |
 | P3 — Production blue/green composition (core complete; providers pending) | Compose the implemented graph cutover, rollback, dependency GC, and retirement coordinator with Gateway/Knowledge/grant receipts | Failed N+1 leaves N callable across every production provider; successful N+1 leaks no old Runtime unit or route; provider receipts preserve the core's crash-safe removed-node behavior |
 | P4 — Product adapters (Code graph/permission-free enablement/managed-host baseline complete; product UX/providers pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, local Flow runtime, Use-owned enablement, and fenced managed-host graph path; add a versioned permission-bearing enablement plan/confirmation adapter, visible Web Flow controls, and production provider adapters | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history and TUI covers local routing plus watcher readiness; permission-free disable/restart/enable replays exact Use-owned state; reviewed permission-bearing toggles, visible Web UX, and production hosts must extend the same no-restart proof |
 | P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all six surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |

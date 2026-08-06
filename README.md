@@ -529,11 +529,15 @@ adapter still expose enablement request v1, which has no plan or confirmation
 fields; a versioned contract adapter is therefore still required for their
 permission-bearing toggle UX.
 Registry visibility and the Grant journal are separate durable systems. The
-current core replays the same visibility transition idempotently and preserves
-its generation when the Registry is otherwise unchanged. A persisted
-idempotency-key cutover record is still required to prove recovery across the
-narrow post-cutover/pre-journal crash window while unrelated Registry mutations
-run concurrently; this remains part of the production gate.
+Registry now embeds a bounded `a3s.use.registry-cutover.v1` record in the same
+atomic `registry.json` write as each Grant-bearing visibility transition. The
+lifecycle checkpoint idempotency key binds the request digest, exact before and
+after generations, and capability snapshot digest. Replay returns that original
+evidence even after unrelated Registry mutations, while key reuse for a
+different transition fails closed. Once the package or Grant journal owns the
+evidence, cleanup changes neither the Registry generation nor the capability
+digest. Admission also fails before receipt or visibility mutation when the
+128-record pending bound is full.
 The storage layer preserves exact package and Runtime generations across
 candidate preparation, cutover, drain, rollback, and receipt-owned removal.
 Required surfaces fail closed when their owning adapter is absent: Runtime
@@ -592,6 +596,7 @@ do not share one database transaction. The boundaries are frozen in
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
 | Package enablement core | Implemented for schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, plan-v4 retained-artifact review, stale-generation rejection, durable authorization/checkpoint recovery, exact result replay, atomic capability cutover, Grant-before-publish enable, hide/cutover/drain-before-revoke disable, and non-destructive package/dependency retention; Code/Web and managed-host enablement v1 still need a versioned plan/confirmation adapter for permission-bearing UX |
+| Durable Registry cutover | Implemented for package-graph and enablement publication/hide: the atomic Registry snapshot carries bounded operation-keyed request/generation/digest evidence, replay survives unrelated mutations, conflicting key reuse fails closed, and post-journal cleanup causes no capability generation or digest inflation |
 | Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, public manager-owned host impact planning, and umbrella/managed-host invocation are implemented: exact User/Workspace scope and revision snapshots, external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |

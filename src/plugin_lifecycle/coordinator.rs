@@ -114,6 +114,13 @@ pub trait PluginCapabilityLifecycleHost: Send + Sync {
         Err(capability_cutover_required())
     }
 
+    /// Acknowledge that both the package lifecycle and Grant journal now own
+    /// the cutover evidence. Hosts with a durable replay record may release it
+    /// here; other hosts have no cleanup work.
+    async fn complete_capability_cutover(&self, _idempotency_key: &str) -> UseResult<()> {
+        Ok(())
+    }
+
     async fn drain_calls(
         &self,
         intent: &PluginLifecycleIntent,

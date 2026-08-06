@@ -640,13 +640,16 @@ surface, and generation. Recovery never guesses that an unknown provider unit
 belongs to the plugin.
 
 Registry visibility and the Grant journal do not share an ACID transaction.
-The current single-package host returns cutover evidence from the atomic
-Registry mutation and same-state replay preserves its generation. Complete
-proof under a process death between Registry cutover and Grant-journal commit,
-combined with an unrelated concurrent Registry mutation, still requires a
-durable Registry record keyed by the operation idempotency key. Production
-claims must retain this gate rather than infer the original cutover from a later
-snapshot.
+The Registry closes that crash window by embedding a bounded
+`a3s.use.registry-cutover.v1` record in the same atomic snapshot write as
+publication or hide. The lifecycle checkpoint idempotency key binds the request
+digest, exact generation transition, and capability snapshot digest. Recovery
+therefore replays the original cutover evidence after an unrelated mutation
+instead of inferring it from the latest snapshot. Reusing a key for another
+mutation fails closed, and the 128-record bound fails before receipt or
+visibility mutation. Once the package or Grant journal durably owns the
+evidence, idempotent acknowledgement removes only pending metadata without
+generation or capability-digest inflation.
 
 The A3S Use journal stores bounded canonical JSON under a SHA-256 scope path and
 validated package segments. Writes use a cross-process lock, atomic replacement,

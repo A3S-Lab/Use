@@ -229,7 +229,7 @@ pub(super) fn validate_locked_extension(
     Ok(())
 }
 
-fn canonical_sha256(value: String, label: &str) -> UseResult<String> {
+pub(super) fn canonical_sha256(value: String, label: &str) -> UseResult<String> {
     let valid = value.strip_prefix("sha256:").is_some_and(|digest| {
         digest.len() == 64
             && digest

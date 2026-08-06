@@ -5,10 +5,16 @@ use std::time::Duration;
 use a3s_use_core::{PluginPackageLock, UseError, UseResult};
 use tokio::fs;
 
+mod cutover;
 mod generations;
 mod model;
 mod package;
+mod visibility;
 
+use cutover::{
+    publication_from_record, recorded_cutover, registry_cutover_capacity,
+    registry_cutover_conflict, ExtensionLifecycleCutoverRequest,
+};
 use generations::{binding_matches_identity, identity_from_receipt};
 use model::{
     exact_receipt, lifecycle_graph_error, lifecycle_identity_error, lifecycle_root,
@@ -23,7 +29,7 @@ use package::{commit_candidate_root, validate_candidate_source};
 use super::{
     ensure_no_installed_dependents, published_binding_matches_extension, verify_package_integrity,
     ExtensionReceipt, ExtensionRegistry, InstalledExtension, UninstallResult,
-    RECEIPT_SCHEMA_VERSION_V3,
+    MAX_PENDING_REGISTRY_CUTOVERS, RECEIPT_SCHEMA_VERSION_V3,
 };
 use crate::package::{
     io_error, sync_parent_directory, unix_timestamp, write_receipt, RegistryLock,
@@ -236,7 +242,7 @@ impl ExtensionRegistry {
         &self,
         identity: &ExtensionLifecycleIdentity,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
-        self.set_lifecycle_visibility_with_evidence(identity, true, env!("CARGO_PKG_VERSION"))
+        self.set_lifecycle_visibility_with_evidence(identity, true, env!("CARGO_PKG_VERSION"), None)
             .await
     }
 
@@ -252,6 +258,7 @@ impl ExtensionRegistry {
                 identities,
                 &[],
                 env!("CARGO_PKG_VERSION"),
+                None,
                 None,
             )
             .await?
@@ -282,6 +289,7 @@ impl ExtensionRegistry {
             &[],
             env!("CARGO_PKG_VERSION"),
             Some(package_lock),
+            None,
         )
         .await
     }
@@ -316,6 +324,7 @@ impl ExtensionRegistry {
             removed,
             env!("CARGO_PKG_VERSION"),
             Some(package_lock),
+            None,
         )
         .await
     }
@@ -331,6 +340,7 @@ impl ExtensionRegistry {
             &[],
             identities,
             env!("CARGO_PKG_VERSION"),
+            None,
             None,
         )
         .await
@@ -350,8 +360,13 @@ impl ExtensionRegistry {
         &self,
         identity: &ExtensionLifecycleIdentity,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
-        self.set_lifecycle_visibility_with_evidence(identity, false, env!("CARGO_PKG_VERSION"))
-            .await
+        self.set_lifecycle_visibility_with_evidence(
+            identity,
+            false,
+            env!("CARGO_PKG_VERSION"),
+            None,
+        )
+        .await
     }
 
     pub async fn drain_lifecycle_package(
@@ -509,120 +524,13 @@ impl ExtensionRegistry {
         })
     }
 
-    async fn set_lifecycle_visibility(
-        &self,
-        identity: &ExtensionLifecycleIdentity,
-        enabled: bool,
-        host_version: &str,
-    ) -> UseResult<ExtensionLifecycleResult> {
-        let publication = self
-            .set_lifecycle_visibility_with_evidence(identity, enabled, host_version)
-            .await?;
-        publication.packages.into_iter().next().ok_or_else(|| {
-            lifecycle_state_error("A single-package visibility cutover omitted its package result.")
-        })
-    }
-
-    async fn set_lifecycle_visibility_with_evidence(
-        &self,
-        identity: &ExtensionLifecycleIdentity,
-        enabled: bool,
-        host_version: &str,
-    ) -> UseResult<ExtensionLifecycleGraphPublication> {
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
-        let selected = self.get(identity.package_id()).await?;
-        let selected_is_exact = selected
-            .as_ref()
-            .is_some_and(|extension| exact_receipt(identity, &extension.receipt).is_ok());
-        let mut extension = if selected_is_exact {
-            selected.ok_or_else(|| {
-                lifecycle_state_error("The exact selected lifecycle receipt disappeared.")
-            })?
-        } else {
-            self.get_lifecycle_generation(identity)
-                .await?
-                .ok_or_else(|| {
-                    UseError::new(
-                        "use.extension.not_installed",
-                        format!(
-                            "Cognitive package generation '{}#{}' is not installed.",
-                            identity.package_id(),
-                            identity.generation()
-                        ),
-                    )
-                })?
-        };
-        if enabled && !extension.supports_use_version(host_version) {
-            return Err(UseError::new(
-                "use.extension.host_incompatible",
-                format!(
-                    "Cognitive package '{}' is not compatible with this A3S Use host.",
-                    identity.package_id
-                ),
-            ));
-        }
-        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
-        let published_exact = published
-            .routes
-            .iter()
-            .any(|binding| binding_matches_identity(&self.paths, binding, identity));
-        if !selected_is_exact && (enabled || published_exact) {
-            return Err(lifecycle_state_error(
-                "A retained generation can be hidden only after atomic capability cutover selected its replacement.",
-            ));
-        }
-        if selected_is_exact
-            && !enabled
-            && !published_exact
-            && published
-                .routes
-                .iter()
-                .any(|binding| binding.package_id == identity.package_id())
-        {
-            return Err(lifecycle_state_error(
-                "An unpublished upgrade candidate cannot hide or replace the still-published prior generation.",
-            ));
-        }
-        let changed = extension.receipt.enabled != enabled;
-        if changed {
-            let previous = extension.receipt.clone();
-            extension.receipt.enabled = enabled;
-            if selected_is_exact {
-                write_receipt(
-                    &self.paths.receipt_path(identity.package_id()),
-                    &extension.receipt,
-                )
-                .await?;
-            } else {
-                self.update_retained_lifecycle_receipt(identity, &previous, &extension.receipt)
-                    .await?;
-            }
-        }
-        let snapshot = if selected_is_exact && (changed || published_exact) {
-            let installed = self.list().await?;
-            self.publish_snapshot_locked(&installed).await?
-        } else {
-            published
-        };
-        let registry_generation = snapshot.generation;
-        let registry_snapshot_digest = snapshot.descriptor_digest()?;
-        Ok(ExtensionLifecycleGraphPublication {
-            packages: vec![ExtensionLifecycleResult {
-                changed,
-                extension,
-                registry_generation,
-            }],
-            registry_generation: snapshot.generation,
-            registry_snapshot_digest,
-        })
-    }
-
     async fn publish_lifecycle_packages_for_host_version(
         &self,
         identities: &[ExtensionLifecycleIdentity],
         removed: &[ExtensionLifecycleIdentity],
         host_version: &str,
         package_lock: Option<&PluginPackageLock>,
+        cutover_request: Option<&ExtensionLifecycleCutoverRequest>,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
         if identities.is_empty() && removed.is_empty()
             || identities.len().saturating_add(removed.len()) > a3s_use_core::MAX_PLUGIN_PLAN_ITEMS
@@ -652,6 +560,16 @@ impl ExtensionRegistry {
 
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let snapshot_before = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let recorded_cutover = cutover_request
+            .map(|request| recorded_cutover(&snapshot_before, request))
+            .transpose()?
+            .flatten();
+        if cutover_request.is_some()
+            && recorded_cutover.is_none()
+            && snapshot_before.pending_cutovers.len() >= MAX_PENDING_REGISTRY_CUTOVERS
+        {
+            return Err(registry_cutover_capacity());
+        }
         if let Some(package_lock) = package_lock {
             package_lock.validate()?;
             if package_lock.host.use_version != host_version {
@@ -806,6 +724,43 @@ impl ExtensionRegistry {
             }
         }
 
+        if let Some(record) = recorded_cutover {
+            let candidates_match =
+                identities
+                    .iter()
+                    .zip(&extensions)
+                    .all(|(identity, extension)| {
+                        extension.receipt.enabled
+                            && snapshot_before.routes.iter().any(|binding| {
+                                binding.enabled
+                                    && binding_matches_identity(self.paths(), binding, identity)
+                            })
+                    });
+            let removed_match = removed.iter().all(|identity| {
+                !snapshot_before
+                    .routes
+                    .iter()
+                    .any(|binding| binding_matches_identity(self.paths(), binding, identity))
+            });
+            if !candidates_match || !removed_match {
+                return Err(registry_cutover_conflict(
+                    "The durable package-graph cutover no longer matches Registry visibility.",
+                ));
+            }
+            for extension in &extensions {
+                verify_package_integrity(extension).await?;
+            }
+            let packages = extensions
+                .into_iter()
+                .map(|extension| ExtensionLifecycleResult {
+                    changed: false,
+                    extension,
+                    registry_generation: record.registry_generation_after,
+                })
+                .collect();
+            return publication_from_record(packages, &record);
+        }
+
         let moved_removed = self
             .retain_removed_lifecycle_packages(&removed_extensions)
             .await?;
@@ -851,7 +806,14 @@ impl ExtensionRegistry {
                 .iter()
                 .any(|identity| exact_receipt(identity, &extension.receipt).is_ok())
         });
-        let snapshot = match self.publish_snapshot_locked(&installed).await {
+        let snapshot_result = match cutover_request {
+            Some(request) => {
+                self.publish_snapshot_with_cutover_locked(&installed, request)
+                    .await
+            }
+            None => self.publish_snapshot_locked(&installed).await,
+        };
+        let snapshot = match snapshot_result {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 self.restore_lifecycle_receipts(&originals).await?;
@@ -957,7 +919,7 @@ impl ExtensionRegistry {
         host_version: &str,
     ) -> UseResult<Vec<ExtensionLifecycleResult>> {
         Ok(self
-            .publish_lifecycle_packages_for_host_version(identities, &[], host_version, None)
+            .publish_lifecycle_packages_for_host_version(identities, &[], host_version, None, None)
             .await?
             .packages)
     }
@@ -975,6 +937,7 @@ impl ExtensionRegistry {
                 &[],
                 host_version,
                 Some(package_lock),
+                None,
             )
             .await?
             .packages)

@@ -43,8 +43,9 @@ pub use registry::{
     validate_catalog_manifest_binding, ActivationResult, ExtensionLifecycleGraphPublication,
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionLifecycleResult,
     ExtensionLifecycleRollbackResult, ExtensionReceipt, ExtensionRegistry,
-    ExtensionRegistrySnapshot, ExtensionRouteBinding, ExtensionRouteLease, ExtensionTrust,
-    InstallOptions, InstallResult, InstalledExtension, UninstallResult,
+    ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot, ExtensionRouteBinding,
+    ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult, InstalledExtension,
+    UninstallResult, EXTENSION_REGISTRY_CUTOVER_SCHEMA, MAX_PENDING_REGISTRY_CUTOVERS,
 };
 pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,

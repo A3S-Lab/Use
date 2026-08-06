@@ -280,10 +280,15 @@ permission-free toggles but cannot carry permission-bearing plan/confirmation
 evidence. That boundary requires a versioned adapter.
 
 The Registry cutover and Grant journal remain separate durable systems. The
-current host can replay an otherwise unchanged visibility transition without
-advancing the Registry generation, but a production proof that also permits an
-unrelated concurrent Registry mutation requires cutover evidence persisted by
-the operation idempotency key.
+Registry snapshot atomically embeds a bounded
+`a3s.use.registry-cutover.v1` record for each Grant-bearing visibility
+transition. The lifecycle checkpoint idempotency key binds the original
+request, before/after generations, and capability snapshot digest, so recovery
+returns the exact evidence even if an unrelated Registry mutation has already
+advanced the live generation. Reusing the key for another transition fails
+closed. Package- or Grant-journal acknowledgement removes only the pending
+metadata and therefore does not advance generation or change capability
+identity.
 
 ## Package Contract
 

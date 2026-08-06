@@ -329,11 +329,14 @@ plan before resuming. A completed replay does not ask for authorization again
 or publish another Registry generation. State/operation v1 records remain
 readable and resume through their legacy request-digest path.
 
-The current capability host returns cutover evidence from the same atomic
-Registry visibility mutation, and same-state retry is generation-stable. A
-future Registry contract must persist that evidence by operation idempotency
-key before the product claims recovery through the narrow cutover/journal crash
-window with unrelated concurrent Registry mutation.
+The capability host persists `a3s.use.registry-cutover.v1` in the same atomic
+Registry visibility mutation. Its lifecycle-checkpoint idempotency key binds
+the mutation request, exact before/after generation, and capability snapshot
+digest. The pending set is bounded at 128 and fails closed before receipt or
+visibility mutation when full. Replay returns the original evidence after
+unrelated Registry mutations, conflicting key reuse is rejected, and
+acknowledgement after the package or Grant journal owns the evidence removes
+only metadata without changing capability generation or digest.
 
 ## Catalog and Trust Provenance
 
