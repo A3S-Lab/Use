@@ -514,7 +514,7 @@ impl PluginLifecycleCoordinator {
         }
         match self
             .journal
-            .load_active(&intent.scope_id, &intent.package_id)
+            .load_active(&intent.scope, &intent.package_id)
             .await?
         {
             Some(record)
@@ -628,7 +628,7 @@ impl PluginLifecycleCoordinator {
     ) -> UseResult<Option<PluginLifecycleOperationRecord>> {
         let active = self
             .journal
-            .load_active(&intent.scope_id, &intent.package_id)
+            .load_active(&intent.scope, &intent.package_id)
             .await?;
         if active
             .as_ref()
@@ -638,7 +638,7 @@ impl PluginLifecycleCoordinator {
         }
         let last = self
             .journal
-            .load_last(&intent.scope_id, &intent.package_id)
+            .load_last(&intent.scope, &intent.package_id)
             .await?;
         Ok(last.filter(|record| record.intent == *intent))
     }
@@ -900,7 +900,7 @@ pub(super) fn validate_manifest_binding(
         PluginLifecycleIntentSpec {
             operation_id: intent.operation_id.clone(),
             plan_digest: intent.plan_digest.clone(),
-            scope_id: intent.scope_id.clone(),
+            scope: intent.scope.clone(),
             package_id: intent.package_id.clone(),
             package_digest: intent.package_digest.clone(),
             manifest_digest: intent.manifest_digest.clone(),

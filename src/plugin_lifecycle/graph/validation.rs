@@ -233,7 +233,7 @@ pub(super) fn validate_unit(
     if unit.intent.action != action
         || unit.intent.operation_id != envelope.plan.operation_id
         || unit.intent.plan_digest != envelope.plan_digest
-        || unit.intent.scope_id != envelope.plan.scope.id
+        || unit.intent.scope != envelope.plan.scope
         || unit.intent.package_id != package_id
         || unit.manifest.package_id != package_id
     {

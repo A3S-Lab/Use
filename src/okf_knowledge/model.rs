@@ -1,7 +1,7 @@
 use a3s_use_core::{OkfKnowledgeObservation, OkfProjectionReceipt, UseError, UseResult};
 use serde::{Deserialize, Serialize};
 
-pub const OKF_KNOWLEDGE_BINDING_SCHEMA: &str = "a3s.use.okf-knowledge-binding.v1";
+pub const OKF_KNOWLEDGE_BINDING_SCHEMA: &str = "a3s.use.okf-knowledge-binding.v2";
 
 /// Durable exact-generation evidence owned by the A3S Knowledge boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

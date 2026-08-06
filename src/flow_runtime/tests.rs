@@ -91,7 +91,7 @@ chmod +x "$output"
 
     let qualified = qualified_surface();
     let first_binding = store
-        .get("user/current", &qualified, 7)
+        .get(&user_scope(), &qualified, 7)
         .await
         .unwrap()
         .expect("generation seven binding");
@@ -106,12 +106,12 @@ chmod +x "$output"
         .await
         .unwrap();
     assert!(store
-        .get("user/current", &qualified, 7)
+        .get(&user_scope(), &qualified, 7)
         .await
         .unwrap()
         .is_some());
     assert!(store
-        .get("user/current", &qualified, 8)
+        .get(&user_scope(), &qualified, 8)
         .await
         .unwrap()
         .is_some());
@@ -120,7 +120,7 @@ chmod +x "$output"
         .await
         .unwrap();
     assert!(store
-        .get("user/current", &qualified, 8)
+        .get(&user_scope(), &qualified, 8)
         .await
         .unwrap()
         .is_some());
@@ -128,12 +128,12 @@ chmod +x "$output"
         .await
         .unwrap();
     assert!(store
-        .get("user/current", &qualified, 8)
+        .get(&user_scope(), &qualified, 8)
         .await
         .unwrap()
         .is_none());
     assert!(store
-        .get("user/current", &qualified, 7)
+        .get(&user_scope(), &qualified, 7)
         .await
         .unwrap()
         .is_some());
@@ -175,7 +175,7 @@ async fn retained_flow_binding_rejects_artifact_substitution() {
         .await
         .unwrap();
     let binding = store
-        .get("user/current", &qualified_surface(), 9)
+        .get(&user_scope(), &qualified_surface(), 9)
         .await
         .unwrap()
         .unwrap();
@@ -192,30 +192,30 @@ async fn retained_flow_binding_rejects_artifact_substitution() {
 #[tokio::test]
 async fn binding_store_rejects_tampered_and_moved_records() {
     let (temporary, _package_root, _manifest, store) = prepared_fixture(10).await;
-    let record = binding_record_path(&store, "user/current", 10);
+    let record = binding_record_path(&store, &user_scope(), 10);
     let original = std::fs::read(&record).unwrap();
 
     std::fs::write(&record, b"{\"schema\":\"tampered\"}").unwrap();
     let error = store
-        .get("user/current", &qualified_surface(), 10)
+        .get(&user_scope(), &qualified_surface(), 10)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.flow_binding_record_invalid");
     std::fs::write(&record, &original).unwrap();
 
-    let moved_generation = binding_record_path(&store, "user/current", 11);
+    let moved_generation = binding_record_path(&store, &user_scope(), 11);
     std::fs::write(&moved_generation, &original).unwrap();
     let error = store
-        .get("user/current", &qualified_surface(), 11)
+        .get(&user_scope(), &qualified_surface(), 11)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.flow_binding_ownership_mismatch");
 
-    let moved_scope = binding_record_path(&store, "workspace/other", 10);
+    let moved_scope = binding_record_path(&store, &workspace_scope(), 10);
     std::fs::create_dir_all(moved_scope.parent().unwrap()).unwrap();
     std::fs::write(&moved_scope, &original).unwrap();
     let error = store
-        .get("workspace/other", &qualified_surface(), 10)
+        .get(&workspace_scope(), &qualified_surface(), 10)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.flow_binding_ownership_mismatch");
@@ -225,11 +225,45 @@ async fn binding_store_rejects_tampered_and_moved_records() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn identical_scope_ids_are_isolated_by_scope_kind() {
+    let (_temporary, _package_root, _manifest, store) = prepared_fixture(11).await;
+    let user = store
+        .get(&user_scope(), &qualified_surface(), 11)
+        .await
+        .unwrap()
+        .expect("user binding");
+    let mut value = serde_json::to_value(&user).unwrap();
+    value["scope"]["kind"] = serde_json::Value::String("workspace".to_owned());
+    let workspace = serde_json::from_value::<super::FlowRuntimeBinding>(value).unwrap();
+
+    assert!(store.put(&workspace).await.unwrap());
+    assert_ne!(
+        binding_record_path(&store, &user_scope(), 11),
+        binding_record_path(&store, &workspace_scope(), 11)
+    );
+    assert_eq!(
+        store
+            .get(&user_scope(), &qualified_surface(), 11)
+            .await
+            .unwrap(),
+        Some(user)
+    );
+    assert_eq!(
+        store
+            .get(&workspace_scope(), &qualified_surface(), 11)
+            .await
+            .unwrap(),
+        Some(workspace)
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn binding_store_rejects_a_symlinked_scope_directory() {
     use std::os::unix::fs::symlink;
 
     let (temporary, _package_root, _manifest, store) = prepared_fixture(12).await;
-    let record = binding_record_path(&store, "user/current", 12);
+    let record = binding_record_path(&store, &user_scope(), 12);
     let scope_directory = record
         .ancestors()
         .nth(4)
@@ -240,7 +274,7 @@ async fn binding_store_rejects_a_symlinked_scope_directory() {
     symlink(&external, scope_directory).unwrap();
 
     let error = store
-        .get("user/current", &qualified_surface(), 12)
+        .get(&user_scope(), &qualified_surface(), 12)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.flow_binding_path_invalid");
@@ -292,12 +326,13 @@ async fn prepared_fixture(
 
 fn binding_record_path(
     store: &FlowRuntimeBindingStore,
-    scope_id: &str,
+    scope: &a3s_use_core::PlanScope,
     generation: u64,
 ) -> PathBuf {
-    let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
+    let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
     store
         .root()
+        .join(scope.kind.as_str())
         .join(scope_digest)
         .join("acme")
         .join("review")
@@ -305,12 +340,29 @@ fn binding_record_path(
         .join(format!("{generation:020}.json"))
 }
 
+fn user_scope() -> a3s_use_core::PlanScope {
+    a3s_use_core::PlanScope {
+        kind: a3s_use_core::PlanScopeKind::User,
+        id: "current".to_string(),
+    }
+}
+
+fn workspace_scope() -> a3s_use_core::PlanScope {
+    a3s_use_core::PlanScope {
+        kind: a3s_use_core::PlanScopeKind::Workspace,
+        id: "current".to_string(),
+    }
+}
+
 fn intent(manifest: &ExtensionManifest, generation: u64) -> PluginLifecycleIntent {
     PluginLifecycleIntent::from_manifest(
         PluginLifecycleIntentSpec {
             operation_id: format!("flow-install-{generation}"),
             plan_digest: format!("sha256:{}", "1".repeat(64)),
-            scope_id: "user/current".to_string(),
+            scope: a3s_use_core::PlanScope {
+                kind: a3s_use_core::PlanScopeKind::User,
+                id: "current".to_string(),
+            },
             package_id: manifest.package_id.clone(),
             package_digest: format!("sha256:{}", "2".repeat(64)),
             manifest_digest: format!("sha256:{:x}", Sha256::digest(MANIFEST.as_bytes())),

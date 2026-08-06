@@ -11,7 +11,9 @@
   planning and umbrella/managed-host graph authority forwarding accepted
   2026-08-06; plan-v4 permission-bearing enablement, Grant cutover core, and
   host-capabilities-v4 reviewed enablement planning accepted 2026-08-06; local
-  A3S Code CLI/Web reviewed enablement and restart replay accepted 2026-08-06
+  A3S Code CLI/Web reviewed enablement and restart replay accepted 2026-08-06;
+  Code TUI `/packages` reviewed enablement and end-to-end full `PlanScope`
+  lifecycle identity accepted 2026-08-07
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -64,12 +66,11 @@ planning/apply selection is implemented, and the umbrella/managed-host paths
 now combine the public canonical impact planner with the exact reviewed-plan
 provider. The fenced managed-host adapter now plans enablement explicitly under
 host capability v4 and applies the reviewed result through the existing
-digest-only request. Local Code CLI and Web now use the same User-scoped
-reviewed plan/apply contract with durable restart replay. Production provider
-composition, a TUI package-level reviewed mutation panel, the A3S Knowledge
-index backend, and scoped cited retrieval remain to be implemented. The
-remaining enablement item is that TUI presentation, not a parallel lifecycle.
-Missing promoted evidence therefore stays explicitly unpublished.
+digest-only request. Local Code CLI, idle-only TUI `/packages`, and Web now use
+the same User-scoped reviewed plan/apply contract with durable restart replay.
+Production provider composition, the A3S Knowledge index backend, and scoped
+cited retrieval remain to be implemented. Missing promoted evidence therefore
+stays explicitly unpublished.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use
@@ -506,11 +507,11 @@ The machine boundary is split deliberately:
 - `a3s.use.okf-bundle.v1` binds immutable content;
 - catalog v3 and operation-plan v2 bind graph package selection and OKF impact;
   operation-plan v4 binds OKF visibility changes for enable/disable;
-- `a3s.use.okf-projection-receipt.v1` records one staged candidate;
-- `a3s.use.okf-knowledge-observation.v1` reports host state and the selected
-  last-good generation; and
-- `a3s.use.okf-capability-projection.v1` contains only exact promoted evidence
-  safe for a scope-aware capability generation.
+- `a3s.use.okf-projection-receipt.v2` records one full-scope staged candidate;
+- `a3s.use.okf-knowledge-observation.v2` reports full-scope host state and the
+  selected last-good generation; and
+- `a3s.use.okf-capability-projection.v2` contains only exact full-scope
+  promoted evidence safe for a scope-aware capability generation.
 
 OKF conformance is deliberately permissive. Unknown concept types and
 frontmatter keys remain valid, missing optional indexes remain valid, and safe
@@ -533,7 +534,7 @@ re-runs conformance over borrowed bytes immediately before calling the injected
 adapter. Adapter output is accepted only when its receipt and observation bind
 the reviewed operation, scope, surface, generation, package, manifest, bundle,
 and index evidence. Use persists the exact pair below
-`<state>/bindings/knowledge/<scope-sha256>/<publisher>/<package>/<surface>/`
+`<state>/bindings/knowledge/<user|workspace>/<scope-sha256>/<publisher>/<package>/<surface>/`
 with atomic file replacement and a cross-process store lock. The highest
 candidate observation is authoritative: it may select a retained exact
 promoted record as last-good, while a highest `removed` record suppresses all
@@ -630,9 +631,9 @@ coordinator: plan v3 binds the complete prior/candidate lock union,
 Add/Replace archives prepare forward, removed routes leave in the same
 publication, and replaced or unreferenced generations retire in reverse order.
 Exact shared dependencies remain selected without download or receipt rewrite.
-Production Knowledge, Runtime Service, Gateway/HTTP MCP, and a TUI
-package-level reviewed enablement panel remain pending. Local Code CLI/Web and
-the fenced managed-host adapter already persist plan-v4/NoChange planning
+Production Knowledge, Runtime Service, and Gateway/HTTP MCP remain pending.
+Local Code CLI, TUI `/packages`, Web, and the fenced managed-host adapter
+already persist plan-v4/NoChange planning
 evidence and inject the reviewed authorization provider during digest-only
 apply. Management MCP remains a bounded read-only adapter, while fenced
 managed-host graph mutations reuse the shared Manager. Storage never
@@ -965,11 +966,12 @@ after that provider's build changes, because refusing to remove an owned
 workload would leak authority; new apply and active projection still require
 exact reviewed provider evidence.
 
-The Task and Service binding schemas are `a3s.use.runtime-task-binding.v2` and
-`a3s.use.runtime-service-binding.v2`. The v2 boundary adds explicit enforcement
-evidence and, for Services, Runtime start identity. Earlier development
-receipts are not reinterpreted with inferred defaults; they fail closed and
-must be prepared and rebound again.
+The Task and Service binding schemas are `a3s.use.runtime-task-binding.v3` and
+`a3s.use.runtime-service-binding.v3`. The current boundary retains the complete
+User/Workspace `PlanScope` in addition to explicit enforcement evidence and,
+for Services, Runtime start identity. Unpublished scope-ID-only development
+receipts are not decoded, migrated, or assigned inferred defaults; they fail
+closed and must be prepared again.
 
 `RuntimeSurfaceObserver` converts persisted binding evidence into one
 explicitly scoped Runtime surface snapshot. The caller supplies a canonical
@@ -1120,11 +1122,11 @@ Plugin Manager composes the supported Tool Task, stdio MCP, A3S Flow, Skill,
 and UI hosts. A3S Use additionally composes plan-v4 permission-bearing
 enablement with exact Grant cutover and recovery when reviewed authority is
 injected. Host capability v4 exposes that path to fenced managed hosts without
-adding another lifecycle, and local Code CLI/Web expose the same User-scoped
-review/apply contract. Production Service/Gateway/Knowledge providers, a TUI
-package-level reviewed enablement panel, complete graph
-upgrade/uninstall construction, and cross-platform crash E2E still bound the
-product readiness claim.
+adding another lifecycle, and local Code CLI, TUI `/packages`, and Web expose
+the same User-scoped review/apply contract. Production
+Service/Gateway/Knowledge providers, complete graph upgrade/uninstall
+construction, and cross-platform crash E2E still bound the product readiness
+claim.
 
 ## Compatibility and Migration
 

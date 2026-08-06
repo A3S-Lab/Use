@@ -198,7 +198,7 @@ async fn failed_upgrade_preparation_rolls_back_ambiguous_surfaces_and_blocks_pla
         PluginLifecycleIntentSpec {
             operation_id: envelope.plan.operation_id.clone(),
             plan_digest: envelope.plan_digest.clone(),
-            scope_id: envelope.plan.scope.id.clone(),
+            scope: envelope.plan.scope.clone(),
             package_id: "acme/root".to_string(),
             package_digest: next_state.release.package_sha256.clone(),
             manifest_digest: next_state.release.manifest_sha256.clone(),
@@ -212,7 +212,7 @@ async fn failed_upgrade_preparation_rolls_back_ambiguous_surfaces_and_blocks_pla
         PluginLifecycleIntentSpec {
             operation_id: envelope.plan.operation_id.clone(),
             plan_digest: envelope.plan_digest.clone(),
-            scope_id: envelope.plan.scope.id.clone(),
+            scope: envelope.plan.scope.clone(),
             package_id: "acme/root".to_string(),
             package_digest: prior_state.release.package_sha256.clone(),
             manifest_digest: prior_state.release.manifest_sha256.clone(),

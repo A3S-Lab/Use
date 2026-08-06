@@ -361,7 +361,7 @@ impl CognitivePackageManager {
             PluginLifecycleIntentSpec {
                 operation_id: request.operation_id.clone(),
                 plan_digest: generated.envelope.plan_digest.clone(),
-                scope_id: self.scope.id.clone(),
+                scope: self.scope.clone(),
                 package_id: request.package_id.to_string(),
                 package_digest: artifact.package_digest.clone(),
                 manifest_digest: artifact.manifest_digest.clone(),

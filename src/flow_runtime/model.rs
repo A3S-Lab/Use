@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
-    PlanQualifiedSurfaceRef, PluginPackageId, PluginSurfaceKind, UseError, UseResult,
+    PlanQualifiedSurfaceRef, PlanScope, PluginPackageId, PluginSurfaceKind, UseError, UseResult,
 };
 use a3s_use_extension::{
     inspect_flow_surface_file, PluginFlowEngine, PluginFlowRuntime, PluginFlowSurface,
@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
-pub const FLOW_RUNTIME_BINDING_SCHEMA: &str = "a3s.use.flow-runtime-binding.v1";
+pub const FLOW_RUNTIME_BINDING_SCHEMA: &str = "a3s.use.flow-runtime-binding.v2";
 const MAX_FLOW_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Durable proof that the sole A3S Flow engine compiled one immutable package
@@ -20,7 +20,7 @@ const MAX_FLOW_ARTIFACT_BYTES: u64 = 256 * 1024 * 1024;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FlowRuntimeBinding {
     schema: String,
-    scope_id: String,
+    scope: PlanScope,
     surface: PlanQualifiedSurfaceRef,
     generation: u64,
     package_digest: String,
@@ -36,7 +36,7 @@ pub struct FlowRuntimeBinding {
 }
 
 pub(crate) struct FlowRuntimeBindingSpec {
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub surface: PlanQualifiedSurfaceRef,
     pub generation: u64,
     pub package_digest: String,
@@ -55,7 +55,7 @@ impl FlowRuntimeBinding {
     pub(crate) fn new(spec: FlowRuntimeBindingSpec) -> UseResult<Self> {
         let binding = Self {
             schema: FLOW_RUNTIME_BINDING_SCHEMA.to_string(),
-            scope_id: spec.scope_id,
+            scope: spec.scope,
             surface: spec.surface,
             generation: spec.generation,
             package_digest: spec.package_digest,
@@ -75,7 +75,7 @@ impl FlowRuntimeBinding {
 
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != FLOW_RUNTIME_BINDING_SCHEMA
-            || !valid_machine_id(&self.scope_id)
+            || !valid_machine_id(&self.scope.id)
             || PluginPackageId::parse(self.surface.package_id.clone()).is_err()
             || self.surface.surface.kind != PluginSurfaceKind::Flow
             || !valid_segment(&self.surface.surface.id)
@@ -99,8 +99,8 @@ impl FlowRuntimeBinding {
         Ok(())
     }
 
-    pub fn scope_id(&self) -> &str {
-        &self.scope_id
+    pub fn scope(&self) -> &PlanScope {
+        &self.scope
     }
 
     pub fn surface(&self) -> &PlanQualifiedSurfaceRef {

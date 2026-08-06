@@ -46,7 +46,7 @@ impl OkfKnowledgeAdapter for FakeKnowledgeAdapter {
         let receipt = OkfProjectionReceipt {
             schema: OKF_PROJECTION_RECEIPT_SCHEMA.to_string(),
             operation_id: spec.operation_id.clone(),
-            scope_id: spec.scope_id.clone(),
+            scope: spec.scope.clone(),
             surface: spec.surface.clone(),
             generation: spec.generation,
             package_digest: spec.package_digest.clone(),
@@ -123,7 +123,7 @@ async fn stages_promotes_hides_and_receipt_removes_the_real_okf_fixture() {
         })
         .unwrap();
     assert!(store
-        .snapshot(&intent.scope_id, &qualified)
+        .snapshot(&intent.scope, &qualified)
         .await
         .unwrap()
         .projection
@@ -135,7 +135,7 @@ async fn stages_promotes_hides_and_receipt_removes_the_real_okf_fixture() {
 
     host.stop_okf(&intent, surface, key).await.unwrap();
     assert!(store
-        .snapshot(&intent.scope_id, &qualified)
+        .snapshot(&intent.scope, &qualified)
         .await
         .unwrap()
         .projection
@@ -145,7 +145,7 @@ async fn stages_promotes_hides_and_receipt_removes_the_real_okf_fixture() {
     host.remove_okf(&intent, surface, key).await.unwrap();
     host.remove_okf(&intent, surface, key).await.unwrap();
     assert_eq!(adapter.calls().await, ["stage", "promote", "remove"]);
-    let snapshot = store.snapshot(&intent.scope_id, &qualified).await.unwrap();
+    let snapshot = store.snapshot(&intent.scope, &qualified).await.unwrap();
     assert_eq!(
         snapshot.latest.unwrap().observation.state,
         OkfKnowledgeObservedState::Removed
@@ -181,7 +181,10 @@ fn intent(manifest: &ExtensionManifest, action: PluginLifecycleAction) -> Plugin
         PluginLifecycleIntentSpec {
             operation_id: format!("okf-{}", action_name(action)),
             plan_digest: format!("sha256:{}", "1".repeat(64)),
-            scope_id: "workspace:knowledge".to_string(),
+            scope: a3s_use_core::PlanScope {
+                kind: a3s_use_core::PlanScopeKind::Workspace,
+                id: "knowledge".to_string(),
+            },
             package_id: manifest.package_id.clone(),
             package_digest: PACKAGE_DIGEST.trim().to_string(),
             manifest_digest: format!("sha256:{:x}", Sha256::digest(MANIFEST.as_bytes())),
@@ -237,7 +240,7 @@ fn observation(
         .transpose()?;
     let observation = OkfKnowledgeObservation {
         schema: OKF_KNOWLEDGE_OBSERVATION_SCHEMA.to_string(),
-        scope_id: receipt.scope_id.clone(),
+        scope: receipt.scope.clone(),
         surface: receipt.surface.clone(),
         generation: receipt.generation,
         package_digest: receipt.package_digest.clone(),

@@ -59,7 +59,7 @@ impl A3sFlowLifecycleHost {
         let qualified = validate_call(intent, surface)?;
         if let Some(binding) = self
             .store
-            .get(&intent.scope_id, &qualified, intent.generation)
+            .get(&intent.scope, &qualified, intent.generation)
             .await?
         {
             validate_binding(intent, surface, &binding)?;
@@ -89,7 +89,7 @@ impl A3sFlowLifecycleHost {
         })?;
         let artifact_sha256 = digest_artifact(&preflight.artifact).await?;
         let binding = FlowRuntimeBinding::new(FlowRuntimeBindingSpec {
-            scope_id: intent.scope_id.clone(),
+            scope: intent.scope.clone(),
             surface: qualified,
             generation: intent.generation,
             package_digest: intent.package_digest.clone(),
@@ -121,7 +121,7 @@ impl A3sFlowLifecycleHost {
         let qualified = validate_call(intent, surface)?;
         let subject = match self
             .store
-            .get(&intent.scope_id, &qualified, intent.generation)
+            .get(&intent.scope, &qualified, intent.generation)
             .await?
         {
             Some(binding) => {
@@ -142,7 +142,7 @@ impl A3sFlowLifecycleHost {
         let qualified = validate_call(intent, surface)?;
         let Some(binding) = self
             .store
-            .get(&intent.scope_id, &qualified, intent.generation)
+            .get(&intent.scope, &qualified, intent.generation)
             .await?
         else {
             return checkpoint_evidence(
@@ -219,7 +219,7 @@ fn validate_binding(
     binding: &FlowRuntimeBinding,
 ) -> UseResult<()> {
     binding.validate()?;
-    if binding.scope_id() != intent.scope_id
+    if binding.scope() != &intent.scope
         || binding.surface().package_id != intent.package_id
         || binding.surface().surface.kind != PluginSurfaceKind::Flow
         || binding.surface().surface.id != surface.id
@@ -237,8 +237,13 @@ fn validate_binding(
 
 fn missing_subject_digest(intent: &PluginLifecycleIntent, surface: &PluginFlowSurface) -> String {
     let identity = format!(
-        "{}\n{}\n{}\n{}\n{}",
-        intent.scope_id, intent.package_id, surface.id, intent.generation, intent.package_digest
+        "{}\n{}\n{}\n{}\n{}\n{}",
+        intent.scope.kind.as_str(),
+        intent.scope.id,
+        intent.package_id,
+        surface.id,
+        intent.generation,
+        intent.package_digest
     );
     format!("sha256:{:x}", Sha256::digest(identity.as_bytes()))
 }

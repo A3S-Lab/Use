@@ -1,25 +1,25 @@
 use a3s_use_core::{
     OkfBundleContract, OkfCapabilityProjection, OkfKnowledgeObservation, OkfKnowledgeObservedState,
-    OkfProjectionReceipt, OkfSelectedGeneration, PlanQualifiedSurfaceRef, PluginSurfaceKind,
-    PluginSurfaceRef, OKF_CAPABILITY_PROJECTION_SCHEMA, OKF_KNOWLEDGE_OBSERVATION_SCHEMA,
-    OKF_PROJECTION_RECEIPT_SCHEMA,
+    OkfProjectionReceipt, OkfSelectedGeneration, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind,
+    PluginSurfaceKind, PluginSurfaceRef, OKF_CAPABILITY_PROJECTION_SCHEMA,
+    OKF_KNOWLEDGE_OBSERVATION_SCHEMA, OKF_PROJECTION_RECEIPT_SCHEMA,
 };
 
 const DIGEST_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const DIGEST_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const DIGEST_C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const DIGEST_D: &str = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
-const PROJECTION_RECEIPT: &[u8] = include_bytes!("../fixtures/okf/projection-receipt-v1.json");
+const PROJECTION_RECEIPT: &[u8] = include_bytes!("../fixtures/okf/projection-receipt-v2.json");
 const PROJECTION_RECEIPT_DIGEST: &str =
-    include_str!("../fixtures/okf/projection-receipt-v1.sha256").trim_ascii_end();
+    include_str!("../fixtures/okf/projection-receipt-v2.sha256").trim_ascii_end();
 const KNOWLEDGE_OBSERVATION: &[u8] =
-    include_bytes!("../fixtures/okf/knowledge-observation-v1.json");
+    include_bytes!("../fixtures/okf/knowledge-observation-v2.json");
 const KNOWLEDGE_OBSERVATION_DIGEST: &str =
-    include_str!("../fixtures/okf/knowledge-observation-v1.sha256").trim_ascii_end();
+    include_str!("../fixtures/okf/knowledge-observation-v2.sha256").trim_ascii_end();
 const CAPABILITY_PROJECTION: &[u8] =
-    include_bytes!("../fixtures/okf/capability-projection-v1.json");
+    include_bytes!("../fixtures/okf/capability-projection-v2.json");
 const CAPABILITY_PROJECTION_DIGEST: &str =
-    include_str!("../fixtures/okf/capability-projection-v1.sha256").trim_ascii_end();
+    include_str!("../fixtures/okf/capability-projection-v2.sha256").trim_ascii_end();
 
 fn canonical_fixture(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\n").unwrap_or(bytes)
@@ -43,7 +43,10 @@ fn receipt() -> OkfProjectionReceipt {
     OkfProjectionReceipt {
         schema: OKF_PROJECTION_RECEIPT_SCHEMA.to_owned(),
         operation_id: "install:acme-research:0002".to_owned(),
-        scope_id: "workspace:research".to_owned(),
+        scope: PlanScope {
+            kind: PlanScopeKind::Workspace,
+            id: "research".to_owned(),
+        },
         surface: surface(),
         generation: 13,
         package_digest: DIGEST_A.to_owned(),
@@ -71,7 +74,7 @@ fn selected(receipt: &OkfProjectionReceipt) -> OkfSelectedGeneration {
 fn promoted(receipt: &OkfProjectionReceipt) -> OkfKnowledgeObservation {
     OkfKnowledgeObservation {
         schema: OKF_KNOWLEDGE_OBSERVATION_SCHEMA.to_owned(),
-        scope_id: receipt.scope_id.clone(),
+        scope: receipt.scope.clone(),
         surface: receipt.surface.clone(),
         generation: receipt.generation,
         package_digest: receipt.package_digest.clone(),
@@ -137,7 +140,7 @@ fn failed_candidate_can_preserve_only_a_distinct_last_good_generation() {
     };
     let failed = OkfKnowledgeObservation {
         schema: OKF_KNOWLEDGE_OBSERVATION_SCHEMA.to_owned(),
-        scope_id: receipt.scope_id.clone(),
+        scope: receipt.scope.clone(),
         surface: receipt.surface.clone(),
         generation: receipt.generation,
         package_digest: receipt.package_digest.clone(),

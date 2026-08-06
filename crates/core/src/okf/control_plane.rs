@@ -3,13 +3,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::plugin::validation::{valid_machine_id, valid_package_id, valid_segment, valid_sha256};
-use crate::{PlanQualifiedSurfaceRef, PluginSurfaceKind, UseError, UseResult};
+use crate::{PlanQualifiedSurfaceRef, PlanScope, PluginSurfaceKind, UseError, UseResult};
 
 use super::OkfBundleContract;
 
-pub const OKF_PROJECTION_RECEIPT_SCHEMA: &str = "a3s.use.okf-projection-receipt.v1";
-pub const OKF_KNOWLEDGE_OBSERVATION_SCHEMA: &str = "a3s.use.okf-knowledge-observation.v1";
-pub const OKF_CAPABILITY_PROJECTION_SCHEMA: &str = "a3s.use.okf-capability-projection.v1";
+pub const OKF_PROJECTION_RECEIPT_SCHEMA: &str = "a3s.use.okf-projection-receipt.v2";
+pub const OKF_KNOWLEDGE_OBSERVATION_SCHEMA: &str = "a3s.use.okf-knowledge-observation.v2";
+pub const OKF_CAPABILITY_PROJECTION_SCHEMA: &str = "a3s.use.okf-capability-projection.v2";
 
 const MAX_CONTROL_PLANE_CONTRACT_BYTES: usize = 128 * 1024;
 const RECEIPT_ERROR: &str = "use.okf.projection_receipt_invalid";
@@ -25,7 +25,7 @@ const PROJECTION_ERROR: &str = "use.okf.capability_projection_invalid";
 pub struct OkfProjectionReceipt {
     pub schema: String,
     pub operation_id: String,
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub surface: PlanQualifiedSurfaceRef,
     pub generation: u64,
     pub package_digest: String,
@@ -68,7 +68,7 @@ pub struct OkfSelectedGeneration {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OkfKnowledgeObservation {
     pub schema: String,
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub surface: PlanQualifiedSurfaceRef,
     pub generation: u64,
     pub package_digest: String,
@@ -89,7 +89,7 @@ pub struct OkfKnowledgeObservation {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OkfCapabilityProjection {
     pub schema: String,
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub surface: PlanQualifiedSurfaceRef,
     pub generation: u64,
     pub package_digest: String,
@@ -116,7 +116,7 @@ impl OkfProjectionReceipt {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != OKF_PROJECTION_RECEIPT_SCHEMA
             || !valid_machine_id(&self.operation_id)
-            || !valid_machine_id(&self.scope_id)
+            || !valid_scope(&self.scope)
             || !valid_okf_surface(&self.surface)
             || self.generation == 0
             || !valid_sha256(&self.package_digest)
@@ -185,7 +185,7 @@ impl OkfKnowledgeObservation {
 
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != OKF_KNOWLEDGE_OBSERVATION_SCHEMA
-            || !valid_machine_id(&self.scope_id)
+            || !valid_scope(&self.scope)
             || !valid_okf_surface(&self.surface)
             || self.generation == 0
             || !valid_sha256(&self.package_digest)
@@ -246,7 +246,7 @@ impl OkfKnowledgeObservation {
     pub fn validate_for_receipt(&self, receipt: &OkfProjectionReceipt) -> UseResult<()> {
         self.validate()?;
         receipt.validate()?;
-        if self.scope_id != receipt.scope_id
+        if self.scope != receipt.scope
             || self.surface != receipt.surface
             || self.generation != receipt.generation
             || self.package_digest != receipt.package_digest
@@ -288,7 +288,7 @@ impl OkfCapabilityProjection {
         }
         let projection = Self {
             schema: OKF_CAPABILITY_PROJECTION_SCHEMA.to_owned(),
-            scope_id: receipt.scope_id.clone(),
+            scope: receipt.scope.clone(),
             surface: receipt.surface.clone(),
             generation: receipt.generation,
             package_digest: receipt.package_digest.clone(),
@@ -318,7 +318,7 @@ impl OkfCapabilityProjection {
 
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != OKF_CAPABILITY_PROJECTION_SCHEMA
-            || !valid_machine_id(&self.scope_id)
+            || !valid_scope(&self.scope)
             || !valid_okf_surface(&self.surface)
             || self.generation == 0
             || !valid_sha256(&self.package_digest)
@@ -353,6 +353,10 @@ fn valid_okf_surface(surface: &PlanQualifiedSurfaceRef) -> bool {
     valid_package_id(&surface.package_id)
         && surface.surface.kind == PluginSurfaceKind::Okf
         && valid_segment(&surface.surface.id)
+}
+
+fn valid_scope(scope: &PlanScope) -> bool {
+    valid_machine_id(&scope.id)
 }
 
 fn parse_contract<T>(

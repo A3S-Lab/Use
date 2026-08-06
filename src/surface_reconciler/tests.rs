@@ -2,8 +2,8 @@ use super::runtime_observations::reconcile_with_runtime_and_knowledge;
 use super::*;
 use a3s_use_core::{
     OkfKnowledgeObservation, OkfKnowledgeObservedState, OkfProjectionReceipt,
-    OkfSelectedGeneration, PlanQualifiedSurfaceRef, OKF_KNOWLEDGE_OBSERVATION_SCHEMA,
-    OKF_PROJECTION_RECEIPT_SCHEMA,
+    OkfSelectedGeneration, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind,
+    OKF_KNOWLEDGE_OBSERVATION_SCHEMA, OKF_PROJECTION_RECEIPT_SCHEMA,
 };
 
 const NAMED_SURFACE_MANIFEST: &str =
@@ -374,7 +374,10 @@ fn knowledge_receipt(manifest: &ExtensionManifest) -> OkfProjectionReceipt {
     OkfProjectionReceipt {
         schema: OKF_PROJECTION_RECEIPT_SCHEMA.to_owned(),
         operation_id: "install:acme-knowledge:0001".to_owned(),
-        scope_id: "workspace:research".to_owned(),
+        scope: PlanScope {
+            kind: PlanScopeKind::Workspace,
+            id: "research".to_owned(),
+        },
         surface: PlanQualifiedSurfaceRef {
             package_id: manifest.package_id.clone(),
             surface: reference(PluginSurfaceKind::Okf, "domain-knowledge"),
@@ -395,7 +398,7 @@ fn promoted_observation(receipt: &OkfProjectionReceipt) -> OkfKnowledgeObservati
     let index_digest = format!("sha256:{}", "c".repeat(64));
     OkfKnowledgeObservation {
         schema: OKF_KNOWLEDGE_OBSERVATION_SCHEMA.to_owned(),
-        scope_id: receipt.scope_id.clone(),
+        scope: receipt.scope.clone(),
         surface: receipt.surface.clone(),
         generation: receipt.generation,
         package_digest: receipt.package_digest.clone(),

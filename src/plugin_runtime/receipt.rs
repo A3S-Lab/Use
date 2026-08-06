@@ -1,5 +1,5 @@
 use a3s_runtime::ProviderId;
-use a3s_use_core::{PlanQualifiedSurfaceRef, PluginSurfaceKind, UseResult};
+use a3s_use_core::{PlanQualifiedSurfaceRef, PlanScope, PluginSurfaceKind, UseResult};
 use serde::{Deserialize, Serialize};
 
 use super::model::{
@@ -42,10 +42,10 @@ impl RuntimeBindingReceipt {
         }
     }
 
-    pub fn scope_id(&self) -> &str {
+    pub fn scope(&self) -> &PlanScope {
         match self {
-            Self::Task(receipt) => &receipt.scope_id,
-            Self::Service(receipt) => &receipt.scope_id,
+            Self::Task(receipt) => &receipt.scope,
+            Self::Service(receipt) => &receipt.scope,
         }
     }
 
@@ -102,7 +102,7 @@ impl RuntimeBindingReceipt {
 fn validate_task(receipt: &RuntimePreparedTaskBinding) -> UseResult<()> {
     if receipt.schema != RUNTIME_TASK_BINDING_SCHEMA
         || receipt.surface.surface.kind != PluginSurfaceKind::Tool
-        || !valid_binding_identity(&receipt.surface, &receipt.scope_id)
+        || !valid_binding_identity(&receipt.surface, &receipt.scope)
         || receipt.generation == 0
         || !valid_sha256(&receipt.package_digest)
         || !valid_sha256(&receipt.descriptor_digest)
@@ -122,7 +122,7 @@ fn validate_task(receipt: &RuntimePreparedTaskBinding) -> UseResult<()> {
 
 fn validate_service(receipt: &RuntimeServiceBindingReceipt) -> UseResult<()> {
     if receipt.schema != RUNTIME_SERVICE_BINDING_SCHEMA
-        || !valid_binding_identity(&receipt.surface, &receipt.scope_id)
+        || !valid_binding_identity(&receipt.surface, &receipt.scope)
         || receipt.generation == 0
         || receipt.runtime_started_at_ms == 0
         || receipt.observation_revision == 0
@@ -206,7 +206,7 @@ fn validate_service_contract(receipt: &RuntimeServiceBindingReceipt) -> UseResul
     Ok(())
 }
 
-fn valid_binding_identity(surface: &PlanQualifiedSurfaceRef, scope_id: &str) -> bool {
+fn valid_binding_identity(surface: &PlanQualifiedSurfaceRef, scope: &PlanScope) -> bool {
     let segments = surface.package_id.split('/').collect::<Vec<_>>();
     surface.package_id.len() <= 128
         && segments.len() == 2
@@ -214,7 +214,7 @@ fn valid_binding_identity(surface: &PlanQualifiedSurfaceRef, scope_id: &str) -> 
             .iter()
             .all(|segment| valid_surface_segment(segment))
         && valid_surface_segment(&surface.surface.id)
-        && valid_machine_id(scope_id)
+        && valid_machine_id(&scope.id)
 }
 
 fn valid_media_type(value: &str) -> bool {

@@ -634,7 +634,7 @@ async fn project_extension(
     let flow_observations = flow_observations_from_store(
         extension,
         &FlowRuntimeBindingStore::from_extension_paths(&paths),
-        COGNITIVE_PACKAGE_DEFAULT_SCOPE,
+        &default_plan_scope(),
     )
     .await?;
     project_extension_for_host_with_flow_observations(
@@ -908,7 +908,7 @@ async fn surface_observations(
 async fn flow_observations_from_store(
     extension: &a3s_use_extension::InstalledExtension,
     store: &FlowRuntimeBindingStore,
-    scope_id: &str,
+    scope: &a3s_use_core::PlanScope,
 ) -> UseResult<SurfaceObservations> {
     let mut observations = SurfaceObservations::new();
     let Some(generation) = extension.receipt.lifecycle_generation else {
@@ -928,7 +928,7 @@ async fn flow_observations_from_store(
             package_id: extension.receipt.package_id.clone(),
             surface: reference.clone(),
         };
-        let Some(binding) = store.get(scope_id, &qualified, generation).await? else {
+        let Some(binding) = store.get(scope, &qualified, generation).await? else {
             continue;
         };
         let state = if binding.package_digest() == package_digest
@@ -945,6 +945,14 @@ async fn flow_observations_from_store(
         observations.insert(reference, state);
     }
     Ok(observations)
+}
+
+#[cfg(feature = "extensions")]
+fn default_plan_scope() -> a3s_use_core::PlanScope {
+    a3s_use_core::PlanScope {
+        kind: a3s_use_core::PlanScopeKind::User,
+        id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
+    }
 }
 
 #[cfg(feature = "extensions")]
@@ -1574,7 +1582,10 @@ extension "acme/slack" {
             PluginLifecycleIntentSpec {
                 operation_id: "flow-observation-install".to_string(),
                 plan_digest: format!("sha256:{}", "1".repeat(64)),
-                scope_id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_string(),
+                scope: a3s_use_core::PlanScope {
+                    kind: a3s_use_core::PlanScopeKind::User,
+                    id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_string(),
+                },
                 package_id: extension.receipt.package_id.clone(),
                 package_digest: format!("sha256:{}", "a".repeat(64)),
                 manifest_digest: format!("sha256:{}", extension.receipt.manifest_sha256),
@@ -1606,10 +1617,9 @@ extension "acme/slack" {
             .await
             .unwrap();
 
-        let observations =
-            flow_observations_from_store(&extension, &store, COGNITIVE_PACKAGE_DEFAULT_SCOPE)
-                .await
-                .unwrap();
+        let observations = flow_observations_from_store(&extension, &store, &default_plan_scope())
+            .await
+            .unwrap();
         assert_eq!(
             observations.get(&PluginSurfaceRef {
                 kind: PluginSurfaceKind::Flow,
@@ -1619,7 +1629,7 @@ extension "acme/slack" {
         );
         let binding = store
             .get(
-                COGNITIVE_PACKAGE_DEFAULT_SCOPE,
+                &default_plan_scope(),
                 &PlanQualifiedSurfaceRef {
                     package_id: extension.receipt.package_id.clone(),
                     surface: PluginSurfaceRef {
@@ -1635,10 +1645,9 @@ extension "acme/slack" {
         tokio::fs::write(binding.artifact(), b"substituted")
             .await
             .unwrap();
-        let failed =
-            flow_observations_from_store(&extension, &store, COGNITIVE_PACKAGE_DEFAULT_SCOPE)
-                .await
-                .unwrap();
+        let failed = flow_observations_from_store(&extension, &store, &default_plan_scope())
+            .await
+            .unwrap();
         assert_eq!(
             failed.get(&PluginSurfaceRef {
                 kind: PluginSurfaceKind::Flow,

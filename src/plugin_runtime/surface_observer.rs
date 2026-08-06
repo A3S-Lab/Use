@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use a3s_runtime::{ProviderId, RuntimeClientRegistry};
 use a3s_use_core::{
-    PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
+    PlanQualifiedSurfaceRef, PlanScope, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
 };
 use a3s_use_extension::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 use serde::Serialize;
@@ -16,7 +16,7 @@ use super::model::{
 use super::receipt::RuntimeBindingReceipt;
 use super::store::RuntimeBindingStore;
 
-pub const RUNTIME_SURFACE_OBSERVATION_SCHEMA_VERSION: u32 = 1;
+pub const RUNTIME_SURFACE_OBSERVATION_SCHEMA_VERSION: u32 = 2;
 const MAX_RUNTIME_SURFACES: usize = 128;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -48,7 +48,7 @@ pub struct RuntimeSurfaceObservation {
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSurfaceObservationSnapshot {
     schema_version: u32,
-    scope_id: String,
+    scope: PlanScope,
     package_id: String,
     package_digest: String,
     surfaces: Vec<RuntimeSurfaceObservation>,
@@ -66,12 +66,12 @@ impl<'a> RuntimeSurfaceObserver<'a> {
 
     pub async fn observe_manifest(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         package_digest: &str,
         generation: u64,
         manifest: &ExtensionManifest,
     ) -> UseResult<RuntimeSurfaceObservationSnapshot> {
-        validate_scope_and_digest(scope_id, package_digest)?;
+        validate_scope_and_digest(scope, package_digest)?;
         if generation == 0 {
             return Err(runtime_input_error(
                 "Runtime surface observation requires an exact positive package generation.",
@@ -88,7 +88,7 @@ impl<'a> RuntimeSurfaceObserver<'a> {
             };
             let Some(receipt) = self
                 .store
-                .get_generation(scope_id, &qualified, generation)
+                .get_generation(scope, &qualified, generation)
                 .await?
             else {
                 surfaces.push(RuntimeSurfaceObservation {
@@ -123,7 +123,7 @@ impl<'a> RuntimeSurfaceObserver<'a> {
 
         Ok(RuntimeSurfaceObservationSnapshot {
             schema_version: RUNTIME_SURFACE_OBSERVATION_SCHEMA_VERSION,
-            scope_id: scope_id.to_string(),
+            scope: scope.clone(),
             package_id: manifest.package_id.clone(),
             package_digest: package_digest.to_string(),
             surfaces,
@@ -136,8 +136,8 @@ impl RuntimeSurfaceObservationSnapshot {
         self.schema_version
     }
 
-    pub fn scope_id(&self) -> &str {
-        &self.scope_id
+    pub fn scope(&self) -> &PlanScope {
+        &self.scope
     }
 
     pub fn package_id(&self) -> &str {
@@ -153,7 +153,7 @@ impl RuntimeSurfaceObservationSnapshot {
     }
 
     pub(crate) fn validate_for_manifest(&self, manifest: &ExtensionManifest) -> UseResult<()> {
-        validate_scope_and_digest(&self.scope_id, &self.package_digest)?;
+        validate_scope_and_digest(&self.scope, &self.package_digest)?;
         let expectations = runtime_surface_expectations(manifest)?;
         if self.schema_version != RUNTIME_SURFACE_OBSERVATION_SCHEMA_VERSION
             || self.package_id != manifest.package_id
@@ -298,8 +298,8 @@ fn validate_manifest_identity(manifest: &ExtensionManifest) -> UseResult<()> {
     Ok(())
 }
 
-fn validate_scope_and_digest(scope_id: &str, package_digest: &str) -> UseResult<()> {
-    if !valid_machine_id(scope_id) || !valid_sha256(package_digest) {
+fn validate_scope_and_digest(scope: &PlanScope, package_digest: &str) -> UseResult<()> {
+    if !valid_machine_id(&scope.id) || !valid_sha256(package_digest) {
         return Err(runtime_input_error(
             "Runtime surface observation requires an explicit scope and canonical package digest.",
         ));

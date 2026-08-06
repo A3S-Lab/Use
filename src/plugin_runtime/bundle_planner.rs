@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use a3s_runtime::contract::{ArtifactRef, IsolationLevel, NetworkMode};
 use a3s_use_core::{
-    ExecutablePlanningSurface, PlannedPackageState, PluginPlanningBundle, PluginSurfaceKind,
-    PluginWorkspaceGrantProposal, SurfacePermissionCeiling, ToolWorkloadContract, UseError,
-    UseResult,
+    ExecutablePlanningSurface, PlanScope, PlannedPackageState, PluginPlanningBundle,
+    PluginSurfaceKind, PluginWorkspaceGrantProposal, SurfacePermissionCeiling,
+    ToolWorkloadContract, UseError, UseResult,
 };
 use a3s_use_extension::{
     PluginMcpLaunch, PluginMcpSurface, SurfaceActivation, ToolServiceSurface, ToolTaskSource,
@@ -35,6 +35,7 @@ pub fn plan_runtime_bundle(
     bundle: &PluginPlanningBundle,
     package: &PlannedPackageState,
     proposal: &PluginWorkspaceGrantProposal,
+    scope: &PlanScope,
     generation: u64,
 ) -> UseResult<Vec<RuntimeSurfacePlan>> {
     bundle.validate()?;
@@ -47,6 +48,7 @@ pub fn plan_runtime_bundle(
         || package.release.package_sha256 != bundle.package_sha256
         || package.release.manifest_sha256 != bundle.manifest_sha256
         || package.release.permission_ceiling_digest != bundle.permission_ceiling_digest
+        || proposal.scope_id != scope.id
         || proposal.package_id != bundle.package_id
         || proposal.package_digest != bundle.package_sha256
         || proposal.permission_ceiling_digest != bundle.permission_ceiling_digest
@@ -101,7 +103,7 @@ pub fn plan_runtime_bundle(
         let context = RuntimeSurfaceContext::new(
             bundle.package_id.clone(),
             bundle.package_sha256.clone(),
-            proposal.scope_id.clone(),
+            scope.clone(),
             authorization_digest.clone(),
             surface_ref,
             generation,

@@ -292,10 +292,6 @@ impl CognitivePackageManager {
         &self.registry
     }
 
-    pub fn scope_id(&self) -> &str {
-        &self.scope.id
-    }
-
     pub fn scope(&self) -> &PlanScope {
         &self.scope
     }

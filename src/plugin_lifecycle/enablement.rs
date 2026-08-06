@@ -236,7 +236,7 @@ fn validate_enablement_grant_binding(
     };
     if envelope.plan.action != action
         || envelope.plan.operation_id != intent.operation_id
-        || envelope.plan.scope.id != intent.scope_id
+        || envelope.plan.scope != intent.scope
         || envelope.plan.package_id != intent.package_id
         || envelope.plan_digest != intent.plan_digest
         || intent.action != lifecycle_action

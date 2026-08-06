@@ -4,8 +4,8 @@ use a3s_runtime::contract::{
     TransportProtocol,
 };
 use a3s_use_core::{
-    McpReleaseDescriptor, PluginSurfaceKind, ToolReleaseDescriptor, ToolWorkloadContract, UseError,
-    UseResult,
+    McpReleaseDescriptor, PlanScope, PluginSurfaceKind, ToolReleaseDescriptor,
+    ToolWorkloadContract, UseError, UseResult,
 };
 use a3s_use_extension::{
     PluginMcpLaunch, PluginMcpSurface, ToolServiceSurface, ToolTaskSource, ToolTaskSurface,
@@ -18,7 +18,7 @@ use super::model::{
     RuntimeSurfacePlan, RuntimeTaskInvocation, RuntimeWorkloadPolicy,
 };
 
-const SEMANTICS_PROFILE_SCHEMA: &str = "a3s.use.runtime-semantics.v1";
+const SEMANTICS_PROFILE_SCHEMA: &str = "a3s.use.runtime-semantics.v2";
 
 pub fn plan_tool_task_release(
     context: RuntimeSurfaceContext,
@@ -326,7 +326,7 @@ fn finish_plan(
         schema: SEMANTICS_PROFILE_SCHEMA,
         package_id: &context.package_id,
         package_digest: &context.package_digest,
-        scope_id: &context.scope_id,
+        scope: &context.scope,
         grant_digest: &context.grant_digest,
         surface_kind: context.surface.kind,
         surface_id: &context.surface.id,
@@ -391,7 +391,7 @@ fn unit_id(
         schema: &'static str,
         package_id: &'a str,
         package_digest: &'a str,
-        scope_id: &'a str,
+        scope: &'a PlanScope,
         surface_kind: PluginSurfaceKind,
         surface_id: &'a str,
         generation: u64,
@@ -399,10 +399,10 @@ fn unit_id(
     }
 
     let identity = UnitIdentity {
-        schema: "a3s.use.runtime-unit-identity.v1",
+        schema: "a3s.use.runtime-unit-identity.v2",
         package_id: &context.package_id,
         package_digest: &context.package_digest,
-        scope_id: &context.scope_id,
+        scope: &context.scope,
         surface_kind: context.surface.kind,
         surface_id: &context.surface.id,
         generation: context.generation,
@@ -422,7 +422,7 @@ struct RuntimeSemanticsProfile<'a> {
     schema: &'static str,
     package_id: &'a str,
     package_digest: &'a str,
-    scope_id: &'a str,
+    scope: &'a PlanScope,
     grant_digest: &'a str,
     surface_kind: PluginSurfaceKind,
     surface_id: &'a str,

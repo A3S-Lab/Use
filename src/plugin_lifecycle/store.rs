@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use a3s_use_core::{PluginPackageId, UseError, UseResult};
+use a3s_use_core::{PlanScope, PluginPackageId, UseError, UseResult};
 use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
@@ -52,11 +52,11 @@ impl PluginLifecycleJournalStore {
         intent: &PluginLifecycleIntent,
     ) -> UseResult<PluginLifecycleOperationRecord> {
         intent.validate()?;
-        let directory = self.package_directory(&intent.scope_id, &intent.package_id)?;
+        let directory = self.package_directory(&intent.scope, &intent.package_id)?;
         let _lock = acquire_lock(&self.state_root, &directory).await?;
         let active_path = directory.join("active.json");
         if let Some(current) = read_optional_record(&active_path).await? {
-            validate_record_ownership(&current, &intent.scope_id, &intent.package_id)?;
+            validate_record_ownership(&current, &intent.scope, &intent.package_id)?;
             if current.intent == *intent {
                 return Ok(current);
             }
@@ -75,32 +75,32 @@ impl PluginLifecycleJournalStore {
 
     pub async fn load_active(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         package_id: &str,
     ) -> UseResult<Option<PluginLifecycleOperationRecord>> {
-        let directory = self.package_directory(scope_id, package_id)?;
+        let directory = self.package_directory(scope, package_id)?;
         if !validate_existing_directory_chain(&self.state_root, &directory).await? {
             return Ok(None);
         }
         let record = read_optional_record(&directory.join("active.json")).await?;
         if let Some(record) = &record {
-            validate_record_ownership(record, scope_id, package_id)?;
+            validate_record_ownership(record, scope, package_id)?;
         }
         Ok(record)
     }
 
     pub async fn load_last(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         package_id: &str,
     ) -> UseResult<Option<PluginLifecycleOperationRecord>> {
-        let directory = self.package_directory(scope_id, package_id)?;
+        let directory = self.package_directory(scope, package_id)?;
         if !validate_existing_directory_chain(&self.state_root, &directory).await? {
             return Ok(None);
         }
         let record = read_optional_record(&directory.join("last.json")).await?;
         if let Some(record) = &record {
-            validate_record_ownership(record, scope_id, package_id)?;
+            validate_record_ownership(record, scope, package_id)?;
         }
         Ok(record)
     }
@@ -187,7 +187,7 @@ impl PluginLifecycleJournalStore {
         update: impl FnOnce(&mut PluginLifecycleOperationRecord) -> UseResult<()>,
     ) -> UseResult<PluginLifecycleOperationRecord> {
         intent.validate()?;
-        let directory = self.package_directory(&intent.scope_id, &intent.package_id)?;
+        let directory = self.package_directory(&intent.scope, &intent.package_id)?;
         let _lock = acquire_lock(&self.state_root, &directory).await?;
         let active_path = directory.join("active.json");
         let mut record = read_optional_record(&active_path).await?.ok_or_else(|| {
@@ -196,7 +196,7 @@ impl PluginLifecycleJournalStore {
                 "The cognitive-package lifecycle operation does not exist.",
             )
         })?;
-        validate_record_ownership(&record, &intent.scope_id, &intent.package_id)?;
+        validate_record_ownership(&record, &intent.scope, &intent.package_id)?;
         if record.intent != *intent {
             return Err(store_error(
                 "use.plugin.lifecycle_operation_conflict",
@@ -209,8 +209,8 @@ impl PluginLifecycleJournalStore {
         Ok(record)
     }
 
-    fn package_directory(&self, scope_id: &str, package_id: &str) -> UseResult<PathBuf> {
-        if !valid_machine_id(scope_id) {
+    fn package_directory(&self, scope: &PlanScope, package_id: &str) -> UseResult<PathBuf> {
+        if !valid_machine_id(&scope.id) {
             return Err(path_identity_error());
         }
         let package_id = PluginPackageId::parse(package_id.to_string())?;
@@ -218,8 +218,13 @@ impl PluginLifecycleJournalStore {
             .as_str()
             .split_once('/')
             .ok_or_else(path_identity_error)?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
-        Ok(self.root.join(scope_digest).join(publisher).join(package))
+        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+        Ok(self
+            .root
+            .join(scope.kind.as_str())
+            .join(scope_digest)
+            .join(publisher)
+            .join(package))
     }
 }
 
@@ -429,10 +434,10 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
 
 fn validate_record_ownership(
     record: &PluginLifecycleOperationRecord,
-    scope_id: &str,
+    scope: &PlanScope,
     package_id: &str,
 ) -> UseResult<()> {
-    if record.intent.scope_id != scope_id || record.intent.package_id != package_id {
+    if record.intent.scope != *scope || record.intent.package_id != package_id {
         return Err(store_error(
             "use.plugin.lifecycle_ownership_mismatch",
             "A lifecycle record does not match its scope and package path.",

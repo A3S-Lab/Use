@@ -89,12 +89,12 @@ enablement request v1 remains compatibility-only.
 | Cognitive-package enablement state | `a3s.use.cognitive-package-enablement-state.v2` | Package state plus pending immutable plan and complete authorization evidence |
 | Cognitive-package enablement operation | `a3s.use.cognitive-package-enablement-operation.v1` | Legacy or no-op completed result with no plan-bound mutation |
 | Cognitive-package enablement operation | `a3s.use.cognitive-package-enablement-operation.v2` | Completed plan-bound enablement result and authorization evidence for exact replay |
-| Package lifecycle intent | `a3s.use.plugin-lifecycle-intent.v1` | Exact package generation, six-surface graph, action, and deterministic checkpoint schedule |
-| Package lifecycle operation | `a3s.use.plugin-lifecycle-operation.v1` | Durable checkpoint receipts, optional failures, required failure evidence, and terminal status |
-| OKF projection receipt | `a3s.use.okf-projection-receipt.v1` | Exact scope/package/surface generation staged for Knowledge |
-| OKF Knowledge observation | `a3s.use.okf-knowledge-observation.v1` | Staged, promoted, failed, or removed index evidence and last-good selection |
-| OKF capability projection | `a3s.use.okf-capability-projection.v1` | Exact promoted evidence safe to join to a scoped capability generation |
-| OKF Knowledge binding | `a3s.use.okf-knowledge-binding.v1` | Durable exact receipt plus observation for one retained generation |
+| Package lifecycle intent | `a3s.use.plugin-lifecycle-intent.v2` | Exact User/Workspace scope, package generation, six-surface graph, action, and deterministic checkpoint schedule |
+| Package lifecycle operation | `a3s.use.plugin-lifecycle-operation.v2` | Full-scope durable checkpoint receipts, optional failures, required failure evidence, and terminal status |
+| OKF projection receipt | `a3s.use.okf-projection-receipt.v2` | Exact User/Workspace scope, package, surface, and generation staged for Knowledge |
+| OKF Knowledge observation | `a3s.use.okf-knowledge-observation.v2` | Full-scope staged, promoted, failed, or removed index evidence and last-good selection |
+| OKF capability projection | `a3s.use.okf-capability-projection.v2` | Exact full-scope promoted evidence safe to join to a capability generation |
+| OKF Knowledge binding | `a3s.use.okf-knowledge-binding.v2` | Durable exact receipt plus observation for one retained generation |
 
 ### OKF control-plane contract is frozen
 
@@ -164,8 +164,8 @@ not published.
 
 `A3sFlowLifecycleHost` is the concrete Use adapter for that preflight boundary.
 It delegates to `a3s_flow::NativeTsRuntime::preflight` and persists
-`a3s.use.flow-runtime-binding.v1` by scope, package, Flow surface, and lifecycle
-generation. Capability observation revalidates the admitted source and exact
+`a3s.use.flow-runtime-binding.v2` by full User/Workspace scope, package, Flow
+surface, and lifecycle generation. Capability observation revalidates the admitted source and exact
 compiled artifact before reporting `Prepared`; missing evidence remains
 pending and substitution reports failure. Stop preserves retained evidence for
 drain, while removal deletes only the exact receipt-owned generation.
@@ -938,8 +938,8 @@ Canonical interoperability fixtures live under
 - `manager-toolset-v3.json`.
 
 Canonical OKF fixtures under `crates/core/fixtures/okf/` include the bundle
-contract plus `projection-receipt-v1.json`,
-`knowledge-observation-v1.json`, and `capability-projection-v1.json`.
+contract plus `projection-receipt-v2.json`,
+`knowledge-observation-v2.json`, and `capability-projection-v2.json`.
 
 Each fixture has a sibling `.sha256` file. Tests require byte-for-byte
 canonical form, stable descriptor digests, fail-closed unknown fields, and

@@ -102,7 +102,7 @@ async fn native_tool_and_stdio_mcp_remain_static_launchers() {
     ] {
         assert!(host
             .store()
-            .get(&intent.scope_id, &surface)
+            .get(&intent.scope, &surface)
             .await
             .unwrap()
             .is_none());
@@ -152,14 +152,14 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     assert_eq!(readiness.calls.load(Ordering::SeqCst), 2);
     assert!(matches!(
         store
-            .get(&intent.scope_id, &tool_plan.surface())
+            .get(&intent.scope, &tool_plan.surface())
             .await
             .unwrap(),
         Some(RuntimeBindingReceipt::Service(_))
     ));
     assert!(matches!(
         store
-            .get(&intent.scope_id, &mcp_plan.surface())
+            .get(&intent.scope, &mcp_plan.surface())
             .await
             .unwrap(),
         Some(RuntimeBindingReceipt::Service(ref receipt))
@@ -184,12 +184,12 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     assert_eq!(mcp_runtime.stop_count.load(Ordering::SeqCst), 1);
     assert_eq!(mcp_runtime.remove_count.load(Ordering::SeqCst), 1);
     assert!(store
-        .get(&intent.scope_id, &tool_plan.surface())
+        .get(&intent.scope, &tool_plan.surface())
         .await
         .unwrap()
         .is_none());
     assert!(store
-        .get(&intent.scope_id, &mcp_plan.surface())
+        .get(&intent.scope, &mcp_plan.surface())
         .await
         .unwrap()
         .is_none());
@@ -273,12 +273,12 @@ async fn runtime_lifecycle_prepares_next_generation_and_retires_only_the_prior_g
 
     let qualified = prior_plan.surface();
     assert!(store
-        .get_generation(&prior_intent.scope_id, &qualified, prior_intent.generation)
+        .get_generation(&prior_intent.scope, &qualified, prior_intent.generation)
         .await
         .unwrap()
         .is_some());
     assert!(store
-        .get_generation(&next_intent.scope_id, &qualified, next_intent.generation)
+        .get_generation(&next_intent.scope, &qualified, next_intent.generation)
         .await
         .unwrap()
         .is_some());
@@ -288,12 +288,12 @@ async fn runtime_lifecycle_prepares_next_generation_and_retires_only_the_prior_g
         .unwrap();
 
     assert!(store
-        .get_generation(&prior_intent.scope_id, &qualified, prior_intent.generation)
+        .get_generation(&prior_intent.scope, &qualified, prior_intent.generation)
         .await
         .unwrap()
         .is_none());
     assert!(store
-        .get_generation(&next_intent.scope_id, &qualified, next_intent.generation)
+        .get_generation(&next_intent.scope, &qualified, next_intent.generation)
         .await
         .unwrap()
         .is_some());
@@ -350,7 +350,7 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
 fn endpoint_id(intent: &PluginLifecycleIntent, surface_id: &str) -> String {
     format!(
         "gateway:{:x}/{surface_id}",
-        Sha256::digest(intent.scope_id.as_bytes())
+        Sha256::digest(serde_json::to_vec(&intent.scope).unwrap())
     )
 }
 
@@ -548,7 +548,7 @@ fn context(
     RuntimeSurfaceContext::new(
         intent.package_id.clone(),
         intent.package_digest.clone(),
-        intent.scope_id.clone(),
+        intent.scope.clone(),
         intent.plan_digest.clone(),
         PluginSurfaceRef {
             kind,
@@ -626,7 +626,10 @@ fn intent_generation(
         PluginLifecycleIntentSpec {
             operation_id: format!("runtime-generation-{generation}"),
             plan_digest: format!("sha256:{}", "1".repeat(64)),
-            scope_id: "workspace:research".to_string(),
+            scope: a3s_use_core::PlanScope {
+                kind: a3s_use_core::PlanScopeKind::Workspace,
+                id: "research".to_string(),
+            },
             package_id: manifest.package_id.clone(),
             package_digest: PACKAGE_DIGEST.trim().to_string(),
             manifest_digest: format!("sha256:{:x}", Sha256::digest(MANIFEST.as_bytes())),

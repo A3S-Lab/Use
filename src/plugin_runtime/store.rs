@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use a3s_use_core::{PlanQualifiedSurfaceRef, PluginSurfaceKind, UseError, UseResult};
+use a3s_use_core::{PlanQualifiedSurfaceRef, PlanScope, PluginSurfaceKind, UseError, UseResult};
 use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
@@ -44,14 +44,14 @@ impl RuntimeBindingStore {
     pub async fn put(&self, receipt: &RuntimeBindingReceipt) -> UseResult<bool> {
         receipt.validate()?;
         let _lock = self.acquire_lock().await?;
-        let directory = self.surface_directory(receipt.scope_id(), receipt.surface())?;
+        let directory = self.surface_directory(receipt.scope(), receipt.surface())?;
         ensure_owned_directory(&self.root, Some(&directory)).await?;
         let retained = generations(&directory).await?;
         let path = binding_path(&directory, receipt.generation());
         if let Some(current) = read_optional_receipt(&path).await? {
             validate_ownership(
                 &current,
-                receipt.scope_id(),
+                receipt.scope(),
                 receipt.surface(),
                 receipt.generation(),
             )?;
@@ -71,17 +71,17 @@ impl RuntimeBindingStore {
     /// with the generation selected by their immutable package evidence.
     pub async fn get(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<Option<RuntimeBindingReceipt>> {
-        let directory = self.surface_directory(scope_id, surface)?;
+        let directory = self.surface_directory(scope, surface)?;
         if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(None);
         }
         let Some(generation) = generations(&directory).await?.into_iter().next_back() else {
             return Ok(None);
         };
-        self.get_generation(scope_id, surface, generation).await
+        self.get_generation(scope, surface, generation).await
     }
 
     /// Read one exact retained Runtime generation. Candidate preparation and
@@ -89,14 +89,14 @@ impl RuntimeBindingStore {
     /// receipt for a surface.
     pub async fn get_generation(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
         generation: u64,
     ) -> UseResult<Option<RuntimeBindingReceipt>> {
         if generation == 0 {
             return Err(invalid_path_identity());
         }
-        let directory = self.surface_directory(scope_id, surface)?;
+        let directory = self.surface_directory(scope, surface)?;
         if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(None);
         }
@@ -104,14 +104,14 @@ impl RuntimeBindingStore {
         let Some(receipt) = read_optional_receipt(&path).await? else {
             return Ok(None);
         };
-        validate_ownership(&receipt, scope_id, surface, generation)?;
+        validate_ownership(&receipt, scope, surface, generation)?;
         Ok(Some(receipt))
     }
 
     pub async fn remove(&self, expected: &RuntimeBindingReceipt) -> UseResult<bool> {
         expected.validate()?;
         let _lock = self.acquire_lock().await?;
-        let directory = self.surface_directory(expected.scope_id(), expected.surface())?;
+        let directory = self.surface_directory(expected.scope(), expected.surface())?;
         if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(false);
         }
@@ -134,11 +134,11 @@ impl RuntimeBindingStore {
 
     fn surface_directory(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<PathBuf> {
-        validate_path_identity(scope_id, surface)?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
+        validate_path_identity(scope, surface)?;
+        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
         let mut segments = surface.package_id.split('/');
         let publisher = segments.next().ok_or_else(invalid_path_identity)?;
         let package = segments.next().ok_or_else(invalid_path_identity)?;
@@ -152,6 +152,7 @@ impl RuntimeBindingStore {
         };
         Ok(self
             .root
+            .join(scope.kind.as_str())
             .join(scope_digest)
             .join(publisher)
             .join(package)
@@ -235,11 +236,11 @@ fn validate_same_generation_replacement(
 
 fn validate_ownership(
     receipt: &RuntimeBindingReceipt,
-    scope_id: &str,
+    scope: &PlanScope,
     surface: &PlanQualifiedSurfaceRef,
     generation: u64,
 ) -> UseResult<()> {
-    if receipt.scope_id() != scope_id
+    if receipt.scope() != scope
         || receipt.surface() != surface
         || receipt.generation() != generation
     {
@@ -323,7 +324,7 @@ fn same_service_generation(
 ) -> bool {
     current.surface == next.surface
         && current.package_digest == next.package_digest
-        && current.scope_id == next.scope_id
+        && current.scope == next.scope
         && current.descriptor_digest == next.descriptor_digest
         && current.provider_id == next.provider_id
         && current.provider_build_id == next.provider_build_id
@@ -544,9 +545,9 @@ async fn sync_parent(_parent: Option<&Path>) -> UseResult<()> {
     Ok(())
 }
 
-fn validate_path_identity(scope_id: &str, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
+fn validate_path_identity(scope: &PlanScope, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
     let package_segments = surface.package_id.split('/').collect::<Vec<_>>();
-    if !super::model::valid_machine_id(scope_id)
+    if !super::model::valid_machine_id(&scope.id)
         || surface.package_id.len() > 128
         || package_segments.len() != 2
         || package_segments

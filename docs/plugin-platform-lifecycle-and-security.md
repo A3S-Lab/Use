@@ -12,7 +12,9 @@
   graph saga foundation frozen 2026-08-05; public Grant-impact planning and
   umbrella/managed-host authority forwarding plus plan-v4 permission-bearing
   enablement core connected 2026-08-06; local A3S Code CLI/Web reviewed
-  enablement and restart replay connected 2026-08-06
+  enablement and restart replay connected 2026-08-06; Code TUI `/packages`
+  reviewed enablement and full `PlanScope` lifecycle/store isolation connected
+  2026-08-07
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -413,13 +415,14 @@ Knowledge observation. It is not a Runtime Task or Service and it does not gain
 authority from concept text or YAML frontmatter.
 
 M0K-B freezes the machine evidence used by this flow:
-`a3s.use.okf-projection-receipt.v1` records the staged candidate,
-`a3s.use.okf-knowledge-observation.v1` records staged/promoted/failed/removed
-state and last-good selection, and `a3s.use.okf-capability-projection.v1`
-contains only exact promoted evidence. M0K-C-A persists their combined
-`a3s.use.okf-knowledge-binding.v1` record and reconstructs selection only from
-retained exact promoted evidence. The production Knowledge index backend and
-scope-aware capability/session caller remain pending. The package lifecycle
+`a3s.use.okf-projection-receipt.v2` records the full-scope staged candidate,
+`a3s.use.okf-knowledge-observation.v2` records full-scope
+staged/promoted/failed/removed state and last-good selection, and
+`a3s.use.okf-capability-projection.v2` contains only exact promoted evidence.
+M0K-C-A persists their combined `a3s.use.okf-knowledge-binding.v2` record and
+reconstructs selection only from retained exact promoted evidence. The
+production Knowledge index backend and scope-aware capability/session caller
+remain pending. The package lifecycle
 adapter already performs stage-store-promote-store, reuses a retained promoted
 generation after restart, hides without deleting on disable, and delegates
 only the exact receipt to Knowledge on uninstall.
@@ -445,9 +448,10 @@ generation remains selected. Crash replay uses the parent operation ID and OKF
 surface idempotency key; it must neither duplicate an index nor infer success
 from a staging directory.
 
-The binding store uses a SHA-256 scope directory, validated publisher/package
-and OKF surface segments, fixed-width generation filenames, bounded regular
-JSON files, atomic replacement, and a cross-process lock. Observation updates
+The binding store separates `user` and `workspace` before the SHA-256 scope-ID
+directory, then uses validated publisher/package and OKF surface segments,
+fixed-width generation filenames, bounded regular JSON files, atomic
+replacement, and a cross-process lock. Observation updates
 are monotonic. Failed or staged N+1 may keep exact promoted N selected;
 promoted N+1 switches selection; and removed N+1 cannot fall back to N. The
 store retains at most 32 generations and requires explicit receipt-owned
@@ -653,9 +657,12 @@ visibility mutation. Once the package or Grant journal durably owns the
 evidence, idempotent acknowledgement removes only pending metadata without
 generation or capability-digest inflation.
 
-The A3S Use journal stores bounded canonical JSON under a SHA-256 scope path and
-validated package segments. Writes use a cross-process lock, atomic replacement,
-file and parent sync, symlink rejection, strict schemas, and monotonic
+The A3S Use journal stores bounded canonical JSON under
+`operations/plugins/<user|workspace>/<sha256(scope.id)>/` and validated package
+segments. The intent and record retain the complete scope; same-ID scope-kind
+substitution is a distinct path and an ownership mismatch. Writes use a
+cross-process lock, atomic replacement, file and parent sync, symlink rejection,
+strict schemas, and monotonic
 checkpoint times. Replaying a completed checkpoint with different outcome or
 evidence is a conflict. Runtime preparation and cleanup evidence is derived
 from stable reviewed plan identity rather than volatile observation timestamps,
@@ -887,7 +894,7 @@ conflicting, stale, malformed, oversized, symlinked, or non-regular record
 fails closed.
 
 The Runtime binding store is rooted at
-`<state-root>/bindings/runtime/<scope-sha256>/<publisher>/<package>/<surface>/`
+`<state-root>/bindings/runtime/<user|workspace>/<scope-sha256>/<publisher>/<package>/<surface>/`
 with one fixed-width generation receipt per file. It never uses a
 caller-provided scope, package, surface, or generation as an unchecked path.
 The cross-process-locked store retains at most 32 exact generations, validates
