@@ -8,7 +8,8 @@
   dependency/lock contracts frozen 2026-08-03; unified A3S Flow contracts and
   exact-generation preflight binding foundation frozen 2026-08-04; operation
   plan v3 dual-lock upgrades, host capabilities v3, and Grant-aware graph saga
-  foundation frozen 2026-08-05
+  foundation frozen 2026-08-05; public Grant-impact planning and
+  umbrella/managed-host graph authority forwarding connected 2026-08-06
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -23,8 +24,10 @@ implemented foundations.
 Signed remote schema-v3 records enter that graph from `a3s-use install` and
 the compatible `component install` command. A3S Code TUI/Web now composes the
 supported Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production
-Knowledge, Service/HTTP, durable Flow execution, and managed-host composition
-remain product integration gates.
+Knowledge, Service/HTTP, permission-bearing enablement, and distributed Flow
+scheduling/retention remain product integration gates. The umbrella and
+fenced managed-host graph paths bind the public Grant planner to the exact
+reviewed provider.
 
 ## Contract Set
 
@@ -530,11 +533,12 @@ drain calls admitted by the prior snapshot, and then retire prior Grants before
 surface/package cleanup. The standalone manager now derives and persists these
 inputs after trusted authority binding and exact confirmation, and it selects
 the Grant-aware entry point whenever required. Umbrella and managed-host
-adapters can now construct `ReviewedCognitivePackageAuthorizationProvider`,
-which preserves the complete external operation identity, lifetime, scope,
-policy, lock-bound envelope, and confirmation and rejects locally replanned or
-replayed drift. Those product adapters still need to invoke this provider; the
-grant-free compatibility methods do not provide authorization.
+adapters snapshot the exact Grant scope/revision, bind canonical impacts with
+the public manager-owned planner after host policy, and construct
+`ReviewedCognitivePackageAuthorizationProvider`. The provider preserves the
+complete external operation identity, lifetime, scope, policy, lock-bound
+envelope, and confirmation and rejects locally replanned or replayed drift.
+The grant-free compatibility methods do not provide authorization.
 
 An observed record is evidence, not executable authority. Callers must use the
 active resolver, which rechecks the path identity, exact package digest,
@@ -781,16 +785,18 @@ Catalog-v1 component plans remain compatible without claiming a complete
 plugin plan. For catalog v3, the CLI registry resolver fetches only the signed
 planning target and includes its typed bundle in the upstream component plan
 and digest. The shared Manager requires that bundle and rechecks its exact
-catalog binding. A plan containing a Tool, MCP server, or any permission
-ceiling still fails closed until the umbrella host provides explicit Runtime
-provider assignments and durable grant-saga evidence. Registry no-op upgrades
-remain compatible component-only plans.
+catalog binding. Complete locked plans for executable Tool Tasks and stdio MCP
+carry exact Use-native provider evidence; permission-bearing graph plans bind
+the canonical Grant impact and forward the same host authority into apply.
+Runtime Tool Services, HTTP MCP, and OKF still fail closed until their
+production providers are composed. Registry no-op upgrades remain compatible
+component-only plans.
 
 Each reviewed Manager record binds the actor supplied by its trusted adapter:
-CLI and Web select `user`, while management MCP selects `agent`. Untrusted
-package or request content cannot select the principal. The current lifecycle
-scope remains the frozen `user/current` scope and is returned alongside that
-actor.
+CLI and Web select `user`, while management MCP selects `agent` with the local
+`user/current` scope. The fenced managed-host adapter selects `agent` and the
+exact enrolled Workspace scope. Untrusted package or request content cannot
+select the principal, scope, fence, or Grant snapshot.
 
 ## Manager MCP Toolset
 

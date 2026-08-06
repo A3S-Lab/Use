@@ -207,22 +207,22 @@ The main gaps are:
   native executable plugins without human review;
 - schema v3 named surfaces, Tool release contracts, catalog-v3 executable
   planning targets, planning bundles, and typed Runtime lifecycle adapters are
-  implemented, but the host Runtime Broker is not injected into the shared
-  Plugin Manager yet;
+  implemented; A3S Code composes executable Tool Tasks and stdio MCP, while
+  production Runtime Service and Gateway providers are not injected yet;
 - persisted Tool Task/Service bindings and Runtime observations feed the shared
   reconciler, and package-level package/capability plus
-  Runtime/MCP/Flow/Skill/UI/OKF adapters exist, but the Plugin Manager still lacks
-  complete host composition and scope-aware apply/observation wiring;
+  Runtime/MCP/Flow/Skill/UI/OKF adapters exist; the Plugin Manager composes the
+  supported Tool Task, stdio MCP, Flow, Skill, and UI set with scope-aware
+  apply/observation, while production Service/Gateway/Knowledge hosts remain;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
-  its bounded read-only management MCP is connected, while production host
-  composition across package/capability and surface adapters remains to be
-  connected;
+  its bounded read-only management MCP and fenced managed-host adapter are
+  connected, while production Service/Gateway/Knowledge composition remains;
 - the dependency resolver, lock, remote closure downloader, graph lifecycle
   coordinator, and signed remote standalone CLI path are implemented in A3S
-  Use; Code TUI/Web now inject their supported host set through the public
-  lifecycle factory, while management MCP and managed-host mutation still need
-  the same composition;
+  Use; Code TUI/Web inject their supported host set through the public lifecycle
+  factory, management MCP remains intentionally read-only, and fenced
+  managed-host mutation reuses the same Manager composition;
 - package and Runtime storage now support exact N/N+1 coexistence, candidate
   commit replay, pre-cutover rollback, and exact prior-generation retirement;
   the dependency-closure coordinator binds prior/candidate locks in plan v3,
@@ -509,6 +509,13 @@ Implementation status (2026-08-06):
 - completed in the umbrella CLI: a reusable typed `plugin_manager` application
   service with one operation lock and centralized plan, apply, enable, and
   disable process boundaries;
+- completed in the umbrella CLI: one canonical fenced managed-host adapter
+  verifies immutable capabilities and a durable enrolled Workspace scope,
+  separates remote and local plan/apply authority, observes exact package
+  state, and replays byte-equivalent operations after host recreation;
+- completed in A3S Code: local CLI/Web and fenced managed hosts route
+  permission-free schema-v3 enable/disable through the same Use-owned
+  package-state generation and lifecycle factory without legacy fallback;
 - completed in the umbrella CLI: a bounded Marketplace read model joining
   release bundles, complete signed catalog records, legacy TUF records, and an
   immutable installed/enabled snapshot without package downloads;
@@ -620,6 +627,11 @@ Implementation status (2026-08-06):
   `PlanScope` for Grant-bearing operations, carry it through install/upgrade/
   uninstall plans, and reject pending replay when a caller substitutes only
   the scope kind;
+- completed in A3S Code: the shared umbrella and fenced managed-host planner
+  snapshot the exact Grant scope at the durable state revision, evaluate host
+  policy, invoke `bind_cognitive_package_grant_impacts` with the final
+  authority, reject scope/revision/impact/authority drift, and forward the same
+  reviewed envelope and confirmation into Use-owned graph apply and replay;
 - completed in A3S Use: permission-free schema-v3 package enablement is
   serialized by operation- and package-scoped cross-process locks and uses a durable,
   monotonic package-state generation separate from immutable receipt lifecycle
@@ -645,11 +657,9 @@ Implementation status (2026-08-06):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; umbrella and managed-host invocation of Use-owned package
-  enablement plus the reviewed-plan provider with their exact fence, scope,
-  authority, confirmation, canonical Grant evidence, and replay result; real signed
-  cross-platform lifecycle E2E; and the published
-  managed-host port required before a Cloud adapter can enable mutation. Hosts
+  injection; permission-bearing enablement with exact Grant prepare, cutover,
+  drain, and retirement; real signed cross-platform lifecycle E2E; and the
+  published Cloud adapter over the existing fenced managed-host port. Hosts
   must not add a parallel implementation.
 
 Deliverables:
@@ -907,8 +917,8 @@ Implementation status (in progress 2026-07-30):
 - completed M5J-C-A in the umbrella CLI: bind every reviewed plan to a
   host-selected actor, with CLI/Web producing user plans and management MCP
   producing agent plans, while package and request content cannot choose the
-  principal; persist and return the actor with the frozen `user/current`
-  lifecycle scope;
+  principal; local adapters retain `user/current`, while the fenced
+  managed-host adapter binds the exact enrolled Workspace scope;
 - completed M5J-C-B in the umbrella CLI: accept an optional complete Use plan
   draft from the delegated planner, bind host identity/lifetime/actor/scope,
   requested release and verified capability generation, evaluate policy, and
@@ -1014,15 +1024,19 @@ Implementation status (in progress 2026-07-30):
 - completed in `a3s-use`: expose a fail-closed reviewed-plan provider that
   binds the exact external authority, confirmation, operation identity, and
   lock-bound envelope into Grant-aware graph apply and replay;
+- completed in the umbrella CLI: snapshot the exact User/Workspace Grant scope
+  and durable revision, apply host policy before and after the public canonical
+  Grant planner, forward the unchanged authority/envelope/confirmation through
+  local and fenced managed-host graph operations, and prove a signed
+  permission-bearing Tool Task persists its exact Grant without legacy child
+  mutation;
 - completed in `a3s-use`: expose durable permission-free package enablement and
   observation using an independent optimistic package-state generation; reuse
   the installed generation's typed lifecycle hosts, recover interrupted
   checkpoints, replay exact results, and reject permission-bearing toggles
   until Grant cutover composition exists;
-- pending: inject the Runtime Broker into the shared umbrella Plugin Manager,
-  invoke package enablement and that provider through
-  CLI/Web/management MCP/managed-host entry points, and add secret-reference adapters,
-  filesystem/network/child-process enforcement, production-provider-backed
+- pending: add permission-bearing enablement composition, secret-reference
+  adapters, filesystem/network/child-process enforcement, production-provider-backed
   prior-generation Runtime retirement, streaming/file-backed large Task
   output, the production MCP initialize client adapter, stdio supervision,
   Gateway route revocation, and scope-aware capability/session snapshot wiring.

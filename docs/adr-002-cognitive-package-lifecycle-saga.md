@@ -1,6 +1,6 @@
 # ADR-002: Cognitive Package Lifecycle Saga
 
-- Status: accepted architecture; P0 hosts, P2-A Grant graph saga, and standalone P2-B wiring implemented; umbrella wiring in progress
+- Status: accepted architecture; P0 hosts, P2-A Grant graph saga, and P2-B graph wiring through standalone, umbrella, and managed-host paths implemented
 - Decision date: 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -145,9 +145,11 @@ operation identity, lifetime, scope, policy, lock-bound envelope, and
 confirmation across apply and crash replay. The Grant-aware package manager
 now retains the complete User or Workspace `PlanScope`; pending replay compares
 both kind and ID so a managed workspace cannot be reopened as user authority.
-Production blue/green completion
-still requires umbrella and managed-host adapters to invoke that provider and
-to compose Runtime Service, Gateway, Knowledge, and projection providers.
+The umbrella and fenced managed-host planners now snapshot the exact Grant
+scope/revision, bind canonical impacts with the final host authority, and
+invoke this provider without regenerating identity or confirmation. Production
+blue/green completion still requires Runtime Service, Gateway, Knowledge, and
+projection providers plus permission-bearing enablement.
 
 ## Implementation State
 
@@ -177,6 +179,9 @@ Implemented:
   operations, authority-stable replay, and tamper/legacy-bypass rejection;
 - exact User/Workspace plan-scope propagation across Grant-bearing graph
   install, upgrade, uninstall, and pending replay;
+- public canonical host Grant-impact planning plus umbrella and fenced
+  managed-host snapshot/revision/policy binding and reviewed-provider
+  invocation;
 - stable replay evidence for Runtime preparation and removal;
 - a content-addressed package fixture containing all six contribution kinds;
   and
@@ -189,10 +194,9 @@ Implemented:
 Remaining before the product can claim complete cognitive-package lifecycle:
 
 - injection of production Runtime Service, Gateway/HTTP MCP, and A3S Knowledge
-  hosts plus exact Grant authority/confirmation forwarding by umbrella and
-  managed-host Plugin Managers;
-- management MCP and managed-host lifecycle-factory mutation wiring into this
-  coordinator, while preserving the existing Code TUI/Web baseline;
+  hosts;
+- exact Grant prepare/cutover/drain/retirement for permission-bearing
+  enablement, while management MCP remains intentionally read-only;
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
 
 ## Consequences
@@ -210,5 +214,5 @@ Costs:
 - every product host must provide typed lifecycle adapters;
 - capability publication requires a multi-resource saga; and
 - production-provider-backed upgrades remain unavailable through the umbrella
-  Plugin Manager until it forwards exact Use Grant authority/confirmation and
-  composes the remaining provider evidence.
+  Plugin Manager until it composes the remaining Service, Gateway, and
+  Knowledge evidence.
