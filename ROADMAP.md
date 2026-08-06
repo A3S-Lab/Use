@@ -143,6 +143,9 @@ The following foundations are implemented:
   reviewed operation identity, lifetime, scope, policy, complete lock-bound
   envelope, and confirmation, derives only plan-bound Grant confirmations, and
   rejects planner, dependency-lock, policy, or replay drift before mutation;
+- a public canonical host Grant-impact planner that uses the same internal
+  algorithm as install/upgrade/uninstall, supports User and Workspace scope,
+  and rejects prebound impacts or Grant snapshot scope/revision drift;
 - full User/Workspace plan-scope retention for Grant-bearing cognitive-package
   operations, with pending replay rejecting a scope-kind substitution even
   when the scope ID matches;

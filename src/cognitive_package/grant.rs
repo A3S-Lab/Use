@@ -451,6 +451,32 @@ pub(super) fn plan_workspace_grants(
     }))
 }
 
+/// Bind the canonical cognitive-package Grant impact to a host-owned draft.
+///
+/// Embedding hosts call this after assigning the final operation identity,
+/// scope, and authority in `binding`, using a Grant snapshot read from the
+/// same durable state revision as `draft`. The function deliberately exposes
+/// only planner-owned impact evidence; Grant proposals, confirmations, and
+/// lifecycle receipts remain owned and re-derived by the package manager when
+/// the reviewed plan is applied.
+///
+/// This is the single supported host adapter for install, upgrade, and
+/// uninstall Grant planning. It uses the same planner as the manager-owned
+/// operation path and fails closed if the draft already contains host-supplied
+/// workspace impacts or the snapshot scope/revision drifts.
+pub fn bind_cognitive_package_grant_impacts(
+    draft: &mut PluginOperationPlanDraft,
+    binding: &PluginOperationPlanBinding,
+    snapshot: &PluginWorkspaceGrantSnapshot,
+) -> UseResult<()> {
+    let (enabled_before, enabled_after) = match draft.action {
+        a3s_use_core::PluginOperationAction::Install => (false, true),
+        a3s_use_core::PluginOperationAction::Upgrade => (true, true),
+        a3s_use_core::PluginOperationAction::Uninstall => (true, false),
+    };
+    plan_workspace_grants(draft, binding, snapshot, enabled_before, enabled_after).map(drop)
+}
+
 pub(super) async fn authorize_planned_operation(
     provider: &dyn CognitivePackageAuthorizationProvider,
     envelope: &PluginOperationPlanEnvelope,

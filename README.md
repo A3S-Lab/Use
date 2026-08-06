@@ -62,6 +62,9 @@ available for automation, embedding, and diagnostics.
 > lock, policy, or replay drift fails closed. The Grant-aware package manager
 > retains the complete User or Workspace plan scope and rejects
 > pending-operation replay when only the scope kind changes under the same ID.
+> Embedding hosts can now call the same canonical Grant planner to bind exact
+> install/upgrade/uninstall impacts before review; the API exposes no parallel
+> proposal algorithm and Use re-derives all Grant evidence during apply.
 > A permission-free Workspace plan still binds its exact enablement transition
 > without inventing Grant digests, so scope validation remains complete for
 > static Skill/UI packages. Use now also owns durable schema-v3 package
@@ -110,6 +113,11 @@ The package model is exercised as code, not only described in prose:
   grant-aware graph paths persist candidates before package preparation,
   checkpoint exact cutover evidence, and delay prior-grant revocation until
   accepted calls drain.
+- [`bind_cognitive_package_grant_impacts`](src/cognitive_package/grant.rs)
+  lets an umbrella or managed host bind the exact User/Workspace Grant impact
+  with the manager-owned planner before review. Scope, state revision, prior
+  Grant evidence, operation authority, and lifecycle transition all fail
+  closed on drift; proposals and receipts remain internal to apply.
 - [`capability watch`](src/capability_registry.rs) lets resident hosts observe
   package and projection changes without restarting.
 - A3S Code's
@@ -485,7 +493,8 @@ only when the immutable plan contains no Grant-bearing package transition. The
 public reviewed-host provider now accepts only the same complete envelope and
 exact confirmation, reproduces the signed dependency lock in a clean
 workspace, and rejects policy drift during interrupted replay. The umbrella
-Plugin Manager and managed-host adapters still need to invoke that provider;
+Plugin Manager and managed-host adapters can use the public canonical Grant
+impact planner before invoking that provider, but still need to wire the call;
 production Knowledge, Service, and Gateway composition is also still being
 wired.
 Permission-free schema-v3 enable/disable already uses the package lifecycle's
@@ -554,7 +563,7 @@ do not share one database transaction. The boundaries are frozen in
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
 | Package enablement core | Implemented for permission-free schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, stale-generation rejection, durable checkpoint recovery, exact result replay, lifecycle-based hide/drain/stop and prepare/publish, and non-destructive package/dependency retention; permission-bearing Grant cutover and umbrella/managed-host adapters remain pending |
-| Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, exact User/Workspace scope retention, and permission-free Workspace enablement impacts are implemented: external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host adapters still need to invoke the provider |
+| Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, a public manager-owned host impact planner, exact User/Workspace scope retention, and permission-free Workspace enablement impacts are implemented: external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host adapters still need to invoke the planner/provider pair |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
 | Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone and reviewed-host Grant plan/apply selection are wired, while production providers and umbrella/managed-host adapter invocation remain release gates |

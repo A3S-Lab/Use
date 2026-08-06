@@ -114,6 +114,109 @@ async fn standalone_policy_requires_exact_confirmation_and_rejects_grant_free_by
     );
 }
 
+#[test]
+fn host_grant_planner_matches_manager_planner_for_permission_bearing_user_install() {
+    let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
+    let scope = PlanScope {
+        kind: PlanScopeKind::User,
+        id: "user/current".to_string(),
+    };
+    let mut manager_draft = PluginOperationPlanDraft::new(
+        source.action,
+        source.package_id,
+        source.component_id,
+        source.packages,
+        source.providers,
+        Vec::new(),
+        source.impact,
+        source.state,
+    )
+    .unwrap();
+    let binding = binding(
+        &scope,
+        &manager_draft,
+        &StandaloneCognitivePackageAuthorizationProvider,
+        "install:test:host-grant-planner",
+        1_710_000_000_000,
+    );
+    let snapshot = empty_snapshot(&scope.id, manager_draft.state.state_revision);
+    let mut host_draft = manager_draft.clone();
+
+    let manager_grants =
+        plan_workspace_grants(&mut manager_draft, &binding, &snapshot, false, true)
+            .unwrap()
+            .unwrap();
+    bind_cognitive_package_grant_impacts(&mut host_draft, &binding, &snapshot).unwrap();
+
+    assert_eq!(
+        host_draft.workspace_impacts,
+        manager_draft.workspace_impacts
+    );
+    assert_eq!(host_draft.workspace_impacts.len(), 1);
+    assert_eq!(host_draft.workspace_impacts[0].scope_id, scope.id);
+    assert!(!host_draft.workspace_impacts[0].enabled_before);
+    assert!(host_draft.workspace_impacts[0].enabled_after);
+    let change_set_digest = manager_grants.change_set.descriptor_digest().unwrap();
+    assert_eq!(
+        host_draft.workspace_impacts[0]
+            .grant_after_digest
+            .as_deref(),
+        Some(change_set_digest.as_str())
+    );
+    assert_eq!(
+        host_draft.bind(binding.clone()).unwrap(),
+        manager_draft.bind(binding).unwrap()
+    );
+}
+
+#[test]
+fn host_grant_planner_rejects_scope_revision_and_prebound_impact_drift() {
+    let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
+    let mut draft = PluginOperationPlanDraft::new(
+        source.action,
+        source.package_id,
+        source.component_id,
+        source.packages,
+        source.providers,
+        Vec::new(),
+        source.impact,
+        source.state,
+    )
+    .unwrap();
+    let binding = binding(
+        &source.scope,
+        &draft,
+        &StandaloneCognitivePackageAuthorizationProvider,
+        "install:test:host-grant-drift",
+        1_710_000_000_000,
+    );
+
+    let wrong_scope = empty_snapshot("workspace:other", draft.state.state_revision);
+    assert_eq!(
+        bind_cognitive_package_grant_impacts(&mut draft.clone(), &binding, &wrong_scope)
+            .unwrap_err()
+            .code,
+        "use.plugin.package_authorization_invalid"
+    );
+
+    let wrong_revision = empty_snapshot(&binding.scope.id, draft.state.state_revision + 1);
+    assert_eq!(
+        bind_cognitive_package_grant_impacts(&mut draft.clone(), &binding, &wrong_revision)
+            .unwrap_err()
+            .code,
+        "use.plugin.package_authorization_invalid"
+    );
+
+    draft.workspace_impacts = source.workspace_impacts;
+    let snapshot = empty_snapshot(&binding.scope.id, draft.state.state_revision);
+    assert_eq!(
+        bind_cognitive_package_grant_impacts(&mut draft, &binding, &snapshot)
+            .unwrap_err()
+            .code,
+        "use.plugin.package_authorization_invalid"
+    );
+}
+
 #[tokio::test]
 async fn permission_free_workspace_plan_still_binds_exact_enablement_impact() {
     let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
@@ -154,8 +257,7 @@ async fn permission_free_workspace_plan_still_binds_exact_enablement_impact() {
     );
     let snapshot = empty_snapshot(&source.scope.id, draft.state.state_revision);
 
-    let planned = plan_workspace_grants(&mut draft, &binding, &snapshot, false, true).unwrap();
-    assert!(planned.is_none());
+    bind_cognitive_package_grant_impacts(&mut draft, &binding, &snapshot).unwrap();
     assert_eq!(draft.workspace_impacts.len(), 1);
     assert_eq!(draft.workspace_impacts[0].scope_id, source.scope.id);
     assert!(draft.workspace_impacts[0].grant_before_digest.is_none());
