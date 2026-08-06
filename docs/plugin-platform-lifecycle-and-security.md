@@ -9,7 +9,8 @@
   dependency/lock foundation frozen 2026-08-03; unified A3S Flow semantics
   plus A3S Code TUI/Web host/catalog integration frozen 2026-08-04,
   bounded exact-generation package/Runtime N/N+1 storage, and the Grant-aware
-  graph saga foundation frozen 2026-08-05
+  graph saga foundation frozen 2026-08-05; public Grant-impact planning and
+  umbrella/managed-host authority forwarding connected 2026-08-06
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -27,9 +28,10 @@ typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
 foundation. P0 package/capability hosts add generation-bound commit,
 publish/hide, lease drain, and exact removal. A3S Code composes the supported
 Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production Knowledge,
-Runtime Service, Gateway/HTTP MCP, umbrella/managed-host Grant-authority
-forwarding, and managed-host composition remain pending. Standalone Grant
-planning/apply is implemented. Without promoted observation, an OKF surface
+Runtime Service, Gateway/HTTP MCP, and permission-bearing enablement remain
+pending. Standalone and host-reviewed Grant planning/apply are implemented,
+including exact umbrella/managed-host scope, revision, authority,
+confirmation, and replay binding. Without promoted observation, an OKF surface
 stays unpublished.
 
 The dependency foundation adds canonical schema-v3 SemVer edges, a bounded
@@ -39,8 +41,8 @@ single-snapshot graph publication, reverse uninstall, and crash-safe partial
 receipt recovery. Signed remote schema-v3 `install`/`uninstall` and compatible
 remote `component` commands call this graph coordinator. Code TUI/Web inject
 their supported host set through the public lifecycle factory and consume one
-exact-generation watcher; management MCP and managed-host mutations must still
-reuse that composition.
+exact-generation watcher; the management MCP remains intentionally read-only,
+and fenced managed-host mutations reuse the same Manager composition.
 
 Flow has one engine, `a3s-flow`. Use verifies its bounded source and explicit
 Tool/MCP/OKF dependency edges; a typed host adapter owns Native TypeScript
@@ -748,8 +750,9 @@ receipt and is not subsequently tombstoned. The Grant-aware graph coordinator
 places candidate persistence before package/Runtime readiness, exact Registry
 publication before the cutover checkpoint, accepted-call drain before Grant
 retirement, and provider/package cleanup afterward. Standalone and umbrella
-Plugin Managers must still derive the canonical inputs after policy and
-confirmation and select this path when Grants are required.
+Plugin Managers derive the canonical inputs after policy and confirmation and
+select this path when Grants are required; the fenced managed-host path reuses
+the same planner and reviewed provider.
 
 Durable authorization uses two storage schemas:
 `a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision

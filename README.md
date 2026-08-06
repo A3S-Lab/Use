@@ -74,9 +74,11 @@ available for automation, embedding, and diagnostics.
 > the installed dependency graph. Permission-bearing toggles fail closed until
 > the product adapter composes the exact Workspace Grant cutover.
 > Production Knowledge,
-> Service/HTTP hosts, umbrella and managed-host adapter wiring, distributed Flow
+> Service/HTTP hosts, permission-bearing enablement, distributed Flow
 > scheduling/resumption, and complete real-process cross-platform E2E remain
-> release gates.
+> release gates. The A3S Code umbrella and managed-host graph paths now invoke
+> the public Grant planner and reviewed provider with exact scope, revision,
+> authority, confirmation, and replay evidence.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 ## Proof in the codebase
@@ -493,10 +495,14 @@ only when the immutable plan contains no Grant-bearing package transition. The
 public reviewed-host provider now accepts only the same complete envelope and
 exact confirmation, reproduces the signed dependency lock in a clean
 workspace, and rejects policy drift during interrupted replay. The umbrella
-Plugin Manager and managed-host adapters can use the public canonical Grant
-impact planner before invoking that provider, but still need to wire the call;
-production Knowledge, Service, and Gateway composition is also still being
-wired.
+Plugin Manager and managed-host adapters now snapshot the exact User/Workspace
+Grant scope at the durable planner revision, evaluate provisional host policy,
+invoke the public canonical Grant-impact planner with the final authority, and
+re-evaluate the immutable result before invoking that provider. Scope,
+revision, prebound-impact, policy, or authority drift fails closed. A signed
+Tool Task integration proves exact Grant receipt persistence, no legacy child
+mutation, and durable result replay. Production Knowledge, Service, and Gateway
+composition is still being wired.
 Permission-free schema-v3 enable/disable already uses the package lifecycle's
 hide, drain, stop, prepare, and publish checkpoints without changing package
 bytes or dependency ownership. The optimistic generation is the durable
@@ -562,11 +568,11 @@ do not share one database transaction. The boundaries are frozen in
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
-| Package enablement core | Implemented for permission-free schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, stale-generation rejection, durable checkpoint recovery, exact result replay, lifecycle-based hide/drain/stop and prepare/publish, and non-destructive package/dependency retention; permission-bearing Grant cutover and umbrella/managed-host adapters remain pending |
-| Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, a public manager-owned host impact planner, exact User/Workspace scope retention, and permission-free Workspace enablement impacts are implemented: external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host adapters still need to invoke the planner/provider pair |
+| Package enablement core | Implemented for permission-free schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, stale-generation rejection, durable checkpoint recovery, exact result replay, lifecycle-based hide/drain/stop and prepare/publish, and non-destructive package/dependency retention; exact permission-bearing Grant cutover in umbrella/managed-host adapters remains pending |
+| Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, public manager-owned host impact planning, and umbrella/managed-host invocation are implemented: exact User/Workspace scope and revision snapshots, external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |
-| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone and reviewed-host Grant plan/apply selection are wired, while production providers and umbrella/managed-host adapter invocation remain release gates |
+| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone, reviewed-host, umbrella, and managed-host Grant plan/apply selection are wired, while production providers remain release gates |
 
 The baseline intentionally fails closed when required permission, Runtime,
 Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages

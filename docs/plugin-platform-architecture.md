@@ -7,7 +7,9 @@
   package-level six-surface lifecycle plus P0 hosts accepted 2026-08-03, the
   cognitive-package dependency/lock foundation accepted 2026-08-03, and A3S
   Flow accepted as the single workflow engine and the exact-generation
-  preflight binding foundation accepted on 2026-08-04
+  preflight binding foundation accepted on 2026-08-04; canonical Grant-impact
+  planning and umbrella/managed-host graph authority forwarding accepted
+  2026-08-06
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -56,11 +58,11 @@ and replays every GC boundary without generation inflation. Grant-aware graph
 paths now persist candidate Grants before package preparation, bind exact
 Registry cutover evidence, jointly roll back candidates before cutover, and
 drain accepted prior calls before Grant retirement. Standalone Grant
-planning/apply selection is now implemented; umbrella/managed-host authority
-forwarding has an exact reviewed-plan provider but is not yet invoked by those
-adapters. Production provider composition, the A3S Knowledge index backend,
-and scoped cited retrieval remain to be implemented. Missing promoted evidence
-therefore stays explicitly unpublished.
+planning/apply selection is implemented, and the umbrella/managed-host paths
+now combine the public canonical impact planner with the exact reviewed-plan
+provider. Production provider composition, permission-bearing enablement, the
+A3S Knowledge index backend, and scoped cited retrieval remain to be
+implemented. Missing promoted evidence therefore stays explicitly unpublished.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use
@@ -576,9 +578,10 @@ coordinator: plan v3 binds the complete prior/candidate lock union,
 Add/Replace archives prepare forward, removed routes leave in the same
 publication, and replaced or unreferenced generations retire in reverse order.
 Exact shared dependencies remain selected without download or receipt rewrite.
-Production Knowledge, Runtime Service, Gateway/HTTP MCP, grant,
-management-MCP, and managed-host composition remain pending. Storage never
-overwrites the snapshot-selected retained generation.
+Production Knowledge, Runtime Service, Gateway/HTTP MCP, and
+permission-bearing enablement remain pending. Management MCP remains a bounded
+read-only adapter, while fenced managed-host graph mutations reuse the shared
+Manager. Storage never overwrites the snapshot-selected retained generation.
 
 ## Surface Reconciliation
 
@@ -1028,23 +1031,26 @@ The core invariants are:
 - bind every grant and Runtime observation to exact content digests; and
 - retain mutable user data unless a separate purge is authorized.
 
-The first live complete-plan slice is implemented for catalog-v2 installs that
-contain only permission-free Skill and UI surfaces. The umbrella component plan
-retains the verified catalog record, the shared Manager joins it to the exact
-registry target and verified capability snapshot, and host binding adds policy
+The first live complete-plan slice used catalog-v2 installs containing only
+permission-free Skill and UI surfaces. The umbrella component plan retains the
+verified catalog record, the shared Manager joins it to the exact registry
+target and verified capability snapshot, and host binding adds policy
 authority. A durable monotonic planner revision detects state drift between
-review and apply and advances idempotently after successful child mutation.
-The same safe slice now covers registry upgrade and uninstall by joining the
-package-specific installed catalog and receipt to the compact capability
-snapshot and umbrella current version, then deriving exact replace or remove
-transitions.
+review and apply and advances idempotently after successful graph mutation.
+Registry upgrade and uninstall join package-specific installed catalog and
+receipt evidence to the compact capability snapshot and umbrella current
+version before deriving exact replace or remove transitions.
 
 For executable candidates, catalog v3, the separately signed planning bundle,
 TUF target-only loading, provider-neutral Runtime templates, and CLI
 component-plan transport are implemented. The shared Manager revalidates that
-the typed bundle matches the exact catalog evidence. Executable or
-permission-bearing drafts still fail closed until the host Runtime Broker,
-two-pass provider selection, and workspace grant saga are connected.
+the typed bundle matches the exact catalog evidence. For a complete locked
+cognitive-package graph, it snapshots the exact Grant scope/revision, performs
+host policy evaluation, binds Use's canonical impact with the final authority,
+and forwards the unchanged reviewed envelope and confirmation into graph
+apply. A signed executable Tool Task proves this provider- and
+permission-bearing path without a legacy child mutation. Unsupported Runtime
+Service, HTTP MCP, and OKF requirements still fail closed in the composed host.
 
 The in-crate package lifecycle foundation is separately implemented: canonical
 surface scheduling, durable checkpoint replay, production package/capability
@@ -1053,8 +1059,10 @@ dependency-ordered remote closure download, atomic graph install/upgrade
 publication, automatic upgrade rollback/retirement, and an all-six-surface
 package fixture. Schema-v3 operations use dedicated exact-generation
 `ExtensionRegistry` methods and reject legacy mutation bypass. The umbrella
-Plugin Manager does not yet compose these hosts, so P0 alone does not expand
-the current product readiness claim.
+Plugin Manager composes the supported Tool Task, stdio MCP, A3S Flow, Skill,
+and UI hosts; production Service/Gateway/Knowledge providers, complete graph
+upgrade/uninstall construction, and cross-platform crash E2E still bound the
+product readiness claim.
 
 ## Compatibility and Migration
 
