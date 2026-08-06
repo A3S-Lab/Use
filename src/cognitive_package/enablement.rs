@@ -1,6 +1,7 @@
 use a3s_use_core::{
-    PlanScope, PluginDesiredState, PluginHostPackageState, PluginObservedState,
-    PluginOperationPlan, PluginPackageId, PluginSurfaceRef, UseError, UseResult,
+    LockedPluginPackage, PlanScope, PluginDesiredState, PluginHostPackageState,
+    PluginObservedState, PluginOperationPlan, PluginPackageId, PluginSurfaceRef, UseError,
+    UseResult,
 };
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionRegistrySnapshot, InstalledExtension,
@@ -17,9 +18,11 @@ use crate::plugin_lifecycle::{
 use super::enablement_store::{
     operation_conflict, CognitivePackageArtifactState, CognitivePackageEnablementStore,
     PendingCognitivePackageEnablement, StoredCognitivePackageEnablement,
-    StoredCognitivePackageEnablementOperation,
+    StoredCognitivePackageEnablementOperation, ENABLEMENT_STATE_SCHEMA_V2,
 };
+use super::grant::authorize_planned_operation;
 use super::plan::now_ms;
+use super::plan::{enablement_operation, package_state_revision};
 use super::{package_manager_error, CognitivePackageManager};
 
 pub const COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA: &str =
@@ -260,10 +263,9 @@ impl CognitivePackageManager {
                 .await;
         }
 
-        let extension = self
+        let (extension, locked_package) = self
             .required_enablement_extension(&request.package_id)
             .await?;
-        reject_permission_bearing_enablement(&extension)?;
         self.lifecycle.validate_manifest(&extension.manifest)?;
         let admitted_at_ms = now_ms()?;
         let reconciled = reconcile_state(
@@ -303,6 +305,9 @@ impl CognitivePackageManager {
             let operation = StoredCognitivePackageEnablementOperation::new(
                 self.scope.clone(),
                 request.clone(),
+                None,
+                None,
+                None,
                 result.clone(),
                 state_after.clone(),
             )?;
@@ -323,6 +328,29 @@ impl CognitivePackageManager {
                 "An installed cognitive package has no immutable artifact identity.",
             )
         })?;
+        let snapshot = self.registry.snapshot().await?;
+        let grant_snapshot = self
+            .grant_store()
+            .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
+            .await?;
+        let generated = enablement_operation(
+            request,
+            &locked_package,
+            &extension.manifest,
+            extension.receipt.descriptor_digest()?,
+            snapshot.generation,
+            &self.scope,
+            admitted_at_ms,
+            &grant_snapshot,
+            self.authorization.as_ref(),
+        )?;
+        let authorization = authorize_planned_operation(
+            self.authorization.as_ref(),
+            &generated.envelope,
+            generated.grants.as_ref(),
+            admitted_at_ms,
+        )
+        .await?;
         let request_digest = request.descriptor_digest()?;
         let action = if request.enabled {
             PluginLifecycleAction::Enable
@@ -332,7 +360,7 @@ impl CognitivePackageManager {
         let intent = PluginLifecycleIntent::from_manifest(
             PluginLifecycleIntentSpec {
                 operation_id: request.operation_id.clone(),
-                plan_digest: request_digest.clone(),
+                plan_digest: generated.envelope.plan_digest.clone(),
                 scope_id: self.scope.id.clone(),
                 package_id: request.package_id.to_string(),
                 package_digest: artifact.package_digest.clone(),
@@ -343,10 +371,13 @@ impl CognitivePackageManager {
             &extension.manifest,
         )?;
         let mut pending = reconciled;
+        pending.schema = ENABLEMENT_STATE_SCHEMA_V2.to_string();
         pending.active = Some(PendingCognitivePackageEnablement {
             request_digest,
             request: request.clone(),
             intent,
+            envelope: Some(generated.envelope),
+            authorization: Some(authorization),
             state_generation_after,
             started_at_ms: admitted_at_ms,
         });
@@ -494,10 +525,9 @@ impl CognitivePackageManager {
             return Ok(operation);
         }
 
-        let extension = self
+        let (extension, _) = self
             .required_enablement_extension(&active.request.package_id)
             .await?;
-        reject_permission_bearing_enablement(&extension)?;
         self.lifecycle.validate_manifest(&extension.manifest)?;
         let artifact = artifact_state(&extension)?;
         if current.artifact.as_ref() != Some(&artifact) {
@@ -505,6 +535,18 @@ impl CognitivePackageManager {
                 "use.plugin.package_generation_changed",
                 "The immutable package generation changed while enablement was pending.",
             ));
+        }
+        if let Some(envelope) = &active.envelope {
+            let mut prior_receipt = extension.receipt.clone();
+            prior_receipt.enabled = !active.request.enabled;
+            if envelope.plan.state.receipt_digest.as_deref()
+                != Some(prior_receipt.descriptor_digest()?.as_str())
+            {
+                return Err(package_manager_error(
+                    "use.plugin.package_generation_changed",
+                    "The exact installed receipt changed after enablement planning.",
+                ));
+            }
         }
         let completed_at_fallback = now_ms()?;
         let identity = ExtensionLifecycleIdentity::new(
@@ -517,11 +559,55 @@ impl CognitivePackageManager {
             self.registry.clone(),
             self.registry.lifecycle_package_root(&identity),
         )?;
-        let lifecycle = coordinator
-            .apply(&active.intent, &extension.manifest, || {
-                now_ms().unwrap_or(completed_at_fallback)
+        if active.requires_authority_revalidation() {
+            let envelope = active.envelope.as_ref().ok_or_else(|| {
+                enablement_error(
+                    "use.plugin.package_enablement_state_invalid",
+                    "A plan-bound enablement operation omitted its immutable envelope.",
+                )
+            })?;
+            self.authorization.verify_plan(envelope)?;
+        }
+        let grants = active
+            .authorization
+            .as_ref()
+            .zip(active.envelope.as_ref())
+            .map(|(authorization, envelope)| {
+                authorization.lifecycle_unit(self.grant_store(), envelope)
             })
-            .await?;
+            .transpose()?
+            .flatten();
+        let lifecycle = match (&active.envelope, grants.as_ref()) {
+            (Some(envelope), Some(grants)) if active.request.enabled => {
+                coordinator
+                    .apply_enable_with_grants(
+                        envelope,
+                        &active.intent,
+                        &extension.manifest,
+                        grants,
+                        || now_ms().unwrap_or(completed_at_fallback),
+                    )
+                    .await?
+            }
+            (Some(envelope), Some(grants)) => {
+                coordinator
+                    .apply_disable_with_grants(
+                        envelope,
+                        &active.intent,
+                        &extension.manifest,
+                        grants,
+                        || now_ms().unwrap_or(completed_at_fallback),
+                    )
+                    .await?
+            }
+            _ => {
+                coordinator
+                    .apply(&active.intent, &extension.manifest, || {
+                        now_ms().unwrap_or(completed_at_fallback)
+                    })
+                    .await?
+            }
+        };
         let completed_at_ms = lifecycle.completed_at_ms.ok_or_else(|| {
             enablement_error(
                 "use.plugin.package_enablement_state_invalid",
@@ -566,6 +652,9 @@ impl CognitivePackageManager {
         let operation = StoredCognitivePackageEnablementOperation::new(
             self.scope.clone(),
             active.request.clone(),
+            active.envelope.clone(),
+            active.authorization.clone(),
+            active.envelope.as_ref().map(|_| active.started_at_ms),
             result,
             state_after,
         )?;
@@ -577,7 +666,7 @@ impl CognitivePackageManager {
     async fn required_enablement_extension(
         &self,
         package_id: &PluginPackageId,
-    ) -> UseResult<InstalledExtension> {
+    ) -> UseResult<(InstalledExtension, LockedPluginPackage)> {
         let extension = self
             .registry
             .get(package_id.as_str())
@@ -588,16 +677,17 @@ impl CognitivePackageManager {
                     format!("Cognitive package '{}' is not installed.", package_id),
                 )
             })?;
-        self.validate_enablement_extension(package_id, &extension)
+        let package = self
+            .validate_enablement_extension(package_id, &extension)
             .await?;
-        Ok(extension)
+        Ok((extension, package))
     }
 
     async fn validate_enablement_extension(
         &self,
         package_id: &PluginPackageId,
         extension: &InstalledExtension,
-    ) -> UseResult<()> {
+    ) -> UseResult<LockedPluginPackage> {
         if extension.receipt.schema_version != COGNITIVE_PACKAGE_RECEIPT_SCHEMA_VERSION
             || extension.receipt.package_id != package_id.as_str()
             || extension.receipt.lifecycle_generation.is_none()
@@ -609,7 +699,7 @@ impl CognitivePackageManager {
             ));
         }
         let catalog = extension.plan_ready_catalog()?;
-        let mut owned = false;
+        let mut owned = None;
         for graph in self.graph_store().list().await? {
             if let Some(locked) = graph.package_lock.package(package_id.as_str()) {
                 if &locked.catalog != catalog {
@@ -618,16 +708,15 @@ impl CognitivePackageManager {
                         "An installed graph disagrees with the selected package catalog evidence.",
                     ));
                 }
-                owned = true;
+                owned.get_or_insert_with(|| locked.clone());
             }
         }
-        if !owned {
-            return Err(enablement_error(
+        owned.ok_or_else(|| {
+            enablement_error(
                 "use.plugin.package_enablement_state_invalid",
                 "The schema-v3 package is not owned by an installed dependency graph.",
-            ));
-        }
-        Ok(())
+            )
+        })
     }
 }
 
@@ -709,23 +798,6 @@ fn artifact_state(extension: &InstalledExtension) -> UseResult<CognitivePackageA
     };
     artifact.validate()?;
     Ok(artifact)
-}
-
-fn reject_permission_bearing_enablement(extension: &InstalledExtension) -> UseResult<()> {
-    let catalog = extension.plan_ready_catalog()?;
-    if !catalog.record.permission_ceiling.surfaces.is_empty() {
-        return Err(package_manager_error(
-            "use.plugin.package_enablement_grant_required",
-            format!(
-                "Cognitive package '{}' requires an exact Workspace Grant enablement cutover.",
-                extension.receipt.package_id
-            ),
-        )
-        .with_suggestion(
-            "Use a host that composes Grant prepare/cutover/drain/retirement with package enablement.",
-        ));
-    }
-    Ok(())
 }
 
 fn project_installed_state(

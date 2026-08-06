@@ -214,6 +214,13 @@ impl PluginGrantLifecycleUnit {
             )
         }))
     }
+
+    pub async fn is_completed(&self) -> UseResult<bool> {
+        Ok(self
+            .observe()
+            .await?
+            .is_some_and(|journal| journal.phase == WorkspaceGrantLifecyclePhase::Completed))
+    }
 }
 
 fn validate_binding(
@@ -255,10 +262,11 @@ fn validate_binding(
         .iter()
         .filter(|package| {
             impact.enabled_after
-                && matches!(
+                && (matches!(
                     package.change,
                     PlanPackageChangeKind::Add | PlanPackageChangeKind::Replace
-                )
+                ) || (plan.action == a3s_use_core::PluginOperationAction::Enable
+                    && package.change == PlanPackageChangeKind::Retain))
                 && package
                     .after
                     .as_ref()
@@ -276,10 +284,11 @@ fn validate_binding(
         .iter()
         .filter(|package| {
             impact.enabled_before
-                && matches!(
+                && (matches!(
                     package.change,
                     PlanPackageChangeKind::Remove | PlanPackageChangeKind::Replace
-                )
+                ) || (plan.action == a3s_use_core::PluginOperationAction::Disable
+                    && package.change == PlanPackageChangeKind::Retain))
                 && package
                     .before
                     .as_ref()

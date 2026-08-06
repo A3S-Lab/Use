@@ -230,6 +230,16 @@ impl ExtensionRegistry {
             .await
     }
 
+    /// Publish one exact installed generation and return the immutable
+    /// Registry snapshot selected by the same atomic cutover.
+    pub async fn publish_lifecycle_package_with_evidence(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        self.set_lifecycle_visibility_with_evidence(identity, true, env!("CARGO_PKG_VERSION"))
+            .await
+    }
+
     /// Publish a fully prepared dependency closure through one Registry
     /// snapshot cutover. Receipt updates remain invisible to route admission
     /// until the complete enabled set is durably projected.
@@ -331,6 +341,16 @@ impl ExtensionRegistry {
         identity: &ExtensionLifecycleIdentity,
     ) -> UseResult<ExtensionLifecycleResult> {
         self.set_lifecycle_visibility(identity, false, env!("CARGO_PKG_VERSION"))
+            .await
+    }
+
+    /// Hide one exact installed generation and return the immutable Registry
+    /// snapshot selected by the same atomic cutover.
+    pub async fn hide_lifecycle_package_with_evidence(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        self.set_lifecycle_visibility_with_evidence(identity, false, env!("CARGO_PKG_VERSION"))
             .await
     }
 
@@ -495,6 +515,20 @@ impl ExtensionRegistry {
         enabled: bool,
         host_version: &str,
     ) -> UseResult<ExtensionLifecycleResult> {
+        let publication = self
+            .set_lifecycle_visibility_with_evidence(identity, enabled, host_version)
+            .await?;
+        publication.packages.into_iter().next().ok_or_else(|| {
+            lifecycle_state_error("A single-package visibility cutover omitted its package result.")
+        })
+    }
+
+    async fn set_lifecycle_visibility_with_evidence(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+        enabled: bool,
+        host_version: &str,
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let selected = self.get(identity.package_id()).await?;
         let selected_is_exact = selected
@@ -570,10 +604,16 @@ impl ExtensionRegistry {
         } else {
             published
         };
-        Ok(ExtensionLifecycleResult {
-            changed,
-            extension,
+        let registry_generation = snapshot.generation;
+        let registry_snapshot_digest = snapshot.descriptor_digest()?;
+        Ok(ExtensionLifecycleGraphPublication {
+            packages: vec![ExtensionLifecycleResult {
+                changed,
+                extension,
+                registry_generation,
+            }],
             registry_generation: snapshot.generation,
+            registry_snapshot_digest,
         })
     }
 

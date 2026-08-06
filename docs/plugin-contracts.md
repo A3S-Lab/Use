@@ -9,7 +9,8 @@
   exact-generation preflight binding foundation frozen 2026-08-04; operation
   plan v3 dual-lock upgrades, host capabilities v3, and Grant-aware graph saga
   foundation frozen 2026-08-05; public Grant-impact planning and
-  umbrella/managed-host graph authority forwarding connected 2026-08-06
+  umbrella/managed-host graph authority forwarding plus plan-v4
+  permission-bearing enablement core connected 2026-08-06
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -24,10 +25,12 @@ implemented foundations.
 Signed remote schema-v3 records enter that graph from `a3s-use install` and
 the compatible `component install` command. A3S Code TUI/Web now composes the
 supported Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production
-Knowledge, Service/HTTP, permission-bearing enablement, and distributed Flow
-scheduling/retention remain product integration gates. The umbrella and
-fenced managed-host graph paths bind the public Grant planner to the exact
-reviewed provider.
+Knowledge, Service/HTTP, permission-bearing enablement review forwarding, and
+distributed Flow scheduling/retention remain product integration gates. The
+umbrella and fenced managed-host graph paths bind the public Grant planner to
+the exact reviewed provider. A3S Use itself now applies the same reviewed
+authorization model to permission-bearing enable/disable; managed-host
+enablement request v1 still lacks plan and confirmation fields.
 
 ## Contract Set
 
@@ -59,9 +62,11 @@ reviewed provider.
 | Installed plan evidence | `a3s.use.installed-plugin-plan-evidence.v1` | Package-specific receipt, catalog, surface, and capability join |
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v1` | Untrusted planner evidence before host identity and authority |
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v2` | Draft v1 plus an exact derived OKF bundle delta |
+| Operation plan draft | `a3s.use.plugin-operation-plan-draft.v3` | Enable/disable draft over one exact retained installed artifact and its visibility/authorization delta |
 | Operation plan | `a3s.use.plugin-operation-plan.v1` | Exact install, upgrade, or uninstall delta |
 | Operation plan | `a3s.use.plugin-operation-plan.v2` | Plan v1 plus an exact derived OKF bundle delta |
 | Operation plan | `a3s.use.plugin-operation-plan.v3` | Upgrade plan binding the complete exact prior/candidate lock union, including removed nodes |
+| Operation plan | `a3s.use.plugin-operation-plan.v4` | Enable/disable plan binding retained artifact, receipt, state revision, capability generation, and exact Grant impact |
 | Manager toolset | `a3s.use.plugin-manager-tools.v1` | Bounded MCP management interface |
 | Manager toolset | `a3s.use.plugin-manager-tools.v2` | Manager v1 with canonical `okf` search and selection values |
 | Manager toolset | `a3s.use.plugin-manager-tools.v3` | Manager v2 with canonical `flow` search and selection values |
@@ -73,6 +78,10 @@ reviewed provider.
 | Host apply | `a3s.use.plugin-host-apply-request/result.v1` | Digest-only apply with exact confirmation and idempotent operation evidence |
 | Host enablement | `a3s.use.plugin-host-enablement-request/result.v1` | Optimistic-generation enable or disable through the same manager |
 | Host observation | `a3s.use.plugin-host-observation-request/result.v1` | Exact Use-owned package/capability state or explicit unavailable evidence |
+| Cognitive-package enablement state | `a3s.use.cognitive-package-enablement-state.v1` | Legacy permission-free package-state and pending lifecycle record |
+| Cognitive-package enablement state | `a3s.use.cognitive-package-enablement-state.v2` | Package state plus pending immutable plan and complete authorization evidence |
+| Cognitive-package enablement operation | `a3s.use.cognitive-package-enablement-operation.v1` | Legacy or no-op completed result with no plan-bound mutation |
+| Cognitive-package enablement operation | `a3s.use.cognitive-package-enablement-operation.v2` | Completed plan-bound enablement result and authorization evidence for exact replay |
 | Package lifecycle intent | `a3s.use.plugin-lifecycle-intent.v1` | Exact package generation, six-surface graph, action, and deterministic checkpoint schedule |
 | Package lifecycle operation | `a3s.use.plugin-lifecycle-operation.v1` | Durable checkpoint receipts, optional failures, required failure evidence, and terminal status |
 | OKF projection receipt | `a3s.use.okf-projection-receipt.v1` | Exact scope/package/surface generation staged for Knowledge |
@@ -185,8 +194,11 @@ or unreferenced generations in reverse order, and durably replays every
 outcome. Its Grant-aware entry points persist plan-bound candidate Grants before
 package preparation, require exact snapshot/generation cutover evidence,
 restore package and Grant candidates together before cutover, and drain prior
-calls before revocation. Product-level Grant planning/apply selection and
-production provider composition remain outside the completed foundation.
+calls before revocation. The standalone manager performs product-level Grant
+planning/apply selection for graph and enablement operations when an exact
+authorization provider is injected. Production provider composition and
+versioned Code/Web/managed-host enablement review forwarding remain outside the
+completed foundation.
 
 Package ownership also applies above one manifest. A schema-v3 package may
 declare canonical package ID plus SemVer dependency blocks. The package lock
@@ -241,6 +253,14 @@ Observation returns either the shared Surface Reconciler state with exact
 receipt/package/capability evidence or a typed unavailable reason; absence and
 success are never inferred from missing evidence.
 
+Host plan request v1 accepts install, upgrade, and uninstall only. It rejects
+`enable` and `disable` because that request has neither current enablement
+evidence nor confirmation fields; callers must use the separate enablement
+port. Host enablement request v1 can safely forward permission-free toggles,
+but it cannot authorize a plan-v4 permission-bearing toggle. Such a product
+adapter must negotiate a new version instead of manufacturing or dropping
+review evidence.
+
 For schema-v3 cognitive packages, that expected value is the monotonic
 Use-owned **package-state generation**, not the immutable receipt lifecycle
 generation. The latter continues to identify exact installed bytes and host
@@ -263,11 +283,11 @@ changed flag, projected package/capability state, and an OLPC-canonical
 `sha256:` outcome digest under
 `a3s.use.cognitive-package-enablement-result.v1`.
 
-Use serializes the operation with operation- and package-scoped cross-process locks and
-persists both the active lifecycle intent and final request/result. A changed
-operation must advance the package-state generation; a no-op retains it. The
-same operation ID and request replay the exact completed result after restart,
-while a different request under that ID fails with
+Use serializes the operation with operation- and package-scoped cross-process
+locks and persists both the active lifecycle intent and final request/result. A
+changed operation must advance the package-state generation; a no-op retains
+it. The same operation ID and request replay the exact completed result after
+restart, while a different request under that ID fails with
 `use.plugin.package_enablement_operation_conflict`. A stale expected generation
 fails with `use.plugin.package_generation_changed` before any lifecycle side
 effect.
@@ -278,9 +298,42 @@ stops surfaces in order; enable prepares dependencies and republishes them.
 Neither transition rewrites package bytes nor the installed dependency graph.
 Artifact replacement, absence, and reinstall are reconciled into the monotonic
 state generation without reusing the artifact lifecycle generation as mutable
-state. Permission-bearing packages currently fail with
-`use.plugin.package_enablement_grant_required` until an embedding product
-composes exact Grant prepare/cutover/drain/retirement evidence.
+state.
+
+A changed toggle is represented by
+`a3s.use.plugin-operation-plan-draft.v3`, which binds as
+`a3s.use.plugin-operation-plan.v4`. The single package transition is `Retain`:
+`before == after` for the exact installed release, permission ceiling,
+manifest, selected surfaces, source provenance, receipt digest, state revision,
+and capability generation. Enable derives visibility false → true, secret
+Grant additions, OKF additions, and candidate Workspace Grants. Disable
+derives visibility true → false, secret revocations, OKF removals, and exact
+prior-Grant retirement. Provider evidence is required for enabled executable
+surfaces and forbidden for disable.
+
+For a permission-bearing package, authorization must bind the plan's exact
+scope, actor, policy, confirmation, Grant snapshot/change set, resolved Grants,
+ceilings, and admission time before lifecycle mutation. Missing reviewed
+authority returns `use.plugin.package_confirmation_required` with the immutable
+plan. Enable prepares candidate Grants, prepares surfaces, atomically publishes
+one capability generation with cutover evidence, commits Grant cutover, and
+completes the Grant operation. Disable prepares its Grant operation, atomically
+hides the package, commits cutover, drains calls accepted by the prior
+generation, revokes the exact Grant, and then stops surfaces. Capability hosts
+that cannot return cutover evidence fail closed before mutation.
+
+State schema v2 stores a pending plan envelope and authorization bundle;
+operation schema v2 stores the same evidence beside the exact terminal result.
+Recovery revalidates the injected provider, installed artifact, receipt, and
+plan before resuming. A completed replay does not ask for authorization again
+or publish another Registry generation. State/operation v1 records remain
+readable and resume through their legacy request-digest path.
+
+The current capability host returns cutover evidence from the same atomic
+Registry visibility mutation, and same-state retry is generation-stable. A
+future Registry contract must persist that evidence by operation idempotency
+key before the product claims recovery through the narrow cutover/journal crash
+window with unrelated concurrent Registry mutation.
 
 ## Catalog and Trust Provenance
 
@@ -463,7 +516,8 @@ operation plan, the resolver:
 1. requires `grantBeforeDigest` to equal the snapshot digest;
 2. requires `grantAfterDigest` to equal the change-set digest;
 3. derives required entries from every permission-bearing root and dependency
-   Add, Replace, or Remove transition and workspace enablement state;
+   Add, Replace, or Remove transition, plus the root `Retain` transition for
+   plan-v4 enable/disable, and checks workspace enablement state;
 4. rechecks proposal package generation, ceiling, authority, and lifetime;
 5. rejects missing, extra, reordered, stale, or substituted evidence; and
 6. resolves candidate grants separately from exact delayed revocations.
@@ -664,13 +718,16 @@ assembly.
 - one compatible Runtime provider proof per resulting Tool or MCP surface;
 - workspace enablement and grant impact;
 - download, installed, reclaimed, drain, and retained-data impact;
-- for plan v2, the exact derived OKF before/after bundle changes; and
+- for plan v2 and plan-v4 enablement, the exact derived OKF before/after bundle
+  changes; and
 - durable state revision, capability generation, and prior receipt digest.
 
 The plan validator derives surface and secret deltas from the embedded package
-states, and derives OKF impact for plan v2. OKF-bearing plans require v2 while
-plans without OKF remain byte-compatible v1. Runtime provider evidence remains
-required only for Tool and MCP. The validator also rejects:
+states, and derives OKF impact for plan v2 and plan-v4 enablement. Install,
+upgrade, and uninstall without OKF remain byte-compatible v1; OKF-bearing graph
+plans use v2; dual-lock upgrades use v3; enable/disable always use v4. Runtime
+provider evidence remains required only for Tool and MCP. The validator also
+rejects:
 
 - a root transition that differs from the requested operation;
 - a permission ceiling that differs from the release digest;

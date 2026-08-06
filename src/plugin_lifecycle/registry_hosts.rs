@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
 use super::{
-    PluginCapabilityCutoverEvidence, PluginCapabilityLifecycleHost,
+    PluginCapabilityCutoverEvidence, PluginCapabilityLifecycleHost, PluginCapabilityPublication,
     PluginGraphCapabilityLifecycleHost, PluginGraphCapabilityPublication, PluginLifecycleAction,
     PluginLifecycleEvidence, PluginLifecycleIntent, PluginPackageLifecycleHost,
     PluginPackagePublicationEvidence, PluginPackageRollbackEvidence,
@@ -500,6 +500,29 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
         result_evidence("capability-published", intent, idempotency_key, &result)
     }
 
+    async fn publish_capability_with_cutover(
+        &self,
+        intent: &PluginLifecycleIntent,
+        idempotency_key: &str,
+    ) -> UseResult<PluginCapabilityPublication> {
+        validate_action(
+            intent,
+            &[PluginLifecycleAction::Enable],
+            "capability publication with Grant cutover",
+        )?;
+        let identity = lifecycle_identity(intent)?;
+        let publication = self
+            .registry
+            .publish_lifecycle_package_with_evidence(&identity)
+            .await?;
+        single_package_cutover_publication(
+            intent,
+            idempotency_key,
+            "capability-published",
+            publication,
+        )
+    }
+
     async fn hide_capability(
         &self,
         intent: &PluginLifecycleIntent,
@@ -516,6 +539,29 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
         let identity = lifecycle_identity(intent)?;
         let result = self.registry.hide_lifecycle_package(&identity).await?;
         result_evidence("capability-hidden", intent, idempotency_key, &result)
+    }
+
+    async fn hide_capability_with_cutover(
+        &self,
+        intent: &PluginLifecycleIntent,
+        idempotency_key: &str,
+    ) -> UseResult<PluginCapabilityPublication> {
+        validate_action(
+            intent,
+            &[PluginLifecycleAction::Disable],
+            "capability hiding with Grant cutover",
+        )?;
+        let identity = lifecycle_identity(intent)?;
+        let publication = self
+            .registry
+            .hide_lifecycle_package_with_evidence(&identity)
+            .await?;
+        single_package_cutover_publication(
+            intent,
+            idempotency_key,
+            "capability-hidden",
+            publication,
+        )
     }
 
     async fn drain_calls(
@@ -538,6 +584,32 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
             .await?;
         result_evidence("calls-drained", intent, idempotency_key, &result)
     }
+}
+
+fn single_package_cutover_publication(
+    intent: &PluginLifecycleIntent,
+    idempotency_key: &str,
+    label: &str,
+    publication: a3s_use_extension::ExtensionLifecycleGraphPublication,
+) -> UseResult<PluginCapabilityPublication> {
+    let [result] = publication.packages.as_slice() else {
+        return Err(UseError::new(
+            "use.plugin.package_publication_invalid",
+            "A single-package capability cutover omitted or duplicated package evidence.",
+        ));
+    };
+    if result.extension.receipt.package_id != intent.package_id {
+        return Err(UseError::new(
+            "use.plugin.package_publication_invalid",
+            "A single-package capability cutover changed package identity.",
+        ));
+    }
+    let evidence = result_evidence(label, intent, idempotency_key, result)?;
+    let cutover = registry_cutover_evidence(
+        publication.registry_generation,
+        publication.registry_snapshot_digest,
+    )?;
+    Ok(PluginCapabilityPublication::new(evidence, cutover))
 }
 
 fn lifecycle_identity(intent: &PluginLifecycleIntent) -> UseResult<ExtensionLifecycleIdentity> {

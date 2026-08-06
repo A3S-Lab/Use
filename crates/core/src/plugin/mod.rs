@@ -105,12 +105,18 @@ pub const PLUGIN_MANAGER_TOOLSET_SCHEMA_V3: &str = "a3s.use.plugin-manager-tools
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA: &str = "a3s.use.plugin-operation-plan-draft.v1";
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan-draft.v2";
+/// Enable/disable draft schema whose retained artifact transition changes
+/// only capability visibility and workspace authorization.
+pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3: &str = "a3s.use.plugin-operation-plan-draft.v3";
 pub const PLUGIN_OPERATION_PLAN_SCHEMA: &str = "a3s.use.plugin-operation-plan.v1";
 pub const PLUGIN_OPERATION_PLAN_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan.v2";
 /// Upgrade plan schema binding both the exact prior and candidate package
 /// locks. The two locks make dependency removals reviewable without weakening
 /// the exact-closure guarantees of plan schemas v1 and v2.
 pub const PLUGIN_OPERATION_PLAN_SCHEMA_V3: &str = "a3s.use.plugin-operation-plan.v3";
+/// Enable/disable plan schema binding an exact installed receipt, retained
+/// package state, capability generation, and workspace Grant transition.
+pub const PLUGIN_OPERATION_PLAN_SCHEMA_V4: &str = "a3s.use.plugin-operation-plan.v4";
 pub const PLUGIN_PLANNING_BUNDLE_SCHEMA: &str = "a3s.use.plugin-planning-bundle.v1";
 pub const PLUGIN_PERMISSION_SCHEMA: &str = "a3s.use.plugin-permissions.v1";
 pub const PLUGIN_GRANT_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-grant-confirmation.v1";

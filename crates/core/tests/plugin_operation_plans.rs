@@ -7,6 +7,7 @@ use a3s_use_core::{
     PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanEnvelope,
     PluginPlanSource, PluginSurfaceKind, PluginSurfaceRef, SurfaceChangeKind,
     VerifiedCatalogProvenance, PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 const CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-v1.json");
@@ -171,6 +172,79 @@ fn install_plan() -> PluginOperationPlan {
     }
 }
 
+fn enablement_plan(action: PluginOperationAction) -> PluginOperationPlan {
+    assert!(matches!(
+        action,
+        PluginOperationAction::Enable | PluginOperationAction::Disable
+    ));
+    let install = install_plan();
+    let state = install.packages[0]
+        .after
+        .clone()
+        .expect("install fixture has an exact package state");
+    let enabling = action == PluginOperationAction::Enable;
+    PluginOperationPlan {
+        schema: PLUGIN_OPERATION_PLAN_SCHEMA_V4.to_owned(),
+        operation_id: if enabling {
+            "enable:acme-research:0002".to_owned()
+        } else {
+            "disable:acme-research:0002".to_owned()
+        },
+        created_at_ms: install.created_at_ms,
+        expires_at_ms: install.expires_at_ms,
+        action,
+        package_id: install.package_id,
+        component_id: install.component_id,
+        scope: install.scope,
+        package_lock_digest: None,
+        prior_package_lock_digest: None,
+        packages: vec![PlannedPackageTransition {
+            package_id: state.release.package_id.clone(),
+            role: PlanPackageRole::Root,
+            change: PlanPackageChangeKind::Retain,
+            before: Some(state.clone()),
+            after: Some(state),
+            source: None,
+            surfaces: Vec::new(),
+        }],
+        secret_changes: vec![PlannedSecretChange {
+            surface: qualified(PluginSurfaceKind::Tool, "convert"),
+            secret_name: "research-api".to_owned(),
+            change: if enabling {
+                PlannedSecretChangeKind::Grant
+            } else {
+                PlannedSecretChangeKind::Revoke
+            },
+        }],
+        providers: if enabling {
+            install.providers
+        } else {
+            Vec::new()
+        },
+        workspace_impacts: vec![PlannedWorkspaceImpact {
+            scope_id: "workspace:research".to_owned(),
+            grant_before_digest: Some(DIGEST_A.to_owned()),
+            grant_after_digest: Some(DIGEST_F.to_owned()),
+            enabled_before: !enabling,
+            enabled_after: enabling,
+        }],
+        impact: PlannedOperationImpact {
+            download_bytes: 0,
+            installed_bytes_after: 4_194_304,
+            reclaimed_bytes: 0,
+            drain_required: !enabling,
+            retained_data: !enabling,
+            okf_changes: Vec::new(),
+        },
+        authority: install.authority,
+        state: PlannedStateEvidence {
+            state_revision: 4,
+            capability_generation: 13,
+            receipt_digest: Some(DIGEST_C.to_owned()),
+        },
+    }
+}
+
 #[test]
 fn canonical_install_plan_fixture_binds_the_complete_resolved_delta() {
     let plan = install_plan();
@@ -189,6 +263,54 @@ fn an_empty_host_can_plan_from_capability_generation_zero() {
     let mut plan = install_plan();
     plan.state.capability_generation = 0;
     plan.validate().unwrap();
+}
+
+#[test]
+fn enablement_plans_retain_exact_artifact_state_and_bind_visibility_authority() {
+    let enable = enablement_plan(PluginOperationAction::Enable);
+    enable.validate().unwrap();
+    assert_eq!(enable.packages[0].change, PlanPackageChangeKind::Retain);
+    assert_eq!(enable.packages[0].before, enable.packages[0].after);
+    assert!(!enable.workspace_impacts[0].enabled_before);
+    assert!(enable.workspace_impacts[0].enabled_after);
+    assert_eq!(
+        enable.secret_changes[0].change,
+        PlannedSecretChangeKind::Grant
+    );
+
+    let disable = enablement_plan(PluginOperationAction::Disable);
+    disable.validate().unwrap();
+    assert!(disable.providers.is_empty());
+    assert!(disable.impact.drain_required);
+    assert!(disable.workspace_impacts[0].enabled_before);
+    assert!(!disable.workspace_impacts[0].enabled_after);
+    assert_eq!(
+        disable.secret_changes[0].change,
+        PlannedSecretChangeKind::Revoke
+    );
+}
+
+#[test]
+fn enablement_plan_rejects_artifact_provider_receipt_and_visibility_drift() {
+    let mut replaced = enablement_plan(PluginOperationAction::Enable);
+    replaced.packages[0].change = PlanPackageChangeKind::Replace;
+    assert!(replaced.validate().is_err());
+
+    let mut missing_provider = enablement_plan(PluginOperationAction::Enable);
+    missing_provider.providers.clear();
+    assert!(missing_provider.validate().is_err());
+
+    let mut disable_provider = enablement_plan(PluginOperationAction::Disable);
+    disable_provider.providers = install_plan().providers;
+    assert!(disable_provider.validate().is_err());
+
+    let mut missing_receipt = enablement_plan(PluginOperationAction::Disable);
+    missing_receipt.state.receipt_digest = None;
+    assert!(missing_receipt.validate().is_err());
+
+    let mut unchanged_visibility = enablement_plan(PluginOperationAction::Enable);
+    unchanged_visibility.workspace_impacts[0].enabled_before = true;
+    assert!(unchanged_visibility.validate().is_err());
 }
 
 #[test]

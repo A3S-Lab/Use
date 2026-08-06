@@ -135,6 +135,11 @@ impl PluginHostPlanRequest {
                     }
                 }
             }
+            (PluginOperationAction::Enable | PluginOperationAction::Disable, _) => {
+                return Err(plan_request_error(
+                    "Host plan request v1 does not carry enablement state or confirmation; use the enablement port, which fails closed when reviewed authority is unavailable.",
+                ));
+            }
             _ => {
                 return Err(plan_request_error(
                     "Install and upgrade require one exact catalog candidate; uninstall does not.",

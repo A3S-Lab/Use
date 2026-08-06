@@ -9,9 +9,9 @@ use super::validation::{valid_machine_id, valid_package_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPackageChangeKind,
     PlanPolicyDecision, PlannedPackageState, PlannedPackageTransition, PluginGrantConfirmation,
-    PluginOperationConfirmation, PluginOperationPlan, PluginWorkspaceGrantProposal,
-    WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA,
-    PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+    PluginOperationAction, PluginOperationConfirmation, PluginOperationPlan,
+    PluginWorkspaceGrantProposal, WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS,
+    PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
 const SNAPSHOT_ERROR: &str = "use.plugin.grant_snapshot_invalid";
@@ -355,8 +355,8 @@ impl PluginWorkspaceGrantChangeSet {
         enabled_before: bool,
         enabled_after: bool,
     ) -> UseResult<()> {
-        let before_required = grant_before_required(package, enabled_before);
-        let after_required = grant_after_required(package, enabled_after);
+        let before_required = grant_before_required(plan.action, package, enabled_before);
+        let after_required = grant_after_required(plan.action, package, enabled_after);
         if change.before.is_some() != before_required || change.after.is_some() != after_required {
             return Err(plan_mismatch());
         }
@@ -418,28 +418,38 @@ fn expected_changes(
     plan.packages
         .iter()
         .filter(|package| {
-            grant_before_required(package, enabled_before)
-                || grant_after_required(package, enabled_after)
+            grant_before_required(plan.action, package, enabled_before)
+                || grant_after_required(plan.action, package, enabled_after)
         })
         .map(|package| package.package_id.as_str())
         .collect()
 }
 
-fn grant_before_required(package: &PlannedPackageTransition, enabled: bool) -> bool {
+fn grant_before_required(
+    action: PluginOperationAction,
+    package: &PlannedPackageTransition,
+    enabled: bool,
+) -> bool {
     enabled
-        && matches!(
+        && (matches!(
             package.change,
             PlanPackageChangeKind::Remove | PlanPackageChangeKind::Replace
-        )
+        ) || (action == PluginOperationAction::Disable
+            && package.change == PlanPackageChangeKind::Retain))
         && package.before.as_ref().is_some_and(has_grant_permissions)
 }
 
-fn grant_after_required(package: &PlannedPackageTransition, enabled: bool) -> bool {
+fn grant_after_required(
+    action: PluginOperationAction,
+    package: &PlannedPackageTransition,
+    enabled: bool,
+) -> bool {
     enabled
-        && matches!(
+        && (matches!(
             package.change,
             PlanPackageChangeKind::Add | PlanPackageChangeKind::Replace
-        )
+        ) || (action == PluginOperationAction::Enable
+            && package.change == PlanPackageChangeKind::Retain))
         && package.after.as_ref().is_some_and(has_grant_permissions)
 }
 

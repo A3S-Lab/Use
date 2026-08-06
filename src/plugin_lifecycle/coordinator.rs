@@ -10,10 +10,35 @@ use sha2::{Digest, Sha256};
 
 use super::model::valid_sha256;
 use super::{
-    PluginLifecycleCheckpoint, PluginLifecycleCheckpointKind, PluginLifecycleCheckpointOutcome,
-    PluginLifecycleIntent, PluginLifecycleIntentSpec, PluginLifecycleJournalStore,
-    PluginLifecycleOperationRecord, PluginLifecycleOperationStatus,
+    PluginCapabilityCutoverEvidence, PluginLifecycleCheckpoint, PluginLifecycleCheckpointKind,
+    PluginLifecycleCheckpointOutcome, PluginLifecycleIntent, PluginLifecycleIntentSpec,
+    PluginLifecycleJournalStore, PluginLifecycleOperationRecord, PluginLifecycleOperationStatus,
 };
+
+/// Package checkpoint evidence plus the exact Registry snapshot selected by
+/// one single-package visibility cutover.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginCapabilityPublication {
+    evidence: PluginLifecycleEvidence,
+    cutover: PluginCapabilityCutoverEvidence,
+}
+
+impl PluginCapabilityPublication {
+    pub fn new(
+        evidence: PluginLifecycleEvidence,
+        cutover: PluginCapabilityCutoverEvidence,
+    ) -> Self {
+        Self { evidence, cutover }
+    }
+
+    pub fn evidence(&self) -> &PluginLifecycleEvidence {
+        &self.evidence
+    }
+
+    pub fn cutover(&self) -> &PluginCapabilityCutoverEvidence {
+        &self.cutover
+    }
+}
 
 /// Digest of host-validated, non-secret evidence for one lifecycle checkpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,11 +88,31 @@ pub trait PluginCapabilityLifecycleHost: Send + Sync {
         idempotency_key: &str,
     ) -> UseResult<PluginLifecycleEvidence>;
 
+    /// Publish one exact package generation and prove the immutable
+    /// capability snapshot selected by the same atomic cutover.
+    async fn publish_capability_with_cutover(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _idempotency_key: &str,
+    ) -> UseResult<PluginCapabilityPublication> {
+        Err(capability_cutover_required())
+    }
+
     async fn hide_capability(
         &self,
         intent: &PluginLifecycleIntent,
         idempotency_key: &str,
     ) -> UseResult<PluginLifecycleEvidence>;
+
+    /// Hide one exact package generation and prove the immutable capability
+    /// snapshot selected by the same atomic cutover.
+    async fn hide_capability_with_cutover(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _idempotency_key: &str,
+    ) -> UseResult<PluginCapabilityPublication> {
+        Err(capability_cutover_required())
+    }
 
     async fn drain_calls(
         &self,
@@ -223,7 +268,7 @@ pub trait PluginUiLifecycleHost: Send + Sync {
 #[derive(Clone)]
 pub struct PluginLifecycleHosts {
     package: Arc<dyn PluginPackageLifecycleHost>,
-    capability: Arc<dyn PluginCapabilityLifecycleHost>,
+    pub(super) capability: Arc<dyn PluginCapabilityLifecycleHost>,
     tool: Arc<dyn PluginToolLifecycleHost>,
     mcp: Arc<dyn PluginMcpLifecycleHost>,
     okf: Arc<dyn PluginOkfLifecycleHost>,
@@ -259,8 +304,8 @@ impl PluginLifecycleHosts {
 
 #[derive(Clone)]
 pub struct PluginLifecycleCoordinator {
-    journal: PluginLifecycleJournalStore,
-    hosts: PluginLifecycleHosts,
+    pub(super) journal: PluginLifecycleJournalStore,
+    pub(super) hosts: PluginLifecycleHosts,
 }
 
 impl PluginLifecycleCoordinator {
@@ -570,7 +615,7 @@ impl PluginLifecycleCoordinator {
         PluginLifecycleEvidence::new(format!("sha256:{:x}", Sha256::digest(identity.as_bytes())))
     }
 
-    async fn load_exact_record(
+    pub(super) async fn load_exact_record(
         &self,
         intent: &PluginLifecycleIntent,
     ) -> UseResult<Option<PluginLifecycleOperationRecord>> {
@@ -615,7 +660,7 @@ impl PluginLifecycleCoordinator {
             .await
     }
 
-    async fn execute_and_record(
+    pub(super) async fn execute_and_record(
         &self,
         intent: &PluginLifecycleIntent,
         manifest: &ExtensionManifest,
@@ -840,7 +885,7 @@ impl PluginLifecycleCoordinator {
     }
 }
 
-fn validate_manifest_binding(
+pub(super) fn validate_manifest_binding(
     intent: &PluginLifecycleIntent,
     manifest: &ExtensionManifest,
 ) -> UseResult<()> {
@@ -885,8 +930,15 @@ fn surface_missing() -> UseError {
     coordinator_error("A lifecycle checkpoint references a missing manifest surface.")
 }
 
-fn coordinator_error(message: impl Into<String>) -> UseError {
+pub(super) fn coordinator_error(message: impl Into<String>) -> UseError {
     UseError::new("use.plugin.lifecycle_coordinator_invalid", message)
+}
+
+fn capability_cutover_required() -> UseError {
+    UseError::new(
+        "use.plugin.capability_cutover_evidence_required",
+        "The capability host cannot prove an atomic single-package visibility cutover.",
+    )
 }
 
 #[cfg(test)]

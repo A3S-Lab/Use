@@ -10,7 +10,8 @@
   plus A3S Code TUI/Web host/catalog integration frozen 2026-08-04,
   bounded exact-generation package/Runtime N/N+1 storage, and the Grant-aware
   graph saga foundation frozen 2026-08-05; public Grant-impact planning and
-  umbrella/managed-host authority forwarding connected 2026-08-06
+  umbrella/managed-host authority forwarding plus plan-v4 permission-bearing
+  enablement core connected 2026-08-06
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -28,11 +29,13 @@ typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
 foundation. P0 package/capability hosts add generation-bound commit,
 publish/hide, lease drain, and exact removal. A3S Code composes the supported
 Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production Knowledge,
-Runtime Service, Gateway/HTTP MCP, and permission-bearing enablement remain
-pending. Standalone and host-reviewed Grant planning/apply are implemented,
-including exact umbrella/managed-host scope, revision, authority,
-confirmation, and replay binding. Without promoted observation, an OKF surface
-stays unpublished.
+Runtime Service, Gateway/HTTP MCP, and managed-host permission-bearing
+enablement review forwarding remain pending. Standalone and host-reviewed
+Grant planning/apply are implemented, including exact umbrella/managed-host
+scope, revision, authority, confirmation, and replay binding. The directly
+injected Use authorization path now applies the same evidence to
+permission-bearing enable/disable. Without promoted observation, an OKF
+surface stays unpublished.
 
 The dependency foundation adds canonical schema-v3 SemVer edges, a bounded
 deterministic transitive resolver, exact Registry/TUF-bound package locks,
@@ -135,7 +138,7 @@ flowchart TD
   drift --> command
   exact -- "Yes" --> finalizeProposals
   finalizeProposals --> intent
-  intent --> plannedAction
+  intent --> grantNeeded
 
   subgraph packageInstall["3. Package installation or upgrade staging"]
     stage["Revalidate the complete lock before payload download<br/>then fetch dependencies before dependents<br/>to bounded staging roots"]
@@ -143,21 +146,21 @@ flowchart TD
     valid{"All verification gates pass?"}
     rejectPackage["Delete or quarantine staging data<br/>Record typed failure; preserve N on upgrade"]
     commit["Atomically commit immutable package generation<br/>and candidate installed-disabled receipt"]
-    grantNeeded{"Planned exact-generation<br/>grant transition?"}
-    persistCandidateGrant["Persist validated candidate grant receipt<br/>without replacing N authorization"]
+    grantNeeded{"Planned exact-generation<br/>Grant transition?"}
+    persistCandidateGrant["Persist validated candidate Grant or retirement intent<br/>without replacing N authorization"]
     desiredAfterCommit{"Desired state after commit?"}
   end
 
+  grantNeeded -- "Yes" --> persistCandidateGrant
+  grantNeeded -- "No" --> plannedAction
+  persistCandidateGrant --> plannedAction
   plannedAction -- "install / upgrade" --> stage
   stage --> verify
   verify --> valid
   valid -- "No" --> rejectPackage
   rejectPackage --> completeResult
   valid -- "Yes" --> commit
-  commit --> grantNeeded
-  grantNeeded -- "Yes" --> persistCandidateGrant
-  grantNeeded -- "No" --> desiredAfterCommit
-  persistCandidateGrant --> desiredAfterCommit
+  commit --> desiredAfterCommit
 
   subgraph reconcile["4. Surface reconciliation"]
     observe["Observe package, desired state, grants,<br/>bindings, projections, Runtime, and Gateway"]
@@ -178,8 +181,8 @@ flowchart TD
     readyBindings["Persist non-secret bindings<br/>and receipt-owned projections"]
     degradedBindings["Persist required bindings only<br/>Record optional-surface failures"]
     projectionReady{"Skill roots, command shims, UI/OKF indexes,<br/>and backend bindings committed?"}
-    publishReady["Atomically publish one capability generation<br/>Then drain/remove any superseded generation"]
-    publishDegraded["Atomically publish required capabilities<br/>Mark aggregate degraded; retry optional surfaces"]
+    publishReady["Atomically publish one capability generation<br/>Checkpoint exact Grant cutover when planned<br/>Then drain/remove any superseded generation"]
+    publishDegraded["Atomically publish required capabilities<br/>Checkpoint exact Grant cutover when planned<br/>Mark aggregate degraded; retry optional surfaces"]
   end
 
   desiredAfterCommit -- "installed-disabled" --> installedDisabled["Installed and disabled"]
@@ -255,21 +258,28 @@ flowchart TD
   changed -- "Yes" --> observe
 
   subgraph toggle["6. Enable and disable"]
+    togglePlan["Build immutable operation plan v4<br/>Retain exact artifact; bind receipt, scope,<br/>capability generation, and Grant impact"]
     togglePolicy{"Authorize enable or disable<br/>allow / ask / deny"}
     toggleConfirm{"User confirms?"}
-    toggleIntent["Persist durable toggle intent<br/>and idempotency key"]
+    toggleIntent["Persist durable toggle intent, exact plan,<br/>confirmation, authorization bundle,<br/>and idempotency keys"]
+    toggleGrantNeeded{"Permission-bearing<br/>Grant transition?"}
+    toggleGrantPrepare["Prepare candidate Grant or<br/>exact retirement intent"]
     toggleAction{"Enable or disable?"}
-    setEnabled["Persist desired enabled"]
-    setDisabled["Persist desired installed-disabled"]
+    setEnabled["Reconcile desired enabled"]
+    setDisabled["Reconcile desired installed-disabled"]
   end
 
-  command -- "Enable / disable" --> togglePolicy
+  command -- "Enable / disable" --> togglePlan
+  togglePlan --> togglePolicy
   togglePolicy -- "deny" --> denied
   togglePolicy -- "ask" --> toggleConfirm
   toggleConfirm -- "No" --> denied
   toggleConfirm -- "Yes" --> toggleIntent
   togglePolicy -- "allow" --> toggleIntent
-  toggleIntent --> toggleAction
+  toggleIntent --> toggleGrantNeeded
+  toggleGrantNeeded -- "Yes" --> toggleGrantPrepare
+  toggleGrantPrepare --> toggleAction
+  toggleGrantNeeded -- "No" --> toggleAction
   toggleAction -- "Enable" --> setEnabled
   setEnabled --> observe
   toggleAction -- "Disable" --> setDisabled
@@ -277,8 +287,8 @@ flowchart TD
   subgraph remove["7. Disable, uninstall, and retained data"]
     referenceGate{"New protected workspace reference<br/>not covered by reviewed plan?"}
     setAbsent["Persist desired absent"]
-    revokeGrant["Persist exact-generation grant tombstone<br/>when a current grant exists"]
-    hide["Atomically hide routes and projections<br/>Block new calls"]
+    revokeGrant["Persist exact-generation Grant tombstone<br/>when the reviewed plan retires one"]
+    hide["Atomically hide routes and projections<br/>Checkpoint exact Grant cutover when planned<br/>Block new calls"]
     drain["Drain exact-generation leases<br/>or reach reviewed timeout policy"]
     removalAction{"Desired state"}
     stop["Stop eager Tool/MCP/Flow workloads<br/>Keep immutable package and data"]
@@ -294,11 +304,11 @@ flowchart TD
   plannedAction -- "uninstall" --> referenceGate
   referenceGate -- "Yes" --> drift
   referenceGate -- "No" --> setAbsent
-  setAbsent --> revokeGrant
-  revokeGrant --> hide
+  setAbsent --> hide
   setDisabled --> hide
   hide --> drain
-  drain --> removalAction
+  drain --> revokeGrant
+  revokeGrant --> removalAction
   removalAction -- "installed-disabled" --> stop
   stop --> installedDisabled
   removalAction -- "absent" --> removeRuntime
@@ -359,7 +369,7 @@ flowchart TD
   classDef runtime fill:#fff8e1,stroke:#f9a825,color:#5d4037;
   class ready,degraded,installedDisabled,removed,keepPrevious,keepPreviousDisabled stable;
   class denied,drift,rejectPlanning,rejectPackage,rejectUse,broken failure;
-  class hostContext,planningTarget,grantProposal,buildPlan,confirmationEvidence,intent,toggleIntent,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
+  class hostContext,planningTarget,grantProposal,buildPlan,confirmationEvidence,intent,togglePlan,toggleIntent,toggleGrantPrepare,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
   class providerPreflight,providerCapable,runtimePlan,taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,runFlow,removeRuntime runtime;
 ```
 
@@ -483,8 +493,8 @@ The implemented package checkpoint schedules are:
 | --- | --- |
 | Install | commit installed-disabled package → prepare surfaces in dependency order → publish one capability generation |
 | Upgrade candidate | retain exact N → commit N+1 disabled → prepare candidate surfaces → publish the changed closure once → retire replaced N in reverse order; a pre-cutover failure automatically removes candidates and restores N, with durable rollback/retirement replay |
-| Enable | prepare surfaces in dependency order → publish one capability generation |
-| Disable | hide package capability → drain accepted calls → stop surfaces in reverse dependency order |
+| Enable | persist reviewed plan-v4 authorization → prepare candidate Grant when required → prepare surfaces in dependency order → publish one capability generation with exact cutover evidence → commit and complete Grant operation |
+| Disable | persist reviewed plan-v4 authorization and Grant retirement intent → hide package capability with exact cutover evidence → commit Grant cutover → drain accepted calls → revoke the exact prior Grant → stop surfaces in reverse dependency order |
 | Uninstall | hide package capability → drain accepted calls → remove receipt-owned surfaces in reverse dependency order → remove package |
 
 Tool, MCP, OKF, Flow, Skill, and UI are contributions inside this sequence. No
@@ -523,22 +533,31 @@ schema-v3 ownership.
 1. Resolve verified metadata and SemVer constraints into an exact package lock.
 2. Snapshot active grant evidence, derive the sorted root/dependency change
    set, and bind both digests into the canonical expiring plan.
-3. Re-resolve on apply and persist an operation intent before side effects.
+3. Re-resolve on apply, persist an operation intent, and prepare every planned
+   candidate Grant or retirement intent before package/Runtime side effects.
 4. Revalidate every locked Registry/TUF/catalog input before any payload
    download, then download and verify dependencies before dependents.
 5. Atomically commit each changed immutable package and a disabled receipt in
    dependency order; exact published `Retain` generations are reused.
-6. Persist any planned exact-generation grant without replacing another
-   package generation's authorization.
-7. Record desired `enabled` state and reconcile Tool, MCP, OKF, Flow, Skill, and UI
+6. Record desired `enabled` state and reconcile Tool, MCP, OKF, Flow, Skill, and UI
    bindings in dependency order.
-8. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
-9. Atomically publish all changed packages in one capability generation.
-10. Mark the operation complete and garbage-collect safe staging data.
+7. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
+8. Atomically publish all changed packages in one capability generation and
+   checkpoint exact Grant cutover evidence when required.
+9. Mark the operation complete and garbage-collect safe staging data.
 
 If activation fails, the package remains installed but disabled or broken with
 typed diagnostics. No partial command shim, endpoint, MCP route, OKF generation,
 Flow, Skill, or UI is advertised as ready.
+
+Enabling an already installed package does not repeat resolution or package
+commit. It builds a plan-v4 `Retain` transition bound to the exact receipt,
+manifest, scope, package-state revision, and capability generation. When the
+package is permission-bearing, the coordinator persists its reviewed
+authorization bundle and candidate Grant before preparing surfaces, then
+requires atomic Registry publication evidence before Grant cutover. Missing
+confirmation returns `use.plugin.package_confirmation_required` with the
+immutable plan and performs no lifecycle mutation.
 
 ### Upgrade
 
@@ -567,8 +586,11 @@ new grant or confirmation.
 
 ### Disable and uninstall
 
-Disable first publishes a snapshot without the plugin, then drains invocations
-and stops eager workloads. The immutable package and retained data remain.
+Disable first binds an immutable plan-v4 retained-artifact transition and any
+exact prior Grant retirement. It atomically publishes a snapshot without the
+plugin, commits Grant cutover evidence, drains invocations, revokes the exact
+prior Grant, and only then stops eager workloads. The immutable package and
+retained data remain.
 
 Uninstall:
 
@@ -601,6 +623,9 @@ observations.
 | Package committed, receipt absent | Reconstruct or quarantine from verified manifest |
 | Disabled receipt committed | Resume reconciliation without publishing |
 | Candidate grant committed, bindings absent | Revalidate the exact plan and resume or tombstone the candidate |
+| Enable Grant prepared, Registry cutover absent | Revalidate plan-v4 authorization and exact receipt, then retry atomic publication without minting another Grant |
+| Disable Registry/Grant cutover committed, drain incomplete | Keep the prior Grant active, resume exact-generation drain, then revoke and stop |
+| Enablement terminal result present | Replay the stored result without reauthorization or another capability generation |
 | Runtime unit applied, binding absent | Inspect exact unit and reconstruct binding |
 | Binding ready, snapshot absent | Revalidate grants and publish atomically |
 | Some graph receipts enabled, closure snapshot absent | Keep the partial receipts invisible and replay the exact lock-bound batch publication |
@@ -613,6 +638,15 @@ observations.
 Every external mutation carries an idempotency key derived from operation,
 surface, and generation. Recovery never guesses that an unknown provider unit
 belongs to the plugin.
+
+Registry visibility and the Grant journal do not share an ACID transaction.
+The current single-package host returns cutover evidence from the atomic
+Registry mutation and same-state replay preserves its generation. Complete
+proof under a process death between Registry cutover and Grant-journal commit,
+combined with an unrelated concurrent Registry mutation, still requires a
+durable Registry record keyed by the operation idempotency key. Production
+claims must retain this gate rather than infer the original cutover from a later
+snapshot.
 
 The A3S Use journal stores bounded canonical JSON under a SHA-256 scope path and
 validated package segments. Writes use a cross-process lock, atomic replacement,
@@ -752,7 +786,11 @@ publication before the cutover checkpoint, accepted-call drain before Grant
 retirement, and provider/package cleanup afterward. Standalone and umbrella
 Plugin Managers derive the canonical inputs after policy and confirmation and
 select this path when Grants are required; the fenced managed-host path reuses
-the same planner and reviewed provider.
+the same planner and reviewed provider for graph operations. The Use
+enablement coordinator now applies the same ordering to plan-v4 `Retain`
+transitions when authorization is injected. Managed-host enablement request v1
+cannot carry the plan/confirmation and must be versioned before Code/Web or a
+fenced host exposes permission-bearing toggle review.
 
 Durable authorization uses two storage schemas:
 `a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision

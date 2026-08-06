@@ -10,7 +10,9 @@
   stable-name Registry controls plus A3S Code TUI/Web Flow and hot-plug host
   integration accepted 2026-08-04; exact `flow.json` identity plus shared
   workspace-local durable execution/observation accepted 2026-08-04; bounded
-  exact-generation package/route and Runtime N/N+1 storage accepted 2026-08-05
+  exact-generation package/route and Runtime N/N+1 storage accepted 2026-08-05;
+  operation-plan-v4 permission-bearing enablement and Grant cutover core
+  accepted 2026-08-06
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -516,6 +518,10 @@ Implementation status (2026-08-06):
 - completed in A3S Code: local CLI/Web and fenced managed hosts route
   permission-free schema-v3 enable/disable through the same Use-owned
   package-state generation and lifecycle factory without legacy fallback;
+- pending in A3S Code/managed hosts: version enablement request v1 so a
+  permission-bearing toggle can carry Use's immutable plan-v4 envelope and
+  exact confirmation; host-plan request v1 explicitly rejects enable/disable
+  rather than dropping that evidence;
 - completed in the umbrella CLI: a bounded Marketplace read model joining
   release bundles, complete signed catalog records, legacy TUF records, and an
   immutable installed/enabled snapshot without package downloads;
@@ -632,8 +638,8 @@ Implementation status (2026-08-06):
   policy, invoke `bind_cognitive_package_grant_impacts` with the final
   authority, reject scope/revision/impact/authority drift, and forward the same
   reviewed envelope and confirmation into Use-owned graph apply and replay;
-- completed in A3S Use: permission-free schema-v3 package enablement is
-  serialized by operation- and package-scoped cross-process locks and uses a durable,
+- completed in A3S Use: schema-v3 package enablement is serialized by
+  operation- and package-scoped cross-process locks and uses a durable,
   monotonic package-state generation separate from immutable receipt lifecycle
   generations; requests, active lifecycle intents, checkpoints, and exact
   results survive restart, stale generations and conflicting operation IDs fail
@@ -641,6 +647,17 @@ Implementation status (2026-08-06):
 - completed in A3S Use: enable/disable runs through the normal package
   lifecycle, preserving package bytes and dependency graph ownership while
   disable hides, drains, and stops and enable prepares and republishes;
+- completed in A3S Use: every changed enable/disable operation binds an
+  immutable plan-v4 `Retain` transition to the exact receipt, manifest, scope,
+  package-state revision, and capability generation; permission-bearing enable
+  prepares the exact Grant before atomic publication, while disable commits
+  atomic hide and Grant cutover before draining accepted calls and revoking the
+  exact prior Grant;
+- completed in A3S Use: enablement state-v2 and operation-v2 records persist
+  the plan envelope, confirmation, Grant snapshot/change set, resolved Grants,
+  ceilings, and admission time; recovery revalidates provider authority,
+  artifact and receipt evidence, and completed replay neither reauthorizes nor
+  inflates the capability generation;
 - completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
   embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
   Knowledge adapters; the standalone factory does not invent fallback hosts;
@@ -657,10 +674,13 @@ Implementation status (2026-08-06):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; permission-bearing enablement with exact Grant prepare, cutover,
-  drain, and retirement; real signed cross-platform lifecycle E2E; and the
-  published Cloud adapter over the existing fenced managed-host port. Hosts
-  must not add a parallel implementation.
+  injection; a versioned Code/Web/managed-host enablement adapter that carries
+  the immutable plan and exact confirmation for permission-bearing toggles;
+  Registry cutover evidence persisted by idempotency key for recovery across
+  concurrent unrelated Registry mutations;
+  real signed cross-platform lifecycle E2E; and the published Cloud adapter
+  over the existing fenced managed-host port. Hosts must not add a parallel
+  implementation.
 
 Deliverables:
 
@@ -1030,16 +1050,19 @@ Implementation status (in progress 2026-07-30):
   local and fenced managed-host graph operations, and prove a signed
   permission-bearing Tool Task persists its exact Grant without legacy child
   mutation;
-- completed in `a3s-use`: expose durable permission-free package enablement and
-  observation using an independent optimistic package-state generation; reuse
-  the installed generation's typed lifecycle hosts, recover interrupted
-  checkpoints, replay exact results, and reject permission-bearing toggles
-  until Grant cutover composition exists;
-- pending: add permission-bearing enablement composition, secret-reference
-  adapters, filesystem/network/child-process enforcement, production-provider-backed
-  prior-generation Runtime retirement, streaming/file-backed large Task
-  output, the production MCP initialize client adapter, stdio supervision,
-  Gateway route revocation, and scope-aware capability/session snapshot wiring.
+- completed in `a3s-use`: expose durable package enablement and observation
+  using an independent optimistic package-state generation; reuse the installed
+  generation's typed lifecycle hosts, recover interrupted checkpoints, replay
+  exact results, and bind changed toggles to immutable plan-v4 authorization;
+- completed in `a3s-use`: compose permission-bearing enablement with exact
+  Grant prepare, atomic Registry cutover evidence, accepted-call drain, exact
+  revocation, authorization-stable recovery, and result replay;
+- pending: add the versioned Code/Web/managed-host enablement plan/confirmation
+  adapter, secret-reference adapters, filesystem/network/child-process
+  enforcement, production-provider-backed prior-generation Runtime retirement,
+  streaming/file-backed large Task output, the production MCP initialize client
+  adapter, stdio supervision, Gateway route revocation, and scope-aware
+  capability/session snapshot wiring.
 
 Deliverables:
 

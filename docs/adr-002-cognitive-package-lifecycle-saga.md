@@ -1,6 +1,6 @@
 # ADR-002: Cognitive Package Lifecycle Saga
 
-- Status: accepted architecture; P0 hosts, P2-A Grant graph saga, and P2-B graph wiring through standalone, umbrella, and managed-host paths implemented
+- Status: accepted architecture; P0 hosts, P2-A Grant graph saga, P2-B graph wiring, and permission-bearing enablement core implemented
 - Decision date: 2026-08-03
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -48,12 +48,18 @@ install / candidate upgrade
   -> atomically publish one package capability generation
 
 enable
-  prepare all selected surfaces in dependency order
-  -> atomically publish one package capability generation
+  persist plan-v4 retained-artifact authorization
+  -> prepare exact candidate Grant when required
+  -> prepare all selected surfaces in dependency order
+  -> atomically publish one package capability generation with cutover evidence
+  -> commit and complete the Grant operation
 
 disable
-  hide the complete package generation
+  persist plan-v4 retained-artifact authorization and Grant retirement intent
+  -> atomically hide the complete package generation with cutover evidence
+  -> commit Grant cutover
   -> drain accepted calls
+  -> revoke the exact prior Grant
   -> stop surfaces in reverse dependency order
 
 uninstall
@@ -62,6 +68,14 @@ uninstall
   -> remove receipt-owned surfaces in reverse dependency order
   -> remove the package generation
 ```
+
+Enable and disable do not replace package bytes. Their
+`a3s.use.plugin-operation-plan.v4` envelope contains one exact `Retain`
+transition with identical before/after artifact state while binding receipt,
+manifest, scope, package-state revision, capability generation, provider,
+OKF/secret, and Workspace Grant evidence. This makes visibility and
+authorization reviewable without pretending that the immutable artifact
+changed.
 
 Every checkpoint has a deterministic SHA-256 idempotency key derived from the
 operation, action, generation, sequence, and optional surface identity. The
@@ -149,7 +163,10 @@ The umbrella and fenced managed-host planners now snapshot the exact Grant
 scope/revision, bind canonical impacts with the final host authority, and
 invoke this provider without regenerating identity or confirmation. Production
 blue/green completion still requires Runtime Service, Gateway, Knowledge, and
-projection providers plus permission-bearing enablement.
+projection providers. A3S Use now applies the same authorization provider and
+Grant sub-saga to plan-v4 enable/disable operations. The existing Code/Web and
+managed-host enablement request v1 still lacks plan/confirmation fields, so
+permission-bearing toggle UX requires a versioned adapter.
 
 ## Implementation State
 
@@ -182,6 +199,16 @@ Implemented:
 - public canonical host Grant-impact planning plus umbrella and fenced
   managed-host snapshot/revision/policy binding and reviewed-provider
   invocation;
+- immutable draft-v3/plan-v4 enablement over one exact retained artifact,
+  including derived OKF, secret, provider, visibility, and Workspace Grant
+  impact;
+- permission-bearing enable Grant prepare before atomic publication and
+  disable atomic hide/cutover plus accepted-call drain before exact Grant
+  revocation;
+- enablement state-v2 and operation-v2 persistence of the plan, confirmation,
+  Grant snapshot/change set, resolved Grants, ceilings, and admission time,
+  with provider/artifact/receipt revalidation and authorization-free completed
+  replay;
 - stable replay evidence for Runtime preparation and removal;
 - a content-addressed package fixture containing all six contribution kinds;
   and
@@ -195,8 +222,12 @@ Remaining before the product can claim complete cognitive-package lifecycle:
 
 - injection of production Runtime Service, Gateway/HTTP MCP, and A3S Knowledge
   hosts;
-- exact Grant prepare/cutover/drain/retirement for permission-bearing
-  enablement, while management MCP remains intentionally read-only;
+- a versioned Code/Web/managed-host enablement adapter carrying the immutable
+  plan and exact confirmation for permission-bearing toggles, while management
+  MCP remains intentionally read-only;
+- Registry cutover evidence persisted by operation idempotency key, proving
+  recovery when a process dies before Grant-journal commit and an unrelated
+  Registry mutation interleaves; and
 - cross-platform install/use/upgrade/disable/uninstall crash-injection E2E.
 
 ## Consequences

@@ -16,7 +16,7 @@ use a3s_use_core::{
     PluginWorkspaceGrantChangeSet, ToolReleaseDescriptor, ToolWorkloadClass, UseResult,
     PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
-use a3s_use_extension::{StoredWorkspaceGrant, WorkspaceGrantStore};
+use a3s_use_extension::{StoredWorkspaceGrant, WorkspaceGrantLifecyclePhase, WorkspaceGrantStore};
 use async_trait::async_trait;
 
 const POLICY_DIGEST: &str =
@@ -307,7 +307,7 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
 }
 
 #[tokio::test]
-async fn permission_bearing_enablement_fails_closed_until_grant_cutover_is_composed() {
+async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutover() {
     let temporary = tempfile::tempdir().unwrap();
     let target = host_target();
     let targets = cognitive_tool_targets_version(
@@ -330,10 +330,11 @@ async fn permission_bearing_enablement_fails_closed_until_grant_cutover_is_compo
     .unwrap();
     let extension_registry =
         ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let authorization_count = Arc::new(AtomicUsize::new(0));
     let manager = CognitivePackageManager::with_authorization(
         extension_registry.clone(),
         Arc::new(ConfirmAllPlans {
-            authorization_count: Arc::new(AtomicUsize::new(0)),
+            authorization_count: authorization_count.clone(),
         }),
     )
     .unwrap();
@@ -348,6 +349,30 @@ async fn permission_bearing_enablement_fails_closed_until_grant_cutover_is_compo
         )
         .await
         .unwrap();
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
+    let installed = extension_registry
+        .get("acme/worker")
+        .await
+        .unwrap()
+        .unwrap();
+    let lifecycle_generation = installed.receipt.lifecycle_generation.unwrap();
+    let install_plan = manager
+        .install_remote(
+            &registry,
+            &[],
+            "acme/worker",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(!install_plan.changed);
+    let catalog = installed.plan_ready_catalog().unwrap();
+    let package_digest = catalog.record.package.sha256.clone().unwrap();
+    let permissions = catalog.record.permission_ceiling.clone();
+    assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
+
     let state = manager.observe_package("acme/worker").await.unwrap();
     let request = CognitivePackageEnablementRequest::new(
         "enablement:worker:disable:0001",
@@ -356,10 +381,23 @@ async fn permission_bearing_enablement_fails_closed_until_grant_cutover_is_compo
         false,
     )
     .unwrap();
-
+    let unreviewed = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+    let confirmation_required = unreviewed.set_enablement(&request).await.unwrap_err();
     assert_eq!(
-        manager.set_enablement(&request).await.unwrap_err().code,
-        "use.plugin.package_enablement_grant_required"
+        confirmation_required.code,
+        "use.plugin.package_confirmation_required"
+    );
+    assert_eq!(
+        confirmation_required.details["operationId"],
+        request.operation_id
+    );
+    assert_eq!(
+        confirmation_required.details["plan"]["plan"]["action"],
+        "disable"
+    );
+    assert_eq!(
+        confirmation_required.details["plan"]["plan"]["schema"],
+        "a3s.use.plugin-operation-plan.v4"
     );
     assert!(
         extension_registry
@@ -370,14 +408,148 @@ async fn permission_bearing_enablement_fails_closed_until_grant_cutover_is_compo
             .receipt
             .enabled
     );
-    assert_eq!(
-        manager
-            .observe_package("acme/worker")
+    assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
+
+    let route_lock = exclusive_lock(
+        &home
+            .join("state/route-locks/acme/worker")
+            .join(format!("{lifecycle_generation:020}.lock")),
+    );
+    let interrupted_manager = manager.clone();
+    let interrupted_request = request.clone();
+    let interrupted = tokio::spawn(async move {
+        interrupted_manager
+            .set_enablement(&interrupted_request)
+            .await
+    });
+
+    let grant_store = WorkspaceGrantStore::new(home.join("state"));
+    let mut reached_cutover_drain = false;
+    let mut disable_cutover_generation = None;
+    for _ in 0..500 {
+        let hidden = extension_registry
+            .get("acme/worker")
             .await
             .unwrap()
-            .package_generation,
-        state.package_generation
+            .is_some_and(|extension| !extension.receipt.enabled);
+        let cutover_committed = grant_store
+            .observe_change_set(&request.operation_id)
+            .await
+            .unwrap()
+            .is_some_and(|journal| journal.phase == WorkspaceGrantLifecyclePhase::CutoverCommitted);
+        if hidden && cutover_committed {
+            reached_cutover_drain = true;
+            disable_cutover_generation =
+                Some(extension_registry.snapshot().await.unwrap().generation);
+            break;
+        }
+        if interrupted.is_finished() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    if !reached_cutover_drain {
+        FileExt::unlock(&route_lock).unwrap();
+        drop(route_lock);
+        let outcome = interrupted.await;
+        panic!("disable did not reach the cutover-before-drain checkpoint: {outcome:?}");
+    }
+    assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
+    assert!(extension_registry
+        .find_route("worker-v1")
+        .await
+        .unwrap()
+        .is_none());
+
+    interrupted.abort();
+    let _ = interrupted.await;
+    FileExt::unlock(&route_lock).unwrap();
+    drop(route_lock);
+
+    let restarted = CognitivePackageManager::with_authorization(
+        extension_registry.clone(),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: authorization_count.clone(),
+        }),
+    )
+    .unwrap();
+    let disabled = restarted.set_enablement(&request).await.unwrap();
+    assert!(disabled.changed);
+    assert!(!disabled.replayed);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        extension_registry.snapshot().await.unwrap().generation,
+        disable_cutover_generation.unwrap()
     );
+    assert_revoked(&home, &restarted.scope().id, &package_digest).await;
+    assert_eq!(
+        grant_store
+            .observe_change_set(&request.operation_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .phase,
+        WorkspaceGrantLifecyclePhase::Completed
+    );
+
+    let replayed = restarted.set_enablement(&request).await.unwrap();
+    assert!(replayed.replayed);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 2);
+
+    let enable = CognitivePackageEnablementRequest::new(
+        "enablement:worker:enable:0002",
+        "acme/worker",
+        disabled.state.package_generation.unwrap(),
+        true,
+    )
+    .unwrap();
+    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    assert_eq!(
+        restarted.set_enablement(&enable).await.unwrap_err().code,
+        "use.extension.busy"
+    );
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        grant_store
+            .observe_change_set(&enable.operation_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .phase,
+        WorkspaceGrantLifecyclePhase::Prepared
+    );
+    assert!(extension_registry
+        .find_route("worker-v1")
+        .await
+        .unwrap()
+        .is_none());
+    assert_granted(&home, &restarted.scope().id, &package_digest, &permissions).await;
+    FileExt::unlock(&registry_lock).unwrap();
+    drop(registry_lock);
+
+    let enabled = restarted.set_enablement(&enable).await.unwrap();
+    assert!(enabled.changed);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        extension_registry.snapshot().await.unwrap().generation,
+        disable_cutover_generation.unwrap() + 1
+    );
+    assert_eq!(
+        grant_store
+            .observe_change_set(&enable.operation_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .phase,
+        WorkspaceGrantLifecyclePhase::Completed
+    );
+    assert_granted(&home, &restarted.scope().id, &package_digest, &permissions).await;
+    assert!(extension_registry
+        .find_route("worker-v1")
+        .await
+        .unwrap()
+        .is_some());
 }
 
 #[tokio::test]
