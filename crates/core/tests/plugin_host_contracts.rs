@@ -508,6 +508,18 @@ fn plan_contract_reuses_catalog_plan_and_host_policy_authority() {
     uninstall.candidate = None;
     uninstall.selected_surfaces.clear();
     uninstall.validate().unwrap();
+
+    let mut enable = plan_request();
+    enable.action = PluginOperationAction::Enable;
+    enable.candidate = None;
+    enable.selected_surfaces.clear();
+    assert!(enable.validate().is_err());
+
+    let mut disable = plan_request();
+    disable.action = PluginOperationAction::Disable;
+    disable.candidate = None;
+    disable.selected_surfaces.clear();
+    assert!(disable.validate().is_err());
 }
 
 #[test]

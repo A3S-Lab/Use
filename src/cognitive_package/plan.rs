@@ -14,8 +14,9 @@ use sha2::{Digest, Sha256};
 use super::{
     all_catalog_surfaces, current_host_target,
     grant::{plan_workspace_grants, PlannedWorkspaceGrantOperation},
-    package_manager_error, CognitivePackageAuthorizationProvider, InstallDisposition,
-    UninstallDisposition, UpgradeDisposition,
+    package_manager_error, CognitivePackageAuthorizationProvider,
+    CognitivePackageEnablementRequest, InstallDisposition, UninstallDisposition,
+    UpgradeDisposition,
 };
 
 const PLAN_LIFETIME_MS: u64 = 60 * 60 * 1000;
@@ -24,6 +25,118 @@ pub(super) struct PlannedGraphOperation {
     pub envelope: PluginOperationPlanEnvelope,
     pub generations: BTreeMap<String, u64>,
     pub grants: Option<PlannedWorkspaceGrantOperation>,
+}
+
+pub(super) struct PlannedEnablementOperation {
+    pub envelope: PluginOperationPlanEnvelope,
+    pub grants: Option<PlannedWorkspaceGrantOperation>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enablement_operation(
+    request: &CognitivePackageEnablementRequest,
+    package: &LockedPluginPackage,
+    manifest: &ExtensionManifest,
+    receipt_digest: String,
+    registry_generation: u64,
+    scope: &PlanScope,
+    created_at_ms: u64,
+    grant_snapshot: &PluginWorkspaceGrantSnapshot,
+    authorization: &dyn CognitivePackageAuthorizationProvider,
+) -> UseResult<PlannedEnablementOperation> {
+    request.validate()?;
+    if package.package_id() != request.package_id.as_str()
+        || manifest.package_id != request.package_id.as_str()
+    {
+        return Err(package_manager_error(
+            "use.plugin.package_enablement_plan_invalid",
+            "The installed package, manifest, and enablement request identities disagree.",
+        ));
+    }
+    let state = package
+        .catalog
+        .selected_state(&all_catalog_surfaces(package))?;
+    let transition = PlannedPackageTransition::resolved(
+        package.package_id(),
+        PlanPackageRole::Root,
+        PlanPackageChangeKind::Retain,
+        Some(state.clone()),
+        Some(state.clone()),
+        None,
+    )?;
+    let providers = if request.enabled {
+        let manifests = BTreeMap::from([(package.package_id().to_string(), manifest.clone())]);
+        static_provider_evidence(std::iter::once(package), &manifests)?
+    } else {
+        Vec::new()
+    };
+    let action = if request.enabled {
+        PluginOperationAction::Enable
+    } else {
+        PluginOperationAction::Disable
+    };
+    let drain_required = !request.enabled
+        && state
+            .permissions
+            .surfaces
+            .iter()
+            .any(|permission| permission.private_service);
+    let mut draft = PluginOperationPlanDraft::new(
+        action,
+        package.package_id(),
+        format!("use/{}", package.package_id()),
+        vec![transition],
+        providers,
+        Vec::new(),
+        PlannedOperationImpact {
+            download_bytes: 0,
+            installed_bytes_after: package.catalog.record.package.expanded_bytes,
+            reclaimed_bytes: 0,
+            drain_required,
+            retained_data: !request.enabled,
+            okf_changes: Vec::new(),
+        },
+        PlannedStateEvidence {
+            state_revision: package_state_revision(registry_generation)?,
+            capability_generation: registry_generation,
+            receipt_digest: Some(receipt_digest),
+        },
+    )?;
+    let authority = authorization.bind_authority(&draft)?;
+    let expires_at_ms = created_at_ms.checked_add(PLAN_LIFETIME_MS).ok_or_else(|| {
+        package_manager_error(
+            "use.plugin.package_clock_invalid",
+            "The package-plan expiration time overflowed.",
+        )
+    })?;
+    let binding = authorization.bind_operation(
+        &draft,
+        PluginOperationPlanBinding {
+            operation_id: request.operation_id.clone(),
+            created_at_ms,
+            expires_at_ms,
+            scope: scope.clone(),
+            authority,
+        },
+    )?;
+    if binding.operation_id != request.operation_id || binding.scope != *scope {
+        return Err(package_manager_error(
+            "use.plugin.package_enablement_plan_mismatch",
+            "The authorization provider changed the enablement operation identity or scope.",
+        ));
+    }
+    let grants = plan_workspace_grants(
+        &mut draft,
+        &binding,
+        grant_snapshot,
+        !request.enabled,
+        request.enabled,
+    )?;
+    let plan = draft.bind(binding)?;
+    Ok(PlannedEnablementOperation {
+        envelope: PluginOperationPlanEnvelope::new(plan)?,
+        grants,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -588,6 +701,8 @@ fn authorized_binding(
         PluginOperationAction::Install => "install",
         PluginOperationAction::Uninstall => "uninstall",
         PluginOperationAction::Upgrade => "upgrade",
+        PluginOperationAction::Enable => "enable",
+        PluginOperationAction::Disable => "disable",
     };
     let identity = lock_digest.strip_prefix("sha256:").unwrap_or(lock_digest);
     let default_binding = PluginOperationPlanBinding {

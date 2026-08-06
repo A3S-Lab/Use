@@ -69,16 +69,23 @@ available for automation, embedding, and diagnostics.
 > without inventing Grant digests, so scope validation remains complete for
 > static Skill/UI packages. Use now also owns durable schema-v3 package
 > enablement state independently of the immutable artifact generation:
-> enable/disable is operation- and package-locked, expected-generation checked, checkpoint
-> resumable, and operation-result replayable without rewriting package bytes or
-> the installed dependency graph. Permission-bearing toggles fail closed until
-> the product adapter composes the exact Workspace Grant cutover.
-> Production Knowledge,
-> Service/HTTP hosts, permission-bearing enablement, distributed Flow
-> scheduling/resumption, and complete real-process cross-platform E2E remain
-> release gates. The A3S Code umbrella and managed-host graph paths now invoke
-> the public Grant planner and reviewed provider with exact scope, revision,
-> authority, confirmation, and replay evidence.
+> enable/disable is operation- and package-locked, expected-generation checked,
+> checkpoint resumable, and operation-result replayable without rewriting
+> package bytes or the installed dependency graph. Every changed toggle is now
+> reviewed as operation plan v4 over one exact `Retain` artifact transition.
+> With an injected authorization provider, permission-bearing enable prepares
+> the exact Workspace Grant before atomic capability publication; disable hides
+> atomically, checkpoints Grant cutover, drains accepted calls, and only then
+> revokes the exact prior Grant. The immutable plan, confirmation, Grant
+> snapshot/change set, resolved Grants, ceilings, and admission time survive
+> restart. The existing managed-host enablement v1 request does not carry that
+> plan or confirmation, so Code/Web permission-bearing toggle review requires a
+> versioned adapter before it can use this core path. Production Knowledge,
+> Service/HTTP hosts, distributed Flow scheduling/resumption, complete
+> real-process cross-platform E2E, and that managed-host confirmation adapter
+> remain release gates. The A3S Code umbrella and managed-host graph paths now
+> invoke the public Grant planner and reviewed provider with exact scope,
+> revision, authority, confirmation, and replay evidence.
 > [ROADMAP.md](ROADMAP.md) is the source of truth.
 
 ## Proof in the codebase
@@ -109,7 +116,10 @@ The package model is exercised as code, not only described in prose:
   drives enable/disable through the same six-surface lifecycle. Its durable
   Use-owned state generation advances independently from immutable receipt
   generations across toggles, upgrades, uninstall, and reinstall; complete
-  operation results survive process restart and replay exactly.
+  operation results survive process restart and replay exactly. Changed
+  toggles bind plan-v4 retained-artifact evidence; permission-bearing toggles
+  persist the complete reviewed authorization bundle and revalidate its
+  provider and receipt before recovery.
 - [`PluginGrantLifecycleUnit`](src/plugin_lifecycle/grant.rs) binds one reviewed
   package plan to its exact Workspace Grant changes and signed ceilings. The
   grant-aware graph paths persist candidates before package preparation,
@@ -503,14 +513,27 @@ revision, prebound-impact, policy, or authority drift fails closed. A signed
 Tool Task integration proves exact Grant receipt persistence, no legacy child
 mutation, and durable result replay. Production Knowledge, Service, and Gateway
 composition is still being wired.
-Permission-free schema-v3 enable/disable already uses the package lifecycle's
-hide, drain, stop, prepare, and publish checkpoints without changing package
-bytes or dependency ownership. The optimistic generation is the durable
-Use-owned package state generation, not the immutable artifact generation.
-Reused operation IDs with different requests and stale generations fail before
-lifecycle mutation. Permission-bearing enablement remains blocked until the
-same operation composes Grant prepare, cutover, drain, and retirement; the
-umbrella and managed-host adapters have not yet connected this port.
+Schema-v3 enable/disable uses the package lifecycle's hide, drain, stop,
+prepare, and publish checkpoints without changing package bytes or dependency
+ownership. The optimistic generation is the durable Use-owned package state
+generation, not the immutable artifact generation. Reused operation IDs with
+different requests and stale generations fail before lifecycle mutation.
+Every changed operation binds plan-v4 receipt, manifest, scope, state revision,
+and capability-generation evidence. When the retained package has permissions,
+the injected authorization provider must return the exact reviewed plan and
+confirmation: enable performs Grant prepare before atomic publication, while
+disable commits atomic hide before drain and exact Grant revocation. Missing
+review authority returns `use.plugin.package_confirmation_required` with the
+immutable plan before lifecycle mutation. Code/Web and the fenced managed-host
+adapter still expose enablement request v1, which has no plan or confirmation
+fields; a versioned contract adapter is therefore still required for their
+permission-bearing toggle UX.
+Registry visibility and the Grant journal are separate durable systems. The
+current core replays the same visibility transition idempotently and preserves
+its generation when the Registry is otherwise unchanged. A persisted
+idempotency-key cutover record is still required to prove recovery across the
+narrow post-cutover/pre-journal crash window while unrelated Registry mutations
+run concurrently; this remains part of the production gate.
 The storage layer preserves exact package and Runtime generations across
 candidate preparation, cutover, drain, rollback, and receipt-owned removal.
 Required surfaces fail closed when their owning adapter is absent: Runtime
@@ -568,7 +591,7 @@ do not share one database transaction. The boundaries are frozen in
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
-| Package enablement core | Implemented for permission-free schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, stale-generation rejection, durable checkpoint recovery, exact result replay, lifecycle-based hide/drain/stop and prepare/publish, and non-destructive package/dependency retention; exact permission-bearing Grant cutover in umbrella/managed-host adapters remains pending |
+| Package enablement core | Implemented for schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, plan-v4 retained-artifact review, stale-generation rejection, durable authorization/checkpoint recovery, exact result replay, atomic capability cutover, Grant-before-publish enable, hide/cutover/drain-before-revoke disable, and non-destructive package/dependency retention; Code/Web and managed-host enablement v1 still need a versioned plan/confirmation adapter for permission-bearing UX |
 | Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, public manager-owned host impact planning, and umbrella/managed-host invocation are implemented: exact User/Workspace scope and revision snapshots, external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |

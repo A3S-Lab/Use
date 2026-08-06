@@ -151,6 +151,7 @@ impl PendingPackageGraphOperation {
                     PlanPackageChangeKind::Add | PlanPackageChangeKind::Replace
                 ),
                 PluginOperationAction::Uninstall => package.change == PlanPackageChangeKind::Remove,
+                PluginOperationAction::Enable | PluginOperationAction::Disable => false,
             })
             .map(|package| package.package_id.as_str())
             .collect::<std::collections::BTreeSet<_>>();
@@ -627,6 +628,8 @@ fn action_name(action: PluginOperationAction) -> &'static str {
         PluginOperationAction::Install => "install",
         PluginOperationAction::Uninstall => "uninstall",
         PluginOperationAction::Upgrade => "upgrade",
+        PluginOperationAction::Enable => "enable",
+        PluginOperationAction::Disable => "disable",
     }
 }
 

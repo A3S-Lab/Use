@@ -52,6 +52,8 @@ pub enum PluginOperationAction {
     Install,
     Uninstall,
     Upgrade,
+    Enable,
+    Disable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -9,7 +9,8 @@
   Flow accepted as the single workflow engine and the exact-generation
   preflight binding foundation accepted on 2026-08-04; canonical Grant-impact
   planning and umbrella/managed-host graph authority forwarding accepted
-  2026-08-06
+  2026-08-06; plan-v4 permission-bearing enablement and Grant cutover core
+  accepted 2026-08-06
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -60,9 +61,12 @@ Registry cutover evidence, jointly roll back candidates before cutover, and
 drain accepted prior calls before Grant retirement. Standalone Grant
 planning/apply selection is implemented, and the umbrella/managed-host paths
 now combine the public canonical impact planner with the exact reviewed-plan
-provider. Production provider composition, permission-bearing enablement, the
-A3S Knowledge index backend, and scoped cited retrieval remain to be
-implemented. Missing promoted evidence therefore stays explicitly unpublished.
+provider. Production provider composition, the managed-host enablement review
+adapter, the A3S Knowledge index backend, and scoped cited retrieval remain to
+be implemented. A3S Use's directly injected
+authorization path already supports permission-bearing enable/disable; the
+remaining enablement item is product protocol/UX forwarding, not a parallel
+lifecycle. Missing promoted evidence therefore stays explicitly unpublished.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use
@@ -244,6 +248,42 @@ Each surface also reports `pending`, `prepared`, `starting`, `healthy`,
 `failed`, `draining`, or `stopped`. Plugin `ready` means every enabled,
 required surface has satisfied its surface-specific readiness gate. It must
 never be inferred merely from an enabled receipt.
+
+Enablement uses two independent generations. The immutable lifecycle generation
+identifies package bytes and bindings; the Use-owned package-state generation
+advances optimistic desired-state concurrency across enable, disable, upgrade,
+uninstall, and reinstall. A toggle never manufactures a replacement artifact.
+
+Every changed toggle is an immutable operation-plan-v4 mutation over one
+`Retain` transition whose before and after package states are identical. The
+plan still binds the exact receipt, manifest, source provenance, selected
+surfaces, scope, state revision, capability generation, provider evidence,
+OKF/secret delta, and Workspace Grant impact. That gives review and recovery a
+complete artifact identity while allowing only visibility and authorization to
+change.
+
+```text
+enable:  Grant prepare -> surface prepare -> atomic publish
+         -> Grant cutover -> Grant completion
+
+disable: Grant intent -> atomic hide -> Grant cutover
+         -> accepted-call drain -> exact Grant revoke -> surface stop
+```
+
+The plan envelope, exact confirmation, Grant snapshot/change set, resolved
+Grants, ceilings, and admission time are stored with pending state-v2 and
+terminal operation-v2 records. Recovery revalidates provider authority,
+artifact, receipt, and plan evidence; completed replay neither reauthorizes nor
+inflates the Registry generation. The managed-host enablement v1 request carries
+only expected package-state generation and desired boolean, so it may forward
+permission-free toggles but cannot carry permission-bearing plan/confirmation
+evidence. That boundary requires a versioned adapter.
+
+The Registry cutover and Grant journal remain separate durable systems. The
+current host can replay an otherwise unchanged visibility transition without
+advancing the Registry generation, but a production proof that also permits an
+unrelated concurrent Registry mutation requires cutover evidence persisted by
+the operation idempotency key.
 
 ## Package Contract
 
@@ -453,7 +493,8 @@ The contract binds:
 The machine boundary is split deliberately:
 
 - `a3s.use.okf-bundle.v1` binds immutable content;
-- catalog v3 and operation-plan v2 bind package selection and impact;
+- catalog v3 and operation-plan v2 bind graph package selection and OKF impact;
+  operation-plan v4 binds OKF visibility changes for enable/disable;
 - `a3s.use.okf-projection-receipt.v1` records one staged candidate;
 - `a3s.use.okf-knowledge-observation.v1` reports host state and the selected
   last-good generation; and
@@ -578,10 +619,12 @@ coordinator: plan v3 binds the complete prior/candidate lock union,
 Add/Replace archives prepare forward, removed routes leave in the same
 publication, and replaced or unreferenced generations retire in reverse order.
 Exact shared dependencies remain selected without download or receipt rewrite.
-Production Knowledge, Runtime Service, Gateway/HTTP MCP, and
-permission-bearing enablement remain pending. Management MCP remains a bounded
-read-only adapter, while fenced managed-host graph mutations reuse the shared
-Manager. Storage never overwrites the snapshot-selected retained generation.
+Production Knowledge, Runtime Service, Gateway/HTTP MCP, and the versioned
+Code/Web/managed-host enablement review adapter remain pending. The Use core
+already executes permission-bearing toggles when a reviewed authorization
+provider is injected. Management MCP remains a bounded read-only adapter, while
+fenced managed-host graph mutations reuse the shared Manager. Storage never
+overwrites the snapshot-selected retained generation.
 
 ## Surface Reconciliation
 
@@ -790,8 +833,10 @@ For a same-package, same-generation permission replacement, preparation
 atomically supersedes the prior receipt and retirement verifies the new receipt
 instead of writing a tombstone over it. For a new package digest, N remains
 granted until cutover evidence exists and is then tombstoned exactly. The
-Plugin Manager still needs to coordinate this grant sub-saga with package,
-Runtime, route, lease-drain, and global capability checkpoints.
+Use package manager coordinates this Grant sub-saga with package, route,
+lease-drain, and global capability checkpoints for graph and enablement
+operations. Production Runtime Service, Gateway, and Knowledge providers must
+join the same checkpoints rather than introduce a second coordinator.
 
 ## Runtime Integration
 
@@ -1060,7 +1105,10 @@ publication, automatic upgrade rollback/retirement, and an all-six-surface
 package fixture. Schema-v3 operations use dedicated exact-generation
 `ExtensionRegistry` methods and reject legacy mutation bypass. The umbrella
 Plugin Manager composes the supported Tool Task, stdio MCP, A3S Flow, Skill,
-and UI hosts; production Service/Gateway/Knowledge providers, complete graph
+and UI hosts. A3S Use additionally composes plan-v4 permission-bearing
+enablement with exact Grant cutover and recovery when reviewed authority is
+injected. Production Service/Gateway/Knowledge providers, the versioned
+Code/Web/managed-host enablement review adapter, complete graph
 upgrade/uninstall construction, and cross-platform crash E2E still bound the
 product readiness claim.
 

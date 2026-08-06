@@ -691,6 +691,9 @@ fn operation_envelope(
             retained_data: true,
             okf_changes: Vec::new(),
         },
+        PluginOperationAction::Enable | PluginOperationAction::Disable => {
+            unreachable!("package-graph fixtures do not build enablement plans")
+        }
     };
     let plan = PluginOperationPlanDraft::new(
         action,

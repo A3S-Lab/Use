@@ -307,6 +307,34 @@ fn clock_from(start: u64) -> impl Fn() -> u64 {
 }
 
 #[tokio::test]
+async fn capability_hosts_without_cutover_evidence_fail_before_mutation() {
+    let host = RecordingHosts::default();
+    let enable = intent(PluginLifecycleAction::Enable);
+    let publish = host
+        .publish_capability_with_cutover(
+            &enable,
+            &enable.checkpoints.last().unwrap().idempotency_key,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        publish.code,
+        "use.plugin.capability_cutover_evidence_required"
+    );
+
+    let disable = intent(PluginLifecycleAction::Disable);
+    let hide = host
+        .hide_capability_with_cutover(
+            &disable,
+            &disable.checkpoints.first().unwrap().idempotency_key,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(hide.code, "use.plugin.capability_cutover_evidence_required");
+    assert!(host.calls().await.is_empty());
+}
+
+#[tokio::test]
 async fn installs_all_surface_hosts_before_one_capability_publication() {
     let temp = tempfile::tempdir().unwrap();
     let host = Arc::new(RecordingHosts::default());

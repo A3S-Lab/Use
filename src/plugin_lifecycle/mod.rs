@@ -6,6 +6,7 @@
 //! independently installable packages.
 
 mod coordinator;
+mod enablement;
 mod grant;
 mod graph;
 mod journal;
@@ -18,10 +19,10 @@ mod static_surfaces;
 mod store;
 
 pub use coordinator::{
-    PluginCapabilityLifecycleHost, PluginFlowLifecycleHost, PluginLifecycleCoordinator,
-    PluginLifecycleEvidence, PluginLifecycleHosts, PluginMcpLifecycleHost, PluginOkfLifecycleHost,
-    PluginPackageLifecycleHost, PluginSkillLifecycleHost, PluginToolLifecycleHost,
-    PluginUiLifecycleHost,
+    PluginCapabilityLifecycleHost, PluginCapabilityPublication, PluginFlowLifecycleHost,
+    PluginLifecycleCoordinator, PluginLifecycleEvidence, PluginLifecycleHosts,
+    PluginMcpLifecycleHost, PluginOkfLifecycleHost, PluginPackageLifecycleHost,
+    PluginSkillLifecycleHost, PluginToolLifecycleHost, PluginUiLifecycleHost,
 };
 pub use grant::{PluginCapabilityCutoverEvidence, PluginGrantLifecycleUnit};
 pub use graph::{

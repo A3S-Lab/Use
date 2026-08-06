@@ -15,6 +15,7 @@ use super::validation::{
 use super::{
     PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA,
     PLUGIN_OPERATION_PLAN_SCHEMA_V2, PLUGIN_OPERATION_PLAN_SCHEMA_V3,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 impl PluginOperationPlan {
@@ -24,6 +25,7 @@ impl PluginOperationPlan {
             PLUGIN_OPERATION_PLAN_SCHEMA
                 | PLUGIN_OPERATION_PLAN_SCHEMA_V2
                 | PLUGIN_OPERATION_PLAN_SCHEMA_V3
+                | PLUGIN_OPERATION_PLAN_SCHEMA_V4
         ) || Self::validate_operation_id(&self.operation_id).is_err()
             || !valid_package_id(&self.package_id)
             || !valid_machine_id(&self.component_id)
@@ -86,9 +88,10 @@ impl PluginOperationPlan {
         }
         let receipt_matches_action = match self.action {
             PluginOperationAction::Install => self.state.receipt_digest.is_none(),
-            PluginOperationAction::Upgrade | PluginOperationAction::Uninstall => {
-                self.state.receipt_digest.is_some()
-            }
+            PluginOperationAction::Upgrade
+            | PluginOperationAction::Uninstall
+            | PluginOperationAction::Enable
+            | PluginOperationAction::Disable => self.state.receipt_digest.is_some(),
         };
         if !receipt_matches_action {
             return Err(plan_error(
@@ -151,6 +154,9 @@ impl PluginOperationPlan {
             PluginOperationAction::Install => PlanPackageChangeKind::Add,
             PluginOperationAction::Upgrade => PlanPackageChangeKind::Replace,
             PluginOperationAction::Uninstall => PlanPackageChangeKind::Remove,
+            PluginOperationAction::Enable | PluginOperationAction::Disable => {
+                PlanPackageChangeKind::Retain
+            }
         }
     }
 
@@ -160,7 +166,7 @@ impl PluginOperationPlan {
                 "Planned secret changes must be sorted and unique.",
             ));
         }
-        let expected = planned_secret_changes(&self.packages);
+        let expected = planned_secret_changes(self.action, &self.packages);
         if self.secret_changes != expected {
             return Err(plan_error(
                 "Planned secret changes do not equal the resolved permission delta.",
@@ -170,10 +176,13 @@ impl PluginOperationPlan {
     }
 
     fn validate_providers(&self) -> UseResult<()> {
-        if self.action == PluginOperationAction::Uninstall {
+        if matches!(
+            self.action,
+            PluginOperationAction::Uninstall | PluginOperationAction::Disable
+        ) {
             if !self.providers.is_empty() {
                 return Err(plan_error(
-                    "Uninstall plans must not select new runtime providers.",
+                    "Uninstall and disable plans must not select new runtime providers.",
                 ));
             }
             return Ok(());
@@ -208,6 +217,11 @@ impl PluginOperationPlan {
     }
 
     fn validate_workspace_impacts(&self) -> UseResult<()> {
+        let expected_enablement = match self.action {
+            PluginOperationAction::Install | PluginOperationAction::Enable => (false, true),
+            PluginOperationAction::Upgrade => (true, true),
+            PluginOperationAction::Uninstall | PluginOperationAction::Disable => (true, false),
+        };
         if self
             .workspace_impacts
             .windows(2)
@@ -227,6 +241,7 @@ impl PluginOperationPlan {
                     .grant_after_digest
                     .as_deref()
                     .is_some_and(|value| !valid_sha256(value))
+                || (impact.enabled_before, impact.enabled_after) != expected_enablement
                 || (impact.grant_before_digest == impact.grant_after_digest
                     && impact.enabled_before == impact.enabled_after)
             {
@@ -262,15 +277,39 @@ impl PluginOperationPlan {
                     && self.impact.installed_bytes_after == 0
                     && self.impact.retained_data
             }
+            PluginOperationAction::Enable => {
+                self.impact.download_bytes == 0
+                    && self.impact.installed_bytes_after > 0
+                    && self.impact.reclaimed_bytes == 0
+                    && !self.impact.drain_required
+                    && !self.impact.retained_data
+            }
+            PluginOperationAction::Disable => {
+                self.impact.download_bytes == 0
+                    && self.impact.installed_bytes_after > 0
+                    && self.impact.reclaimed_bytes == 0
+                    && self.impact.retained_data
+            }
         };
-        let drain_required = self.packages.iter().any(|package| {
-            matches!(
-                package.change,
-                PlanPackageChangeKind::Remove | PlanPackageChangeKind::Replace
-            ) && package.before.as_ref().is_some_and(has_private_service)
-        });
-        let okf_changes = planned_okf_changes(&self.packages)?;
-        let schema_matches = if self.prior_package_lock_digest.is_some() {
+        let drain_required = if self.action == PluginOperationAction::Disable {
+            self.packages
+                .iter()
+                .any(|package| package.before.as_ref().is_some_and(has_private_service))
+        } else {
+            self.packages.iter().any(|package| {
+                matches!(
+                    package.change,
+                    PlanPackageChangeKind::Remove | PlanPackageChangeKind::Replace
+                ) && package.before.as_ref().is_some_and(has_private_service)
+            })
+        };
+        let okf_changes = planned_okf_changes(self.action, &self.packages)?;
+        let schema_matches = if matches!(
+            self.action,
+            PluginOperationAction::Enable | PluginOperationAction::Disable
+        ) {
+            self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V4
+        } else if self.prior_package_lock_digest.is_some() {
             self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V3
         } else if okf_changes.is_empty() {
             self.schema == PLUGIN_OPERATION_PLAN_SCHEMA
@@ -291,13 +330,18 @@ impl PluginOperationPlan {
 }
 
 pub(super) fn planned_okf_changes(
+    action: PluginOperationAction,
     packages: &[super::PlannedPackageTransition],
 ) -> UseResult<Vec<PlannedOkfSurfaceChange>> {
     let mut before = std::collections::BTreeMap::new();
     let mut after = std::collections::BTreeMap::new();
     for package in packages {
-        collect_okf_bundles(&package.package_id, package.before.as_ref(), &mut before)?;
-        collect_okf_bundles(&package.package_id, package.after.as_ref(), &mut after)?;
+        if action != PluginOperationAction::Enable {
+            collect_okf_bundles(&package.package_id, package.before.as_ref(), &mut before)?;
+        }
+        if action != PluginOperationAction::Disable {
+            collect_okf_bundles(&package.package_id, package.after.as_ref(), &mut after)?;
+        }
     }
     let references = before
         .keys()
@@ -358,13 +402,18 @@ fn collect_okf_bundles(
 }
 
 pub(super) fn planned_secret_changes(
+    action: PluginOperationAction,
     packages: &[super::PlannedPackageTransition],
 ) -> Vec<PlannedSecretChange> {
     let mut before = BTreeSet::new();
     let mut after = BTreeSet::new();
     for package in packages {
-        collect_secrets(&package.package_id, package.before.as_ref(), &mut before);
-        collect_secrets(&package.package_id, package.after.as_ref(), &mut after);
+        if action != PluginOperationAction::Enable {
+            collect_secrets(&package.package_id, package.before.as_ref(), &mut before);
+        }
+        if action != PluginOperationAction::Disable {
+            collect_secrets(&package.package_id, package.after.as_ref(), &mut after);
+        }
     }
     let mut changes = Vec::new();
     for (surface, secret_name) in before.difference(&after) {

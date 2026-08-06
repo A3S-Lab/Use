@@ -345,19 +345,21 @@ pub(super) fn plan_workspace_grants(
     let mut ceilings = Vec::new();
     for package in &draft.packages {
         let before_required = enabled_before
-            && matches!(
+            && (matches!(
                 package.change,
                 PlanPackageChangeKind::Remove | PlanPackageChangeKind::Replace
-            )
+            ) || (draft.action == a3s_use_core::PluginOperationAction::Disable
+                && package.change == PlanPackageChangeKind::Retain))
             && package
                 .before
                 .as_ref()
                 .is_some_and(has_workspace_permissions);
         let after_required = enabled_after
-            && matches!(
+            && (matches!(
                 package.change,
                 PlanPackageChangeKind::Add | PlanPackageChangeKind::Replace
-            )
+            ) || (draft.action == a3s_use_core::PluginOperationAction::Enable
+                && package.change == PlanPackageChangeKind::Retain))
             && package
                 .after
                 .as_ref()
@@ -473,6 +475,8 @@ pub fn bind_cognitive_package_grant_impacts(
         a3s_use_core::PluginOperationAction::Install => (false, true),
         a3s_use_core::PluginOperationAction::Upgrade => (true, true),
         a3s_use_core::PluginOperationAction::Uninstall => (true, false),
+        a3s_use_core::PluginOperationAction::Enable => (false, true),
+        a3s_use_core::PluginOperationAction::Disable => (true, false),
     };
     plan_workspace_grants(draft, binding, snapshot, enabled_before, enabled_after).map(drop)
 }
@@ -582,19 +586,21 @@ fn expected_grant_packages(plan: &PluginOperationPlan) -> BTreeSet<&str> {
         .iter()
         .filter(|package| {
             (enabled_before
-                && matches!(
+                && (matches!(
                     package.change,
                     PlanPackageChangeKind::Remove | PlanPackageChangeKind::Replace
-                )
+                ) || (plan.action == a3s_use_core::PluginOperationAction::Disable
+                    && package.change == PlanPackageChangeKind::Retain))
                 && package
                     .before
                     .as_ref()
                     .is_some_and(has_workspace_permissions))
                 || (enabled_after
-                    && matches!(
+                    && (matches!(
                         package.change,
                         PlanPackageChangeKind::Add | PlanPackageChangeKind::Replace
-                    )
+                    ) || (plan.action == a3s_use_core::PluginOperationAction::Enable
+                        && package.change == PlanPackageChangeKind::Retain))
                     && package
                         .after
                         .as_ref()
@@ -613,10 +619,11 @@ fn candidate_ceilings(
         .iter()
         .filter(|package| {
             enabled_after
-                && matches!(
+                && (matches!(
                     package.change,
                     PlanPackageChangeKind::Add | PlanPackageChangeKind::Replace
-                )
+                ) || (plan.action == a3s_use_core::PluginOperationAction::Enable
+                    && package.change == PlanPackageChangeKind::Retain))
                 && package
                     .after
                     .as_ref()
@@ -660,6 +667,8 @@ fn expected_enablement(plan: &PluginOperationPlan) -> (bool, bool) {
         a3s_use_core::PluginOperationAction::Install => (false, true),
         a3s_use_core::PluginOperationAction::Upgrade => (true, true),
         a3s_use_core::PluginOperationAction::Uninstall => (true, false),
+        a3s_use_core::PluginOperationAction::Enable => (false, true),
+        a3s_use_core::PluginOperationAction::Disable => (true, false),
     }
 }
 
