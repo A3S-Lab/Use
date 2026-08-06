@@ -137,8 +137,14 @@ Try the built-in Browser and local OCR capabilities:
 
 ```bash
 a3s use browser render https://example.com --output page.html
+a3s install use/ocr
 a3s use ocr extract ./scan.png --json
 ```
+
+The pinned OCR installer bounds connection setup and stalled reads without a
+total transfer deadline, then verifies the exact model length and SHA-256
+before activation. Healthy slow links therefore remain supported without
+weakening artifact integrity.
 
 Build the standalone engine from source:
 
