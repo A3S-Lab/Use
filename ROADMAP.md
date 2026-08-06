@@ -617,6 +617,15 @@ Implementation status (2026-08-06):
   `PlanScope` for Grant-bearing operations, carry it through install/upgrade/
   uninstall plans, and reject pending replay when a caller substitutes only
   the scope kind;
+- completed in A3S Use: permission-free schema-v3 package enablement is
+  serialized by operation- and package-scoped cross-process locks and uses a durable,
+  monotonic package-state generation separate from immutable receipt lifecycle
+  generations; requests, active lifecycle intents, checkpoints, and exact
+  results survive restart, stale generations and conflicting operation IDs fail
+  before mutation, and upgrade/uninstall/reinstall do not reset state history;
+- completed in A3S Use: enable/disable runs through the normal package
+  lifecycle, preserving package bytes and dependency graph ownership while
+  disable hides, drains, and stops and enable prepares and republishes;
 - completed in A3S Use: `CognitivePackageLifecycleFactory` is the explicit
   embedding seam for Code/Web Runtime, Gateway, static projection, and A3S
   Knowledge adapters; the standalone factory does not invent fallback hosts;
@@ -633,9 +642,9 @@ Implementation status (2026-08-06):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; umbrella and managed-host invocation of the reviewed-plan
-  provider with their exact authority, confirmation, and canonical Grant
-  evidence; real signed
+  injection; umbrella and managed-host invocation of Use-owned package
+  enablement plus the reviewed-plan provider with their exact fence, scope,
+  authority, confirmation, canonical Grant evidence, and replay result; real signed
   cross-platform lifecycle E2E; and the published
   managed-host port required before a Cloud adapter can enable mutation. Hosts
   must not add a parallel implementation.
@@ -1002,9 +1011,14 @@ Implementation status (in progress 2026-07-30):
 - completed in `a3s-use`: expose a fail-closed reviewed-plan provider that
   binds the exact external authority, confirmation, operation identity, and
   lock-bound envelope into Grant-aware graph apply and replay;
+- completed in `a3s-use`: expose durable permission-free package enablement and
+  observation using an independent optimistic package-state generation; reuse
+  the installed generation's typed lifecycle hosts, recover interrupted
+  checkpoints, replay exact results, and reject permission-bearing toggles
+  until Grant cutover composition exists;
 - pending: inject the Runtime Broker into the shared umbrella Plugin Manager,
-  invoke that provider through CLI/Web/management MCP/managed-host entry
-  points, and add secret-reference adapters,
+  invoke package enablement and that provider through
+  CLI/Web/management MCP/managed-host entry points, and add secret-reference adapters,
   filesystem/network/child-process enforcement, production-provider-backed
   prior-generation Runtime retirement, streaming/file-backed large Task
   output, the production MCP initialize client adapter, stdio supervision,

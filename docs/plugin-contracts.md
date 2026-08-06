@@ -238,11 +238,46 @@ Observation returns either the shared Surface Reconciler state with exact
 receipt/package/capability evidence or a typed unavailable reason; absence and
 success are never inferred from missing evidence.
 
+For schema-v3 cognitive packages, that expected value is the monotonic
+Use-owned **package-state generation**, not the immutable receipt lifecycle
+generation. The latter continues to identify exact installed bytes and host
+bindings. Conflating them would make a real enable/disable transition unable to
+advance optimistic state without pretending the artifact changed.
+
 Canonical capability, managed-scope, and observation JSON/SHA-256 fixtures are
 checked into `crates/core/fixtures/plugins/` for Cloud and other host adapters.
 Unknown fields, unbounded input, mixed schema versions, zero generations,
 noncanonical package IDs, stale fences, and substituted request/result
 identities are rejected.
+
+### Durable cognitive-package enablement
+
+`CognitivePackageEnablementRequest` binds one operation ID, canonical package
+ID, expected package-state generation, and desired enabled boolean under
+`a3s.use.cognitive-package-enablement-request.v1`.
+`CognitivePackageEnablementResult` binds the complete outcome, timestamp,
+changed flag, projected package/capability state, and an OLPC-canonical
+`sha256:` outcome digest under
+`a3s.use.cognitive-package-enablement-result.v1`.
+
+Use serializes the operation with operation- and package-scoped cross-process locks and
+persists both the active lifecycle intent and final request/result. A changed
+operation must advance the package-state generation; a no-op retains it. The
+same operation ID and request replay the exact completed result after restart,
+while a different request under that ID fails with
+`use.plugin.package_enablement_operation_conflict`. A stale expected generation
+fails with `use.plugin.package_generation_changed` before any lifecycle side
+effect.
+
+The coordinator invokes the same manifest-derived lifecycle used by graph
+installation. Disable hides capability publication, drains accepted calls, and
+stops surfaces in order; enable prepares dependencies and republishes them.
+Neither transition rewrites package bytes nor the installed dependency graph.
+Artifact replacement, absence, and reinstall are reconciled into the monotonic
+state generation without reusing the artifact lifecycle generation as mutable
+state. Permission-bearing packages currently fail with
+`use.plugin.package_enablement_grant_required` until an embedding product
+composes exact Grant prepare/cutover/drain/retirement evidence.
 
 ## Catalog and Trust Provenance
 

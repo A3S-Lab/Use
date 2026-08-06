@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use a3s_use::cognitive_package::{
     CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider,
-    ReviewedCognitivePackageAuthorizationProvider, StandaloneCognitivePackageLifecycleFactory,
+    CognitivePackageEnablementRequest, ReviewedCognitivePackageAuthorizationProvider,
+    StandaloneCognitivePackageLifecycleFactory,
 };
 use a3s_use_core::{
     CatalogPlanningTarget, ExecutablePlanningSurface, PlanActor, PlanAuthority, PlanPolicyDecision,
@@ -303,6 +304,80 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     assert!(!home
         .join("state/operations/package-graphs/uninstall/acme/worker.json")
         .exists());
+}
+
+#[tokio::test]
+async fn permission_bearing_enablement_fails_closed_until_grant_cutover_is_composed() {
+    let temporary = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let targets = cognitive_tool_targets_version(
+        temporary.path(),
+        "acme/worker",
+        "worker-v1",
+        "1.0.0",
+        &target,
+    );
+    let repository = TestRepository::with_targets(targets, 59, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temporary.path().join("home");
+    let registry = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        &repository.root_sha256,
+        None,
+        home.join("state/remote-registries/fixture"),
+    )
+    .unwrap();
+    let extension_registry =
+        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let manager = CognitivePackageManager::with_authorization(
+        extension_registry.clone(),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    manager
+        .install_remote(
+            &registry,
+            &[],
+            "acme/worker",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    let state = manager.observe_package("acme/worker").await.unwrap();
+    let request = CognitivePackageEnablementRequest::new(
+        "enablement:worker:disable:0001",
+        "acme/worker",
+        state.package_generation.unwrap(),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(
+        manager.set_enablement(&request).await.unwrap_err().code,
+        "use.plugin.package_enablement_grant_required"
+    );
+    assert!(
+        extension_registry
+            .get("acme/worker")
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt
+            .enabled
+    );
+    assert_eq!(
+        manager
+            .observe_package("acme/worker")
+            .await
+            .unwrap()
+            .package_generation,
+        state.package_generation
+    );
 }
 
 #[tokio::test]

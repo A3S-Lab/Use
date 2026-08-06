@@ -64,7 +64,12 @@ available for automation, embedding, and diagnostics.
 > pending-operation replay when only the scope kind changes under the same ID.
 > A permission-free Workspace plan still binds its exact enablement transition
 > without inventing Grant digests, so scope validation remains complete for
-> static Skill/UI packages.
+> static Skill/UI packages. Use now also owns durable schema-v3 package
+> enablement state independently of the immutable artifact generation:
+> enable/disable is operation- and package-locked, expected-generation checked, checkpoint
+> resumable, and operation-result replayable without rewriting package bytes or
+> the installed dependency graph. Permission-bearing toggles fail closed until
+> the product adapter composes the exact Workspace Grant cutover.
 > Production Knowledge,
 > Service/HTTP hosts, umbrella and managed-host adapter wiring, distributed Flow
 > scheduling/resumption, and complete real-process cross-platform E2E remain
@@ -95,6 +100,11 @@ The package model is exercised as code, not only described in prose:
   without asking again during crash replay. Embedding hosts can bind a full
   User or Workspace `PlanScope` for Grant-bearing plans; replay compares both
   kind and ID.
+- [`CognitivePackageEnablementRequest`](src/cognitive_package/enablement.rs)
+  drives enable/disable through the same six-surface lifecycle. Its durable
+  Use-owned state generation advances independently from immutable receipt
+  generations across toggles, upgrades, uninstall, and reinstall; complete
+  operation results survive process restart and replay exactly.
 - [`PluginGrantLifecycleUnit`](src/plugin_lifecycle/grant.rs) binds one reviewed
   package plan to its exact Workspace Grant changes and signed ceilings. The
   grant-aware graph paths persist candidates before package preparation,
@@ -470,6 +480,14 @@ workspace, and rejects policy drift during interrupted replay. The umbrella
 Plugin Manager and managed-host adapters still need to invoke that provider;
 production Knowledge, Service, and Gateway composition is also still being
 wired.
+Permission-free schema-v3 enable/disable already uses the package lifecycle's
+hide, drain, stop, prepare, and publish checkpoints without changing package
+bytes or dependency ownership. The optimistic generation is the durable
+Use-owned package state generation, not the immutable artifact generation.
+Reused operation IDs with different requests and stale generations fail before
+lifecycle mutation. Permission-bearing enablement remains blocked until the
+same operation composes Grant prepare, cutover, drain, and retirement; the
+umbrella and managed-host adapters have not yet connected this port.
 The storage layer preserves exact package and Runtime generations across
 candidate preparation, cutover, drain, rollback, and receipt-owned removal.
 Required surfaces fail closed when their owning adapter is absent: Runtime
@@ -495,8 +513,9 @@ The ownership boundaries are deliberate:
 - **The shared Plugin Manager** is the only lifecycle application service for
   CLI, Web, management MCP, and remote managed-host adapters.
 - **A3S Use** owns package validation, exact versions, immutable generations,
-  operation journals, Workspace Grant prepare/cutover/rollback evidence,
-  receipts, route leases, binding evidence, and capability reconciliation.
+  an independent monotonic package-state generation, operation journals,
+  Workspace Grant prepare/cutover/rollback evidence, receipts, route leases,
+  binding evidence, and capability reconciliation.
 - **Runtime, A3S Flow, Gateway, and A3S Knowledge adapters** own execution,
   serving, preflight, and indexing. Their typed evidence is required before
   publication.
@@ -526,6 +545,7 @@ do not share one database transaction. The boundaries are frozen in
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
 | OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
 | Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
+| Package enablement core | Implemented for permission-free schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, stale-generation rejection, durable checkpoint recovery, exact result replay, lifecycle-based hide/drain/stop and prepare/publish, and non-destructive package/dependency retention; permission-bearing Grant cutover and umbrella/managed-host adapters remain pending |
 | Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, exact User/Workspace scope retention, and permission-free Workspace enablement impacts are implemented: external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay; umbrella and managed-host adapters still need to invoke the provider |
 | Skill/UI lifecycle | Immutable validation and typed static projection implemented |
 | Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; production-provider and complete cross-platform real-process gates remain |

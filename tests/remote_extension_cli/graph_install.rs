@@ -1,5 +1,207 @@
 use super::*;
 
+#[tokio::test]
+async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let root = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
+    let repository = TestRepository::with_targets(vec![root], 7, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+    let trusted = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        &repository.root_sha256,
+        None,
+        home.join("state/remote-registries/fixture"),
+    )
+    .unwrap();
+    let extension_registry =
+        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+
+    manager
+        .install_remote(
+            &trusted,
+            &[],
+            "acme/root",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    let installed = extension_registry.get("acme/root").await.unwrap().unwrap();
+    let package_root = installed.receipt.package_root.clone();
+    let artifact_generation = installed.receipt.lifecycle_generation.unwrap();
+    let graph_path = home.join("state/package-graphs/acme/root.json");
+    let graph_before = std::fs::read(&graph_path).unwrap();
+    let observed = manager.observe_package("acme/root").await.unwrap();
+    assert_eq!(observed.package_generation, Some(artifact_generation));
+    assert_eq!(observed.desired, PluginDesiredState::Enabled);
+
+    let disable = CognitivePackageEnablementRequest::new(
+        "enablement:disable:0001",
+        "acme/root",
+        artifact_generation,
+        false,
+    )
+    .unwrap();
+    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    assert_eq!(
+        manager.set_enablement(&disable).await.unwrap_err().code,
+        "use.extension.busy"
+    );
+    assert!(
+        extension_registry
+            .get("acme/root")
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt
+            .enabled
+    );
+    FileExt::unlock(&registry_lock).unwrap();
+    drop(registry_lock);
+
+    let restarted = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+    let disabled = restarted.set_enablement(&disable).await.unwrap();
+    assert!(disabled.changed);
+    assert!(!disabled.replayed);
+    let disabled_generation = disabled.state.package_generation.unwrap();
+    assert!(disabled_generation > artifact_generation);
+    assert_eq!(
+        disabled.state.desired,
+        PluginDesiredState::InstalledDisabled
+    );
+    assert_eq!(disabled.state.observed, PluginObservedState::Installed);
+    assert!(extension_registry
+        .find_route("root")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(
+        !extension_registry
+            .get("acme/root")
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt
+            .enabled
+    );
+    assert!(package_root.is_dir());
+    assert_eq!(std::fs::read(&graph_path).unwrap(), graph_before);
+
+    let journal: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(lifecycle_journal_path(&home, "acme/root")).unwrap())
+            .unwrap();
+    assert_eq!(journal["intent"]["action"], "disable");
+    assert_eq!(
+        journal["intent"]["checkpoints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|checkpoint| checkpoint["kind"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["capability-hidden", "calls-drained", "surface-stopped"]
+    );
+    assert_eq!(journal["receipts"].as_array().unwrap().len(), 3);
+
+    let restarted_again = CognitivePackageManager::new(extension_registry.clone()).unwrap();
+    let replayed = restarted_again.set_enablement(&disable).await.unwrap();
+    assert!(replayed.replayed);
+    let mut expected_replay = disabled.clone();
+    expected_replay.replayed = true;
+    assert_eq!(replayed, expected_replay);
+
+    let changed_reuse = CognitivePackageEnablementRequest::new(
+        "enablement:disable:0001",
+        "acme/root",
+        disabled_generation,
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        restarted_again
+            .set_enablement(&changed_reuse)
+            .await
+            .unwrap_err()
+            .code,
+        "use.plugin.package_enablement_operation_conflict"
+    );
+
+    let stale = CognitivePackageEnablementRequest::new(
+        "enablement:enable:stale",
+        "acme/root",
+        artifact_generation,
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        restarted_again
+            .set_enablement(&stale)
+            .await
+            .unwrap_err()
+            .code,
+        "use.plugin.package_generation_changed"
+    );
+    assert!(extension_registry
+        .find_route("root")
+        .await
+        .unwrap()
+        .is_none());
+
+    let enable = CognitivePackageEnablementRequest::new(
+        "enablement:enable:0002",
+        "acme/root",
+        disabled_generation,
+        true,
+    )
+    .unwrap();
+    let enabled = restarted_again.set_enablement(&enable).await.unwrap();
+    assert!(enabled.changed);
+    assert!(enabled.state.package_generation.unwrap() > disabled_generation);
+    assert_eq!(enabled.state.desired, PluginDesiredState::Enabled);
+    assert_eq!(enabled.state.observed, PluginObservedState::Ready);
+    assert!(extension_registry
+        .find_route("root")
+        .await
+        .unwrap()
+        .is_some());
+    let enabled_generation = enabled.state.package_generation.unwrap();
+    let no_change = CognitivePackageEnablementRequest::new(
+        "enablement:enable:noop:0003",
+        "acme/root",
+        enabled_generation,
+        true,
+    )
+    .unwrap();
+    let no_change = restarted_again.set_enablement(&no_change).await.unwrap();
+    assert!(!no_change.changed);
+    assert_eq!(no_change.state.package_generation, Some(enabled_generation));
+    assert!(package_root.is_dir());
+    assert_eq!(std::fs::read(graph_path).unwrap(), graph_before);
+
+    let state_generation_before_reinstall = no_change.state.package_generation.unwrap();
+    restarted_again.uninstall("acme/root").await.unwrap();
+    let absent = restarted_again.observe_package("acme/root").await.unwrap();
+    assert_eq!(absent.desired, PluginDesiredState::Absent);
+    assert!(absent.package_generation.is_none());
+    restarted_again
+        .install_remote(
+            &trusted,
+            &[],
+            "acme/root",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            None,
+        )
+        .await
+        .unwrap();
+    let reinstalled = restarted_again.observe_package("acme/root").await.unwrap();
+    assert!(reinstalled.package_generation.unwrap() > state_generation_before_reinstall);
+}
+
 #[test]
 fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
     let temp = tempfile::tempdir().unwrap();

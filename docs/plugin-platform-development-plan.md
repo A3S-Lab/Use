@@ -95,6 +95,17 @@ retirement around that package graph. Production publication still requires
 umbrella and managed-host invocation of Use's reviewed-plan authorization
 provider, typed provider composition, and a real A3S Knowledge backend.
 
+Package enablement has two deliberately separate generations. The immutable
+artifact generation identifies installed bytes, manifests, bindings, and
+lifecycle intent. A Use-owned package-state generation provides optimistic
+concurrency for desired enablement and continues monotonically across
+enable/disable, upgrade, uninstall, and reinstall. Permission-free schema-v3
+packages now persist that state and the complete operation request/result under
+operation- and package-scoped cross-process locks, resume lifecycle checkpoints after a
+crash, and replay a completed operation without touching the package graph.
+Permission-bearing enablement remains fail-closed until the reviewed Workspace
+Grant lifecycle is composed by the product adapter.
+
 Flow uses one product model. `engine = "a3s-flow"` is fixed; `native-ts` is the
 first admitted execution adapter. Use owns package integrity, dependency
 ordering, and catalog projection. Code/Web or another embedding host owns
@@ -153,6 +164,14 @@ observed state. It is not persisted as one mutable linear enum.
 Install and upgrade commit a new immutable generation. Disable and uninstall
 first remove the route from new callers, then acquire the exclusive drain
 lease. Existing calls retain the exact generation they accepted.
+
+Disable and enable do not mint or replace an artifact generation. They advance
+the independent package-state generation only when desired state changes. A
+stale expected state generation or an operation ID reused for different input
+is rejected before lifecycle mutation. Disable hides capabilities, drains
+accepted calls, and stops surfaces; enable prepares surfaces and publishes one
+capability snapshot. Package bytes and installed dependency ownership remain
+unchanged.
 
 The M2 implementation projects this model into schema v3 capability bindings.
 Its deterministic Surface Reconciler calculates dependency levels, required
@@ -247,6 +266,9 @@ Remaining on the critical path:
   public lifecycle factory and the same durable graph records;
 - select the implemented grant-aware graph path from umbrella and managed-host
   adapters without leaving an authorized grant-free bypass;
+- route umbrella and managed-host enablement through Use's durable package-state
+  coordinator, preserving the external operation ID, complete request, fence,
+  scope, and exact replay result instead of calling legacy extension toggles;
 - coordinate the implemented exact package/Runtime N/N+1 storage, cutover,
   rollback, drain, and removal primitives after blue/green cutover; and
 - pass CLI/Web/agent install-use-upgrade-uninstall E2E with production
@@ -264,11 +286,12 @@ earlier ownership or durability gate.
 | P0-F — Unified Flow contract and Code local runtime (complete 2026-08-04) | First-class Flow inventory, `a3s-flow` identity, Native TypeScript integrity, Tool/MCP/OKF edges, lifecycle/reconciliation, exact `flow.json` resolution, immutable source staging, and one Code CLI/TUI/Web durable local store | Manifest/catalog/source drift fails before mutation; fixed run IDs are idempotent; histories survive host recreation and package upgrade/uninstall; public responses leak no managed path; no injected host means no publication |
 | P0-U — Dual-generation storage (complete 2026-08-05) | Bounded exact package receipts, snapshot-selected route leases, Runtime generation directories, exact observation, pre-cutover rollback, and receipt-owned removal | N remains callable while N+1 is staged; commit replay preserves N; moved/tampered/symlinked/over-limit state fails closed; Runtime cleanup removes only N |
 | P0-G — Dependency-graph upgrade and GC core (complete 2026-08-05) | Plan-v3 prior/candidate lock binding, Add/Replace/Remove/Retain, selected downloads, shared-node retention, dependency-forward N+1 preparation, one capability cutover including removed routes, automatic unpublished-candidate rollback, reverse N retirement, exact graph CAS, and durable replay | Preparation/publication failure restores N and removes additions; successful cutover retires replacements and unreferenced dependencies exactly once; retained-receipt and applying/rolling-back crash fixtures converge without generation inflation |
+| P0-E — Package enablement core (complete 2026-08-06) | Separate immutable artifact identity from a durable Use-owned package-state generation; serialize per operation and package; checkpoint and replay permission-free schema-v3 enable/disable through the normal lifecycle without changing bytes or graph ownership | Restart resumes an interrupted lifecycle; completed operation replay is stable; concurrent or sequential operation-ID reuse and stale generations fail before mutation; upgrade/uninstall/reinstall preserve monotonic state; permission-bearing packages fail closed |
 | P1 — Host composition (Code baseline complete; production providers pending) | Keep Code's public lifecycle-factory composition for executable Tool Tasks, stdio MCP, A3S Flow, and Skill/UI; add explicit Runtime Service, Gateway/HTTP MCP, and A3S Knowledge adapters | TUI and Web produce the same intent and supported host set today; unavailable production hosts continue to fail before publication |
 | P2-A — Grant graph saga (complete 2026-08-05) | Compose durable Grant prepare, exact Registry cutover, joint pre-cutover rollback, accepted-call drain, and prior-Grant retirement with package graph operations | Candidate Grant survives restart; failed publication restores package and Grant candidates; prior Grant survives until exact cutover and drain |
 | P2-B — Product Grant wiring (Use provider and exact plan scope complete 2026-08-06; product adapters pending) | Standalone derives canonical proposals/change sets/resolved Grants/ceilings after injected policy authority and exact confirmation; the reviewed-host provider preserves an external operation identity, policy, lock-bound envelope, confirmation, and User/Workspace scope across apply/replay; permission-free Workspace plans bind activation without fictitious Grant digests; umbrella and managed hosts must invoke it | Standalone and reviewed-provider signed-lock install/replay cannot bypass or regenerate authorization or substitute scope kind; permission-free Workspace plans retain an exact action-derived enablement impact; CLI, Web, management MCP, and managed hosts still need identical end-to-end evidence |
 | P3 — Production blue/green composition (core complete; providers pending) | Compose the implemented graph cutover, rollback, dependency GC, and retirement coordinator with Gateway/Knowledge/grant receipts | Failed N+1 leaves N callable across every production provider; successful N+1 leaks no old Runtime unit or route; provider receipts preserve the core's crash-safe removed-node behavior |
-| P4 — Product adapters (Code baseline complete; MCP/managed hosts pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, and local Flow runtime; add visible Web Flow controls and route management MCP/managed-host mutations through the same path | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history and TUI covers local routing plus watcher readiness; visible Web UX and production hosts must extend the same no-restart proof |
+| P4 — Product adapters (Code baseline complete; enablement/MCP/managed hosts pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, and local Flow runtime; connect Use-owned enablement and add visible Web Flow controls while routing management MCP/managed-host mutations through the same path | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history and TUI covers local routing plus watcher readiness; disable/restart/enable must replay the exact Use-owned state and visible Web UX and production hosts must extend the same no-restart proof |
 | P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all six surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
 
 P1, the umbrella/managed-host remainder of P2-B, and the remaining
