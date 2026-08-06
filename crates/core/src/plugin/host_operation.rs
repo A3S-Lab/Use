@@ -6,8 +6,9 @@ use super::host::{validate_request_identity, verify_capabilities, verify_support
 use super::validation::valid_sha256;
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPolicyDecision,
-    PluginDesiredState, PluginHostCapabilities, PluginHostPackageState, PluginHostPlanResult,
-    PluginManagedScope, PluginOperationConfirmation, PluginOperationPlan, PluginPackageId,
+    PluginDesiredState, PluginHostCapabilities, PluginHostEnablementPlanResult,
+    PluginHostPackageState, PluginHostPlanResult, PluginManagedScope, PluginOperationConfirmation,
+    PluginOperationPlan, PluginPackageId,
 };
 
 pub const PLUGIN_HOST_APPLY_REQUEST_SCHEMA: &str = "a3s.use.plugin-host-apply-request.v1";
@@ -190,6 +191,25 @@ impl PluginHostApplyRequest {
             self.confirmation.as_ref(),
             now_ms,
         )
+    }
+
+    pub fn validate_for_enablement_plan(
+        &self,
+        plan: &PluginHostEnablementPlanResult,
+        capabilities: &PluginHostCapabilities,
+    ) -> UseResult<()> {
+        plan.validate_for_capabilities(capabilities)?;
+        self.validate_for_plan(&plan.reviewed_plan()?, capabilities)
+    }
+
+    pub fn verify_apply_for_enablement_plan(
+        &self,
+        plan: &PluginHostEnablementPlanResult,
+        capabilities: &PluginHostCapabilities,
+        now_ms: u64,
+    ) -> UseResult<()> {
+        plan.validate_for_capabilities(capabilities)?;
+        self.verify_apply_for_plan(&plan.reviewed_plan()?, capabilities, now_ms)
     }
 
     pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {

@@ -1,8 +1,10 @@
 use a3s_use_core::{
-    CatalogSurface, PlanActor, PlanAuthority, PlanPackageRole, PlanPolicyDecision, PlanScope,
-    PlanScopeKind, PlannedOperationImpact, PlannedStateEvidence, PlannedWorkspaceImpact,
-    PluginCatalogRecord, PluginDesiredState, PluginHostApplyRequest, PluginHostApplyResult,
-    PluginHostCapabilities, PluginHostEnablementRequest, PluginHostEnablementResult,
+    CatalogSurface, PlanActor, PlanAuthority, PlanPackageChangeKind, PlanPackageRole,
+    PlanPolicyDecision, PlanScope, PlanScopeKind, PlannedOperationImpact, PlannedPackageTransition,
+    PlannedStateEvidence, PlannedWorkspaceImpact, PluginCatalogRecord, PluginDesiredState,
+    PluginHostApplyRequest, PluginHostApplyResult, PluginHostCapabilities,
+    PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
+    PluginHostEnablementPlanStatus, PluginHostEnablementRequest, PluginHostEnablementResult,
     PluginHostManager, PluginHostObservationRequest, PluginHostObservationResult,
     PluginHostObservationStatus, PluginHostPackageState, PluginHostPlanRequest,
     PluginHostPlanResult, PluginHostUnavailableReason, PluginManagedScope, PluginObservedState,
@@ -11,11 +13,14 @@ use a3s_use_core::{
     PluginSurfaceRef, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
     PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
     PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_CAPABILITIES_SCHEMA_V3,
-    PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA,
-    PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
-    PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V2,
-    PLUGIN_HOST_PROTOCOL_LEVEL_V3, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA, PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
+    PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V2, PLUGIN_HOST_PROTOCOL_LEVEL_V3,
+    PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_MANAGED_SCOPE_SCHEMA,
     PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA_V3,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
@@ -28,6 +33,9 @@ const HOST_CAPABILITIES_V2_DIGEST: &str =
 const HOST_CAPABILITIES_V3: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v3.json");
 const HOST_CAPABILITIES_V3_DIGEST: &str =
     include_str!("../fixtures/plugins/host-capabilities-v3.sha256").trim_ascii_end();
+const HOST_CAPABILITIES_V4: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v4.json");
+const HOST_CAPABILITIES_V4_DIGEST: &str =
+    include_str!("../fixtures/plugins/host-capabilities-v4.sha256").trim_ascii_end();
 const MANAGED_SCOPE: &[u8] = include_bytes!("../fixtures/plugins/managed-scope-v1.json");
 const MANAGED_SCOPE_DIGEST: &str =
     include_str!("../fixtures/plugins/managed-scope-v1.sha256").trim_ascii_end();
@@ -221,6 +229,98 @@ fn installed_state(desired: PluginDesiredState) -> PluginHostPackageState {
     }
 }
 
+fn enablement_plan_request(enabled: bool) -> PluginHostEnablementPlanRequest {
+    let capabilities = PluginHostCapabilities::v4(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+    PluginHostEnablementPlanRequest {
+        schema: PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned(),
+        request_id: "request:enablement-plan:0001".to_owned(),
+        assignment_generation: 3,
+        capabilities_digest: capabilities.descriptor_digest().unwrap(),
+        scope: scope(),
+        package_id: PluginPackageId::parse("acme/knowledge").unwrap(),
+        expected_package_generation: 13,
+        enabled,
+    }
+}
+
+fn enablement_plan_result() -> PluginHostEnablementPlanResult {
+    let request = enablement_plan_request(false);
+    let candidate = candidate();
+    let state = candidate.selected_state(&[]).unwrap();
+    let transition = PlannedPackageTransition::resolved(
+        request.package_id.as_str(),
+        PlanPackageRole::Root,
+        PlanPackageChangeKind::Retain,
+        Some(state.clone()),
+        Some(state),
+        None,
+    )
+    .unwrap();
+    let draft = PluginOperationPlanDraft::new(
+        PluginOperationAction::Disable,
+        request.package_id.as_str(),
+        request.package_id.component_id(),
+        vec![transition],
+        Vec::new(),
+        vec![PlannedWorkspaceImpact {
+            scope_id: request.scope.scope_id.clone(),
+            grant_before_digest: Some(DIGEST_B.to_owned()),
+            grant_after_digest: None,
+            enabled_before: true,
+            enabled_after: false,
+        }],
+        PlannedOperationImpact {
+            download_bytes: 0,
+            installed_bytes_after: candidate.record.package.expanded_bytes,
+            reclaimed_bytes: 0,
+            drain_required: false,
+            retained_data: true,
+            okf_changes: Vec::new(),
+        },
+        PlannedStateEvidence {
+            state_revision: 3,
+            capability_generation: 14,
+            receipt_digest: Some(DIGEST_C.to_owned()),
+        },
+    )
+    .unwrap();
+    let plan = draft
+        .bind(PluginOperationPlanBinding {
+            operation_id: "use-enablement-operation:0001".to_owned(),
+            created_at_ms: 1_785_360_000_000,
+            expires_at_ms: 1_785_360_600_000,
+            scope: request.scope.plan_scope(),
+            authority: PlanAuthority {
+                actor: PlanActor::User,
+                decision: PlanPolicyDecision::Ask,
+                policy_digest: DIGEST_C.to_owned(),
+                confirmation_required: true,
+            },
+        })
+        .unwrap();
+    assert_eq!(plan.schema, PLUGIN_OPERATION_PLAN_SCHEMA_V4);
+    PluginHostEnablementPlanResult {
+        schema: PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned(),
+        request_id: request.request_id,
+        assignment_generation: request.assignment_generation,
+        capabilities_digest: request.capabilities_digest,
+        scope: request.scope,
+        package_id: request.package_id,
+        expected_package_generation: request.expected_package_generation,
+        enabled: request.enabled,
+        planned_at_ms: plan.created_at_ms,
+        status: PluginHostEnablementPlanStatus::Planned,
+        state: installed_state(PluginDesiredState::Enabled),
+        plan: Some(PluginOperationPlanEnvelope::new(plan).unwrap()),
+        replayed: false,
+    }
+}
+
 fn removed_state() -> PluginHostPackageState {
     PluginHostPackageState {
         version: None,
@@ -396,6 +496,112 @@ fn capabilities_v3_advertises_graph_upgrade_plans_without_rewriting_prior_versio
         fixture.descriptor_digest().unwrap(),
         HOST_CAPABILITIES_V3_DIGEST
     );
+}
+
+#[test]
+fn capabilities_v4_adds_enablement_review_without_rewriting_prior_versions() {
+    let v3 = PluginHostCapabilities::v3(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+    let v4 = PluginHostCapabilities::v4(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+
+    assert_eq!(v4.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V4);
+    assert_eq!(v4.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V4);
+    assert!(!v3.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V4));
+    assert!(v4.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V4));
+    assert!(v4
+        .contract_schemas
+        .contains(&PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned()));
+    assert!(v4
+        .contract_schemas
+        .contains(&PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned()));
+    assert_eq!(
+        PluginHostCapabilities::from_json(&v4.canonical_bytes().unwrap()).unwrap(),
+        v4
+    );
+
+    let fixture = PluginHostCapabilities::from_json(HOST_CAPABILITIES_V4).unwrap();
+    assert_eq!(
+        fixture,
+        PluginHostCapabilities::v4(
+            "host:node-01",
+            env!("CARGO_PKG_VERSION"),
+            "use:0.2.1:linux-x86_64",
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        fixture.canonical_bytes().unwrap(),
+        canonical_fixture(HOST_CAPABILITIES_V4)
+    );
+    assert_eq!(
+        fixture.descriptor_digest().unwrap(),
+        HOST_CAPABILITIES_V4_DIGEST
+    );
+
+    let mut expanded_v3 = v3;
+    expanded_v3
+        .contract_schemas
+        .push(PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned());
+    assert!(expanded_v3.validate().is_err());
+}
+
+#[test]
+fn host_enablement_plan_is_explicit_and_reuses_digest_only_apply() {
+    let capabilities = PluginHostCapabilities::v4(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+    let request = enablement_plan_request(false);
+    request.validate_for_capabilities(&capabilities).unwrap();
+    let result = enablement_plan_result();
+    result.validate_for(&request, &capabilities).unwrap();
+    assert_eq!(
+        PluginHostEnablementPlanResult::from_json(&result.canonical_bytes().unwrap()).unwrap(),
+        result
+    );
+
+    let envelope = result.plan.as_ref().unwrap();
+    let confirmation = PluginOperationConfirmation {
+        schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_owned(),
+        operation_id: envelope.plan.operation_id.clone(),
+        plan_digest: envelope.plan_digest.clone(),
+        confirmed_by: PlanActor::User,
+        confirmed_at_ms: envelope.plan.created_at_ms + 1,
+    };
+    let apply = PluginHostApplyRequest {
+        schema: PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
+        request_id: "request:enablement-apply:0001".to_owned(),
+        assignment_generation: request.assignment_generation,
+        capabilities_digest: request.capabilities_digest.clone(),
+        scope: request.scope.clone(),
+        package_id: request.package_id.clone(),
+        operation_id: envelope.plan.operation_id.clone(),
+        plan_digest: envelope.plan_digest.clone(),
+        confirmation: Some(confirmation),
+    };
+    apply
+        .verify_apply_for_enablement_plan(&result, &capabilities, envelope.plan.created_at_ms + 1)
+        .unwrap();
+
+    let mut no_change = result;
+    no_change.status = PluginHostEnablementPlanStatus::NoChange;
+    no_change.state = installed_state(PluginDesiredState::InstalledDisabled);
+    no_change.plan = None;
+    no_change.validate_for(&request, &capabilities).unwrap();
+    assert!(apply
+        .validate_for_enablement_plan(&no_change, &capabilities)
+        .is_err());
 }
 
 #[test]
@@ -709,6 +915,8 @@ fn public_host_types_and_service_port_are_send_sync() {
     assert_send_sync::<PluginHostPlanResult>();
     assert_send_sync::<PluginHostApplyRequest>();
     assert_send_sync::<PluginHostApplyResult>();
+    assert_send_sync::<PluginHostEnablementPlanRequest>();
+    assert_send_sync::<PluginHostEnablementPlanResult>();
     assert_send_sync::<PluginHostEnablementRequest>();
     assert_send_sync::<PluginHostEnablementResult>();
     assert_send_sync::<PluginHostObservationRequest>();

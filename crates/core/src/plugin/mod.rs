@@ -12,6 +12,7 @@ mod grant;
 mod grant_changes;
 mod grant_resolution;
 mod host;
+mod host_enablement_plan;
 mod host_observation;
 mod host_operation;
 mod host_plan;
@@ -47,8 +48,13 @@ pub use grant_resolution::{
 pub use host::{
     PluginHostCapabilities, PluginHostManager, PluginManagedScope, PLUGIN_HOST_CAPABILITIES_SCHEMA,
     PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_CAPABILITIES_SCHEMA_V3,
-    PLUGIN_HOST_PROTOCOL_LEVEL, PLUGIN_HOST_PROTOCOL_LEVEL_V2, PLUGIN_HOST_PROTOCOL_LEVEL_V3,
-    PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_PROTOCOL_LEVEL, PLUGIN_HOST_PROTOCOL_LEVEL_V2,
+    PLUGIN_HOST_PROTOCOL_LEVEL_V3, PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_MANAGED_SCOPE_SCHEMA,
+};
+pub use host_enablement_plan::{
+    PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
+    PluginHostEnablementPlanStatus, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA,
 };
 pub use host_observation::{
     PluginDesiredState, PluginHostObservationRequest, PluginHostObservationResult,
