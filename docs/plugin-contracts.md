@@ -8,9 +8,10 @@
   dependency/lock contracts frozen 2026-08-03; unified A3S Flow contracts and
   exact-generation preflight binding foundation frozen 2026-08-04; operation
   plan v3 dual-lock upgrades, host capabilities v3, and Grant-aware graph saga
-  foundation frozen 2026-08-05; public Grant-impact planning and
-  umbrella/managed-host graph authority forwarding plus plan-v4
-  permission-bearing enablement core connected 2026-08-06
+  foundation frozen 2026-08-05; public Grant-impact planning,
+  umbrella/managed-host graph authority forwarding, plan-v4
+  permission-bearing enablement core, and host-capabilities-v4 reviewed
+  enablement planning connected 2026-08-06
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -25,12 +26,13 @@ implemented foundations.
 Signed remote schema-v3 records enter that graph from `a3s-use install` and
 the compatible `component install` command. A3S Code TUI/Web now composes the
 supported Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production
-Knowledge, Service/HTTP, permission-bearing enablement review forwarding, and
-distributed Flow scheduling/retention remain product integration gates. The
+Knowledge, Service/HTTP, local CLI/Web/TUI reviewed-enablement presentation,
+and distributed Flow scheduling/retention remain product integration gates. The
 umbrella and fenced managed-host graph paths bind the public Grant planner to
 the exact reviewed provider. A3S Use itself now applies the same reviewed
-authorization model to permission-bearing enable/disable; managed-host
-enablement request v1 still lacks plan and confirmation fields.
+authorization model to permission-bearing enable/disable. Host capability v4
+adds explicit enablement planning and reuses digest-only apply; direct
+enablement request v1 remains compatibility-only.
 
 ## Contract Set
 
@@ -74,10 +76,13 @@ enablement request v1 still lacks plan and confirmation fields.
 | Host capabilities | `a3s.use.plugin-host-capabilities.v1` | Exact manager build, protocol level, and frozen supported schema inventory |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v2` | Protocol level 2 with explicit first-class Flow support; v1 remains byte-frozen |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v3` | Protocol level 3 advertising operation plan v3; v1/v2 remain byte-frozen |
+| Host capabilities | `a3s.use.plugin-host-capabilities.v4` | Protocol level 4 advertising plan v4 plus reviewed enablement planning; v1-v3 remain byte-frozen |
 | Host plan | `a3s.use.plugin-host-plan-request/result.v1` | Exact verified selection in and canonical reviewed A3S Use plan out |
+| Host enablement plan | `a3s.use.plugin-host-enablement-plan-request/result.v1` | Exact desired state in and durable plan-v4 or terminal NoChange result out |
 | Host apply | `a3s.use.plugin-host-apply-request/result.v1` | Digest-only apply with exact confirmation and idempotent operation evidence |
-| Host enablement | `a3s.use.plugin-host-enablement-request/result.v1` | Optimistic-generation enable or disable through the same manager |
+| Host enablement | `a3s.use.plugin-host-enablement-request/result.v1` | Compatibility-only optimistic-generation enable or disable through the same manager |
 | Host observation | `a3s.use.plugin-host-observation-request/result.v1` | Exact Use-owned package/capability state or explicit unavailable evidence |
+| Cognitive-package enablement plan result | `a3s.use.cognitive-package-enablement-plan-result.v1` | Use-generated NoChange, Planned plan-v4, or durable Completed outcome before authorization/apply |
 | Cognitive-package enablement state | `a3s.use.cognitive-package-enablement-state.v1` | Legacy permission-free package-state and pending lifecycle record |
 | Cognitive-package enablement state | `a3s.use.cognitive-package-enablement-state.v2` | Package state plus pending immutable plan and complete authorization evidence |
 | Cognitive-package enablement operation | `a3s.use.cognitive-package-enablement-operation.v1` | Legacy or no-op completed result with no plan-bound mutation |
@@ -165,9 +170,10 @@ drain, while removal deletes only the exact receipt-owned generation.
 
 Host-capabilities v1 remains frozen without Flow. V2 uses protocol level 2 and
 advertises it explicitly. V3 uses protocol level 3 and adds only operation
-plan v3 to the advertised plan inventory, so a managed host cannot accept a
-dual-lock removal plan without negotiating support. Manager-toolset v1/v2 also
-remain frozen; v3 adds the canonical `flow` selection value. Compilation,
+plan v3 to the advertised plan inventory. V4 uses protocol level 4 and adds
+plan v4 plus enablement-plan request/result v1 without changing v1-v3, so a
+managed host cannot accept unsupported graph or enablement evidence. Manager-
+toolset v1/v2 also remain frozen; v3 adds the canonical `flow` selection value. Compilation,
 preflight, durable execution,
 replay, and storage belong to the typed `a3s-flow` host adapter. `flow.json` is
 a design/deployment document that must map to the same Flow identity; it does
@@ -196,8 +202,9 @@ package preparation, require exact snapshot/generation cutover evidence,
 restore package and Grant candidates together before cutover, and drain prior
 calls before revocation. The standalone manager performs product-level Grant
 planning/apply selection for graph and enablement operations when an exact
-authorization provider is injected. Production provider composition and
-versioned Code/Web/managed-host enablement review forwarding remain outside the
+authorization provider is injected. The fenced managed-host adapter now
+forwards reviewed enablement through capability v4; production provider
+composition and local Code/Web/TUI reviewed presentation remain outside the
 completed foundation.
 
 Package ownership also applies above one manifest. A schema-v3 package may
@@ -228,38 +235,43 @@ canonical operation plan before review.
 
 `PluginHostManager` is the sole typed application port for a remote managed
 workspace. It is not another manager implementation. A host adapter delegates
-its four distinct operations—plan, apply, set enablement, and observe—to the
+its five distinct operations—graph plan, enablement plan, apply, compatibility
+set enablement, and observe—to the
 same shared Plugin Manager used by local presentation adapters. Catalog/TUF
 verification, immutable generations, operation replay, Workspace Grants,
 Runtime Bindings, capability publication, drain, reference counting, and
 cleanup remain behind that one manager.
 
-Every request carries the descriptor digest of
-`a3s.use.plugin-host-capabilities.v1`, a positive assignment generation, and an
-exact `a3s.use.plugin-managed-scope.v1` value. The scope contains only opaque
-host, workspace, and authority identities plus a positive fence generation and
-digest. It contains no path or bearer token. The manager compares the complete
-value with its durable current fence; stale, future, standalone, or
-different-authority scopes fail closed.
+Every request carries the descriptor digest of the negotiated
+`a3s.use.plugin-host-capabilities.v1` through v4 document, a positive assignment
+generation, and an exact `a3s.use.plugin-managed-scope.v1` value. The scope
+contains only opaque host, workspace, and authority identities plus a positive
+fence generation and digest. It contains no path or bearer token. The manager
+compares the complete value with its durable current fence; stale, future,
+standalone, or different-authority scopes fail closed.
 
-The host capability schema freezes its full v1 contract, catalog, plan, and
-surface inventory. A different inventory requires a new schema and protocol
-level instead of silently mixing versions. Plan input can select only one
+Each host capability schema freezes its complete contract, catalog, plan, and
+surface inventory. V1-v3 remain byte-frozen; v4 adds operation plan v4 and the
+enablement-plan request/result v1 schemas. A different inventory requires a new
+schema and protocol level instead of silently mixing versions. Graph-plan input can select only one
 complete verified catalog record and bounded named surfaces. Policy authority,
 provider choice, operation identity, and confirmation are host-owned. Apply
 submits only the stored operation ID and plan digest plus exact canonical user
-confirmation when required. Enablement uses an expected installed generation.
+confirmation when required. Both enablement paths use an expected package-state
+generation.
 Observation returns either the shared Surface Reconciler state with exact
 receipt/package/capability evidence or a typed unavailable reason; absence and
 success are never inferred from missing evidence.
 
 Host plan request v1 accepts install, upgrade, and uninstall only. It rejects
-`enable` and `disable` because that request has neither current enablement
-evidence nor confirmation fields; callers must use the separate enablement
-port. Host enablement request v1 can safely forward permission-free toggles,
-but it cannot authorize a plan-v4 permission-bearing toggle. Such a product
-adapter must negotiate a new version instead of manufacturing or dropping
-review evidence.
+`enable` and `disable`; callers use host enablement-plan request v1 instead.
+That request binds request identity, assignment, capability digest, managed
+fence, package ID, expected package-state generation, and desired boolean. Its
+result is either terminal `NoChange` with no mutation plan or `Planned` with an
+exact plan-v4 envelope. The planned branch projects into the existing host plan
+result, so confirmed mutation continues through host apply request v1. Host
+enablement request v1 remains available for permission-free compatibility but
+cannot authorize a plan-v4 permission-bearing toggle.
 
 For schema-v3 cognitive packages, that expected value is the monotonic
 Use-owned **package-state generation**, not the immutable receipt lifecycle
@@ -328,6 +340,18 @@ Recovery revalidates the injected provider, installed artifact, receipt, and
 plan before resuming. A completed replay does not ask for authorization again
 or publish another Registry generation. State/operation v1 records remain
 readable and resume through their legacy request-digest path.
+
+`CognitivePackageEnablementPlanResult` is the Use-owned planning boundary. It
+returns `NoChange`, `Planned`, or `Completed`: the first has no synthetic plan,
+the second carries the exact plan-v4 envelope, and the last carries the durable
+operation result when the operation ID already completed. The managed host maps
+the first two into `PluginHostEnablementPlanResult`, persists the exact request
+and result before returning, and also stores an operation index for `Planned`.
+It derives a stable operation ID from the canonical planning request. Apply
+rechecks policy, fence, capability digest, operation ID, plan digest,
+confirmation, and lifetime before recording
+intent, then uses `ReviewedCognitivePackageAuthorizationProvider` so Use must
+reproduce the reviewed plan before entering the existing saga.
 
 The capability host persists `a3s.use.registry-cutover.v1` in the same atomic
 Registry visibility mutation. Its lifecycle-checkpoint idempotency key binds
@@ -907,6 +931,7 @@ Canonical interoperability fixtures live under
 - `manager-toolset-v2.json`;
 - `host-capabilities-v2.json`;
 - `host-capabilities-v3.json`;
+- `host-capabilities-v4.json`;
 - `manager-toolset-v3.json`.
 
 Canonical OKF fixtures under `crates/core/fixtures/okf/` include the bundle

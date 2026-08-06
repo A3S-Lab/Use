@@ -9,8 +9,8 @@
   Flow accepted as the single workflow engine and the exact-generation
   preflight binding foundation accepted on 2026-08-04; canonical Grant-impact
   planning and umbrella/managed-host graph authority forwarding accepted
-  2026-08-06; plan-v4 permission-bearing enablement and Grant cutover core
-  accepted 2026-08-06
+  2026-08-06; plan-v4 permission-bearing enablement, Grant cutover core, and
+  host-capabilities-v4 reviewed enablement planning accepted 2026-08-06
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -61,12 +61,13 @@ Registry cutover evidence, jointly roll back candidates before cutover, and
 drain accepted prior calls before Grant retirement. Standalone Grant
 planning/apply selection is implemented, and the umbrella/managed-host paths
 now combine the public canonical impact planner with the exact reviewed-plan
-provider. Production provider composition, the managed-host enablement review
-adapter, the A3S Knowledge index backend, and scoped cited retrieval remain to
-be implemented. A3S Use's directly injected
-authorization path already supports permission-bearing enable/disable; the
-remaining enablement item is product protocol/UX forwarding, not a parallel
-lifecycle. Missing promoted evidence therefore stays explicitly unpublished.
+provider. The fenced managed-host adapter now plans enablement explicitly under
+host capability v4 and applies the reviewed result through the existing
+digest-only request. Production provider composition, local Code CLI/Web/TUI
+reviewed presentation, the A3S Knowledge index backend, and scoped cited
+retrieval remain to be implemented. The remaining enablement item is local
+product UX forwarding, not a parallel lifecycle. Missing promoted evidence
+therefore stays explicitly unpublished.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use
@@ -194,8 +195,9 @@ unit ID are projections. None is an ownership identity.
 Remote management uses the same ownership model. A
 `PluginManagedScope` binds one opaque host/workspace/authority tuple to an
 exact positive fence generation and digest. The versioned `PluginHostManager`
-port accepts separate plan, digest-only apply, enablement, and observation
-contracts, all bound to the host's exact capability descriptor. It does not
+port accepts five separate operations: graph plan, enablement plan, digest-only
+apply, compatibility set enablement, and observation. Every request is bound to
+the host's exact capability descriptor. It does not
 define an `execute(plugin, action, payload)` protocol. A Cloud node adapter is
 only a delivery adapter over this port; it cannot reproduce the Plugin Manager
 saga or allow local mutation adapters to compete inside the managed scope.
@@ -274,10 +276,12 @@ The plan envelope, exact confirmation, Grant snapshot/change set, resolved
 Grants, ceilings, and admission time are stored with pending state-v2 and
 terminal operation-v2 records. Recovery revalidates provider authority,
 artifact, receipt, and plan evidence; completed replay neither reauthorizes nor
-inflates the Registry generation. The managed-host enablement v1 request carries
-only expected package-state generation and desired boolean, so it may forward
-permission-free toggles but cannot carry permission-bearing plan/confirmation
-evidence. That boundary requires a versioned adapter.
+inflates the Registry generation. Host capability v4 adds an explicit
+enablement-plan request/result around this evidence: `NoChange` is terminal and
+has no synthetic plan, while a changed transition returns plan v4 and reuses
+the existing digest-only apply request with exact confirmation. The direct
+managed-host enablement-v1 request carries only expected package-state
+generation and desired boolean, so it remains permission-free compatibility.
 
 The Registry cutover and Grant journal remain separate durable systems. The
 Registry snapshot atomically embeds a bounded
@@ -624,11 +628,12 @@ coordinator: plan v3 binds the complete prior/candidate lock union,
 Add/Replace archives prepare forward, removed routes leave in the same
 publication, and replaced or unreferenced generations retire in reverse order.
 Exact shared dependencies remain selected without download or receipt rewrite.
-Production Knowledge, Runtime Service, Gateway/HTTP MCP, and the versioned
-Code/Web/managed-host enablement review adapter remain pending. The Use core
-already executes permission-bearing toggles when a reviewed authorization
-provider is injected. Management MCP remains a bounded read-only adapter, while
-fenced managed-host graph mutations reuse the shared Manager. Storage never
+Production Knowledge, Runtime Service, Gateway/HTTP MCP, and local Code/Web/TUI
+reviewed enablement presentation remain pending. The fenced managed-host
+adapter already persists plan-v4/NoChange planning evidence and injects the
+reviewed authorization provider during digest-only apply. Management MCP remains
+a bounded read-only adapter, while fenced managed-host graph mutations reuse the
+shared Manager. Storage never
 overwrites the snapshot-selected retained generation.
 
 ## Surface Reconciliation
@@ -1112,8 +1117,9 @@ package fixture. Schema-v3 operations use dedicated exact-generation
 Plugin Manager composes the supported Tool Task, stdio MCP, A3S Flow, Skill,
 and UI hosts. A3S Use additionally composes plan-v4 permission-bearing
 enablement with exact Grant cutover and recovery when reviewed authority is
-injected. Production Service/Gateway/Knowledge providers, the versioned
-Code/Web/managed-host enablement review adapter, complete graph
+injected. Host capability v4 exposes that path to fenced managed hosts without
+adding another lifecycle. Production Service/Gateway/Knowledge providers,
+local Code/Web/TUI reviewed enablement presentation, complete graph
 upgrade/uninstall construction, and cross-platform crash E2E still bound the
 product readiness claim.
 

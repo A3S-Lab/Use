@@ -11,8 +11,8 @@
   integration accepted 2026-08-04; exact `flow.json` identity plus shared
   workspace-local durable execution/observation accepted 2026-08-04; bounded
   exact-generation package/route and Runtime N/N+1 storage accepted 2026-08-05;
-  operation-plan-v4 permission-bearing enablement and Grant cutover core
-  accepted 2026-08-06
+  operation-plan-v4 permission-bearing enablement, Grant cutover core, and
+  host-capabilities-v4 reviewed enablement planning accepted 2026-08-06
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -503,8 +503,9 @@ Estimated effort: 2–3 weeks
 Implementation status (2026-08-06):
 
 - completed in `a3s-use-core`: one object-safe `PluginHostManager` port and
-  canonical v1 managed-host capability, scope-fence, plan, digest-only apply,
-  enablement, and observation contracts. They reuse the existing catalog,
+  canonical managed-host capabilities v1-v4, scope-fence, graph plan,
+  enablement plan, digest-only apply, compatibility enablement, and observation
+  contracts. They reuse the existing catalog,
   plan, confirmation, and Surface Reconciler states, reject mixed schemas and
   stale fences, expose bounded unavailable evidence, and contain no path,
   provider, endpoint, Secret value, or universal action payload;
@@ -518,10 +519,12 @@ Implementation status (2026-08-06):
 - completed in A3S Code: local CLI/Web and fenced managed hosts route
   permission-free schema-v3 enable/disable through the same Use-owned
   package-state generation and lifecycle factory without legacy fallback;
-- pending in A3S Code/managed hosts: version enablement request v1 so a
-  permission-bearing toggle can carry Use's immutable plan-v4 envelope and
-  exact confirmation; host-plan request v1 explicitly rejects enable/disable
-  rather than dropping that evidence;
+- completed in A3S Code managed hosts: capability v4 plans a desired package
+  state as exact plan-v4 or terminal NoChange, persists the planning evidence
+  and stable operation index, and reuses digest-only apply with exact
+  confirmation; host graph-plan request v1 continues to reject enable/disable;
+- pending in A3S Code local CLI/Web/TUI: expose that reviewed two-step flow
+  instead of calling the compatibility toggle directly;
 - completed in the umbrella CLI: a bounded Marketplace read model joining
   release bundles, complete signed catalog records, legacy TUF records, and an
   immutable installed/enabled snapshot without package downloads;
@@ -658,6 +661,13 @@ Implementation status (2026-08-06):
   ceilings, and admission time; recovery revalidates provider authority,
   artifact and receipt evidence, and completed replay neither reauthorizes nor
   inflates the capability generation;
+- completed in `a3s-use-core`: host capabilities v4 advertises operation plan
+  v4 and strict enablement-plan request/result v1 without changing v1-v3; Use
+  planning returns NoChange, Planned, or an already Completed durable result;
+- completed in A3S Code managed hosts: planning requests/results, operation
+  indexes, apply intents, and apply results survive restart; apply rechecks
+  policy, fence, capability, operation, digest, confirmation, and lifetime,
+  then enters the same Use Grant/Registry recovery saga;
 - completed in A3S Use: Registry publication and hide atomically persist a
   bounded `a3s.use.registry-cutover.v1` record keyed by the lifecycle
   checkpoint; replay returns the original request-bound generation and snapshot
@@ -680,7 +690,7 @@ Implementation status (2026-08-06):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; a versioned Code/Web/managed-host enablement adapter that carries
+  injection; one shared local Code CLI/Web/TUI presentation service carrying
   the immutable plan and exact confirmation for permission-bearing toggles;
   real signed cross-platform lifecycle E2E; and the published Cloud adapter
   over the existing fenced managed-host port. Hosts must not add a parallel
@@ -1061,8 +1071,11 @@ Implementation status (in progress 2026-07-30):
 - completed in `a3s-use`: compose permission-bearing enablement with exact
   Grant prepare, atomic Registry cutover evidence, accepted-call drain, exact
   revocation, authorization-stable recovery, and result replay;
-- pending: add the versioned Code/Web/managed-host enablement plan/confirmation
-  adapter, secret-reference adapters, filesystem/network/child-process
+- completed in `a3s-use-core` and A3S Code managed hosts: negotiate capability
+  v4, persist exact plan-v4/NoChange review evidence, and reuse digest-only
+  apply with the reviewed authorization provider;
+- pending: add the shared local CLI/Web/TUI enablement plan/confirmation
+  presentation, secret-reference adapters, filesystem/network/child-process
   enforcement, production-provider-backed prior-generation Runtime retirement,
   streaming/file-backed large Task output, the production MCP initialize client
   adapter, stdio supervision, Gateway route revocation, and scope-aware
