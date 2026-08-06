@@ -77,8 +77,9 @@ Python, PaddlePaddle, or a remote OCR endpoint. The first CLI extraction
 installs or repairs the pinned model bundle when first-use policy permits it.
 Model acquisition bounds connection setup and stalled reads rather than total
 transfer duration. Interrupted bodies resume only from an exact validated byte
-range; a range-ignoring server restarts the staging file. The exact archive
-length and SHA-256 still gate activation.
+range; a range-ignoring server restarts the staging file. Transient connection
+and retryable origin failures share the same bounded retry budget. The exact
+archive length and SHA-256 still gate activation.
 Standard MCP keeps this local provider's `ocr_doctor` and `ocr_extract`
 closed-world and read-only, while the separate idempotent `ocr_install` network
 mutation requires parent confirmation. Explicit `use/ocr` component operations
