@@ -141,10 +141,12 @@ a3s install use/ocr
 a3s use ocr extract ./scan.png --json
 ```
 
-The pinned OCR installer bounds connection setup and stalled reads without a
-total transfer deadline, then verifies the exact model length and SHA-256
-before activation. Healthy slow links therefore remain supported without
-weakening artifact integrity.
+The pinned OCR installer uses an immutable A3S OCR release bundle instead of
+depending on the upstream model CDN at install time. It bounds connection
+setup and stalled reads without a total transfer deadline. Interrupted bodies
+resume from a validated byte offset, while range-ignoring servers restart the
+staging file. The exact bundle length and SHA-256 still gate activation, and
+extraction admits only the four declared model assets.
 
 Build the standalone engine from source:
 
