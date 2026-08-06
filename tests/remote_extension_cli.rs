@@ -175,6 +175,7 @@ fn target_request_count(server: &TestServer) -> usize {
 fn lifecycle_journal_path(home: &std::path::Path, package_id: &str) -> std::path::PathBuf {
     let scope = format!("{:x}", Sha256::digest(b"user/current"));
     home.join("state/operations/plugins")
+        .join("user")
         .join(scope)
         .join(package_id)
         .join("active.json")

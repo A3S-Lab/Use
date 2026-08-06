@@ -25,7 +25,7 @@ impl PluginLifecycleIntent {
             schema: PLUGIN_LIFECYCLE_INTENT_SCHEMA.to_string(),
             operation_id: spec.operation_id,
             plan_digest: spec.plan_digest,
-            scope_id: spec.scope_id,
+            scope: spec.scope,
             package_id: spec.package_id,
             package_digest: spec.package_digest,
             manifest_digest: spec.manifest_digest,

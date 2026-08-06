@@ -318,7 +318,7 @@ fn validate_task_binding(
     if !matches!(plan.contract(), RuntimeSurfaceContract::ToolTask { .. })
         || binding.surface != plan.surface()
         || binding.package_digest != plan.context().package_digest()
-        || binding.scope_id != plan.context().scope_id()
+        || binding.scope != *plan.context().scope()
         || binding.descriptor_digest != plan.descriptor_digest()
         || binding.artifact_digest != plan.spec().artifact.digest
         || binding.artifact_media_type != plan.spec().artifact.media_type

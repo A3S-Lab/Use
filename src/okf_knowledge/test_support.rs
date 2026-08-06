@@ -1,8 +1,9 @@
 use a3s_use_core::{
     inspect_okf_bundle_files, OkfBundleContract, OkfBundleFile, OkfBundleLimits, OkfFormatVersion,
     OkfKnowledgeObservation, OkfKnowledgeObservedState, OkfProjectionReceipt,
-    OkfSelectedGeneration, PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef,
-    OKF_BUNDLE_CONTRACT_SCHEMA, OKF_KNOWLEDGE_OBSERVATION_SCHEMA, OKF_PROJECTION_RECEIPT_SCHEMA,
+    OkfSelectedGeneration, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PluginSurfaceKind,
+    PluginSurfaceRef, OKF_BUNDLE_CONTRACT_SCHEMA, OKF_KNOWLEDGE_OBSERVATION_SCHEMA,
+    OKF_PROJECTION_RECEIPT_SCHEMA,
 };
 
 use super::{OkfKnowledgeBinding, OkfKnowledgeStageSpec};
@@ -49,7 +50,7 @@ pub(super) fn bundle() -> OkfBundleContract {
 pub(super) fn stage_spec(generation: u64) -> OkfKnowledgeStageSpec {
     OkfKnowledgeStageSpec {
         operation_id: format!("operation-{generation}"),
-        scope_id: "workspace-01".to_owned(),
+        scope: scope(PlanScopeKind::Workspace),
         surface: surface(),
         generation,
         package_digest: PACKAGE_DIGEST.to_owned(),
@@ -62,7 +63,7 @@ pub(super) fn receipt(generation: u64) -> OkfProjectionReceipt {
     OkfProjectionReceipt {
         schema: OKF_PROJECTION_RECEIPT_SCHEMA.to_owned(),
         operation_id: format!("operation-{generation}"),
-        scope_id: "workspace-01".to_owned(),
+        scope: scope(PlanScopeKind::Workspace),
         surface: surface(),
         generation,
         package_digest: PACKAGE_DIGEST.to_owned(),
@@ -110,7 +111,7 @@ pub(super) fn observation(
     };
     OkfKnowledgeObservation {
         schema: OKF_KNOWLEDGE_OBSERVATION_SCHEMA.to_owned(),
-        scope_id: receipt.scope_id.clone(),
+        scope: receipt.scope.clone(),
         surface: receipt.surface.clone(),
         generation: receipt.generation,
         package_digest: receipt.package_digest.clone(),
@@ -122,6 +123,13 @@ pub(super) fn observation(
         observed_at_ms,
         index_digest,
         selected,
+    }
+}
+
+pub(super) fn scope(kind: PlanScopeKind) -> PlanScope {
+    PlanScope {
+        kind,
+        id: "shared-scope".to_owned(),
     }
 }
 

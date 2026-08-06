@@ -59,7 +59,7 @@ impl OkfKnowledgeLifecycleHost {
         let qualified = validate_call(intent, surface)?;
         if let Some(binding) = self
             .store
-            .get(&intent.scope_id, &qualified, intent.generation)
+            .get(&intent.scope, &qualified, intent.generation)
             .await?
         {
             validate_binding(intent, surface, &binding)?;
@@ -86,7 +86,7 @@ impl OkfKnowledgeLifecycleHost {
         let request = OkfKnowledgeStageRequest::new(
             OkfKnowledgeStageSpec {
                 operation_id: intent.operation_id.clone(),
-                scope_id: intent.scope_id.clone(),
+                scope: intent.scope.clone(),
                 surface: qualified,
                 generation: intent.generation,
                 package_digest: intent.package_digest.clone(),
@@ -134,7 +134,7 @@ impl OkfKnowledgeLifecycleHost {
         let qualified = validate_call(intent, surface)?;
         let subject = match self
             .store
-            .get(&intent.scope_id, &qualified, intent.generation)
+            .get(&intent.scope, &qualified, intent.generation)
             .await?
         {
             Some(binding) => {
@@ -155,7 +155,7 @@ impl OkfKnowledgeLifecycleHost {
         let qualified = validate_call(intent, surface)?;
         let Some(binding) = self
             .store
-            .get(&intent.scope_id, &qualified, intent.generation)
+            .get(&intent.scope, &qualified, intent.generation)
             .await?
         else {
             return checkpoint_evidence(
@@ -241,7 +241,7 @@ fn validate_binding(
     binding: &OkfKnowledgeBinding,
 ) -> UseResult<()> {
     binding.validate()?;
-    if binding.receipt.scope_id != intent.scope_id
+    if binding.receipt.scope != intent.scope
         || binding.receipt.surface.package_id != intent.package_id
         || binding.receipt.surface.surface.kind != PluginSurfaceKind::Okf
         || binding.receipt.surface.surface.id != surface.id
@@ -273,8 +273,13 @@ fn promoted_evidence(
 
 fn missing_subject_digest(intent: &PluginLifecycleIntent, surface: &PluginOkfSurface) -> String {
     let identity = format!(
-        "{}\n{}\n{}\n{}\n{}",
-        intent.scope_id, intent.package_id, surface.id, intent.generation, intent.package_digest
+        "{}\n{}\n{}\n{}\n{}\n{}",
+        intent.scope.kind.as_str(),
+        intent.scope.id,
+        intent.package_id,
+        surface.id,
+        intent.generation,
+        intent.package_digest
     );
     format!("sha256:{:x}", Sha256::digest(identity.as_bytes()))
 }

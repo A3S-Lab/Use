@@ -13,7 +13,9 @@
   exact-generation package/route and Runtime N/N+1 storage accepted 2026-08-05;
   operation-plan-v4 permission-bearing enablement, Grant cutover core, and
   host-capabilities-v4 reviewed enablement planning accepted 2026-08-06; local
-  A3S Code CLI/Web reviewed enablement and restart replay accepted 2026-08-06
+  A3S Code CLI/Web reviewed enablement and restart replay accepted 2026-08-06;
+  Code TUI `/packages` reviewed enablement and full `PlanScope` lifecycle,
+  binding, and observation identity accepted 2026-08-07
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -149,9 +151,10 @@ The following foundations are implemented:
 - a public canonical host Grant-impact planner that uses the same internal
   algorithm as install/upgrade/uninstall, supports User and Workspace scope,
   and rejects prebound impacts or Grant snapshot scope/revision drift;
-- full User/Workspace plan-scope retention for Grant-bearing cognitive-package
-  operations, with pending replay rejecting a scope-kind substitution even
-  when the scope ID matches;
+- full User/Workspace plan-scope retention across cognitive-package planning,
+  lifecycle intents/journals, Runtime/Flow/OKF bindings and observations, and
+  capability evidence; durable stores separate scope kind before hashing the
+  ID, and replay rejects same-ID scope-kind substitution;
 - a public lifecycle factory that lets Code/Web hosts inject Runtime, Gateway,
   A3S Flow, Knowledge, Skill, and UI ownership while the standalone
   composition fails closed for unavailable Runtime Service, HTTP MCP, Flow,
@@ -188,9 +191,12 @@ The following foundations are implemented:
 - A3S Code lifecycle composition for executable Tool Tasks, stdio MCP,
   immutable Skill/UI, and real `a3s-flow` Native TypeScript preflight;
 - one exact-generation watcher feeding Code TUI/Web plus the typed
-  `GET /api/v1/plugins/flows` catalog; and
+  `GET /api/v1/plugins/flows` catalog;
 - exact `flow.json` identity resolution plus one cross-process-locked local
-  `a3s-flow` event store shared by Code CLI, TUI, and Web; and
+  `a3s-flow` event store shared by Code CLI, TUI, and Web;
+- an idle-only Code TUI `/packages` panel that reads the authoritative package
+  snapshot, creates the shared reviewed enablement plan, presents exact
+  confirmation evidence, and applies only the returned operation ID/digest;
 - detached-Web `install -> run -> upgrade -> run -> uninstall -> restart`
   coverage for Activity, Skill, Flow replacement, retained run history, and
   path-free observation.
@@ -527,8 +533,10 @@ Implementation status (2026-08-06):
 - completed in A3S Code local CLI/Web: persist and present a User-scoped
   plan-v4/NoChange result, collect exact confirmation, apply by operation ID
   and canonical digest, and replay the recorded result after restart;
-- pending in A3S Code TUI: add a package-level review/confirmation panel; its
-  existing watcher already withdraws and restores Skill/MCP/Flow generations;
+- completed in A3S Code TUI: idle-only `/packages` lists the authoritative
+  installed snapshot, uses that same review/confirmation/apply service, and
+  refreshes after terminal results while the watcher withdraws or restores
+  Skill/MCP/Flow generations;
 - completed in the umbrella CLI: a bounded Marketplace read model joining
   release bundles, complete signed catalog records, legacy TUF records, and an
   immutable installed/enabled snapshot without package downloads;
@@ -694,11 +702,9 @@ Implementation status (2026-08-06):
   Skill/UI hosts; TUI watcher and detached-Web Marketplace lifecycle gates
   cover live generation replacement;
 - pending: production Runtime Service, Gateway/HTTP MCP, and Knowledge host
-  injection; a TUI package-level reviewed-enablement panel using the shared
-  local Code application service;
-  real signed cross-platform lifecycle E2E; and the published Cloud adapter
-  over the existing fenced managed-host port. Hosts must not add a parallel
-  implementation.
+  injection; real signed cross-platform lifecycle E2E; and the published Cloud
+  adapter over the existing fenced managed-host port. Hosts must not add a
+  parallel implementation.
 
 Deliverables:
 
@@ -1078,10 +1084,10 @@ Implementation status (in progress 2026-07-30):
 - completed in `a3s-use-core` and A3S Code managed hosts: negotiate capability
   v4, persist exact plan-v4/NoChange review evidence, and reuse digest-only
   apply with the reviewed authorization provider;
-- completed in A3S Code CLI/Web: add the shared local enablement
-  plan/confirmation presentation and exact digest-bound apply;
-- pending: add the corresponding TUI package panel, secret-reference adapters,
-  filesystem/network/child-process
+- completed in A3S Code CLI/TUI/Web: add the shared local enablement
+  plan/confirmation presentation and exact digest-bound apply, with TUI
+  exposed through idle-only `/packages`;
+- pending: secret-reference adapters, filesystem/network/child-process
   enforcement, production-provider-backed prior-generation Runtime retirement,
   streaming/file-backed large Task output, the production MCP initialize client
   adapter, stdio supervision, Gateway route revocation, and scope-aware

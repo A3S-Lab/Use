@@ -86,7 +86,7 @@ impl PluginRuntimeClient {
             schema: super::model::RUNTIME_TASK_BINDING_SCHEMA.to_string(),
             surface: plan.surface(),
             package_digest: plan.context().package_digest().to_string(),
-            scope_id: plan.context().scope_id().to_string(),
+            scope: plan.context().scope().clone(),
             descriptor_digest: plan.descriptor_digest().to_string(),
             provider_id: provider.provider_id.clone(),
             provider_build_id: provider.provider_build_id.clone(),

@@ -1,9 +1,11 @@
-use a3s_use_core::{PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult};
+use a3s_use_core::{
+    PlanScope, PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
+};
 use a3s_use_extension::SurfaceActivation;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub const PLUGIN_LIFECYCLE_INTENT_SCHEMA: &str = "a3s.use.plugin-lifecycle-intent.v1";
+pub const PLUGIN_LIFECYCLE_INTENT_SCHEMA: &str = "a3s.use.plugin-lifecycle-intent.v2";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -111,7 +113,7 @@ pub struct PluginLifecycleCheckpoint {
 pub struct PluginLifecycleIntentSpec {
     pub operation_id: String,
     pub plan_digest: String,
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub package_id: String,
     pub package_digest: String,
     pub manifest_digest: String,
@@ -125,7 +127,7 @@ pub struct PluginLifecycleIntent {
     pub schema: String,
     pub operation_id: String,
     pub plan_digest: String,
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub package_id: String,
     pub package_digest: String,
     pub manifest_digest: String,
@@ -139,7 +141,7 @@ impl PluginLifecycleIntent {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != PLUGIN_LIFECYCLE_INTENT_SCHEMA
             || !valid_machine_id(&self.operation_id)
-            || !valid_machine_id(&self.scope_id)
+            || !valid_machine_id(&self.scope.id)
             || PluginPackageId::parse(self.package_id.clone()).is_err()
             || !valid_sha256(&self.plan_digest)
             || !valid_sha256(&self.package_digest)

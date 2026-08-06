@@ -7,10 +7,10 @@ use a3s_runtime::{
 };
 use a3s_use_core::{
     CatalogSurface, ExecutablePlanningSurface, NetworkEgressPermission, PlanActor,
-    PlanPolicyDecision, PlannedPackageState, PlannedPluginRelease, PlanningArtifactRef,
-    PlanningSurfaceActivation, PluginPermissionCeiling, PluginPlanningBundle, PluginReleaseChannel,
-    PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrantProposal, ResourcePermissionCeiling,
-    SurfacePermissionCeiling, ToolWorkloadClass, ToolWorkloadContract,
+    PlanPolicyDecision, PlanScope, PlanScopeKind, PlannedPackageState, PlannedPluginRelease,
+    PlanningArtifactRef, PlanningSurfaceActivation, PluginPermissionCeiling, PluginPlanningBundle,
+    PluginReleaseChannel, PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrantProposal,
+    ResourcePermissionCeiling, SurfacePermissionCeiling, ToolWorkloadClass, ToolWorkloadContract,
     WorkspaceGrantProposalAuthority, PLUGIN_PERMISSION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
     PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA,
 };
@@ -626,7 +626,8 @@ async fn service_health_revision_cannot_regress_or_exceed_its_observation() {
 #[tokio::test]
 async fn planning_bundle_selects_only_the_explicit_capable_provider() {
     let (bundle, package, proposal) = runtime_bundle_inputs(false);
-    let plans = plan_runtime_bundle(&bundle, &package, &proposal, 8).unwrap();
+    let plans =
+        plan_runtime_bundle(&bundle, &package, &proposal, &plan_scope(&proposal), 8).unwrap();
     assert_eq!(plans.len(), 1);
     assert_eq!(
         plans[0].context().grant_digest(),
@@ -665,7 +666,8 @@ async fn planning_bundle_selects_only_the_explicit_capable_provider() {
 #[test]
 fn planning_bundle_fails_closed_on_unrepresentable_egress_authority() {
     let (bundle, package, proposal) = runtime_bundle_inputs(true);
-    let error = plan_runtime_bundle(&bundle, &package, &proposal, 8).unwrap_err();
+    let error =
+        plan_runtime_bundle(&bundle, &package, &proposal, &plan_scope(&proposal), 8).unwrap_err();
 
     assert_eq!(error.code, "use.plugin.runtime.authorization_unsupported");
 }
@@ -781,4 +783,11 @@ fn runtime_bundle_inputs(
         grant_expires_at_ms: None,
     };
     (bundle, package, proposal)
+}
+
+fn plan_scope(proposal: &PluginWorkspaceGrantProposal) -> PlanScope {
+    PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: proposal.scope_id.clone(),
+    }
 }

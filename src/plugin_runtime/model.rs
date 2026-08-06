@@ -4,19 +4,19 @@ use a3s_runtime::contract::{
     IsolationLevel, RuntimeMount, RuntimeObservation, RuntimeUnitSpec, SecretReference,
 };
 use a3s_use_core::{
-    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlannedProviderEvidence, PluginSurfaceKind,
-    PluginSurfaceRef, UseError, UseResult,
+    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlanScope, PlannedProviderEvidence,
+    PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
 };
 use serde::{Deserialize, Serialize};
 
-pub const RUNTIME_SERVICE_BINDING_SCHEMA: &str = "a3s.use.runtime-service-binding.v2";
-pub const RUNTIME_TASK_BINDING_SCHEMA: &str = "a3s.use.runtime-task-binding.v2";
+pub const RUNTIME_SERVICE_BINDING_SCHEMA: &str = "a3s.use.runtime-service-binding.v3";
+pub const RUNTIME_TASK_BINDING_SCHEMA: &str = "a3s.use.runtime-task-binding.v3";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeSurfaceContext {
     pub(super) package_id: String,
     pub(super) package_digest: String,
-    pub(super) scope_id: String,
+    pub(super) scope: PlanScope,
     pub(super) grant_digest: String,
     pub(super) surface: PluginSurfaceRef,
     pub(super) generation: u64,
@@ -26,7 +26,7 @@ impl RuntimeSurfaceContext {
     pub fn new(
         package_id: impl Into<String>,
         package_digest: impl Into<String>,
-        scope_id: impl Into<String>,
+        scope: PlanScope,
         grant_digest: impl Into<String>,
         surface: PluginSurfaceRef,
         generation: u64,
@@ -34,7 +34,7 @@ impl RuntimeSurfaceContext {
         let context = Self {
             package_id: package_id.into(),
             package_digest: package_digest.into(),
-            scope_id: scope_id.into(),
+            scope,
             grant_digest: grant_digest.into(),
             surface,
             generation,
@@ -51,8 +51,8 @@ impl RuntimeSurfaceContext {
         &self.package_digest
     }
 
-    pub fn scope_id(&self) -> &str {
-        &self.scope_id
+    pub fn scope(&self) -> &PlanScope {
+        &self.scope
     }
 
     pub fn grant_digest(&self) -> &str {
@@ -91,7 +91,7 @@ impl RuntimeSurfaceContext {
                 "Runtime surface package and grant digests must be canonical SHA-256 values.",
             ));
         }
-        if !valid_machine_id(&self.scope_id) {
+        if !valid_machine_id(&self.scope.id) {
             return Err(runtime_input_error(
                 "Runtime surface scope IDs must use the portable plan identity contract.",
             ));
@@ -233,7 +233,7 @@ pub struct RuntimePreparedTaskBinding {
     pub schema: String,
     pub surface: PlanQualifiedSurfaceRef,
     pub package_digest: String,
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub descriptor_digest: String,
     pub provider_id: String,
     pub provider_build_id: String,
@@ -322,7 +322,7 @@ impl RuntimeServiceActivation {
             schema: RUNTIME_SERVICE_BINDING_SCHEMA.to_string(),
             surface: self.plan.surface(),
             package_digest: self.plan.context.package_digest,
-            scope_id: self.plan.context.scope_id,
+            scope: self.plan.context.scope,
             descriptor_digest: self.plan.descriptor_digest,
             provider_id: self.provider.provider_id,
             provider_build_id: self.provider.provider_build_id,
@@ -430,7 +430,7 @@ pub struct RuntimeServiceBindingReceipt {
     pub schema: String,
     pub surface: PlanQualifiedSurfaceRef,
     pub package_digest: String,
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub descriptor_digest: String,
     pub provider_id: String,
     pub provider_build_id: String,

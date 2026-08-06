@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use a3s_use_core::{PlanQualifiedSurfaceRef, PluginPackageId, PluginSurfaceKind, UseResult};
+use a3s_use_core::{
+    PlanQualifiedSurfaceRef, PlanScope, PluginPackageId, PluginSurfaceKind, UseResult,
+};
 use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
@@ -47,7 +49,7 @@ impl FlowRuntimeBindingStore {
     pub async fn put(&self, binding: &FlowRuntimeBinding) -> UseResult<bool> {
         binding.validate()?;
         let _lock = self.acquire_lock().await?;
-        let directory = self.surface_directory(binding.scope_id(), binding.surface())?;
+        let directory = self.surface_directory(binding.scope(), binding.surface())?;
         ensure_owned_directory(&self.state_root, Some(&directory)).await?;
         let path = binding_path(&directory, binding.generation());
         if let Some(current) = read_optional_binding(&path).await? {
@@ -73,14 +75,14 @@ impl FlowRuntimeBindingStore {
 
     pub async fn get(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
         generation: u64,
     ) -> UseResult<Option<FlowRuntimeBinding>> {
         if generation == 0 {
             return Err(invalid_path_identity());
         }
-        let directory = self.surface_directory(scope_id, surface)?;
+        let directory = self.surface_directory(scope, surface)?;
         if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(None);
         }
@@ -88,14 +90,14 @@ impl FlowRuntimeBindingStore {
         let Some(binding) = read_optional_binding(&path).await? else {
             return Ok(None);
         };
-        validate_ownership(&binding, scope_id, surface, generation)?;
+        validate_ownership(&binding, scope, surface, generation)?;
         Ok(Some(binding))
     }
 
     pub async fn remove(&self, expected: &FlowRuntimeBinding) -> UseResult<bool> {
         expected.validate()?;
         let _lock = self.acquire_lock().await?;
-        let directory = self.surface_directory(expected.scope_id(), expected.surface())?;
+        let directory = self.surface_directory(expected.scope(), expected.surface())?;
         if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(false);
         }
@@ -118,18 +120,19 @@ impl FlowRuntimeBindingStore {
 
     fn surface_directory(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<PathBuf> {
-        validate_path_identity(scope_id, surface)?;
+        validate_path_identity(scope, surface)?;
         let package_id = PluginPackageId::parse(surface.package_id.clone())?;
         let (publisher, package) = package_id
             .as_str()
             .split_once('/')
             .ok_or_else(invalid_path_identity)?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
+        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
         Ok(self
             .root
+            .join(scope.kind.as_str())
             .join(scope_digest)
             .join(publisher)
             .join(package)
@@ -184,11 +187,11 @@ impl FlowRuntimeBindingStore {
 
 fn validate_ownership(
     binding: &FlowRuntimeBinding,
-    scope_id: &str,
+    scope: &PlanScope,
     surface: &PlanQualifiedSurfaceRef,
     generation: u64,
 ) -> UseResult<()> {
-    if binding.scope_id() != scope_id
+    if binding.scope() != scope
         || binding.surface() != surface
         || binding.generation() != generation
     {
@@ -200,8 +203,8 @@ fn validate_ownership(
     Ok(())
 }
 
-fn validate_path_identity(scope_id: &str, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
-    if !valid_machine_id(scope_id)
+fn validate_path_identity(scope: &PlanScope, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
+    if !valid_machine_id(&scope.id)
         || PluginPackageId::parse(surface.package_id.clone()).is_err()
         || surface.surface.kind != PluginSurfaceKind::Flow
         || !valid_segment(&surface.surface.id)

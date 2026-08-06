@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    PlanPackageChangeKind, PlanScope, PlanScopeKind, PluginOperationAction,
-    PluginOperationPlanEnvelope, PluginPackageId, UseError, UseResult,
+    PlanPackageChangeKind, PlanScope, PluginOperationAction, PluginOperationPlanEnvelope,
+    PluginPackageId, UseError, UseResult,
 };
 use fs2::FileExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -85,7 +85,7 @@ impl PendingCognitivePackageEnablement {
             || self.state_generation_after <= state.state_generation
             || self.started_at_ms == 0
             || self.intent.operation_id != self.request.operation_id
-            || self.intent.scope_id != state.scope.id
+            || self.intent.scope != state.scope
             || self.intent.package_id != state.package_id
             || self.intent.package_digest != artifact.package_digest
             || self.intent.manifest_digest != artifact.manifest_digest
@@ -486,10 +486,7 @@ async fn acquire_lock(lock_path: PathBuf) -> UseResult<StdFile> {
 
 fn scope_digest(scope: &PlanScope) -> UseResult<String> {
     validate_scope(scope)?;
-    let kind = match scope.kind {
-        PlanScopeKind::User => "user",
-        PlanScopeKind::Workspace => "workspace",
-    };
+    let kind = scope.kind.as_str();
     Ok(format!(
         "{:x}",
         Sha256::digest(format!("{kind}\n{}", scope.id).as_bytes())

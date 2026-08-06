@@ -1,10 +1,10 @@
 use std::fs;
 
-use a3s_use_core::OkfKnowledgeObservedState;
+use a3s_use_core::{OkfKnowledgeObservedState, PlanScope, PlanScopeKind};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
-use super::test_support::{binding, receipt, surface};
+use super::test_support::{binding, receipt, scope, surface};
 use super::*;
 
 #[tokio::test]
@@ -16,7 +16,10 @@ async fn store_round_trips_idempotently_and_promotes_one_generation() {
     assert!(store.put(&staged).await.unwrap());
     assert!(!store.put(&staged).await.unwrap());
     assert_eq!(
-        store.get("workspace-01", &surface(), 1).await.unwrap(),
+        store
+            .get(&scope(PlanScopeKind::Workspace), &surface(), 1)
+            .await
+            .unwrap(),
         Some(staged)
     );
 
@@ -27,10 +30,52 @@ async fn store_round_trips_idempotently_and_promotes_one_generation() {
         1_002,
     );
     assert!(store.put(&promoted).await.unwrap());
-    let snapshot = store.snapshot("workspace-01", &surface()).await.unwrap();
+    let snapshot = store
+        .snapshot(&scope(PlanScopeKind::Workspace), &surface())
+        .await
+        .unwrap();
     assert_eq!(snapshot.latest, Some(promoted.clone()));
     assert_eq!(snapshot.selected, Some(promoted));
     assert_eq!(snapshot.projection.unwrap().generation, 1);
+}
+
+#[tokio::test]
+async fn identical_scope_ids_are_isolated_by_scope_kind() {
+    let temporary = TempDir::new().unwrap();
+    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let workspace_receipt = receipt(1);
+    let workspace = binding(
+        &workspace_receipt,
+        OkfKnowledgeObservedState::Staged,
+        None,
+        1_001,
+    );
+    let mut user_receipt = workspace_receipt;
+    user_receipt.scope.kind = PlanScopeKind::User;
+    let user = binding(
+        &user_receipt,
+        OkfKnowledgeObservedState::Staged,
+        None,
+        1_001,
+    );
+
+    assert!(store.put(&workspace).await.unwrap());
+    assert!(store.put(&user).await.unwrap());
+    assert_ne!(
+        binding_path(&store, &workspace.receipt.scope, 1),
+        binding_path(&store, &user.receipt.scope, 1)
+    );
+    assert_eq!(
+        store
+            .get(&workspace.receipt.scope, &surface(), 1)
+            .await
+            .unwrap(),
+        Some(workspace)
+    );
+    assert_eq!(
+        store.get(&user.receipt.scope, &surface(), 1).await.unwrap(),
+        Some(user)
+    );
 }
 
 #[tokio::test]
@@ -54,7 +99,10 @@ async fn failed_candidate_retains_last_good_and_next_promotion_switches_atomical
         2_001,
     );
     store.put(&failed).await.unwrap();
-    let snapshot = store.snapshot("workspace-01", &surface()).await.unwrap();
+    let snapshot = store
+        .snapshot(&scope(PlanScopeKind::Workspace), &surface())
+        .await
+        .unwrap();
     assert_eq!(snapshot.latest, Some(failed));
     assert_eq!(snapshot.selected, Some(first));
     assert_eq!(snapshot.projection.unwrap().generation, 1);
@@ -67,7 +115,10 @@ async fn failed_candidate_retains_last_good_and_next_promotion_switches_atomical
         3_001,
     );
     store.put(&third).await.unwrap();
-    let snapshot = store.snapshot("workspace-01", &surface()).await.unwrap();
+    let snapshot = store
+        .snapshot(&scope(PlanScopeKind::Workspace), &surface())
+        .await
+        .unwrap();
     assert_eq!(snapshot.selected, Some(third));
     assert_eq!(snapshot.projection.unwrap().generation, 3);
 }
@@ -95,7 +146,10 @@ async fn removed_latest_generation_suppresses_fallback() {
     );
     store.put(&removed).await.unwrap();
 
-    let snapshot = store.snapshot("workspace-01", &surface()).await.unwrap();
+    let snapshot = store
+        .snapshot(&scope(PlanScopeKind::Workspace), &surface())
+        .await
+        .unwrap();
     assert_eq!(snapshot.latest, Some(removed));
     assert!(snapshot.selected.is_none());
     assert!(snapshot.projection.is_none());
@@ -193,10 +247,14 @@ async fn store_rejects_missing_selected_generation_and_tampered_json() {
         1_001,
     );
     store.put(&staged).await.unwrap();
-    fs::write(binding_path(&store, "workspace-01", 1), b"{}").unwrap();
+    fs::write(
+        binding_path(&store, &scope(PlanScopeKind::Workspace), 1),
+        b"{}",
+    )
+    .unwrap();
     assert_eq!(
         store
-            .get("workspace-01", &surface(), 1)
+            .get(&scope(PlanScopeKind::Workspace), &surface(), 1)
             .await
             .unwrap_err()
             .code,
@@ -221,7 +279,14 @@ async fn store_rejects_wrong_scope_and_surface_identity() {
 
     assert_eq!(
         store
-            .get("../workspace", &surface(), 1)
+            .get(
+                &PlanScope {
+                    kind: PlanScopeKind::Workspace,
+                    id: "../workspace".to_owned(),
+                },
+                &surface(),
+                1,
+            )
             .await
             .unwrap_err()
             .code,
@@ -231,7 +296,7 @@ async fn store_rejects_wrong_scope_and_surface_identity() {
     wrong_kind.surface.kind = a3s_use_core::PluginSurfaceKind::Skill;
     assert_eq!(
         store
-            .snapshot("workspace-01", &wrong_kind)
+            .snapshot(&scope(PlanScopeKind::Workspace), &wrong_kind)
             .await
             .unwrap_err()
             .code,
@@ -255,7 +320,7 @@ async fn store_detects_a_valid_record_moved_to_another_scope_path() {
         .unwrap();
 
     let mut other_receipt = receipt(1);
-    other_receipt.scope_id = "workspace-02".to_owned();
+    other_receipt.scope.id = "other-scope".to_owned();
     store
         .put(&binding(
             &other_receipt,
@@ -266,14 +331,14 @@ async fn store_detects_a_valid_record_moved_to_another_scope_path() {
         .await
         .unwrap();
     fs::copy(
-        binding_path(&store, "workspace-02", 1),
-        binding_path(&store, "workspace-01", 1),
+        binding_path(&store, &other_receipt.scope, 1),
+        binding_path(&store, &scope(PlanScopeKind::Workspace), 1),
     )
     .unwrap();
 
     assert_eq!(
         store
-            .get("workspace-01", &surface(), 1)
+            .get(&scope(PlanScopeKind::Workspace), &surface(), 1)
             .await
             .unwrap_err()
             .code,
@@ -346,12 +411,13 @@ fn binding_store_contracts_are_send_and_sync() {
 
 fn binding_path(
     store: &OkfKnowledgeBindingStore,
-    scope_id: &str,
+    scope: &PlanScope,
     generation: u64,
 ) -> std::path::PathBuf {
-    let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
+    let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
     store
         .root()
+        .join(scope.kind.as_str())
         .join(scope_digest)
         .join("acme")
         .join("research")

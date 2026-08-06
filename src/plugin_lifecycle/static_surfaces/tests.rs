@@ -68,7 +68,10 @@ fn intent(manifest: &ExtensionManifest) -> PluginLifecycleIntent {
         PluginLifecycleIntentSpec {
             operation_id: "static-install".to_string(),
             plan_digest: format!("sha256:{}", "1".repeat(64)),
-            scope_id: "workspace:research".to_string(),
+            scope: a3s_use_core::PlanScope {
+                kind: a3s_use_core::PlanScopeKind::Workspace,
+                id: "research".to_string(),
+            },
             package_id: manifest.package_id.clone(),
             package_digest: PACKAGE_DIGEST.trim().to_string(),
             manifest_digest: format!("sha256:{:x}", Sha256::digest(MANIFEST.as_bytes())),

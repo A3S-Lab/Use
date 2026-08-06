@@ -144,8 +144,13 @@ fn projection_evidence(
     idempotency_key: &str,
 ) -> UseResult<PluginLifecycleEvidence> {
     let subject = format!(
-        "{}\n{}\n{}\n{}\n{}",
-        intent.scope_id, intent.package_id, surface_id, intent.generation, intent.package_digest
+        "{}\n{}\n{}\n{}\n{}\n{}",
+        intent.scope.kind.as_str(),
+        intent.scope.id,
+        intent.package_id,
+        surface_id,
+        intent.generation,
+        intent.package_digest
     );
     let subject = format!("sha256:{:x}", Sha256::digest(subject.as_bytes()));
     surface_evidence(label, intent, surface_id, idempotency_key, &subject)
@@ -159,8 +164,12 @@ fn surface_evidence(
     subject_digest: &str,
 ) -> UseResult<PluginLifecycleEvidence> {
     let identity = format!(
-        "{label}\n{idempotency_key}\n{}\n{}\n{surface_id}\n{}\n{}\n{subject_digest}",
-        intent.package_id, intent.scope_id, intent.generation, intent.manifest_digest
+        "{label}\n{idempotency_key}\n{}\n{}\n{}\n{surface_id}\n{}\n{}\n{subject_digest}",
+        intent.package_id,
+        intent.scope.kind.as_str(),
+        intent.scope.id,
+        intent.generation,
+        intent.manifest_digest
     );
     PluginLifecycleEvidence::new(format!("sha256:{:x}", Sha256::digest(identity.as_bytes())))
 }

@@ -109,6 +109,19 @@ async fn client_rejects_a_valid_binding_for_a_different_reviewed_candidate() {
     assert_eq!(error.code, "use.okf.knowledge_adapter_evidence_mismatch");
 }
 
+#[tokio::test]
+async fn client_rejects_scope_kind_substitution_with_the_same_scope_id() {
+    let mut wrong_receipt = receipt(1);
+    wrong_receipt.scope.kind = a3s_use_core::PlanScopeKind::User;
+    let client = client_with_receipt(&wrong_receipt);
+
+    let error = client
+        .stage(OkfKnowledgeStageRequest::new(stage_spec(1), files()).unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_adapter_evidence_mismatch");
+}
+
 #[test]
 fn adapter_contracts_are_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}

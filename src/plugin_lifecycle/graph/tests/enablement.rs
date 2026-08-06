@@ -176,7 +176,7 @@ fn grant_enablement_fixture() -> GrantEnablementFixture {
         PluginLifecycleIntentSpec {
             operation_id: envelope.plan.operation_id.clone(),
             plan_digest: envelope.plan_digest.clone(),
-            scope_id: SCOPE_ID.to_string(),
+            scope: envelope.plan.scope.clone(),
             package_id: "acme/root".to_string(),
             package_digest: state.release.package_sha256.clone(),
             manifest_digest: state.release.manifest_sha256.clone(),

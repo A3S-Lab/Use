@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use a3s_use_core::{
     inspect_okf_bundle_files, OkfBundleContract, OkfBundleFile, OkfKnowledgeObservation,
-    OkfKnowledgeObservedState, OkfProjectionReceipt, PlanQualifiedSurfaceRef, PluginPackageId,
-    PluginSurfaceKind, UseError, UseResult,
+    OkfKnowledgeObservedState, OkfProjectionReceipt, PlanQualifiedSurfaceRef, PlanScope,
+    PluginPackageId, PluginSurfaceKind, UseError, UseResult,
 };
 use async_trait::async_trait;
 
@@ -13,7 +13,7 @@ use super::OkfKnowledgeBinding;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OkfKnowledgeStageSpec {
     pub operation_id: String,
-    pub scope_id: String,
+    pub scope: PlanScope,
     pub surface: PlanQualifiedSurfaceRef,
     pub generation: u64,
     pub package_digest: String,
@@ -24,7 +24,7 @@ pub struct OkfKnowledgeStageSpec {
 impl OkfKnowledgeStageSpec {
     pub fn validate(&self) -> UseResult<()> {
         if !valid_machine_id(&self.operation_id)
-            || !valid_machine_id(&self.scope_id)
+            || !valid_machine_id(&self.scope.id)
             || PluginPackageId::parse(self.surface.package_id.clone()).is_err()
             || self.surface.surface.kind != PluginSurfaceKind::Okf
             || !valid_segment(&self.surface.surface.id)
@@ -74,7 +74,7 @@ impl OkfKnowledgeStageRequest {
     pub fn validate_receipt(&self, receipt: &OkfProjectionReceipt) -> UseResult<()> {
         receipt.validate()?;
         if receipt.operation_id != self.spec.operation_id
-            || receipt.scope_id != self.spec.scope_id
+            || receipt.scope != self.spec.scope
             || receipt.surface != self.spec.surface
             || receipt.generation != self.spec.generation
             || receipt.package_digest != self.spec.package_digest

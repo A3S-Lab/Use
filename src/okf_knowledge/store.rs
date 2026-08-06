@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
     OkfCapabilityProjection, OkfKnowledgeObservedState, OkfSelectedGeneration,
-    PlanQualifiedSurfaceRef, PluginPackageId, PluginSurfaceKind, UseError, UseResult,
+    PlanQualifiedSurfaceRef, PlanScope, PluginPackageId, PluginSurfaceKind, UseError, UseResult,
 };
 use a3s_use_extension::ExtensionPaths;
 use sha2::{Digest, Sha256};
@@ -53,15 +53,10 @@ impl OkfKnowledgeBindingStore {
     pub async fn put(&self, binding: &OkfKnowledgeBinding) -> UseResult<bool> {
         binding.validate()?;
         let _lock = acquire_lock(&self.state_root, &self.root).await?;
-        let directory =
-            self.surface_directory(&binding.receipt.scope_id, &binding.receipt.surface)?;
+        let directory = self.surface_directory(&binding.receipt.scope, &binding.receipt.surface)?;
         ensure_owned_directory(&self.state_root, Some(&directory)).await?;
-        let mut records = read_bindings(
-            &directory,
-            &binding.receipt.scope_id,
-            &binding.receipt.surface,
-        )
-        .await?;
+        let mut records =
+            read_bindings(&directory, &binding.receipt.scope, &binding.receipt.surface).await?;
 
         let generation = binding.receipt.generation;
         if let Some(position) = records
@@ -106,14 +101,14 @@ impl OkfKnowledgeBindingStore {
 
     pub async fn get(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
         generation: u64,
     ) -> UseResult<Option<OkfKnowledgeBinding>> {
         if generation == 0 {
             return Err(invalid_path_identity());
         }
-        let directory = self.surface_directory(scope_id, surface)?;
+        let directory = self.surface_directory(scope, surface)?;
         if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(None);
         }
@@ -121,37 +116,38 @@ impl OkfKnowledgeBindingStore {
         let Some(binding) = read_optional_binding(&path).await? else {
             return Ok(None);
         };
-        validate_ownership(&binding, scope_id, surface, generation)?;
+        validate_ownership(&binding, scope, surface, generation)?;
         Ok(Some(binding))
     }
 
     pub async fn snapshot(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<OkfKnowledgeBindingSnapshot> {
-        let directory = self.surface_directory(scope_id, surface)?;
+        let directory = self.surface_directory(scope, surface)?;
         if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(OkfKnowledgeBindingSnapshot::default());
         }
-        let records = read_bindings(&directory, scope_id, surface).await?;
+        let records = read_bindings(&directory, scope, surface).await?;
         snapshot_from_records(&records)
     }
 
     fn surface_directory(
         &self,
-        scope_id: &str,
+        scope: &PlanScope,
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<PathBuf> {
-        validate_path_identity(scope_id, surface)?;
+        validate_path_identity(scope, surface)?;
         let package_id = PluginPackageId::parse(surface.package_id.clone())?;
         let (publisher, package) = package_id
             .as_str()
             .split_once('/')
             .ok_or_else(invalid_path_identity)?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
+        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
         Ok(self
             .root
+            .join(scope.kind.as_str())
             .join(scope_digest)
             .join(publisher)
             .join(package)
@@ -252,8 +248,8 @@ fn validate_selected_binding(
     Ok(())
 }
 
-fn validate_path_identity(scope_id: &str, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
-    if !valid_machine_id(scope_id)
+fn validate_path_identity(scope: &PlanScope, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
+    if !valid_machine_id(&scope.id)
         || PluginPackageId::parse(surface.package_id.clone()).is_err()
         || surface.surface.kind != PluginSurfaceKind::Okf
         || !valid_segment(&surface.surface.id)
@@ -265,11 +261,11 @@ fn validate_path_identity(scope_id: &str, surface: &PlanQualifiedSurfaceRef) -> 
 
 fn validate_ownership(
     binding: &OkfKnowledgeBinding,
-    scope_id: &str,
+    scope: &PlanScope,
     surface: &PlanQualifiedSurfaceRef,
     generation: u64,
 ) -> UseResult<()> {
-    if binding.receipt.scope_id != scope_id
+    if binding.receipt.scope != *scope
         || binding.receipt.surface != *surface
         || binding.receipt.generation != generation
     {

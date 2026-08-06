@@ -700,7 +700,7 @@ fn install_graph_fixture(retain_base: bool) -> InstallGraphFixture {
                 PluginLifecycleIntentSpec {
                     operation_id: envelope.plan.operation_id.clone(),
                     plan_digest: envelope.plan_digest.clone(),
-                    scope_id: envelope.plan.scope.id.clone(),
+                    scope: envelope.plan.scope.clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: state.release.package_sha256.clone(),
                     manifest_digest: state.release.manifest_sha256.clone(),
@@ -840,7 +840,7 @@ fn upgrade_graph_fixture() -> UpgradeGraphFixture {
                 PluginLifecycleIntentSpec {
                     operation_id: envelope.plan.operation_id.clone(),
                     plan_digest: envelope.plan_digest.clone(),
-                    scope_id: envelope.plan.scope.id.clone(),
+                    scope: envelope.plan.scope.clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: state.release.package_sha256.clone(),
                     manifest_digest: state.release.manifest_sha256.clone(),
@@ -877,7 +877,7 @@ fn upgrade_graph_fixture() -> UpgradeGraphFixture {
                 PluginLifecycleIntentSpec {
                     operation_id: envelope.plan.operation_id.clone(),
                     plan_digest: envelope.plan_digest.clone(),
-                    scope_id: envelope.plan.scope.id.clone(),
+                    scope: envelope.plan.scope.clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: state.release.package_sha256.clone(),
                     manifest_digest: state.release.manifest_sha256.clone(),

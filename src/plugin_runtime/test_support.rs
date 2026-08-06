@@ -12,8 +12,8 @@ use a3s_runtime::contract::{
 };
 use a3s_runtime::{ProviderId, RuntimeClient, RuntimeError, RuntimeResult};
 use a3s_use_core::{
-    McpReleaseDescriptor, PlanEnforcementProfile, PlannedProviderEvidence, PluginSurfaceKind,
-    PluginSurfaceRef, ToolReleaseDescriptor,
+    McpReleaseDescriptor, PlanEnforcementProfile, PlanScope, PlanScopeKind,
+    PlannedProviderEvidence, PluginSurfaceKind, PluginSurfaceRef, ToolReleaseDescriptor,
 };
 use a3s_use_extension::{
     PluginMcpLaunch, PluginMcpSurface, SurfaceActivation, ToolServiceSurface, ToolTaskSource,
@@ -31,7 +31,10 @@ pub(super) fn context(kind: PluginSurfaceKind, id: &str) -> RuntimeSurfaceContex
     RuntimeSurfaceContext::new(
         "acme/research",
         DIGEST_A,
-        "workspace-01",
+        PlanScope {
+            kind: PlanScopeKind::Workspace,
+            id: "workspace-01".to_owned(),
+        },
         DIGEST_B,
         PluginSurfaceRef {
             kind,

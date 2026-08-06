@@ -249,7 +249,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope_id: self.scope.id.clone(),
+                    scope: self.scope.clone(),
                     package_id: package_id.clone(),
                     package_digest: prepared.package.package_digest().to_string(),
                     manifest_digest: prepared.package.manifest_digest().to_string(),
@@ -460,7 +460,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope_id: self.scope.id.clone(),
+                    scope: self.scope.clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),

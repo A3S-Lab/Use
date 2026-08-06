@@ -4,7 +4,7 @@ use a3s_runtime::contract::NetworkMode;
 use a3s_runtime::{
     ProviderId, RuntimeClient, RuntimeClientRegistry, RuntimeProviderFactory, RuntimeResult,
 };
-use a3s_use_core::{PluginSurfaceKind, PluginSurfaceRef};
+use a3s_use_core::{PlanScope, PlanScopeKind, PluginSurfaceKind, PluginSurfaceRef};
 use a3s_use_extension::{ExtensionManifest, ToolWorkload};
 use async_trait::async_trait;
 use tempfile::TempDir;
@@ -49,7 +49,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
         surface: surface(PluginSurfaceKind::Tool, "convert"),
     };
     let mut candidate = store
-        .get_generation("workspace-01", &task, 7)
+        .get_generation(&workspace_scope(), &task, 7)
         .await
         .unwrap()
         .unwrap();
@@ -65,7 +65,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
     let observer = RuntimeSurfaceObserver::new(&store, &providers);
 
     let snapshot = observer
-        .observe_manifest("workspace-01", DIGEST_A, 7, &manifest)
+        .observe_manifest(&workspace_scope(), DIGEST_A, 7, &manifest)
         .await
         .unwrap();
     assert_eq!(snapshot.surfaces().len(), 3);
@@ -142,7 +142,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
     };
     service.base_path = "/v2".to_string();
     let contract_error = observer
-        .observe_manifest("workspace-01", DIGEST_A, 7, &changed_contract)
+        .observe_manifest(&workspace_scope(), DIGEST_A, 7, &changed_contract)
         .await
         .unwrap_err();
     assert_eq!(
@@ -152,7 +152,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
 
     service_runtime.restart_service(1_050, 1_100);
     let stale = observer
-        .observe_manifest("workspace-01", DIGEST_A, 7, &manifest)
+        .observe_manifest(&workspace_scope(), DIGEST_A, 7, &manifest)
         .await
         .unwrap();
     assert_eq!(
@@ -171,7 +171,7 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
     assert!(!broken.capability_ready);
 
     let mismatched = observer
-        .observe_manifest("workspace-01", OTHER_PACKAGE_DIGEST, 7, &manifest)
+        .observe_manifest(&workspace_scope(), OTHER_PACKAGE_DIGEST, 7, &manifest)
         .await
         .unwrap_err();
     assert_eq!(
@@ -191,7 +191,7 @@ async fn unbound_surfaces_remain_pending_without_a_default_provider() {
     .unwrap();
 
     let snapshot = RuntimeSurfaceObserver::new(&store, &providers)
-        .observe_manifest("workspace-01", DIGEST_A, 7, &manifest)
+        .observe_manifest(&workspace_scope(), DIGEST_A, 7, &manifest)
         .await
         .unwrap();
     assert_eq!(snapshot.surfaces().len(), 2);
@@ -213,6 +213,13 @@ async fn unbound_surfaces_remain_pending_without_a_default_provider() {
     .unwrap();
     assert_eq!(reconciled.observed, PluginObservedState::Reconciling);
     assert!(!reconciled.capability_ready);
+}
+
+fn workspace_scope() -> PlanScope {
+    PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: "workspace-01".to_owned(),
+    }
 }
 
 async fn install_task_binding(store: &RuntimeBindingStore, providers: &mut RuntimeClientRegistry) {

@@ -1,4 +1,6 @@
+use a3s_use_core::{PlanScope, PlanScopeKind};
 use a3s_use_extension::ExtensionManifest;
+use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::plugin_lifecycle::{
@@ -30,12 +32,16 @@ extension "acme/guide" {
 "#;
 
 fn intent(operation_id: &str) -> PluginLifecycleIntent {
+    intent_in_scope(operation_id, workspace_scope())
+}
+
+fn intent_in_scope(operation_id: &str, scope: PlanScope) -> PluginLifecycleIntent {
     let manifest = ExtensionManifest::parse_acl(OPTIONAL_SKILL_PACKAGE).unwrap();
     PluginLifecycleIntent::from_manifest(
         PluginLifecycleIntentSpec {
             operation_id: operation_id.to_string(),
             plan_digest: format!("sha256:{}", "1".repeat(64)),
-            scope_id: "workspace:guide".to_string(),
+            scope,
             package_id: "acme/guide".to_string(),
             package_digest: format!("sha256:{}", "2".repeat(64)),
             manifest_digest: format!("sha256:{}", "3".repeat(64)),
@@ -119,7 +125,7 @@ async fn resumes_exact_checkpoint_and_replays_terminal_record() {
     assert_eq!(reopened.complete(&intent, 60).await.unwrap(), completed);
     assert_eq!(
         reopened
-            .load_active("workspace:guide", "acme/guide")
+            .load_active(&intent.scope, "acme/guide")
             .await
             .unwrap(),
         Some(completed)
@@ -173,7 +179,7 @@ async fn rejects_out_of_order_and_required_optional_failure_checkpoints() {
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.lifecycle_operation_invalid");
     assert!(store
-        .load_active("workspace:guide", "acme/guide")
+        .load_active(&intent.scope, "acme/guide")
         .await
         .unwrap()
         .unwrap()
@@ -212,7 +218,7 @@ async fn rolling_back_and_rolled_back_states_round_trip_and_replay_exactly() {
     );
     assert_eq!(
         store
-            .load_active("workspace:guide", "acme/guide")
+            .load_active(&intent.scope, "acme/guide")
             .await
             .unwrap(),
         Some(rolled_back)
@@ -277,9 +283,7 @@ async fn tampered_active_record_fails_closed() {
     let intent = intent("install:acme-guide:4");
     store.begin(&intent).await.unwrap();
 
-    let mut entries = tokio::fs::read_dir(store.root()).await.unwrap();
-    let scope = entries.next_entry().await.unwrap().unwrap().path();
-    let active = scope.join("acme").join("guide").join("active.json");
+    let active = operation_directory(&store, &intent.scope).join("active.json");
     let bytes = tokio::fs::read(&active).await.unwrap();
     let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     value["intent"]["generation"] = serde_json::json!(0);
@@ -288,7 +292,7 @@ async fn tampered_active_record_fails_closed() {
         .unwrap();
 
     let error = store
-        .load_active("workspace:guide", "acme/guide")
+        .load_active(&intent.scope, "acme/guide")
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.lifecycle_record_invalid");
@@ -304,17 +308,76 @@ async fn symlinked_operation_record_fails_closed() {
     let intent = intent("install:acme-guide:5");
     store.begin(&intent).await.unwrap();
 
-    let mut entries = tokio::fs::read_dir(store.root()).await.unwrap();
-    let scope = entries.next_entry().await.unwrap().unwrap().path();
-    let directory = scope.join("acme").join("guide");
+    let directory = operation_directory(&store, &intent.scope);
     let active = directory.join("active.json");
     let target = directory.join("outside.json");
     tokio::fs::rename(&active, &target).await.unwrap();
     symlink(&target, &active).unwrap();
 
     let error = store
-        .load_active("workspace:guide", "acme/guide")
+        .load_active(&intent.scope, "acme/guide")
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.lifecycle_record_invalid");
+}
+
+#[tokio::test]
+async fn identical_scope_ids_are_isolated_by_scope_kind() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let user_scope = PlanScope {
+        kind: PlanScopeKind::User,
+        id: "shared".to_owned(),
+    };
+    let workspace_scope = PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: "shared".to_owned(),
+    };
+    let user = intent_in_scope("install:acme-guide:user", user_scope.clone());
+    let workspace = intent_in_scope("install:acme-guide:workspace", workspace_scope.clone());
+
+    store.begin(&user).await.unwrap();
+    store.begin(&workspace).await.unwrap();
+
+    assert_eq!(
+        store
+            .load_active(&user_scope, "acme/guide")
+            .await
+            .unwrap()
+            .unwrap()
+            .intent,
+        user
+    );
+    assert_eq!(
+        store
+            .load_active(&workspace_scope, "acme/guide")
+            .await
+            .unwrap()
+            .unwrap()
+            .intent,
+        workspace
+    );
+    assert_ne!(
+        operation_directory(&store, &user_scope),
+        operation_directory(&store, &workspace_scope)
+    );
+}
+
+fn workspace_scope() -> PlanScope {
+    PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: "guide".to_owned(),
+    }
+}
+
+fn operation_directory(
+    store: &PluginLifecycleJournalStore,
+    scope: &PlanScope,
+) -> std::path::PathBuf {
+    store
+        .root()
+        .join(scope.kind.as_str())
+        .join(format!("{:x}", Sha256::digest(scope.id.as_bytes())))
+        .join("acme")
+        .join("guide")
 }

@@ -1,7 +1,8 @@
 use std::fs;
 
 use a3s_use_core::{
-    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef,
+    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PluginSurfaceKind,
+    PluginSurfaceRef,
 };
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -35,7 +36,7 @@ fn task_receipt(generation: u64) -> RuntimeBindingReceipt {
         schema: RUNTIME_TASK_BINDING_SCHEMA.to_string(),
         surface: surface(PluginSurfaceKind::Tool, "convert"),
         package_digest: PACKAGE_DIGEST.to_string(),
-        scope_id: "workspace-01".to_string(),
+        scope: workspace_scope(),
         descriptor_digest: DESCRIPTOR_DIGEST.to_string(),
         provider_id: "test-runtime".to_string(),
         provider_build_id: "build-1".to_string(),
@@ -53,7 +54,7 @@ fn service_receipt(observation_revision: u64) -> RuntimeBindingReceipt {
         schema: RUNTIME_SERVICE_BINDING_SCHEMA.to_string(),
         surface: surface(PluginSurfaceKind::Tool, "index"),
         package_digest: PACKAGE_DIGEST.to_string(),
-        scope_id: "workspace-01".to_string(),
+        scope: workspace_scope(),
         descriptor_digest: DESCRIPTOR_DIGEST.to_string(),
         provider_id: "test-runtime".to_string(),
         provider_build_id: "build-1".to_string(),
@@ -86,11 +87,56 @@ async fn binding_store_round_trips_idempotently_and_removes_exact_ownership() {
     assert!(store.put(&receipt).await.unwrap());
     assert!(!store.put(&receipt).await.unwrap());
     assert_eq!(
-        store.get("workspace-01", receipt.surface()).await.unwrap(),
+        store
+            .get(&workspace_scope(), receipt.surface())
+            .await
+            .unwrap(),
         Some(receipt.clone())
     );
     assert!(store.remove(&receipt).await.unwrap());
     assert!(!store.remove(&receipt).await.unwrap());
+}
+
+#[tokio::test]
+async fn identical_scope_ids_are_isolated_by_scope_kind() {
+    let temporary = TempDir::new().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let workspace = task_receipt(7);
+    let mut user = workspace.clone();
+    let RuntimeBindingReceipt::Task(user_receipt) = &mut user else {
+        panic!("fixture should be a Task binding");
+    };
+    user_receipt.scope.kind = PlanScopeKind::User;
+
+    assert!(store.put(&workspace).await.unwrap());
+    assert!(store.put(&user).await.unwrap());
+    assert_ne!(
+        binding_path(
+            &store,
+            workspace.scope(),
+            workspace.surface(),
+            workspace.generation(),
+        ),
+        binding_path(&store, user.scope(), user.surface(), user.generation(),)
+    );
+    assert_eq!(
+        store
+            .get_generation(
+                workspace.scope(),
+                workspace.surface(),
+                workspace.generation(),
+            )
+            .await
+            .unwrap(),
+        Some(workspace)
+    );
+    assert_eq!(
+        store
+            .get_generation(user.scope(), user.surface(), user.generation())
+            .await
+            .unwrap(),
+        Some(user)
+    );
 }
 
 #[tokio::test]
@@ -115,33 +161,36 @@ async fn binding_store_retains_exact_generations_and_rejects_conflicts() {
     assert!(store.put(&next).await.unwrap());
     assert_eq!(
         store
-            .get_generation("workspace-01", current.surface(), 6)
+            .get_generation(&workspace_scope(), current.surface(), 6)
             .await
             .unwrap(),
         Some(prior.clone())
     );
     assert_eq!(
         store
-            .get_generation("workspace-01", current.surface(), 7)
+            .get_generation(&workspace_scope(), current.surface(), 7)
             .await
             .unwrap(),
         Some(current.clone())
     );
     assert_eq!(
         store
-            .get_generation("workspace-01", current.surface(), 8)
+            .get_generation(&workspace_scope(), current.surface(), 8)
             .await
             .unwrap(),
         Some(next.clone())
     );
     assert_eq!(
-        store.get("workspace-01", current.surface()).await.unwrap(),
+        store
+            .get(&workspace_scope(), current.surface())
+            .await
+            .unwrap(),
         Some(next)
     );
     assert!(store.remove(&current).await.unwrap());
     assert_eq!(
         store
-            .get_generation("workspace-01", prior.surface(), 6)
+            .get_generation(&workspace_scope(), prior.surface(), 6)
             .await
             .unwrap(),
         Some(prior)
@@ -168,7 +217,7 @@ async fn service_observation_refresh_is_monotonic_within_one_generation() {
     );
     assert_eq!(
         store
-            .get("workspace-01", refreshed.surface())
+            .get(&workspace_scope(), refreshed.surface())
             .await
             .unwrap(),
         Some(refreshed)
@@ -183,14 +232,14 @@ async fn binding_store_fails_closed_on_tampered_json() {
     store.put(&receipt).await.unwrap();
     let path = binding_path(
         &store,
-        receipt.scope_id(),
+        receipt.scope(),
         receipt.surface(),
         receipt.generation(),
     );
     fs::write(&path, b"{\"bindingKind\":\"task\",\"receipt\":{}}").unwrap();
 
     let error = store
-        .get(receipt.scope_id(), receipt.surface())
+        .get(receipt.scope(), receipt.surface())
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.binding_receipt_invalid");
@@ -202,12 +251,12 @@ async fn binding_store_rejects_a_receipt_moved_to_another_generation() {
     let store = RuntimeBindingStore::new(temporary.path());
     let receipt = task_receipt(7);
     store.put(&receipt).await.unwrap();
-    let original = binding_path(&store, receipt.scope_id(), receipt.surface(), 7);
-    let moved = binding_path(&store, receipt.scope_id(), receipt.surface(), 8);
+    let original = binding_path(&store, receipt.scope(), receipt.surface(), 7);
+    let moved = binding_path(&store, receipt.scope(), receipt.surface(), 8);
     fs::rename(original, moved).unwrap();
 
     let error = store
-        .get_generation(receipt.scope_id(), receipt.surface(), 8)
+        .get_generation(receipt.scope(), receipt.surface(), 8)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.binding_ownership_mismatch");
@@ -220,13 +269,13 @@ async fn binding_store_rejects_symlinked_generation_receipts() {
     let store = RuntimeBindingStore::new(temporary.path());
     let receipt = task_receipt(7);
     store.put(&receipt).await.unwrap();
-    let path = binding_path(&store, receipt.scope_id(), receipt.surface(), 7);
+    let path = binding_path(&store, receipt.scope(), receipt.surface(), 7);
     let owned = temporary.path().join("owned-runtime-receipt.json");
     fs::rename(&path, &owned).unwrap();
     std::os::unix::fs::symlink(&owned, &path).unwrap();
 
     let error = store
-        .get(receipt.scope_id(), receipt.surface())
+        .get(receipt.scope(), receipt.surface())
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.binding_path_invalid");
@@ -247,13 +296,13 @@ async fn binding_store_enforces_the_retained_generation_limit() {
     assert_eq!(error.code, "use.plugin.runtime.binding_limit_exceeded");
     let qualified = surface(PluginSurfaceKind::Tool, "convert");
     assert!(store
-        .get_generation("workspace-01", &qualified, 1)
+        .get_generation(&workspace_scope(), &qualified, 1)
         .await
         .unwrap()
         .is_some());
     assert!(store
         .get_generation(
-            "workspace-01",
+            &workspace_scope(),
             &qualified,
             MAX_RUNTIME_BINDING_GENERATIONS as u64,
         )
@@ -261,15 +310,15 @@ async fn binding_store_enforces_the_retained_generation_limit() {
         .unwrap()
         .is_some());
 
-    let first = binding_path(&store, "workspace-01", &qualified, 1);
+    let first = binding_path(&store, &workspace_scope(), &qualified, 1);
     let injected = binding_path(
         &store,
-        "workspace-01",
+        &workspace_scope(),
         &qualified,
         MAX_RUNTIME_BINDING_GENERATIONS as u64 + 1,
     );
     fs::copy(first, injected).unwrap();
-    let error = store.get("workspace-01", &qualified).await.unwrap_err();
+    let error = store.get(&workspace_scope(), &qualified).await.unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.binding_limit_exceeded");
 }
 
@@ -279,7 +328,7 @@ async fn binding_store_rejects_okf_surfaces() {
     let store = RuntimeBindingStore::new(temporary.path());
     let okf = surface(PluginSurfaceKind::Okf, "domain-knowledge");
 
-    let error = store.get("workspace-01", &okf).await.unwrap_err();
+    let error = store.get(&workspace_scope(), &okf).await.unwrap_err();
     assert_eq!(error.code, "use.plugin.runtime.binding_path_invalid");
 }
 
@@ -316,16 +365,24 @@ fn binding_store_contract_is_send_and_sync() {
 
 fn binding_path(
     store: &RuntimeBindingStore,
-    scope_id: &str,
+    scope: &PlanScope,
     surface: &PlanQualifiedSurfaceRef,
     generation: u64,
 ) -> std::path::PathBuf {
-    let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
+    let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
     store
         .root()
+        .join(scope.kind.as_str())
         .join(scope_digest)
         .join("acme")
         .join("research")
         .join(format!("tool-{}", surface.surface.id))
         .join(format!("{generation:020}.json"))
+}
+
+fn workspace_scope() -> PlanScope {
+    PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: "workspace-01".to_owned(),
+    }
 }

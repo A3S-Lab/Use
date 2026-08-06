@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use a3s_use_core::{PlanQualifiedSurfaceRef, UseResult};
+use a3s_use_core::{PlanQualifiedSurfaceRef, PlanScope, UseResult};
 use fs2::FileExt;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -68,7 +68,7 @@ pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<St
 
 pub(super) async fn read_bindings(
     directory: &Path,
-    scope_id: &str,
+    scope: &PlanScope,
     surface: &PlanQualifiedSurfaceRef,
 ) -> UseResult<Vec<OkfKnowledgeBinding>> {
     let mut entries = fs::read_dir(directory)
@@ -103,7 +103,7 @@ pub(super) async fn read_bindings(
                 io::Error::from(io::ErrorKind::NotFound),
             )
         })?;
-        validate_ownership(&binding, scope_id, surface, generation)?;
+        validate_ownership(&binding, scope, surface, generation)?;
         records.push(binding);
     }
     records.sort_by_key(|record| record.receipt.generation);

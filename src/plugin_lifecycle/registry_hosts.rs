@@ -753,7 +753,10 @@ mod tests {
             crate::plugin_lifecycle::PluginLifecycleIntentSpec {
                 operation_id: "upgrade:acme-cognitive:2".to_string(),
                 plan_digest: format!("sha256:{}", "1".repeat(64)),
-                scope_id: "workspace:cognitive".to_string(),
+                scope: a3s_use_core::PlanScope {
+                    kind: a3s_use_core::PlanScopeKind::Workspace,
+                    id: "cognitive".to_string(),
+                },
                 package_id: candidate.manifest().package_id.clone(),
                 package_digest: candidate.package_digest().to_string(),
                 manifest_digest: candidate.manifest_digest().to_string(),

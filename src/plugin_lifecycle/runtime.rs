@@ -299,7 +299,7 @@ impl RuntimePluginSurfaceLifecycleHost {
         let qualified = selected.plan().surface();
         let Some(receipt) = self
             .store
-            .get_generation(&intent.scope_id, &qualified, intent.generation)
+            .get_generation(&intent.scope, &qualified, intent.generation)
             .await?
         else {
             return Ok(None);
@@ -344,7 +344,7 @@ impl RuntimePluginSurfaceLifecycleHost {
         let qualified = qualified_surface(intent, kind, surface_id);
         let Some(receipt) = self
             .store
-            .get_generation(&intent.scope_id, &qualified, intent.generation)
+            .get_generation(&intent.scope, &qualified, intent.generation)
             .await?
         else {
             return missing_runtime_evidence(label, intent, surface_id, idempotency_key);
@@ -416,7 +416,7 @@ impl RuntimePluginSurfaceLifecycleHost {
         let context = selected.plan().context();
         if context.package_id() != intent.package_id
             || context.package_digest() != intent.package_digest
-            || context.scope_id() != intent.scope_id
+            || context.scope() != &intent.scope
             || context.generation() != intent.generation
             || selected.provider().surface != qualified
         {
@@ -602,7 +602,7 @@ fn validate_selected_receipt(
     let plan = selected.plan();
     let provider = selected.provider();
     let common = receipt.surface() == &plan.surface()
-        && receipt.scope_id() == intent.scope_id
+        && receipt.scope() == &intent.scope
         && receipt.package_digest() == intent.package_digest
         && receipt.generation() == intent.generation
         && receipt.provider_id() == provider.provider_id
@@ -714,8 +714,12 @@ fn projection_evidence(
     idempotency_key: &str,
 ) -> UseResult<PluginLifecycleEvidence> {
     let subject = format!(
-        "{}\n{}\n{}\n{}",
-        intent.scope_id, intent.package_id, intent.generation, intent.package_digest
+        "{}\n{}\n{}\n{}\n{}",
+        intent.scope.kind.as_str(),
+        intent.scope.id,
+        intent.package_id,
+        intent.generation,
+        intent.package_digest
     );
     let subject = format!("sha256:{:x}", Sha256::digest(subject.as_bytes()));
     lifecycle_evidence(label, intent, surface_id, idempotency_key, &subject)
@@ -738,8 +742,12 @@ fn lifecycle_evidence(
     subject_digest: &str,
 ) -> UseResult<PluginLifecycleEvidence> {
     let identity = format!(
-        "{label}\n{idempotency_key}\n{}\n{}\n{surface_id}\n{}\n{}\n{subject_digest}",
-        intent.package_id, intent.scope_id, intent.generation, intent.manifest_digest
+        "{label}\n{idempotency_key}\n{}\n{}\n{}\n{surface_id}\n{}\n{}\n{subject_digest}",
+        intent.package_id,
+        intent.scope.kind.as_str(),
+        intent.scope.id,
+        intent.generation,
+        intent.manifest_digest
     );
     PluginLifecycleEvidence::new(format!("sha256:{:x}", Sha256::digest(identity.as_bytes())))
 }
