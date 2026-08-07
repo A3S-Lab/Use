@@ -166,7 +166,7 @@ Status: in progress
   exact-generation retirement.
 - [x] Complete bounded storage quota, projection retention, tombstone garbage
   collection, and physical compaction in the standalone Knowledge backend.
-- [ ] Complete managed Code/Web Knowledge Workspace/session carriers and prove
+- [x] Complete managed Code/Web Knowledge Workspace/session carriers and prove
   leased prior-generation query semantics through those hosts.
 - [ ] Complete UI sandbox origin, CSP, backend bindings, navigation policy,
   and generation drain across desktop and Web hosts.
