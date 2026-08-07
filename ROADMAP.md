@@ -139,7 +139,8 @@ rejection. They are not supported decode paths.
   observation, exact upgrade, uninstall, failed-preflight non-publication, and
   repaired exact replay coverage on Unix and Windows x86_64.
 - [x] Linux CI, macOS workspace tests, and Windows preview compile/facade plus
-  signed Registry, dependency-graph, Grant, Flow, and OKF lifecycle gates.
+  signed Registry, dependency-graph, Grant, Flow, OKF lifecycle, and
+  killed-process cutover-replay gates.
 - [x] GitHub Pages documentation application and bilingual documentation.
 
 ## Remaining development plan
@@ -203,7 +204,8 @@ Status: pending
   x86_64/arm64 and macOS arm64/x86_64.
 - [x] Run signed Registry trust/lock, dependency-graph install/upgrade/uninstall,
   Grant, standalone Flow preflight/lifecycle, and OKF cutover scenarios through
-  real `a3s-use` processes on Windows x86_64.
+  real `a3s-use` processes on Windows x86_64, including killed-process replay
+  of removed-dependency cleanup without capability-generation inflation.
 - [ ] Expand the remaining Windows gate to the complete filesystem, Runtime,
   MCP, watcher, failure-injection, and crash-recovery matrix.
 - [ ] Test interrupted download, archive extraction, cutover, drain, removal,

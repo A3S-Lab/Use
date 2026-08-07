@@ -38,7 +38,7 @@ fn schema_v3_uninstall_rejects_recovery_when_exact_graph_evidence_was_deleted() 
     assert!(!pending_path.exists());
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[test]
 fn schema_v3_upgrade_replays_removed_node_cleanup_without_generation_inflation() {
     let temp = tempfile::tempdir().unwrap();
