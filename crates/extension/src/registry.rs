@@ -472,6 +472,24 @@ impl ExtensionRegistry {
         .await
     }
 
+    /// Pin one exact currently published cognitive-package generation.
+    ///
+    /// Managed hosts use this form when a capability projection already
+    /// carries the reviewed package digest, manifest digest, and lifecycle
+    /// generation. The lease participates in the same lifecycle drain as a
+    /// route dispatch. It returns `None` when the exact generation is missing,
+    /// no longer published, incompatible with this host, or already draining.
+    pub async fn acquire_published_lifecycle_generation(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+    ) -> UseResult<Option<ExtensionRouteLease>> {
+        let Some(candidate) = self.get_lifecycle_generation(identity).await? else {
+            return Ok(None);
+        };
+        self.acquire_extension_lease_for_host_version(candidate, None, env!("CARGO_PKG_VERSION"))
+            .await
+    }
+
     /// Resolve the exact currently published cognitive-package generation
     /// without acquiring a dispatch lease.
     pub async fn find_published_route(&self, route: &str) -> UseResult<Option<InstalledExtension>> {

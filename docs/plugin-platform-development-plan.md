@@ -90,6 +90,8 @@ Acceptance:
   each complete User/Workspace scope in the standalone SQLite backend.
 - [x] Bound per-surface generations and scope-wide tombstones, reclaim removed
   index pages, truncate the WAL, and expose typed usage evidence.
+- [x] Expose exact published-generation leases that participate in package
+  route drain before Knowledge retirement.
 - [ ] Add Code/Web Workspace and session carriers for exact OKF projections.
 - [ ] Prove leased prior-generation query semantics through managed hosts.
 - Preserve complete User/Workspace scope in every database, request, citation,

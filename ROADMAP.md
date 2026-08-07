@@ -116,6 +116,9 @@ rejection. They are not supported decode paths.
 - [x] Cutover-aware host traits only; no fallback publication API.
 - [x] Prior-generation retirement fails unless the graph route is already
   absent.
+- [x] Hosts can acquire an exact currently published lifecycle generation by
+  package, manifest, and generation identity; the lease participates in the
+  same accepted-call drain as route dispatch.
 - [x] Missing exact recovery evidence fails closed instead of reconstructing
   state heuristically.
 
