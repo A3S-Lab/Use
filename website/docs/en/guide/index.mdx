@@ -33,6 +33,40 @@ receipt v3, plan v4, host protocol v4, manager tools v3, pending graph v2, and
 enablement state/operation v2. Superseded preview state is rejected with
 cleanup and reinstall guidance.
 
+## Install the A3S CLI
+
+The A3S CLI has cross-platform installers independent of the A3S Use product
+status. On macOS and glibc Linux, run:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/A3S-Lab/a3s/main/install.sh | sh
+```
+
+On Windows PowerShell 5.1 or newer, run:
+
+```powershell
+irm https://raw.githubusercontent.com/A3S-Lab/a3s/main/install.ps1 | iex
+```
+
+The scripts select the current platform archive from the official stable
+`A3S-Lab/CLI` Release, verify SHA-256, and atomically replace a user-scoped
+installation. They do not edit shell profiles or the user `PATH` by default.
+
+After installing the CLI, explicitly install and inspect the Use development
+preview carried by that CLI Release:
+
+```bash
+a3s install use --source release
+a3s use doctor --json
+```
+
+:::warning Two distinct version boundaries
+The command above installs the Use preview pinned by the CLI Release. It does
+not mean that Use has shipped a supported product release. Build from source
+in the next section to verify the exact implementation on current `main`.
+:::
+
 ## Build from source
 
 Rust 1.85 or newer is required:
@@ -90,13 +124,13 @@ Runtime Service, HTTP MCP, Flow, Knowledge, Skill, and UI readiness always
 depends on an explicit embedding-host owner. Missing ownership fails closed;
 Use does not substitute a permissive runner or source-only binding.
 
-## Why there is no install script yet
+## Why there is no standalone Use installer yet
 
-A cross-platform one-line installer belongs to the first supported release
-gate. It must install reproducible archives with checksums, signatures, SBOM,
-provenance, licenses, and all required assets on Linux, macOS, and Windows.
-Publishing a convenience script before those artifacts and platform gates
-exist would create a false release surface.
+The A3S CLI already has cross-platform install scripts. A supported standalone
+Use installer still belongs to the first Use release gate. It must install
+reproducible archives with checksums, signatures, SBOM, provenance, licenses,
+and all required assets on Linux, macOS, and Windows. The preview component
+carried by the CLI does not replace that gate.
 
 ## Next steps
 

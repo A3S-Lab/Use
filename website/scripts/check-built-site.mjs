@@ -31,12 +31,7 @@ const requiredFiles = [
   "en/llms.txt",
   "en/llms-full.txt",
   "a3s-use-mark.svg",
-  "package-system-hero.avif",
-  "package-system-hero.jpg",
-  "package-system-hero-mobile.avif",
-  "package-system-hero-mobile.jpg",
-  "package-trust-detail.avif",
-  "package-trust-detail.jpg",
+  "favicon.svg",
   "social-card.svg",
   "social-card.png",
 ];
@@ -71,9 +66,24 @@ for (const homepage of ["index.html", "en/index.html"]) {
     "Flow",
     "Skill",
     "UI",
+    "https://raw.githubusercontent.com/A3S-Lab/a3s/main/install.sh",
+    "a3s install use --source release",
   ]) {
     if (!html.includes(marker)) {
       throw new Error(`${homepage} is missing homepage marker: ${marker}`);
+    }
+  }
+}
+
+for (const guide of ["guide/index.html", "en/guide/index.html"]) {
+  const html = await readFile(path.join(outputRoot, guide), "utf8");
+  const visibleText = html.replace(/<[^>]+>/g, "");
+  for (const installer of [
+    "https://raw.githubusercontent.com/A3S-Lab/a3s/main/install.sh",
+    "https://raw.githubusercontent.com/A3S-Lab/a3s/main/install.ps1",
+  ]) {
+    if (!visibleText.includes(installer)) {
+      throw new Error(`${guide} is missing CLI installer: ${installer}`);
     }
   }
 }

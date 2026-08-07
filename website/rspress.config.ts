@@ -11,7 +11,7 @@ export default defineConfig({
   siteOrigin,
   title: "A3S Use",
   description:
-    "AI Native Package Manager for native tools and cognitive plugins on Linux, macOS, and Windows.",
+    "A3S Use installs native tools and cognitive capabilities as one reviewed, exact package graph.",
   lang: "zh",
   icon: "/favicon.svg",
   logo: "/a3s-use-mark.svg",
@@ -27,33 +27,18 @@ export default defineConfig({
       label: "简体中文",
       title: "A3S Use",
       description:
-        "面向 Linux、macOS 与 Windows 的 AI Native Package Manager，统一管理原生工具与认知插件。",
+        "用一张精确包图安装原生工具与认知能力；先审查，再原子发布新的能力代际。",
     },
     {
       lang: "en",
       label: "English",
       title: "A3S Use",
       description:
-        "AI Native Package Manager for native tools and cognitive plugins on Linux, macOS, and Windows.",
+        "Install native tools and cognitive capabilities as one reviewed, exact package graph.",
     },
   ],
   head: [
-    [
-      "meta",
-      {
-        name: "theme-color",
-        content: "#f2f4f6",
-        media: "(prefers-color-scheme: light)",
-      },
-    ],
-    [
-      "meta",
-      {
-        name: "theme-color",
-        content: "#080a0e",
-        media: "(prefers-color-scheme: dark)",
-      },
-    ],
+    ["meta", { name: "theme-color", content: "#ffffff" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:site_name", content: "A3S Use" }],
     [
@@ -73,7 +58,7 @@ export default defineConfig({
     ],
   ],
   themeConfig: {
-    darkMode: "auto",
+    darkMode: "force-light",
     search: true,
     localeRedirect: "never",
     enableContentAnimation: true,

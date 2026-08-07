@@ -30,6 +30,37 @@ A3S Use 尚未发布受支持的产品版本，也未达到 production-ready。�
 host protocol v4、manager tools v3、pending graph v2，以及 enablement
 state/operation v2。过时的预览状态会被拒绝，并提示清理后重新安装。
 
+## 安装 A3S CLI
+
+A3S CLI 已提供独立于 Use 产品状态的跨平台安装器。macOS 与 glibc Linux
+使用：
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://raw.githubusercontent.com/A3S-Lab/a3s/main/install.sh | sh
+```
+
+Windows PowerShell 5.1 或更高版本使用：
+
+```powershell
+irm https://raw.githubusercontent.com/A3S-Lab/a3s/main/install.ps1 | iex
+```
+
+脚本从官方 `A3S-Lab/CLI` 稳定 Release 选择当前平台归档、校验 SHA-256，
+并以当前用户权限原子替换安装。默认不会改写 shell 配置或用户 `PATH`。
+
+安装 CLI 后，可以显式安装并检查 CLI Release 携带的 Use 开发预览组件：
+
+```bash
+a3s install use --source release
+a3s use doctor --json
+```
+
+:::warning 两种版本边界
+上面的命令安装 CLI Release 固定的 Use 预览组件，不代表 Use 已发布受支持的
+产品版本。要验证当前 `main` 的精确实现，仍应按下一节从源码构建。
+:::
+
 ## 从源码构建
 
 需要 Rust 1.85 或更高版本：
@@ -86,12 +117,12 @@ Runtime Service、HTTP MCP、Flow、Knowledge、Skill、UI 的 readiness 都依�
 embedding host 显式提供 owner。owner 缺失时直接 fail closed，不会替换为宽松
 runner 或 source-only binding。
 
-## 为什么现在没有一键安装脚本
+## 为什么现在没有独立的 Use 一键安装器
 
-跨平台一键安装器属于首个受支持版本的发布门禁。它必须在 Linux、macOS、
-Windows 上安装带 checksum、签名、SBOM、provenance、license 和完整资产的
-可复现归档。在这些产物和平台门禁完成前发布便利脚本，会制造一个虚假的
-产品发布入口。
+A3S CLI 已有跨平台安装脚本；Use 自己的受支持产品安装器仍属于首个发布门禁。
+它必须在 Linux、macOS、Windows 上安装带 checksum、签名、SBOM、
+provenance、license 和完整资产的可复现归档。CLI 中的预览组件不能替代这项
+发布门禁。
 
 ## 下一步
 

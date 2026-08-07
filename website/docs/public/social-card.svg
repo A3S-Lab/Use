@@ -1,42 +1,78 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
-  <title id="title">A3S Use — AI Native Package Manager</title>
-  <desc id="description">One trusted package lifecycle for native tools and cognitive plugins.</desc>
+  <title id="title">A3S Use — The AI Native package manager</title>
+  <desc id="description">One exact graph, one reviewed change, and one atomic capability cutover.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#11151c"/>
-      <stop offset=".55" stop-color="#07090d"/>
-      <stop offset="1" stop-color="#0b0e13"/>
-    </linearGradient>
-    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
-      <path d="M44 0H0V44" fill="none" stroke="#fff" stroke-opacity=".045"/>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#1264ff" stroke-opacity=".055"/>
     </pattern>
-    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
-      <stop stop-color="#f4f7fb"/>
-      <stop offset=".56" stop-color="#f0b65b"/>
-      <stop offset="1" stop-color="#54dda1"/>
-    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#244c89" flood-opacity=".14"/>
+    </filter>
   </defs>
-  <rect width="1200" height="630" rx="28" fill="url(#bg)"/>
+  <rect width="1200" height="630" rx="28" fill="#f8fbff"/>
   <rect width="1200" height="630" rx="28" fill="url(#grid)"/>
-  <rect x="1" y="1" width="1198" height="628" rx="27" fill="none" stroke="#29313d"/>
-  <g transform="translate(72 62)">
-    <rect width="54" height="54" rx="12" fill="#f0b65b"/>
-    <path d="m11 38 12.7-23h5.5L42 38h-7.8l-2.1-4.2H20l-2.1 4.2Zm12.3-10.6h5.9l-3-6.2Z" fill="#07090d"/>
-    <text x="72" y="24" fill="#f4f7fb" font-family="ui-sans-serif,system-ui,sans-serif" font-size="25" font-weight="750" letter-spacing="2.5">A3S USE</text>
-    <text x="72" y="50" fill="#919baa" font-family="ui-monospace,monospace" font-size="15" letter-spacing="1.5">AI NATIVE PACKAGE MANAGER</text>
+  <rect x="1" y="1" width="1198" height="628" rx="27" fill="none" stroke="#cbdaf0"/>
+
+  <g transform="translate(64 58)">
+    <rect width="54" height="54" rx="12" fill="#1264ff"/>
+    <path d="m11 38 12.7-23h5.5L42 38h-7.8l-2.1-4.2H20l-2.1 4.2Zm12.3-10.6h5.9l-3-6.2Z" fill="#fff"/>
+    <text x="72" y="23" fill="#101827" font-family="ui-sans-serif,system-ui,sans-serif" font-size="25" font-weight="760" letter-spacing="1.5">A3S USE</text>
+    <text x="72" y="49" fill="#62728a" font-family="ui-monospace,monospace" font-size="13" font-weight="700" letter-spacing="1.5">DEVELOPMENT PREVIEW</text>
   </g>
-  <g transform="translate(72 200)">
-    <text fill="url(#word)" font-family="ui-sans-serif,system-ui,sans-serif" font-size="70" font-weight="760" letter-spacing="-3">PACKAGES FOR SOFTWARE.</text>
-    <text y="82" fill="url(#word)" font-family="ui-sans-serif,system-ui,sans-serif" font-size="70" font-weight="760" letter-spacing="-3">CAPABILITIES FOR AGENTS.</text>
-    <text y="146" fill="#aeb8c6" font-family="ui-sans-serif,system-ui,sans-serif" font-size="23">Native tools + cognitive plugins. One verifiable lifecycle.</text>
+
+  <g transform="translate(64 200)">
+    <text fill="#101827" font-family="ui-sans-serif,system-ui,sans-serif" font-size="66" font-weight="760" letter-spacing="-3">THE AI NATIVE</text>
+    <text y="78" fill="#1264ff" font-family="ui-sans-serif,system-ui,sans-serif" font-size="66" font-weight="760" letter-spacing="-3">PACKAGE MANAGER</text>
+    <text y="144" fill="#56657b" font-family="ui-sans-serif,system-ui,sans-serif" font-size="21">Install one exact graph. Review once. Cut over atomically.</text>
   </g>
-  <g transform="translate(72 500)" font-family="ui-monospace,monospace" font-size="15" font-weight="700" letter-spacing="1">
-    <rect width="144" height="42" rx="21" fill="#5794ff" fill-opacity=".12" stroke="#5794ff" stroke-opacity=".55"/>
-    <text x="27" y="27" fill="#8eb8ff">LINUX</text>
-    <rect x="160" width="144" height="42" rx="21" fill="#54dda1" fill-opacity=".1" stroke="#54dda1" stroke-opacity=".55"/>
-    <text x="184" y="27" fill="#82e8b9">MACOS</text>
-    <rect x="320" width="172" height="42" rx="21" fill="#f0b65b" fill-opacity=".1" stroke="#f0b65b" stroke-opacity=".55"/>
-    <text x="344" y="27" fill="#e9c98f">WINDOWS</text>
-    <text x="1056" y="27" text-anchor="end" fill="#f0b65b">A3S-LAB.GITHUB.IO/Use</text>
+
+  <g transform="translate(728 92)" filter="url(#shadow)">
+    <rect width="408" height="432" rx="18" fill="#fff" stroke="#c5d8f3"/>
+    <rect x="16" y="16" width="376" height="48" rx="10" fill="#f4f7fc" stroke="#dce4f0"/>
+    <rect x="30" y="27" width="26" height="26" rx="7" fill="#1264ff"/>
+    <path d="m35 47 6.1-11h2.7L50 47h-3.9L45 45h-5.8l-1 2Zm6-5h3l-1.5-3Z" fill="#fff"/>
+    <text x="68" y="45" fill="#101827" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700">a3s/science@0.3.0</text>
+    <text x="330" y="45" fill="#1264ff" font-family="ui-monospace,monospace" font-size="8" font-weight="700">GRAPH 4/4</text>
+
+    <g transform="translate(38 91)" font-family="ui-sans-serif,system-ui,sans-serif">
+      <path d="M13 24v250" stroke="#bfd0e8"/>
+      <g>
+        <circle cx="13" cy="24" r="7" fill="#1264ff" stroke="#fff" stroke-width="3"/>
+        <rect x="38" width="304" height="55" rx="10" fill="#fff" stroke="#bcd2f3"/>
+        <text x="56" y="23" fill="#101827" font-size="12" font-weight="700">Resolve exact graph</text>
+        <text x="56" y="40" fill="#6c7c92" font-family="ui-monospace,monospace" font-size="8">4 packages · exact lock</text>
+        <text x="316" y="32" text-anchor="end" fill="#0c8b68" font-family="ui-monospace,monospace" font-size="8" font-weight="700">LOCKED</text>
+      </g>
+      <g transform="translate(0 73)">
+        <circle cx="13" cy="24" r="7" fill="#1264ff" stroke="#fff" stroke-width="3"/>
+        <rect x="38" width="304" height="55" rx="10" fill="#fff" stroke="#bcd2f3"/>
+        <text x="56" y="23" fill="#101827" font-size="12" font-weight="700">Verify source and digest</text>
+        <text x="56" y="40" fill="#6c7c92" font-family="ui-monospace,monospace" font-size="8">TUF · sha256:93b7…20e1</text>
+        <text x="316" y="32" text-anchor="end" fill="#0c8b68" font-family="ui-monospace,monospace" font-size="8" font-weight="700">VERIFIED</text>
+      </g>
+      <g transform="translate(0 146)">
+        <circle cx="13" cy="24" r="7" fill="#1264ff" stroke="#fff" stroke-width="3"/>
+        <rect x="38" width="304" height="55" rx="10" fill="#fff" stroke="#bcd2f3"/>
+        <text x="56" y="23" fill="#101827" font-size="12" font-weight="700">Review grants and impact</text>
+        <text x="56" y="40" fill="#6c7c92" font-family="ui-monospace,monospace" font-size="8">6 surfaces · 2 grants</text>
+        <text x="316" y="32" text-anchor="end" fill="#0c8b68" font-family="ui-monospace,monospace" font-size="8" font-weight="700">APPROVED</text>
+      </g>
+      <g transform="translate(0 219)">
+        <circle cx="13" cy="24" r="7" fill="#1264ff" stroke="#fff" stroke-width="3"/>
+        <rect x="38" width="304" height="55" rx="10" fill="#eaf2ff" stroke="#8db4f4"/>
+        <text x="56" y="23" fill="#101827" font-size="12" font-weight="700">Publish capability snapshot</text>
+        <text x="56" y="40" fill="#6c7c92" font-family="ui-monospace,monospace" font-size="8">generation 42 → 43</text>
+        <text x="316" y="32" text-anchor="end" fill="#1264ff" font-family="ui-monospace,monospace" font-size="8" font-weight="700">ACTIVE</text>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(64 531)" font-family="ui-monospace,monospace" font-size="11" font-weight="700" letter-spacing=".8">
+    <rect width="162" height="38" rx="7" fill="#eaf2ff" stroke="#bfd4f7"/>
+    <text x="20" y="24" fill="#1264ff">EXACT GRAPH</text>
+    <rect x="174" width="190" height="38" rx="7" fill="#eaf2ff" stroke="#bfd4f7"/>
+    <text x="194" y="24" fill="#1264ff">REVIEWED CHANGE</text>
+    <rect x="376" width="184" height="38" rx="7" fill="#eaf2ff" stroke="#bfd4f7"/>
+    <text x="396" y="24" fill="#1264ff">ATOMIC CUTOVER</text>
   </g>
 </svg>

@@ -1,5 +1,6 @@
 export type Locale = "zh" | "en";
 export type SurfaceKey = "tool" | "mcp" | "okf" | "flow" | "skill" | "ui";
+export type InstallerKey = "unix" | "windows";
 
 type SurfaceCopy = {
   label: string;
@@ -9,24 +10,42 @@ type SurfaceCopy = {
   evidence: string[];
 };
 
-type HomeCopy = {
+type AssuranceCopy = {
+  title: string;
+  body: string;
+};
+
+type InstallerCopy = {
+  kicker: string;
+  title: string;
+  body: string;
+  platformSelector: string;
+  unix: string;
+  windows: string;
+  atomicInstall: string;
+  noPathMutation: string;
+  cliTitle: string;
+  cliBody: string;
+  previewTitle: string;
+  previewBody: string;
+};
+
+export type HomeCopy = {
+  heroKicker: string;
   titleLead: string;
   titleAccent: string;
   subtitle: string;
-  heroImageAlt: string;
-  getStarted: string;
+  previewNotice: string;
+  exploreModel: string;
   github: string;
-  statusLabel: string;
-  available: string;
-  building: string;
-  foundationLabel: string;
-  platformLabel: string;
-  installLabel: string;
-  installHint: string;
+  assuranceLabel: string;
+  assurances: AssuranceCopy[];
+  installer: InstallerCopy;
   copy: string;
   copying: string;
   copied: string;
   copyFailed: string;
+  modelKicker: string;
   modelTitle: string;
   modelBody: string;
   nativeTitle: string;
@@ -35,9 +54,11 @@ type HomeCopy = {
   cognitiveBody: string;
   surfaceHint: string;
   surfaces: Record<SurfaceKey, SurfaceCopy>;
+  lifecycleKicker: string;
   lifecycleTitle: string;
   lifecycleBody: string;
   lifecycle: Array<{ number: string; title: string; body: string }>;
+  architectureKicker: string;
   architectureTitle: string;
   architectureBody: string;
   source: string;
@@ -50,14 +71,18 @@ type HomeCopy = {
   hosts: string;
   hostsBody: string;
   architectureLink: string;
+  trustKicker: string;
   trustTitle: string;
   trustBody: string;
-  trustImageAlt: string;
+  trustLedger: string;
+  trustVerified: string;
   trustCards: Array<{ title: string; body: string }>;
+  platformKicker: string;
   platformTitle: string;
   platformBody: string;
-  supported: string;
-  preview: string;
+  fullGate: string;
+  previewGate: string;
+  ctaKicker: string;
   ctaTitle: string;
   ctaBody: string;
   ctaSecondary: string;
@@ -66,60 +91,94 @@ type HomeCopy = {
 
 export const homeCopy: Record<Locale, HomeCopy> = {
   zh: {
-    titleLead: "为软件安装包。",
-    titleAccent: "为 Agent 安装能力。",
+    heroKicker: "A3S USE · DEVELOPMENT PREVIEW",
+    titleLead: "AI Native",
+    titleAccent: "包管理器",
     subtitle:
-      "A3S Use 为 Linux、macOS 与 Windows 上的原生工具和认知插件提供统一、可验证的包生命周期。",
-    heroImageAlt: "六个石墨色模块由一条琥珀色验证轨道锁定为完整软件包。",
-    getStarted: "开始使用",
+      "用一张精确依赖图安装原生工具与认知能力。每次变更先审查，再一次切换到新的能力代际。",
+    previewNotice:
+      "当前是开发预览，协议与持久化状态仍可能变化，不用于生产环境。",
+    exploreModel: "查看包模型",
     github: "查看 GitHub",
-    statusLabel: "版本与实现状态",
-    available: "main 已可用",
-    building: "开发中",
-    foundationLabel: "v0.3 认知包依赖图",
-    platformLabel: "认知插件平台",
-    installLabel: "安装 A3S Use",
-    installHint: "稳定发布版，v0.3 认知包图已进入 main",
-    copy: "复制",
+    assuranceLabel: "A3S Use 的三条生命周期保证",
+    assurances: [
+      {
+        title: "精确包图",
+        body: "依赖按精确版本锁定，正向安装、反向回收。",
+      },
+      {
+        title: "审查后变更",
+        body: "计划、权限与确认绑定同一个摘要。",
+      },
+      {
+        title: "原子发布",
+        body: "六类表面在同一能力代际中一起生效。",
+      },
+    ],
+    installer: {
+      kicker: "A3S CLI INSTALLER",
+      title: "先把 a3s 装到系统里",
+      body: "安装脚本从 A3S-Lab/CLI 的稳定 GitHub Release 识别当前平台，校验 SHA-256，再以用户权限原子替换二进制。",
+      platformSelector: "选择 A3S CLI 安装平台",
+      unix: "macOS / Linux",
+      windows: "Windows",
+      atomicInstall: "原子替换，可回滚",
+      noPathMutation: "默认不修改 PATH",
+      cliTitle: "安装稳定版 A3S CLI",
+      cliBody:
+        "脚本只从官方 Release 下载匹配的二进制和 Web 资产，不需要管理员权限。",
+      previewTitle: "再安装 Use 预览组件",
+      previewBody:
+        "这一步安装的是开发预览，不代表 A3S Use 已达到生产发布门槛。",
+    },
+    copy: "复制命令",
     copying: "正在复制",
     copied: "已复制",
     copyFailed: "复制失败",
-    modelTitle: "一个不可变身份，一套安装与移除边界",
+    modelKicker: "PACKAGE MODEL",
+    modelTitle: "一个包图，六类能力表面",
     modelBody:
-      "Tool、MCP、OKF、Flow、Skill 与 UI 是同一包拥有的贡献，不是可独立安装的包。Use 只向宿主投影依赖已就绪的同代际证据。",
+      "Tool、MCP、OKF、A3S Flow、Skill 与 UI 都归属于同一个包图。它们共享身份、依赖、授权和退役边界，不能各自绕过生命周期。",
     nativeTitle: "平台原生执行",
     nativeBody: "目标相关的可执行文件、运行时资产、原生 argv 与标准进程状态。",
     cognitiveTitle: "Agent 可发现能力",
     cognitiveBody:
-      "内容绑定的工作流与指令、工具依赖、MCP 服务、沙箱 UI 与 OKF 知识，不从文本获得额外权限。",
-    surfaceHint: "选择一个表面查看运行边界",
+      "工作流、知识、指令和界面与内容摘要绑定；文本本身不会获得权限。",
+    surfaceHint: "选择一种能力表面查看它的运行边界",
     surfaces: {
       tool: {
         label: "Tool",
         kind: "TASK / SERVICE",
         title: "保留原生 CLI 或 HTTP 合约",
-        body: "Tool 是 Runtime 管理的工作负载，不是私有 action 协议，也不是 MCP tools/list 项。",
+        body: "Tool 是由 Runtime 管理的工作负载，不会被改造成私有 action 协议或伪装成 MCP 工具。",
         evidence: ["provider evidence", "exact generation", "bounded I/O"],
       },
       mcp: {
         label: "MCP",
         kind: "STDIO / STREAMABLE HTTP",
-        title: "使用标准 MCP 传输",
-        body: "stdio 会话受监督。Streamable HTTP 位于私有 Runtime Service 后，并在发布前完成协议探测。",
+        title: "只使用标准 MCP 传输",
+        body: "stdio 会话受监督；Streamable HTTP 位于 Runtime Service 后，并在发布前通过协议与健康探测。",
         evidence: ["standard protocol", "health probe", "scoped binding"],
+      },
+      okf: {
+        label: "OKF",
+        kind: "KNOWLEDGE / NON-EXECUTABLE",
+        title: "可共享、可引用的知识包",
+        body: "OKF v0.2 使用交叉链接 Markdown 表达概念。内置 SQLite/FTS5 后端已支持精确代际的暂存、发布、搜索和移除。",
+        evidence: ["content digest", "FTS5 citation", "promoted generation"],
       },
       flow: {
         label: "Flow",
         kind: "A3S FLOW / NATIVE TYPESCRIPT",
         title: "一个工作流引擎，多种宿主目标",
-        body: "Flow 固定使用 a3s-flow 引擎，并显式依赖 Tool、MCP 与 OKF。native-ts 是执行适配器，flow.json 是同一身份的设计与部署文档。",
-        evidence: ["source digest", "compiled artifact", "typed live catalog"],
+        body: "Flow 固定使用 a3s-flow 引擎，并显式声明 Tool、MCP 与 OKF 依赖。flow.json 记录同一身份的设计与部署信息。",
+        evidence: ["source digest", "compiled artifact", "typed catalog"],
       },
       skill: {
         label: "Skill",
         kind: "CONTENT-BOUND",
         title: "指令依赖真实可用能力",
-        body: "Skill 与包内容摘要绑定，并声明所需 Flow、Tool、MCP 与 OKF。依赖未就绪时不会进入能力快照。",
+        body: "Skill 与包内容摘要绑定，并声明所需表面。依赖未就绪时，它不会进入能力快照。",
         evidence: [
           "content digest",
           "dependency closure",
@@ -129,157 +188,168 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       ui: {
         label: "UI",
         kind: "SANDBOXED STATIC",
-        title: "静态界面不等于 Runtime 工作负载",
-        body: "A3S Code/Web 在沙箱中渲染 HTML、CSS 与 JavaScript，只访问已声明且获授权的后端绑定。",
+        title: "静态界面不是 Runtime 工作负载",
+        body: "宿主只在沙箱中渲染完整性绑定的 HTML、CSS 与 JavaScript，并限制它访问已声明、已授权的后端。",
         evidence: ["integrity bound", "declared backend", "host sandbox"],
       },
-      okf: {
-        label: "OKF",
-        kind: "OPEN KNOWLEDGE FORMAT / NON-EXECUTABLE",
-        title: "可共享、可索引的知识包",
-        body: "OKF v0.2 用带 YAML frontmatter 的交叉链接 Markdown 表达概念。生命周期适配器已支持精确代际的 stage、promote、hide 与 receipt-owned remove，生产 A3S Knowledge 后端仍待接入。",
-        evidence: [
-          "content digest",
-          "bounded conformance",
-          "promoted observation",
-        ],
-      },
     },
+    lifecycleKicker: "REVIEWED LIFECYCLE",
     lifecycleTitle: "正向准备，一次发布，反向移除",
     lifecycleBody:
-      "跨宿主变更之前，一份持久包日志会绑定已审查计划、精确代际、六表面依赖图和幂等检查点。",
+      "持久操作日志把已审查计划、精确包图、授权和幂等检查点放在同一条恢复路径上。",
     lifecycle: [
-      {
-        number: "01",
-        title: "发现",
-        body: "刷新并搜索 TUF 签名目录，不下载包体。",
-      },
-      {
-        number: "02",
-        title: "计划",
-        body: "固定包摘要、表面、权限与 Runtime 证据。",
-      },
-      {
-        number: "03",
-        title: "授权",
-        body: "ACL 策略和用户确认绑定同一个计划摘要。",
-      },
+      { number: "01", title: "发现", body: "刷新签名目录，不下载包体。" },
+      { number: "02", title: "解析", body: "冻结版本、依赖边和来源证据。" },
+      { number: "03", title: "审查", body: "展示影响、权限和精确计划摘要。" },
       {
         number: "04",
         title: "暂存",
-        body: "在有界目录中验证归档、ACL 清单与内容。",
+        body: "在有界目录验证归档、ACL 清单与内容。",
       },
-      {
-        number: "05",
-        title: "准备",
-        body: "按依赖顺序准备 Runtime、Knowledge、A3S Flow、Skill 与 UI 宿主。",
-      },
+      { number: "05", title: "准备", body: "按依赖顺序准备六类表面的宿主。" },
       {
         number: "06",
-        title: "发布 / 移除",
-        body: "一次发布，或先隐藏、排空，再反向移除 receipt-owned 资源。",
+        title: "切换",
+        body: "发布新代际；退役时先排空，再反向移除。",
       },
     ],
+    architectureKicker: "OWNERSHIP",
     architectureTitle: "一个 Manager，一套生命周期事实",
     architectureBody:
-      "CLI、Web 与 Agent 管理 MCP 共用同一个 Plugin Manager。Use 管包与证据，Runtime 管工作负载，宿主管策略、凭据和渲染。",
+      "CLI、Web 与 Agent 管理 MCP 共用同一个 Plugin Manager。Use 管包和证据，Runtime 管工作负载，各宿主管策略、凭据与渲染。",
     source: "包来源",
     manager: "共享 Plugin Manager",
-    managerBody: "目录 / 策略 / 确认 / plan and apply / replay",
+    managerBody: "catalog / policy / review / plan and apply / replay",
     engine: "A3S Use 包引擎",
-    engineBody: "verify / journal / prepare / publish / drain",
-    planes: "原生与认知表面",
+    engineBody: "verify / journal / prepare / cutover / drain",
+    planes: "六类能力表面",
     planesBody: "Tool / MCP / OKF / Flow / Skill / UI",
     hosts: "A3S 宿主",
     hostsBody: "A3S Code / Web / Knowledge / agents",
     architectureLink: "阅读架构说明",
+    trustKicker: "TRUST BOUNDARY",
     trustTitle: "包内容不能给自己授权",
     trustBody:
-      "Flow、Skill、UI、OKF、工具输出与远端内容都只是数据。权限只来自宿主策略、明确授权与代际绑定的收据。",
-    trustImageAlt:
-      "石墨色软件包模块拆分为可检查的层，并由琥珀色防篡改结构贯穿。",
+      "Flow、Skill、UI、OKF、工具输出和远端内容都只是数据。权限只来自宿主策略、明确授权与代际绑定的收据。",
+    trustLedger: "完整性账本",
+    trustVerified: "全部通过",
     trustCards: [
       {
-        title: "可验证供应链",
-        body: "固定 TUF 根、签名元数据、长度与 SHA-256，并拒绝回滚和过期状态。",
+        title: "验证供应链",
+        body: "固定 TUF 根、签名元数据、长度和 SHA-256，拒绝回滚与过期状态。",
       },
       {
-        title: "默认拒绝漂移",
-        body: "应用前重新解析。版本、内容、权限或提供者变化都会要求重新审查。",
+        title: "漂移即停止",
+        body: "应用前重新解析；版本、内容、权限或提供者变化都会要求重新审查。",
       },
       {
-        title: "精确代际授权",
-        body: "Grant、Runtime binding、route lease 与能力快照绑定同一包代际。",
+        title: "授权绑定代际",
+        body: "Grant、Runtime binding、route lease 与能力快照指向同一包代际。",
       },
     ],
-    platformTitle: "一个模型，覆盖三类桌面平台",
+    platformKicker: "PLATFORM GATES",
+    platformTitle: "同一个模型，三类桌面平台",
     platformBody:
-      "macOS 与 Linux 已覆盖完整发布包和生命周期。Windows x86_64 当前为 Preview，并持续补齐运行时与插件生命周期门禁。",
-    supported: "支持",
-    preview: "预览",
-    ctaTitle: "一次安装认知包及其完整依赖",
+      "Linux 与 macOS 运行完整工作区门禁；Windows x86_64 目前是较窄的 Preview 编译与 facade 门禁。",
+    fullGate: "完整门禁",
+    previewGate: "预览门禁",
+    ctaKicker: "START WITH EVIDENCE",
+    ctaTitle: "从一份可审查的包图开始",
     ctaBody:
-      "用 a3s plugin 安装后，Code CLI/TUI/Web 会热插拔已验证的 Tool、MCP、Flow、Skill 与 UI，并共用精确 flow.json 身份和本地持久运行历史。生产 Runtime Service、HTTP MCP、OKF 与分布式 Flow 调度仍是发布门禁。",
+      "先验证当前实现和边界，再决定是否把开发预览接入你的 A3S 宿主。路线图会持续列出尚未完成的发布门槛。",
     ctaSecondary: "查看路线图",
-    footer: "MIT 开源，Rust 构建，支持 Linux / macOS / Windows",
+    footer: "MIT 开源 · Rust 构建 · A3S-Lab/Use",
   },
   en: {
-    titleLead: "Packages for software.",
-    titleAccent: "Capabilities for agents.",
+    heroKicker: "A3S USE · DEVELOPMENT PREVIEW",
+    titleLead: "The AI Native",
+    titleAccent: "package manager",
     subtitle:
-      "A3S Use gives native tools and cognitive plugins one verifiable lifecycle across Linux, macOS, and Windows.",
-    heroImageAlt:
-      "Six graphite modules locked into one software package by an amber verification rail.",
-    getStarted: "Get started",
+      "Install native tools and cognitive capabilities as one exact dependency graph. Review every change, then cut over to the next capability generation once.",
+    previewNotice:
+      "Development preview: protocols and persisted state may still change. Do not use it in production.",
+    exploreModel: "Explore the package model",
     github: "View on GitHub",
-    statusLabel: "Release and implementation status",
-    available: "Available on main",
-    building: "In development",
-    foundationLabel: "v0.3 cognitive package graph",
-    platformLabel: "Cognitive plugin platform",
-    installLabel: "Install A3S Use",
-    installHint: "Stable release, with the v0.3 cognitive graph on main",
-    copy: "Copy",
+    assuranceLabel: "Three A3S Use lifecycle guarantees",
+    assurances: [
+      {
+        title: "Exact package graph",
+        body: "Lock exact versions, install forward, and retire in reverse.",
+      },
+      {
+        title: "Reviewed mutation",
+        body: "Bind the plan, grants, and confirmation to one digest.",
+      },
+      {
+        title: "Atomic publication",
+        body: "Publish all six surfaces in one capability generation.",
+      },
+    ],
+    installer: {
+      kicker: "A3S CLI INSTALLER",
+      title: "Install a3s on your system first",
+      body: "The installer detects the current platform, resolves the stable A3S-Lab/CLI GitHub Release, verifies SHA-256, and atomically replaces the user-scoped binary.",
+      platformSelector: "Choose an A3S CLI installation platform",
+      unix: "macOS / Linux",
+      windows: "Windows",
+      atomicInstall: "Atomic replacement with rollback",
+      noPathMutation: "PATH unchanged by default",
+      cliTitle: "Install the stable A3S CLI",
+      cliBody:
+        "The script downloads matching binaries and Web assets only from the official Release. Administrator access is not required.",
+      previewTitle: "Then install the Use preview",
+      previewBody:
+        "This installs a development preview. It does not claim that A3S Use has passed its production release gates.",
+    },
+    copy: "Copy command",
     copying: "Copying",
     copied: "Copied",
     copyFailed: "Copy failed",
-    modelTitle: "One immutable identity. One install and removal boundary.",
+    modelKicker: "PACKAGE MODEL",
+    modelTitle: "One package graph, six capability surfaces",
     modelBody:
-      "Tool, MCP, OKF, Flow, Skill, and UI are contributions owned by one package, not independently installed packages. Use projects only same-generation evidence with ready dependencies.",
+      "Tool, MCP, OKF, A3S Flow, Skill, and UI belong to one package graph. They share identity, dependencies, grants, and retirement boundaries instead of bypassing lifecycle control independently.",
     nativeTitle: "Platform-native execution",
     nativeBody:
       "Target-specific executables, runtime assets, native argv, and standard process status.",
     cognitiveTitle: "Agent-discoverable capabilities",
     cognitiveBody:
-      "Content-bound workflows and instructions, tool dependencies, MCP services, sandboxed UI, and OKF knowledge with no authority derived from text.",
-    surfaceHint: "Choose a surface to inspect its execution boundary",
+      "Workflows, knowledge, instructions, and UI bind to content digests. Text never grants itself authority.",
+    surfaceHint: "Choose a capability surface to inspect its runtime boundary",
     surfaces: {
       tool: {
         label: "Tool",
         kind: "TASK / SERVICE",
         title: "Keep the native CLI or HTTP contract",
-        body: "A Tool is a Runtime-managed workload. It is not a private action protocol or an MCP tools/list item.",
+        body: "A Tool is a Runtime-managed workload. It is not converted into a private action protocol or disguised as an MCP tool.",
         evidence: ["provider evidence", "exact generation", "bounded I/O"],
       },
       mcp: {
         label: "MCP",
         kind: "STDIO / STREAMABLE HTTP",
-        title: "Use standard MCP transports",
-        body: "stdio sessions are supervised. Streamable HTTP runs behind a private Runtime Service and passes a protocol probe before publication.",
+        title: "Use standard MCP transports only",
+        body: "stdio sessions are supervised. Streamable HTTP runs behind Runtime Service and passes protocol and health probes before publication.",
         evidence: ["standard protocol", "health probe", "scoped binding"],
+      },
+      okf: {
+        label: "OKF",
+        kind: "KNOWLEDGE / NON-EXECUTABLE",
+        title: "Shareable knowledge with exact citations",
+        body: "OKF v0.2 represents concepts as cross-linked Markdown. The built-in SQLite/FTS5 backend stages, publishes, searches, and removes exact generations.",
+        evidence: ["content digest", "FTS5 citation", "promoted generation"],
       },
       flow: {
         label: "Flow",
         kind: "A3S FLOW / NATIVE TYPESCRIPT",
         title: "One workflow engine across host targets",
-        body: "Flow always uses the a3s-flow engine with explicit Tool, MCP, and OKF dependencies. native-ts is an execution adapter, while flow.json documents design and deployment for the same identity.",
-        evidence: ["source digest", "compiled artifact", "typed live catalog"],
+        body: "Flow always uses a3s-flow and declares Tool, MCP, and OKF dependencies explicitly. flow.json records design and deployment for the same identity.",
+        evidence: ["source digest", "compiled artifact", "typed catalog"],
       },
       skill: {
         label: "Skill",
         kind: "CONTENT-BOUND",
-        title: "Instructions depend on real capabilities",
-        body: "A Skill binds to package content and declares required Flow, Tool, MCP, and OKF surfaces. It stays out of snapshots until dependencies are ready.",
+        title: "Instructions depend on ready capabilities",
+        body: "A Skill binds to package content and declares required surfaces. It stays out of the snapshot until every dependency is ready.",
         evidence: [
           "content digest",
           "dependency closure",
@@ -290,39 +360,29 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         label: "UI",
         kind: "SANDBOXED STATIC",
         title: "Static UI is not a Runtime workload",
-        body: "A3S Code/Web renders HTML, CSS, and JavaScript in a sandbox with access only to declared and authorized backend bindings.",
+        body: "Hosts render integrity-bound HTML, CSS, and JavaScript in a sandbox with access only to declared and authorized backends.",
         evidence: ["integrity bound", "declared backend", "host sandbox"],
       },
-      okf: {
-        label: "OKF",
-        kind: "OPEN KNOWLEDGE FORMAT / NON-EXECUTABLE",
-        title: "Shareable, indexable knowledge packages",
-        body: "OKF v0.2 represents concepts as cross-linked Markdown with YAML frontmatter. Its lifecycle adapter stages, promotes, hides, and receipt-removes exact generations, while the production A3S Knowledge backend remains pending.",
-        evidence: [
-          "content digest",
-          "bounded conformance",
-          "promoted observation",
-        ],
-      },
     },
+    lifecycleKicker: "REVIEWED LIFECYCLE",
     lifecycleTitle: "Prepare forward. Publish once. Remove in reverse.",
     lifecycleBody:
-      "Before multi-host mutation, one durable package journal binds the reviewed plan, exact generation, six-surface dependency graph, and idempotent checkpoints.",
+      "One durable operation journal keeps the reviewed plan, exact graph, grants, and idempotent checkpoints on the same recovery path.",
     lifecycle: [
       {
         number: "01",
         title: "Discover",
-        body: "Refresh and search a TUF-signed catalog without package payloads.",
+        body: "Refresh the signed catalog without package payloads.",
       },
       {
         number: "02",
-        title: "Plan",
-        body: "Bind package digests, surfaces, permissions, and Runtime evidence.",
+        title: "Resolve",
+        body: "Freeze versions, dependency edges, and source evidence.",
       },
       {
         number: "03",
-        title: "Authorize",
-        body: "Bind ACL policy and user confirmation to the same plan digest.",
+        title: "Review",
+        body: "Show impact, grants, and the exact plan digest.",
       },
       {
         number: "04",
@@ -332,55 +392,59 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       {
         number: "05",
         title: "Prepare",
-        body: "Prepare Runtime, Knowledge, A3S Flow, Skill, and UI hosts in dependency order.",
+        body: "Prepare hosts for all six surfaces in dependency order.",
       },
       {
         number: "06",
-        title: "Publish / remove",
-        body: "Publish once, or hide and drain before reverse receipt-owned removal.",
+        title: "Cut over",
+        body: "Publish a new generation; drain and retire in reverse.",
       },
     ],
+    architectureKicker: "OWNERSHIP",
     architectureTitle: "One Manager, one lifecycle truth",
     architectureBody:
       "CLI, Web, and agent management MCP share one Plugin Manager. Use owns packages and evidence, Runtime owns workloads, and hosts own policy, credentials, and rendering.",
     source: "Package sources",
     manager: "Shared Plugin Manager",
-    managerBody: "catalog / policy / confirmation / plan and apply / replay",
+    managerBody: "catalog / policy / review / plan and apply / replay",
     engine: "A3S Use package engine",
-    engineBody: "verify / journal / prepare / publish / drain",
-    planes: "Native and cognitive surfaces",
+    engineBody: "verify / journal / prepare / cutover / drain",
+    planes: "Six capability surfaces",
     planesBody: "Tool / MCP / OKF / Flow / Skill / UI",
     hosts: "A3S hosts",
     hostsBody: "A3S Code / Web / Knowledge / agents",
     architectureLink: "Read the architecture guide",
+    trustKicker: "TRUST BOUNDARY",
     trustTitle: "Package content cannot authorize itself",
     trustBody:
       "Flow, Skill, UI, OKF, tool output, and remote content are data. Authority comes only from host policy, explicit grants, and generation-bound receipts.",
-    trustImageAlt:
-      "A graphite package module separated into inspectable layers and threaded by an amber tamper-evident mechanism.",
+    trustLedger: "Integrity ledger",
+    trustVerified: "All checks passed",
     trustCards: [
       {
-        title: "Verifiable supply chain",
+        title: "Verify the supply chain",
         body: "Pin TUF roots, signed metadata, length, and SHA-256 while rejecting rollback and expired state.",
       },
       {
-        title: "Fail closed on drift",
-        body: "Resolve again before apply. Version, content, permission, or provider changes require a new review.",
+        title: "Stop on drift",
+        body: "Resolve again before apply. Version, content, grant, or provider changes require another review.",
       },
       {
-        title: "Exact-generation authority",
-        body: "Grants, Runtime bindings, route leases, and capability snapshots bind to one package generation.",
+        title: "Bind authority to a generation",
+        body: "Grants, Runtime bindings, route leases, and snapshots point to the same package generation.",
       },
     ],
+    platformKicker: "PLATFORM GATES",
     platformTitle: "One model across three desktop families",
     platformBody:
-      "macOS and Linux cover complete release archives and lifecycle. Windows x86_64 is currently Preview while runtime and plugin lifecycle gates are completed.",
-    supported: "Supported",
-    preview: "Preview",
-    ctaTitle: "Install a cognitive package and its complete dependency graph.",
+      "Linux and macOS run the full workspace gates. Windows x86_64 currently runs a narrower Preview compile and facade gate.",
+    fullGate: "Full gate",
+    previewGate: "Preview gate",
+    ctaKicker: "START WITH EVIDENCE",
+    ctaTitle: "Start with a package graph you can review",
     ctaBody:
-      "Install with a3s plugin and Code CLI/TUI/Web hot-plugs verified Tool, MCP, Flow, Skill, and UI surfaces with one exact flow.json identity and durable local history. Production Runtime Service, HTTP MCP, OKF, and distributed Flow scheduling remain release gates.",
+      "Verify the current implementation and boundaries before connecting this development preview to an A3S host. The roadmap keeps every unfinished release gate visible.",
     ctaSecondary: "View roadmap",
-    footer: "MIT licensed, built in Rust, available on Linux / macOS / Windows",
+    footer: "MIT licensed · Built in Rust · A3S-Lab/Use",
   },
 };
