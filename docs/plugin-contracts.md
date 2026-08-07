@@ -1,6 +1,6 @@
 # A3S Use Plugin Contract Reference
 
-- Status: M0 complete; M0K-B OKF control-plane and package lifecycle foundation complete
+- Status: M0 complete; standalone M0K-C-B Knowledge core complete
 - Baseline date: 2026-07-30
 - Product amendment: OKF bundle contract/conformance frozen 2026-07-31;
   plugin-surface control plane frozen 2026-08-01; managed-host protocol frozen
@@ -12,7 +12,9 @@
   umbrella/managed-host graph authority forwarding, plan-v4
   permission-bearing enablement core, and host-capabilities-v4 reviewed
   enablement planning connected 2026-08-06; local A3S Code CLI/Web reviewed
-  enablement and restart replay connected 2026-08-06
+  enablement and restart replay connected 2026-08-06; standalone SQLite/FTS5
+  Knowledge indexing, scoped cited retrieval, and signed generation cutover
+  connected 2026-08-07
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Lifecycle: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
 - Delivery: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
@@ -20,15 +22,16 @@
 This document records the machine-readable plugin contracts implemented in
 `a3s-use-core`, plus the signed catalog reader and durable workspace-grant
 store implemented in `a3s-use-extension`, plus the package lifecycle contracts
-implemented in `a3s-use`. It does not claim that production Plugin Manager
-wiring, Knowledge, Gateway, or Runtime generation retirement are complete. The
+implemented in `a3s-use`. It does not claim that managed Code/Web Knowledge
+session wiring, Gateway, or Runtime generation retirement are complete. The
 package/capability, dependency-graph, and Grant-aware graph hosts are
 implemented foundations.
 Signed remote schema-v3 records enter that graph from `a3s-use install` and
-the compatible `component install` command. A3S Code TUI/Web now composes the
-supported Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production
-Knowledge, Service/HTTP, a TUI package-level reviewed-enablement panel, and
-distributed Flow scheduling/retention remain product integration gates. Local
+the `component install` command. The standalone host now composes Tool Task,
+stdio MCP, immutable Skill/UI, and transactional SQLite/FTS5 Knowledge. A3S
+Code TUI/Web composes Tool Task, stdio MCP, A3S Flow, Skill, and UI; managed
+Workspace/session Knowledge carriers, Service/HTTP, and distributed Flow
+scheduling/retention remain product integration gates. Local
 Code CLI/Web already expose User-scoped plan/apply and durable replay. The
 umbrella and fenced managed-host graph paths bind the public Grant planner to
 the exact reviewed provider. A3S Use itself now applies the same reviewed
@@ -95,6 +98,8 @@ enablement request v1 remains compatibility-only.
 | OKF Knowledge observation | `a3s.use.okf-knowledge-observation.v2` | Full-scope staged, promoted, failed, or removed index evidence and last-good selection |
 | OKF capability projection | `a3s.use.okf-capability-projection.v2` | Exact full-scope promoted evidence safe to join to a capability generation |
 | OKF Knowledge binding | `a3s.use.okf-knowledge-binding.v2` | Durable exact receipt plus observation for one retained generation |
+| OKF Knowledge search request | `a3s.use.okf-knowledge-search-request.v1` | Complete scope, bounded query, result limit, and exact reviewed capability/session projections |
+| OKF Knowledge search response | `a3s.use.okf-knowledge-search-response.v1` | Deterministically ranked concepts with package/surface/generation/index/path/source-digest citations |
 
 ### OKF control-plane contract is frozen
 
@@ -138,11 +143,16 @@ stage/promote/observe/remove port, an evidence-checking client, and a bounded
 durable binding store. The stage request revalidates the exact in-memory bundle
 bytes; the store accepts only monotonic observation updates and creates a
 capability projection only from an exact retained promoted record. The package
-lifecycle adapter implements receipt-owned OKF
-stage/promote/hide/remove semantics and durable replay. Production Knowledge
-indexing, scope-aware session publication, cited retrieval, and end-to-end
-parent-saga recovery remain M0K-C-B work; no second lifecycle or Runtime path
-is implied by these contracts.
+lifecycle adapter implements receipt-owned OKF stage/promote/hide/remove
+semantics and durable replay. The standalone M0K-C-B implementation adds one
+SQLite/FTS5 database per complete User/Workspace scope, transactional stage,
+promotion, selection, and removal, exact projection-authorized search, and
+concept/source-digest citations. Current capability snapshots publish only the
+promoted generation, while an already-open session may continue querying its
+exact retained prior projection until receipt-owned retirement. Signed package
+install/query/upgrade/uninstall tests prove capability and citation cutover.
+Managed Code/Web Workspace/session carriers and production retention/GC remain;
+no second lifecycle or Runtime path is implied by these contracts.
 
 ### A3S Flow surface contract is additive and unified
 
@@ -971,12 +981,14 @@ a deployed registry.
 
 ## Evolution Rules
 
-- A schema version never changes meaning after release.
-- New optional descriptive fields require a new schema if current parsers use
-  `deny_unknown_fields`.
-- New privilege, source, provider, or lifecycle fields always require a new
-  schema and explicit migration.
-- Existing manifest v1/v2 packages remain readable through compatibility
-  parsing; only v3 packages can declare the named multi-surface model.
-- A manager may support several schema versions internally, but one plan uses
-  exactly one version of every embedded contract.
+- The cognitive-package platform is pre-1.0. Unpublished schemas, APIs,
+  receipts, and database layouts may be replaced or deleted without migration;
+  checked-in older paths are technical debt, not support commitments.
+- After a schema ships as part of the first stable product release, its meaning
+  is immutable and incompatible changes require an explicit new version.
+- Privilege, source, provider, and lifecycle evidence always fails closed on
+  unknown fields or unsupported versions.
+- One operation uses exactly one current version of every embedded contract.
+- Package SemVer ranges, host-version requirements, target compatibility, and
+  signed provenance remain mandatory correctness checks; they are unrelated to
+  migration support for unpublished internal state.

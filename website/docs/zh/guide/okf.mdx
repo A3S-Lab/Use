@@ -9,7 +9,7 @@ description: Open Knowledge Format 如何作为 A3S Use 的一等、非执行型
 
 在 A3S Use 中，OKF 是与 Tool、MCP、Flow、Skill、UI 并列的一等认知表面，但它不是可执行 workload。
 
-> 当前状态：M0K-B 已实现冻结的 bundle descriptor、schema-v3 manifest、递归包验证、catalog-v3 evidence、plan-v2 impact、projection receipt、Knowledge observation、capability projection、依赖闭包与 reconciler gate。M0K-C-A 已实现注入式 stage/promote/observe/remove port、精确字节验证、持久 last-good binding store 与 package-lifecycle adapter。真实 A3S Knowledge index 后端、scoped session projection 和带引用检索路径仍待完成；没有 promoted evidence 就不会发布该表面。
+> 当前状态：standalone lifecycle 已包含跨平台 bundled SQLite/FTS5 Knowledge 后端、完整 User/Workspace 隔离、事务化 stage/promote/remove、基于精确 projection 授权的带引用搜索、重启恢复，以及 signed install/query/upgrade/uninstall 覆盖。A3S Code/Web 托管的 Workspace/session carrier 与生产 retention/GC 仍待完成；没有精确 promoted evidence 就不会发布该表面。
 
 ## Bundle 结构
 
@@ -85,13 +85,15 @@ signed catalog
   → publish the shared capability snapshot
 ```
 
-A3S Use 负责包与 bundle 完整性；A3S Knowledge 负责合规后的 promotion、索引和带行号引用的检索。Candidate 验证或索引失败时，最后一个成功 generation 继续可搜索。
+A3S Use 负责包与 bundle 完整性；Knowledge host 负责合规后的 promotion、索引和带引用检索。当前结果引用精确 package、surface、generation、projection receipt、index、concept path 与 source digest，不宣称行级引用。Candidate 验证或索引失败时，最后一个成功 generation 继续可搜索。
 
 冻结的宿主边界使用三种 canonical record：
 
 - `a3s.use.okf-projection-receipt.v2`：精确、完整 scope 的 staged candidate；
 - `a3s.use.okf-knowledge-observation.v2`：完整 scope 的 staged、promoted、failed、removed 状态与 last-good selection；
 - `a3s.use.okf-capability-projection.v2`：可安全发布的精确、完整 scope promoted evidence。
+
+Standalone 后端为每个完整 scope 使用独立 SQLite/FTS5 数据库。当前 capability snapshot 选择新提升的 generation；已经打开且持有精确旧 projection 的 session 可在 drain 期间继续查询，receipt-owned removal 后该 projection 立即失效。由于尚未发布稳定 Knowledge 数据库格式，未知 `user_version` 会被直接拒绝，不迁移也不改写。
 
 ## 编译不属于安装
 

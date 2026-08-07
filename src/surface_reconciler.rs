@@ -15,7 +15,9 @@ const RECONCILE_SCHEMA_VERSION: u32 = 1;
 const MAX_RECONCILE_SURFACES: usize = 256;
 
 mod runtime_observations;
+#[cfg(test)]
 pub(crate) use runtime_observations::reconcile_with_runtime;
+pub(crate) use runtime_observations::reconcile_with_runtime_and_knowledge;
 
 pub(crate) type SurfaceObservations = BTreeMap<PluginSurfaceRef, SurfaceObservedState>;
 

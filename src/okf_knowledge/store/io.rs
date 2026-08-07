@@ -201,6 +201,19 @@ pub(super) async fn write_binding(path: &Path, binding: &OkfKnowledgeBinding) ->
     sync_parent(Some(parent)).await
 }
 
+pub(super) async fn remove_binding(path: &Path) -> UseResult<()> {
+    let metadata = fs::symlink_metadata(path)
+        .await
+        .map_err(|error| path_error("inspect removable OKF Knowledge binding", path, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(invalid_path_identity());
+    }
+    fs::remove_file(path)
+        .await
+        .map_err(|error| path_error("remove retired OKF Knowledge binding", path, error))?;
+    sync_parent(path.parent()).await
+}
+
 pub(super) async fn ensure_owned_directory(root: &Path, parent: Option<&Path>) -> UseResult<()> {
     let parent = parent.ok_or_else(invalid_path_identity)?;
     if !parent.starts_with(root) {

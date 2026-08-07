@@ -15,7 +15,9 @@
   host-capabilities-v4 reviewed enablement planning accepted 2026-08-06; local
   A3S Code CLI/Web reviewed enablement and restart replay accepted 2026-08-06;
   Code TUI `/packages` reviewed enablement and full `PlanScope` lifecycle,
-  binding, and observation identity accepted 2026-08-07
+  binding, and observation identity accepted 2026-08-07; standalone
+  SQLite/FTS5 Knowledge indexing, scoped cited retrieval, capability
+  projection, and signed upgrade cutover accepted 2026-08-07
 - Scope: A3S Use, the umbrella A3S CLI, A3S Code/Web/Knowledge, and plugin registries
 
 This document is the source of truth for evolving A3S Use into a plugin
@@ -55,8 +57,10 @@ These decisions are part of the target contract:
 2. The stable package identity remains `<publisher>/<name>`. The umbrella
    component identity remains `use/<publisher>/<name>`. A unique route is a
    presentation and dispatch alias, not an ownership identity.
-3. "Plugin" is the user-facing product term. Existing extension manifests and
-   commands remain compatible until a versioned migration is complete.
+3. "Plugin" is the user-facing product term. The cognitive-package platform is
+   pre-1.0: unpublished manifest, API, receipt, and database schemas may be
+   replaced or removed outright. No migration or compatibility promise is made
+   for pre-release state.
 4. A plugin may contribute multiple named Tools, MCP servers, conformant OKF
    bundles, A3S Flow workflows, Skills, and sandboxed UIs.
 5. A Plugin Tool is a real workload on which a Skill or UI may depend. A CLI
@@ -157,8 +161,8 @@ The following foundations are implemented:
   ID, and replay rejects same-ID scope-kind substitution;
 - a public lifecycle factory that lets Code/Web hosts inject Runtime, Gateway,
   A3S Flow, Knowledge, Skill, and UI ownership while the standalone
-  composition fails closed for unavailable Runtime Service, HTTP MCP, Flow,
-  or OKF hosts;
+  composition supplies local SQLite/FTS5 Knowledge and fails closed for
+  unavailable Runtime Service, HTTP MCP, or Flow hosts;
 - sandboxed plugin UI with verified HTML, CSS, and JavaScript assets;
 - generation/revision capability snapshots consumed by A3S Code;
 - live MCP and Skill projection into a dedicated A3S Use worker;
@@ -170,6 +174,11 @@ The following foundations are implemented:
 - M0K-C-A injected Knowledge stage/promote/observe/remove contracts, byte-exact
   stage revalidation, adapter evidence checks, and a durable bounded
   exact-generation binding store with fail-closed last-good reconstruction;
+- M0K-C-B standalone Knowledge backend: bundled cross-platform SQLite/FTS5,
+  atomic database initialization and stage/promote/remove transactions,
+  complete User/Workspace isolation, exact capability/session projection
+  authorization, concept/source-digest citations, restart-safe query, retained
+  draining generations, and signed install/query/upgrade/uninstall coverage;
 - one canonical manifest surface graph shared by reconciliation and lifecycle;
 - a package-level install/upgrade/enable/disable/uninstall intent with
   deterministic dependency-forward and reverse-removal checkpoints;
@@ -201,12 +210,12 @@ The following foundations are implemented:
   coverage for Activity, Skill, Flow replacement, retained run history, and
   path-free observation.
 
-The OKF control plane is implemented without creating another package manager,
-Runtime route, or reconciler. It intentionally publishes no OKF capability
-when promoted Knowledge evidence is absent. The injected port, Use-owned
-evidence store, and package-lifecycle adapter are implemented; the production
-A3S Knowledge backend and scope-aware host/session projection remain the next
-implementation slice.
+The OKF control and data planes are implemented without creating another
+package manager, Runtime route, or reconciler. The standalone lifecycle uses a
+bundled SQLite/FTS5 backend and intentionally publishes no OKF capability when
+exact promoted Knowledge evidence is absent. Current capability snapshots
+select the promoted generation; an already-open session may retain and query
+its exact prior projection until receipt-owned retirement removes that index.
 
 The main gaps are:
 
@@ -222,11 +231,13 @@ The main gaps are:
   reconciler, and package-level package/capability plus
   Runtime/MCP/Flow/Skill/UI/OKF adapters exist; the Plugin Manager composes the
   supported Tool Task, stdio MCP, Flow, Skill, and UI set with scope-aware
-  apply/observation, while production Service/Gateway/Knowledge hosts remain;
+  apply/observation, while production Service/Gateway providers and managed
+  Code/Web Knowledge scope/session carriers remain;
 - the shared Plugin Manager now owns Marketplace, reviewed lifecycle
   orchestration, durable apply replay, and the first-class user CLI adapter;
   its bounded read-only management MCP and fenced managed-host adapter are
-  connected, while production Service/Gateway/Knowledge composition remains;
+  connected, while production Service/Gateway and managed Knowledge product
+  composition remain;
 - the dependency resolver, lock, remote closure downloader, graph lifecycle
   coordinator, and signed remote standalone CLI path are implemented in A3S
   Use; Code TUI/Web inject their supported host set through the public lifecycle
@@ -247,9 +258,10 @@ The main gaps are:
   remain pending;
 - the default Use release still carries an optional Science reference package
   payload instead of relying on on-demand registry delivery;
-- the versioned OKF manager/search/selection contract, injected Knowledge port,
-  and exact-generation binding store are frozen, but the umbrella host ACL
-  policy and production A3S Knowledge atomic-index backend remain to be wired;
+- the standalone SQLite/FTS5 Knowledge host, cited search, exact-generation
+  binding, lifecycle cutover, and signed package E2E are implemented, but the
+  umbrella host ACL plus Code/Web-managed Workspace and session projection
+  carriers remain to be wired;
 - official registry signing/key operations (distinct from replaceable source
   configuration) and Windows Browser parity are not yet at the final
   production gate.
@@ -327,7 +339,7 @@ Exit criteria:
 - cross-SDK digest fixtures are deterministic;
 - no lifecycle mutation is implemented before its plan schema is fixed.
 
-### M0K — OKF contribution contract and fixtures (M0K-C-A lifecycle foundation complete 2026-08-03; M0K-C-B pending)
+### M0K — OKF contribution and Knowledge lifecycle (standalone M0K-C-B core complete 2026-08-07; managed product carriers pending)
 
 Estimated effort: 2–3 weeks
 
@@ -377,13 +389,19 @@ Implementation status (2026-08-03):
 - completed M0K-C-A lifecycle foundation: the typed OKF host performs
   stage-store-promote-store, reuses exact promoted evidence after restart,
   hides capability without deleting Knowledge data on disable, and removes
-  only receipt-owned projection evidence on uninstall.
+  only receipt-owned projection evidence on uninstall; and
+- completed standalone M0K-C-B core: the bundled SQLite/FTS5 adapter isolates
+  complete User/Workspace scopes, initializes only the current database schema
+  atomically, transacts stage/promote/remove, checks exact retained projections,
+  returns concept/source-digest citations, preserves draining and last-good
+  generations until exact removal, and passes signed install/query/upgrade/
+  uninstall plus restart coverage.
 
-M0K-C-B remains pending: implement the production A3S Knowledge backend behind
-the injected port, bind it and the store to the parent operation journal and
-scope-aware capability/session projection, and prove cited retrieval,
-last-good rollback, retained-generation cleanup, and receipt-owned removal end
-to end.
+Managed M0K-C-B product integration remains pending: carry exact Workspace and
+session projections through A3S Code/Web, connect umbrella ACL policy, and add
+production retention/garbage collection plus complete cross-platform
+real-process evidence. The current database has no released migration
+contract; an unknown `PRAGMA user_version` is rejected without rewriting it.
 
 Deliverables:
 
@@ -1091,7 +1109,7 @@ Implementation status (in progress 2026-07-30):
   enforcement, production-provider-backed prior-generation Runtime retirement,
   streaming/file-backed large Task output, the production MCP initialize client
   adapter, stdio supervision, Gateway route revocation, and scope-aware
-  capability/session snapshot wiring.
+  Code/Web capability/session carrier wiring.
 
 Deliverables:
 
@@ -1112,9 +1130,8 @@ Deliverables:
 - persist workspace grants separately from package receipts.
 - adopt manager-toolset v2 and the canonical `okf` surface in the umbrella host
   ACL policy; the shared bounded OKF validator and core selector are complete;
-- connect the completed injected Knowledge port and exact-generation store to
-  the production A3S Knowledge backend, atomic index cutover, parent saga, and
-  receipt-owned cleanup.
+- carry the completed standalone Knowledge projection through Code/Web-managed
+  Workspace sessions and add production retention/garbage collection.
 
 Exit criteria:
 
@@ -1153,8 +1170,9 @@ Exit criteria:
   one CLI Tool, one HTTP Tool, and one plugin MCP capability, then disable,
   re-enable, and uninstall the package;
 - an E2E user and agent can install a signed OKF-bearing package, retrieve a
-  line-cited concept from its exact generation, upgrade atomically, and retain
-  the prior searchable generation after an injected index failure;
+  concept cited to its exact package/surface/generation/index/path/source
+  digest, upgrade atomically, and retain the prior searchable generation after
+  an injected index failure;
 - an E2E user and agent can install a signed Flow-bearing package from a
   replaceable Registry, run it through A3S Code, observe the same identity in
   TUI/Web, then disable and uninstall it without restart;

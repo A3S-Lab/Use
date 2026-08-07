@@ -14,7 +14,8 @@
   enablement core connected 2026-08-06; local A3S Code CLI/Web reviewed
   enablement and restart replay connected 2026-08-06; Code TUI `/packages`
   reviewed enablement and full `PlanScope` lifecycle/store isolation connected
-  2026-08-07
+  2026-08-07; standalone SQLite/FTS5 Knowledge, exact scoped retrieval, and
+  signed atomic generation cutover connected 2026-08-07
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Contracts: [Plugin Contract Reference](plugin-contracts.md)
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
@@ -25,14 +26,14 @@ storage, public application contracts, and observability.
 
 The checked-in M0/M0K contracts cover Tool, MCP, OKF, Flow, Skill, and UI. The shared
 OKF bundle inspector, schema-v3 parser, package validator, exact host evidence,
-reconciler gate, injected Knowledge port, evidence-checking client, and
-persistent generation store are implemented. The production A3S Knowledge
-index backend remains target behavior. A package-level checkpoint journal and
-typed OKF lifecycle adapter now implement the in-crate stage/promote/hide/remove
-foundation. P0 package/capability hosts add generation-bound commit,
+reconciler gate, injected Knowledge port, evidence-checking client, persistent
+generation store, and standalone SQLite/FTS5 index backend are implemented. A
+package-level checkpoint journal and typed OKF lifecycle adapter implement
+stage/promote/hide/remove. P0 package/capability hosts add generation-bound commit,
 publish/hide, lease drain, and exact removal. A3S Code composes the supported
-Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; production Knowledge,
-Runtime Service, and Gateway/HTTP MCP providers remain pending. Standalone and
+Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; managed Code/Web
+Workspace/session Knowledge carriers, Runtime Service, and Gateway/HTTP MCP
+providers remain pending. Standalone and
 host-reviewed Grant planning/apply are implemented, including exact
 umbrella/managed-host scope, revision, authority, confirmation, and replay
 binding; local Code CLI/Web and managed-host reviewed enablement forward that
@@ -421,11 +422,12 @@ staged/promoted/failed/removed state and last-good selection, and
 `a3s.use.okf-capability-projection.v2` contains only exact promoted evidence.
 M0K-C-A persists their combined `a3s.use.okf-knowledge-binding.v2` record and
 reconstructs selection only from retained exact promoted evidence. The
-production Knowledge index backend and scope-aware capability/session caller
-remain pending. The package lifecycle
-adapter already performs stage-store-promote-store, reuses a retained promoted
-generation after restart, hides without deleting on disable, and delegates
-only the exact receipt to Knowledge on uninstall.
+standalone M0K-C-B host supplies one bundled SQLite/FTS5 database per complete
+User/Workspace scope. The package lifecycle performs
+stage-store-promote-store, reuses retained promoted evidence after restart,
+hides without deleting on disable, and delegates only the exact receipt to
+Knowledge on uninstall. Managed Code/Web Workspace/session carriers remain
+pending.
 
 Before publication, the candidate exact generation must provide evidence for:
 
@@ -448,14 +450,24 @@ generation remains selected. Crash replay uses the parent operation ID and OKF
 surface idempotency key; it must neither duplicate an index nor infer success
 from a staging directory.
 
-The binding store separates `user` and `workspace` before the SHA-256 scope-ID
-directory, then uses validated publisher/package and OKF surface segments,
-fixed-width generation filenames, bounded regular JSON files, atomic
-replacement, and a cross-process lock. Observation updates
-are monotonic. Failed or staged N+1 may keep exact promoted N selected;
-promoted N+1 switches selection; and removed N+1 cannot fall back to N. The
-store retains at most 32 generations and requires explicit receipt-owned
-cleanup instead of deleting evidence automatically.
+The binding and SQLite stores separate `user` and `workspace` before the
+SHA-256 scope-ID directory. The binding layer then uses validated publisher/
+package and OKF surface segments, fixed-width generation filenames, bounded
+regular JSON files, atomic replacement, and a cross-process lock. Observation
+updates are monotonic. Failed or staged N+1 keeps exact promoted N as
+last-good; promoted N+1 switches the published capability. An in-flight
+session holding exact retained N remains queryable during drain, and candidate
+rollback can reuse N. Only receipt-owned removal invalidates that exact
+projection. The stores retain at most 32 generations and require explicit
+cleanup instead of deleting live evidence automatically.
+
+Search requests bind the complete scope and an explicit set of reviewed
+capability/session projections. Results cite package, surface, generation,
+projection receipt, index, concept path, and source digest; they do not claim
+line-level citation. Database initialization, stage, promotion, selection, and
+removal are transactional. Because the database format is still pre-release,
+only the current `PRAGMA user_version` is accepted; unknown versions are
+rejected without migration or rewrite.
 
 Disable hides the OKF capability from new sessions without deleting personal
 knowledge. Uninstall removes only the package receipt-owned projection and
@@ -525,14 +537,15 @@ the cutover then removes its route atomically, and reverse retirement can hide,
 drain, and delete that exact generation without allowing a later snapshot to
 reintroduce it.
 
-The package store persists lifecycle-managed state as receipt schema v3. The
+The package store persists lifecycle-managed state as the current receipt
+schema. The
 receipt and derived route binding carry the exact positive lifecycle
 generation; the deterministic immutable root also binds that generation and
 package digest. Commit is installed-disabled, publish and hide replace one
 complete route snapshot, accepted calls hold shared leases, and drain obtains
-the exclusive lease before exact removal. Legacy v1/v2 receipts remain
-readable and mutable through their existing flow, while legacy toggles reject
-schema-v3 ownership.
+the exclusive lease before exact removal. Superseded pre-release receipt and
+toggle paths are removed rather than migrated; package SemVer and host/target
+requirements remain independent runtime correctness checks.
 
 ### Install and enable
 
@@ -921,9 +934,10 @@ observations. An absent receipt stays pending; a stale binding cannot publish
 its dependency closure. A process-wide caller without a workspace identity
 and exact generation must not choose a `current` or default binding.
 
-The current `data/use/extensions/` layout migrates in place through versioned
-receipts or remains a compatibility path. A migration must not duplicate large
-payloads merely to rename a directory.
+Pre-release storage is not migrated in place. An unsupported schema is rejected
+without inferred defaults or rewriting; users recreate unpublished local state
+with the current build. Once the first stable storage contract ships, later
+changes require an explicit version and migration decision.
 
 ## Public Application Contracts
 

@@ -32,6 +32,13 @@ impl OkfKnowledgeAdapter for FakeKnowledgeAdapter {
     async fn remove(&self, _receipt: &OkfProjectionReceipt) -> UseResult<OkfKnowledgeObservation> {
         Ok(self.removed.clone())
     }
+
+    async fn search(
+        &self,
+        request: &OkfKnowledgeSearchRequest,
+    ) -> UseResult<OkfKnowledgeSearchResponse> {
+        OkfKnowledgeSearchResponse::new(request, Vec::new())
+    }
 }
 
 fn client_with_receipt(receipt: &OkfProjectionReceipt) -> OkfKnowledgeClient {

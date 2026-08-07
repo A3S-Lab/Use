@@ -86,8 +86,11 @@ available for automation, embedding, and diagnostics.
 > User-scoped reviewed plan/apply contract; NoChange has no synthetic mutation
 > identity, and completed apply replays after daemon restart. Code TUI now
 > exposes the idle-only `/packages` panel over that same exact-plan review,
-> confirmation, and digest-bound apply service. Production Knowledge,
-> Service/HTTP hosts,
+> confirmation, and digest-bound apply service. The standalone SQLite/FTS5
+> Knowledge host now performs scope-isolated stage/promote/search/remove,
+> publishes only live promoted projections, and proves signed
+> install/query/upgrade/uninstall with cited generation cutover. A3S Code/Web
+> managed Workspace/session carriers, Service/HTTP hosts,
 > distributed Flow scheduling/resumption, complete real-process cross-platform
 > E2E, and production retention remain release gates. The A3S Code
 > umbrella and managed-host graph paths now
@@ -152,6 +155,11 @@ The package model is exercised as code, not only described in prose:
   closed on drift; proposals and receipts remain internal to apply.
 - [`capability watch`](src/capability_registry.rs) lets resident hosts observe
   package and projection changes without restarting.
+- [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) provides the
+  standalone cross-platform Knowledge host. Each complete User or Workspace
+  scope has an isolated SQLite/FTS5 database; stage, promote, selection, and
+  receipt-owned removal are transactional. Search results cite the exact
+  package, surface, generation, index, concept path, and source digest.
 - A3S Code's
   [`CodeCognitivePackageLifecycleFactory`](https://github.com/A3S-Lab/CLI/blob/main/src/components/cognitive_lifecycle.rs)
   injects the real Flow host and publishes a typed exact-generation catalog to
@@ -208,6 +216,8 @@ a3s-use install acme/research \
   --trust-root sha256:<64-hex-digits> \
   --version 2.0.0 \
   --json
+
+a3s-use knowledge search "package activation" --json
 
 a3s-use upgrade acme/research \
   --registry-name packages \
@@ -532,8 +542,9 @@ invoke the public canonical Grant-impact planner with the final authority, and
 re-evaluate the immutable result before invoking that provider. Scope,
 revision, prebound-impact, policy, or authority drift fails closed. A signed
 Tool Task integration proves exact Grant receipt persistence, no legacy child
-mutation, and durable result replay. Production Knowledge, Service, and Gateway
-composition is still being wired.
+mutation, and durable result replay. Managed Code/Web Knowledge scope/session
+carriers plus production Service and Gateway composition are still being
+wired.
 Schema-v3 enable/disable uses the package lifecycle's hide, drain, stop,
 prepare, and publish checkpoints without changing package bytes or dependency
 ownership. The optimistic generation is the durable Use-owned package state
@@ -620,8 +631,9 @@ do not share one database transaction. The boundaries are frozen in
 | Tool/MCP runtime lifecycle | Typed adapters plus bounded exact-generation N/N+1 Runtime binding storage and observation implemented; standalone supports executable Tool Tasks and stdio MCP, while Services/HTTP require injected providers |
 | A3S Flow lifecycle | Concrete `a3s-flow` preflight adapter, exact-generation binding store, artifact/source reinspection, lifecycle evidence, and capability observation implemented |
 | A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
-| OKF lifecycle | Manifest/catalog/plan, validation, injected Knowledge port, exact-generation binding, last-good reconciliation, and lifecycle adapter implemented |
-| Production Knowledge | Pending: backend indexing, scoped cited retrieval, session projection, and umbrella composition |
+| OKF lifecycle | Manifest/catalog/plan, validation, exact-generation binding, last-good reconciliation, lifecycle adapter, transactional stage/promote/remove, and signed install/upgrade/uninstall coverage implemented |
+| Standalone Knowledge | Implemented: bundled cross-platform SQLite/FTS5 backend, complete User/Workspace scope isolation, exact capability/session projection checks, concept/source-digest citations, restart-safe search, draining-generation queries, and atomic signed upgrade cutover |
+| Managed Knowledge integration | Pending: Code/Web-managed Workspace and session projection carriers, umbrella policy wiring, and production retention/garbage collection |
 | Package enablement core | Implemented for schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, plan-v4 retained-artifact review, stale-generation rejection, durable authorization/checkpoint recovery, exact result replay, atomic capability cutover, Grant-before-publish enable, hide/cutover/drain-before-revoke disable, and non-destructive package/dependency retention |
 | Reviewed enablement | Host capability v4 adds explicit managed planning with durable plan-v4/NoChange results; local Code CLI, idle-only TUI `/packages`, and Web use the same User-scoped reviewed plan/apply contract and restart-safe result replay. Confirmed mutation reuses exact operation ID/digest, policy/fence checks where applicable, the reviewed authorization provider, and the same Use saga. Direct enablement v1 and the old Web toggle are compatibility-only |
 | Scope identity | Lifecycle intent/journal, Runtime and Flow bindings, OKF receipts/observations/bindings, and capability evidence retain full User/Workspace `PlanScope`; stores use `<kind>/<sha256(id)>`, evidence digests bind both fields, and same-ID cross-kind substitution tests fail closed |
@@ -634,6 +646,13 @@ do not share one database transaction. The boundaries are frozen in
 The baseline intentionally fails closed when required permission, Runtime,
 Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages
 cannot bypass the graph manager through legacy extension toggles.
+
+> [!NOTE]
+> The cognitive-package platform is pre-1.0. Until its first stable release,
+> unpublished schemas, APIs, and receipts may be replaced or removed outright;
+> they are not compatibility commitments. Package SemVer constraints, host
+> version requirements, and target checks remain package-manager correctness
+> rules.
 
 Inspect immutable readiness evidence:
 

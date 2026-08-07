@@ -106,7 +106,9 @@ resolve signed dependency graph
 
 精确且已发布的依赖可以 retained 而不重复 commit。卸载按 package 反向顺序执行；另一个已安装包仍需要该依赖时会拒绝移除。部分 enabled receipt 写入在完整 immutable snapshot 发布前保持不可见。
 
-OKF 控制面门禁与 package-lifecycle adapter 已经实现：缺失 Knowledge evidence 为 pending，staged 不发布，只有精确 promoted observation 才是 healthy。产生和清理这些 record 的真实 A3S Knowledge index 后端与 scoped 产品接线仍在开发中。
+OKF standalone SQLite/FTS5 host 已实现：缺失 Knowledge evidence 为 pending，staged 不发布，只有精确 promoted observation 才是 healthy。Search 必须携带完整 scope 与精确、已审查的 capability/session projection；citation 绑定 package、surface、generation、index、concept path 与 source digest。Code/Web 托管 Workspace/session carrier 与生产 retention/GC 仍在开发中。
+
+认知包平台仍处于 pre-1.0。未知 receipt 或 database version 会 fail closed；未发布状态直接重建，不迁移也不改写。这不影响 package SemVer 解析、host-version requirement、target 检查与 signed provenance 验证。
 
 Flow 的源码完整性与生命周期顺序已实现，但 embedding host 必须注入精确的 `a3s-flow` compiler/runtime adapter。standalone engine 会在 mutation 前拒绝 required Flow，不会把只有源码证据的 Flow 发布为 ready。
 

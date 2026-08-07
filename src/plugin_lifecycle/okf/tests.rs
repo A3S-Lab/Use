@@ -13,7 +13,8 @@ use tokio::sync::Mutex;
 
 use crate::okf_knowledge::{
     OkfKnowledgeAdapter, OkfKnowledgeBinding, OkfKnowledgeBindingStore, OkfKnowledgeClient,
-    OkfKnowledgeStageRequest,
+    OkfKnowledgeSearchRequest, OkfKnowledgeSearchResponse, OkfKnowledgeStageRequest,
+    SqliteOkfKnowledgeAdapter,
 };
 use crate::plugin_lifecycle::{
     PluginLifecycleAction, PluginLifecycleIntent, PluginLifecycleIntentSpec,
@@ -82,6 +83,13 @@ impl OkfKnowledgeAdapter for FakeKnowledgeAdapter {
     async fn remove(&self, receipt: &OkfProjectionReceipt) -> UseResult<OkfKnowledgeObservation> {
         self.calls.lock().await.push("remove".to_string());
         observation(receipt, OkfKnowledgeObservedState::Removed, None, 5_000)
+    }
+
+    async fn search(
+        &self,
+        request: &OkfKnowledgeSearchRequest,
+    ) -> UseResult<OkfKnowledgeSearchResponse> {
+        OkfKnowledgeSearchResponse::new(request, Vec::new())
     }
 }
 
@@ -169,6 +177,76 @@ async fn missing_receipt_removal_is_idempotent_without_calling_knowledge() {
         .await
         .unwrap();
     assert!(adapter.calls().await.is_empty());
+}
+
+#[tokio::test]
+async fn real_sqlite_backend_runs_lifecycle_and_cited_retrieval_end_to_end() {
+    let temporary = tempfile::tempdir().unwrap();
+    let client =
+        OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path())));
+    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let host = OkfKnowledgeLifecycleHost::new(package_root(), client.clone(), store.clone());
+    let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
+    let intent = intent(&manifest, PluginLifecycleAction::Install);
+    let surface = &manifest.okf[0];
+    let key = &intent
+        .checkpoints
+        .iter()
+        .find(|checkpoint| {
+            checkpoint
+                .surface
+                .as_ref()
+                .is_some_and(|value| value.id == surface.id)
+        })
+        .unwrap()
+        .idempotency_key;
+
+    host.prepare_okf(&intent, surface, key).await.unwrap();
+    let qualified = a3s_use_core::PlanQualifiedSurfaceRef {
+        package_id: intent.package_id.clone(),
+        surface: a3s_use_core::PluginSurfaceRef {
+            kind: a3s_use_core::PluginSurfaceKind::Okf,
+            id: surface.id.clone(),
+        },
+    };
+    let projection = store
+        .snapshot(&intent.scope, &qualified)
+        .await
+        .unwrap()
+        .projection
+        .unwrap();
+    let response = client
+        .search(
+            &OkfKnowledgeSearchRequest::new(
+                intent.scope.clone(),
+                "package activation",
+                5,
+                vec![projection.clone()],
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        response.hits[0].citation.path,
+        "concepts/package-lifecycle.md"
+    );
+    assert_eq!(response.hits[0].citation.surface, qualified);
+
+    host.remove_okf(&intent, surface, key).await.unwrap();
+    let error = client
+        .search(
+            &OkfKnowledgeSearchRequest::new(
+                intent.scope.clone(),
+                "package activation",
+                5,
+                vec![projection],
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_projection_stale");
 }
 
 fn package_root() -> PathBuf {

@@ -123,7 +123,7 @@ fn registry_install_rejects_unsigned_and_local_source_combinations() {
 }
 
 #[test]
-fn schema_v3_okf_install_fails_before_any_package_becomes_visible_without_knowledge() {
+fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowledge() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
     let package_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -144,17 +144,252 @@ fn schema_v3_okf_install_fails_before_any_package_becomes_visible_without_knowle
     let home = temp.path().join("home");
 
     let output = cognitive_registry_install(&server, &repository, &home, "acme/knowledge", &[]);
-    assert!(!output.status.success(), "{output:?}");
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(json(&output)["data"]["changed"], true);
+    assert!(home.join("state/extensions/acme/knowledge.json").exists());
+
+    let snapshot = Command::new(binary())
+        .args(["capability", "snapshot", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(snapshot.status.success(), "{snapshot:?}");
+    let snapshot = json(&snapshot);
+    let capability = snapshot["data"]["registry"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["route"] == "knowledge")
+        .unwrap_or_else(|| panic!("missing Knowledge capability: {snapshot:#}"));
+    assert_eq!(capability["enabled"], true);
+    assert_eq!(capability["knowledge"][0]["generation"], 1);
+    assert_eq!(capability["knowledge"][0]["scope"]["kind"], "user");
+
+    let searched = Command::new(binary())
+        .args([
+            "knowledge",
+            "search",
+            "package activation",
+            "--limit",
+            "5",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(searched.status.success(), "{searched:?}");
+    let searched = json(&searched);
     assert_eq!(
-        json(&output)["error"]["code"],
-        "use.plugin.okf_provider_required"
+        searched["data"]["knowledge"]["hits"][0]["citation"]["path"],
+        "concepts/package-lifecycle.md"
     );
-    assert!(!home.join("state/extensions/acme/knowledge.json").exists());
-    let snapshot = home.join("state/registry.json");
-    if snapshot.exists() {
-        let snapshot: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(snapshot).unwrap()).unwrap();
-        assert_eq!(snapshot["routes"], serde_json::json!([]));
+    assert_eq!(
+        searched["data"]["knowledge"]["hits"][0]["citation"]["surface"]["packageId"],
+        "acme/knowledge"
+    );
+
+    let removed = cognitive_uninstall(&home, "acme/knowledge");
+    assert!(removed.status.success(), "{removed:?}");
+    assert_eq!(json(&removed)["data"]["changed"], true);
+    let searched = Command::new(binary())
+        .args(["knowledge", "search", "package activation", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(!searched.status.success(), "{searched:?}");
+    assert_eq!(
+        json(&searched)["error"]["code"],
+        "use.okf.knowledge_unavailable"
+    );
+}
+
+#[test]
+fn signed_okf_upgrade_atomically_switches_the_cited_capability_generation() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let first = cognitive_okf_target(
+        &temp.path().join("first"),
+        "1.0.0",
+        "The legacyneedle decision keeps the current package generation available.",
+        &target,
+    );
+    let next = cognitive_okf_target(
+        &temp.path().join("next"),
+        "1.1.0",
+        "Zero-downtime knowledge cutover selects the reviewed replacement generation.",
+        &target,
+    );
+    let repository = TestRepository::with_targets(vec![first, next], 23, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+
+    let installed = cognitive_registry_install(&server, &repository, &home, "acme/knowledge", &[]);
+    assert!(installed.status.success(), "{installed:?}");
+    let first_search = knowledge_search(&home, "legacyneedle");
+    assert!(first_search.status.success(), "{first_search:?}");
+    assert_eq!(
+        json(&first_search)["data"]["knowledge"]["hits"][0]["citation"]["generation"],
+        1
+    );
+
+    let upgraded =
+        cognitive_registry_upgrade(&server, &repository, &home, "acme/knowledge", "1.1.0", &[]);
+    assert!(upgraded.status.success(), "{upgraded:?}");
+    assert_eq!(json(&upgraded)["data"]["component"]["version"], "1.1.0");
+    assert_eq!(
+        json(&upgraded)["data"]["packageGraph"]["replacedPackages"],
+        serde_json::json!(["acme/knowledge"])
+    );
+
+    let next_search = knowledge_search(&home, "zero downtime knowledge cutover");
+    assert!(next_search.status.success(), "{next_search:?}");
+    let next_search = json(&next_search);
+    assert_eq!(
+        next_search["data"]["knowledge"]["hits"][0]["citation"]["generation"],
+        2
+    );
+    assert_eq!(
+        next_search["data"]["knowledge"]["hits"][0]["citation"]["path"],
+        "concepts/package-lifecycle.md"
+    );
+
+    let old_search = knowledge_search(&home, "legacyneedle");
+    assert!(old_search.status.success(), "{old_search:?}");
+    assert_eq!(
+        json(&old_search)["data"]["knowledge"]["hits"],
+        serde_json::json!([]),
+        "the current capability projection must not query the retired generation"
+    );
+}
+
+fn knowledge_search(home: &std::path::Path, query: &str) -> Output {
+    Command::new(binary())
+        .args(["knowledge", "search", query, "--json"])
+        .env("A3S_USE_HOME", home)
+        .output()
+        .unwrap()
+}
+
+fn cognitive_okf_target(
+    fixture_root: &std::path::Path,
+    version: &str,
+    decision: &str,
+    target: &str,
+) -> TestTarget {
+    let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/extension/fixtures/packages/plugin-v3-okf/package");
+    let package_root = fixture_root.join("package");
+    copy_fixture_tree(&source, &package_root);
+
+    let decision_path = package_root.join("okf/domain-knowledge/concepts/package-lifecycle.md");
+    let original = std::fs::read_to_string(&decision_path).unwrap();
+    let body_start = original.find("# Decision").unwrap();
+    let frontmatter = &original[..body_start];
+    std::fs::write(
+        &decision_path,
+        format!("{frontmatter}# Decision\n\n{decision}\n"),
+    )
+    .unwrap();
+
+    let okf_root = package_root.join("okf/domain-knowledge");
+    let mut files = Vec::new();
+    collect_okf_files(&okf_root, &okf_root, &mut files);
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    let limits = a3s_use_core::OkfBundleLimits {
+        max_files: 256,
+        max_concepts: 64,
+        max_expanded_bytes: 67_108_864,
+        max_document_bytes: 1_048_576,
+        max_links_per_document: 2_048,
+    };
+    let inspection = a3s_use_core::inspect_okf_bundle_files(
+        a3s_use_core::OkfFormatVersion::V0_2,
+        limits,
+        &files,
+    )
+    .unwrap();
+
+    let manifest_path = package_root.join("a3s-use-extension.acl");
+    let manifest = std::fs::read_to_string(&manifest_path)
+        .unwrap()
+        .replace(
+            "version        = \"1.0.0\"",
+            &format!("version        = \"{version}\""),
+        )
+        .replace(
+            "sha256:bd85b0b63adb32bdf616384a619286af4c32401542655dd09e00450902ab478d",
+            &inspection.content_digest,
+        )
+        .replace(
+            "expanded_bytes         = 2053",
+            &format!("expanded_bytes         = {}", inspection.expanded_bytes),
+        );
+    std::fs::write(&manifest_path, &manifest).unwrap();
+    let parsed = a3s_use_extension::ExtensionManifest::parse_acl(&manifest).unwrap();
+    assert_eq!(
+        parsed.okf[0].bundle.content_digest,
+        inspection.content_digest
+    );
+
+    let archive = package_directory_archive(&package_root);
+    let fingerprint = package_fingerprint(&package_root);
+    let mut catalog = PluginCatalogRecord::from_json(OKF_CATALOG_V3).unwrap();
+    catalog.version = version.to_string();
+    catalog.target = target.to_string();
+    catalog.surfaces[0].okf_bundle = Some(parsed.okf[0].bundle.clone());
+    catalog.archive.target_name = format!(
+        "extensions/acme/knowledge/{version}/stable/{target}/acme-knowledge-{version}-{target}.tar.gz"
+    );
+    catalog.archive.length = archive.len() as u64;
+    catalog.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&archive));
+    catalog.package.expanded_bytes = fingerprint.2;
+    catalog.package.file_count = fingerprint.1;
+    catalog.package.sha256 = Some(format!("sha256:{}", fingerprint.0));
+    catalog.package.manifest_sha256 =
+        Some(format!("sha256:{:x}", Sha256::digest(manifest.as_bytes())));
+    catalog.validate().unwrap();
+
+    TestTarget {
+        target_name: catalog.archive.target_name.clone(),
+        custom: Some(serde_json::to_value(catalog).unwrap()),
+        archive,
+    }
+}
+
+fn copy_fixture_tree(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_fixture_tree(&source_path, &destination_path);
+        } else {
+            std::fs::copy(source_path, destination_path).unwrap();
+        }
+    }
+}
+
+fn collect_okf_files(
+    root: &std::path::Path,
+    directory: &std::path::Path,
+    files: &mut Vec<a3s_use_core::OkfBundleFile>,
+) {
+    for entry in std::fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            collect_okf_files(root, &path, files);
+        } else {
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            files.push(a3s_use_core::OkfBundleFile::new(
+                relative,
+                std::fs::read(path).unwrap(),
+            ));
+        }
     }
 }
 

@@ -14,7 +14,9 @@
   host-capabilities-v4 reviewed enablement planning completed 2026-08-06;
   local A3S Code CLI/Web reviewed enablement and restart replay completed
   2026-08-06; Code TUI `/packages` reviewed enablement and full `PlanScope`
-  lifecycle/store identity completed 2026-08-07
+  lifecycle/store identity completed 2026-08-07; standalone SQLite/FTS5
+  Knowledge indexing, scoped cited retrieval, and signed generation cutover
+  completed 2026-08-07
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -99,10 +101,11 @@ in-crate lifecycle foundation. Lifecycle intents and Runtime/Flow/OKF evidence
 retain full User/Workspace scope, and every durable store separates kind before
 hashing the scope ID. Grant-aware graph paths additionally compose
 durable Grant prepare, exact cutover, pre-cutover rollback, drain, and
-retirement around that package graph. Production publication still requires
-typed production Service/Gateway provider composition and a real A3S Knowledge
-backend. Umbrella graph paths and fenced managed-host graph/enablement paths
-already invoke Use's reviewed-plan authorization provider.
+retirement around that package graph. The standalone composition now supplies
+the real SQLite/FTS5 Knowledge backend; production publication still requires
+typed Service/Gateway provider composition and managed Code/Web Workspace/
+session carriers. Umbrella graph paths and fenced managed-host graph/enablement
+paths already invoke Use's reviewed-plan authorization provider.
 
 Package enablement has two deliberately separate generations. The immutable
 artifact generation identifies installed bytes, manifests, bindings, and
@@ -287,8 +290,9 @@ Implemented as of the planning baseline:
 
 Remaining on the critical path:
 
-- inject production Runtime Service, Gateway/HTTP MCP, and A3S Knowledge hosts
-  into the shared Plugin Manager composition;
+- inject production Runtime Service and Gateway/HTTP MCP hosts plus managed
+  Code/Web Workspace/session Knowledge carriers into the shared Plugin Manager
+  composition;
 - complete schema-v3 graph upgrade/uninstall construction through the shared
   CLI/Web/fenced managed-host Manager using the public lifecycle factory and
   the same durable graph records; management MCP remains read-only;
@@ -308,9 +312,10 @@ earlier ownership or durability gate.
 | P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, standalone CLI dispatch, retained dependency verification, forward install, atomic graph publication, reverse uninstall, and durable graph replay | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection before download, cross-Registry TUF closure, retained-node checks, reverse-dependent guard, published-install repair, pending-only uninstall recovery, and symlink ownership tests pass |
 | P0-F — Unified Flow contract and Code local runtime (complete 2026-08-04) | First-class Flow inventory, `a3s-flow` identity, Native TypeScript integrity, Tool/MCP/OKF edges, lifecycle/reconciliation, exact `flow.json` resolution, immutable source staging, and one Code CLI/TUI/Web durable local store | Manifest/catalog/source drift fails before mutation; fixed run IDs are idempotent; histories survive host recreation and package upgrade/uninstall; public responses leak no managed path; no injected host means no publication |
 | P0-U — Dual-generation storage (complete 2026-08-05) | Bounded exact package receipts, snapshot-selected route leases, Runtime generation directories, exact observation, pre-cutover rollback, and receipt-owned removal | N remains callable while N+1 is staged; commit replay preserves N; moved/tampered/symlinked/over-limit state fails closed; Runtime cleanup removes only N |
+| P0-K — Standalone Knowledge (complete 2026-08-07) | Bundled SQLite/FTS5 per full User/Workspace scope; transactional stage/promote/remove; exact capability/session projection search; concept/source-digest citations; signed upgrade cutover | Atomic initialization/restart, scope-kind isolation, retained draining N, candidate rollback, exact removal, signed install/query/upgrade/uninstall, and unknown-schema rejection pass |
 | P0-G — Dependency-graph upgrade and GC core (complete 2026-08-05) | Plan-v3 prior/candidate lock binding, Add/Replace/Remove/Retain, selected downloads, shared-node retention, dependency-forward N+1 preparation, one capability cutover including removed routes, automatic unpublished-candidate rollback, reverse N retirement, exact graph CAS, and durable replay | Preparation/publication failure restores N and removes additions; successful cutover retires replacements and unreferenced dependencies exactly once; retained-receipt and applying/rolling-back crash fixtures converge without generation inflation |
 | P0-E — Package enablement core (complete 2026-08-06) | Separate immutable artifact identity from a durable Use-owned package-state generation; serialize per operation and package; checkpoint and replay schema-v3 enable/disable through the normal lifecycle without changing bytes or graph ownership; bind every changed toggle to plan-v4 retained-artifact evidence | Restart resumes an interrupted lifecycle; completed operation replay is stable; concurrent or sequential operation-ID reuse and stale generations fail before mutation; upgrade/uninstall/reinstall preserve monotonic state; missing reviewed authority fails before mutation with the immutable plan |
-| P1 — Host composition (Code baseline complete; production providers pending) | Keep Code's public lifecycle-factory composition for executable Tool Tasks, stdio MCP, A3S Flow, and Skill/UI; add explicit Runtime Service, Gateway/HTTP MCP, and A3S Knowledge adapters | TUI and Web produce the same intent and supported host set today; unavailable production hosts continue to fail before publication |
+| P1 — Host composition (Code baseline and standalone Knowledge complete; production providers pending) | Keep Code's public lifecycle-factory composition for executable Tool Tasks, stdio MCP, A3S Flow, and Skill/UI; carry the implemented Knowledge projection through managed Workspace sessions; add explicit Runtime Service and Gateway/HTTP MCP adapters | Standalone signed OKF lifecycle is queryable; TUI and Web produce the same intent today; unavailable production hosts continue to fail before publication |
 | P2-A — Grant graph saga (complete 2026-08-05) | Compose durable Grant prepare, exact Registry cutover, joint pre-cutover rollback, accepted-call drain, and prior-Grant retirement with package graph operations | Candidate Grant survives restart; failed publication restores package and Grant candidates; prior Grant survives until exact cutover and drain |
 | P2-B — Product Grant wiring (complete for graph mutation 2026-08-06) | Standalone derives canonical proposals/change sets/resolved Grants/ceilings after injected policy authority and exact confirmation; the reviewed-host provider preserves an external operation identity, policy, lock-bound envelope, confirmation, and User/Workspace scope across apply/replay; umbrella and managed hosts snapshot the exact scope/revision and invoke the same canonical impact planner before forwarding the reviewed envelope | Standalone, reviewed-provider, umbrella, and fenced managed-host graph paths cannot bypass or regenerate authorization, substitute scope kind/revision/authority, or launch the legacy child mutation; a signed permission-bearing Tool Task persists the exact Grant receipt |
 | P2-C — Permission-bearing enablement core (complete 2026-08-06) | Represent enable/disable as immutable plan-v4 `Retain` transitions; persist exact authorization evidence; prepare Grant before enable publication; atomically hide and checkpoint cutover before disable drain and revocation | Missing confirmation causes zero lifecycle mutation and returns the immutable plan; cutover interruption recovers without early revocation or generation inflation; completed replay does not reauthorize; capability hosts without cutover evidence fail closed before mutation |
@@ -441,17 +446,17 @@ The dependency-ordered slices are:
    stage/promote/observe/remove port, check returned receipt/observation
    evidence, and durably retain bounded exact-generation records with
    last-good projection.
-4. **Production Knowledge and lifecycle (in progress M0K-C-B):** the package
-   adapter now supplies idempotent stage/promote/hide/receipt-remove behavior.
-   Implement the real A3S Knowledge index backend behind the port and wire it
-   into capability snapshots, plan/apply replay, upgrade cutover, and scoped
-   sessions without touching personal notes or another package's index.
-5. **Product E2E (pending M0K-C-B/M6):** search a signed OKF-bearing package without archive
+4. **Standalone Knowledge and lifecycle (complete M0K-C-B core):** the package
+   adapter supplies idempotent stage/promote/hide/receipt-remove behavior. A
+   bundled SQLite/FTS5 backend transacts indexing and selection, joins live
+   capability snapshots, authorizes search by exact scope/projection, and
+   preserves retained in-flight and last-good generations until exact cleanup.
+5. **Managed product E2E (pending M0K-C-B/M6):** search a signed OKF-bearing package without archive
    download; review provenance, concept count, bytes, and permission impact;
    install and query cited concepts; upgrade atomically; disable/uninstall; and
    recover each checkpoint after injected crashes.
 
-Implementation status (2026-08-02): M0K-A completed the shared
+Implementation status (2026-08-07): M0K-A completed the shared
 `a3s.use.okf-bundle.v1` descriptor, deterministic content identity, bounded
 v0.2/v0.1 inspector, and canonical/malicious fixtures. M0K-B completed schema
 v3 manifest and full-package admission, catalog-v3 bundle evidence,
@@ -459,9 +464,13 @@ Skill-to-OKF closure, plan/draft v2 impact, manager-toolset v2, projection
 receipt, Knowledge observation, capability projection, and Knowledge-owned
 reconciliation. Golden ACL, JSON, and complete-package digests freeze the
 slice. M0K-C-A completed the byte-exact injected adapter boundary, durable
-last-good binding store, and package-lifecycle adapter foundation. M0K-C-B must
-now connect a real Knowledge backend and the scope-aware production hosts;
-absent promoted evidence remains unpublished.
+last-good binding store, and package-lifecycle adapter foundation. The
+standalone M0K-C-B core now provides bundled SQLite/FTS5, complete User/
+Workspace isolation, atomic stage/promote/remove, exact projection-authorized
+cited search, capability publication, and signed install/query/upgrade/
+uninstall coverage. Managed Code/Web Workspace/session carriers, umbrella ACL,
+cross-platform real-process gates, and retention/GC remain. Absent promoted
+evidence remains unpublished.
 
 The workstream does not compile PDFs, Office files, images, archives, or web
 pages during install. Independent compilers produce normalized OKF before
@@ -574,8 +583,8 @@ after trusted authority and exact confirmation, then selects this path for
 every permission-bearing operation. Umbrella and managed-host Plugin Managers
 now snapshot the exact scope/revision, bind the same canonical impact after
 policy, and forward the unchanged reviewed authority and confirmation.
-Remaining integration composes production Runtime, Gateway, and Knowledge
-hosts. Code CLI, TUI `/packages`, and Web already share the local
+Remaining integration composes production Runtime and Gateway hosts plus
+managed Code/Web Knowledge session carriers. Code CLI, TUI `/packages`, and Web already share the local
 plan/confirmation service, while fenced managed hosts use the versioned
 capability-v4 contract.
 

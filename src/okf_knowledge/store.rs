@@ -13,7 +13,7 @@ mod io;
 
 use io::{
     acquire_lock, binding_path, ensure_owned_directory, read_bindings, read_optional_binding,
-    validate_existing_directory_chain, write_binding,
+    remove_binding, validate_existing_directory_chain, write_binding,
 };
 
 pub const MAX_OKF_KNOWLEDGE_GENERATIONS: usize = 32;
@@ -66,9 +66,11 @@ impl OkfKnowledgeBindingStore {
             if records[position] == *binding {
                 return Ok(false);
             }
-            if records.last().map(|record| record.receipt.generation) != Some(generation) {
+            if records.last().map(|record| record.receipt.generation) != Some(generation)
+                && binding.observation.state != OkfKnowledgeObservedState::Removed
+            {
                 return Err(stale_error(
-                    "An older OKF Knowledge generation cannot change after a newer candidate exists.",
+                    "An older OKF Knowledge generation cannot change after a newer candidate exists unless receipt-owned cleanup marks it removed.",
                 ));
             }
             validate_replacement(&records[position], binding)?;
@@ -81,6 +83,25 @@ impl OkfKnowledgeBindingStore {
                 return Err(stale_error(
                     "A stale OKF Knowledge generation cannot enter the binding store.",
                 ));
+            }
+            if records.len() >= MAX_OKF_KNOWLEDGE_GENERATIONS {
+                let latest_generation = records
+                    .last()
+                    .map(|record| record.receipt.generation)
+                    .ok_or_else(selection_error)?;
+                let mut removed = Vec::new();
+                records.retain(|record| {
+                    let prune = record.observation.state == OkfKnowledgeObservedState::Removed
+                        && record.receipt.generation != latest_generation;
+                    if prune {
+                        removed.push(record.receipt.generation);
+                    }
+                    !prune
+                });
+                snapshot_from_records(&records)?;
+                for generation in removed {
+                    remove_binding(&binding_path(&directory, generation)).await?;
+                }
             }
             if records.len() >= MAX_OKF_KNOWLEDGE_GENERATIONS {
                 return Err(store_error(
