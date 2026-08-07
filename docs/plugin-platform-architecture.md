@@ -337,6 +337,13 @@ generation, desired/observed state, readiness, dependencies, and evidence
 digests. Watchers resume by generation plus revision and can hot-refresh
 resident hosts without polling package directories.
 
+The steady-state watch path reads immutable publications without acquiring the
+Registry writer lock. A watcher may take that lock once to repair a verified
+receipt/publication mismatch after a crash. Lifecycle mutations absorb this
+short reconciliation window with a bounded asynchronous wait, while a real
+concurrent writer still returns `use.extension.busy`. The wait never turns a
+read into an unbounded mutation queue.
+
 ## Storage model
 
 Use owns separate roots for:

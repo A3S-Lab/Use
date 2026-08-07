@@ -49,7 +49,7 @@ impl ExtensionRegistry {
         candidate: &ExtensionLifecyclePackage,
     ) -> UseResult<ExtensionLifecycleResult> {
         candidate.validate_identity(identity)?;
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
         let mut retained_created = None;
         let mut retained_candidate = None;
         if let Some(current) = self.get(identity.package_id()).await? {
@@ -387,7 +387,7 @@ impl ExtensionRegistry {
         timeout: Duration,
     ) -> UseResult<ExtensionLifecycleResult> {
         crate::route_lock::deadline_after(timeout)?;
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
         let extension = self.exact_lifecycle_extension(identity).await?;
         if extension.receipt.enabled {
             return Err(lifecycle_state_error(
@@ -425,7 +425,7 @@ impl ExtensionRegistry {
         timeout: Duration,
     ) -> UseResult<UninstallResult> {
         crate::route_lock::deadline_after(timeout)?;
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
         let target = self.lifecycle_package_root(identity);
         let selected = self.get(identity.package_id()).await?;
         let selected_is_exact = selected
@@ -570,7 +570,7 @@ impl ExtensionRegistry {
             }
         }
 
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
         let snapshot_before = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
         let recorded_cutover = cutover_request
             .map(|request| recorded_cutover(&snapshot_before, request))

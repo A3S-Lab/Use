@@ -299,6 +299,10 @@ Current Registry rules:
   argv, command, timeout, and transport drift fail closed.
 - Prepared downloads and installed Registry/TUF receipts must retain the full
   verified catalog record and its provenance.
+- Watchers read immutable publications without waiting behind writers. If a
+  one-time crash reconciliation briefly owns the Registry lock, lifecycle
+  writers wait asynchronously for at most two seconds; genuinely concurrent
+  mutations still fail with `use.extension.busy`.
 - An installed receipt remains bound to its source name, URL, root digest,
   release channel, target, and TUF role versions.
 - Replacing source configuration never rewrites installed receipt provenance;
@@ -402,6 +406,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
 | Durable atomic Registry cutover and exact replay | Implemented |
+| Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |

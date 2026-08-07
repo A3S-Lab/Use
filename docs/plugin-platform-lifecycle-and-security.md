@@ -215,6 +215,19 @@ confirmation, changed ceiling, or provider drift fails before side effects.
 Two active granted generations for the same package make the scope unstable and
 block planning until the owning operation recovers.
 
+## Registry concurrency
+
+Lifecycle mutations remain serialized by the cross-process Registry lock.
+Steady-state snapshot and watch reads consume immutable publications without
+that lock. A read may briefly acquire it only for crash reconciliation when
+receipt state and the last publication disagree.
+
+A lifecycle writer waits asynchronously for at most two seconds for that
+transient reconciliation to finish. If the lock is still held, the operation
+returns `use.extension.busy` and keeps its existing durable recovery evidence.
+This prevents a live Code watcher from spuriously rejecting the next reviewed
+upgrade without hiding genuine concurrent mutation.
+
 ## Provider security
 
 ### Runtime and Gateway

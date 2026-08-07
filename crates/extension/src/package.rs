@@ -1,7 +1,7 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{UseError, UseResult};
 use fs2::FileExt;
@@ -18,6 +18,8 @@ pub(crate) const MAX_PACKAGE_BYTES: u64 = 1_073_741_824;
 pub(super) const MAX_ACTIVITY_HTML_BYTES: u64 = 2 * 1024 * 1024;
 pub(super) const MAX_ACTIVITY_RESOURCE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_PACKAGE_README_BYTES: u64 = 2 * 1024 * 1024;
+const REGISTRY_MUTATION_LOCK_WAIT: Duration = Duration::from_secs(2);
+const REGISTRY_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 
 pub(crate) async fn read_manifest(package_root: &Path) -> UseResult<(ExtensionManifest, Vec<u8>)> {
     let path = package_root.join(MANIFEST_NAME);
@@ -379,10 +381,80 @@ impl RegistryLock {
             .map_err(|error| io_error("write extension registry lock", path, error))?;
         Ok(Self { file })
     }
+
+    /// Wait briefly for a read-side crash reconciliation to release the
+    /// Registry lock before reporting real writer contention.
+    ///
+    /// Snapshot repair intentionally uses [`Self::acquire`] so a reader never
+    /// waits behind a lifecycle mutation. Mutations use this bounded async
+    /// path because a Code watcher may own the lock for one short repair
+    /// between two otherwise independent package operations.
+    pub(crate) async fn acquire_for_mutation(path: &Path) -> UseResult<Self> {
+        Self::acquire_for_mutation_with_wait(path, REGISTRY_MUTATION_LOCK_WAIT).await
+    }
+
+    async fn acquire_for_mutation_with_wait(path: &Path, wait: Duration) -> UseResult<Self> {
+        let deadline = tokio::time::Instant::now() + wait;
+        loop {
+            match Self::acquire(path) {
+                Ok(lock) => return Ok(lock),
+                Err(error) if error.code == "use.extension.busy" => {
+                    let now = tokio::time::Instant::now();
+                    if now >= deadline {
+                        return Err(error);
+                    }
+                    tokio::time::sleep(
+                        REGISTRY_LOCK_RETRY_INTERVAL.min(deadline.saturating_duration_since(now)),
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
 }
 
 impl Drop for RegistryLock {
     fn drop(&mut self) {
         let _ = FileExt::unlock(&self.file);
+    }
+}
+
+#[cfg(test)]
+mod registry_lock_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn mutation_waits_for_a_transient_registry_reconciliation() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state/.registry.lock");
+        let transient = RegistryLock::acquire(&path).unwrap();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(75)).await;
+            drop(transient);
+        });
+
+        let acquired =
+            RegistryLock::acquire_for_mutation_with_wait(&path, Duration::from_millis(500)).await;
+
+        release.await.unwrap();
+        assert!(acquired.is_ok());
+    }
+
+    #[tokio::test]
+    async fn mutation_reports_busy_after_the_bounded_wait() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state/.registry.lock");
+        let _held = RegistryLock::acquire(&path).unwrap();
+
+        let error =
+            match RegistryLock::acquire_for_mutation_with_wait(&path, Duration::from_millis(75))
+                .await
+            {
+                Ok(_) => panic!("a held Registry lock must remain busy after the wait bound"),
+                Err(error) => error,
+            };
+
+        assert_eq!(error.code, "use.extension.busy");
     }
 }
