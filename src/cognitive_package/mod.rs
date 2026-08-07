@@ -303,6 +303,37 @@ impl CognitivePackageManager {
         self.authorization.as_ref()
     }
 
+    /// Read the exact installed dependency lock owned by one root package.
+    ///
+    /// Embedding hosts use this immutable evidence when creating reviewed
+    /// upgrade and uninstall plans. The package graph store remains owned by
+    /// A3S Use; callers cannot replace or remove records through this API.
+    pub async fn installed_package_lock(
+        &self,
+        root_package_id: &str,
+    ) -> UseResult<Option<PluginPackageLock>> {
+        Ok(self
+            .graph_store()
+            .get(root_package_id)
+            .await?
+            .map(|graph| graph.package_lock))
+    }
+
+    /// Snapshot every exact dependency lock currently owned by A3S Use.
+    ///
+    /// Results are sorted by root package ID by the durable graph store. This
+    /// lets an embedding host retain shared dependencies during reviewed graph
+    /// upgrades and removals without parsing Use-owned state files.
+    pub async fn installed_package_locks(&self) -> UseResult<Vec<PluginPackageLock>> {
+        Ok(self
+            .graph_store()
+            .list()
+            .await?
+            .into_iter()
+            .map(|graph| graph.package_lock)
+            .collect())
+    }
+
     fn graph_store(&self) -> InstalledPackageGraphStore {
         InstalledPackageGraphStore::new(self.registry.paths().state_root())
     }
