@@ -20,7 +20,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
     let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
 
-    manager
+    let installed_result = manager
         .install_remote(
             &trusted,
             &[],
@@ -31,6 +31,14 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         )
         .await
         .unwrap();
+    assert_eq!(
+        manager.installed_package_lock("acme/root").await.unwrap(),
+        Some(installed_result.package_lock.clone())
+    );
+    assert_eq!(
+        manager.installed_package_locks().await.unwrap(),
+        vec![installed_result.package_lock]
+    );
     let installed = extension_registry.get("acme/root").await.unwrap().unwrap();
     let package_root = installed.receipt.package_root.clone();
     let artifact_generation = installed.receipt.lifecycle_generation.unwrap();
