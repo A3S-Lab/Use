@@ -244,6 +244,12 @@ and release descriptors before lifecycle admission. Required provider failure
 stays unpublished; there is no `PATH` lookup, unsigned native fallback, or
 provider substitution.
 
+Persistent Services consume only the exact loopback endpoint published inside
+the matching Runtime observation. During retirement, the Gateway binding is
+hidden and drained before the Runtime unit is stopped; the route is removed
+before the unit is removed, and the binding receipt is deleted last. Every
+step is generation-bound and idempotent.
+
 ### A3S Flow
 
 The host must inject the declared `a3s-flow` adapter. Exact source/export,

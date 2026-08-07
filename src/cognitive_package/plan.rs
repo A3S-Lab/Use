@@ -67,7 +67,7 @@ pub(super) fn enablement_operation(
     )?;
     let providers = if request.enabled {
         let manifests = BTreeMap::from([(package.package_id().to_string(), manifest.clone())]);
-        static_provider_evidence(std::iter::once(package), &manifests)?
+        operation_provider_evidence(std::iter::once(package), &manifests, authorization)?
     } else {
         Vec::new()
     };
@@ -161,7 +161,7 @@ pub(super) fn install_operation(
 
     let state_revision = package_state_revision(registry_generation)?;
     let lock_digest = lock.descriptor_digest()?;
-    let providers = static_provider_evidence(&lock.packages, manifests)?;
+    let providers = operation_provider_evidence(&lock.packages, manifests, authorization)?;
     let impact = PlannedOperationImpact {
         download_bytes: lock
             .packages
@@ -541,7 +541,7 @@ pub(super) fn upgrade_operation(
                 candidate_lock.package(package.package_id()).is_none()
                     && dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Retain)
             }));
-    let providers = static_provider_evidence(provider_packages, manifests)?;
+    let providers = operation_provider_evidence(provider_packages, manifests, authorization)?;
     let impact = PlannedOperationImpact {
         download_bytes: candidate_lock
             .packages
@@ -772,12 +772,95 @@ pub(super) fn static_provider_evidence<'a>(
     Ok(providers)
 }
 
+pub(super) fn operation_provider_evidence<'a>(
+    packages: impl IntoIterator<Item = &'a LockedPluginPackage>,
+    manifests: &BTreeMap<String, ExtensionManifest>,
+    authorization: &dyn CognitivePackageAuthorizationProvider,
+) -> UseResult<Vec<PlannedProviderEvidence>> {
+    let packages = packages.into_iter().collect::<Vec<_>>();
+    let Some(reviewed) = authorization.reviewed_plan() else {
+        return static_provider_evidence(packages, manifests);
+    };
+    let providers = reviewed.plan.providers.clone();
+    let mut expected = Vec::new();
+    for package in packages {
+        let manifest = manifests.get(package.package_id()).ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_graph_invalid",
+                "A locked package has no admitted manifest for reviewed provider planning.",
+            )
+        })?;
+        let state = package
+            .catalog
+            .selected_state(&all_catalog_surfaces(package))?;
+        for surface in &state.release.surfaces {
+            if !matches!(
+                surface.kind,
+                PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
+            ) {
+                continue;
+            }
+            let reference = PlanQualifiedSurfaceRef {
+                package_id: package.package_id().to_string(),
+                surface: surface.reference(),
+            };
+            let native = is_static_surface(manifest, surface.kind, &surface.id);
+            expected.push((reference, native, state.release.package_sha256.clone()));
+        }
+    }
+    expected.sort_by(|left, right| left.0.cmp(&right.0));
+    if providers.len() != expected.len()
+        || providers
+            .iter()
+            .zip(&expected)
+            .any(|(provider, expected)| provider.surface != expected.0)
+    {
+        return Err(package_manager_error(
+            "use.plugin.package_provider_invalid",
+            "The reviewed Runtime provider set does not cover the exact executable package surfaces.",
+        ));
+    }
+    for (provider, (surface, native, package_digest)) in providers.iter().zip(expected) {
+        if native {
+            if provider != &native_provider_evidence(surface, &package_digest)? {
+                return Err(package_manager_error(
+                    "use.plugin.package_provider_invalid",
+                    "A package-local launcher does not match the built-in native provider evidence.",
+                ));
+            }
+        } else if provider.provider_id == "a3s-use-native-launcher" {
+            return Err(package_manager_error(
+                "use.plugin.runtime_provider_required",
+                "A release-backed executable surface cannot use the package-local native provider.",
+            ));
+        }
+    }
+    Ok(providers)
+}
+
 fn validate_static_surface(
     manifest: &ExtensionManifest,
     kind: PluginSurfaceKind,
     surface_id: &str,
 ) -> UseResult<()> {
-    let supported = match kind {
+    if is_static_surface(manifest, kind, surface_id) {
+        Ok(())
+    } else {
+        Err(package_manager_error(
+            "use.plugin.runtime_provider_required",
+            format!(
+                "Executable surface '{surface_id}' requires an explicitly injected Runtime provider."
+            ),
+        ))
+    }
+}
+
+fn is_static_surface(
+    manifest: &ExtensionManifest,
+    kind: PluginSurfaceKind,
+    surface_id: &str,
+) -> bool {
+    match kind {
         PluginSurfaceKind::Tool => manifest.tools.iter().any(|surface| {
             surface.id == surface_id
                 && matches!(
@@ -790,16 +873,6 @@ fn validate_static_surface(
             surface.id == surface_id && matches!(surface.launch, PluginMcpLaunch::Stdio { .. })
         }),
         _ => false,
-    };
-    if supported {
-        Ok(())
-    } else {
-        Err(package_manager_error(
-            "use.plugin.runtime_provider_required",
-            format!(
-                "Executable surface '{surface_id}' requires an explicitly injected Runtime provider."
-            ),
-        ))
     }
 }
 
@@ -813,4 +886,192 @@ fn package_role(lock: &PluginPackageLock, package_id: &str) -> PlanPackageRole {
 
 fn digest(value: &str) -> String {
     format!("sha256:{:x}", Sha256::digest(value.as_bytes()))
+}
+
+#[cfg(test)]
+mod tests {
+    use a3s_use_core::{
+        PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPolicyDecision, PlanScopeKind,
+        PluginCatalogRecord, PluginPackageLockHost, PluginPackageResolver,
+        VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    };
+
+    use super::*;
+    use crate::cognitive_package::ReviewedCognitivePackageAuthorizationProvider;
+
+    #[test]
+    fn reviewed_host_provider_evidence_preserves_managed_surfaces_and_locks_native_launchers() {
+        let (lock, manifests, dispositions) = managed_package_graph();
+        let transitions = install_plan_packages(&lock, &dispositions).unwrap();
+        let providers = reviewed_providers(&transitions, &manifests);
+        let reviewed = reviewed_authorization(&lock, transitions, providers.clone());
+
+        let actual = operation_provider_evidence(&lock.packages, &manifests, &reviewed).unwrap();
+
+        assert_eq!(actual, providers);
+        assert_eq!(
+            actual
+                .iter()
+                .filter(|provider| provider.provider_id == "managed-runtime")
+                .count(),
+            2
+        );
+        assert_eq!(
+            actual
+                .iter()
+                .filter(|provider| provider.provider_id == "a3s-use-native-launcher")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn reviewed_host_cannot_replace_a_package_native_launcher() {
+        let (lock, manifests, dispositions) = managed_package_graph();
+        let transitions = install_plan_packages(&lock, &dispositions).unwrap();
+        let mut providers = reviewed_providers(&transitions, &manifests);
+        let native = providers
+            .iter_mut()
+            .find(|provider| provider.provider_id == "a3s-use-native-launcher")
+            .unwrap();
+        native.provider_id = "unreviewed-native".to_string();
+        native.provider_build_id = "build-1".to_string();
+        native.capability_digest = test_digest('c');
+        native.semantics_profile_digest = test_digest('d');
+        let reviewed = reviewed_authorization(&lock, transitions, providers);
+
+        let error = operation_provider_evidence(&lock.packages, &manifests, &reviewed).unwrap_err();
+
+        assert_eq!(error.code, "use.plugin.package_provider_invalid");
+    }
+
+    fn managed_package_graph() -> (
+        PluginPackageLock,
+        BTreeMap<String, ExtensionManifest>,
+        BTreeMap<String, InstallDisposition>,
+    ) {
+        let record = PluginCatalogRecord::from_json(include_bytes!(
+            "../../crates/core/fixtures/plugins/catalog-record-v3.json"
+        ))
+        .unwrap();
+        let provenance = VerifiedCatalogProvenance {
+            registry_name: "official".to_string(),
+            registry_url: "https://packages.example.test/a3s/".to_string(),
+            root_sha256: test_digest('f'),
+            root_version: 1,
+            timestamp_version: 4,
+            snapshot_version: 3,
+            targets_version: 2,
+            catalog_record_digest: record.descriptor_digest().unwrap(),
+        };
+        let verified = VerifiedPluginCatalogRecord::new(record, provenance).unwrap();
+        let lock = PluginPackageResolver::new(
+            PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap(),
+        )
+        .resolve(verified, Vec::new())
+        .unwrap();
+        let package_id = lock.root_package_id.clone();
+        let manifest = ExtensionManifest::parse_acl(include_str!(
+            "../../crates/extension/fixtures/manifests/plugin-v3.acl"
+        ))
+        .unwrap();
+        (
+            lock,
+            BTreeMap::from([(package_id.clone(), manifest)]),
+            BTreeMap::from([(package_id, InstallDisposition::Add)]),
+        )
+    }
+
+    fn reviewed_providers(
+        transitions: &[PlannedPackageTransition],
+        manifests: &BTreeMap<String, ExtensionManifest>,
+    ) -> Vec<PlannedProviderEvidence> {
+        let mut providers = Vec::new();
+        for transition in transitions {
+            let state = transition.after.as_ref().unwrap();
+            let manifest = manifests.get(&transition.package_id).unwrap();
+            for surface in &state.release.surfaces {
+                if !matches!(
+                    surface.kind,
+                    PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
+                ) {
+                    continue;
+                }
+                let qualified = PlanQualifiedSurfaceRef {
+                    package_id: transition.package_id.clone(),
+                    surface: surface.reference(),
+                };
+                if is_static_surface(manifest, surface.kind, &surface.id) {
+                    providers.push(
+                        native_provider_evidence(qualified, &state.release.package_sha256).unwrap(),
+                    );
+                } else {
+                    providers.push(PlannedProviderEvidence {
+                        surface: qualified,
+                        provider_id: "managed-runtime".to_string(),
+                        provider_build_id: "build-1".to_string(),
+                        capability_digest: test_digest('a'),
+                        semantics_profile_digest: test_digest('b'),
+                        enforcement: PlanEnforcementProfile::Container,
+                    });
+                }
+            }
+        }
+        providers.sort_by(|left, right| left.surface.cmp(&right.surface));
+        providers
+    }
+
+    fn reviewed_authorization(
+        lock: &PluginPackageLock,
+        transitions: Vec<PlannedPackageTransition>,
+        providers: Vec<PlannedProviderEvidence>,
+    ) -> ReviewedCognitivePackageAuthorizationProvider {
+        let mut draft = PluginOperationPlanDraft::new(
+            PluginOperationAction::Install,
+            lock.root_package_id.clone(),
+            format!("use/{}", lock.root_package_id),
+            transitions,
+            providers,
+            Vec::new(),
+            PlannedOperationImpact {
+                download_bytes: lock.packages[0].catalog.record.archive.length,
+                installed_bytes_after: lock.packages[0].catalog.record.package.expanded_bytes,
+                reclaimed_bytes: 0,
+                drain_required: false,
+                retained_data: false,
+                okf_changes: Vec::new(),
+            },
+            PlannedStateEvidence {
+                state_revision: 2,
+                capability_generation: 1,
+                receipt_digest: None,
+            },
+        )
+        .unwrap();
+        draft.package_lock_digest = Some(lock.descriptor_digest().unwrap());
+        let plan = draft
+            .bind(PluginOperationPlanBinding {
+                operation_id: "install:managed-runtime".to_string(),
+                created_at_ms: 100,
+                expires_at_ms: 200,
+                scope: PlanScope {
+                    kind: PlanScopeKind::User,
+                    id: "current".to_string(),
+                },
+                authority: PlanAuthority {
+                    actor: PlanActor::User,
+                    decision: PlanPolicyDecision::Allow,
+                    policy_digest: test_digest('e'),
+                    confirmation_required: false,
+                },
+            })
+            .unwrap();
+        let envelope =
+            PluginOperationPlanEnvelope::new_with_package_lock(plan, lock.clone()).unwrap();
+        ReviewedCognitivePackageAuthorizationProvider::new(envelope, None).unwrap()
+    }
+
+    fn test_digest(seed: char) -> String {
+        format!("sha256:{}", seed.to_string().repeat(64))
+    }
 }

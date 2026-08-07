@@ -5,10 +5,10 @@ use std::sync::Mutex;
 
 use a3s_runtime::contract::{
     ArtifactRef, HealthCheckKind, IsolationLevel, MountKind, NetworkMode, ResourceControl,
-    RuntimeActionRequest, RuntimeApplyRequest, RuntimeCapabilities, RuntimeExecRequest,
-    RuntimeExecResult, RuntimeFeature, RuntimeHealthObservation, RuntimeHealthState,
-    RuntimeInspection, RuntimeLogChunk, RuntimeLogQuery, RuntimeLogStream, RuntimeObservation,
-    RuntimeRemoval, RuntimeUnitClass, RuntimeUnitState,
+    RuntimeActionRequest, RuntimeApplyRequest, RuntimeCapabilities, RuntimeEvidence,
+    RuntimeExecRequest, RuntimeExecResult, RuntimeFeature, RuntimeHealthObservation,
+    RuntimeHealthState, RuntimeInspection, RuntimeLogChunk, RuntimeLogQuery, RuntimeLogStream,
+    RuntimeObservation, RuntimeRemoval, RuntimeServiceEndpoint, RuntimeUnitClass, RuntimeUnitState,
 };
 use a3s_runtime::{ProviderId, RuntimeClient, RuntimeError, RuntimeResult};
 use a3s_use_core::{
@@ -144,6 +144,7 @@ pub(super) fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
         ],
         features: vec![
             RuntimeFeature::DurableIdentity,
+            RuntimeFeature::ServiceTcp,
             RuntimeFeature::Logs,
             RuntimeFeature::Stop,
             RuntimeFeature::Remove,
@@ -243,11 +244,21 @@ impl RuntimeClient for FakeRuntime {
         }
         let running = self.converge;
         let task = request.spec.class == RuntimeUnitClass::Task;
+        let spec_digest = request.spec.digest().map_err(RuntimeError::Protocol)?;
+        let mut claims = BTreeMap::new();
+        if !task && running {
+            for port in &request.spec.network.ports {
+                RuntimeServiceEndpoint::node_local_tcp(&port.name, 31_337)
+                    .map_err(RuntimeError::Protocol)?
+                    .insert_claim(&mut claims)
+                    .map_err(RuntimeError::Protocol)?;
+            }
+        }
         let observation = RuntimeObservation {
             schema: RuntimeObservation::SCHEMA.to_string(),
             unit_id: request.spec.unit_id.clone(),
             generation: request.spec.generation,
-            spec_digest: request.spec.digest().map_err(RuntimeError::Protocol)?,
+            spec_digest: spec_digest.clone(),
             class: request.spec.class,
             state: if task && running {
                 RuntimeUnitState::Succeeded
@@ -275,7 +286,12 @@ impl RuntimeClient for FakeRuntime {
                 }),
             outputs: Vec::new(),
             usage: None,
-            evidence: None,
+            evidence: Some(RuntimeEvidence {
+                provider_build: self.capabilities.provider_build.clone(),
+                spec_digest,
+                semantics_profile_digest: request.spec.semantics_profile_digest.clone(),
+                claims,
+            }),
             provider_attestation: None,
             failure: None,
         };
@@ -314,6 +330,7 @@ impl RuntimeClient for FakeRuntime {
         current.state = RuntimeUnitState::Stopped;
         current.observed_at_ms = 1_100;
         current.finished_at_ms = Some(1_100);
+        current.clear_service_endpoints();
         Ok(RuntimeInspection::Found {
             schema: RuntimeInspection::SCHEMA.to_string(),
             observation: Box::new(current.clone()),

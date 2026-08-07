@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use a3s_runtime::contract::{RuntimeObservation, RuntimeUnitClass};
+use a3s_runtime::contract::{RuntimeObservation, RuntimeServiceEndpoint, RuntimeUnitClass};
 use a3s_use_core::{
     PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
 };
@@ -51,6 +51,7 @@ pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
         surface: &ToolSurface,
         plan: &RuntimeSurfacePlan,
         observation: &RuntimeObservation,
+        runtime_endpoint: &RuntimeServiceEndpoint,
         idempotency_key: &str,
     ) -> UseResult<RuntimeEndpointRef>;
 
@@ -60,8 +61,32 @@ pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
         surface: &PluginMcpSurface,
         plan: &RuntimeSurfacePlan,
         observation: &RuntimeObservation,
+        runtime_endpoint: &RuntimeServiceEndpoint,
         idempotency_key: &str,
     ) -> UseResult<PluginMcpServiceReadiness>;
+
+    /// Hide one exact Gateway binding and wait for calls admitted through it.
+    ///
+    /// Implementations must be idempotent for the supplied operation key. The
+    /// Runtime Service remains available until this completes, so a route can
+    /// never outlive its upstream generation during normal retirement.
+    async fn drain_service(
+        &self,
+        intent: &PluginLifecycleIntent,
+        receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
+        idempotency_key: &str,
+    ) -> UseResult<()>;
+
+    /// Remove one already-drained, receipt-owned Gateway binding.
+    ///
+    /// This must not remove a route with a different endpoint identity or
+    /// generation. Retrying an already completed removal returns success.
+    async fn remove_service(
+        &self,
+        intent: &PluginLifecycleIntent,
+        receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
+        idempotency_key: &str,
+    ) -> UseResult<()>;
 }
 
 /// Tool/MCP lifecycle adapter backed by explicit Runtime selections and durable
@@ -199,6 +224,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                         self.deadline_at_ms,
                     )
                     .await?;
+                let runtime_endpoint = service_endpoint(selected.plan(), activation.observation())?;
                 let endpoint = self
                     .readiness
                     .bind_tool_service(
@@ -206,6 +232,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                         surface,
                         selected.plan(),
                         activation.observation(),
+                        &runtime_endpoint,
                         idempotency_key,
                     )
                     .await?;
@@ -263,6 +290,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                 self.deadline_at_ms,
             )
             .await?;
+        let runtime_endpoint = service_endpoint(selected.plan(), activation.observation())?;
         let readiness = self
             .readiness
             .bind_mcp_service(
@@ -270,6 +298,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                 surface,
                 selected.plan(),
                 activation.observation(),
+                &runtime_endpoint,
                 idempotency_key,
             )
             .await?;
@@ -327,12 +356,12 @@ impl RuntimePluginSurfaceLifecycleHost {
             )
             .map(Some);
         }
-        self.remove_binding(selected, &receipt, idempotency_key)
+        self.retire_binding(intent, selected, &receipt, idempotency_key)
             .await?;
         Ok(None)
     }
 
-    async fn stop_or_remove_runtime(
+    async fn stop_runtime(
         &self,
         intent: &PluginLifecycleIntent,
         kind: PluginSurfaceKind,
@@ -359,13 +388,57 @@ impl RuntimePluginSurfaceLifecycleHost {
         }
         let selected = self.selected(intent, kind, surface_id)?;
         validate_selected_receipt(intent, selected, &receipt)?;
-        self.remove_binding(selected, &receipt, idempotency_key)
+        if let RuntimeBindingReceipt::Service(service) = &receipt {
+            self.readiness
+                .drain_service(intent, service, idempotency_key)
+                .await?;
+            selected
+                .client()
+                .stop_service(
+                    service,
+                    request_id("stop", idempotency_key),
+                    self.deadline_at_ms,
+                )
+                .await?;
+        }
+        projection_evidence(label, intent, surface_id, idempotency_key)
+    }
+
+    async fn remove_runtime(
+        &self,
+        intent: &PluginLifecycleIntent,
+        kind: PluginSurfaceKind,
+        surface_id: &str,
+        idempotency_key: &str,
+        label: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        validate_surface(intent, kind, surface_id)?;
+        let qualified = qualified_surface(intent, kind, surface_id);
+        let Some(receipt) = self
+            .store
+            .get_generation(&intent.scope, &qualified, intent.generation)
+            .await?
+        else {
+            return missing_runtime_evidence(label, intent, surface_id, idempotency_key);
+        };
+        if receipt.generation() != intent.generation
+            || receipt.package_digest() != intent.package_digest
+        {
+            return Err(runtime_lifecycle_error(
+                "use.plugin.runtime_lifecycle_binding_changed",
+                "A different Runtime binding generation was preserved during lifecycle cleanup.",
+            ));
+        }
+        let selected = self.selected(intent, kind, surface_id)?;
+        validate_selected_receipt(intent, selected, &receipt)?;
+        self.retire_binding(intent, selected, &receipt, idempotency_key)
             .await?;
         projection_evidence(label, intent, surface_id, idempotency_key)
     }
 
-    async fn remove_binding(
+    async fn retire_binding(
         &self,
+        intent: &PluginLifecycleIntent,
         selected: &SelectedRuntimeSurface,
         receipt: &RuntimeBindingReceipt,
         idempotency_key: &str,
@@ -373,6 +446,9 @@ impl RuntimePluginSurfaceLifecycleHost {
         match receipt {
             RuntimeBindingReceipt::Task(_) => {}
             RuntimeBindingReceipt::Service(service) => {
+                self.readiness
+                    .drain_service(intent, service, idempotency_key)
+                    .await?;
                 selected
                     .client()
                     .stop_service(
@@ -380,6 +456,9 @@ impl RuntimePluginSurfaceLifecycleHost {
                         request_id("stop", idempotency_key),
                         self.deadline_at_ms,
                     )
+                    .await?;
+                self.readiness
+                    .remove_service(intent, service, idempotency_key)
                     .await?;
                 selected
                     .client()
@@ -455,7 +534,7 @@ impl PluginToolLifecycleHost for RuntimePluginSurfaceLifecycleHost {
                 projection_evidence("tool-launcher-hidden", intent, &surface.id, idempotency_key)
             }
             _ => {
-                self.stop_or_remove_runtime(
+                self.stop_runtime(
                     intent,
                     PluginSurfaceKind::Tool,
                     &surface.id,
@@ -486,7 +565,7 @@ impl PluginToolLifecycleHost for RuntimePluginSurfaceLifecycleHost {
                 )
             }
             _ => {
-                self.stop_or_remove_runtime(
+                self.remove_runtime(
                     intent,
                     PluginSurfaceKind::Tool,
                     &surface.id,
@@ -528,7 +607,7 @@ impl PluginMcpLifecycleHost for RuntimePluginSurfaceLifecycleHost {
                 )
             }
             PluginMcpLaunch::StreamableHttp { .. } => {
-                self.stop_or_remove_runtime(
+                self.stop_runtime(
                     intent,
                     PluginSurfaceKind::Mcp,
                     &surface.id,
@@ -557,7 +636,7 @@ impl PluginMcpLifecycleHost for RuntimePluginSurfaceLifecycleHost {
                 )
             }
             PluginMcpLaunch::StreamableHttp { .. } => {
-                self.stop_or_remove_runtime(
+                self.remove_runtime(
                     intent,
                     PluginSurfaceKind::Mcp,
                     &surface.id,
@@ -568,6 +647,30 @@ impl PluginMcpLifecycleHost for RuntimePluginSurfaceLifecycleHost {
             }
         }
     }
+}
+
+fn service_endpoint(
+    plan: &RuntimeSurfacePlan,
+    observation: &RuntimeObservation,
+) -> UseResult<RuntimeServiceEndpoint> {
+    let port_name = match plan.contract() {
+        RuntimeSurfaceContract::ToolService { port_name, .. }
+        | RuntimeSurfaceContract::McpService { port_name, .. } => port_name,
+        RuntimeSurfaceContract::ToolTask { .. } => {
+            return Err(runtime_lifecycle_error(
+                "use.plugin.runtime_lifecycle_plan_mismatch",
+                "A Runtime Task cannot publish a persistent Service endpoint.",
+            ));
+        }
+    };
+    RuntimeServiceEndpoint::from_observation(observation, port_name).map_err(|error| {
+        runtime_lifecycle_error(
+            "use.plugin.runtime_service_endpoint_invalid",
+            format!(
+                "The Runtime Service did not publish its exact generation-bound endpoint: {error}"
+            ),
+        )
+    })
 }
 
 fn validate_tool_plan(surface: &ToolSurface, plan: &RuntimeSurfacePlan) -> UseResult<()> {

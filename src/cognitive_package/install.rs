@@ -16,8 +16,8 @@ use crate::plugin_lifecycle::{
 
 use super::grant::authorize_planned_operation;
 use super::plan::{
-    install_generations, install_operation, install_plan_packages, now_ms, package_state_revision,
-    static_provider_evidence,
+    install_generations, install_operation, install_plan_packages, now_ms,
+    operation_provider_evidence, package_state_revision,
 };
 use super::store::PendingPackageGraphOperation;
 use super::{
@@ -166,6 +166,7 @@ impl CognitivePackageManager {
                     &manifests,
                     &changed_manifests,
                     &self.scope,
+                    self.authorization.as_ref(),
                 )?;
                 pending
             }
@@ -536,10 +537,12 @@ fn validate_replay(
     admitted_manifests: &BTreeMap<String, ExtensionManifest>,
     changed_manifests: &BTreeMap<String, ExtensionManifest>,
     scope: &PlanScope,
+    authorization: &dyn super::CognitivePackageAuthorizationProvider,
 ) -> UseResult<()> {
     pending.validate()?;
     let expected_packages = install_plan_packages(lock, dispositions)?;
-    let expected_providers = static_provider_evidence(&lock.packages, admitted_manifests)?;
+    let expected_providers =
+        operation_provider_evidence(&lock.packages, admitted_manifests, authorization)?;
     let state_revision = package_state_revision(pending.envelope.plan.state.capability_generation)?;
     let expected_generations = install_generations(lock, dispositions, state_revision)?;
     if pending.envelope.package_lock.as_ref() != Some(lock)

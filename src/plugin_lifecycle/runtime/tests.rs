@@ -5,10 +5,10 @@ use std::sync::{Arc, Mutex};
 
 use a3s_runtime::contract::{
     ArtifactRef, HealthCheckKind, IsolationLevel, MountKind, NetworkMode, ResourceControl,
-    RuntimeActionRequest, RuntimeApplyRequest, RuntimeCapabilities, RuntimeExecRequest,
-    RuntimeExecResult, RuntimeFeature, RuntimeHealthObservation, RuntimeHealthState,
-    RuntimeInspection, RuntimeLogChunk, RuntimeLogQuery, RuntimeObservation, RuntimeRemoval,
-    RuntimeUnitClass, RuntimeUnitState,
+    RuntimeActionRequest, RuntimeApplyRequest, RuntimeCapabilities, RuntimeEvidence,
+    RuntimeExecRequest, RuntimeExecResult, RuntimeFeature, RuntimeHealthObservation,
+    RuntimeHealthState, RuntimeInspection, RuntimeLogChunk, RuntimeLogQuery, RuntimeObservation,
+    RuntimeRemoval, RuntimeServiceEndpoint, RuntimeUnitClass, RuntimeUnitState,
 };
 use a3s_runtime::{
     ProviderId, RuntimeClient, RuntimeClientRegistry, RuntimeError, RuntimeProviderFactory,
@@ -16,7 +16,7 @@ use a3s_runtime::{
 };
 use a3s_use_core::{
     McpReleaseDescriptor, PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef,
-    ToolReleaseDescriptor, UseResult,
+    ToolReleaseDescriptor, UseError, UseResult,
 };
 use a3s_use_extension::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 use async_trait::async_trait;
@@ -175,6 +175,19 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     assert_eq!(readiness.calls.load(Ordering::SeqCst), 2);
 
     let stopped_tool = host.stop_tool(&intent, tool, "disable-tool").await.unwrap();
+    assert_eq!(tool_runtime.stop_count.load(Ordering::SeqCst), 1);
+    assert_eq!(tool_runtime.remove_count.load(Ordering::SeqCst), 0);
+    assert_eq!(readiness.drains.load(Ordering::SeqCst), 1);
+    assert_eq!(readiness.removals.load(Ordering::SeqCst), 0);
+    assert!(store
+        .get(&intent.scope, &tool_plan.surface())
+        .await
+        .unwrap()
+        .is_some());
+    let removed_tool = host
+        .remove_tool(&intent, tool, "uninstall-tool")
+        .await
+        .unwrap();
     let removed_mcp = host
         .remove_mcp(&intent, mcp, "uninstall-mcp")
         .await
@@ -183,6 +196,8 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     assert_eq!(tool_runtime.remove_count.load(Ordering::SeqCst), 1);
     assert_eq!(mcp_runtime.stop_count.load(Ordering::SeqCst), 1);
     assert_eq!(mcp_runtime.remove_count.load(Ordering::SeqCst), 1);
+    assert_eq!(readiness.drains.load(Ordering::SeqCst), 3);
+    assert_eq!(readiness.removals.load(Ordering::SeqCst), 2);
     assert!(store
         .get(&intent.scope, &tool_plan.surface())
         .await
@@ -194,6 +209,12 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
         .unwrap()
         .is_none());
 
+    assert_eq!(
+        host.remove_tool(&intent, tool, "uninstall-tool")
+            .await
+            .unwrap(),
+        removed_tool
+    );
     assert_eq!(
         host.stop_tool(&intent, tool, "disable-tool").await.unwrap(),
         stopped_tool
@@ -303,9 +324,61 @@ async fn runtime_lifecycle_prepares_next_generation_and_retires_only_the_prior_g
     assert_eq!(next_runtime.remove_count.load(Ordering::SeqCst), 0);
 }
 
+#[tokio::test]
+async fn gateway_drain_failure_preserves_runtime_and_binding_for_replay() {
+    let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
+    let intent = intent(&manifest);
+    let tool = manifest
+        .tools
+        .iter()
+        .find(|surface| matches!(&surface.workload, ToolWorkload::Service(_)))
+        .unwrap();
+    let plan = tool_plan(&intent, tool);
+    let runtime = Arc::new(FakeRuntime::new(capabilities(&plan, "tool-runtime")));
+    let unused_mcp = Arc::new(FakeRuntime::new(capabilities(&plan, "mcp-runtime")));
+    let selection = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
+    let readiness = Arc::new(RecordingReadiness {
+        fail_drain: true,
+        ..RecordingReadiness::default()
+    });
+    let temporary = tempfile::tempdir().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let host = RuntimePluginSurfaceLifecycleHost::new(
+        package_root(),
+        selection,
+        store.clone(),
+        readiness.clone(),
+    );
+
+    host.prepare_tool(
+        &intent,
+        tool,
+        key(&intent, PluginSurfaceKind::Tool, &tool.id),
+    )
+    .await
+    .unwrap();
+    let error = host
+        .stop_tool(&intent, tool, "drain-must-complete")
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.plugin.gateway_drain_failed");
+    assert_eq!(readiness.drains.load(Ordering::SeqCst), 1);
+    assert_eq!(runtime.stop_count.load(Ordering::SeqCst), 0);
+    assert_eq!(runtime.remove_count.load(Ordering::SeqCst), 0);
+    assert!(store
+        .get_generation(&intent.scope, &plan.surface(), intent.generation)
+        .await
+        .unwrap()
+        .is_some());
+}
+
 #[derive(Default)]
 struct RecordingReadiness {
     calls: AtomicUsize,
+    drains: AtomicUsize,
+    removals: AtomicUsize,
+    fail_drain: bool,
 }
 
 #[async_trait]
@@ -316,8 +389,10 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
         surface: &ToolSurface,
         _plan: &RuntimeSurfacePlan,
         _observation: &RuntimeObservation,
+        runtime_endpoint: &RuntimeServiceEndpoint,
         _idempotency_key: &str,
     ) -> UseResult<RuntimeEndpointRef> {
+        assert_eq!(runtime_endpoint.port_name, "http");
         self.calls.fetch_add(1, Ordering::SeqCst);
         RuntimeEndpointRef::parse(endpoint_id(intent, &surface.id))
     }
@@ -328,8 +403,10 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
         surface: &PluginMcpSurface,
         plan: &RuntimeSurfacePlan,
         observation: &RuntimeObservation,
+        runtime_endpoint: &RuntimeServiceEndpoint,
         _idempotency_key: &str,
     ) -> UseResult<PluginMcpServiceReadiness> {
+        assert_eq!(runtime_endpoint.port_name, "mcp");
         self.calls.fetch_add(1, Ordering::SeqCst);
         let RuntimeSurfaceContract::McpService {
             protocol_version, ..
@@ -344,6 +421,32 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
                 observation.observed_at_ms + 1,
             )?,
         ))
+    }
+
+    async fn drain_service(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
+        _idempotency_key: &str,
+    ) -> UseResult<()> {
+        self.drains.fetch_add(1, Ordering::SeqCst);
+        if self.fail_drain {
+            return Err(UseError::new(
+                "use.plugin.gateway_drain_failed",
+                "The test Gateway refused to drain its exact route.",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn remove_service(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
+        _idempotency_key: &str,
+    ) -> UseResult<()> {
+        self.removals.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 }
 
@@ -398,11 +501,20 @@ impl RuntimeClient for FakeRuntime {
 
     async fn apply(&self, request: &RuntimeApplyRequest) -> RuntimeResult<RuntimeObservation> {
         self.apply_count.fetch_add(1, Ordering::SeqCst);
+        let spec_digest = request.spec.digest().map_err(RuntimeError::Protocol)?;
+        let port = request.spec.network.ports.first().ok_or_else(|| {
+            RuntimeError::Protocol("test Runtime Service omitted its declared port".to_string())
+        })?;
+        let mut claims = BTreeMap::new();
+        RuntimeServiceEndpoint::node_local_tcp(&port.name, 31_337)
+            .map_err(RuntimeError::Protocol)?
+            .insert_claim(&mut claims)
+            .map_err(RuntimeError::Protocol)?;
         let observation = RuntimeObservation {
             schema: RuntimeObservation::SCHEMA.to_string(),
             unit_id: request.spec.unit_id.clone(),
             generation: request.spec.generation,
-            spec_digest: request.spec.digest().map_err(RuntimeError::Protocol)?,
+            spec_digest: spec_digest.clone(),
             class: request.spec.class,
             state: RuntimeUnitState::Running,
             provider_resource_id: Some("resource-01".to_string()),
@@ -417,7 +529,12 @@ impl RuntimeClient for FakeRuntime {
             }),
             outputs: Vec::new(),
             usage: None,
-            evidence: None,
+            evidence: Some(RuntimeEvidence {
+                provider_build: self.capabilities.provider_build.clone(),
+                spec_digest,
+                semantics_profile_digest: request.spec.semantics_profile_digest.clone(),
+                claims,
+            }),
             provider_attestation: None,
             failure: None,
         };
@@ -452,6 +569,7 @@ impl RuntimeClient for FakeRuntime {
         observation.state = RuntimeUnitState::Stopped;
         observation.observed_at_ms = 1_100;
         observation.finished_at_ms = Some(1_100);
+        observation.clear_service_endpoints();
         Ok(RuntimeInspection::Found {
             schema: RuntimeInspection::SCHEMA.to_string(),
             observation: Box::new(observation.clone()),
@@ -602,6 +720,7 @@ fn capabilities(plan: &RuntimeSurfacePlan, provider: &str) -> RuntimeCapabilitie
         ],
         features: vec![
             RuntimeFeature::DurableIdentity,
+            RuntimeFeature::ServiceTcp,
             RuntimeFeature::Stop,
             RuntimeFeature::Remove,
         ],
