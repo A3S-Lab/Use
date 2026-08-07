@@ -101,10 +101,9 @@ impl ExtensionLifecycleIdentity {
 
 /// Validated schema-v3 package bytes retained until immutable commit.
 ///
-/// Constructors preserve the same trust boundaries as the legacy installer:
-/// local packages require explicit approval, release bundles recheck their
-/// reviewed digest, and remote packages can only originate from a verified
-/// TUF download object.
+/// Constructors enforce source-specific trust boundaries: local packages
+/// require explicit approval, release bundles recheck their reviewed digest,
+/// and remote packages can only originate from a verified TUF download object.
 #[derive(Debug)]
 pub struct ExtensionLifecyclePackage {
     pub(super) source: PreparedPackageSource,

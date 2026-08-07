@@ -1,92 +1,37 @@
 ---
 title: Getting Started
-description: Install A3S Use, inspect local capabilities, and understand the boundary between the stable package foundation and plugin-platform baseline.
+description: Build the A3S Use development preview, inspect its current capabilities, and understand what is not released yet.
 ---
 
 # Getting Started
 
-A3S Use is the **AI Native Package Manager** for the A3S ecosystem. It does not replace `apt`, Homebrew, or WinGet. It manages native tools and cognitive plugins that participate in the A3S capability and security model.
+A3S Use is the **AI Native Package Manager** for A3S. It resolves and manages
+native capabilities and versioned cognitive-package graphs containing Tool,
+MCP, OKF, A3S Flow, Skill, and UI surfaces.
 
-## What is available now
+:::caution Development preview
+A3S Use has not shipped a supported product release and is not
+production-ready. Build from source for development and evaluation. Do not
+treat repository tags, internal schema numbers, or green unit tests as a
+release promise.
+:::
 
-| Capability                                                            | Status                                                        |
-| --------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Local directories and bounded archives                                | Available in v0.2                                             |
-| Digest-reviewed releases and TUF registries                           | Available in v0.2                                             |
-| Named registry replace, enable, disable, remove, and refresh          | Available through the umbrella host                           |
-| Native CLI, standard MCP, and content-bound Skills                    | Available in v0.2                                             |
-| Schema-v3 Tool, MCP, OKF, Flow, Skill, and UI contracts               | Control-plane baseline implemented on `main`                  |
-| Schema-v3 SemVer dependency resolver, exact lock, and graph lifecycle | Available for signed remote standalone CLI installs           |
-| Schema-v3 package commit/remove and capability publish/hide/drain     | P0 generation-bound hosts implemented                         |
-| OKF (Open Knowledge Format) knowledge surface                         | Standalone SQLite/FTS5 lifecycle and cited search implemented |
-| A3S Flow workflow surface                                             | Code CLI/TUI/Web local durable runtime and hot-plug E2E ready |
-| Complete Plugin Manager apply saga and production product integration | In development                                                |
+## What exists on `main`
 
-The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`. Signed remote schema-v3 records enter that graph from `a3s-use install`. The standalone host now indexes and queries OKF through a scope-isolated SQLite/FTS5 backend and proves signed generation cutover. The umbrella host provides stable-name Registry replace and enable/disable, while A3S Code composes the real Flow preflight host, resolves exact `flow.json` identities, and shares one workspace-local durable runtime across CLI, TUI, and Web. Managed Code/Web Knowledge Workspace/session carriers, Service/Gateway composition, distributed Flow scheduling/resumption, retention, and complete cross-platform real-process gates are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
+| Area                | Current implementation                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------- |
+| Package format      | Manifest v3 with six named surface kinds and required package README                               |
+| Dependencies        | Bounded SemVer resolver, exact Registry/TUF lock, forward prepare, one cutover, reverse retirement |
+| Trust               | Replaceable host-owned Registries and complete catalog-v3 provenance                               |
+| Lifecycle           | Install, upgrade, uninstall, enable, and disable through immutable plan-v4 review/apply            |
+| Local surface hosts | Tool Task, stdio MCP, Skill/UI projection, SQLite/FTS5 OKF, injected `a3s-flow` preflight          |
+| Managed hosts       | Runtime Service, HTTP MCP/Gateway, managed Knowledge/UI composition still in development           |
+| Platforms           | Linux and macOS development gates; Windows preview checks, not release parity                      |
 
-## Install a release
-
-Install the complete, verified release through the A3S CLI:
-
-```bash
-a3s install use --source release
-a3s use doctor --json
-a3s use capabilities --json
-```
-
-Prebuilt archives are also published on [GitHub Releases](https://github.com/A3S-Lab/Use/releases). Keep each archive's binary, Skills, Dashboard, model assets, licenses, and provenance files together. Copying the facade binary alone does not preserve the complete product surface.
-
-## Try built-in capabilities
-
-Render a web page to a local file:
-
-```bash
-a3s use browser render https://example.com --output page.html
-```
-
-Run local OCR and return JSON:
-
-```bash
-a3s use ocr extract ./scan.png --json
-```
-
-Inspect the immutable capability snapshot:
-
-```bash
-a3s-use capability snapshot --json
-```
-
-## Install a cognitive package
-
-Use the umbrella Plugin Manager for the reviewed user lifecycle:
-
-```bash
-a3s plugin search research
-a3s plugin inspect acme/research
-a3s plugin install acme/research --channel stable
-a3s plugin upgrade acme/research
-a3s plugin uninstall acme/research
-```
-
-The standalone engine can also install one signed package and its complete
-SemVer dependency closure from an explicit host-selected Registry:
-
-```bash
-a3s-use install acme/research \
-  --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
-  --version 2.0.0 \
-  --json
-
-a3s-use uninstall acme/research --json
-```
-
-Add `--package-lock-digest sha256:<64-hex-digits>` when applying a separately
-reviewed resolution. Lock drift fails before any archive download. Runtime
-Service, HTTP MCP, and Flow packages require their embedding host's explicit
-Runtime/Gateway or A3S Flow lifecycle factory. Standalone OKF uses the bundled
-SQLite/FTS5 Knowledge host.
+Only the current preview contract line is accepted: manifest v3, catalog v3,
+receipt v3, plan v4, host protocol v4, manager tools v3, pending graph v2, and
+enablement state/operation v2. Superseded preview state is rejected with
+cleanup and reinstall guidance.
 
 ## Build from source
 
@@ -97,39 +42,67 @@ git clone https://github.com/A3S-Lab/Use.git
 cd Use
 cargo build --workspace --bins --locked
 ./target/debug/a3s-use doctor --json
+./target/debug/a3s-use capability snapshot --json
 ```
 
-Run development checks inside the Use repository:
+Run the repository gates from the Use checkout:
 
 ```bash
 cargo fmt --all -- --check
-cargo test --workspace --all-features --locked
+cargo test --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
-## Install a local package
+## Exercise the development CLI
 
-An unsigned local directory, `.tar.gz`, `.tgz`, or `.zip` requires explicit trust:
+The standalone CLI can resolve a signed package and its complete SemVer
+dependency closure from an explicit host-selected Registry:
 
 ```bash
-a3s-use component install acme/calendar \
-  --from ./calendar-package \
-  --allow-unsigned \
+a3s-use install acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --version 2.0.0 \
   --json
 
-a3s-use component status calendar --json
-a3s-use extension disable acme/calendar --json
-a3s-use extension enable acme/calendar --json
-a3s-use component uninstall calendar --json
+a3s-use upgrade acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --json
+
+a3s-use uninstall acme/research --json
 ```
 
-The package ID is the stable lifecycle identity; a route is only a presentation and dispatch alias. A3S Use preserves native `argv`, stdin, stdout, stderr, exit status, and standard MCP. It does not add a universal action envelope.
+Add `--package-lock-digest sha256:<64-hex-digits>` when applying a separately
+reviewed resolution. Lock drift fails before archive download. These Registry
+values are illustrative; the project does not advertise a public production
+Registry.
+
+Search an exact promoted OKF projection with citations:
+
+```bash
+a3s-use knowledge search "retrieval policy" --limit 5 --json
+```
+
+Runtime Service, HTTP MCP, Flow, Knowledge, Skill, and UI readiness always
+depends on an explicit embedding-host owner. Missing ownership fails closed;
+Use does not substitute a permissive runner or source-only binding.
+
+## Why there is no install script yet
+
+A cross-platform one-line installer belongs to the first supported release
+gate. It must install reproducible archives with checksums, signatures, SBOM,
+provenance, licenses, and all required assets on Linux, macOS, and Windows.
+Publishing a convenience script before those artifacts and platform gates
+exist would create a false release surface.
 
 ## Next steps
 
-- [Understand the native + cognitive package model](./package-model)
-- [Package durable workflows with A3S Flow](./flow)
-- [Design shareable OKF knowledge packages](./okf)
-- [Configure supply-chain trust and authorization boundaries](./trust-security)
-- [Inspect ownership across Plugin Manager, Use, and Runtime](./architecture)
-- [Track delivery milestones](./roadmap)
+- [Understand the cognitive-package model](./package-model)
+- [Package workflows with A3S Flow](./flow)
+- [Design OKF knowledge packages](./okf)
+- [Configure Registry trust and authorization](./trust-security)
+- [Inspect ownership across Use and its hosts](./architecture)
+- [Track release blockers](./roadmap)

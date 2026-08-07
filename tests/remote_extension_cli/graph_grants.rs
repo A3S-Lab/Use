@@ -381,8 +381,7 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         false,
     )
     .unwrap();
-    let unreviewed = CognitivePackageManager::new(extension_registry.clone()).unwrap();
-    let planned = unreviewed.plan_enablement(&request).await.unwrap();
+    let planned = manager.plan_enablement(&request).await.unwrap();
     assert_eq!(
         planned.status,
         CognitivePackageEnablementPlanStatus::Planned
@@ -412,25 +411,13 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
     );
     assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
 
-    // The v1 mutation API remains fail-closed for compatibility, while new
-    // product adapters consume the explicit plan above and inject its exact
-    // confirmation through the reviewed provider.
-    let confirmation_required = unreviewed.set_enablement(&request).await.unwrap_err();
+    let confirmation_required = manager
+        .apply_enablement(&request, planned_envelope.clone(), None)
+        .await
+        .unwrap_err();
     assert_eq!(
         confirmation_required.code,
-        "use.plugin.package_confirmation_required"
-    );
-    assert_eq!(
-        confirmation_required.details["operationId"],
-        request.operation_id
-    );
-    assert_eq!(
-        confirmation_required.details["plan"]["plan"]["action"],
-        "disable"
-    );
-    assert_eq!(
-        confirmation_required.details["plan"]["plan"]["schema"],
-        "a3s.use.plugin-operation-plan.v4"
+        "use.plugin.package_reviewed_authorization_invalid"
     );
     assert!(
         extension_registry
@@ -451,9 +438,21 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
     );
     let interrupted_manager = manager.clone();
     let interrupted_request = request.clone();
+    let interrupted_plan = planned_envelope.clone();
+    let interrupted_confirmation = PluginOperationConfirmation {
+        schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_string(),
+        operation_id: interrupted_plan.plan.operation_id.clone(),
+        plan_digest: interrupted_plan.plan_digest.clone(),
+        confirmed_by: PlanActor::User,
+        confirmed_at_ms: interrupted_plan.plan.created_at_ms + 1,
+    };
     let interrupted = tokio::spawn(async move {
         interrupted_manager
-            .set_enablement(&interrupted_request)
+            .apply_enablement(
+                &interrupted_request,
+                interrupted_plan,
+                Some(interrupted_confirmation),
+            )
             .await
     });
 
@@ -490,7 +489,7 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
     }
     assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
     assert!(extension_registry
-        .find_route("worker-v1")
+        .find_published_route("worker-v1")
         .await
         .unwrap()
         .is_none());
@@ -516,10 +515,12 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         }),
     )
     .unwrap();
-    let disabled = restarted.set_enablement(&request).await.unwrap();
+    let disabled = apply_planned_enablement(&restarted, &request)
+        .await
+        .unwrap();
     assert!(disabled.changed);
     assert!(!disabled.replayed);
-    assert_eq!(authorization_count.load(Ordering::SeqCst), 2);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
     assert_eq!(
         extension_registry.snapshot().await.unwrap().generation,
         disable_cutover_generation.unwrap()
@@ -541,9 +542,11 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         WorkspaceGrantLifecyclePhase::Completed
     );
 
-    let replayed = restarted.set_enablement(&request).await.unwrap();
+    let replayed = apply_planned_enablement(&restarted, &request)
+        .await
+        .unwrap();
     assert!(replayed.replayed);
-    assert_eq!(authorization_count.load(Ordering::SeqCst), 2);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
 
     let enable = CognitivePackageEnablementRequest::new(
         "enablement:worker:enable:0002",
@@ -554,10 +557,13 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
     .unwrap();
     let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
     assert_eq!(
-        restarted.set_enablement(&enable).await.unwrap_err().code,
+        apply_planned_enablement(&restarted, &enable)
+            .await
+            .unwrap_err()
+            .code,
         "use.extension.busy"
     );
-    assert_eq!(authorization_count.load(Ordering::SeqCst), 3);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
     assert_eq!(
         grant_store
             .observe_change_set(&enable.operation_id)
@@ -568,7 +574,7 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         WorkspaceGrantLifecyclePhase::Prepared
     );
     assert!(extension_registry
-        .find_route("worker-v1")
+        .find_published_route("worker-v1")
         .await
         .unwrap()
         .is_none());
@@ -576,9 +582,9 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
     FileExt::unlock(&registry_lock).unwrap();
     drop(registry_lock);
 
-    let enabled = restarted.set_enablement(&enable).await.unwrap();
+    let enabled = apply_planned_enablement(&restarted, &enable).await.unwrap();
     assert!(enabled.changed);
-    assert_eq!(authorization_count.load(Ordering::SeqCst), 3);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
     assert_eq!(
         extension_registry.snapshot().await.unwrap().generation,
         disable_cutover_generation.unwrap() + 1
@@ -600,7 +606,7 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
     );
     assert_granted(&home, &restarted.scope().id, &package_digest, &permissions).await;
     assert!(extension_registry
-        .find_route("worker-v1")
+        .find_published_route("worker-v1")
         .await
         .unwrap()
         .is_some());

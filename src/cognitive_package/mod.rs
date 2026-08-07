@@ -19,11 +19,10 @@ mod upgrade;
 
 use a3s_use_core::{
     LockedPluginPackage, PlanScope, PlanScopeKind, PluginOperationPlanEnvelope, PluginPackageLock,
-    PluginReleaseChannel, UseError, UseResult, VerifiedPluginCatalogRecord,
+    UseError, UseResult, VerifiedPluginCatalogRecord,
 };
 use a3s_use_extension::{
-    inspect_remote_plugin, ExtensionLifecyclePackage, ExtensionManifest, ExtensionRegistry,
-    InstalledExtension, PluginCatalogHost, TrustedRegistry,
+    ExtensionLifecyclePackage, ExtensionManifest, ExtensionRegistry, InstalledExtension,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -302,26 +301,6 @@ impl CognitivePackageManager {
 
     pub fn authorization(&self) -> &dyn CognitivePackageAuthorizationProvider {
         self.authorization.as_ref()
-    }
-
-    /// Return true only for a complete signed schema-v3 catalog record.
-    /// Missing catalog metadata means the caller may use the compatible
-    /// schema-v1/v2 installer; malformed or incompatible catalog state fails.
-    pub async fn is_remote_cognitive_package(
-        &self,
-        registry: &TrustedRegistry,
-        package_id: &str,
-        version: Option<&str>,
-        channel: PluginReleaseChannel,
-    ) -> UseResult<bool> {
-        let host = PluginCatalogHost::new(current_host_target()?, env!("CARGO_PKG_VERSION"))?;
-        match inspect_remote_plugin(registry, &host, package_id, version, Some(channel)).await {
-            Ok(inspection) => {
-                Ok(inspection.plugin.record.schema == a3s_use_core::PLUGIN_CATALOG_SCHEMA_V3)
-            }
-            Err(error) if error.code == "use.extension.catalog_package_missing" => Ok(false),
-            Err(error) => Err(error),
-        }
     }
 
     fn graph_store(&self) -> InstalledPackageGraphStore {

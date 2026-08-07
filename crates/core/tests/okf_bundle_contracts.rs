@@ -93,39 +93,6 @@ fn inspects_v02_without_rejecting_extensions_or_safe_dangling_links() {
 }
 
 #[test]
-fn accepts_v01_timestamp_and_body_citations_fallbacks() {
-    let files = vec![
-        OkfBundleFile::new(
-            "index.md",
-            b"---\nokf_version: \"0.1\"\n---\n\n# Concepts\n",
-        ),
-        OkfBundleFile::new(
-            "metric.md",
-            br#"---
-type: Metric
-timestamp: '2026-05-28T22:53:05+00:00'
----
-
-# Definition
-
-Revenue for a fiscal year.
-
-# Citations
-
-- https://example.com/policy
-"#,
-        ),
-    ];
-
-    let inspection =
-        inspect_okf_bundle(OkfFormatVersion::V0_1, OkfBundleLimits::default(), files).unwrap();
-
-    assert_eq!(inspection.format_version, OkfFormatVersion::V0_1);
-    assert_eq!(inspection.concept_count, 1);
-    assert!(inspection.diagnostics.is_empty());
-}
-
-#[test]
 fn rejects_malformed_concepts_and_unsafe_resolution() {
     for content in [
         b"# Missing frontmatter\n".as_slice(),

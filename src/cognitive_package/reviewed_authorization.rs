@@ -82,6 +82,10 @@ impl CognitivePackageAuthorizationProvider for ReviewedCognitivePackageAuthoriza
         "reviewed-host-plan"
     }
 
+    fn reviewed_plan(&self) -> Option<&PluginOperationPlanEnvelope> {
+        Some(&self.expected)
+    }
+
     fn bind_authority(&self, draft: &PluginOperationPlanDraft) -> UseResult<PlanAuthority> {
         self.verify_draft(draft)?;
         Ok(self.expected.plan.authority.clone())

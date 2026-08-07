@@ -5,7 +5,6 @@ use crate::UseResult;
 
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract,
-    PLUGIN_MANAGER_TOOLSET_SCHEMA, PLUGIN_MANAGER_TOOLSET_SCHEMA_V2,
     PLUGIN_MANAGER_TOOLSET_SCHEMA_V3,
 };
 
@@ -40,26 +39,18 @@ pub struct PluginManagerToolAnnotations {
 }
 
 impl PluginManagerToolset {
-    pub fn v1() -> Self {
-        Self::contract(PLUGIN_MANAGER_TOOLSET_SCHEMA, false, false)
-    }
-
-    pub fn v2() -> Self {
-        Self::contract(PLUGIN_MANAGER_TOOLSET_SCHEMA_V2, true, false)
-    }
-
     pub fn v3() -> Self {
-        Self::contract(PLUGIN_MANAGER_TOOLSET_SCHEMA_V3, true, true)
+        Self::contract()
     }
 
-    fn contract(schema: &str, okf: bool, flow: bool) -> Self {
+    fn contract() -> Self {
         Self {
-            schema: schema.to_owned(),
+            schema: PLUGIN_MANAGER_TOOLSET_SCHEMA_V3.to_owned(),
             tools: vec![
                 tool(
                     "plugin_search",
                     "Search verified plugin catalog metadata without installing packages.",
-                    search_schema(okf, flow),
+                    search_schema(),
                     annotations(true, false, true, true),
                 ),
                 tool(
@@ -83,13 +74,13 @@ impl PluginManagerToolset {
                 tool(
                     "plugin_plan_install",
                     "Resolve an install and return a digest-bound plan without applying it.",
-                    plan_schema(okf, flow),
+                    plan_schema(),
                     annotations(true, false, false, true),
                 ),
                 tool(
                     "plugin_plan_upgrade",
                     "Resolve an upgrade and return a digest-bound plan without applying it.",
-                    plan_schema(okf, flow),
+                    plan_schema(),
                     annotations(true, false, false, true),
                 ),
                 tool(
@@ -105,16 +96,16 @@ impl PluginManagerToolset {
                     annotations(false, true, true, true),
                 ),
                 tool(
-                    "plugin_enable",
-                    "Idempotently enable an installed plugin in one bounded scope.",
+                    "plugin_plan_enable",
+                    "Return a digest-bound enablement plan without applying it.",
                     package_scope_schema(),
-                    annotations(false, false, true, false),
+                    annotations(true, false, false, false),
                 ),
                 tool(
-                    "plugin_disable",
-                    "Idempotently disable an installed plugin while retaining installed data.",
+                    "plugin_plan_disable",
+                    "Return a digest-bound disablement plan without applying it.",
                     package_scope_schema(),
-                    annotations(false, false, true, false),
+                    annotations(true, false, false, false),
                 ),
             ],
         }
@@ -130,9 +121,9 @@ impl PluginManagerToolset {
     }
 
     pub fn validate(&self) -> UseResult<()> {
-        if self != &Self::v1() && self != &Self::v2() && self != &Self::v3() {
+        if self != &Self::v3() {
             return Err(manager_error(
-                "The plugin manager MCP tool inventory differs from the frozen v1/v2/v3 contracts.",
+                "The plugin manager MCP tool inventory differs from the current frozen contract.",
             ));
         }
         Ok(())
@@ -180,14 +171,14 @@ const fn annotations(
     }
 }
 
-fn search_schema(okf: bool, flow: bool) -> Value {
+fn search_schema() -> Value {
     object_schema(
         vec![
             (
                 "query",
                 json!({"type":"string","minLength":1,"maxLength":256}),
             ),
-            ("kind", surface_kind_schema(okf, flow)),
+            ("kind", surface_kind_schema()),
             ("channel", channel_schema()),
             ("cursor", bounded_string(512)),
             (
@@ -236,13 +227,13 @@ fn package_scope_schema() -> Value {
     )
 }
 
-fn plan_schema(okf: bool, flow: bool) -> Value {
+fn plan_schema() -> Value {
     object_schema(
         vec![
             ("packageId", package_id_schema()),
             ("versionRequirement", bounded_string(64)),
             ("channel", channel_schema()),
-            ("surfaces", selected_surfaces_schema(okf, flow)),
+            ("surfaces", selected_surfaces_schema()),
             ("scopeKind", scope_kind_schema()),
             ("scopeId", machine_id_schema()),
         ],
@@ -263,7 +254,7 @@ fn apply_schema() -> Value {
     )
 }
 
-fn selected_surfaces_schema(okf: bool, flow: bool) -> Value {
+fn selected_surfaces_schema() -> Value {
     json!({
         "type": "array",
         "minItems": 1,
@@ -273,7 +264,7 @@ fn selected_surfaces_schema(okf: bool, flow: bool) -> Value {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "kind": surface_kind_schema(okf, flow),
+                "kind": surface_kind_schema(),
                 "id": {
                     "type": "string",
                     "pattern": "^[a-z][a-z0-9-]{0,62}$"
@@ -292,14 +283,8 @@ fn machine_id_schema() -> Value {
     json!({"type":"string","pattern":MACHINE_ID_PATTERN})
 }
 
-fn surface_kind_schema(okf: bool, flow: bool) -> Value {
-    if flow {
-        json!({"type":"string","enum":["flow","mcp","okf","skill","tool","ui"]})
-    } else if okf {
-        json!({"type":"string","enum":["mcp","okf","skill","tool","ui"]})
-    } else {
-        json!({"type":"string","enum":["mcp","skill","tool","ui"]})
-    }
+fn surface_kind_schema() -> Value {
+    json!({"type":"string","enum":["flow","mcp","okf","skill","tool","ui"]})
 }
 
 fn channel_schema() -> Value {

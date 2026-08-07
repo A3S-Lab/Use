@@ -88,6 +88,12 @@ impl CognitivePackageAuthorizationEvidence {
 pub trait CognitivePackageAuthorizationProvider: Send + Sync {
     fn name(&self) -> &'static str;
 
+    /// Return the exact host-reviewed plan when this provider represents an
+    /// apply operation. Standalone providers never synthesize this evidence.
+    fn reviewed_plan(&self) -> Option<&PluginOperationPlanEnvelope> {
+        None
+    }
+
     fn bind_authority(&self, draft: &PluginOperationPlanDraft) -> UseResult<PlanAuthority>;
 
     /// Bind the complete trusted operation identity around planner-owned

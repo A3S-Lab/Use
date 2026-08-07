@@ -134,41 +134,6 @@ impl ExtensionGraphCapabilityLifecycleHost {
 
 #[async_trait]
 impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHost {
-    async fn publish_capabilities(
-        &self,
-        package_lock: &a3s_use_core::PluginPackageLock,
-        intents: &[PluginLifecycleIntent],
-        idempotency_key: &str,
-    ) -> UseResult<Vec<PluginPackagePublicationEvidence>> {
-        let identities = intents
-            .iter()
-            .map(lifecycle_identity)
-            .collect::<UseResult<Vec<_>>>()?;
-        let results = self
-            .registry
-            .publish_lifecycle_package_graph(package_lock, &identities)
-            .await?;
-        if results.len() != intents.len() {
-            return Err(UseError::new(
-                "use.plugin.package_graph_publication_invalid",
-                "The Registry omitted a package from dependency-closure publication.",
-            ));
-        }
-        intents
-            .iter()
-            .zip(results)
-            .map(|(intent, result)| {
-                let evidence = checkpoint_evidence(
-                    "package-graph-capability-published",
-                    intent,
-                    idempotency_key,
-                    &result.extension.receipt.descriptor_digest()?,
-                )?;
-                PluginPackagePublicationEvidence::new(&intent.package_id, evidence)
-            })
-            .collect()
-    }
-
     async fn publish_capabilities_with_cutover(
         &self,
         package_lock: &a3s_use_core::PluginPackageLock,
@@ -198,46 +163,6 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
             publication.registry_snapshot_digest,
         )?;
         Ok(PluginGraphCapabilityPublication::new(packages, cutover))
-    }
-
-    async fn publish_upgrade_capabilities(
-        &self,
-        package_lock: &a3s_use_core::PluginPackageLock,
-        candidate_intents: &[PluginLifecycleIntent],
-        removed_intents: &[PluginLifecycleIntent],
-        idempotency_key: &str,
-    ) -> UseResult<Vec<PluginPackagePublicationEvidence>> {
-        let candidates = candidate_intents
-            .iter()
-            .map(lifecycle_identity)
-            .collect::<UseResult<Vec<_>>>()?;
-        let removed = removed_intents
-            .iter()
-            .map(lifecycle_identity)
-            .collect::<UseResult<Vec<_>>>()?;
-        let results = self
-            .registry
-            .publish_lifecycle_package_graph_transition(package_lock, &candidates, &removed)
-            .await?;
-        if results.len() != candidate_intents.len() {
-            return Err(UseError::new(
-                "use.plugin.package_graph_publication_invalid",
-                "The Registry omitted a candidate from dependency-graph upgrade publication.",
-            ));
-        }
-        candidate_intents
-            .iter()
-            .zip(results)
-            .map(|(intent, result)| {
-                let evidence = checkpoint_evidence(
-                    "package-graph-capability-published",
-                    intent,
-                    idempotency_key,
-                    &result.extension.receipt.descriptor_digest()?,
-                )?;
-                PluginPackagePublicationEvidence::new(&intent.package_id, evidence)
-            })
-            .collect()
     }
 
     async fn publish_upgrade_capabilities_with_cutover(
@@ -496,11 +421,11 @@ impl ExtensionCapabilityLifecycleHost {
 
 #[async_trait]
 impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
-    async fn publish_capability(
+    async fn publish_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
         idempotency_key: &str,
-    ) -> UseResult<PluginLifecycleEvidence> {
+    ) -> UseResult<PluginCapabilityPublication> {
         validate_action(
             intent,
             &[
@@ -509,21 +434,6 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
                 PluginLifecycleAction::Enable,
             ],
             "capability publication",
-        )?;
-        let identity = lifecycle_identity(intent)?;
-        let result = self.registry.publish_lifecycle_package(&identity).await?;
-        result_evidence("capability-published", intent, idempotency_key, &result)
-    }
-
-    async fn publish_capability_with_cutover(
-        &self,
-        intent: &PluginLifecycleIntent,
-        idempotency_key: &str,
-    ) -> UseResult<PluginCapabilityPublication> {
-        validate_action(
-            intent,
-            &[PluginLifecycleAction::Enable],
-            "capability publication with Grant cutover",
         )?;
         let identity = lifecycle_identity(intent)?;
         let publication = self
@@ -538,24 +448,6 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
         )
     }
 
-    async fn hide_capability(
-        &self,
-        intent: &PluginLifecycleIntent,
-        idempotency_key: &str,
-    ) -> UseResult<PluginLifecycleEvidence> {
-        validate_action(
-            intent,
-            &[
-                PluginLifecycleAction::Disable,
-                PluginLifecycleAction::Uninstall,
-            ],
-            "capability hiding",
-        )?;
-        let identity = lifecycle_identity(intent)?;
-        let result = self.registry.hide_lifecycle_package(&identity).await?;
-        result_evidence("capability-hidden", intent, idempotency_key, &result)
-    }
-
     async fn hide_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
@@ -563,8 +455,11 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
     ) -> UseResult<PluginCapabilityPublication> {
         validate_action(
             intent,
-            &[PluginLifecycleAction::Disable],
-            "capability hiding with Grant cutover",
+            &[
+                PluginLifecycleAction::Disable,
+                PluginLifecycleAction::Uninstall,
+            ],
+            "capability hiding",
         )?;
         let identity = lifecycle_identity(intent)?;
         let publication = self
@@ -577,6 +472,24 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
             "capability-hidden",
             publication,
         )
+    }
+
+    async fn retire_hidden_capability(
+        &self,
+        intent: &PluginLifecycleIntent,
+        idempotency_key: &str,
+    ) -> UseResult<PluginLifecycleEvidence> {
+        validate_action(
+            intent,
+            &[PluginLifecycleAction::Uninstall],
+            "hidden capability retirement",
+        )?;
+        let identity = lifecycle_identity(intent)?;
+        let result = self
+            .registry
+            .retire_hidden_lifecycle_package(&identity)
+            .await?;
+        result_evidence("capability-hidden", intent, idempotency_key, &result)
     }
 
     async fn complete_capability_cutover(&self, idempotency_key: &str) -> UseResult<()> {

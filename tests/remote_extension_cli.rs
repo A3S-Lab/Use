@@ -11,12 +11,12 @@ use a3s_use::cognitive_package::{
 };
 use a3s_use_core::{
     CatalogAvailability, CatalogSurface, PluginCatalogRecord, PluginDesiredState,
-    PluginObservedState, PluginOperationAction, PluginPackageDependency, PluginReleaseChannel,
-    PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA_V3,
+    PluginObservedState, PluginOperationAction, PluginPackageDependency, PluginPackageLockHost,
+    PluginReleaseChannel, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA_V3,
 };
 use a3s_use_extension::{
-    prepare_remote_package, ExtensionPaths, ExtensionRegistry, ResolvedRemotePackage,
-    TrustedRegistry,
+    prepare_remote_package, resolve_remote_package_lock, ExtensionPaths, ExtensionRegistry,
+    ResolvedRemotePackage, TrustedRegistry,
 };
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
@@ -51,7 +51,7 @@ fn registry_install(
     server: &TestServer,
     repository: &TestRepository,
     home: &std::path::Path,
-    plan_digest: Option<&str>,
+    package_lock_digest: Option<&str>,
     extra: &[&str],
 ) -> Output {
     let mut command = Command::new(binary());
@@ -66,8 +66,8 @@ fn registry_install(
         "--trust-root",
         &repository.root_sha256,
     ]);
-    if let Some(plan_digest) = plan_digest {
-        command.args(["--registry-plan-digest", plan_digest]);
+    if let Some(package_lock_digest) = package_lock_digest {
+        command.args(["--package-lock-digest", package_lock_digest]);
     }
     command
         .args(extra)
@@ -179,6 +179,31 @@ fn lifecycle_journal_path(home: &std::path::Path, package_id: &str) -> std::path
         .join(scope)
         .join(package_id)
         .join("active.json")
+}
+
+async fn apply_planned_enablement(
+    manager: &CognitivePackageManager,
+    request: &CognitivePackageEnablementRequest,
+) -> a3s_use_core::UseResult<a3s_use::cognitive_package::CognitivePackageEnablementResult> {
+    let mut planned = Box::new(Box::pin(manager.plan_enablement(request)).await?);
+    if let Some(result) = planned.result.take() {
+        return Ok(result);
+    }
+    let envelope = planned.plan.take().ok_or_else(|| {
+        a3s_use_core::UseError::new(
+            "test.plugin.enablement_plan_missing",
+            "The integration test expected an enablement plan to apply.",
+        )
+    })?;
+    let confirmation = (envelope.plan.authority.decision == a3s_use_core::PlanPolicyDecision::Ask)
+        .then(|| a3s_use_core::PluginOperationConfirmation {
+            schema: a3s_use_core::PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_string(),
+            operation_id: envelope.plan.operation_id.clone(),
+            plan_digest: envelope.plan_digest.clone(),
+            confirmed_by: a3s_use_core::PlanActor::User,
+            confirmed_at_ms: envelope.plan.created_at_ms + 1,
+        });
+    Box::pin(manager.apply_enablement(request, envelope, confirmation)).await
 }
 
 fn cognitive_skill_target(

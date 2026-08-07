@@ -1,718 +1,287 @@
 # A3S Use Plugin Platform Development Plan
 
-- Status: implementation in progress
-- Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted; M0K-A
-  bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
-  package-level six-surface lifecycle foundation accepted 2026-08-03, the
-  cognitive-package dependency/lock foundation accepted 2026-08-03, and the
-  unified A3S Flow surface and exact-generation preflight binding foundation
-  accepted 2026-08-04; exact `flow.json` identity plus shared Code
-  CLI/TUI/Web local durable execution and observation accepted 2026-08-04;
-  public Grant-impact planning and umbrella/managed-host graph authority
-  forwarding, permission-bearing enablement Grant cutover, and
-  host-capabilities-v4 reviewed enablement planning completed 2026-08-06;
-  local A3S Code CLI/Web reviewed enablement and restart replay completed
-  2026-08-06; Code TUI `/packages` reviewed enablement and full `PlanScope`
-  lifecycle/store identity completed 2026-08-07; standalone SQLite/FTS5
-  Knowledge indexing, scoped cited retrieval, and signed generation cutover
-  completed 2026-08-07
-- Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
-- Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
-- Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
-- Contracts: [Plugin Contract Reference](plugin-contracts.md)
+Status: active
+Last updated: 2026-08-07
 
-This document defines the technical execution plan for the milestones in the
-plugin platform roadmap. The roadmap owns priority and completion status; this
-plan owns execution workstreams, validation, delivery risks, and non-goals.
-The architecture document owns domain and runtime boundaries.
+## Objective
 
-## Target Architecture
+Deliver a supported cross-platform AI Native Package Manager that installs one
+signed cognitive package and its complete SemVer dependency closure, then
+hot-publishes Tool, MCP, OKF, A3S Flow, Skill, and UI through one reviewed,
+recoverable lifecycle.
 
-```text
-                   trusted, signed plugin registries
-                     metadata first; payload on demand
-                                  |
-                         Plugin Catalog Service
-                    search / inspect / resolve / lock
-                                  |
-                  +---------------+---------------+
-                  |                               |
-               user CLI/Web                 agent MCP client
-                  |                               |
-                  +-------- Plugin Manager -------+
-                            plan / apply
-                                  |
-                    umbrella authorization broker
-                  ACL policy / confirmation / grants
-                                  |
-                      host Plugin Runtime Broker
-              signed templates / explicit provider evidence
-                                  |
-                      A3S Use package store
-          revalidate / install forward / retain / remove reverse
-                                  |
-                 package lifecycle intent + journal
-                 ordered typed hosts / idempotent replay
-                                  |
-                       capability snapshot/watch
-       +----------+----------+----------+----------+----------+----------+
-       |          |          |          |          |          |          |
-   Tool Tasks Tool Services MCP servers OKF bundles A3S Flows  Skills   UI assets
-    Runtime     Runtime      standard   Knowledge   durable   guidance  sandboxed
-      Task      Service      protocol     index      engine               view
-```
+The product is not released and not production-ready. This plan assumes one
+current contract baseline and explicitly excludes pre-release compatibility
+work.
 
-Ownership remains explicit:
+## Engineering constraints
 
-- the umbrella A3S host owns configured registries, trust roots, install
-  policy, user confirmation, and workspace authorization;
-- A3S Use owns package validation, immutable activation, receipts, leases,
-  surface reconciliation, provider/runtime bindings, and owned-file removal;
-- each plugin repository owns its Tool CLI/HTTP and MCP vocabulary, A3S Flow
-  source, Skill guidance, UI and OKF assets, version, license, and reproducible package;
-- A3S Code/Web adapts the shared manager and capability registry, and composes
-  the sole A3S Flow engine for workspace-local execution, without becoming a
-  second package manager or workflow engine.
+1. Work in the relevant Use crate/application, not the A3S monorepo root.
+2. Human-authored package/configuration files use ACL and `a3s-acl`.
+3. CLI, TUI, Web, and agent tools call one Plugin Manager.
+4. Planning is read-only; `plugin_apply_plan` is the only manager mutation.
+5. Registry URLs and trust roots are host configuration.
+6. Required missing provider/readiness evidence fails before publication.
+7. Package, Grant, provider, and capability generations cut over together.
+8. Recovery uses exact durable evidence and never infers deleted state.
+9. Superseded preview contracts, APIs, and disk layouts are deleted, not
+   migrated.
+10. Modified behavior receives focused and integration tests.
 
-## Core Contracts
+## Current baseline
 
-### Package surfaces
+Completed in the Use repository:
 
-One package may declare multiple named surfaces in any compatible combination:
+- manifest v3 and all six named surface contracts;
+- catalog v3, complete TUF metadata, verified provenance, and exact receipts;
+- bounded SemVer resolver, package lock, prior/candidate upgrade binding;
+- operation plan v4, confirmation, policy and host/provider evidence;
+- manager toolset v3 with plan/apply enablement;
+- immutable package generations and dependency graph records;
+- dependency-forward install, one cutover, reverse uninstall and upgrade GC;
+- durable Registry cutover replay and exact lifecycle journals;
+- Workspace Grant composition, joint rollback, and drain-before-revoke;
+- standalone executable Task, stdio MCP, Skill/UI, and SQLite/FTS5 OKF hosts;
+- injectable real `a3s-flow` Native TypeScript lifecycle host;
+- CLI diagnostics, package graph commands, Knowledge search, and watchers;
+- current-schema fixtures, digest goldens, remote Registry tests, recovery
+  tests, and GitHub Pages site.
 
-| Surface | Contract | Runtime authority |
-| --- | --- | --- |
-| Skill | Existing `SKILL.md` plus content digest | Guidance only; never grants permission |
-| Tool Task | A non-interactive CLI program with native argv and exit semantics | One-shot A3S Runtime Task, or constrained legacy native runner |
-| Tool Service | A private HTTP API with health and optional content-bound OpenAPI | Long-lived A3S Runtime Service behind a scoped binding |
-| MCP | Standard stdio or Streamable HTTP server | Runtime Service for HTTP; supervised session for stdio |
-| Flow | Durable workflow with explicit Tool/MCP/OKF dependencies | One injected `a3s-flow` engine with a typed runtime adapter |
-| UI | Declared HTML, CSS, and JavaScript assets | Sandboxed view with scoped declared backend bindings |
-| OKF | Conformant Open Knowledge Format Markdown concept bundle | Non-executable, exact-generation A3S Knowledge projection and local cited-search index |
+## Workstream A — Managed provider completion
 
-The checked-in schema-v3 baseline implements Tool, MCP, OKF, Flow, Skill, and UI.
-M0K-B freezes the OKF manifest, package validation, catalog, plan,
-receipt/projection, and host-observation contracts. M0K-C-A adds the injected
-Knowledge port, exact-byte stage request, checked adapter client, and durable
-generation store. A package-level intent/journal/coordinator, typed Runtime,
-Flow/Skill/UI, and OKF adapters, and P0 package/capability hosts now provide the
-in-crate lifecycle foundation. Lifecycle intents and Runtime/Flow/OKF evidence
-retain full User/Workspace scope, and every durable store separates kind before
-hashing the scope ID. Grant-aware graph paths additionally compose
-durable Grant prepare, exact cutover, pre-cutover rollback, drain, and
-retirement around that package graph. The standalone composition now supplies
-the real SQLite/FTS5 Knowledge backend; production publication still requires
-typed Service/Gateway provider composition and managed Code/Web Workspace/
-session carriers. Umbrella graph paths and fenced managed-host graph/enablement
-paths already invoke Use's reviewed-plan authorization provider.
+Priority: P0
+Status: in progress
 
-Package enablement has two deliberately separate generations. The immutable
-artifact generation identifies installed bytes, manifests, bindings, and
-lifecycle intent. A Use-owned package-state generation provides optimistic
-concurrency for desired enablement and continues monotonically across
-enable/disable, upgrade, uninstall, and reinstall. Schema-v3 packages now
-persist that state and the complete operation request/result under
-operation- and package-scoped cross-process locks, resume lifecycle checkpoints
-after a crash, and replay a completed operation without touching the package
-graph. Every changed toggle now binds operation-plan v4 to an exact retained
-artifact, receipt, scope, state revision, capability generation, and derived
-OKF/secret/Grant impact. With an injected authorization provider,
-permission-bearing enable prepares the exact Workspace Grant before atomic
-publication; disable checkpoints atomic hide before draining accepted calls and
-revoking the prior Grant. Enablement state-v2 and operation-v2 records retain
-the immutable plan, confirmation, Grant snapshot/change set, resolved Grants,
-ceilings, and admission time. Host capability v4 adds an explicit enablement
-planning request/result: `NoChange` is terminal, while a changed transition
-returns the exact plan-v4 envelope and reuses digest-only apply with
-confirmation. Direct managed-host enablement request v1 remains a
-permission-free compatibility path. Local Code CLI, idle-only TUI `/packages`,
-and Web now expose the same User-scoped reviewed two-step contract and durable
-replay.
+### A1 Runtime Service
 
-Flow uses one product model. `engine = "a3s-flow"` is fixed; `native-ts` is the
-first admitted execution adapter. Use owns package integrity, dependency
-ordering, and catalog projection. Code/Web or another embedding host owns
-compiler preflight and durable execution. Code now resolves one strict,
-path-free installed identity from `flow.json`, revalidates and stages the exact
-source before mutation, and shares one workspace-local event store across CLI,
-TUI, and Web. Existing `flow.json` documents are therefore executed or deployed
-through a typed adapter to that same Flow identity rather than retained as a
-parallel runtime. Distributed workers and automatic suspended-work resumption
-remain a later host concern. Web currently exposes the run/history API without
-a Marketplace Flow control surface; CLI and TUI provide the interactive local
-execution UX.
+- Compose production Task and Service providers through typed
+  `RuntimeClientRegistry` objects.
+- Bind provider/build/capability evidence during planning and revalidate during
+  apply.
+- Implement exact-generation health, invocation, drain, and removal.
+- Prove no native fallback when the selected provider disappears.
 
-The dependency foundation is also implemented: schema-v3 ACL package
-dependencies, a required bounded `README.md`, bounded deterministic SemVer
-resolution, canonical `a3s.use.plugin-package-lock.v1`, lock-bound plans and
-host requests, dependency-forward remote download, retained-generation checks,
-reverse removal, and one Registry snapshot cutover for changed packages. This
-is an in-crate foundation until P1/P4 route the umbrella CLI and Web through it.
+Acceptance:
 
-A Plugin Tool is not an MCP `tools/list` item. It is the real executable
-workload on which a Skill or UI may depend. A3S Use manages its lifecycle and
-binding but preserves its CLI or HTTP vocabulary. It does not introduce a
-private action schema.
+- signed Tool Task and Service packages install, invoke, upgrade, and uninstall;
+- N remains callable only through leases accepted before N+1 cutover; and
+- changed provider evidence fails before archive download or mutation.
 
-UI continues to have no generic execute message. It may reach only
-manifest-declared Tool Service bindings through an origin-scoped reverse proxy
-or use the existing reviewed MCP bridge. It never receives an A3S OS token,
-registry key, host filesystem path, ambient network access, or direct Runtime
-or MCP bearer token.
+### A2 HTTP MCP and Gateway
 
-### Lifecycle state
+- Compose HTTP/streamable MCP with Gateway-owned endpoint lifecycle.
+- Bind private service identity, MCP endpoint, health, and permission ceiling.
+- Drain prior sessions and routes before removing the prior generation.
+- Keep standard MCP transport; do not add an A3S RPC dialect.
 
-The manager exposes installation and activation as separate state:
+Acceptance:
+
+- stdio and HTTP MCP use the same package plan/cutover model; and
+- endpoint or health failure keeps the required MCP and dependents unpublished.
+
+### A3 Managed Knowledge
+
+- Add Code/Web Workspace and session carriers for exact OKF projections.
+- Implement retention, quota, garbage collection, and leased prior-generation
+  query semantics.
+- Preserve complete User/Workspace scope in every database, request, citation,
+  and observation.
+
+Acceptance:
+
+- signed install/search/upgrade/search/uninstall/restart works through managed
+  hosts with exact citations and no stale projection access.
+
+### A4 Sandboxed UI
+
+- Define per-package origin, CSP, navigation, storage, and backend bindings.
+- Bind UI to exact Skill/Tool/MCP/Flow readiness and Grant evidence.
+- Add generation-aware hot replacement and drain.
+
+Acceptance:
+
+- UI cannot access undeclared hosts, processes, files, secrets, or network;
+- failed N+1 UI leaves N selected; and
+- uninstall leaves no origin, storage, route, or binding.
+
+## Workstream B — A3S Code CLI/TUI/Web convergence
+
+Priority: P0
+Status: in progress
+
+- Run one shared Plugin Manager application service.
+- Keep Registry source state, catalog cache, plan generation, policy, apply, and
+  operation replay out of view-specific code.
+- TUI `/packages`, Web marketplace, CLI, and agent MCP must display and apply
+  the same operation ID and plan digest.
+- Use one watcher keyed by capability generation plus revision.
+- Preserve exact Flow and OKF history without repository-local paths.
+
+Required E2E:
 
 ```text
-available
-  -> resolved
-  -> planned
-  -> staged
-  -> installed
-  -> enabled
-  -> ready
-  -> draining
-  -> removed
+search
+→ inspect catalog/source/permissions
+→ plan install
+→ confirm/apply
+→ invoke Tool + MCP + Flow + OKF + UI/Skill
+→ plan/apply exact-generation upgrade
+→ invoke N+1 and inspect retained N history
+→ plan/apply uninstall
+→ restart all processes and verify terminal replay/no residue
 ```
 
-`incompatible`, `broken`, `degraded`, and `disabled` are explicit diagnosable
-states. A Flow is ready only after its required Tool/MCP bindings and OKF
-generation are usable. A Skill is ready only after every required Flow or
-direct Tool/MCP/OKF dependency is ready.
-
-This sequence is a user-facing phase view derived from separate desired and
-observed state. It is not persisted as one mutable linear enum.
-
-Install and upgrade commit a new immutable generation. Disable and uninstall
-first remove the route from new callers, then acquire the exclusive drain
-lease. Existing calls retain the exact generation they accepted.
-
-Disable and enable do not mint or replace an artifact generation. They advance
-the independent package-state generation only when desired state changes. A
-stale expected state generation or an operation ID reused for different input
-is rejected before lifecycle mutation. Disable hides capabilities, drains
-accepted calls, and stops surfaces; enable prepares surfaces and publishes one
-capability snapshot. Package bytes and installed dependency ownership remain
-unchanged.
-
-The M2 implementation projects this model into schema v3 capability bindings.
-Its deterministic Surface Reconciler calculates dependency levels, required
-closure, host ownership, desired/observed surface state, aggregate readiness,
-and publication eligibility. The package coordinator consumes the same graph,
-persists deterministic checkpoints, prepares surfaces forward, and removes
-them in reverse. Concrete Runtime, immutable Flow/Skill/UI evidence, and OKF adapters exist,
-but production host injection is not connected: missing observations remain
-explicit `pending` evidence, while a Skill can be projected only when its
-required dependency closure is already usable. OKF enters this same operation
-through exact receipt/observation evidence; it may not publish an independent
-knowledge generation outside the package operation.
-
-### Searchable catalog metadata
-
-Signed catalog records must be sufficient to search and review a plugin without
-downloading its archive:
-
-- package ID, display name, description, publisher, keywords, and categories;
-- semantic version, channel, host compatibility, and target;
-- normalized schema-v3 package dependencies with canonical SemVer ranges;
-- declared surface IDs, Tool Task/Service kinds, and MCP tool count when
-  publisher-generated;
-- declared OKF surface IDs, format version, concept/file counts, expanded
-  bytes, limits, and content digest in catalog v3;
-- compressed bytes, expanded bytes, and file count;
-- package-level permission summary;
-- license and canonical source repository;
-- registry identity, TUF role versions, archive target, and SHA-256;
-- for catalog v3, one exact bounded `planning-v1.json` target name, length,
-  and SHA-256 for pre-archive executable planning;
-- deprecation, replacement, or security-withdrawal state.
-
-Search operates locally over verified metadata after a bounded refresh. Results
-retain registry provenance. A browser or model must not invent an installable
-identity that was not returned by a verified catalog.
-
-### Immutable operation plan
-
-Install, upgrade, and uninstall plans include:
-
-- action, package ID, component ID, selected version, channel, and target;
-- source registry and trust-root identity;
-- the exact transitive package lock and its canonical digest when dependencies
-  are present;
-- exact archive length and SHA-256;
-- expanded package digest when known;
-- surfaces added or removed;
-- Skill/UI/OKF dependency changes and selected Runtime provider evidence;
-- permission and secret-grant diff;
-- download and installed-size estimates;
-- affected workspace grants;
-- whether calls must drain;
-- the canonical plan digest and expiration time.
-
-Apply accepts the digest, repeats resolution, and rejects any changed target,
-metadata version, permission set, package content, or ownership state.
-
-Implemented dependency-plan guarantees include deterministic bounded
-backtracking, highest-compatible selection, distinct missing/conflict/cycle/
-ambiguity errors, exact host target/version binding, package-ID-sorted canonical
-lock bytes, and plan reconstruction from every locked catalog record. Remote
-apply revalidates all locked Registry/TUF/catalog evidence before downloading
-the first archive.
-
-The executable planning boundary is
-[ADR-001](adr-001-plugin-runtime-broker-boundary.md). Catalog-v3 resolution
-downloads only the small signed planning target. A3S Use derives
-provider-neutral Task/Service templates; the host supplies explicit provider
-assignments and clients. Provider preflight, policy/grant resolution, and
-final semantics selection are two deterministic, side-effect-free passes.
-The package archive is not downloaded until an authorized apply.
-
-Implemented as of the planning baseline:
-
-- strict catalog-v3 planning-target and executable planning-bundle contracts;
-- exact TUF target-only loading and catalog rebinding;
-- provider-neutral Tool Task, Tool Service, and Streamable HTTP MCP templates;
-- explicit `RuntimeClientRegistry` provider selection and evidence; and
-- verified planning-bundle transport in the umbrella CLI component plan;
-- exact umbrella/managed-host Grant snapshot, two-pass policy, canonical
-  impact binding, and reviewed-provider forwarding for locked graph plans; and
-- schema-v3 enablement through the Use-owned package-state coordinator,
-  including plan-v4 permission-bearing Grant cutover when exact reviewed
-  authorization is injected; host capability v4 exposes durable reviewed
-  planning/apply to fenced managed hosts, while permission-free compatibility
-  toggles remain available through the shared Manager; and
-- bounded operation-keyed Registry cutover records embedded in the atomic
-  capability snapshot, including request/generation/digest binding, replay
-  after unrelated Registry mutation, conflict/capacity rejection before
-  mutation, and acknowledgement without capability generation inflation.
-
-Remaining on the critical path:
-
-- inject production Runtime Service and Gateway/HTTP MCP hosts plus managed
-  Code/Web Workspace/session Knowledge carriers into the shared Plugin Manager
-  composition;
-- complete schema-v3 graph upgrade/uninstall construction through the shared
-  CLI/Web/fenced managed-host Manager using the public lifecycle factory and
-  the same durable graph records; management MCP remains read-only;
-- coordinate the implemented exact package/Runtime N/N+1 storage, cutover,
-  rollback, drain, and removal primitives after blue/green cutover; and
-- pass CLI/Web/agent install-use-upgrade-uninstall E2E with production
-  providers.
-
-### Next implementation slices
-
-The remaining work is dependency ordered. A later slice must not bypass an
-earlier ownership or durability gate.
-
-| Slice | Scope | Required proof |
-| --- | --- | --- |
-| P0 — Package/capability hosts (complete 2026-08-03) | Installed-disabled generation commit/removal and atomic publish/hide/drain over receipt schema v3, snapshots, and route leases | Root/receipt/snapshot replay, exact removal, drain timeout, tamper rejection, and unchanged v1/v2 suites pass |
-| P0-D — Package dependency graph (complete 2026-08-03) | ACL SemVer dependencies, exact lock, Registry-set resolution/download, standalone CLI dispatch, retained dependency verification, forward install, atomic graph publication, reverse uninstall, and durable graph replay | Backtracking/conflict/cycle/ambiguity fixtures, lock drift rejection before download, cross-Registry TUF closure, retained-node checks, reverse-dependent guard, published-install repair, pending-only uninstall recovery, and symlink ownership tests pass |
-| P0-F — Unified Flow contract and Code local runtime (complete 2026-08-04) | First-class Flow inventory, `a3s-flow` identity, Native TypeScript integrity, Tool/MCP/OKF edges, lifecycle/reconciliation, exact `flow.json` resolution, immutable source staging, and one Code CLI/TUI/Web durable local store | Manifest/catalog/source drift fails before mutation; fixed run IDs are idempotent; histories survive host recreation and package upgrade/uninstall; public responses leak no managed path; no injected host means no publication |
-| P0-U — Dual-generation storage (complete 2026-08-05) | Bounded exact package receipts, snapshot-selected route leases, Runtime generation directories, exact observation, pre-cutover rollback, and receipt-owned removal | N remains callable while N+1 is staged; commit replay preserves N; moved/tampered/symlinked/over-limit state fails closed; Runtime cleanup removes only N |
-| P0-K — Standalone Knowledge (complete 2026-08-07) | Bundled SQLite/FTS5 per full User/Workspace scope; transactional stage/promote/remove; exact capability/session projection search; concept/source-digest citations; signed upgrade cutover | Atomic initialization/restart, scope-kind isolation, retained draining N, candidate rollback, exact removal, signed install/query/upgrade/uninstall, and unknown-schema rejection pass |
-| P0-G — Dependency-graph upgrade and GC core (complete 2026-08-05) | Plan-v3 prior/candidate lock binding, Add/Replace/Remove/Retain, selected downloads, shared-node retention, dependency-forward N+1 preparation, one capability cutover including removed routes, automatic unpublished-candidate rollback, reverse N retirement, exact graph CAS, and durable replay | Preparation/publication failure restores N and removes additions; successful cutover retires replacements and unreferenced dependencies exactly once; retained-receipt and applying/rolling-back crash fixtures converge without generation inflation |
-| P0-E — Package enablement core (complete 2026-08-06) | Separate immutable artifact identity from a durable Use-owned package-state generation; serialize per operation and package; checkpoint and replay schema-v3 enable/disable through the normal lifecycle without changing bytes or graph ownership; bind every changed toggle to plan-v4 retained-artifact evidence | Restart resumes an interrupted lifecycle; completed operation replay is stable; concurrent or sequential operation-ID reuse and stale generations fail before mutation; upgrade/uninstall/reinstall preserve monotonic state; missing reviewed authority fails before mutation with the immutable plan |
-| P1 — Host composition (Code baseline and standalone Knowledge complete; production providers pending) | Keep Code's public lifecycle-factory composition for executable Tool Tasks, stdio MCP, A3S Flow, and Skill/UI; carry the implemented Knowledge projection through managed Workspace sessions; add explicit Runtime Service and Gateway/HTTP MCP adapters | Standalone signed OKF lifecycle is queryable; TUI and Web produce the same intent today; unavailable production hosts continue to fail before publication |
-| P2-A — Grant graph saga (complete 2026-08-05) | Compose durable Grant prepare, exact Registry cutover, joint pre-cutover rollback, accepted-call drain, and prior-Grant retirement with package graph operations | Candidate Grant survives restart; failed publication restores package and Grant candidates; prior Grant survives until exact cutover and drain |
-| P2-B — Product Grant wiring (complete for graph mutation 2026-08-06) | Standalone derives canonical proposals/change sets/resolved Grants/ceilings after injected policy authority and exact confirmation; the reviewed-host provider preserves an external operation identity, policy, lock-bound envelope, confirmation, and User/Workspace scope across apply/replay; umbrella and managed hosts snapshot the exact scope/revision and invoke the same canonical impact planner before forwarding the reviewed envelope | Standalone, reviewed-provider, umbrella, and fenced managed-host graph paths cannot bypass or regenerate authorization, substitute scope kind/revision/authority, or launch the legacy child mutation; a signed permission-bearing Tool Task persists the exact Grant receipt |
-| P2-C — Permission-bearing enablement core (complete 2026-08-06) | Represent enable/disable as immutable plan-v4 `Retain` transitions; persist exact authorization evidence; prepare Grant before enable publication; atomically hide and checkpoint cutover before disable drain and revocation | Missing confirmation causes zero lifecycle mutation and returns the immutable plan; cutover interruption recovers without early revocation or generation inflation; completed replay does not reauthorize; capability hosts without cutover evidence fail closed before mutation |
-| P2-D — Durable Registry cutover (complete 2026-08-06) | Embed bounded lifecycle-checkpoint-keyed request, before/after generation, and capability snapshot evidence in the same atomic Registry write; acknowledge it only after package or Grant journals own the cutover | Post-cutover/pre-journal process death replays the original evidence after unrelated Registry mutation; conflicting key reuse and capacity exhaustion fail before lifecycle mutation; acknowledgement changes neither generation nor capability digest |
-| P2-E — Managed reviewed enablement (complete 2026-08-06) | Add host capability v4 plus enablement-plan request/result v1; persist exact planning evidence and operation index; bind confirmation to operation ID and plan digest; reuse digest-only apply and the existing Use saga | Signed Skill disable/restart/replay/enable succeeds without package or graph mutation; stale generation, request/digest substitution, policy drift, missing confirmation, and missing durable intent fail closed |
-| P3 — Production blue/green composition (core complete; providers pending) | Compose the implemented graph cutover, rollback, dependency GC, and retirement coordinator with Gateway/Knowledge/grant receipts | Failed N+1 leaves N callable across every production provider; successful N+1 leaks no old Runtime unit or route; provider receipts preserve the core's crash-safe removed-node behavior |
-| P4 — Product adapters (Code graph, managed host, and local CLI/TUI/Web reviewed enablement complete; providers pending) | Preserve the shared CLI/Web Marketplace journal, Code snapshot watcher, local Flow runtime, Use-owned enablement, fenced managed-host v4 path, and idle-only TUI `/packages`; add visible Web Flow controls and production provider adapters | Detached Web API covers install/run/upgrade/run/uninstall/restart with retained Flow history plus reviewed disable/restart/replay/NoChange/enable; TUI uses the same exact plan, confirmation, and digest-bound apply path; production hosts must extend the same no-restart proof |
-| P5 — Production E2E | Exercise signed and replaceable registries, policy/confirmation, crash replay, retained data, and all six surfaces on supported platforms | macOS/Linux gates pass; Windows claims remain preview until equivalent evidence exists |
-
-P1 and the remaining provider-composition work in P3 remain release blockers
-for calling schema-v3 cognitive-package lifecycle production-ready.
-P4 must include dependency-bearing graph operations
-through CLI and Web and is the hot-plug product gate. P5 is the release
-promotion gate.
-
-## Authorization Model
-
-The default agent policy is `ask`, not `allow`.
-
-```acl
-plugins {
-  schema = "a3s.plugin-policy.v1"
-
-  agent_install   = "allow"
-  agent_upgrade   = "ask"
-  agent_uninstall = "ask"
-
-  trusted_registries = ["a3s"]
-  trusted_publishers = ["a3s"]
-  allowed_surfaces   = ["flow", "mcp", "okf", "skill", "tool", "ui"]
-
-  max_download_bytes  = 52428800
-  max_installed_bytes = 268435456
-  max_packages        = 16
-  max_surfaces        = 64
-
-  allow_release_bundles = true
-  allow_user_scope      = false
-  workspace_ids         = ["workspace:research"]
-  max_workspaces        = 1
-
-  permissions {
-    plugin_data = "read-write"
-    temporary   = "read-write"
-
-    native_execution = false
-    child_process     = false
-    private_service   = true
-    secrets           = false
-
-    max_cpu_millis               = 2000
-    max_memory_bytes             = 1073741824
-    max_pids                     = 256
-    max_ephemeral_storage_bytes  = 2147483648
-
-    network "api.example.com" {
-      ports = [443]
-    }
-
-    workspace "inputs" {
-      access = "read"
-    }
-  }
-}
-```
-
-Omitted ceilings are zero, empty, or false. Exact lists and rules are
-normalized before digesting; duplicates, unknown fields, broad network
-patterns, and unattended secret grants fail closed. The policy preserves the
-following decisions:
-
-| Operation | Default agent decision | May be pre-authorized |
-| --- | --- | --- |
-| Search verified metadata | Allow | Yes |
-| Inspect or list local state | Allow | Yes |
-| Build an immutable plan | Allow | Yes |
-| Install signed declarative-only package | Ask | Yes, within all policy ceilings |
-| Install digest-pinned Runtime Tool/MCP workload | Ask | Yes, with a compatible enforced provider |
-| Install content-bound A3S Flow workflow | Ask | Yes, with an explicit compatible `a3s-flow` host adapter |
-| Install native Tool or MCP executable | Ask | Only with an enforced sandbox profile |
-| Enable or disable installed package | Ask | Yes, per workspace |
-| Uninstall receipt-owned files | Ask | Yes, when no protected grant depends on it |
-| Add or rotate a trust root | Deny | No; user only |
-| Install unsigned/local package | Deny | No; user only |
-| Grant a secret | Deny | No; user only |
-| Purge plugin user data | Deny | No; user only |
-
-Package permissions form a ceiling. Individual MCP annotations or HTTP route
-policy may be more restrictive but never more permissive. Skill text, UI or
-OKF content, Tool output, MCP descriptions, API documentation, and remote
-content cannot modify policy or authorize an install. Flow source is data and
-cannot create ambient authority; its executable and knowledge access comes
-only from explicit Tool/MCP/OKF dependency grants.
-
-Core surface selection and manager-toolset v2 now define the canonical `okf`
-value. The umbrella host must adopt it through a versioned or explicitly
-compatible ACL policy change before policy can authorize an OKF-bearing
-package. Unknown surface values continue to fail closed.
-
-Native process isolation is not equivalent to a sandbox. Until filesystem,
-environment, process, and network restrictions are enforced on a platform, a
-native executable package is reported as `native-unconfined` and cannot use
-the unattended `allow` path.
-
-## OKF Contribution Workstream
-
-OKF is a non-executable cognitive surface, not a Skill alias, MCP server,
-Runtime workload, or personal knowledge vault. The first delivery targets
-current Open Knowledge Format v0.2 with an explicit v0.1 compatibility path and
-reuses the same immutable package generation and parent saga as every other
-surface.
-
-The dependency-ordered slices are:
-
-1. **Contract and fixture (complete M0K-B):** freeze the manifest-local surface identity,
-   declared format version, v0.2/v0.1 compatibility behavior, bundle root,
-   canonical digest, size/file limits, optional dependencies, catalog fields,
-   plan impact, policy enum, receipt, projection, and observation schemas. Add
-   stable ACL/JSON digest fixtures.
-2. **Bounded conformance (complete M0K-A/M0K-B):** validate UTF-8 Markdown, properly delimited YAML
-   frontmatter, one non-empty scalar `type` on non-reserved concepts,
-   canonical concept IDs, reserved `index.md`/`log.md`, standard Markdown link
-   syntax, file/node limits, and expanded-package ownership. Preserve unknown
-   types and extension keys; report safe dangling links without rejecting the
-   bundle. Reject raw compiler inputs as active OKF authority.
-3. **Knowledge adapter foundation (complete M0K-C-A):** validate the exact
-   borrowed OKF bytes in the stage request, expose an injected
-   stage/promote/observe/remove port, check returned receipt/observation
-   evidence, and durably retain bounded exact-generation records with
-   last-good projection.
-4. **Standalone Knowledge and lifecycle (complete M0K-C-B core):** the package
-   adapter supplies idempotent stage/promote/hide/receipt-remove behavior. A
-   bundled SQLite/FTS5 backend transacts indexing and selection, joins live
-   capability snapshots, authorizes search by exact scope/projection, and
-   preserves retained in-flight and last-good generations until exact cleanup.
-5. **Managed product E2E (pending M0K-C-B/M6):** search a signed OKF-bearing package without archive
-   download; review provenance, concept count, bytes, and permission impact;
-   install and query cited concepts; upgrade atomically; disable/uninstall; and
-   recover each checkpoint after injected crashes.
-
-Implementation status (2026-08-07): M0K-A completed the shared
-`a3s.use.okf-bundle.v1` descriptor, deterministic content identity, bounded
-v0.2/v0.1 inspector, and canonical/malicious fixtures. M0K-B completed schema
-v3 manifest and full-package admission, catalog-v3 bundle evidence,
-Skill-to-OKF closure, plan/draft v2 impact, manager-toolset v2, projection
-receipt, Knowledge observation, capability projection, and Knowledge-owned
-reconciliation. Golden ACL, JSON, and complete-package digests freeze the
-slice. M0K-C-A completed the byte-exact injected adapter boundary, durable
-last-good binding store, and package-lifecycle adapter foundation. The
-standalone M0K-C-B core now provides bundled SQLite/FTS5, complete User/
-Workspace isolation, atomic stage/promote/remove, exact projection-authorized
-cited search, capability publication, and signed install/query/upgrade/
-uninstall coverage. Managed Code/Web Workspace/session carriers, umbrella ACL,
-cross-platform real-process gates, and retention/GC remain. Absent promoted
-evidence remains unpublished.
-
-The workstream does not compile PDFs, Office files, images, archives, or web
-pages during install. Independent compilers produce normalized OKF before
-packaging. The package payload reviewed by the plan is the payload promoted by
-the Knowledge host.
-
-OKF v0.2 Attested Computation fields remain inert metadata at this boundary.
-They cannot implicitly select or invoke a Tool, executor, attester, Runtime
-provider, or secret. Any executable binding must be declared and authorized
-through the existing Tool and host contracts.
-
-## User And Agent Surfaces
-
-### User commands
-
-The intended product vocabulary is:
-
-```text
-a3s plugin search <query>
-a3s plugin inspect <publisher/name>
-a3s plugin list
-a3s plugin install <publisher/name>
-a3s plugin enable <publisher/name>
-a3s plugin disable <publisher/name>
-a3s plugin uninstall <publisher/name>
-```
-
-Existing commands such as `a3s install use/<publisher>/<name>` and
-`a3s use extension ...` remain compatibility routes and call the same manager.
-There is one implementation and one receipt format.
-
-### Agent management MCP
-
-The target host exposes one standard MCP management server with:
-
-```text
-plugin_search
-plugin_inspect
-plugin_list_installed
-plugin_status
-plugin_plan_install
-plugin_plan_upgrade
-plugin_plan_uninstall
-plugin_apply_plan
-plugin_enable
-plugin_disable
-```
-
-Read-only tools carry correct MCP annotations. Apply, enable, and disable are
-mutating. Uninstall is destructive. Tools return typed failures and never fall
-back to shell, workspace edits, arbitrary URLs, or unsigned packages.
-
-The completed M4 adapter publishes only the first seven tools, ending at
-`plugin_plan_uninstall`. Plan creation may persist an immutable reviewed plan
-but cannot apply it or change active capabilities. `plugin_apply_plan`,
-`plugin_enable`, and `plugin_disable` remain absent from `tools/list` and are
-also explicitly denied by the dedicated Use worker. M6 adds them only after
-typed ACL policy, provider enforcement, and inherited parent confirmation are
-available.
-
-There is deliberately no `plugin_execute` management tool. After activation,
-the capability watcher projects Skills, managed CLI Tool shims, scoped HTTP
-Tool bindings, and MCP capabilities into the authorized session. The agent
-uses a Tool through its native CLI or HTTP vocabulary described by the Skill,
-and uses MCP through standard MCP.
-
-## Storage And Scope
-
-The target storage model is:
-
-- immutable package generations and archives are user-wide and reusable;
-- activation and grants may be workspace-scoped;
-- exact package generations have separate grant records so N and candidate
-  N+1 can coexist until the capability snapshot switches;
-- secrets remain in the host secret store and are injected only for an
-  approved package, operation, and workspace;
-- plugin data is separate from executable package files;
-- Tool and MCP Runtime bindings are non-secret receipts, not copied payloads;
-- uninstall removes package files after route drain but retains data;
-- cache eviction is separate from uninstall and never changes capability
-  receipts;
-- concurrent installs for the same package serialize through one lifecycle
-  lock and converge idempotently.
-
-Workspace grant writes additionally serialize under a dedicated store lock,
-atomically replace only the same scope/package/digest record, and preserve
-revocation tombstones. Reading a record is observational; use-time authority
-requires revalidation against the current package digest, signed ceiling, and
-clock.
-
-Plan construction must bind canonical pre-confirmation grant proposals, not
-invent a final grant digest before an `ask` decision exists. The subsequent
-user confirmation binds both plan and proposal digests; only then may apply
-finalize and persist a grant.
-
-The workspace impact's before digest identifies a sorted active-grant snapshot;
-its after digest identifies a sorted change set covering root and dependency
-packages. Resolution derives required Add/Replace/Remove entries from the
-package plan and returns prepare-grant plus delayed-revoke phases. The
-before snapshot is now built by a bounded, locked traversal of exact durable
-grant generations; stale tombstone/grant revisions and ambiguous parallel
-grants fail closed. The grant lifecycle adapter now records immutable intent,
-applies candidate receipts idempotently, checkpoints exact capability cutover,
-and retires prior receipts with crash-safe replay. The graph coordinator now
-persists candidate Grants before package preparation, jointly rolls back
-package and Grant candidates before cutover, requires exact Registry snapshot
-and generation evidence, drains prior accepted calls, and only then retires old
-Grants. The standalone manager derives and durably binds canonical Grant inputs
-after trusted authority and exact confirmation, then selects this path for
-every permission-bearing operation. Umbrella and managed-host Plugin Managers
-now snapshot the exact scope/revision, bind the same canonical impact after
-policy, and forward the unchanged reviewed authority and confirmation.
-Remaining integration composes production Runtime and Gateway hosts plus
-managed Code/Web Knowledge session carriers. Code CLI, TUI `/packages`, and Web already share the local
-plan/confirmation service, while fenced managed hosts use the versioned
-capability-v4 contract.
-
-Workspace-scoped activation must not duplicate the package payload. Global
-uninstall refuses to proceed while another protected workspace grant still
-requires the package unless the user explicitly reviews that impact.
-
-## Validation Matrix
-
-Every milestone adds focused tests at the owning layer.
+Run the sequence for User and Workspace scopes, permission-free and
+permission-bearing packages, and interrupted operations at every durable
+checkpoint.
+
+## Workstream C — Distributed A3S Flow
+
+Priority: P1
+Status: pending
+
+- Bind package Flow source/export/generation to remote scheduling without a
+  second package lifecycle.
+- Treat `flow.json` only as a visual design/deployment carrier.
+- Define execution placement, resume, cancellation, retry, and observation
+  ownership between Code, OS, Flow, Runtime, and Use.
+- Preserve the same plan, Grant, dependency edges, and package receipt for local
+  and remote execution.
+
+Acceptance:
+
+- changing placement does not change package identity or create another lock,
+  receipt, or journal;
+- local and remote observations bind the same compiled Flow generation; and
+- process/network interruption resumes without duplicate workflow effects.
+
+## Workstream D — Cross-platform hardening
+
+Priority: P0 release gate
+Status: pending
+
+### Linux
+
+- Full workspace tests on x86_64 and arm64.
+- Real-process Runtime/MCP/Flow/Knowledge/UI lifecycle.
+- Container/release-bundle conformance and filesystem failure injection.
+
+### macOS
+
+- Full workspace and real-process tests on arm64 and x86_64.
+- Quarantine, executable permission, browser/runtime, and filesystem cases.
+
+### Windows
+
+- Expand beyond compile/Core/facade/CLI coverage.
+- Test Registry/package/Grant state, reparse points, file locks, antivirus
+  contention, process groups, named resources, and reboot recovery.
+- Run the complete signed six-surface lifecycle and failure matrix.
+
+Acceptance: every advertised platform passes the same contract, lifecycle,
+recovery, and residue assertions.
+
+## Workstream E — Registry and supply-chain operations
+
+Priority: P0 release gate
+Status: pending
+
+- Operate a documented TUF Registry with root rotation, expiry, rollback
+  protection, mirror replacement, cached offline reads, and incident recovery.
+- Publish complete catalog-v3 records and planning targets only.
+- Define source replacement and exact-provenance restoration workflows.
+- Produce reproducible archives, checksums, signatures, SBOMs, and provenance.
+- Verify release archives in clean Linux/macOS/Windows environments.
+- Add bounded download resume, disk-space/quota, and cache retention tests.
+
+Acceptance: an operator can bootstrap trust, install, rotate/replace sources,
+recover offline, audit provenance, and remove the product using published
+instructions only.
+
+## Workstream F — Operations and support
+
+Priority: P0 release gate
+Status: pending
+
+- Define retention and garbage collection for packages, prior generations,
+  TUF cache, Grants, Flow history, OKF indexes, UI storage, and journals.
+- Add diagnostics for plan, download, prepare, cutover, drain, rollback, and
+  recovery using non-secret evidence.
+- Define backup/restore and repair boundaries. Missing exact evidence must
+  remain fail-closed; repair cannot invent authority.
+- Complete threat-model review, security response, upgrade policy, rollback
+  policy, and support runbooks.
+- Establish performance budgets for catalog refresh, resolution, install,
+  startup, watcher latency, and storage growth.
+
+## Test matrix
 
 ### Contract tests
 
-- ACL manifest and policy parsing;
-- canonical JSON and plan digests;
-- permission ceiling and permission-diff fixtures;
-- MCP schemas and annotations;
-- UI asset paths, media types, sizes, and digests;
-- named surface dependency graphs and Tool release descriptors;
-- A3S Flow engine/runtime/source/export validation, content digests, and host
-  capabilities v1-v4 compatibility, including frozen v1-v3 inventories;
-- canonical package dependency ranges, bounded resolver behavior, exact lock
-  bytes/digest, and plan/host-request lock binding;
-- canonical OKF manifest, complete package, catalog-v3, plan-v2,
-  manager-toolset-v2, receipt, projection, and observation fixtures.
+- current schema canonical round trip and SHA-256 golden;
+- unknown-field and superseded-schema rejection;
+- catalog/manifest/package/receipt binding;
+- host capability and manager toolset exact inventory;
+- plan/confirmation/lock/Grant digest stability.
 
-### Registry and package tests
+### Registry and resolver tests
 
-- metadata tampering, expiry, rollback, and root mismatch;
-- deterministic search and pagination;
-- target length and SHA-256 mismatch;
-- archive traversal, links, devices, duplicate paths, and expansion limits;
-- malformed OKF frontmatter, unsafe out-of-root references, path collisions,
-  oversized concept graphs, nondeterministic digests, raw-source promotion,
-  and non-fatal diagnostics for safe dangling links;
-- incompatible host and unsupported surface declarations;
-- Catalog/manifest package-dependency mismatch, Registry ambiguity, Registry
-  identity drift, and dependency-forward multi-target download;
-- reproducible package digest and provenance.
+- TUF expiry, rollback, root mismatch, target length/digest mismatch;
+- incomplete `custom.a3s` rejection;
+- missing verified catalog receipt rejection;
+- source ambiguity, cycles, incompatible constraints, and search bounds;
+- replaceable source configuration without receipt rewrite.
 
 ### Lifecycle tests
 
-- plan/apply mismatch;
-- canonical all-six-surface forward preparation and reverse removal;
-- retained shared-dependency reuse, exact published-generation verification,
-  reverse-dependent uninstall protection, atomic graph cutover, and recovery
-  from partial receipt writes;
-- journal restart, concurrent same-key replay, optional failure, required
-  failure, tampered records, and symlinked paths;
-- install and upgrade atomicity;
-- enable, disable, and watch generation changes;
-- concurrent install convergence;
-- route conflict and stale lookup rejection;
-- in-flight drain, timeout, retry, and crash reconciliation;
-- Runtime Task invocation and private Service health/binding behavior;
-- provider capability mismatch and no-fallback behavior;
-- Flow preflight, dependency-gated publication, reverse stop/remove, source
-  corruption, and unavailable-host rejection;
-- OKF last-good-generation preservation across conformance and index failure;
-- uninstall ownership and retained user data.
+- forward install and reverse removal order;
+- retained dependency exactness;
+- Add/Replace/Remove/Retain upgrade;
+- cutover replay, completion acknowledgement, and key conflict;
+- route absence before retirement;
+- drain before Grant/package removal;
+- pre-cutover joint rollback and post-cutover retirement recovery;
+- no-op terminal result replay.
 
-### Agent safety tests
+### Security tests
 
-- search and plan without mutation;
-- default confirmation and explicit pre-authorization;
-- denial of trust-root, unsigned-package, secret, and purge operations;
-- prompt-injection text in catalog, Skill, OKF, Tool output/API documents, MCP
-  descriptions, and UI messages;
-- permission escalation during upgrade;
-- native-unconfined unattended-install rejection;
-- dynamic CLI/HTTP Tool binding and removal without arbitrary-path execution.
+- path traversal, symlink/reparse point, archive link, duplicate path, and size
+  attacks;
+- plan, policy, scope kind, confirmation, provider, Grant, and generation drift;
+- missing recovery evidence and tampered journal rejection;
+- static UI/Skill ambient-authority denial;
+- secret-safe error diagnostics.
 
-### Release tests
+### Product E2E
 
-- no Science payload in the default Use archive;
-- one selected Science package and its exact dependency closure downloaded per
-  install;
-- installed archive smoke through CLI, Web, and manager MCP;
-- CLI/HTTP Tools, MCP capabilities, OKF, Flow, Skills, and UI share one package
-  identity and generation;
-- macOS, Linux, and Windows evidence remains aligned with platform claims.
+- one real signed six-surface package through CLI, TUI, Web, and manager MCP;
+- install/invoke/upgrade/invoke/uninstall/restart;
+- interruption at every durable checkpoint;
+- Linux, macOS, and Windows; and
+- clean release archive with no checkout-local dependencies.
 
-## Workstream Map
+## Delivery sequence
 
-| Workstream | Primary locations |
-| --- | --- |
-| Package, catalog, TUF, receipts, grants, leases | `crates/extension/`, `src/release_bundles.rs` |
-| Package-level lifecycle intent, journal, and typed hosts | `src/plugin_lifecycle/` |
-| Surface reconciliation and bindings | `src/capability_registry.rs`, `src/extension_host.rs` |
-| Tool/MCP Runtime deployment | A3S Runtime adapters, `src/mcp/`, release descriptors |
-| A3S Flow preflight, local execution/history, distributed replay, and Code/OS adapter | A3S Flow, A3S Code `/flow` plus Web Flow API, Use lifecycle host |
-| Umbrella plan, policy, and lifecycle | A3S CLI `components/`, registry store, configuration |
-| Agent worker and manager MCP adapter | A3S CLI `use_registry.rs` and Code session adapters |
-| User Marketplace and sandboxed UI | A3S Web Plugins feature and Code Web plugin API |
-| OKF conformance, projection, and cited search | A3S Knowledge service, Code/Web OKF adapters, Use reconciler |
-| Science catalog and packages | A3S Science registry builder and package sources |
-| Release and compatibility evidence | Use, Browser, OCR, CLI, Web, and Science CI workflows |
+1. Finish managed Runtime/Gateway/Knowledge/UI composition.
+2. Converge A3S Code CLI/TUI/Web and agent MCP on the same service.
+3. Complete distributed Flow placement without a second lifecycle.
+4. Run cross-platform real-process and failure-injection qualification.
+5. Complete Registry, distribution, retention, security, and support operations.
+6. Freeze a release candidate only after all documentation examples pass.
 
-## Risks And Mitigations
+## Explicit non-goals
 
-| Risk | Mitigation |
-| --- | --- |
-| Signed native code is treated as safe code | Require permission review and enforced sandbox for unattended install |
-| Registry changes after agent review | Digest-bound plan/apply with complete re-resolution |
-| Skill, UI, OKF, or Flow source attempts to authorize itself | Treat content as guidance/data; authorization remains host-owned |
-| Search downloads or installs the catalog | Separate signed metadata from payload and active capabilities |
-| Multiple adapters diverge | One shared Plugin Manager application service |
-| Upgrade silently expands privilege | Signed permission metadata plus explicit permission diff |
-| Skill is published before its executable dependency | Dependency-gated surface reconciliation |
-| `flow.json` and package Flow become divergent runtimes | One exact installed identity and one A3S Flow engine; the typed adapter is shared by CLI, TUI, Web, and OS deployment metadata |
-| Candidate OKF indexing replaces valid knowledge before it is complete | Stage and validate, atomically promote, retain the last good generation |
-| Runtime provider cannot honor Service isolation | Capability negotiation in plan and no silent fallback |
-| Uninstall breaks active calls | Hide, acquire drain lease, then remove owned files |
-| Uninstall destroys user data | Separate executable package roots from retained data and purge |
-| Registry compromise affects every user | Pinned roots, delegated roles, expiry, rollback protection, and withdrawal |
-| Cross-platform sandbox semantics differ | Report enforced profiles precisely and fail unattended native install closed |
+- Replacing general-purpose OS package managers.
+- Translating every Tool into MCP or a universal action envelope.
+- Letting packages choose providers, Registries, trust roots, or permissions.
+- Publishing required surfaces with missing evidence.
+- Keeping multiple preview schema/API/storage implementations alive.
+- Guessing recovery state after exact journals or graph records were deleted.
+- Building a second workflow lifecycle around `flow.json`.
 
-## Non-Goals
+## Release definition
 
-This plan does not turn A3S Use into:
-
-- a universal operating-system package manager;
-- a frontend for arbitrary npm, pip, Cargo, Homebrew, Winget, APT, or source
-  repository installs;
-- an arbitrary URL downloader or Git clone-and-execute service;
-- an in-process native dynamic-library host;
-- a new A3S JSON-RPC dialect;
-- a universal tool/action schema layered over MCP;
-- a translation layer that rewrites native Tool CLI or HTTP operations;
-- a browser UI runtime with host DOM, ambient network, or secret access;
-- an authority for an agent to add trust roots or install unsigned code.
+The platform is releasable only when the same signed package graph can be
+reviewed, installed, hot-used, upgraded, recovered, audited, and removed across
+all advertised hosts and platforms without mixed generations, duplicated side
+effects, ambient authority, or leftover owned state.

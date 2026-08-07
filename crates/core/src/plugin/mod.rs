@@ -46,10 +46,8 @@ pub use grant_resolution::{
     PluginGrantConfirmation, PluginWorkspaceGrantProposal, WorkspaceGrantProposalAuthority,
 };
 pub use host::{
-    PluginHostCapabilities, PluginHostManager, PluginManagedScope, PLUGIN_HOST_CAPABILITIES_SCHEMA,
-    PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_CAPABILITIES_SCHEMA_V3,
-    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_PROTOCOL_LEVEL, PLUGIN_HOST_PROTOCOL_LEVEL_V2,
-    PLUGIN_HOST_PROTOCOL_LEVEL_V3, PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PluginHostCapabilities, PluginHostManager, PluginManagedScope,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_MANAGED_SCOPE_SCHEMA,
 };
 pub use host_enablement_plan::{
     PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
@@ -63,9 +61,8 @@ pub use host_observation::{
     PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
 };
 pub use host_operation::{
-    PluginHostApplyRequest, PluginHostApplyResult, PluginHostEnablementRequest,
-    PluginHostEnablementResult, PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
-    PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA,
+    PluginHostApplyRequest, PluginHostApplyResult, PLUGIN_HOST_APPLY_REQUEST_SCHEMA,
+    PLUGIN_HOST_APPLY_RESULT_SCHEMA,
 };
 pub use host_plan::{
     PluginHostPlanRequest, PluginHostPlanResult, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
@@ -101,27 +98,13 @@ pub use planning_bundle::{
 };
 pub use resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantChangeSet};
 
-pub const PLUGIN_CATALOG_SCHEMA: &str = "a3s.use.plugin-catalog.v1";
-pub const PLUGIN_CATALOG_SCHEMA_V2: &str = "a3s.use.plugin-catalog.v2";
 pub const PLUGIN_CATALOG_SCHEMA_V3: &str = "a3s.use.plugin-catalog.v3";
 pub const INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA: &str = "a3s.use.installed-plugin-plan-evidence.v1";
-pub const PLUGIN_MANAGER_TOOLSET_SCHEMA: &str = "a3s.use.plugin-manager-tools.v1";
-pub const PLUGIN_MANAGER_TOOLSET_SCHEMA_V2: &str = "a3s.use.plugin-manager-tools.v2";
 pub const PLUGIN_MANAGER_TOOLSET_SCHEMA_V3: &str = "a3s.use.plugin-manager-tools.v3";
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
-pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA: &str = "a3s.use.plugin-operation-plan-draft.v1";
-pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan-draft.v2";
-/// Enable/disable draft schema whose retained artifact transition changes
-/// only capability visibility and workspace authorization.
+/// Current draft schema for every package lifecycle operation.
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3: &str = "a3s.use.plugin-operation-plan-draft.v3";
-pub const PLUGIN_OPERATION_PLAN_SCHEMA: &str = "a3s.use.plugin-operation-plan.v1";
-pub const PLUGIN_OPERATION_PLAN_SCHEMA_V2: &str = "a3s.use.plugin-operation-plan.v2";
-/// Upgrade plan schema binding both the exact prior and candidate package
-/// locks. The two locks make dependency removals reviewable without weakening
-/// the exact-closure guarantees of plan schemas v1 and v2.
-pub const PLUGIN_OPERATION_PLAN_SCHEMA_V3: &str = "a3s.use.plugin-operation-plan.v3";
-/// Enable/disable plan schema binding an exact installed receipt, retained
-/// package state, capability generation, and workspace Grant transition.
+/// Current plan schema for install, upgrade, uninstall, enable, and disable.
 pub const PLUGIN_OPERATION_PLAN_SCHEMA_V4: &str = "a3s.use.plugin-operation-plan.v4";
 pub const PLUGIN_PLANNING_BUNDLE_SCHEMA: &str = "a3s.use.plugin-planning-bundle.v1";
 pub const PLUGIN_PERMISSION_SCHEMA: &str = "a3s.use.plugin-permissions.v1";

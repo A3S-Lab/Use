@@ -1,177 +1,117 @@
-# External Repository Capabilities
+# External Repository Cognitive Packages
 
-A3S Use can host independently released application capabilities without
-embedding their source code or inventing a private RPC protocol. An external
-repository builds a bounded package containing one ACL manifest and one or more
-native CLI, standard MCP, and Skill surfaces. A3S Use validates, installs,
-activates, discovers, and delegates those surfaces.
+Status: development preview
+Last updated: 2026-08-07
 
-The repository remains the source of development and release artifacts. A3S
-Use does not clone a repository, execute its build scripts, or resolve a mutable
-branch during installation. This keeps source acquisition and package execution
-separate: the installed package is immutable and content-bound, while the
-manifest records where its source is maintained.
+## Boundary
 
-## Manifest version 2
+An external repository may build and publish a versioned cognitive package
+without becoming a source-code dependency of A3S Use. Use installs immutable
+package artifacts; it does not clone a repository, execute its build scripts,
+resolve a branch, or infer capabilities from source files.
 
-Every package has one `a3s-use-extension.acl` at its root:
+The current package line is manifest schema 3. A package has one canonical
+`<publisher>/<name>` identity, one SemVer version, one required ACL manifest,
+one required bounded UTF-8 `README.md`, optional package dependencies, and one
+or more named Tool, MCP, OKF, Flow, Skill, or UI surfaces.
 
-```acl
-extension "acme/calendar" {
-  schema_version = 2
-  version        = "1.4.0"
-  route          = "calendar"
-  requires_use   = ">=0.2.0, <0.3.0"
-  actions        = ["read", "mutate"]
+Superseded preview manifests and receipts are not supported. If unsupported
+state is present, Use fails closed and requires cleanup followed by reinstall.
 
-  repository {
-    url      = "https://github.com/acme/calendar"
-    revision = "0123456789abcdef0123456789abcdef01234567"
-  }
-
-  cli {
-    executable  = "bin/acme-calendar"
-    json_output = true
-  }
-
-  mcp {
-    executable = "bin/acme-calendar"
-    args       = ["mcp"]
-    transport  = "stdio"
-  }
-
-  skill {
-    path = "skills/calendar/SKILL.md"
-  }
-}
-```
-
-Version 2 requires:
-
-- a SemVer package `version`;
-- a unique lowercase `<publisher>/<name>` package identity;
-- one lowercase route that does not collide with a built-in command;
-- a valid `requires_use` SemVer range;
-- a credential-free HTTPS repository URL without a query or fragment; and
-- at least one CLI, standard MCP, or `SKILL.md` surface.
-
-`repository.revision` is optional for release channels that bind source
-provenance elsewhere. When present, it must be a lowercase 40- or 64-character
-commit digest. It is provenance metadata, not an instruction to fetch or run
-source code.
-
-All declared paths are relative to the package root. Installation rejects
-missing surfaces, path traversal, symbolic links, non-executable native
-surfaces, invalid archives, oversized packages, identity drift, route
-conflicts, and host-version incompatibility before activation.
-
-## Package layout
+## Package shape
 
 ```text
 calendar-package/
 ├── a3s-use-extension.acl
-├── bin/
-│   └── acme-calendar
-└── skills/
-    └── calendar/
-        └── SKILL.md
+├── README.md
+├── tools/
+├── releases/
+├── okf/
+├── flows/
+├── skills/
+└── ui/
 ```
 
-The CLI and MCP declarations may reference the same executable with different
-arguments. MCP remains standard stdio or Streamable HTTP MCP. A3S Use does not
-wrap either surface in JSON-RPC or translate its tool vocabulary.
+Only the manifest and `README.md` names are fixed. Every contribution path is
+manifest-owned, package-relative, normalized, and content-bound. Use rejects
+path traversal, links, duplicate normalized paths, archive ambiguity, size
+overflows, content drift, route collisions, and incompatible host or target
+ranges before publication.
 
-## Installation and trust
+The source repository URL and immutable revision are provenance. They are not
+instructions to fetch or execute source code.
 
-A package can enter the registry through one of three explicit trust paths:
+## Dependencies and versions
 
-1. a local directory or bounded archive with `--allow-unsigned`;
-2. a digest-reviewed package bundled with an A3S Use release; or
-3. a TUF-verified remote extension registry with a separately trusted root.
+A package dependency declares only a canonical package ID and SemVer
+requirement. Package content cannot choose a Registry, URL, trust root,
+channel, target, mirror, or mutable tag.
 
-For local development:
+The host resolves the complete transitive closure from its enabled named
+Registries. Resolution is bounded and rejects cycles, missing releases,
+incompatible constraints, target/provider incompatibility, and ambiguous
+equal-priority candidates. The resulting package lock freezes every selected
+catalog-v3 record, dependency edge, artifact digest, Registry identity, and
+TUF metadata version.
 
-```bash
-a3s-use component install acme/calendar \
-  --from ./calendar-package \
-  --allow-unsigned \
-  --json
+Dependencies prepare before dependents. Shared exact dependencies may be
+retained. Unused packages retire in reverse order after one graph cutover.
+
+## Six native surfaces
+
+| Surface | Package contribution | Host owner |
+| --- | --- | --- |
+| Tool | Finite CLI Task or private HTTP Service | Runtime provider |
+| MCP | Standard stdio or Streamable HTTP server | stdio supervisor or Runtime/Gateway |
+| OKF | Content-bound OKF v0.2 concept graph | Knowledge host |
+| Flow | `a3s-flow` Native TypeScript source/export | Flow host |
+| Skill | Content-bound `SKILL.md` and supporting files | Skill projection host |
+| UI | Integrity-bound static entry and declared bindings | Code/Web sandbox host |
+
+Tool is the native program or Service, not an MCP `tools/list` item. MCP keeps
+the standard MCP protocol. Flow uses `a3s-flow`; `flow.json` does not create a
+second package or lifecycle. OKF is Knowledge data, not an executable.
+
+Each required surface publishes only when its exact dependency evidence is
+ready for the same package generation. Missing host ownership is an error, not
+permission to substitute a native runner, source-only binding, or metadata
+fallback.
+
+## Registry and trust
+
+Remote package discovery uses host-selected, replaceable Registry
+configuration and TUF verification. A signed target must carry one complete
+catalog-v3 record in `custom.a3s`. That evidence binds package identity,
+version, target, archive and expanded-package digests, surfaces, dependencies,
+permission ceiling, and planning target.
+
+Registry replacement changes future resolution input; it never rewrites an
+installed receipt. Upgrade remains bound to the receipt's exact provenance.
+If that source cannot be restored, the package must be removed and installed
+again from the newly trusted source.
+
+Local unsigned packages are development input only and require explicit human
+trust. They do not establish a production distribution path.
+
+## Reviewed lifecycle
+
+The lifecycle is plan, confirm, then apply:
+
+```text
+verify catalog and provenance
+→ resolve the exact SemVer graph
+→ freeze the lock and immutable plan
+→ confirm the operation ID and plan digest
+→ prepare dependencies and all required surfaces
+→ publish one Registry snapshot
+→ drain prior-generation calls and grants
+→ remove receipt-owned prior state in reverse order
 ```
 
-Local trust is never implied. Without `--allow-unsigned`, a local package is
-rejected.
+Install, upgrade, uninstall, enable, and disable use the same plan-v4 and apply
+boundary. There is no direct enable/disable mutation tool. Crash recovery
+resumes exact durable evidence; deleted journals or graph records are
+corruption and are never reconstructed heuristically.
 
-## Identity, routes, and lifecycle
-
-The package ID is the stable lifecycle identity. The route is the user-facing
-command and discovery alias.
-
-```bash
-# Stable package lifecycle operations
-a3s-use extension inspect acme/calendar --json
-a3s-use extension disable acme/calendar --json
-a3s-use extension enable acme/calendar --json
-
-# Route-based use and inspection
-a3s-use calendar events list --json
-a3s-use doctor calendar --json
-a3s-use component status calendar --json
-a3s-use mcp serve calendar
-a3s-use component uninstall calendar --json
-```
-
-`use/calendar` is accepted wherever a route alias is accepted.
-`use/acme/calendar` is the canonical component-qualified package identity.
-Initial installation still requires the package ID because an uninstalled route
-has no trustworthy owner.
-
-Disable and uninstall first make the route invisible, then wait for accepted
-CLI or MCP calls to release their package lease. A timed-out drain remains
-disabled. Upgrade switches the active receipt atomically while existing calls
-continue against the generation they accepted.
-
-## Host compatibility and discovery
-
-Installation rejects a package when `requires_use` does not match the running
-A3S Use version. Existing receipts that become incompatible after a host
-upgrade remain visible for diagnosis but are not callable. They project as
-`broken` or `incompatible`, without MCP, Skill, or workbench activation.
-
-Resident hosts consume:
-
-```bash
-a3s-use capability snapshot --json
-a3s-use capability watch \
-  --after-generation 12 \
-  --after-revision <sha256> \
-  --json
-```
-
-Each external capability projection includes its package identity, route,
-version, immutable package root, required A3S Use range, repository identity,
-surface list, MCP target, and content-bound Skill or workbench assets. The
-registry generation covers lifecycle commits; the projection revision also
-changes when projected content changes.
-
-## Office reference package
-
-[A3S Office](https://github.com/A3S-Lab/Office) uses this boundary. Its package
-identity is `a3s/office`, its route is `office`, and its native `a3s-office`
-binary provides both CLI and standard MCP surfaces.
-
-From an Office source checkout:
-
-```bash
-./scripts/package-a3s-use-extension.sh ./dist/a3s-use-office
-
-a3s-use component install a3s/office \
-  --from ./dist/a3s-use-office \
-  --allow-unsigned \
-  --json
-
-a3s-use office --help
-a3s-use mcp serve office
-```
-
-Office can evolve, test, and release independently. A3S Use owns only the
-standard package contract and lifecycle around it.
+The complete contract inventory is in [Plugin Contracts](plugin-contracts.md),
+and lifecycle ownership is in [Plugin Platform Architecture](plugin-platform-architecture.md).

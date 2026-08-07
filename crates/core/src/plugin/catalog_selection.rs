@@ -66,13 +66,7 @@ impl PluginCatalogRecord {
 pub(super) fn validate_surface_dependencies(
     surfaces: &[CatalogSurface],
     surface_refs: &BTreeSet<PluginSurfaceRef>,
-    schema_v2: bool,
 ) -> UseResult<()> {
-    if !schema_v2 && surfaces.iter().any(|surface| !surface.requires.is_empty()) {
-        return Err(catalog_error(
-            "Catalog surface dependencies require schema version 2.",
-        ));
-    }
     for surface in surfaces {
         if surface.requires.len() > MAX_CATALOG_SURFACES
             || !strictly_sorted_unique(&surface.requires)

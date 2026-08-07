@@ -353,7 +353,6 @@ impl PluginOperationPlanEnvelope {
         prior_package_lock: PluginPackageLock,
         package_lock: PluginPackageLock,
     ) -> UseResult<Self> {
-        plan.schema = super::PLUGIN_OPERATION_PLAN_SCHEMA_V3.to_string();
         plan.prior_package_lock_digest = Some(prior_package_lock.descriptor_digest()?);
         plan.package_lock_digest = Some(package_lock.descriptor_digest()?);
         let plan_digest = plan.descriptor_digest()?;
@@ -380,8 +379,13 @@ impl PluginOperationPlanEnvelope {
             &self.plan.prior_package_lock_digest,
             &self.prior_package_lock,
         ) {
-            (None, None, None, None) => {}
+            (None, None, None, None) if self.plan.action != PluginOperationAction::Upgrade => {}
             (Some(expected), Some(package_lock), None, None) => {
+                if self.plan.action == PluginOperationAction::Upgrade {
+                    return Err(plan_error(
+                        "An upgrade plan requires both prior and candidate package locks.",
+                    ));
+                }
                 if package_lock.descriptor_digest()? != *expected {
                     return Err(plan_error(
                         "The cognitive-package lock digest does not match the plan binding.",
@@ -395,6 +399,11 @@ impl PluginOperationPlanEnvelope {
                 Some(prior_expected),
                 Some(prior_package_lock),
             ) => {
+                if self.plan.action != PluginOperationAction::Upgrade {
+                    return Err(plan_error(
+                        "Only an upgrade plan may carry a prior package lock.",
+                    ));
+                }
                 if package_lock.descriptor_digest()? != *expected
                     || prior_package_lock.descriptor_digest()? != *prior_expected
                 {

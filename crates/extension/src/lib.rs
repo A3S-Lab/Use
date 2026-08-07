@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 use a3s_acl::{Block, Value};
 use a3s_use_core::{
@@ -8,8 +8,6 @@ use a3s_use_core::{
 use serde::{Deserialize, Serialize};
 
 mod digest;
-#[cfg(test)]
-mod manifest_tests;
 mod package;
 #[cfg(test)]
 mod package_tests;
@@ -40,12 +38,12 @@ pub use plugin_manifest::{
     ToolSurface, ToolTaskSource, ToolTaskSurface, ToolWorkload,
 };
 pub use registry::{
-    validate_catalog_manifest_binding, ActivationResult, ExtensionLifecycleGraphPublication,
+    validate_catalog_manifest_binding, ExtensionLifecycleGraphPublication,
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionLifecycleResult,
     ExtensionLifecycleRollbackResult, ExtensionReceipt, ExtensionRegistry,
     ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot, ExtensionRouteBinding,
-    ExtensionRouteLease, ExtensionTrust, InstallOptions, InstallResult, InstalledExtension,
-    UninstallResult, EXTENSION_REGISTRY_CUTOVER_SCHEMA, MAX_PENDING_REGISTRY_CUTOVERS,
+    ExtensionRouteLease, ExtensionTrust, InstalledExtension, UninstallResult,
+    EXTENSION_REGISTRY_CUTOVER_SCHEMA, MAX_PENDING_REGISTRY_CUTOVERS,
 };
 pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
@@ -104,14 +102,6 @@ pub struct ExtensionManifest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository: Option<ExtensionRepository>,
     pub actions: Vec<RiskClass>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cli: Option<CliSurface>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mcp: Option<McpSurface>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skill: Option<SkillSurface>,
-    #[serde(default, skip_serializing_if = "ExtensionContributions::is_empty")]
-    pub contributes: ExtensionContributions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<ToolSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -155,71 +145,6 @@ pub struct ExtensionRepository {
     pub revision: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CliSurface {
-    pub executable: PathBuf,
-    pub json_output: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpSurface {
-    pub executable: PathBuf,
-    pub args: Vec<String>,
-    pub transport: McpTransport,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum McpTransport {
-    Stdio,
-    StreamableHttp,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillSurface {
-    pub path: PathBuf,
-}
-
-/// Declarative, non-callable Workbench contributions owned by this package.
-///
-/// Runtime actions remain limited to native CLI, standard MCP, and Skill
-/// surfaces. Contributions only describe integrity-bound assets that a host
-/// may choose to render in its own security boundary.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionContributions {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub activity_bar: Vec<ActivityBarContribution>,
-}
-
-impl ExtensionContributions {
-    pub fn is_empty(&self) -> bool {
-        self.activity_bar.is_empty()
-    }
-}
-
-/// One VS Code-style Activity Bar contribution backed by a managed HTML
-/// asset and the extension's installed Skill guidance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActivityBarContribution {
-    pub id: String,
-    pub title: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub description: String,
-    pub icon: String,
-    pub entry: PathBuf,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub styles: Vec<PathBuf>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scripts: Vec<PathBuf>,
-    pub skill: String,
-    pub order: i32,
-}
-
 impl ExtensionManifest {
     pub fn parse_acl(input: &str) -> UseResult<Self> {
         let document = a3s_acl::parse_acl(input).map_err(|error| {
@@ -250,14 +175,6 @@ impl ExtensionManifest {
 
     pub fn validate_package_root(&self, package_root: &Path) -> UseResult<()> {
         let mut paths = Vec::new();
-        paths.extend(self.cli.iter().map(|surface| surface.executable.as_path()));
-        paths.extend(self.mcp.iter().map(|surface| surface.executable.as_path()));
-        paths.extend(self.skill.iter().map(|surface| surface.path.as_path()));
-        for contribution in &self.contributes.activity_bar {
-            paths.push(contribution.entry.as_path());
-            paths.extend(contribution.styles.iter().map(PathBuf::as_path));
-            paths.extend(contribution.scripts.iter().map(PathBuf::as_path));
-        }
         for tool in &self.tools {
             paths.extend(tool.package_paths());
         }
@@ -291,14 +208,11 @@ impl ExtensionManifest {
     }
 
     pub fn surface_kinds(&self) -> Vec<&'static str> {
-        let mut surfaces = Vec::with_capacity(4);
-        if self.cli.is_some() {
-            surfaces.push("cli");
-        }
+        let mut surfaces = Vec::with_capacity(6);
         if !self.tools.is_empty() {
             surfaces.push("tool");
         }
-        if self.mcp.is_some() || !self.mcp_servers.is_empty() {
+        if !self.mcp_servers.is_empty() {
             surfaces.push("mcp");
         }
         if !self.okf.is_empty() {
@@ -307,7 +221,7 @@ impl ExtensionManifest {
         if !self.flows.is_empty() {
             surfaces.push("flow");
         }
-        if self.skill.is_some() || !self.skills.is_empty() {
+        if !self.skills.is_empty() {
             surfaces.push("skill");
         }
         if !self.ui.is_empty() {
@@ -316,19 +230,13 @@ impl ExtensionManifest {
         surfaces
     }
 
-    /// Return the complete schema-v3 surface graph in canonical identity
+    /// Return the complete cognitive-package surface graph in canonical identity
     /// order.
     ///
     /// Dependency validation happens while parsing the manifest. This method
     /// deliberately exposes one shared graph to reconciliation and lifecycle
     /// orchestration so their activation and removal rules cannot drift.
     pub fn plugin_surfaces(&self) -> UseResult<Vec<ManifestPluginSurface>> {
-        if self.schema_version != 3 {
-            return Err(manifest_error(
-                "Only schema version 3 packages expose named plugin surfaces.",
-            ));
-        }
-
         let mut surfaces = Vec::with_capacity(
             self.tools.len()
                 + self.mcp_servers.len()
@@ -471,11 +379,11 @@ impl ExtensionManifest {
     }
 
     pub fn has_mcp(&self) -> bool {
-        self.mcp.is_some() || !self.mcp_servers.is_empty()
+        !self.mcp_servers.is_empty()
     }
 
     pub fn ui_count(&self) -> usize {
-        self.contributes.activity_bar.len() + self.ui.len()
+        self.ui.len()
     }
 
     pub fn supports_use_version(&self, version: &str) -> UseResult<bool> {
@@ -532,9 +440,9 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         ));
     }
     let schema_version = schema_number as u32;
-    if !(1..=3).contains(&schema_version) {
+    if schema_version != 3 {
         return Err(manifest_error(
-            "Only extension schema versions 1, 2, and 3 are supported.",
+            "Only cognitive-package manifest schema version 3 is supported; rebuild packages created with a pre-release schema.",
         ));
     }
     let version = string_attribute(block, "version")?;
@@ -555,12 +463,8 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         .map(|action| parse_risk_class(&action))
         .collect::<UseResult<Vec<_>>>()?;
     let mut seen = BTreeSet::new();
-    let mut cli = None;
-    let mut mcp = None;
-    let mut skill = None;
     let mut repository = None;
     let mut dependencies = Vec::new();
-    let mut contributes = ExtensionContributions::default();
     let mut tools = Vec::new();
     let mut mcp_servers = Vec::new();
     let mut okf = Vec::new();
@@ -569,8 +473,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
     let mut ui = Vec::new();
     for surface in &block.blocks {
         let name = surface.name.as_str();
-        let singleton = matches!(name, "cli" | "repository" | "contributes")
-            || (schema_version < 3 && matches!(name, "mcp" | "skill"));
+        let singleton = name == "repository";
         if singleton && !seen.insert(name) {
             return Err(manifest_error(format!(
                 "Duplicate '{}' surface.",
@@ -578,42 +481,14 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             )));
         }
         match name {
-            "cli" if schema_version == 3 => {
-                return Err(manifest_error(
-                    "Schema version 3 cannot declare legacy 'cli' or 'contributes' surfaces.",
-                ))
-            }
-            "cli" => cli = Some(parse_cli(surface)?),
-            "tool" if schema_version == 3 => {
-                tools.push(plugin_manifest::parse_tool(surface)?);
-            }
-            "mcp" if schema_version == 3 => {
-                mcp_servers.push(plugin_manifest::parse_mcp(surface)?);
-            }
-            "mcp" => mcp = Some(parse_mcp(surface)?),
-            "okf" if schema_version == 3 => {
-                okf.push(plugin_manifest::parse_okf(surface)?);
-            }
-            "flow" if schema_version == 3 => {
-                flows.push(plugin_manifest::parse_flow(surface)?);
-            }
-            "skill" if schema_version == 3 => {
-                skills.push(plugin_manifest::parse_skill(surface)?);
-            }
-            "skill" => skill = Some(parse_skill(surface)?),
-            "ui" if schema_version == 3 => {
-                ui.push(plugin_manifest::parse_ui(surface)?);
-            }
-            "dependency" if schema_version == 3 => {
-                dependencies.push(parse_package_dependency(surface)?);
-            }
+            "tool" => tools.push(plugin_manifest::parse_tool(surface)?),
+            "mcp" => mcp_servers.push(plugin_manifest::parse_mcp(surface)?),
+            "okf" => okf.push(plugin_manifest::parse_okf(surface)?),
+            "flow" => flows.push(plugin_manifest::parse_flow(surface)?),
+            "skill" => skills.push(plugin_manifest::parse_skill(surface)?),
+            "ui" => ui.push(plugin_manifest::parse_ui(surface)?),
+            "dependency" => dependencies.push(parse_package_dependency(surface)?),
             "repository" => repository = Some(parse_repository(surface)?),
-            "contributes" if schema_version == 3 => {
-                return Err(manifest_error(
-                    "Schema version 3 cannot declare legacy 'cli' or 'contributes' surfaces.",
-                ))
-            }
-            "contributes" => contributes = parse_contributes(surface)?,
             name => {
                 return Err(manifest_error(format!(
                     "Unknown extension surface '{name}'."
@@ -621,13 +496,7 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             }
         }
     }
-    if schema_version < 3 && cli.is_none() && mcp.is_none() && skill.is_none() {
-        return Err(manifest_error(
-            "An extension must declare CLI, MCP, and/or Skill.",
-        ));
-    }
-    if schema_version == 3
-        && tools.is_empty()
+    if tools.is_empty()
         && mcp_servers.is_empty()
         && okf.is_empty()
         && flows.is_empty()
@@ -638,65 +507,47 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
             "A schema version 3 extension must declare Tool, MCP, OKF, Flow, Skill, and/or UI.",
         ));
     }
-    if schema_version == 3 {
-        plugin_manifest::validate_dependencies(&tools, &mcp_servers, &okf, &flows, &skills, &ui)?;
-        dependencies.sort_by(|left, right| left.package_id.cmp(&right.package_id));
-        if dependencies
-            .windows(2)
-            .any(|pair| pair[0].package_id == pair[1].package_id)
-        {
-            return Err(manifest_error(
-                "Package dependencies must be sorted and unique by package ID.",
-            ));
-        }
-        if dependencies
-            .iter()
-            .any(|dependency| dependency.package_id == package_id)
-        {
-            return Err(manifest_error(
-                "A cognitive package cannot depend on itself.",
-            ));
-        }
-        PluginPackageDependency::validate_set(&package_id, &dependencies).map_err(|error| {
-            manifest_error(format!("Invalid package dependency set: {}", error.message))
-        })?;
-    }
-    if !contributes.activity_bar.is_empty() && skill.is_none() {
+    plugin_manifest::validate_dependencies(&tools, &mcp_servers, &okf, &flows, &skills, &ui)?;
+    dependencies.sort_by(|left, right| left.package_id.cmp(&right.package_id));
+    if dependencies
+        .windows(2)
+        .any(|pair| pair[0].package_id == pair[1].package_id)
+    {
         return Err(manifest_error(
-            "Activity Bar contributions require a Skill surface from the same extension.",
+            "Package dependencies must be sorted and unique by package ID.",
         ));
     }
+    if dependencies
+        .iter()
+        .any(|dependency| dependency.package_id == package_id)
+    {
+        return Err(manifest_error(
+            "A cognitive package cannot depend on itself.",
+        ));
+    }
+    PluginPackageDependency::validate_set(&package_id, &dependencies).map_err(|error| {
+        manifest_error(format!("Invalid package dependency set: {}", error.message))
+    })?;
     let requires_use = optional_string_attribute(block, "requires_use")?;
-    if schema_version == 1 && (requires_use.is_some() || repository.is_some()) {
+    let requirement = requires_use
+        .as_deref()
+        .ok_or_else(|| manifest_error("Cognitive-package manifests require 'requires_use'."))?;
+    let requirement = semver::VersionReq::parse(requirement).map_err(|error| {
+        manifest_error(format!(
+            "Invalid A3S Use compatibility requirement '{requirement}': {error}"
+        ))
+    })?;
+    if repository.is_none() {
         return Err(manifest_error(
-            "Repository identity and A3S Use compatibility require extension schema version 2.",
+            "Cognitive-package manifests require a repository block.",
         ));
     }
-    if schema_version >= 2 {
-        let requirement = requires_use.as_deref().ok_or_else(|| {
-            manifest_error(format!(
-                "Extension schema version {schema_version} requires 'requires_use'."
-            ))
-        })?;
-        let requirement = semver::VersionReq::parse(requirement).map_err(|error| {
-            manifest_error(format!(
-                "Invalid A3S Use compatibility requirement '{requirement}': {error}"
-            ))
-        })?;
-        if repository.is_none() {
-            return Err(manifest_error(format!(
-                "Extension schema version {schema_version} requires a repository block."
-            )));
-        }
-        if schema_version == 3 {
-            let v3_host = semver::Version::new(0, 3, 0);
-            let pre_v3_host = semver::Version::new(0, 2, 1);
-            if !requirement.matches(&v3_host) || requirement.matches(&pre_v3_host) {
-                return Err(manifest_error(
-                    "Schema version 3 must require A3S Use 0.3 and exclude pre-0.3 hosts.",
-                ));
-            }
-        }
+    let current_host = semver::Version::new(0, 3, 0);
+    let obsolete_host = semver::Version::new(0, 2, 1);
+    if !requirement.matches(&current_host) || requirement.matches(&obsolete_host) {
+        return Err(manifest_error(
+            "Schema version 3 must require A3S Use 0.3 and exclude pre-0.3 hosts.",
+        ));
     }
     Ok(ExtensionManifest {
         schema_version,
@@ -707,10 +558,6 @@ fn parse_extension_block(block: &Block) -> UseResult<ExtensionManifest> {
         dependencies,
         repository,
         actions,
-        cli,
-        mcp,
-        skill,
-        contributes,
         tools,
         mcp_servers,
         okf,
@@ -765,180 +612,6 @@ fn parse_repository(block: &Block) -> UseResult<ExtensionRepository> {
         ));
     }
     Ok(ExtensionRepository { url, revision })
-}
-
-fn parse_cli(block: &Block) -> UseResult<CliSurface> {
-    require_surface_shape(block)?;
-    require_known_attributes(block, &["executable", "json_output"])?;
-    let executable = PathBuf::from(string_attribute(block, "executable")?);
-    validate_relative_path(&executable)?;
-    Ok(CliSurface {
-        executable,
-        json_output: optional_bool_attribute(block, "json_output")?.unwrap_or(false),
-    })
-}
-
-fn parse_mcp(block: &Block) -> UseResult<McpSurface> {
-    require_surface_shape(block)?;
-    require_known_attributes(block, &["executable", "args", "transport"])?;
-    let executable = PathBuf::from(string_attribute(block, "executable")?);
-    validate_relative_path(&executable)?;
-    let transport = match string_attribute(block, "transport")?.as_str() {
-        "stdio" => McpTransport::Stdio,
-        "streamable-http" => McpTransport::StreamableHttp,
-        value => {
-            return Err(manifest_error(format!(
-                "Unsupported MCP transport '{value}'."
-            )))
-        }
-    };
-    Ok(McpSurface {
-        executable,
-        args: optional_list_attribute(block, "args")?,
-        transport,
-    })
-}
-
-fn parse_skill(block: &Block) -> UseResult<SkillSurface> {
-    require_surface_shape(block)?;
-    require_known_attributes(block, &["path"])?;
-    let path = PathBuf::from(string_attribute(block, "path")?);
-    validate_relative_path(&path)?;
-    if path.file_name().and_then(|value| value.to_str()) != Some("SKILL.md") {
-        return Err(manifest_error("Skill surfaces must point to SKILL.md."));
-    }
-    Ok(SkillSurface { path })
-}
-
-fn parse_contributes(block: &Block) -> UseResult<ExtensionContributions> {
-    if !block.labels.is_empty() {
-        return Err(manifest_error(
-            "The 'contributes' block cannot have labels.",
-        ));
-    }
-    require_known_attributes(block, &[])?;
-    let mut activity_bar = Vec::new();
-    let mut ids = BTreeSet::new();
-    for contribution in &block.blocks {
-        if contribution.name != "activity_bar" {
-            return Err(manifest_error(format!(
-                "Unknown contribution point '{}'.",
-                contribution.name
-            )));
-        }
-        let activity = parse_activity_bar(contribution)?;
-        if !ids.insert(activity.id.clone()) {
-            return Err(manifest_error(format!(
-                "Duplicate Activity Bar contribution '{}'.",
-                activity.id
-            )));
-        }
-        activity_bar.push(activity);
-    }
-    Ok(ExtensionContributions { activity_bar })
-}
-
-fn parse_activity_bar(block: &Block) -> UseResult<ActivityBarContribution> {
-    if !block.blocks.is_empty() || block.labels.len() != 1 {
-        return Err(manifest_error(
-            "An 'activity_bar' contribution requires one ID label and no nested blocks.",
-        ));
-    }
-    require_known_attributes(
-        block,
-        &[
-            "title",
-            "description",
-            "icon",
-            "entry",
-            "styles",
-            "scripts",
-            "skill",
-            "order",
-        ],
-    )?;
-    let id = block.labels[0].clone();
-    if !valid_segment(&id) {
-        return Err(manifest_error(format!(
-            "Activity Bar contribution ID '{id}' is invalid."
-        )));
-    }
-    let title = bounded_text(string_attribute(block, "title")?, "Activity Bar title", 64)?;
-    let description = optional_string_attribute(block, "description")?
-        .map(|value| bounded_text(value, "Activity Bar description", 240))
-        .transpose()?
-        .unwrap_or_default();
-    let icon = string_attribute(block, "icon")?;
-    if !valid_segment(&icon) {
-        return Err(manifest_error(format!(
-            "Activity Bar icon '{icon}' must be a lowercase icon identifier."
-        )));
-    }
-    let entry = PathBuf::from(string_attribute(block, "entry")?);
-    validate_relative_path(&entry)?;
-    if entry.extension().and_then(|value| value.to_str()) != Some("html") {
-        return Err(manifest_error(
-            "Activity Bar entry assets must be .html files.",
-        ));
-    }
-    let styles = activity_resource_paths(block, "styles", "css")?;
-    let scripts = activity_resource_paths(block, "scripts", "js")?;
-    let mut resources = BTreeSet::from([entry.clone()]);
-    for resource in styles.iter().chain(&scripts) {
-        if !resources.insert(resource.clone()) {
-            return Err(manifest_error(format!(
-                "Activity Bar asset '{}' is declared more than once.",
-                resource.display()
-            )));
-        }
-    }
-    let skill = string_attribute(block, "skill")?;
-    if !valid_segment(&skill) {
-        return Err(manifest_error(format!(
-            "Activity Bar Skill name '{skill}' is invalid."
-        )));
-    }
-    let order = optional_i32_attribute(block, "order")?.unwrap_or(100);
-    Ok(ActivityBarContribution {
-        id,
-        title,
-        description,
-        icon,
-        entry,
-        styles,
-        scripts,
-        skill,
-        order,
-    })
-}
-
-fn activity_resource_paths(block: &Block, name: &str, extension: &str) -> UseResult<Vec<PathBuf>> {
-    let values = optional_list_attribute(block, name)?;
-    if values.len() > 16 {
-        return Err(manifest_error(format!(
-            "Activity Bar '{name}' accepts at most 16 assets."
-        )));
-    }
-    let mut seen = BTreeSet::new();
-    values
-        .into_iter()
-        .map(|value| {
-            let path = PathBuf::from(value);
-            validate_relative_path(&path)?;
-            if path.extension().and_then(|value| value.to_str()) != Some(extension) {
-                return Err(manifest_error(format!(
-                    "Activity Bar '{name}' assets must use the .{extension} extension."
-                )));
-            }
-            if !seen.insert(path.clone()) {
-                return Err(manifest_error(format!(
-                    "Activity Bar asset '{}' is declared more than once.",
-                    path.display()
-                )));
-            }
-            Ok(path)
-        })
-        .collect()
 }
 
 fn bounded_text(value: String, label: &str, max_chars: usize) -> UseResult<String> {

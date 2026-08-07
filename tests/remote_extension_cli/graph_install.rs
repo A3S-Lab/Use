@@ -49,7 +49,10 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     .unwrap();
     let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
     assert_eq!(
-        manager.set_enablement(&disable).await.unwrap_err().code,
+        apply_planned_enablement(&manager, &disable)
+            .await
+            .unwrap_err()
+            .code,
         "use.extension.busy"
     );
     assert!(
@@ -65,7 +68,9 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     drop(registry_lock);
 
     let restarted = CognitivePackageManager::new(extension_registry.clone()).unwrap();
-    let disabled = restarted.set_enablement(&disable).await.unwrap();
+    let disabled = apply_planned_enablement(&restarted, &disable)
+        .await
+        .unwrap();
     assert!(disabled.changed);
     assert!(!disabled.replayed);
     let disabled_generation = disabled.state.package_generation.unwrap();
@@ -76,7 +81,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     );
     assert_eq!(disabled.state.observed, PluginObservedState::Installed);
     assert!(extension_registry
-        .find_route("root")
+        .find_published_route("root")
         .await
         .unwrap()
         .is_none());
@@ -108,7 +113,9 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     assert_eq!(journal["receipts"].as_array().unwrap().len(), 3);
 
     let restarted_again = CognitivePackageManager::new(extension_registry.clone()).unwrap();
-    let replayed = restarted_again.set_enablement(&disable).await.unwrap();
+    let replayed = apply_planned_enablement(&restarted_again, &disable)
+        .await
+        .unwrap();
     assert!(replayed.replayed);
     let mut expected_replay = disabled.clone();
     expected_replay.replayed = true;
@@ -122,8 +129,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     )
     .unwrap();
     assert_eq!(
-        restarted_again
-            .set_enablement(&changed_reuse)
+        apply_planned_enablement(&restarted_again, &changed_reuse)
             .await
             .unwrap_err()
             .code,
@@ -138,15 +144,14 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     )
     .unwrap();
     assert_eq!(
-        restarted_again
-            .set_enablement(&stale)
+        apply_planned_enablement(&restarted_again, &stale)
             .await
             .unwrap_err()
             .code,
         "use.plugin.package_generation_changed"
     );
     assert!(extension_registry
-        .find_route("root")
+        .find_published_route("root")
         .await
         .unwrap()
         .is_none());
@@ -158,13 +163,15 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         true,
     )
     .unwrap();
-    let enabled = restarted_again.set_enablement(&enable).await.unwrap();
+    let enabled = apply_planned_enablement(&restarted_again, &enable)
+        .await
+        .unwrap();
     assert!(enabled.changed);
     assert!(enabled.state.package_generation.unwrap() > disabled_generation);
     assert_eq!(enabled.state.desired, PluginDesiredState::Enabled);
     assert_eq!(enabled.state.observed, PluginObservedState::Ready);
     assert!(extension_registry
-        .find_route("root")
+        .find_published_route("root")
         .await
         .unwrap()
         .is_some());
@@ -176,8 +183,12 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         true,
     )
     .unwrap();
-    let no_change = restarted_again.set_enablement(&no_change).await.unwrap();
-    assert!(!no_change.changed);
+    let no_change = restarted_again.plan_enablement(&no_change).await.unwrap();
+    assert_eq!(
+        no_change.status,
+        CognitivePackageEnablementPlanStatus::NoChange
+    );
+    assert!(no_change.plan.is_none());
     assert_eq!(no_change.state.package_generation, Some(enabled_generation));
     assert!(package_root.is_dir());
     assert_eq!(std::fs::read(graph_path).unwrap(), graph_before);
@@ -270,7 +281,10 @@ async fn enablement_planning_distinguishes_planned_no_change_and_completed_outco
             .enabled
     );
 
-    let disabled = manager.set_enablement(&disable).await.unwrap();
+    let disabled = manager
+        .apply_enablement(&disable, envelope.clone(), None)
+        .await
+        .unwrap();
     let completed = manager.plan_enablement(&disable).await.unwrap();
     assert_eq!(
         completed.status,
@@ -498,7 +512,7 @@ async fn schema_v3_manager_resolves_dependencies_from_host_injected_registries()
 }
 
 #[test]
-fn schema_v3_install_adopts_a_published_graph_and_clears_stale_pending_evidence() {
+fn schema_v3_install_rejects_state_reintroduced_after_cutover_evidence_was_retired() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
     let root = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
@@ -535,14 +549,17 @@ fn schema_v3_install_adopts_a_published_graph_and_clears_stale_pending_evidence(
     journal.as_object_mut().unwrap().remove("completedAtMs");
     std::fs::write(&journal_path, serde_json::to_vec_pretty(&journal).unwrap()).unwrap();
     let target_requests = target_request_count(&server);
-    let recovered = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
-    assert!(recovered.status.success(), "{recovered:?}");
-    assert_eq!(json(&recovered)["data"]["changed"], false);
-    assert!(graph_path.exists());
-    assert!(!pending_path.exists());
+    let rejected = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
+    assert!(!rejected.status.success(), "{rejected:?}");
+    assert_eq!(
+        json(&rejected)["error"]["code"],
+        "use.extension.registry_cutover_conflict"
+    );
+    assert!(!graph_path.exists());
+    assert!(pending_path.exists());
     assert_eq!(target_request_count(&server), target_requests);
     let journal: serde_json::Value =
         serde_json::from_slice(&std::fs::read(journal_path).unwrap()).unwrap();
-    assert_eq!(journal["status"], "completed");
-    assert_eq!(journal["receipts"].as_array().unwrap().len(), 3);
+    assert_eq!(journal["status"], "applying");
+    assert_eq!(journal["receipts"].as_array().unwrap().len(), 2);
 }

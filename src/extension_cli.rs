@@ -127,23 +127,6 @@ pub(crate) async fn extension_list() -> UseResult<CommandOutput> {
     ))
 }
 
-#[cfg(feature = "extensions")]
-pub(crate) async fn release_bundle_catalog() -> UseResult<CommandOutput> {
-    let packages = crate::release_bundles::list().await?;
-    Ok(CommandOutput::success(
-        format!("{} release-bundled extension(s) available.", packages.len()),
-        serde_json::json!({ "packages": packages }),
-    ))
-}
-
-#[cfg(not(feature = "extensions"))]
-pub(crate) async fn release_bundle_catalog() -> UseResult<CommandOutput> {
-    Ok(CommandOutput::success(
-        "No release-bundled extensions are available.",
-        serde_json::json!({ "packages": [] }),
-    ))
-}
-
 pub(crate) async fn extension_inspect(package_id: &str) -> UseResult<CommandOutput> {
     let Some(extension) = installed_extension(package_id).await? else {
         return Err(UseError::new(
@@ -177,43 +160,6 @@ pub(crate) async fn extension_planning_evidence(package_id: &str) -> UseResult<C
             evidence.package_id
         ),
         serde_json::json!({ "planningEvidence": evidence }),
-    ))
-}
-
-pub(crate) async fn extension_enable(package_id: &str) -> UseResult<CommandOutput> {
-    let result = activate_extension(package_id, true, Duration::ZERO).await?;
-    Ok(CommandOutput::success(
-        if result.changed {
-            format!("Enabled extension '{}'.", result.package_id)
-        } else {
-            format!("Extension '{}' is already enabled.", result.package_id)
-        },
-        serde_json::json!({
-            "packageId": result.package_id,
-            "changed": result.changed,
-            "enabled": result.enabled,
-            "generation": result.generation
-        }),
-    ))
-}
-
-pub(crate) async fn extension_disable(
-    package_id: &str,
-    timeout: Duration,
-) -> UseResult<CommandOutput> {
-    let result = activate_extension(package_id, false, timeout).await?;
-    Ok(CommandOutput::success(
-        if result.changed {
-            format!("Disabled extension '{}'.", result.package_id)
-        } else {
-            format!("Extension '{}' is already disabled.", result.package_id)
-        },
-        serde_json::json!({
-            "packageId": result.package_id,
-            "changed": result.changed,
-            "enabled": result.enabled,
-            "generation": result.generation
-        }),
     ))
 }
 
@@ -329,51 +275,6 @@ pub(crate) async fn installed_extension(_package_id: &str) -> UseResult<Option<E
 }
 
 #[cfg(feature = "extensions")]
-pub(crate) async fn install_extension(
-    package_id: &str,
-    source: &Path,
-    force: bool,
-    allow_unsigned: bool,
-) -> UseResult<ExtensionInstallView> {
-    let result = crate::extension_host::install(package_id, source, force, allow_unsigned).await?;
-    Ok(ExtensionInstallView {
-        changed: result.changed,
-        extension: extension_view(result.extension)?,
-        package_graph: None,
-    })
-}
-
-#[cfg(feature = "extensions")]
-pub(crate) async fn install_release_bundle_extension(
-    package_id: &str,
-    expected_package_sha256: &str,
-    force: bool,
-) -> UseResult<ExtensionInstallView> {
-    let (source, package) = crate::release_bundles::resolve(package_id).await?;
-    if package.package_sha256 != expected_package_sha256 {
-        return Err(UseError::new(
-            "use.extension.release_bundle_changed",
-            format!(
-                "Release bundle '{}' changed after its installation plan was reviewed.",
-                package_id
-            ),
-        ));
-    }
-    let result = crate::extension_host::install_release_bundle(
-        package_id,
-        &source,
-        expected_package_sha256,
-        force,
-    )
-    .await?;
-    Ok(ExtensionInstallView {
-        changed: result.changed,
-        extension: extension_view(result.extension)?,
-        package_graph: None,
-    })
-}
-
-#[cfg(feature = "extensions")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn install_remote_extension(
     package_id: &str,
@@ -383,9 +284,7 @@ pub(crate) async fn install_remote_extension(
     trusted_root_path: Option<&Path>,
     version: Option<&str>,
     channel: &str,
-    expected_plan_digest: Option<&str>,
     expected_package_lock_digest: Option<&str>,
-    force: bool,
 ) -> UseResult<ExtensionInstallView> {
     let paths = a3s_use_extension::ExtensionPaths::from_env()?;
     let registry = a3s_use_extension::TrustedRegistry::new(
@@ -407,52 +306,27 @@ pub(crate) async fn install_remote_extension(
         }
     };
     let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
-    if manager
-        .is_remote_cognitive_package(&registry, package_id, version, release_channel)
-        .await?
-    {
-        let result = manager
-            .install_remote(
-                &registry,
-                &[],
-                package_id,
-                version,
-                release_channel,
-                expected_package_lock_digest.or(expected_plan_digest),
-            )
-            .await?;
-        let extension = extension_view(result.root.clone())?;
-        let package_graph = serde_json::to_value(&result).map_err(|error| {
-            UseError::new(
-                "use.plugin.package_graph_invalid",
-                format!("Failed to encode cognitive-package graph evidence: {error}"),
-            )
-        })?;
-        return Ok(ExtensionInstallView {
-            changed: result.changed,
-            extension,
-            package_graph: Some(package_graph),
-        });
-    }
-    if expected_package_lock_digest.is_some() {
-        return Err(UseError::new(
-            "use.plugin.package_lock_unsupported",
-            "A package-lock digest is valid only for a schema-v3 cognitive package.",
-        ));
-    }
-    let result = crate::extension_host::install_remote(
-        package_id,
-        &registry,
-        version,
-        channel,
-        expected_plan_digest,
-        force,
-    )
-    .await?;
+    let result = manager
+        .install_remote(
+            &registry,
+            &[],
+            package_id,
+            version,
+            release_channel,
+            expected_package_lock_digest,
+        )
+        .await?;
+    let extension = extension_view(result.root.clone())?;
+    let package_graph = serde_json::to_value(&result).map_err(|error| {
+        UseError::new(
+            "use.plugin.package_graph_invalid",
+            format!("Failed to encode cognitive-package graph evidence: {error}"),
+        )
+    })?;
     Ok(ExtensionInstallView {
         changed: result.changed,
-        extension: extension_view(result.extension)?,
-        package_graph: None,
+        extension,
+        package_graph: Some(package_graph),
     })
 }
 
@@ -488,15 +362,6 @@ pub(crate) async fn upgrade_remote_extension(
         }
     };
     let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
-    if !manager
-        .is_remote_cognitive_package(&registry, package_id, version, release_channel)
-        .await?
-    {
-        return Err(UseError::new(
-            "use.plugin.package_upgrade_unsupported",
-            "The selected Registry target is not a schema-v3 cognitive package.",
-        ));
-    }
     let result = manager
         .upgrade_remote(
             &registry,
@@ -522,25 +387,6 @@ pub(crate) async fn upgrade_remote_extension(
 }
 
 #[cfg(not(feature = "extensions"))]
-pub(crate) async fn install_extension(
-    _package_id: &str,
-    _source: &Path,
-    _force: bool,
-    _allow_unsigned: bool,
-) -> UseResult<ExtensionInstallView> {
-    Err(extensions_disabled())
-}
-
-#[cfg(not(feature = "extensions"))]
-pub(crate) async fn install_release_bundle_extension(
-    _package_id: &str,
-    _expected_package_sha256: &str,
-    _force: bool,
-) -> UseResult<ExtensionInstallView> {
-    Err(extensions_disabled())
-}
-
-#[cfg(not(feature = "extensions"))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn install_remote_extension(
     _package_id: &str,
@@ -550,9 +396,7 @@ pub(crate) async fn install_remote_extension(
     _trusted_root_path: Option<&Path>,
     _version: Option<&str>,
     _channel: &str,
-    _expected_plan_digest: Option<&str>,
     _expected_package_lock_digest: Option<&str>,
-    _force: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())
 }
@@ -575,72 +419,23 @@ pub(crate) async fn upgrade_remote_extension(
 #[cfg(feature = "extensions")]
 pub(crate) async fn uninstall_extension(package_id: &str) -> UseResult<ExtensionUninstallView> {
     let registry = a3s_use_extension::ExtensionRegistry::from_env()?;
-    let manager = crate::cognitive_package::CognitivePackageManager::new(registry.clone())?;
-    if manager.owns_installed_root(package_id).await?
-        || registry
-            .get(package_id)
-            .await?
-            .is_some_and(|extension| extension.manifest.schema_version == 3)
-    {
-        let result = manager.uninstall(package_id).await?;
-        let package_graph = serde_json::to_value(&result).map_err(|error| {
-            UseError::new(
-                "use.plugin.package_graph_invalid",
-                format!("Failed to encode cognitive-package uninstall evidence: {error}"),
-            )
-        })?;
-        return Ok(ExtensionUninstallView {
-            package_id: result.root_package_id,
-            changed: result.changed,
-            package_graph: Some(package_graph),
-        });
-    }
-    let result = crate::extension_host::uninstall(package_id).await?;
+    let manager = crate::cognitive_package::CognitivePackageManager::new(registry)?;
+    let result = manager.uninstall(package_id).await?;
+    let package_graph = serde_json::to_value(&result).map_err(|error| {
+        UseError::new(
+            "use.plugin.package_graph_invalid",
+            format!("Failed to encode cognitive-package uninstall evidence: {error}"),
+        )
+    })?;
     Ok(ExtensionUninstallView {
-        package_id: result.package_id,
+        package_id: result.root_package_id,
         changed: result.changed,
-        package_graph: None,
+        package_graph: Some(package_graph),
     })
 }
 
 #[cfg(not(feature = "extensions"))]
 pub(crate) async fn uninstall_extension(_package_id: &str) -> UseResult<ExtensionUninstallView> {
-    Err(extensions_disabled())
-}
-
-#[derive(Debug, Clone)]
-struct ExtensionActivationView {
-    package_id: String,
-    changed: bool,
-    enabled: bool,
-    generation: u64,
-}
-
-#[cfg(feature = "extensions")]
-async fn activate_extension(
-    package_id: &str,
-    enabled: bool,
-    timeout: Duration,
-) -> UseResult<ExtensionActivationView> {
-    let result = if enabled {
-        crate::extension_host::enable(package_id).await?
-    } else {
-        crate::extension_host::disable(package_id, timeout).await?
-    };
-    Ok(ExtensionActivationView {
-        package_id: result.package_id,
-        changed: result.changed,
-        enabled: result.enabled,
-        generation: result.generation,
-    })
-}
-
-#[cfg(not(feature = "extensions"))]
-async fn activate_extension(
-    _package_id: &str,
-    _enabled: bool,
-    _timeout: Duration,
-) -> UseResult<ExtensionActivationView> {
     Err(extensions_disabled())
 }
 

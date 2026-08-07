@@ -19,7 +19,7 @@ impl VerifiedPluginCatalogRecord {
         self.validate()?;
         if !self.record.is_package_plan_ready() {
             return Err(catalog_plan_error(
-                "A complete package state requires catalog-v2 or newer package evidence.",
+                "A complete package state requires current catalog-v3 package evidence.",
             ));
         }
         let surfaces = self.record.resolve_surfaces(requested_surfaces)?;

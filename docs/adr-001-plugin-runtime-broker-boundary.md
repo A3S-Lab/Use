@@ -8,9 +8,10 @@
 
 ## Context
 
-An A3S plugin may contribute Skills, CLI Tools, HTTP Tool Services, standard
-MCP servers, and static UI. Tool means the real program or Service that
-performs work; it does not mean an MCP `tools/list` entry.
+An A3S cognitive package may contribute Tool Tasks or Services, standard MCP
+servers, OKF Knowledge, A3S Flow workflows, Skills, and static UI. Tool means
+the real program or Service that performs work; it does not mean an MCP
+`tools/list` entry.
 
 The plugin package knows its workload contract and maximum required authority,
 but it is not trusted to choose an execution backend. The host knows which
@@ -56,7 +57,9 @@ does not scatter authoritative package files into unrelated roots.
 | Tool Task | Signed release/artifact reference plus immutable package metadata | Prepared Runtime Task launcher template; one exact Task per invocation |
 | Tool Service | Signed release/artifact reference plus immutable package metadata | Private Runtime Service plus scoped Gateway binding |
 | Streamable HTTP MCP | Signed release/artifact reference plus immutable package metadata | Runtime Service, health gate, then standard MCP initialize probe |
-| stdio MCP | Immutable package generation | Supervised compatibility session until Runtime has a bidirectional session contract |
+| stdio MCP | Immutable package generation | Host-owned supervised stdio session with exact-generation leases |
+| OKF | Immutable OKF v0.2 content in the package generation | Knowledge-host staging, atomic promotion, cited search, drain, and owned removal |
+| A3S Flow | Content-bound Native TypeScript source and export | `a3s-flow` preflight plus exact compiled-binding evidence |
 | UI | Integrity-bound static assets in the immutable generation | Receipt-owned Code/Web sandbox projection with declared backend bindings |
 
 A managed projection may use a platform-appropriate link, mount, or copied
@@ -85,8 +88,8 @@ The target is bounded to 512 KiB and binds:
 
 The planning target is fetched only when an install or upgrade needs
 executable planning. The package archive is downloaded only after review and
-apply authorization. Skill/UI-only catalog-v2 packages do not require the
-planning target.
+apply authorization. The archive is never used as a fallback source for
+missing catalog or planning evidence.
 
 Optional surface selection narrows activation and authority, not archive
 bytes. Avoiding unrelated Science downloads therefore requires independently
@@ -205,8 +208,9 @@ idempotency key.
 - MCP remains the standard protocol.
 - Streamable HTTP MCP uses a Runtime Service and is not ready until both
   Service health and MCP initialization succeed.
-- stdio MCP remains in a supervised compatibility host until Runtime exposes a
-  portable bidirectional session contract.
+- stdio MCP remains a distinct host-owned supervised session; it is not
+  represented as a Runtime Service without a portable bidirectional session
+  contract.
 - No Tool is automatically wrapped as MCP and no MCP tool is treated as a
   package lifecycle Tool.
 
@@ -277,7 +281,7 @@ Costs:
 - provider selection is a host integration requirement;
 - planning performs two bounded capability checks;
 - Runtime features that cannot represent a permission fail closed;
-- stdio MCP needs a separate compatibility lifecycle until the Runtime
-  contract grows a session primitive; and
+- stdio MCP needs a distinct supervised lifecycle until the Runtime contract
+  grows a session primitive; and
 - capability publication requires a multi-resource saga rather than a simple
   directory copy.

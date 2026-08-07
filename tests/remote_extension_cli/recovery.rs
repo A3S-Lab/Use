@@ -1,8 +1,7 @@
 use super::*;
 
-#[cfg(unix)]
 #[test]
-fn schema_v3_uninstall_replays_after_the_root_and_graph_record_are_removed() {
+fn schema_v3_uninstall_rejects_recovery_when_exact_graph_evidence_was_deleted() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
     let base = cognitive_skill_target(temp.path(), "acme/base", "base", Vec::new(), &target);
@@ -23,48 +22,18 @@ fn schema_v3_uninstall_replays_after_the_root_and_graph_record_are_removed() {
     let base_receipt = home.join("state/extensions/acme/base.json");
     let pending_path = home.join("state/operations/package-graphs/uninstall/acme/root.json");
     let graph_path = home.join("state/package-graphs/acme/root.json");
-    let base_generation =
-        serde_json::from_slice::<serde_json::Value>(&std::fs::read(&base_receipt).unwrap())
-            .unwrap()["lifecycleGeneration"]
-            .as_u64()
-            .unwrap();
-    let route_lock = exclusive_lock(
-        &home
-            .join("state/route-locks/acme/base")
-            .join(format!("{base_generation:020}.lock")),
-    );
-    let mut interrupted = Command::new(binary())
-        .args(["uninstall", "acme/root", "--json"])
-        .env("A3S_USE_HOME", &home)
-        .spawn()
-        .unwrap();
-    let reached_dependency_drain = wait_until(Duration::from_secs(10), || {
-        !root_receipt.exists() && base_receipt.exists() && pending_path.exists()
-    });
-    if !reached_dependency_drain {
-        let _ = interrupted.kill();
-        let _ = interrupted.wait();
-        FileExt::unlock(&route_lock).unwrap();
-        panic!("uninstall did not reach the dependency drain checkpoint");
-    }
-    interrupted.kill().unwrap();
-    interrupted.wait().unwrap();
-    FileExt::unlock(&route_lock).unwrap();
-    drop(route_lock);
-
-    assert!(!root_receipt.exists());
+    assert!(root_receipt.exists());
     assert!(base_receipt.exists());
-    assert!(pending_path.exists());
     std::fs::remove_file(&graph_path).unwrap();
 
-    let recovered = cognitive_uninstall(&home, "acme/root");
-    assert!(recovered.status.success(), "{recovered:?}");
+    let rejected = cognitive_uninstall(&home, "acme/root");
+    assert!(!rejected.status.success(), "{rejected:?}");
     assert_eq!(
-        json(&recovered)["data"]["packageGraph"]["removedPackages"],
-        serde_json::json!(["acme/root", "acme/base"])
+        json(&rejected)["error"]["code"],
+        "use.plugin.package_graph_missing"
     );
-    assert!(!root_receipt.exists());
-    assert!(!base_receipt.exists());
+    assert!(root_receipt.exists());
+    assert!(base_receipt.exists());
     assert!(!graph_path.exists());
     assert!(!pending_path.exists());
 }

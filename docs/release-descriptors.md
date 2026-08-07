@@ -257,6 +257,8 @@ The schema string is the compatibility boundary. A decoder:
 
 Changing field meaning, adding a field, adding a transport or binding target,
 or changing canonicalization requires a new schema identifier and new fixture
-digest. V1 fixtures and their digests remain immutable. Consumers may support
-multiple explicit schema versions during migration, but publication must select
-one exact descriptor and digest.
+digest. V1 is the only accepted descriptor line in the current development
+preview. If this contract changes before the first supported release, all
+producers, consumers, fixtures, and documentation change together and the
+superseded path is removed. Post-release evolution requires a separate,
+explicit product policy.

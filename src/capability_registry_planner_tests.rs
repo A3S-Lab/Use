@@ -1,7 +1,7 @@
 use a3s_use_core::{
     CatalogArchive, CatalogAvailability, CatalogPackage, CatalogSurface, PluginCatalogRecord,
     PluginPermissionCeiling, PluginReleaseChannel, PluginSurfaceKind, PluginSurfaceRef,
-    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2,
+    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3,
     PLUGIN_PERMISSION_SCHEMA,
 };
 use sha2::{Digest, Sha256};
@@ -46,7 +46,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
         surfaces: Vec::new(),
     };
     let record = PluginCatalogRecord {
-        schema: PLUGIN_CATALOG_SCHEMA_V2.to_owned(),
+        schema: PLUGIN_CATALOG_SCHEMA_V3.to_owned(),
         package_id: "acme/guide".to_owned(),
         display_name: "Guide".to_owned(),
         description: "Agent guidance for the current workspace.".to_owned(),
@@ -103,7 +103,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
     let registry =
         a3s_use_extension::ResolvedRemotePackage::from_verified_catalog(&verified).unwrap();
     let receipt = a3s_use_extension::ExtensionReceipt {
-        schema_version: 2,
+        schema_version: 3,
         package_id: manifest.package_id.clone(),
         component_id: "use/acme/guide".to_owned(),
         route: manifest.route.clone(),

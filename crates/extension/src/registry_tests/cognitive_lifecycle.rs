@@ -1,6 +1,45 @@
 use super::*;
 
 #[tokio::test]
+async fn registry_tuf_receipts_require_verified_catalog_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 6);
+    let registry = registry(temp.path());
+    registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap();
+
+    let catalog = verified_knowledge_catalog(&source, "acme/cognitive", &[], 'c').await;
+    let mut receipt = registry
+        .get("acme/cognitive")
+        .await
+        .unwrap()
+        .unwrap()
+        .receipt;
+    receipt.trust = ExtensionTrust::RegistryTuf;
+    receipt.registry = Some(ResolvedRemotePackage::from_verified_catalog(&catalog).unwrap());
+    receipt.verified_catalog = None;
+    write_receipt(&registry.paths().receipt_path("acme/cognitive"), &receipt)
+        .await
+        .unwrap();
+
+    let error = registry.get("acme/cognitive").await.unwrap_err();
+    assert_eq!(error.code, "use.extension.receipt_invalid");
+    assert!(error.message.contains("inconsistent trust provenance"));
+}
+
+#[tokio::test]
 async fn lifecycle_commit_keeps_all_six_surfaces_installed_disabled_until_atomic_publish() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");
@@ -52,14 +91,6 @@ async fn lifecycle_commit_keeps_all_six_surfaces_installed_disabled_until_atomic
         commit_replay.extension.receipt.descriptor_digest().unwrap(),
         committed.extension.receipt.descriptor_digest().unwrap()
     );
-
-    for error in [
-        registry.enable("acme/cognitive").await.unwrap_err(),
-        registry.disable("acme/cognitive").await.unwrap_err(),
-        registry.uninstall("acme/cognitive").await.unwrap_err(),
-    ] {
-        assert_eq!(error.code, "use.extension.lifecycle_managed");
-    }
 
     let published = registry
         .publish_lifecycle_package_for_host_version(&identity, "0.3.0")
@@ -1019,6 +1050,13 @@ async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_pr
         Some(17)
     );
 
+    let error = registry
+        .retire_hidden_lifecycle_package(&first)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.lifecycle_state_invalid");
+    assert!(error.message.contains("atomic graph cutover"));
+
     registry
         .publish_lifecycle_package_for_host_version(&next, "0.3.0")
         .await
@@ -1035,7 +1073,11 @@ async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_pr
         Some(18)
     );
 
-    registry.hide_lifecycle_package(&first).await.unwrap();
+    let retired = registry
+        .retire_hidden_lifecycle_package(&first)
+        .await
+        .unwrap();
+    assert!(retired.changed);
     let error = registry
         .drain_lifecycle_package(&first, Duration::from_millis(1))
         .await

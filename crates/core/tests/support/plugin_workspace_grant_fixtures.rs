@@ -11,7 +11,7 @@ use a3s_use_core::{
     PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
-const INSTALL_PLAN: &[u8] = include_bytes!("../../fixtures/plugins/operation-plan-install-v1.json");
+const INSTALL_PLAN: &[u8] = include_bytes!("../../fixtures/plugins/operation-plan-install-v4.json");
 pub const DIGEST_C: &str =
     "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const DIGEST_D: &str = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";

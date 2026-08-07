@@ -41,104 +41,27 @@ pub(crate) async fn validate_surface_files(
     let canonical_root = fs::canonicalize(package_root)
         .await
         .map_err(|error| io_error("resolve extension package root", package_root, error))?;
-    if manifest.schema_version == 3 {
-        validate_text_asset(
+    validate_text_asset(
+        "use.extension.readme_invalid",
+        "Cognitive package README",
+        "UTF-8 Markdown",
+        &canonical_root,
+        &package_root.join("README.md"),
+        MAX_PACKAGE_README_BYTES,
+    )
+    .await
+    .map_err(|error| {
+        UseError::new(
             "use.extension.readme_invalid",
-            "Cognitive package README",
-            "UTF-8 Markdown",
-            &canonical_root,
-            &package_root.join("README.md"),
-            MAX_PACKAGE_README_BYTES,
+            format!(
+                "Cognitive packages require a bounded UTF-8 README.md: {}",
+                error.message
+            ),
         )
-        .await
-        .map_err(|error| {
-            UseError::new(
-                "use.extension.readme_invalid",
-                format!(
-                    "Schema-v3 cognitive packages require a bounded UTF-8 README.md: {}",
-                    error.message
-                ),
-            )
-        })?;
-    }
-    if let Some(cli) = &manifest.cli {
-        validate_surface_file(
-            "CLI executable",
-            &canonical_root,
-            &package_root.join(&cli.executable),
-            true,
-        )
-        .await?;
-    }
-    if let Some(mcp) = &manifest.mcp {
-        validate_surface_file(
-            "MCP executable",
-            &canonical_root,
-            &package_root.join(&mcp.executable),
-            true,
-        )
-        .await?;
-    }
-    if let Some(skill) = &manifest.skill {
-        validate_surface_file(
-            "Skill file",
-            &canonical_root,
-            &package_root.join(&skill.path),
-            false,
-        )
-        .await?;
-    }
-    for activity in &manifest.contributes.activity_bar {
-        validate_activity_text_asset(
-            "Activity Bar entry",
-            "HTML",
-            &canonical_root,
-            &package_root.join(&activity.entry),
-            MAX_ACTIVITY_HTML_BYTES,
-        )
-        .await?;
-        for style in &activity.styles {
-            validate_activity_text_asset(
-                "Activity Bar style",
-                "CSS",
-                &canonical_root,
-                &package_root.join(style),
-                MAX_ACTIVITY_RESOURCE_BYTES,
-            )
-            .await?;
-        }
-        for script in &activity.scripts {
-            validate_activity_text_asset(
-                "Activity Bar script",
-                "JavaScript",
-                &canonical_root,
-                &package_root.join(script),
-                MAX_ACTIVITY_RESOURCE_BYTES,
-            )
-            .await?;
-        }
-    }
+    })?;
     super::surface_files::validate_named_surface_files(manifest, &canonical_root, package_root)
         .await?;
     Ok(())
-}
-
-async fn validate_activity_text_asset(
-    label: &str,
-    content_type: &str,
-    canonical_root: &Path,
-    path: &Path,
-    max_bytes: u64,
-) -> UseResult<()> {
-    validate_text_asset(
-        "use.extension.activity_asset_invalid",
-        label,
-        content_type,
-        canonical_root,
-        path,
-        max_bytes,
-    )
-    .await
 }
 
 pub(super) async fn validate_text_asset(

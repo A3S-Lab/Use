@@ -6,20 +6,16 @@ use super::host::{validate_request_identity, verify_capabilities, verify_support
 use super::validation::valid_sha256;
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPolicyDecision,
-    PluginDesiredState, PluginHostCapabilities, PluginHostEnablementPlanResult,
-    PluginHostPackageState, PluginHostPlanResult, PluginManagedScope, PluginOperationConfirmation,
-    PluginOperationPlan, PluginPackageId,
+    PluginHostCapabilities, PluginHostEnablementPlanResult, PluginHostPackageState,
+    PluginHostPlanResult, PluginManagedScope, PluginOperationConfirmation, PluginOperationPlan,
+    PluginPackageId,
 };
 
 pub const PLUGIN_HOST_APPLY_REQUEST_SCHEMA: &str = "a3s.use.plugin-host-apply-request.v1";
 pub const PLUGIN_HOST_APPLY_RESULT_SCHEMA: &str = "a3s.use.plugin-host-apply-result.v1";
-pub const PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA: &str = "a3s.use.plugin-host-enablement-request.v1";
-pub const PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA: &str = "a3s.use.plugin-host-enablement-result.v1";
 
 const APPLY_REQUEST_ERROR: &str = "use.plugin.host_apply_request_invalid";
 const APPLY_RESULT_ERROR: &str = "use.plugin.host_apply_result_invalid";
-const ENABLEMENT_REQUEST_ERROR: &str = "use.plugin.host_enablement_request_invalid";
-const ENABLEMENT_RESULT_ERROR: &str = "use.plugin.host_enablement_result_invalid";
 
 /// Digest-only apply request for a plan already stored by the shared manager.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,38 +46,6 @@ pub struct PluginHostApplyResult {
     pub plan_digest: String,
     pub completed_at_ms: u64,
     pub operation_result_digest: String,
-    pub state: PluginHostPackageState,
-    pub replayed: bool,
-}
-
-/// Idempotent desired enablement change for one installed package generation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PluginHostEnablementRequest {
-    pub schema: String,
-    pub request_id: String,
-    pub operation_id: String,
-    pub assignment_generation: u64,
-    pub capabilities_digest: String,
-    pub scope: PluginManagedScope,
-    pub package_id: PluginPackageId,
-    pub expected_package_generation: u64,
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PluginHostEnablementResult {
-    pub schema: String,
-    pub request_id: String,
-    pub operation_id: String,
-    pub assignment_generation: u64,
-    pub capabilities_digest: String,
-    pub scope: PluginManagedScope,
-    pub package_id: PluginPackageId,
-    pub completed_at_ms: u64,
-    pub operation_result_digest: String,
-    pub changed: bool,
     pub state: PluginHostPackageState,
     pub replayed: bool,
 }
@@ -293,173 +257,10 @@ impl PluginHostApplyResult {
     }
 }
 
-impl PluginHostEnablementRequest {
-    pub fn from_json(input: &[u8]) -> UseResult<Self> {
-        parse_contract(
-            input,
-            "plugin host enablement request",
-            ENABLEMENT_REQUEST_ERROR,
-            Self::validate,
-        )
-    }
-
-    pub fn validate(&self) -> UseResult<()> {
-        if self.schema != PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA
-            || self.expected_package_generation == 0
-        {
-            return Err(enablement_request_error(
-                "The plugin host enablement request schema or generation is invalid.",
-            ));
-        }
-        validate_request_identity(
-            &self.request_id,
-            self.assignment_generation,
-            &self.capabilities_digest,
-            &self.scope,
-        )
-        .map_err(|_| {
-            enablement_request_error(
-                "The plugin host enablement request identity or scope is invalid.",
-            )
-        })?;
-        PluginOperationPlan::validate_operation_id(&self.operation_id).map_err(|_| {
-            enablement_request_error("The plugin host enablement operation identity is invalid.")
-        })
-    }
-
-    pub fn validate_for_capabilities(
-        &self,
-        capabilities: &PluginHostCapabilities,
-    ) -> UseResult<()> {
-        self.validate()?;
-        verify_capabilities(&self.capabilities_digest, &self.scope, capabilities)
-    }
-
-    pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
-        self.validate()?;
-        canonical_json(
-            self,
-            "plugin host enablement request",
-            ENABLEMENT_REQUEST_ERROR,
-        )
-    }
-
-    pub fn descriptor_digest(&self) -> UseResult<String> {
-        Ok(canonical_digest(&self.canonical_bytes()?))
-    }
-}
-
-impl PluginHostEnablementResult {
-    pub fn from_json(input: &[u8]) -> UseResult<Self> {
-        parse_contract(
-            input,
-            "plugin host enablement result",
-            ENABLEMENT_RESULT_ERROR,
-            Self::validate,
-        )
-    }
-
-    pub fn validate(&self) -> UseResult<()> {
-        if self.schema != PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA
-            || self.completed_at_ms == 0
-            || !valid_sha256(&self.operation_result_digest)
-        {
-            return Err(enablement_result_error(
-                "The plugin host enablement result schema, time, or digest is invalid.",
-            ));
-        }
-        validate_request_identity(
-            &self.request_id,
-            self.assignment_generation,
-            &self.capabilities_digest,
-            &self.scope,
-        )
-        .map_err(|_| {
-            enablement_result_error(
-                "The plugin host enablement result identity or scope is invalid.",
-            )
-        })?;
-        PluginOperationPlan::validate_operation_id(&self.operation_id).map_err(|_| {
-            enablement_result_error("The plugin host enablement operation identity is invalid.")
-        })?;
-        self.state
-            .validate()
-            .map_err(|_| enablement_result_error("The enabled plugin state is invalid."))?;
-        if self.state.desired == PluginDesiredState::Absent {
-            return Err(enablement_result_error(
-                "Enablement cannot return an absent desired package state.",
-            ));
-        }
-        Ok(())
-    }
-
-    pub fn validate_for(
-        &self,
-        request: &PluginHostEnablementRequest,
-        capabilities: &PluginHostCapabilities,
-    ) -> UseResult<()> {
-        self.validate()?;
-        request.validate_for_capabilities(capabilities)?;
-        verify_capabilities(&self.capabilities_digest, &self.scope, capabilities)?;
-        let expected_desired = if request.enabled {
-            PluginDesiredState::Enabled
-        } else {
-            PluginDesiredState::InstalledDisabled
-        };
-        let generation = self.state.package_generation.ok_or_else(|| {
-            UseError::new(
-                "use.plugin.host_enablement_result_mismatch",
-                "Enablement did not return an installed package generation.",
-            )
-        })?;
-        let generation_matches = if self.changed {
-            generation > request.expected_package_generation
-        } else {
-            generation == request.expected_package_generation
-        };
-        if self.request_id != request.request_id
-            || self.operation_id != request.operation_id
-            || self.assignment_generation != request.assignment_generation
-            || self.capabilities_digest != request.capabilities_digest
-            || self.scope != request.scope
-            || self.package_id != request.package_id
-            || self.state.desired != expected_desired
-            || !generation_matches
-        {
-            return Err(UseError::new(
-                "use.plugin.host_enablement_result_mismatch",
-                "The plugin host enablement result does not bind the exact request and generation.",
-            ));
-        }
-        Ok(())
-    }
-
-    pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
-        self.validate()?;
-        canonical_json(
-            self,
-            "plugin host enablement result",
-            ENABLEMENT_RESULT_ERROR,
-        )
-    }
-
-    pub fn descriptor_digest(&self) -> UseResult<String> {
-        Ok(canonical_digest(&self.canonical_bytes()?))
-    }
-}
-
 fn apply_request_error(message: impl Into<String>) -> UseError {
     contract_error(APPLY_REQUEST_ERROR, message)
 }
 
 fn apply_result_error(message: impl Into<String>) -> UseError {
     contract_error(APPLY_RESULT_ERROR, message)
-}
-
-fn enablement_request_error(message: impl Into<String>) -> UseError {
-    contract_error(ENABLEMENT_REQUEST_ERROR, message)
-}
-
-fn enablement_result_error(message: impl Into<String>) -> UseError {
-    contract_error(ENABLEMENT_RESULT_ERROR, message)
 }

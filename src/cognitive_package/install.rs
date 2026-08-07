@@ -204,9 +204,7 @@ impl CognitivePackageManager {
                 generated
             }
         };
-        if pending.requires_authority_revalidation() {
-            self.authorization.verify_plan(&pending.envelope)?;
-        }
+        self.authorization.verify_plan(&pending.envelope)?;
         let apply_time = now_ms()?;
 
         let mut units = Vec::with_capacity(prepared.len());
@@ -405,9 +403,7 @@ impl CognitivePackageManager {
         installed: &BTreeMap<String, InstalledExtension>,
     ) -> UseResult<()> {
         pending.validate()?;
-        if pending.requires_authority_revalidation() {
-            self.authorization.verify_plan(&pending.envelope)?;
-        }
+        self.authorization.verify_plan(&pending.envelope)?;
         if pending.envelope.plan.action != PluginOperationAction::Install
             || pending.envelope.package_lock.as_ref() != Some(lock)
             || pending.envelope.plan.scope != self.scope

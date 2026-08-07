@@ -13,7 +13,7 @@ use super::test_support::{
 use super::*;
 
 const COMPLETE_CATALOG: &[u8] =
-    include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v1.json");
+    include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v3.json");
 const OKF_CATALOG_V3: &[u8] =
     include_bytes!("../../core/fixtures/plugins/catalog-record-okf-v3.json");
 const FIXTURE_ROOT: &[u8] = include_bytes!("../fixtures/registry/plugin-v3/metadata/root.json");
@@ -535,6 +535,10 @@ async fn catalog_page_stays_below_the_serialized_output_bound() {
             "extensions/{}/1.0.0/stable/{}/padded-{index:02}-1.0.0-{target}.tar.gz",
             record.package_id, target
         );
+        record.planning.as_mut().unwrap().target_name = format!(
+            "extensions/{}/1.0.0/stable/{target}/planning-v1.json",
+            record.package_id
+        );
         for surface_index in 0..240 {
             record.surfaces.push(CatalogSurface {
                 kind: PluginSurfaceKind::Skill,
@@ -651,6 +655,15 @@ fn catalog_record(target: &str, spec: CatalogSpec, archive: &[u8]) -> PluginCata
     );
     record.archive.length = archive.len() as u64;
     record.archive.sha256 = format!("sha256:{:x}", Sha256::digest(archive));
+    if let Some(planning) = &mut record.planning {
+        planning.target_name = format!(
+            "extensions/{}/{}/{}/{}/planning-v1.json",
+            spec.package_id,
+            spec.version,
+            spec.channel.as_str(),
+            target
+        );
+    }
     record.repository = format!("https://github.com/acme/{name}");
     record.availability = spec.availability;
     record.validate().unwrap();

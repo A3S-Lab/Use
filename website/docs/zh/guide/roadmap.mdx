@@ -1,83 +1,91 @@
 ---
 title: 路线图
-description: A3S Use 从稳定包管理基础走向完整认知插件平台的依赖顺序与完成标准。
+description: A3S Use 开发预览版距离可发布产品仍需完成的工程与发布门禁。
 ---
 
 # 路线图
 
-本页是产品化摘要；仓库根目录的 [`ROADMAP.md`](https://github.com/A3S-Lab/Use/blob/main/ROADMAP.md) 是优先级与完成状态的唯一事实来源。
+仓库中的 [`ROADMAP.md`](https://github.com/A3S-Lab/Use/blob/main/ROADMAP.md)
+是唯一事实来源。A3S Use 尚未发布受支持的产品版本，也未达到
+production-ready。合约完成和测试通过只是实现证据，不是发布声明。
 
-## 当前基线
+## 当前协议基线
 
-截至 2026-08-07，`main` 已包含：
+当前预览版只接受一条合约线：
 
-- schema-v3 命名 Tool Task/Service、MCP、OKF、Flow、Skill 与 UI contract；
-- signed catalog v1–v3、离线验证、metadata-only search 与 planning target；
-- immutable operation plan、permission ceiling、grant 与 provider evidence contract；
-- exact-generation workspace grant store 和 recoverable journal；
-- Runtime Task/Service binding、invocation、receipt 与 observation typed adapter；
-- dependency-gated Surface Reconciler、planner evidence 和 capability snapshot；
-- M0K-A `a3s.use.okf-bundle.v1` descriptor 与支持 v0.2/v0.1 的有界 inspector；
-- M0K-B manifest/package validation、catalog-v3、plan-v2、manager-v2、Knowledge evidence、reconciliation 与 canonical fixtures；
-- M0K-C-A 注入式 Knowledge lifecycle contract、精确字节验证、持久 last-good binding 与 package adapter；
-- P0-K bundled SQLite/FTS5 Knowledge，包含完整 User/Workspace 隔离、事务化 generation cutover、精确 projection 授权的带引用搜索、重启恢复与 signed package E2E；
-- P0 schema-v3 package/capability host，包括 generation-bound receipt、确定性 root、原子 snapshot、route-lease drain 与精确移除。
-- P0-D schema-v3 SemVer package dependency、有界解析、精确 Registry/TUF lock、signed remote CLI install/uninstall、前向闭包下载/安装、retained dependency 校验、原子图发布、durable crash replay 与反向移除。
-- P0-F A3S Flow engine/runtime/source contract、Tool/MCP/OKF 依赖闭包、lifecycle/reconciler/catalog projection、真实 Native TypeScript preflight、exact-generation binding、host-capabilities v2 与 manager-toolset v3；
-- 宿主持有的稳定名称 Registry 替换与启停，以及 disabled-source 过滤和内容寻址 trust-root 切换；
-- A3S Code CLI/TUI/Web lifecycle-factory 组合、严格 `flow.json` 身份、单一 workspace-local 持久 runtime，以及 detached-Web 安装/运行/升级/卸载/重启覆盖。
+| 合约                       | 当前值                                            |
+| -------------------------- | ------------------------------------------------- |
+| 认知包 manifest            | schema 3                                          |
+| 签名 catalog               | `a3s.use.plugin-catalog.v3`                       |
+| installed receipt          | schema 3                                          |
+| operation plan             | `a3s.use.plugin-operation-plan.v4`                |
+| host capabilities          | `a3s.use.plugin-host-capabilities.v4`，protocol 4 |
+| manager MCP tools          | `a3s.use.plugin-manager-tools.v3`                 |
+| pending package graph      | `a3s.use.pending-package-graph-operation.v2`      |
+| enablement state/operation | v2                                                |
+| OKF 内容                   | 仅 v0.2                                           |
 
-稳定 v0.2 package foundation 仍可独立使用。上述 plugin-platform baseline 是 `main` 上的在建能力，不能被描述为完整 production plugin product。
+首个受支持版本之前，过时的预览 schema、API、receipt 和磁盘状态会被删除，
+不会被当作兼容目标。遇到不支持的状态时 fail closed，并提示清理后重装。
+SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必须的
+正确性规则。
 
-**OKF（Open Knowledge Format）** 已具备完整 standalone 数据路径：signed package lifecycle、bundled indexing、精确 capability projection、带引用检索、原子升级切换与 receipt-owned removal。A3S Code/Web 托管 Workspace/session carrier、retention/GC 与完整跨平台实进程门禁仍是 production-ready 前置条件。
+## 已实现基线
 
-## 里程碑
+- Manifest v3 与 catalog v3 已覆盖命名 Tool、MCP、OKF、Flow、Skill、UI
+  表面、包依赖、权限上限与精确 provenance。
+- 有界 resolver 会冻结一个 Registry/TUF package lock，前向准备依赖，一次
+  发布图快照，再反向退休不再需要的包。
+- Plan v4 分离审查和 mutation，并绑定 operation identity、confirmation、
+  scope、package transition、impact、Grant、provider 与当前状态证据。
+- Lifecycle journal 已提供精确崩溃重放、cutover-aware publication、精确
+  generation 排空，以及 fail-closed corruption handling。
+- standalone 已组合 Tool Task、stdio MCP、Skill/UI projection、SQLite/FTS5
+  OKF，以及注入式 `a3s-flow` Native TypeScript preflight。
+- GitHub Pages 和中英文产品文档已经存在，但只描述开发预览版。
 
-| 里程碑                               | 状态            | 结果                                                                                                        |
-| ------------------------------------ | --------------- | ----------------------------------------------------------------------------------------------------------- |
-| M0 — Contract freeze and fixtures    | 完成            | 冻结 identity、surface、permission、plan、grant 与 release fixture                                          |
-| M0K-A — OKF bundle contract          | 完成            | 精确内容身份、有界 conformance 与 canonical fixtures                                                        |
-| M0K-B — OKF control plane            | 完成            | Manifest、package、catalog、plan、Knowledge evidence 与 reconciler gate                                     |
-| M0K-C-A — OKF lifecycle foundation   | 完成            | 注入式 port、精确字节验证、持久 binding 与 owned cleanup                                                    |
-| M0K-C-B — Production OKF integration | standalone 完成 | SQLite/FTS5 indexing、scoped projection、带引用检索、rollback 与 signed package E2E；managed carrier 待完成 |
-| M0F — Unified A3S Flow surface       | 本地完成        | Code CLI/TUI/Web 持久 run 与精确 `flow.json` 映射完成；分布式 runtime 待完成                                |
-| M1 — Signed searchable catalog       | 完成            | TUF 签名目录、bounded search、planning bundle 与 cache                                                      |
-| M2 — Shared Plugin Manager           | 进行中          | 统一 CLI/Web/MCP lifecycle、durable plan/apply/replay 与 parent saga                                        |
-| P0 — Package/capability hosts        | 完成            | Generation commit/remove、snapshot publish/hide、lease drain 与 replay                                      |
-| P0-D — Package dependency graph      | 完成            | SemVer resolver、精确 lock、retained node、前向安装、一次切换与反向移除                                     |
-| M3 — User plugin UX                  | 进行中          | CLI/Marketplace lifecycle 可用；on-demand Science/OKF 分发与 release E2E 待完成                             |
-| M4 — Agent read-only management      | 合约完成        | search、inspect、list、status 与 plan 工具                                                                  |
-| M5 — Permission/runtime enforcement  | 进行中          | 生产 grant、secret、egress、filesystem、process 与 Gateway adapter                                          |
-| M6 — Authorized agent lifecycle      | 待完成          | 可授权 apply、hot use、upgrade、disable 与 uninstall                                                        |
-| M7 — Supply chain/platform gates     | 待完成          | 官方签名/密钥运维、rollback/GC、Windows parity 与发布门禁                                                   |
+## 剩余发布计划
 
-## 当前关键路径
+### 1. 托管宿主 provider 组合 — 进行中
 
-1. 在 Code Plugin Manager 已实现的 package、capability、Tool Task、stdio MCP、A3S Flow 与 static-surface 组合上，增加生产 Runtime Service、Gateway/HTTP MCP 与托管 Knowledge Workspace/session carrier。
-2. 把 workspace-grant sub-saga 接入 package checkpoint 与 capability cutover，再让 CLI、Web、management MCP 和 managed-host mutation 统一通过该 journal。
-3. 在 blue/green capability cutover 后增加旧 generation 退休，再完成 CLI/Web/Agent lifecycle 与 crash-recovery E2E。
-4. 保持 Code Web/TUI 的共享 lifecycle 路径，同时让 management MCP 与 managed-host apply 通过同一个 public factory 和 package graph，再增加 retained-generation rollback 与 garbage collection。
-5. 把已完成的 standalone Knowledge projection 带入 Code/Web 托管 Workspace session，并增加生产 retention/garbage collection。
-6. 增加可见 Web Flow run/history 控件，再在已完成的 workspace-local runtime 上增加分布式 worker placement、suspended work 自动恢复与生产 retention/garbage collection。
-7. 每个宿主合约冻结后，再扩展 Agent、prompt、hook、memory 与 context-provider contribution。
-8. 完成官方 Registry 签名/密钥运维与 Windows platform gate。
+- 增加生产 Runtime Service 与 HTTP MCP/Gateway provider。
+- 完成托管 Knowledge Workspace/session carrier 和 UI sandbox 的 ownership、
+  CSP、backend binding、drain、retention 与 garbage collection。
+- 证明 owner 或精确 readiness evidence 缺失时，required 表面始终不发布。
 
-## 完成标准
+### 2. A3S Code TUI/Web 热插拔验收 — 进行中
 
-认知插件平台只有在以下条件同时满足时才可宣称 production-ready：
+- 让 CLI、TUI、Web、manager MCP 共用一个 Plugin Manager。
+- 对全部六类表面和包含依赖的图验证 install、invoke、精确 generation
+  upgrade、再次 invoke、uninstall 与 restart。
+- 证明 User/Workspace scope 隔离、watcher resume、terminal result replay，
+  以及崩溃后不重复副作用。
 
-- 同一 package identity 覆盖发现、计划、授权、安装、启用、升级、禁用与卸载；
-- required Tool/MCP/OKF/Flow/Skill/UI 对同一 generation 原子可见；
-- package、grant、Runtime、Gateway 和 projection 崩溃后可恢复且不会重复副作用；
-- 签名目录、计划摘要、权限、provider 和 runtime observation 全链路可审计；
-- CLI、Web 与 agent management MCP 共享一个 manager 和 receipt format；
-- 含依赖安装在这些 adapter 间共享一个精确 lock、前向/反向生命周期与原子 capability cutover；
-- Linux、macOS 与 Windows 的声明支持级别都有自动化 release gate。
+### 3. 分布式 Flow 与 OS 集成 — 待完成
 
-## 开发原则
+- 在保持单一 package-owned `a3s-flow` 身份的前提下增加 remote placement、
+  scheduling、suspension、resumption、cancellation 与 observation。
+- 证明远程执行只改变 placement；唯一 lock、receipt 和 lifecycle journal
+  仍由 Use 持有。
 
-- 先冻结 contract 和 fixture，再实现 adapter。
-- 先打通 production lifecycle，再增加新的 cognitive surface 类型。
-- 不通过 fallback 掩盖 provider、权限或 readiness evidence 缺失。
-- 不重复已有 manager、store、selector、registry 或 protocol。
-- 首个稳定版本前直接删除过时 schema/API/receipt，不维护迁移分支；SemVer 与 host/target 检查仍属于包管理器正确性规则。
+### 4. 跨平台实进程矩阵 — 待完成
+
+- 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
+  周期与故障注入场景。
+- 覆盖下载中断、归档提取、cutover、drain、进程崩溃、重启、杀毒软件争用
+  和 Windows reparse point。
+
+### 5. 供应链与运维 — 待完成
+
+- 运营一个有文档的 Registry，覆盖签名、root rotation、expiry、mirror
+  replacement、offline recovery 与 incident procedure。
+- 从同一 release workflow 发布可复现归档、checksum、签名、SBOM、
+  provenance 和跨平台安装脚本。
+- 演练存储配额/修复、备份、telemetry、安全响应与支持 runbook。
+
+## Production-ready 定义
+
+只有当用户可以选择可信 Registry、审查一个精确 plan、安装签名依赖图、在受
+支持宿主中热使用六类表面、无需猜测地恢复、无混合 generation 地升级，并在
+每个声明平台上卸载后不遗留 route、Grant、进程、projection 或包拥有状态时，
+A3S Use 才可以发布。

@@ -19,10 +19,8 @@ use crate::plugin_lifecycle::{PluginLifecycleAction, PluginLifecycleIntent};
 use super::grant::PackageGraphAuthorization;
 use super::{CognitivePackageEnablementRequest, CognitivePackageEnablementResult};
 
-const ENABLEMENT_STATE_SCHEMA: &str = "a3s.use.cognitive-package-enablement-state.v1";
-pub(super) const ENABLEMENT_STATE_SCHEMA_V2: &str = "a3s.use.cognitive-package-enablement-state.v2";
-const ENABLEMENT_OPERATION_SCHEMA: &str = "a3s.use.cognitive-package-enablement-operation.v1";
-const ENABLEMENT_OPERATION_SCHEMA_V2: &str = "a3s.use.cognitive-package-enablement-operation.v2";
+pub(super) const ENABLEMENT_STATE_SCHEMA: &str = "a3s.use.cognitive-package-enablement-state.v2";
+const ENABLEMENT_OPERATION_SCHEMA: &str = "a3s.use.cognitive-package-enablement-operation.v2";
 const MAX_ENABLEMENT_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -57,10 +55,8 @@ pub(super) struct PendingCognitivePackageEnablement {
     pub request_digest: String,
     pub request: CognitivePackageEnablementRequest,
     pub intent: PluginLifecycleIntent,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub envelope: Option<PluginOperationPlanEnvelope>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub authorization: Option<PackageGraphAuthorization>,
+    pub envelope: PluginOperationPlanEnvelope,
+    pub authorization: PackageGraphAuthorization,
     pub state_generation_after: u64,
     pub started_at_ms: u64,
 }
@@ -96,52 +92,41 @@ impl PendingCognitivePackageEnablement {
                 "A pending cognitive-package enablement operation is invalid.",
             ));
         }
-        match (&self.envelope, &self.authorization) {
-            (None, None) if self.intent.plan_digest == self.request_digest => Ok(()),
-            (Some(envelope), Some(authorization)) => {
-                envelope.validate()?;
-                authorization.validate_against(envelope, self.started_at_ms)?;
-                let expected_plan_action = if self.request.enabled {
-                    PluginOperationAction::Enable
-                } else {
-                    PluginOperationAction::Disable
-                };
-                let transition = envelope.plan.packages.as_slice();
-                let receipt = envelope.plan.state.receipt_digest.as_deref();
-                let planned_state = transition
-                    .first()
-                    .and_then(|package| package.after.as_ref());
-                if envelope.plan.operation_id != self.request.operation_id
-                    || envelope.plan.action != expected_plan_action
-                    || envelope.plan.package_id != state.package_id
-                    || envelope.plan.scope != state.scope
-                    || envelope.plan.state.state_revision == 0
-                    || transition.len() != 1
-                    || transition[0].package_id != state.package_id
-                    || transition[0].change != PlanPackageChangeKind::Retain
-                    || transition[0].before != transition[0].after
-                    || planned_state.is_none_or(|planned| {
-                        planned.release.version != artifact.version
-                            || planned.release.package_sha256 != artifact.package_digest
-                            || planned.release.manifest_sha256 != artifact.manifest_digest
-                    })
-                    || receipt.is_none()
-                    || self.intent.plan_digest != envelope.plan_digest
-                {
-                    return Err(store_invalid(
-                        "A pending enablement plan drifted from its exact installed artifact or request.",
-                    ));
-                }
-                Ok(())
-            }
-            _ => Err(store_invalid(
-                "A pending enablement operation contains incomplete plan authorization evidence.",
-            )),
+        self.envelope.validate()?;
+        self.authorization
+            .validate_against(&self.envelope, self.started_at_ms)?;
+        let expected_plan_action = if self.request.enabled {
+            PluginOperationAction::Enable
+        } else {
+            PluginOperationAction::Disable
+        };
+        let transition = self.envelope.plan.packages.as_slice();
+        let receipt = self.envelope.plan.state.receipt_digest.as_deref();
+        let planned_state = transition
+            .first()
+            .and_then(|package| package.after.as_ref());
+        if self.envelope.plan.operation_id != self.request.operation_id
+            || self.envelope.plan.action != expected_plan_action
+            || self.envelope.plan.package_id != state.package_id
+            || self.envelope.plan.scope != state.scope
+            || self.envelope.plan.state.state_revision == 0
+            || transition.len() != 1
+            || transition[0].package_id != state.package_id
+            || transition[0].change != PlanPackageChangeKind::Retain
+            || transition[0].before != transition[0].after
+            || planned_state.is_none_or(|planned| {
+                planned.release.version != artifact.version
+                    || planned.release.package_sha256 != artifact.package_digest
+                    || planned.release.manifest_sha256 != artifact.manifest_digest
+            })
+            || receipt.is_none()
+            || self.intent.plan_digest != self.envelope.plan_digest
+        {
+            return Err(store_invalid(
+                "A pending enablement plan drifted from its exact installed artifact or request.",
+            ));
         }
-    }
-
-    pub fn requires_authority_revalidation(&self) -> bool {
-        self.envelope.is_some()
+        Ok(())
     }
 }
 
@@ -170,7 +155,7 @@ impl StoredCognitivePackageEnablement {
         updated_at_ms: u64,
     ) -> UseResult<Self> {
         let state = Self {
-            schema: ENABLEMENT_STATE_SCHEMA_V2.to_string(),
+            schema: ENABLEMENT_STATE_SCHEMA.to_string(),
             scope,
             package_id: package_id.into(),
             state_generation,
@@ -188,10 +173,8 @@ impl StoredCognitivePackageEnablement {
         PluginPackageId::parse(self.package_id.clone()).map_err(|_| {
             store_invalid("A cognitive-package enablement package identity is invalid.")
         })?;
-        if !matches!(
-            self.schema.as_str(),
-            ENABLEMENT_STATE_SCHEMA | ENABLEMENT_STATE_SCHEMA_V2
-        ) || self.state_generation == 0
+        if self.schema != ENABLEMENT_STATE_SCHEMA
+            || self.state_generation == 0
             || self.updated_at_ms == 0
             || (self.artifact.is_none() && self.enabled)
         {
@@ -216,12 +199,9 @@ pub(super) struct StoredCognitivePackageEnablementOperation {
     pub scope: PlanScope,
     pub request_digest: String,
     pub request: CognitivePackageEnablementRequest,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub envelope: Option<PluginOperationPlanEnvelope>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub authorization: Option<PackageGraphAuthorization>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub admitted_at_ms: Option<u64>,
+    pub envelope: PluginOperationPlanEnvelope,
+    pub authorization: PackageGraphAuthorization,
+    pub admitted_at_ms: u64,
     pub result: CognitivePackageEnablementResult,
     pub state_after: StoredCognitivePackageEnablement,
 }
@@ -230,18 +210,14 @@ impl StoredCognitivePackageEnablementOperation {
     pub fn new(
         scope: PlanScope,
         request: CognitivePackageEnablementRequest,
-        envelope: Option<PluginOperationPlanEnvelope>,
-        authorization: Option<PackageGraphAuthorization>,
-        admitted_at_ms: Option<u64>,
+        envelope: PluginOperationPlanEnvelope,
+        authorization: PackageGraphAuthorization,
+        admitted_at_ms: u64,
         result: CognitivePackageEnablementResult,
         state_after: StoredCognitivePackageEnablement,
     ) -> UseResult<Self> {
         let operation = Self {
-            schema: if envelope.is_some() {
-                ENABLEMENT_OPERATION_SCHEMA_V2.to_string()
-            } else {
-                ENABLEMENT_OPERATION_SCHEMA.to_string()
-            },
+            schema: ENABLEMENT_OPERATION_SCHEMA.to_string(),
             request_digest: request.descriptor_digest()?,
             scope,
             request,
@@ -260,33 +236,24 @@ impl StoredCognitivePackageEnablementOperation {
         self.request.validate()?;
         self.result.validate_for(&self.request)?;
         self.state_after.validate()?;
-        match (&self.envelope, &self.authorization, self.admitted_at_ms) {
-            (None, None, None) if self.schema == ENABLEMENT_OPERATION_SCHEMA => {}
-            (Some(envelope), Some(authorization), Some(admitted_at_ms))
-                if self.schema == ENABLEMENT_OPERATION_SCHEMA_V2 && admitted_at_ms > 0 =>
-            {
-                envelope.validate()?;
-                authorization.validate_against(envelope, admitted_at_ms)?;
-                let expected_action = if self.request.enabled {
-                    PluginOperationAction::Enable
-                } else {
-                    PluginOperationAction::Disable
-                };
-                if envelope.plan.operation_id != self.request.operation_id
-                    || envelope.plan.package_id != self.request.package_id.as_str()
-                    || envelope.plan.scope != self.scope
-                    || envelope.plan.action != expected_action
-                {
-                    return Err(store_invalid(
-                        "A completed enablement plan does not bind its exact request and scope.",
-                    ));
-                }
-            }
-            _ => {
-                return Err(store_invalid(
-                    "A completed enablement operation contains incomplete authorization evidence.",
-                ))
-            }
+        self.envelope.validate()?;
+        self.authorization
+            .validate_against(&self.envelope, self.admitted_at_ms)?;
+        let expected_action = if self.request.enabled {
+            PluginOperationAction::Enable
+        } else {
+            PluginOperationAction::Disable
+        };
+        if self.schema != ENABLEMENT_OPERATION_SCHEMA
+            || self.admitted_at_ms == 0
+            || self.envelope.plan.operation_id != self.request.operation_id
+            || self.envelope.plan.package_id != self.request.package_id.as_str()
+            || self.envelope.plan.scope != self.scope
+            || self.envelope.plan.action != expected_action
+        {
+            return Err(store_invalid(
+                "A completed enablement plan does not bind its exact request and scope.",
+            ));
         }
         let package_generation = self.result.state.package_generation.ok_or_else(|| {
             store_invalid("A stored enablement result omitted its state generation.")

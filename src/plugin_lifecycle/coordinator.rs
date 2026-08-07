@@ -81,38 +81,29 @@ pub trait PluginPackageLifecycleHost: Send + Sync {
 
 #[async_trait]
 pub trait PluginCapabilityLifecycleHost: Send + Sync {
-    /// Atomically publish the complete required contribution generation.
-    async fn publish_capability(
-        &self,
-        intent: &PluginLifecycleIntent,
-        idempotency_key: &str,
-    ) -> UseResult<PluginLifecycleEvidence>;
-
     /// Publish one exact package generation and prove the immutable
     /// capability snapshot selected by the same atomic cutover.
     async fn publish_capability_with_cutover(
         &self,
-        _intent: &PluginLifecycleIntent,
-        _idempotency_key: &str,
-    ) -> UseResult<PluginCapabilityPublication> {
-        Err(capability_cutover_required())
-    }
-
-    async fn hide_capability(
-        &self,
         intent: &PluginLifecycleIntent,
         idempotency_key: &str,
-    ) -> UseResult<PluginLifecycleEvidence>;
+    ) -> UseResult<PluginCapabilityPublication>;
 
     /// Hide one exact package generation and prove the immutable capability
     /// snapshot selected by the same atomic cutover.
     async fn hide_capability_with_cutover(
         &self,
-        _intent: &PluginLifecycleIntent,
-        _idempotency_key: &str,
-    ) -> UseResult<PluginCapabilityPublication> {
-        Err(capability_cutover_required())
-    }
+        intent: &PluginLifecycleIntent,
+        idempotency_key: &str,
+    ) -> UseResult<PluginCapabilityPublication>;
+
+    /// Mark an exact prior generation hidden only after a graph cutover has
+    /// already removed it from the immutable capability snapshot.
+    async fn retire_hidden_capability(
+        &self,
+        intent: &PluginLifecycleIntent,
+        idempotency_key: &str,
+    ) -> UseResult<PluginLifecycleEvidence>;
 
     /// Acknowledge that both the package lifecycle and Grant journal now own
     /// the cutover evidence. Hosts with a durable replay record may release it
@@ -320,7 +311,7 @@ impl PluginLifecycleCoordinator {
         Self { journal, hosts }
     }
 
-    pub async fn apply(
+    pub(crate) async fn apply(
         &self,
         intent: &PluginLifecycleIntent,
         manifest: &ExtensionManifest,
@@ -488,11 +479,26 @@ impl PluginLifecycleCoordinator {
             let Some(checkpoint) = record.next_checkpoint().cloned() else {
                 return Ok(record);
             };
-            if !matches!(
-                checkpoint.kind,
-                PluginLifecycleCheckpointKind::CapabilityHidden
-                    | PluginLifecycleCheckpointKind::CallsDrained
-            ) {
+            if checkpoint.kind == PluginLifecycleCheckpointKind::CapabilityHidden {
+                let evidence = self
+                    .hosts
+                    .capability
+                    .retire_hidden_capability(intent, &checkpoint.idempotency_key)
+                    .await?;
+                record = self
+                    .journal
+                    .record_checkpoint(
+                        intent,
+                        &checkpoint.idempotency_key,
+                        PluginLifecycleCheckpointOutcome::Applied,
+                        evidence.digest,
+                        None,
+                        completed_at_ms(),
+                    )
+                    .await?;
+                continue;
+            }
+            if !matches!(checkpoint.kind, PluginLifecycleCheckpointKind::CallsDrained) {
                 return Ok(record);
             }
             record = self
@@ -733,12 +739,18 @@ impl PluginLifecycleCoordinator {
             (PluginLifecycleCheckpointKind::PackageRemoved, None) => {
                 self.hosts.package.remove_package(intent, key).await
             }
-            (PluginLifecycleCheckpointKind::CapabilityPublished, None) => {
-                self.hosts.capability.publish_capability(intent, key).await
-            }
-            (PluginLifecycleCheckpointKind::CapabilityHidden, None) => {
-                self.hosts.capability.hide_capability(intent, key).await
-            }
+            (PluginLifecycleCheckpointKind::CapabilityPublished, None) => self
+                .hosts
+                .capability
+                .publish_capability_with_cutover(intent, key)
+                .await
+                .map(|publication| publication.evidence),
+            (PluginLifecycleCheckpointKind::CapabilityHidden, None) => self
+                .hosts
+                .capability
+                .hide_capability_with_cutover(intent, key)
+                .await
+                .map(|publication| publication.evidence),
             (PluginLifecycleCheckpointKind::CallsDrained, None) => {
                 self.hosts.capability.drain_calls(intent, key).await
             }
@@ -762,6 +774,25 @@ impl PluginLifecycleCoordinator {
                 "The lifecycle checkpoint kind and surface identity disagree.",
             )),
         }
+    }
+
+    pub(crate) async fn complete_single_cutover(
+        &self,
+        intent: &PluginLifecycleIntent,
+    ) -> UseResult<()> {
+        for checkpoint in &intent.checkpoints {
+            if matches!(
+                checkpoint.kind,
+                PluginLifecycleCheckpointKind::CapabilityPublished
+                    | PluginLifecycleCheckpointKind::CapabilityHidden
+            ) {
+                self.hosts
+                    .capability
+                    .complete_capability_cutover(&checkpoint.idempotency_key)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     async fn execute_surface(
@@ -939,13 +970,6 @@ fn surface_missing() -> UseError {
 
 pub(super) fn coordinator_error(message: impl Into<String>) -> UseError {
     UseError::new("use.plugin.lifecycle_coordinator_invalid", message)
-}
-
-fn capability_cutover_required() -> UseError {
-    UseError::new(
-        "use.plugin.capability_cutover_evidence_required",
-        "The capability host cannot prove an atomic single-package visibility cutover.",
-    )
 }
 
 #[cfg(test)]

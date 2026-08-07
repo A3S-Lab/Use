@@ -417,7 +417,6 @@ pub(crate) fn parse_okf(block: &Block) -> UseResult<PluginOkfSurface> {
         ],
     )?;
     let format_version = match string_attribute(block, "format_version")?.as_str() {
-        "0.1" => OkfFormatVersion::V0_1,
         "0.2" => OkfFormatVersion::V0_2,
         value => {
             return Err(manifest_error(format!(

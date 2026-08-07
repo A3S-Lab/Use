@@ -9,9 +9,8 @@ use super::plan::{
 };
 use super::plan_validation::{planned_okf_changes, planned_secret_changes};
 use super::{
-    parse_contract, plan::plan_error, PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA,
-    PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2, PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3,
-    PLUGIN_OPERATION_PLAN_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA_V2, PLUGIN_OPERATION_PLAN_SCHEMA_V4,
+    parse_contract, plan::plan_error, PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 /// Planner-owned operation evidence before the host assigns identity, scope,
@@ -57,18 +56,8 @@ impl PluginOperationPlanDraft {
     ) -> UseResult<Self> {
         let mut impact = impact;
         impact.okf_changes = planned_okf_changes(action, &packages)?;
-        let schema = if matches!(
-            action,
-            PluginOperationAction::Enable | PluginOperationAction::Disable
-        ) {
-            PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3
-        } else if impact.okf_changes.is_empty() {
-            PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA
-        } else {
-            PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2
-        };
         let draft = Self {
-            schema: schema.to_string(),
+            schema: PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3.to_string(),
             action,
             package_id: package_id.into(),
             component_id: component_id.into(),
@@ -95,12 +84,7 @@ impl PluginOperationPlanDraft {
     /// Validate planner-owned evidence without granting it a real host
     /// identity or authority.
     pub fn validate(&self) -> UseResult<()> {
-        if !matches!(
-            self.schema.as_str(),
-            PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA
-                | PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2
-                | PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3
-        ) {
+        if self.schema != PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3 {
             return Err(plan_error(
                 "The plugin operation plan draft schema is unsupported.",
             ));
@@ -109,12 +93,7 @@ impl PluginOperationPlanDraft {
     }
 
     pub fn bind(self, binding: PluginOperationPlanBinding) -> UseResult<PluginOperationPlan> {
-        if !matches!(
-            self.schema.as_str(),
-            PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA
-                | PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2
-                | PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3
-        ) {
+        if self.schema != PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3 {
             return Err(plan_error(
                 "The plugin operation plan draft schema is unsupported.",
             ));
@@ -124,18 +103,8 @@ impl PluginOperationPlanDraft {
 
     fn bind_unchecked(self, binding: PluginOperationPlanBinding) -> UseResult<PluginOperationPlan> {
         let secret_changes = planned_secret_changes(self.action, &self.packages);
-        let plan_schema = match self.schema.as_str() {
-            PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA => PLUGIN_OPERATION_PLAN_SCHEMA,
-            PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2 => PLUGIN_OPERATION_PLAN_SCHEMA_V2,
-            PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3 => PLUGIN_OPERATION_PLAN_SCHEMA_V4,
-            _ => {
-                return Err(plan_error(
-                    "The plugin operation plan draft schema is unsupported.",
-                ))
-            }
-        };
         let plan = PluginOperationPlan {
-            schema: plan_schema.to_string(),
+            schema: PLUGIN_OPERATION_PLAN_SCHEMA_V4.to_string(),
             operation_id: binding.operation_id,
             created_at_ms: binding.created_at_ms,
             expires_at_ms: binding.expires_at_ms,

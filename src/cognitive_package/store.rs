@@ -19,8 +19,7 @@ use super::grant::PackageGraphAuthorization;
 use super::package_manager_error;
 
 const INSTALLED_GRAPH_SCHEMA: &str = "a3s.use.installed-package-graph.v1";
-const PENDING_GRAPH_SCHEMA: &str = "a3s.use.pending-package-graph-operation.v1";
-const PENDING_GRAPH_SCHEMA_V2: &str = "a3s.use.pending-package-graph-operation.v2";
+const PENDING_GRAPH_SCHEMA: &str = "a3s.use.pending-package-graph-operation.v2";
 const MAX_GRAPH_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,7 +88,7 @@ impl PendingPackageGraphOperation {
     ) -> UseResult<Self> {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA_V2.to_string(),
+            schema: PENDING_GRAPH_SCHEMA.to_string(),
             envelope,
             admitted_at_ms,
             authorization,
@@ -119,7 +118,7 @@ impl PendingPackageGraphOperation {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let prior_manifest_digests = manifest_record_digests(&prior_manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA_V2.to_string(),
+            schema: PENDING_GRAPH_SCHEMA.to_string(),
             envelope,
             admitted_at_ms,
             authorization,
@@ -259,10 +258,7 @@ impl PendingPackageGraphOperation {
             .is_ok_and(|digests| digests == self.manifest_digests);
         let prior_manifest_digests_valid = manifest_record_digests(&self.prior_manifests)
             .is_ok_and(|digests| digests == self.prior_manifest_digests);
-        let schema_valid = self.schema == PENDING_GRAPH_SCHEMA_V2
-            || (self.schema == PENDING_GRAPH_SCHEMA
-                && self.authorization == PackageGraphAuthorization::default());
-        if !schema_valid
+        if self.schema != PENDING_GRAPH_SCHEMA
             || changed != generations
             || changed != manifests
             || !upgrade_evidence_valid
@@ -289,10 +285,6 @@ impl PendingPackageGraphOperation {
 
     pub fn root_package_id(&self) -> &str {
         &self.envelope.plan.package_id
-    }
-
-    pub fn requires_authority_revalidation(&self) -> bool {
-        self.schema == PENDING_GRAPH_SCHEMA_V2
     }
 }
 

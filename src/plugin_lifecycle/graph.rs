@@ -152,65 +152,34 @@ impl PluginPackagePublicationEvidence {
 /// Host-owned atomic publication boundary for a prepared package closure.
 #[async_trait]
 pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
-    async fn publish_capabilities(
-        &self,
-        package_lock: &PluginPackageLock,
-        intents: &[PluginLifecycleIntent],
-        idempotency_key: &str,
-    ) -> UseResult<Vec<PluginPackagePublicationEvidence>>;
-
     /// Publish and return exact immutable capability snapshot evidence. Hosts
     /// that cannot prove this boundary must fail before mutation.
     async fn publish_capabilities_with_cutover(
         &self,
-        _package_lock: &PluginPackageLock,
-        _intents: &[PluginLifecycleIntent],
-        _idempotency_key: &str,
-    ) -> UseResult<PluginGraphCapabilityPublication> {
-        Err(cutover_evidence_required())
-    }
+        package_lock: &PluginPackageLock,
+        intents: &[PluginLifecycleIntent],
+        idempotency_key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication>;
 
     /// Publish candidate generations and hide prior-only removed generations
-    /// in one capability snapshot. Existing hosts remain source-compatible for
-    /// upgrades without removals; hosts supporting graph GC must override this
-    /// method with an atomic implementation.
-    async fn publish_upgrade_capabilities(
+    /// in one capability snapshot.
+    async fn publish_upgrade_capabilities_with_cutover(
         &self,
         package_lock: &PluginPackageLock,
         candidate_intents: &[PluginLifecycleIntent],
         removed_intents: &[PluginLifecycleIntent],
         idempotency_key: &str,
-    ) -> UseResult<Vec<PluginPackagePublicationEvidence>> {
-        if !removed_intents.is_empty() {
-            return Err(graph_error(
-                "The capability host does not support atomic dependency-removal publication.",
-            ));
-        }
-        self.publish_capabilities(package_lock, candidate_intents, idempotency_key)
-            .await
-    }
-
-    async fn publish_upgrade_capabilities_with_cutover(
-        &self,
-        _package_lock: &PluginPackageLock,
-        _candidate_intents: &[PluginLifecycleIntent],
-        _removed_intents: &[PluginLifecycleIntent],
-        _idempotency_key: &str,
-    ) -> UseResult<PluginGraphCapabilityPublication> {
-        Err(cutover_evidence_required())
-    }
+    ) -> UseResult<PluginGraphCapabilityPublication>;
 
     /// Atomically hide an uninstall closure and return one route-snapshot
     /// cutover. Package-specific hide checkpoints use the returned evidence;
     /// drain and exact removal continue through their typed hosts.
     async fn hide_capabilities_with_cutover(
         &self,
-        _package_lock: &PluginPackageLock,
-        _intents: &[PluginLifecycleIntent],
-        _idempotency_key: &str,
-    ) -> UseResult<PluginGraphCapabilityPublication> {
-        Err(cutover_evidence_required())
-    }
+        package_lock: &PluginPackageLock,
+        intents: &[PluginLifecycleIntent],
+        idempotency_key: &str,
+    ) -> UseResult<PluginGraphCapabilityPublication>;
 
     /// Release host-owned replay evidence after durable package and Grant
     /// journals can resume without invoking the cutover again.
@@ -319,20 +288,12 @@ impl PluginPackageGraphLifecycleCoordinator {
                 return Ok(records);
             }
         }
-        let (evidence, cutover) = if grants.is_some() {
-            let publication = self
-                .publication
-                .publish_capabilities_with_cutover(lock, &intents, &cutover_key)
-                .await?;
-            (publication.packages, Some(publication.cutover))
-        } else {
-            (
-                self.publication
-                    .publish_capabilities(lock, &intents, &cutover_key)
-                    .await?,
-                None,
-            )
-        };
+        let publication = self
+            .publication
+            .publish_capabilities_with_cutover(lock, &intents, &cutover_key)
+            .await?;
+        let evidence = publication.packages;
+        let cutover = publication.cutover;
         if evidence.len() != ordered.len() {
             return Err(graph_error(
                 "Package-graph publication omitted capability evidence.",
@@ -357,16 +318,16 @@ impl PluginPackageGraphLifecycleCoordinator {
                     .await?,
             );
         }
-        if let (Some(grants), Some(cutover)) = (grants, cutover.as_ref()) {
+        if let Some(grants) = grants {
             let committed_at_ms = completed_at_ms();
             grants
-                .commit_cutover(cutover, committed_at_ms, committed_at_ms)
+                .commit_cutover(&cutover, committed_at_ms, committed_at_ms)
                 .await?;
             grants.retire().await?;
-            self.publication
-                .complete_capability_cutover(&cutover_key)
-                .await?;
         }
+        self.publication
+            .complete_capability_cutover(&cutover_key)
+            .await?;
         Ok(records)
     }
 
@@ -376,35 +337,8 @@ impl PluginPackageGraphLifecycleCoordinator {
         units: &[PluginPackageLifecycleUnit],
         completed_at_ms: impl Fn() -> u64,
     ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
-        let lock = validate_graph(envelope, units, PluginOperationAction::Uninstall)?;
-        let units = units_by_package(units)?;
-        let mut records = Vec::with_capacity(units.len());
-        for package in lock.removal_order()? {
-            let transition = transition_for(envelope, package.package_id())?;
-            if transition.change == PlanPackageChangeKind::Retain {
-                continue;
-            }
-            if transition.change != PlanPackageChangeKind::Remove {
-                return Err(graph_error(
-                    "Package-graph uninstall supports only removed or retained dependency generations.",
-                ));
-            }
-            let unit = *units.get(package.package_id()).ok_or_else(|| {
-                graph_error("A locked dependency has no uninstall lifecycle unit.")
-            })?;
-            validate_unit(
-                envelope,
-                unit,
-                package.package_id(),
-                PluginLifecycleAction::Uninstall,
-            )?;
-            records.push(
-                unit.coordinator
-                    .apply(&unit.intent, &unit.manifest, &completed_at_ms)
-                    .await?,
-            );
-        }
-        Ok(records)
+        self.apply_uninstall_inner(envelope, units, None, completed_at_ms)
+            .await
     }
 
     pub async fn apply_uninstall_with_grants(
@@ -414,9 +348,22 @@ impl PluginPackageGraphLifecycleCoordinator {
         grants: &PluginGrantLifecycleUnit,
         completed_at_ms: impl Fn() -> u64,
     ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
+        self.apply_uninstall_inner(envelope, units, Some(grants), completed_at_ms)
+            .await
+    }
+
+    async fn apply_uninstall_inner(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        units: &[PluginPackageLifecycleUnit],
+        grants: Option<&PluginGrantLifecycleUnit>,
+        completed_at_ms: impl Fn() -> u64,
+    ) -> UseResult<Vec<PluginLifecycleOperationRecord>> {
         let lock = validate_graph(envelope, units, PluginOperationAction::Uninstall)?;
-        grants.validate_envelope(envelope)?;
-        grants.prepare(completed_at_ms()).await?;
+        if let Some(grants) = grants {
+            grants.validate_envelope(envelope)?;
+            grants.prepare(completed_at_ms()).await?;
+        }
         let units_by_id = units_by_package(units)?;
         let mut ordered = Vec::with_capacity(units.len());
         for package in lock.removal_order()? {
@@ -446,7 +393,11 @@ impl PluginPackageGraphLifecycleCoordinator {
             .map(|unit| unit.intent.clone())
             .collect::<Vec<_>>();
         let cutover_key = hide_key(envelope)?;
-        if grants.has_cutover().await? {
+        let grant_has_cutover = match grants {
+            Some(grants) => grants.has_cutover().await?,
+            None => false,
+        };
+        if grant_has_cutover {
             validate_hidden_records(&ordered).await?;
         } else {
             let publication = self
@@ -474,10 +425,12 @@ impl PluginPackageGraphLifecycleCoordinator {
                     .await?;
             }
 
-            let committed_at_ms = completed_at_ms();
-            grants
-                .commit_cutover(&publication.cutover, committed_at_ms, committed_at_ms)
-                .await?;
+            if let Some(grants) = grants {
+                let committed_at_ms = completed_at_ms();
+                grants
+                    .commit_cutover(&publication.cutover, committed_at_ms, committed_at_ms)
+                    .await?;
+            }
         }
 
         for unit in &ordered {
@@ -485,7 +438,9 @@ impl PluginPackageGraphLifecycleCoordinator {
                 .drain_graph_retirement(&unit.intent, &unit.manifest, &completed_at_ms)
                 .await?;
         }
-        grants.retire().await?;
+        if let Some(grants) = grants {
+            grants.retire().await?;
+        }
 
         let mut records = Vec::with_capacity(ordered.len());
         for unit in ordered {
@@ -708,28 +663,16 @@ impl PluginPackageGraphLifecycleCoordinator {
         if grant_has_cutover {
             records.extend(completed_publication_records(&ordered_candidates).await?);
         } else {
-            let publication = if grants.is_some() {
-                self.publication
-                    .publish_upgrade_capabilities_with_cutover(
-                        candidate_lock,
-                        &intents,
-                        &removed_intents,
-                        &cutover_key,
-                    )
-                    .await
-                    .map(|publication| (publication.packages, Some(publication.cutover)))
-            } else {
-                self.publication
-                    .publish_upgrade_capabilities(
-                        candidate_lock,
-                        &intents,
-                        &removed_intents,
-                        &cutover_key,
-                    )
-                    .await
-                    .map(|evidence| (evidence, None))
-            };
-            let (evidence, cutover) = match publication {
+            let publication = self
+                .publication
+                .publish_upgrade_capabilities_with_cutover(
+                    candidate_lock,
+                    &intents,
+                    &removed_intents,
+                    &cutover_key,
+                )
+                .await;
+            let publication = match publication {
                 Ok(publication) => publication,
                 Err(error) => {
                     return match self
@@ -748,6 +691,7 @@ impl PluginPackageGraphLifecycleCoordinator {
                     };
                 }
             };
+            let evidence = publication.packages;
             if evidence.len() != ordered_candidates.len() {
                 return Err(graph_error(
                     "Package-graph upgrade publication omitted candidate capability evidence.",
@@ -771,43 +715,43 @@ impl PluginPackageGraphLifecycleCoordinator {
                 );
             }
 
-            if let (Some(grants), Some(cutover)) = (grants, cutover.as_ref()) {
+            if let Some(grants) = grants {
                 let committed_at_ms = completed_at_ms();
                 grants
-                    .commit_cutover(cutover, committed_at_ms, committed_at_ms)
+                    .commit_cutover(&publication.cutover, committed_at_ms, committed_at_ms)
                     .await?;
             }
         }
 
-        if let Some(grants) = grants {
-            for package in prior_lock.removal_order()? {
-                let Some(transition) = envelope
-                    .plan
-                    .packages
-                    .iter()
-                    .find(|transition| transition.package_id == package.package_id())
-                else {
-                    continue;
-                };
-                if !matches!(
-                    transition.change,
-                    PlanPackageChangeKind::Replace | PlanPackageChangeKind::Remove
-                ) {
-                    continue;
-                }
-                let unit = *retirements.get(package.package_id()).ok_or_else(|| {
-                    graph_error("A replaced dependency has no prior-generation retirement unit.")
-                })?;
-                validate_unit(
-                    envelope,
-                    unit,
-                    package.package_id(),
-                    PluginLifecycleAction::Uninstall,
-                )?;
-                unit.coordinator
-                    .drain_graph_retirement(&unit.intent, &unit.manifest, &completed_at_ms)
-                    .await?;
+        for package in prior_lock.removal_order()? {
+            let Some(transition) = envelope
+                .plan
+                .packages
+                .iter()
+                .find(|transition| transition.package_id == package.package_id())
+            else {
+                continue;
+            };
+            if !matches!(
+                transition.change,
+                PlanPackageChangeKind::Replace | PlanPackageChangeKind::Remove
+            ) {
+                continue;
             }
+            let unit = *retirements.get(package.package_id()).ok_or_else(|| {
+                graph_error("A replaced dependency has no prior-generation retirement unit.")
+            })?;
+            validate_unit(
+                envelope,
+                unit,
+                package.package_id(),
+                PluginLifecycleAction::Uninstall,
+            )?;
+            unit.coordinator
+                .drain_graph_retirement(&unit.intent, &unit.manifest, &completed_at_ms)
+                .await?;
+        }
+        if let Some(grants) = grants {
             grants.retire().await?;
         }
 
@@ -841,11 +785,9 @@ impl PluginPackageGraphLifecycleCoordinator {
                     .await?,
             );
         }
-        if grants.is_some() {
-            self.publication
-                .complete_capability_cutover(&cutover_key)
-                .await?;
-        }
+        self.publication
+            .complete_capability_cutover(&cutover_key)
+            .await?;
         Ok(records)
     }
 

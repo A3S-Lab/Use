@@ -4,9 +4,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use a3s_use_core::RiskClass;
-use a3s_use_extension::{
-    ExtensionManifest, ExtensionPaths, ExtensionRegistry, InstallOptions, McpTransport,
-};
+use a3s_use_extension::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 use a3s_use_science::{ScienceClient, ScienceEndpoints};
 use axum::extract::{OriginalUri, Query, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
@@ -195,28 +193,32 @@ fn packaged_manifest_declares_native_read_only_surfaces() {
     assert_eq!(manifest.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(manifest.route, "science");
     assert_eq!(manifest.actions, [RiskClass::Read]);
-    assert!(manifest.cli.as_ref().unwrap().json_output);
+    let ToolWorkload::Task(tool) = &manifest.tools[0].workload else {
+        panic!("science must be a Tool Task");
+    };
+    assert!(tool.json_output);
     assert_eq!(
-        manifest.mcp.as_ref().unwrap().transport,
-        McpTransport::Stdio
+        tool.source,
+        ToolTaskSource::Executable {
+            executable: PathBuf::from("bin/a3s-use-science")
+        }
     );
+    let PluginMcpLaunch::Stdio { args, .. } = &manifest.mcp_servers[0].launch else {
+        panic!("science MCP must use stdio");
+    };
+    assert_eq!(args, &["serve".to_string(), "--mcp".to_string()]);
     assert_eq!(
-        manifest.mcp.as_ref().unwrap().args,
-        ["serve".to_string(), "--mcp".to_string()]
-    );
-    assert_eq!(
-        manifest.skill.as_ref().unwrap().path,
+        manifest.skills[0].path,
         Path::new("skills/a3s-use-science/SKILL.md")
     );
-    assert_eq!(manifest.contributes.activity_bar.len(), 1);
-    let activity = &manifest.contributes.activity_bar[0];
+    let activity = &manifest.ui[0];
     assert_eq!(activity.id, "research");
     assert_eq!(activity.title, "科研");
     assert_eq!(activity.icon, "flask-conical");
     assert_eq!(activity.entry, Path::new("web/activity.html"));
     assert_eq!(activity.styles, [PathBuf::from("web/activity.css")]);
     assert_eq!(activity.scripts, [PathBuf::from("web/activity.js")]);
-    assert_eq!(activity.skill, "a3s-use-science");
+    assert_eq!(activity.skill.as_deref(), Some("science"));
     manifest
         .validate_package_root(
             Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -320,110 +322,4 @@ fn binary_emits_versioned_diagnostics_and_errors() {
     assert!(!invalid.status.success());
     let value: serde_json::Value = serde_json::from_slice(&invalid.stdout).unwrap();
     assert_eq!(value["error"]["code"], "use.science.identifier_invalid");
-}
-
-#[tokio::test]
-async fn real_science_package_installs_hot_upgrades_dispatches_and_uninstalls() {
-    let temp = tempfile::tempdir().unwrap();
-    let first_package = temp.path().join("science-package-v1");
-    let second_package = temp.path().join("science-package-v2");
-    create_science_package(&first_package);
-    create_science_package(&second_package);
-    let registry = ExtensionRegistry::new(ExtensionPaths::new(
-        temp.path().join("data"),
-        temp.path().join("state"),
-    ));
-
-    let installed = registry
-        .install_local(
-            "a3s/science",
-            &first_package,
-            InstallOptions {
-                allow_unsigned: true,
-                ..InstallOptions::default()
-            },
-        )
-        .await
-        .unwrap();
-    assert!(installed.changed);
-    let first_root = installed.extension.receipt.package_root.clone();
-    for (relative, expected) in [
-        (
-            "web/activity.html",
-            include_bytes!("../package/web/activity.html").as_slice(),
-        ),
-        (
-            "web/activity.css",
-            include_bytes!("../package/web/activity.css").as_slice(),
-        ),
-        (
-            "web/activity.js",
-            include_bytes!("../package/web/activity.js").as_slice(),
-        ),
-    ] {
-        assert_eq!(std::fs::read(first_root.join(relative)).unwrap(), expected);
-    }
-    let lease = registry.acquire_route("science").await.unwrap().unwrap();
-    let executable = lease.extension().cli_executable().unwrap();
-    let diagnostic = Command::new(executable)
-        .args(["doctor", "--json"])
-        .output()
-        .unwrap();
-    assert!(diagnostic.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&diagnostic.stdout).unwrap();
-    assert_eq!(value["schemaVersion"], 1);
-    assert_eq!(value["data"]["sources"].as_array().unwrap().len(), 5);
-
-    let upgraded = registry
-        .install_local(
-            "a3s/science",
-            &second_package,
-            InstallOptions {
-                force: true,
-                allow_unsigned: true,
-            },
-        )
-        .await
-        .unwrap();
-    assert!(upgraded.changed);
-    assert_ne!(upgraded.extension.receipt.package_root, first_root);
-    assert!(
-        first_root.exists(),
-        "the generation pinned by an active route lease was removed"
-    );
-    drop(lease);
-
-    let removed = registry.uninstall("a3s/science").await.unwrap();
-    assert!(removed.changed);
-    assert!(registry.get("a3s/science").await.unwrap().is_none());
-    assert!(!first_root.parent().unwrap().exists());
-}
-
-fn create_science_package(root: &Path) {
-    let binary = root.join("bin/a3s-use-science");
-    let skill = root.join("skills/a3s-use-science/SKILL.md");
-    let activity = root.join("web/activity.html");
-    let activity_styles = root.join("web/activity.css");
-    let activity_script = root.join("web/activity.js");
-    std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
-    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
-    std::fs::create_dir_all(activity.parent().unwrap()).unwrap();
-    std::fs::copy(env!("CARGO_BIN_EXE_a3s-use-science"), &binary).unwrap();
-    std::fs::write(
-        root.join("a3s-use-extension.acl"),
-        include_str!("../package/a3s-use-extension.acl"),
-    )
-    .unwrap();
-    std::fs::write(
-        &skill,
-        include_str!("../package/skills/a3s-use-science/SKILL.md"),
-    )
-    .unwrap();
-    std::fs::write(&activity, include_str!("../package/web/activity.html")).unwrap();
-    std::fs::write(
-        &activity_styles,
-        include_str!("../package/web/activity.css"),
-    )
-    .unwrap();
-    std::fs::write(&activity_script, include_str!("../package/web/activity.js")).unwrap();
 }

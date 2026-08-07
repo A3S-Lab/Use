@@ -16,12 +16,23 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
     let reviewed = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
         .await
         .unwrap();
-    let plan_digest = reviewed.resolved().plan_digest().unwrap();
+    let target_plan_digest = reviewed.resolved().plan_digest().unwrap();
     drop(reviewed);
+    let lock = resolve_remote_package_lock(
+        &trusted,
+        &[],
+        "a3s/science",
+        None,
+        PluginReleaseChannel::Stable,
+        PluginPackageLockHost::new(host_target(), env!("CARGO_PKG_VERSION")).unwrap(),
+    )
+    .await
+    .unwrap();
+    let package_lock_digest = lock.descriptor_digest().unwrap();
     assert_no_target_request(&server);
 
     let home = temp.path().join("home");
-    let installed = registry_install(&server, &repository, &home, Some(&plan_digest), &[]);
+    let installed = registry_install(&server, &repository, &home, Some(&package_lock_digest), &[]);
     assert!(installed.status.success(), "{installed:?}");
     let installed_json = json(&installed);
     assert_eq!(installed_json["data"]["changed"], true);
@@ -50,7 +61,7 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
     assert_eq!(receipt["trust"], "registry-tuf");
     let provenance: ResolvedRemotePackage =
         serde_json::from_value(receipt["registry"].clone()).unwrap();
-    assert_eq!(provenance.plan_digest().unwrap(), plan_digest);
+    assert_eq!(provenance.plan_digest().unwrap(), target_plan_digest);
 
     let inspected = Command::new(binary())
         .args(["extension", "inspect", "a3s/science", "--json"])
@@ -65,13 +76,13 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
         repository.target_name
     );
 
-    let second = registry_install(&server, &repository, &home, Some(&plan_digest), &[]);
+    let second = registry_install(&server, &repository, &home, Some(&package_lock_digest), &[]);
     assert!(second.status.success(), "{second:?}");
     assert_eq!(json(&second)["data"]["changed"], false);
 }
 
 #[test]
-fn registry_plan_mismatch_fails_before_target_download() {
+fn package_lock_mismatch_fails_before_target_download() {
     let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 1, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let temp = tempfile::tempdir().unwrap();
@@ -86,7 +97,7 @@ fn registry_plan_mismatch_fails_before_target_download() {
     assert!(!output.status.success(), "{output:?}");
     assert_eq!(
         json(&output)["error"]["code"],
-        "use.extension.registry_plan_mismatch"
+        "use.plugin.package_lock_mismatch"
     );
     assert_no_target_request(&server);
 }
