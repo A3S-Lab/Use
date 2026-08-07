@@ -22,10 +22,23 @@ impl ExtensionRegistry {
         host_version: &str,
     ) -> UseResult<ExtensionLifecycleResult> {
         let publication = self
-            .set_lifecycle_visibility_with_evidence(identity, enabled, host_version, None)
+            .set_lifecycle_visibility_inner(identity, enabled, host_version, None, false)
             .await?;
         publication.packages.into_iter().next().ok_or_else(|| {
             lifecycle_state_error("A single-package visibility cutover omitted its package result.")
+        })
+    }
+
+    pub(super) async fn retire_lifecycle_visibility(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+        host_version: &str,
+    ) -> UseResult<ExtensionLifecycleResult> {
+        let publication = self
+            .set_lifecycle_visibility_inner(identity, false, host_version, None, true)
+            .await?;
+        publication.packages.into_iter().next().ok_or_else(|| {
+            lifecycle_state_error("A lifecycle retirement omitted its package result.")
         })
     }
 
@@ -35,6 +48,18 @@ impl ExtensionRegistry {
         enabled: bool,
         host_version: &str,
         cutover_request: Option<&ExtensionLifecycleCutoverRequest>,
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        self.set_lifecycle_visibility_inner(identity, enabled, host_version, cutover_request, false)
+            .await
+    }
+
+    async fn set_lifecycle_visibility_inner(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+        enabled: bool,
+        host_version: &str,
+        cutover_request: Option<&ExtensionLifecycleCutoverRequest>,
+        require_already_hidden: bool,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
         let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
         let selected = self.get(identity.package_id()).await?;
@@ -85,6 +110,11 @@ impl ExtensionRegistry {
             .find(|binding| binding_matches_identity(&self.paths, binding, identity));
         let published_exact = published_binding.is_some();
         let published_enabled = published_binding.is_some_and(|binding| binding.enabled);
+        if require_already_hidden && published_exact {
+            return Err(lifecycle_state_error(
+                "A prior generation can be retired only after atomic graph cutover removes its Registry route.",
+            ));
+        }
         if !selected_is_exact && (enabled || published_exact) {
             return Err(lifecycle_state_error(
                 "A retained generation can be hidden only after atomic capability cutover selected its replacement.",

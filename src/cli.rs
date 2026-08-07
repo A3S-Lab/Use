@@ -4,11 +4,10 @@ use crate::capability_registry::{
     snapshot as capability_registry_snapshot, wait_for_change as wait_for_capability_change,
 };
 use crate::extension_cli::{
-    extension_capabilities, extension_disable, extension_enable, extension_inspect, extension_list,
-    extension_planning_evidence, extension_snapshot, extension_watch, external_component_value,
-    external_package_id, external_route, install_extension, install_release_bundle_extension,
+    extension_capabilities, extension_inspect, extension_list, extension_planning_evidence,
+    extension_snapshot, extension_watch, external_component_value, external_package_id,
     install_remote_extension, installed_extension_for_id, installed_extensions,
-    release_bundle_catalog, uninstall_extension, upgrade_remote_extension,
+    uninstall_extension, upgrade_remote_extension,
 };
 use std::time::Duration;
 
@@ -66,30 +65,10 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         }
         "extension" => extension(&args[1..]).await,
         "mcp" => mcp(&args[1..]).await,
-        route => {
-            #[cfg(feature = "extensions")]
-            if let Some(exit_code) =
-                crate::extension_host::run_route(external_route(route).unwrap_or(route), &args[1..])
-                    .await?
-            {
-                return Ok(CommandOutput::delegated(exit_code));
-            }
-            if let Some(extension) = installed_extension_for_id(route).await? {
-                #[cfg(feature = "extensions")]
-                if extension.enabled && extension.compatible {
-                    if let Some(exit_code) =
-                        crate::extension_host::run_route(&extension.route, &args[1..]).await?
-                    {
-                        return Ok(CommandOutput::delegated(exit_code));
-                    }
-                }
-                return Err(inactive_extension_error(&extension));
-            }
-            Err(
-                UseError::new("use.route_unknown", format!("Unknown Use route '{route}'."))
-                    .with_suggestion("Run 'a3s use capabilities --json'."),
-            )
-        }
+        route => Err(
+            UseError::new("use.route_unknown", format!("Unknown Use route '{route}'."))
+                .with_suggestion("Run 'a3s use capabilities --json'."),
+        ),
     }
 }
 
@@ -112,7 +91,7 @@ fn version() -> CommandOutput {
 fn help() -> CommandOutput {
     CommandOutput::success(
         concat!(
-            "a3s-use — typed application capabilities\n\n",
+            "a3s-use — AI Native Package Manager\n\n",
             "usage:\n",
             "  a3s-use capabilities [--json]\n",
             "  a3s-use capability snapshot [--json]\n",
@@ -130,13 +109,11 @@ fn help() -> CommandOutput {
             "  a3s-use <external-route> [args]\n",
             "  a3s-use ocr doctor [--json]\n",
             "  a3s-use ocr extract <image> [--json]\n",
-            "  a3s-use extension list|catalog|inspect|doctor [args] [--json]\n",
+            "  a3s-use extension list|inspect|doctor [args] [--json]\n",
             "  a3s-use extension planning-evidence <publisher/name> [--json]\n",
-            "  a3s-use extension enable <publisher/name> [--json]\n",
-            "  a3s-use extension disable <publisher/name> [--timeout-ms <ms>] [--json]\n",
             "  a3s-use extension snapshot|watch [--after-generation <n>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use mcp serve browser [--tools <profiles>]\n",
-            "  a3s-use mcp serve ocr|<publisher/name>|<external-route>\n",
+            "  a3s-use mcp serve ocr\n",
             "  a3s-use mcp start|status|stop [browser] [--json]"
         ),
         serde_json::json!({
@@ -148,6 +125,7 @@ fn help() -> CommandOutput {
                 "upgrade",
                 "uninstall",
                 "component",
+                "knowledge",
                 "browser",
                 "box",
                 "ocr",
@@ -193,7 +171,7 @@ async fn capabilities() -> UseResult<CommandOutput> {
                     "surfaces": ["cli"]
                 }
             ],
-            "externalSurfaces": ["cli", "mcp", "skill"],
+            "externalSurfaces": ["tool", "mcp", "okf", "flow", "skill", "ui"],
             "extensionRegistry": {
                 "schemaVersion": 1,
                 "generation": extension_generation,
@@ -405,13 +383,7 @@ async fn component_upgrade(args: &[String]) -> UseResult<CommandOutput> {
         .transpose()?;
     let version = option_argument(args, "--version")?;
     let channel = option_argument(args, "--channel")?.unwrap_or("stable");
-    let expected_plan = option_argument(args, "--registry-plan-digest")?;
     let expected_lock = option_argument(args, "--package-lock-digest")?;
-    if expected_plan.is_some() && expected_lock.is_some() {
-        return Err(usage_error(
-            "--registry-plan-digest and --package-lock-digest are mutually exclusive",
-        ));
-    }
     let result = upgrade_remote_extension(
         package_id,
         registry_name,
@@ -420,7 +392,7 @@ async fn component_upgrade(args: &[String]) -> UseResult<CommandOutput> {
         trusted_root.as_deref(),
         version,
         channel,
-        expected_lock.or(expected_plan),
+        expected_lock,
     )
     .await?;
     Ok(CommandOutput::success(
@@ -546,9 +518,6 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
     if matches!(id, "ocr" | "use/ocr") {
         #[cfg(feature = "ocr")]
         {
-            if option_argument(args, "--from")?.is_some() {
-                return Err(usage_error("--from is valid only for external extensions"));
-            }
             let force = args.iter().any(|argument| argument == "--force");
             let previous = a3s_use_ocr::ocr_status();
             let status = a3s_use_ocr::install_ppocr_v6(force).await?;
@@ -574,9 +543,6 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
         }
     }
     if let Some(diagnostic) = builtin_diagnostic(id) {
-        if option_argument(args, "--from")?.is_some() {
-            return Err(usage_error("--from is valid only for external extensions"));
-        }
         if diagnostic.readiness != Readiness::Ready {
             return Err(UseError::new(
                 "use.runtime.install_unavailable",
@@ -617,94 +583,52 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
             "Install external capabilities by their '<publisher>/<name>' package ID.",
         ));
     };
-    let source = option_argument(args, "--from")?;
+    if args.iter().any(|argument| argument == "--force") {
+        return Err(usage_error(
+            "--force is not valid for cognitive packages; apply a newly resolved package-lock plan",
+        ));
+    }
     let registry_name = option_argument(args, "--registry-name")?;
     let registry_url = option_argument(args, "--registry-url")?;
     let trust_root = option_argument(args, "--trust-root")?;
     let trusted_root = option_argument(args, "--trusted-root")?;
     let version = option_argument(args, "--version")?;
     let channel = option_argument(args, "--channel")?.unwrap_or("stable");
-    let expected_plan = option_argument(args, "--registry-plan-digest")?;
     let expected_package_lock = option_argument(args, "--package-lock-digest")?;
-    if expected_plan.is_some() && expected_package_lock.is_some() {
-        return Err(usage_error(
-            "--registry-plan-digest and --package-lock-digest are mutually exclusive",
-        ));
-    }
-    let release_bundle_sha256 = option_argument(args, "--release-bundle-sha256")?;
-    let force = args.iter().any(|argument| argument == "--force");
-    let allow_unsigned = args.iter().any(|argument| argument == "--allow-unsigned");
-    let remote_requested = registry_name.is_some()
-        || registry_url.is_some()
-        || trust_root.is_some()
-        || trusted_root.is_some()
-        || version.is_some()
-        || expected_plan.is_some()
-        || expected_package_lock.is_some()
-        || option_argument(args, "--channel")?.is_some();
-    let result = if let Some(source) = source {
-        if remote_requested || release_bundle_sha256.is_some() {
-            return Err(usage_error(
-                "--from cannot be combined with signed registry or release-bundle options",
-            ));
-        }
-        install_extension(
-            package_id,
-            std::path::Path::new(source),
-            force,
-            allow_unsigned,
-        )
-        .await?
-    } else if let Some(expected_sha256) = release_bundle_sha256 {
-        if remote_requested || allow_unsigned {
-            return Err(usage_error(
-                "--release-bundle-sha256 cannot be combined with registry or unsigned-package options",
-            ));
-        }
-        install_release_bundle_extension(package_id, expected_sha256, force).await?
-    } else {
-        if allow_unsigned {
-            return Err(usage_error(
-                "--allow-unsigned is valid only with an explicit local --from package",
-            ));
-        }
-        let registry_name = registry_name
-            .ok_or_else(|| usage_error("remote extension install requires --registry-name"))?;
-        let registry_url = registry_url
-            .ok_or_else(|| usage_error("remote extension install requires --registry-url"))?;
-        let trust_root = trust_root
-            .ok_or_else(|| usage_error("remote extension install requires --trust-root"))?;
-        let trusted_root = trusted_root
-            .map(|path| {
-                let path = std::path::PathBuf::from(path);
-                if path.is_absolute() {
-                    Ok(path)
-                } else {
-                    std::env::current_dir()
-                        .map(|directory| directory.join(path))
-                        .map_err(|error| {
-                            UseError::new(
-                                "use.extension.registry_path_invalid",
-                                format!("Failed to resolve the trusted root path: {error}"),
-                            )
-                        })
-                }
-            })
-            .transpose()?;
-        install_remote_extension(
-            package_id,
-            registry_name,
-            registry_url,
-            trust_root,
-            trusted_root.as_deref(),
-            version,
-            channel,
-            expected_plan,
-            expected_package_lock,
-            force,
-        )
-        .await?
-    };
+    let registry_name = registry_name
+        .ok_or_else(|| usage_error("cognitive-package install requires --registry-name"))?;
+    let registry_url = registry_url
+        .ok_or_else(|| usage_error("cognitive-package install requires --registry-url"))?;
+    let trust_root =
+        trust_root.ok_or_else(|| usage_error("cognitive-package install requires --trust-root"))?;
+    let trusted_root = trusted_root
+        .map(|path| {
+            let path = std::path::PathBuf::from(path);
+            if path.is_absolute() {
+                Ok(path)
+            } else {
+                std::env::current_dir()
+                    .map(|directory| directory.join(path))
+                    .map_err(|error| {
+                        UseError::new(
+                            "use.extension.registry_path_invalid",
+                            format!("Failed to resolve the trusted root path: {error}"),
+                        )
+                    })
+            }
+        })
+        .transpose()?;
+    let result = install_remote_extension(
+        package_id,
+        registry_name,
+        registry_url,
+        trust_root,
+        trusted_root.as_deref(),
+        version,
+        channel,
+        expected_package_lock,
+    )
+    .await?;
     Ok(CommandOutput::success(
         if result.changed {
             format!("Installed extension '{}'.", result.extension.package_id)
@@ -832,10 +756,6 @@ async fn browser(args: &[String]) -> UseResult<CommandOutput> {
 async fn extension(args: &[String]) -> UseResult<CommandOutput> {
     match args.first().map(String::as_str) {
         None | Some("list") => extension_list().await,
-        Some("catalog") => {
-            validate_extension_options(args, 1, false)?;
-            release_bundle_catalog().await
-        }
         Some("inspect" | "doctor") => {
             let package_id = value_argument(args, 1, "extension inspect requires an ID")?;
             extension_inspect(package_id).await
@@ -844,17 +764,6 @@ async fn extension(args: &[String]) -> UseResult<CommandOutput> {
             validate_extension_options(args, 2, false)?;
             let package_id = value_argument(args, 1, "extension planning-evidence requires an ID")?;
             extension_planning_evidence(package_id).await
-        }
-        Some("enable") => {
-            validate_extension_options(args, 2, false)?;
-            let package_id = value_argument(args, 1, "extension enable requires an ID")?;
-            extension_enable(package_id).await
-        }
-        Some("disable") => {
-            validate_extension_options(args, 2, true)?;
-            let package_id = value_argument(args, 1, "extension disable requires an ID")?;
-            let timeout = duration_option(args, "--timeout-ms", 30_000)?;
-            extension_disable(package_id, timeout).await
         }
         Some("snapshot") => {
             validate_extension_options(args, 1, false)?;
@@ -930,38 +839,6 @@ async fn mcp(args: &[String]) -> UseResult<CommandOutput> {
                     Err(UseError::new(
                         "use.mcp.disabled",
                         "OCR MCP support is disabled in this custom build.",
-                    ))
-                }
-                extension_target
-                    if external_package_id(extension_target).is_some()
-                        || external_route(extension_target).is_some() =>
-                {
-                    if args.len() != 2 {
-                        return Err(usage_error(
-                            "mcp serve for an extension accepts exactly one target",
-                        ));
-                    }
-                    #[cfg(feature = "extensions")]
-                    {
-                        let extension = installed_extension_for_id(extension_target)
-                            .await?
-                            .ok_or_else(|| {
-                                UseError::new(
-                                    "use.mcp.target_unknown",
-                                    format!("Unknown MCP target '{extension_target}'."),
-                                )
-                                .with_suggestion(
-                                    "Install or enable the external capability before serving it.",
-                                )
-                            })?;
-                        let exit_code =
-                            crate::extension_host::run_mcp(&extension.package_id).await?;
-                        Ok(CommandOutput::delegated(exit_code))
-                    }
-                    #[cfg(not(feature = "extensions"))]
-                    Err(UseError::new(
-                        "use.extension.disabled",
-                        "External extension support is disabled in this custom build.",
                     ))
                 }
                 value => Err(UseError::new(
@@ -1129,10 +1006,10 @@ fn extension_diagnostic(extension: &crate::extension_cli::ExtensionView) -> Doma
                 "Extension '{}' is installed but disabled.",
                 extension.package_id
             ),
-            vec![format!(
-                "Run 'a3s use extension enable {}'.",
-                extension.package_id
-            )],
+            vec![
+                "Create and apply a reviewed enablement plan through the package manager."
+                    .to_string(),
+            ],
         )
     };
     DomainDiagnostic {
@@ -1144,35 +1021,6 @@ fn extension_diagnostic(extension: &crate::extension_cli::ExtensionView) -> Doma
         message,
         suggestions,
     }
-}
-
-fn inactive_extension_error(extension: &crate::extension_cli::ExtensionView) -> UseError {
-    if !extension.compatible {
-        return UseError::new(
-            "use.extension.host_incompatible",
-            format!(
-                "Extension '{}' {} does not support A3S Use {}.",
-                extension.package_id,
-                extension.version,
-                env!("CARGO_PKG_VERSION")
-            ),
-        )
-        .with_detail("route", extension.route.clone())
-        .with_detail("requiresUse", extension.requires_use.clone())
-        .with_detail("hostVersion", env!("CARGO_PKG_VERSION"))
-        .with_suggestion("Install a compatible extension version or update A3S Use.");
-    }
-    UseError::new(
-        "use.extension.not_active",
-        format!(
-            "Extension '{}' is disabled on route '{}'.",
-            extension.package_id, extension.route
-        ),
-    )
-    .with_suggestion(format!(
-        "Run 'a3s use extension enable {}'.",
-        extension.package_id
-    ))
 }
 
 fn builtin_presence(id: &str) -> &'static str {
@@ -1243,17 +1091,14 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
     let mut index = 2;
     while index < args.len() {
         match args[index].as_str() {
-            "--json" | "--force" | "--allow-unsigned" => index += 1,
-            "--from"
-            | "--registry-name"
+            "--json" | "--force" => index += 1,
+            "--registry-name"
             | "--registry-url"
             | "--trust-root"
             | "--trusted-root"
             | "--version"
             | "--channel"
-            | "--registry-plan-digest"
-            | "--package-lock-digest"
-            | "--release-bundle-sha256" => {
+            | "--package-lock-digest" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));
                 }
@@ -1280,7 +1125,6 @@ fn validate_component_upgrade_options(args: &[String]) -> UseResult<()> {
             | "--trusted-root"
             | "--version"
             | "--channel"
-            | "--registry-plan-digest"
             | "--package-lock-digest" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));

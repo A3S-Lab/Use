@@ -3,14 +3,17 @@ use super::*;
 
 use a3s_use_core::{
     PlanActor, PlanPackageRole, PlanScope, PlanScopeKind, PlannedOperationImpact,
-    PlannedPackageTransition, PlannedStateEvidence, PluginOperationAction,
-    PluginOperationConfirmation, PluginOperationPlanBinding, PluginPlanSource,
-    PluginWorkspaceGrantSnapshot, WorkspaceGrantEvidence, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
-    PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
+    PlannedPackageTransition, PlannedStateEvidence, PluginCatalogRecord, PluginOperationAction,
+    PluginOperationConfirmation, PluginOperationPlanBinding, PluginPackageLock,
+    PluginPackageLockHost, PluginPackageResolver, PluginWorkspaceGrantSnapshot,
+    VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, WorkspaceGrantEvidence,
+    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
 
 const INSTALL_PLAN: &[u8] =
-    include_bytes!("../../crates/core/fixtures/plugins/operation-plan-install-v1.json");
+    include_bytes!("../../crates/core/fixtures/plugins/operation-plan-install-v4.json");
+const CATALOG_RECORD: &[u8] =
+    include_bytes!("../../crates/core/fixtures/plugins/catalog-record-v3.json");
 
 #[derive(Debug)]
 struct ConfirmAll;
@@ -626,24 +629,24 @@ fn replacement_plan_with_operation(
     created_at_ms: u64,
 ) -> (PluginOperationPlanEnvelope, PlannedWorkspaceGrantOperation) {
     let source = PluginOperationPlan::from_json(INSTALL_PLAN).unwrap();
-    let before = source.packages[0].after.clone().unwrap();
-    let mut after = before.clone();
-    after.release.version = "2.0.0".to_string();
-    after.release.package_sha256 = digest('d');
-    after.release.manifest_sha256 = digest('e');
-    let transition = PlannedPackageTransition::resolved(
-        source.package_id.clone(),
-        PlanPackageRole::Root,
-        PlanPackageChangeKind::Replace,
-        Some(before.clone()),
-        Some(after),
-        Some(PluginPlanSource::LocalReviewed {
-            source_digest: digest('f'),
-            package_digest: digest('d'),
-            unsigned: true,
-        }),
-    )
-    .unwrap();
+    let (prior_lock, candidate_lock) = replacement_package_locks();
+    let before = prior_lock
+        .package(&source.package_id)
+        .unwrap()
+        .catalog
+        .selected_state(&[])
+        .unwrap();
+    let transition = candidate_lock
+        .package(&source.package_id)
+        .unwrap()
+        .catalog
+        .replace_transition(
+            &prior_lock.package(&source.package_id).unwrap().catalog,
+            PlanPackageRole::Root,
+            &[],
+            &[],
+        )
+        .unwrap();
     let mut draft = PluginOperationPlanDraft::new(
         PluginOperationAction::Upgrade,
         source.package_id,
@@ -671,8 +674,68 @@ fn replacement_plan_with_operation(
     let planned = plan_workspace_grants(&mut draft, &binding, &snapshot, true, true)
         .unwrap()
         .unwrap();
-    let envelope = PluginOperationPlanEnvelope::new(draft.bind(binding).unwrap()).unwrap();
+    let envelope = PluginOperationPlanEnvelope::new_with_upgrade_package_locks(
+        draft.bind(binding).unwrap(),
+        prior_lock,
+        candidate_lock,
+    )
+    .unwrap();
     (envelope, planned)
+}
+
+fn replacement_package_locks() -> (PluginPackageLock, PluginPackageLock) {
+    let prior_record = PluginCatalogRecord::from_json(CATALOG_RECORD).unwrap();
+    let prior = verified_catalog(prior_record.clone(), 39);
+
+    let mut candidate_record = prior_record;
+    candidate_record.version = "2.1.0".to_string();
+    candidate_record.archive.target_name = candidate_record
+        .archive
+        .target_name
+        .replace("/2.0.0/", "/2.1.0/")
+        .replace("-2.0.0-", "-2.1.0-");
+    let candidate_planning_target = candidate_record
+        .planning
+        .as_ref()
+        .unwrap()
+        .target_name
+        .replace("/2.0.0/", "/2.1.0/");
+    candidate_record.planning.as_mut().unwrap().target_name = candidate_planning_target;
+    candidate_record.archive.sha256 = digest('d');
+    candidate_record.package.sha256 = Some(digest('d'));
+    candidate_record.package.manifest_sha256 = Some(digest('e'));
+    candidate_record.validate().unwrap();
+    let candidate = verified_catalog(candidate_record, 40);
+
+    let host = PluginPackageLockHost::new("linux-x86_64", "0.3.0").unwrap();
+    let prior_lock = PluginPackageResolver::new(host.clone())
+        .resolve(prior, Vec::new())
+        .unwrap();
+    let candidate_lock = PluginPackageResolver::new(host)
+        .resolve(candidate, Vec::new())
+        .unwrap();
+    (prior_lock, candidate_lock)
+}
+
+fn verified_catalog(
+    record: PluginCatalogRecord,
+    targets_version: u64,
+) -> VerifiedPluginCatalogRecord {
+    let catalog_record_digest = record.descriptor_digest().unwrap();
+    VerifiedPluginCatalogRecord::new(
+        record,
+        VerifiedCatalogProvenance {
+            registry_name: "official".to_string(),
+            registry_url: "https://plugins.a3s.dev/catalog".to_string(),
+            root_sha256: digest('f'),
+            root_version: 7,
+            timestamp_version: targets_version + 3,
+            snapshot_version: targets_version + 2,
+            targets_version,
+            catalog_record_digest,
+        },
+    )
+    .unwrap()
 }
 
 fn uninstall_plan(

@@ -54,7 +54,7 @@ async fn schema_v3_upgrade_advances_enablement_state_without_reusing_artifact_ge
         false,
     )
     .unwrap();
-    let disabled = manager.set_enablement(&disable).await.unwrap();
+    let disabled = apply_planned_enablement(&manager, &disable).await.unwrap();
     let enable = CognitivePackageEnablementRequest::new(
         "enablement:upgrade:enable:0002",
         "acme/root",
@@ -62,7 +62,7 @@ async fn schema_v3_upgrade_advances_enablement_state_without_reusing_artifact_ge
         true,
     )
     .unwrap();
-    let before_upgrade = manager.set_enablement(&enable).await.unwrap();
+    let before_upgrade = apply_planned_enablement(&manager, &enable).await.unwrap();
     let state_generation_before = before_upgrade.state.package_generation.unwrap();
 
     manager
@@ -307,7 +307,7 @@ fn schema_v3_cli_upgrade_removes_an_unreferenced_dependency_node() {
         })));
     assert_eq!(
         upgraded["data"]["packageGraph"]["plan"]["plan"]["schema"],
-        "a3s.use.plugin-operation-plan.v3"
+        "a3s.use.plugin-operation-plan.v4"
     );
     assert!(
         upgraded["data"]["packageGraph"]["plan"]["plan"]["priorPackageLockDigest"]

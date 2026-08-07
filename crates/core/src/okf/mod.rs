@@ -33,8 +33,6 @@ const MAX_OKF_LINKS_PER_DOCUMENT: u64 = 16_384;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum OkfFormatVersion {
-    #[serde(rename = "0.1")]
-    V0_1,
     #[serde(rename = "0.2")]
     V0_2,
 }
@@ -42,7 +40,6 @@ pub enum OkfFormatVersion {
 impl OkfFormatVersion {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::V0_1 => "0.1",
             Self::V0_2 => "0.2",
         }
     }

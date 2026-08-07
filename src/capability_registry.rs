@@ -78,7 +78,6 @@ enum CapabilityOrigin {
 #[serde(rename_all = "kebab-case")]
 enum McpTransport {
     Stdio,
-    StreamableHttp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -624,13 +623,6 @@ async fn project_extensions(
 ) -> UseResult<Option<Vec<CapabilityBinding>>> {
     let mut capabilities = Vec::with_capacity(snapshot.routes.len());
     for route in &snapshot.routes {
-        #[cfg(feature = "ocr")]
-        if route.route == "ocr" {
-            // OCR became a first-party built-in route. Ignore a legacy OCR
-            // extension receipt so an older installation cannot shadow or
-            // duplicate the release-matched built-in MCP/Skill projection.
-            continue;
-        }
         let Some(extension) = crate::extension_host::get_snapshot_binding(route).await? else {
             return Ok(None);
         };
@@ -725,74 +717,49 @@ async fn project_extension_for_host_with_flow_observations(
 ) -> UseResult<CapabilityBinding> {
     let receipt = &extension.receipt;
     let compatible = extension.supports_use_version(host_version);
-    let reconciliation = if extension.manifest.schema_version == 3 {
-        let observations =
-            surface_observations(extension, receipt.enabled && compatible, flow_observations)
-                .await?;
-        let knowledge = knowledge_bindings
-            .iter()
-            .map(|binding| (binding.receipt.clone(), binding.observation.clone()))
-            .collect::<Vec<_>>();
-        Some(reconcile_with_runtime_and_knowledge(
-            &extension.manifest,
-            if receipt.enabled {
-                PluginDesiredState::Enabled
-            } else {
-                PluginDesiredState::InstalledDisabled
-            },
-            compatible,
-            &observations,
-            None,
-            &knowledge,
-        )?)
-    } else {
-        None
-    };
+    let observations =
+        surface_observations(extension, receipt.enabled && compatible, flow_observations).await?;
+    let knowledge_observations = knowledge_bindings
+        .iter()
+        .map(|binding| (binding.receipt.clone(), binding.observation.clone()))
+        .collect::<Vec<_>>();
+    let reconciliation = Some(reconcile_with_runtime_and_knowledge(
+        &extension.manifest,
+        if receipt.enabled {
+            PluginDesiredState::Enabled
+        } else {
+            PluginDesiredState::InstalledDisabled
+        },
+        compatible,
+        &observations,
+        None,
+        &knowledge_observations,
+    )?);
     let active = receipt.enabled
         && compatible
         && reconciliation
             .as_ref()
-            .is_none_or(|snapshot| snapshot.capability_ready);
-    let readiness = reconciliation.as_ref().map_or_else(
-        || {
-            if active {
-                Readiness::Ready
-            } else if !compatible {
-                Readiness::Broken
-            } else {
-                Readiness::Unknown
-            }
-        },
-        |snapshot| match snapshot.observed {
-            PluginObservedState::Ready | PluginObservedState::Degraded => Readiness::Ready,
-            PluginObservedState::Broken | PluginObservedState::Incompatible => Readiness::Broken,
-            PluginObservedState::Installed
-            | PluginObservedState::Reconciling
-            | PluginObservedState::Draining
-            | PluginObservedState::Removed => Readiness::Unknown,
-        },
-    );
-    let mcp = active
-        .then(|| {
-            extension.manifest.mcp.as_ref().map(|surface| McpSurface {
-                target: receipt.package_id.clone(),
-                transport: match surface.transport {
-                    a3s_use_extension::McpTransport::Stdio => McpTransport::Stdio,
-                    a3s_use_extension::McpTransport::StreamableHttp => McpTransport::StreamableHttp,
-                },
-            })
-        })
-        .flatten();
+            .is_some_and(|snapshot| snapshot.capability_ready);
+    let readiness = match reconciliation
+        .as_ref()
+        .expect("reconciliation is present")
+        .observed
+    {
+        PluginObservedState::Ready | PluginObservedState::Degraded => Readiness::Ready,
+        PluginObservedState::Broken | PluginObservedState::Incompatible => Readiness::Broken,
+        PluginObservedState::Installed
+        | PluginObservedState::Reconciling
+        | PluginObservedState::Draining
+        | PluginObservedState::Removed => Readiness::Unknown,
+    };
+    let mcp = None;
     let mut skills = Vec::new();
     if active {
-        if let Some(snapshot) = &reconciliation {
-            for skill in &extension.manifest.skills {
-                if snapshot.publishes(PluginSurfaceKind::Skill, &skill.id) {
-                    skills.push(skill_surface(receipt.package_root.join(&skill.path)).await?);
-                }
+        let snapshot = reconciliation.as_ref().expect("reconciliation is present");
+        for skill in &extension.manifest.skills {
+            if snapshot.publishes(PluginSurfaceKind::Skill, &skill.id) {
+                skills.push(skill_surface(receipt.package_root.join(&skill.path)).await?);
             }
-        } else if let Some(path) = extension.skill_path() {
-            skills.push(skill_surface(path).await?);
         }
     }
     let mut activity_bar = Vec::new();
@@ -818,34 +785,6 @@ async fn project_extension_for_host_with_flow_observations(
                 requires_okf: surface.requires_okf.clone(),
             });
         }
-    }
-    for contribution in extension
-        .manifest
-        .contributes
-        .activity_bar
-        .iter()
-        .filter(|_| active)
-    {
-        let mut styles = Vec::with_capacity(contribution.styles.len());
-        for path in &contribution.styles {
-            styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
-        }
-        let mut scripts = Vec::with_capacity(contribution.scripts.len());
-        for path in &contribution.scripts {
-            scripts.push(activity_asset(receipt.package_root.join(path), "text/javascript").await?);
-        }
-        activity_bar.push(ActivityBarContribution {
-            id: contribution.id.clone(),
-            title: contribution.title.clone(),
-            description: contribution.description.clone(),
-            icon: contribution.icon.clone(),
-            entry: activity_asset(receipt.package_root.join(&contribution.entry), "text/html")
-                .await?,
-            styles,
-            scripts,
-            skill: Some(contribution.skill.clone()),
-            order: contribution.order,
-        });
     }
     if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
         for binding in knowledge_bindings {
@@ -1317,46 +1256,26 @@ extension "acme/workflow" {
 "#;
 
     #[cfg(feature = "extensions")]
-    const LEGACY_CLI_PLUGIN: &str = r#"
-extension "acme/slack" {
-  schema_version = 2
-  version        = "1.0.0"
-  route          = "slack"
-  requires_use   = ">=0.2.0, <0.3.0"
-  actions        = ["read"]
-
-  repository {
-    url = "https://github.com/acme/slack"
-  }
-
-  cli {
-    executable  = "bin/a3s-use-acme-slack"
-    json_output = true
-  }
-}
-"#;
-
-    #[cfg(feature = "extensions")]
     fn installed_extension(
         manifest: a3s_use_extension::ExtensionManifest,
         package_root: PathBuf,
         enabled: bool,
     ) -> a3s_use_extension::InstalledExtension {
         let receipt = a3s_use_extension::ExtensionReceipt {
-            schema_version: 1,
+            schema_version: 3,
             package_id: manifest.package_id.clone(),
             component_id: format!("use/{}", manifest.route),
             route: manifest.route.clone(),
             version: manifest.version.clone(),
             package_root,
             manifest_sha256: "0".repeat(64),
-            package_sha256: None,
+            package_sha256: Some("0".repeat(64)),
             trust: a3s_use_extension::ExtensionTrust::LocalExplicit,
             registry: None,
             verified_catalog: None,
             installed_at_unix: 0,
             enabled,
-            lifecycle_generation: None,
+            lifecycle_generation: Some(1),
         };
         a3s_use_extension::InstalledExtension { receipt, manifest }
     }
@@ -2019,31 +1938,6 @@ extension "acme/slack" {
         assert_eq!(reconciliation.observed, PluginObservedState::Degraded);
         assert_eq!(standalone.observed, SurfaceObservedState::Failed);
         assert!(!standalone.published);
-    }
-
-    #[cfg(feature = "extensions")]
-    #[tokio::test]
-    async fn legacy_extension_projection_remains_active_without_reconciliation() {
-        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(LEGACY_CLI_PLUGIN).unwrap();
-        let temp = tempfile::tempdir().unwrap();
-        let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
-        let surfaces = extension
-            .surfaces()
-            .into_iter()
-            .map(str::to_string)
-            .collect();
-
-        let binding = project_extension_for_host(&extension, surfaces, "0.2.1")
-            .await
-            .unwrap();
-
-        assert!(binding.enabled);
-        assert_eq!(binding.readiness, Readiness::Ready);
-        assert!(binding.reconciliation.is_none());
-        assert!(serde_json::to_value(&binding)
-            .unwrap()
-            .get("reconciliation")
-            .is_none());
     }
 
     #[cfg(feature = "extensions")]

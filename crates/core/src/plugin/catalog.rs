@@ -12,7 +12,7 @@ use super::validation::{
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PluginPackageDependency,
     PluginPermissionCeiling, PluginSurfaceKind, PluginSurfaceRef, ToolWorkloadClass,
-    PLUGIN_CATALOG_SCHEMA, PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
+    PLUGIN_CATALOG_SCHEMA_V3,
 };
 
 pub(super) const CATALOG_ERROR: &str = "use.plugin.catalog_invalid";
@@ -146,11 +146,7 @@ impl PluginCatalogRecord {
     }
 
     pub fn validate(&self) -> UseResult<()> {
-        let schema_v1 = self.schema == PLUGIN_CATALOG_SCHEMA;
-        let schema_v2 = self.schema == PLUGIN_CATALOG_SCHEMA_V2;
-        let schema_v3 = self.schema == PLUGIN_CATALOG_SCHEMA_V3;
-        let complete_package_schema = schema_v2 || schema_v3;
-        if (!schema_v1 && !complete_package_schema)
+        if self.schema != PLUGIN_CATALOG_SCHEMA_V3
             || !valid_package_id(&self.package_id)
             || !valid_catalog_text(&self.display_name, 128)
             || !valid_catalog_text(&self.description, 2048)
@@ -174,11 +170,9 @@ impl PluginCatalogRecord {
                 "The plugin catalog identity, search metadata, compatibility, or target is invalid.",
             ));
         }
-        if (!schema_v3 && !self.dependencies.is_empty())
-            || PluginPackageDependency::validate_set(&self.package_id, &self.dependencies).is_err()
-        {
+        if PluginPackageDependency::validate_set(&self.package_id, &self.dependencies).is_err() {
             return Err(catalog_error(
-                "Package dependencies require catalog schema version 3 and a canonical sorted dependency set.",
+                "Package dependencies must be a canonical sorted dependency set.",
             ));
         }
 
@@ -207,19 +201,7 @@ impl PluginCatalogRecord {
                 mcp_transports.insert(surface.id.as_str(), transport);
             }
         }
-        if !schema_v3
-            && self.surfaces.iter().any(|surface| {
-                matches!(
-                    surface.kind,
-                    PluginSurfaceKind::Flow | PluginSurfaceKind::Okf
-                )
-            })
-        {
-            return Err(catalog_error(
-                "Flow and OKF catalog surfaces require plugin catalog schema version 3.",
-            ));
-        }
-        self.validate_surface_dependencies(&surface_refs, complete_package_schema)?;
+        self.validate_surface_dependencies(&surface_refs)?;
 
         self.permission_ceiling
             .validate()
@@ -245,12 +227,11 @@ impl PluginCatalogRecord {
                     kind: PluginSurfaceKind::Tool,
                     id: binding.tool_id.clone(),
                 };
-                if complete_package_schema
-                    && !self
-                        .surfaces
-                        .iter()
-                        .find(|surface| surface.reference() == permission.surface)
-                        .is_some_and(|surface| surface.requires.contains(&tool))
+                if !self
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.reference() == permission.surface)
+                    .is_some_and(|surface| surface.requires.contains(&tool))
                 {
                     return Err(catalog_error(
                         "A complete plugin catalog UI HTTP binding must declare its Tool dependency.",
@@ -328,18 +309,18 @@ impl PluginCatalogRecord {
                 PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
             )
         });
-        match (&self.planning, schema_v3, has_executable) {
-            (Some(planning), true, true) => {
+        match (&self.planning, has_executable) {
+            (Some(planning), true) => {
                 planning.validate(&self.package_id, &self.version, self.channel, &self.target)?
             }
-            (None, false, _) | (None, true, false) => {}
+            (None, false) => {}
             _ => {
                 return Err(catalog_error(
-                    "Catalog-v3 records must carry one planning target exactly when they contain executable surfaces.",
+                    "Catalog records must carry one planning target exactly when they contain executable surfaces.",
                 ))
             }
         }
-        self.package.validate(complete_package_schema)?;
+        self.package.validate()?;
         if !valid_spdx_expression(&self.license) || !valid_repository_url(&self.repository) {
             return Err(catalog_error(
                 "The plugin catalog license or repository identity is invalid.",
@@ -358,22 +339,14 @@ impl PluginCatalogRecord {
     }
 
     pub fn is_package_plan_ready(&self) -> bool {
-        matches!(
-            self.schema.as_str(),
-            PLUGIN_CATALOG_SCHEMA_V2 | PLUGIN_CATALOG_SCHEMA_V3
-        )
+        self.schema == PLUGIN_CATALOG_SCHEMA_V3
     }
 
     fn validate_surface_dependencies(
         &self,
         surface_refs: &BTreeSet<PluginSurfaceRef>,
-        schema_v2: bool,
     ) -> UseResult<()> {
-        super::catalog_selection::validate_surface_dependencies(
-            &self.surfaces,
-            surface_refs,
-            schema_v2,
-        )
+        super::catalog_selection::validate_surface_dependencies(&self.surfaces, surface_refs)
     }
 }
 
@@ -491,7 +464,7 @@ impl CatalogPlanningTarget {
 }
 
 impl CatalogPackage {
-    fn validate(&self, schema_v2: bool) -> UseResult<()> {
+    fn validate(&self) -> UseResult<()> {
         if self.expanded_bytes == 0
             || self.expanded_bytes > MAX_EXPANDED_PACKAGE_BYTES
             || self.file_count == 0
@@ -504,8 +477,8 @@ impl CatalogPackage {
                 .manifest_sha256
                 .as_deref()
                 .is_some_and(|value| !valid_sha256(value))
-            || (schema_v2 && self.sha256.is_none())
-            || schema_v2 != self.manifest_sha256.is_some()
+            || self.sha256.is_none()
+            || self.manifest_sha256.is_none()
         {
             return Err(catalog_error(
                 "The plugin catalog package estimate or digest is invalid.",

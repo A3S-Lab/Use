@@ -68,7 +68,7 @@ plugins {
 
   trusted_registries = ["a3s"]
   trusted_publishers = ["a3s"]
-  allowed_surfaces   = ["mcp", "skill", "tool", "ui"]
+  allowed_surfaces   = ["flow", "mcp", "okf", "skill", "tool", "ui"]
 
   permissions {
     native_execution = false
@@ -85,7 +85,7 @@ plugins {
 
 省略的 ceiling 等价于零、空或 `false`。重复项、未知字段、宽泛网络规则和无人值守 secret grant 都 fail closed。
 
-示例是当前 host policy v1，因此有意省略 `okf`。Core selection 和 manager-toolset v2 已定义 canonical value，但 umbrella host 必须显式 version 或兼容扩展 ACL policy，才能授权包含 OKF 的 operation。
+示例使用当前六类表面清单。宿主必须按精确的当前合约解析这份 ACL policy，并拒绝未知或不完整的清单；不能通过默认值扩大权限。
 
 ## 激活顺序
 

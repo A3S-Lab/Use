@@ -5,7 +5,7 @@ description: Open Knowledge Format 如何作为 A3S Use 的一等、非执行型
 
 # OKF 知识包
 
-**[OKF（Open Knowledge Format）](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)** 是面向人和 Agent 的开放知识包格式：just Markdown, just files, just YAML frontmatter。当前 OKF v0.2 把可共享领域知识组织成带类型、可交叉链接、可增量索引的概念图，并定义了 v0.1 内容的兼容路径。
+**[OKF（Open Knowledge Format）](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)** 是面向人和 Agent 的开放知识包格式：just Markdown, just files, just YAML frontmatter。A3S Use 只接受 OKF v0.2；该格式把可共享领域知识组织成带类型、可交叉链接、可增量索引的概念图。
 
 在 A3S Use 中，OKF 是与 Tool、MCP、Flow、Skill、UI 并列的一等认知表面，但它不是可执行 workload。
 
@@ -55,7 +55,7 @@ sources:
 ---
 ```
 
-`title`、`description`、`resource`、`tags` 是推荐字段。OKF v0.2 还定义了可选 provenance、trust、lifecycle 与 attested-computation 字段族。Producer 扩展字段和未知 concept type 仍然合规，消费者必须保留它们；v0.2 consumer 可以回退读取 v0.1 的 `timestamp` 和 `# Citations`。
+`title`、`description`、`resource`、`tags` 是推荐字段。OKF v0.2 还定义了可选 provenance、trust、lifecycle 与 attested-computation 字段族。Producer 扩展字段和未知 concept type 仍然合规，消费者必须保留它们。A3S Use 不会把旧版 `timestamp` 或 `# Citations` 布局重新解释为 v0.2 权威内容。
 
 `index.md` 和 `log.md` 是保留文件，不是普通 concept。只有 bundle 根 `index.md` 可以包含 frontmatter，且仅用于声明 `okf_version`。缺少 index 或安全的 dangling link 仍然合规，应报告诊断而不是拒绝 bundle。
 

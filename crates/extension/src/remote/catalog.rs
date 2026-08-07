@@ -45,8 +45,8 @@ pub struct VerifiedRegistryMetadata {
 }
 
 /// Installable package targets discovered from one fully verified TUF
-/// repository. The legacy catalog contains only targets compatible with the
-/// current host and never downloads package payloads.
+/// repository. The catalog contains only targets compatible with the current
+/// host and never downloads package payloads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VerifiedRegistryCatalog {
@@ -427,10 +427,7 @@ fn collect_catalog_entries(
         };
         let metadata = decode_registry_target_metadata(target_name, custom)?;
         validate_target_metadata(target_name, target, &metadata)?;
-        let RegistryTargetMetadata::Catalog(record) = metadata else {
-            continue;
-        };
-        let record = *record;
+        let record = metadata.into_catalog_record();
         let version = Version::parse(&record.version).map_err(|error| {
             registry_target_error(format!(
                 "TUF target '{}' declares an invalid catalog version: {error}",
@@ -455,9 +452,7 @@ fn metadata_is_compatible(
     if metadata.target() != host.target && metadata.target() != "any" {
         return Ok(false);
     }
-    let Some(record) = metadata.catalog_record() else {
-        return Ok(true);
-    };
+    let record = metadata.catalog_record();
     let requirement = VersionReq::parse(&record.requires_use).map_err(|error| {
         registry_target_error(format!(
             "Catalog record '{}' has an invalid A3S Use requirement: {error}",

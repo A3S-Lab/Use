@@ -5,7 +5,7 @@ description: How Open Knowledge Format becomes a first-class, non-executable A3S
 
 # OKF Knowledge Packages
 
-**[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)** is an open knowledge-package format for people and agents: just Markdown, just files, just YAML frontmatter. Current OKF v0.2 organizes shareable domain knowledge as a typed, cross-linked, incrementally indexable concept graph and defines a compatibility path for v0.1 content.
+**[OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)** is an open knowledge-package format for people and agents: just Markdown, just files, just YAML frontmatter. A3S Use accepts only OKF v0.2, which organizes shareable domain knowledge as a typed, cross-linked, incrementally indexable concept graph.
 
 In A3S Use, OKF is a first-class cognitive surface alongside Tool, MCP, Flow, Skill, and UI, but it is not an executable workload.
 
@@ -55,7 +55,7 @@ sources:
 ---
 ```
 
-`title`, `description`, `resource`, and `tags` are recommended fields. OKF v0.2 also defines optional provenance, trust, lifecycle, and attested-computation families. Producer extension keys and unknown concept types remain conformant and must be preserved; a v0.2 consumer may fall back to legacy v0.1 `timestamp` and `# Citations` data.
+`title`, `description`, `resource`, and `tags` are recommended fields. OKF v0.2 also defines optional provenance, trust, lifecycle, and attested-computation families. Producer extension keys and unknown concept types remain conformant and must be preserved. A3S Use does not reinterpret older `timestamp` or `# Citations` layouts as v0.2 authority.
 
 `index.md` and `log.md` are reserved rather than concepts. Only the bundle-root `index.md` may contain frontmatter, and only to declare `okf_version`. Missing indexes and safe dangling links remain conformant and are reported as diagnostics rather than rejected.
 

@@ -124,9 +124,7 @@ pub async fn download_selected_locked_remote_packages(
             Some(&expected_plan_digest),
         )
         .await?;
-        if candidate.verified_catalog() != Some(&locked.catalog)
-            || candidate.resolved() != &expected
-        {
+        if candidate.verified_catalog() != &locked.catalog || candidate.resolved() != &expected {
             return Err(package_graph_error(
                 "use.plugin.package_lock_changed",
                 format!(

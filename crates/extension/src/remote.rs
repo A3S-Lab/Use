@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use a3s_use_core::{
     PluginPlanningBundle, UseError, UseResult, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3,
+    VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 use semver::{Version, VersionReq};
@@ -42,14 +42,13 @@ pub use package_graph::{
     resolve_remote_package_lock,
 };
 use target::{
-    decode_registry_target_metadata, resolved_remote_package, target_metadata_from_receipt,
-    validate_target_metadata, validate_target_name, RegistryTargetMetadata,
+    decode_registry_target_metadata, resolved_remote_package, validate_target_metadata,
+    validate_target_name, RegistryTargetMetadata,
 };
 
 const ROOT_NAME: &str = "root.json";
 const ROOT_CACHE_NAME: &str = "bootstrap-root.json";
 const REGISTRY_METADATA_KEY: &str = "a3s";
-const REGISTRY_TARGET_SCHEMA_VERSION: u32 = 1;
 const MAX_BOOTSTRAP_ROOT_BYTES: u64 = 1024 * 1024;
 const MAX_REMOTE_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_REGISTRY_PACKAGE_TARGETS: u64 = 10_000;
@@ -158,8 +157,8 @@ pub struct ResolvedRemotePackage {
 }
 
 impl ResolvedRemotePackage {
-    /// Adapt a complete verified catalog record into the exact legacy target
-    /// resolution consumed by the existing installer and umbrella planner.
+    /// Adapt a complete verified catalog record into exact target resolution
+    /// consumed by the package planner and archive verifier.
     ///
     /// This is a metadata-only conversion. It preserves the same registry,
     /// TUF role, target, and digest evidence without fetching the archive.
@@ -261,15 +260,7 @@ impl ResolvedRemotePackage {
                 format!("The registry target name in the receipt is invalid: {error}"),
             )
         })?;
-        validate_target_name(
-            &target_name,
-            &target_metadata_from_receipt(
-                self.package_id.clone(),
-                self.version.clone(),
-                self.channel.clone(),
-                self.target.clone(),
-            ),
-        )?;
+        validate_target_name(&target_name, self)?;
         if target_name.raw().rsplit('/').next() != Some(self.archive_name.as_str()) {
             return Err(UseError::new(
                 "use.extension.receipt_invalid",
@@ -285,7 +276,7 @@ pub struct PreparedRemotePackage {
     repository: Repository,
     target_name: TargetName,
     resolved: ResolvedRemotePackage,
-    verified_catalog: Option<VerifiedPluginCatalogRecord>,
+    verified_catalog: VerifiedPluginCatalogRecord,
 }
 
 impl std::fmt::Debug for PreparedRemotePackage {
@@ -302,22 +293,17 @@ impl PreparedRemotePackage {
         &self.resolved
     }
 
-    pub fn verified_catalog(&self) -> Option<&VerifiedPluginCatalogRecord> {
-        self.verified_catalog.as_ref()
+    pub fn verified_catalog(&self) -> &VerifiedPluginCatalogRecord {
+        &self.verified_catalog
     }
 
     /// Download and verify only the small executable planning target.
     ///
-    /// Legacy records and schema-v3 packages containing only static surfaces
-    /// have no planning target and return `None`. A schema-v3 package with
-    /// executable surfaces resolves one exact separately signed TUF target.
+    /// Static schema-v3 packages have no planning target and return `None`.
+    /// A package with executable surfaces resolves one exact separately signed
+    /// TUF target.
     pub async fn load_planning_bundle(&self) -> UseResult<Option<PluginPlanningBundle>> {
-        let Some(catalog) = self.verified_catalog.as_ref() else {
-            return Ok(None);
-        };
-        if catalog.record.schema != PLUGIN_CATALOG_SCHEMA_V3 {
-            return Ok(None);
-        }
+        let catalog = &self.verified_catalog;
         let Some(expected) = catalog.record.planning.as_ref() else {
             return Ok(None);
         };
@@ -431,7 +417,7 @@ fn planning_target_error(message: impl Into<String>) -> UseError {
 pub struct DownloadedRemotePackage {
     path: PathBuf,
     resolved: ResolvedRemotePackage,
-    verified_catalog: Option<VerifiedPluginCatalogRecord>,
+    verified_catalog: VerifiedPluginCatalogRecord,
     _temporary: TempDir,
 }
 
@@ -444,8 +430,8 @@ impl DownloadedRemotePackage {
         &self.resolved
     }
 
-    pub fn verified_catalog(&self) -> Option<&VerifiedPluginCatalogRecord> {
-        self.verified_catalog.as_ref()
+    pub fn verified_catalog(&self) -> &VerifiedPluginCatalogRecord {
+        &self.verified_catalog
     }
 }
 
@@ -531,14 +517,9 @@ pub async fn prepare_remote_package(
             continue;
         }
         let target_compatible = metadata.target() == host_target || metadata.target() == "any";
-        let use_compatible = metadata
-            .catalog_record()
-            .map(|record| {
-                VersionReq::parse(&record.requires_use)
-                    .map(|requirement| requirement.matches(&host_use_version))
-                    .unwrap_or(false)
-            })
-            .unwrap_or(true);
+        let use_compatible = VersionReq::parse(&metadata.catalog_record().requires_use)
+            .map(|requirement| requirement.matches(&host_use_version))
+            .unwrap_or(false);
         if !target_compatible || !use_compatible {
             incompatible = true;
             continue;
@@ -578,11 +559,8 @@ pub async fn prepare_remote_package(
             "The TUF repository resolves the same package version to multiple targets.",
         ));
     }
-    let verified_catalog = metadata
-        .catalog_record()
-        .cloned()
-        .map(|record| verified_catalog_record(registry, &repository, record))
-        .transpose()?;
+    let verified_catalog =
+        verified_catalog_record(registry, &repository, metadata.catalog_record().clone())?;
     let resolved = resolved_remote_package(registry, &repository, &metadata, &target_name, &target);
     resolved.verify_expected_plan(expected_plan_digest)?;
     Ok(PreparedRemotePackage {

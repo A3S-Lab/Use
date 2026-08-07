@@ -2,15 +2,15 @@ use a3s_use_core::{
     CatalogSurface, OkfBundleContract, PlanPackageChangeKind, PlannedPackageTransition,
     PluginOperationPlan, PluginOperationPlanBinding, PluginOperationPlanDraft,
     PluginPermissionCeiling, PluginPlanSource, PluginSurfaceKind,
-    PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2, PLUGIN_OPERATION_PLAN_SCHEMA_V2,
+    PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3, PLUGIN_OPERATION_PLAN_SCHEMA_V4,
     PLUGIN_PERMISSION_SCHEMA,
 };
 
-const INSTALL_PLAN: &[u8] = include_bytes!("../fixtures/plugins/operation-plan-install-v1.json");
+const INSTALL_PLAN: &[u8] = include_bytes!("../fixtures/plugins/operation-plan-install-v4.json");
 const OKF_INSTALL_PLAN: &[u8] =
-    include_bytes!("../fixtures/plugins/operation-plan-install-okf-v2.json");
+    include_bytes!("../fixtures/plugins/operation-plan-install-okf-v4.json");
 const OKF_INSTALL_PLAN_DIGEST: &str =
-    include_str!("../fixtures/plugins/operation-plan-install-okf-v2.sha256").trim_ascii_end();
+    include_str!("../fixtures/plugins/operation-plan-install-okf-v4.sha256").trim_ascii_end();
 
 fn canonical_fixture(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\n").unwrap_or(bytes)
@@ -77,7 +77,7 @@ fn okf_install_plan() -> PluginOperationPlan {
         expected.state,
     )
     .unwrap();
-    assert_eq!(draft.schema, PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V2);
+    assert_eq!(draft.schema, PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3);
     draft
         .bind(PluginOperationPlanBinding {
             operation_id: "install:acme-knowledge:0001".to_owned(),
@@ -204,7 +204,7 @@ fn draft_rejects_missing_explicit_runtime_provider_evidence() {
 #[test]
 fn okf_draft_derives_exact_bundle_impact_without_a_runtime_provider() {
     let mut plan = okf_install_plan();
-    assert_eq!(plan.schema, PLUGIN_OPERATION_PLAN_SCHEMA_V2);
+    assert_eq!(plan.schema, PLUGIN_OPERATION_PLAN_SCHEMA_V4);
     assert_eq!(plan.impact.okf_changes.len(), 1);
     assert_eq!(
         plan.impact.okf_changes[0]
@@ -226,6 +226,6 @@ fn okf_draft_derives_exact_bundle_impact_without_a_runtime_provider() {
         plan
     );
 
-    plan.schema = a3s_use_core::PLUGIN_OPERATION_PLAN_SCHEMA.to_owned();
+    plan.schema = "a3s.use.plugin-operation-plan.v3".to_owned();
     assert!(plan.validate().is_err());
 }

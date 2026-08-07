@@ -138,9 +138,10 @@ impl ExtensionRegistry {
                 retained_candidate = Some((current_identity, current.receipt));
             } else {
                 return Err(UseError::new(
-                    "use.extension.lifecycle_legacy_conflict",
-                    "A legacy extension receipt already owns this cognitive package ID.",
-                ));
+                    "use.extension.lifecycle_receipt_incompatible",
+                    "An obsolete pre-release receipt owns this cognitive package ID; remove the state and reinstall the package.",
+                )
+                .with_suggestion("Remove the pre-release A3S Use state, then install the package again."));
             }
         }
 
@@ -351,6 +352,17 @@ impl ExtensionRegistry {
         identity: &ExtensionLifecycleIdentity,
     ) -> UseResult<ExtensionLifecycleResult> {
         self.set_lifecycle_visibility(identity, false, env!("CARGO_PKG_VERSION"))
+            .await
+    }
+
+    /// Mark one prior generation hidden after an atomic graph cutover has
+    /// already removed its exact Registry route. This operation never owns a
+    /// visibility cutover and fails before mutation if the route is present.
+    pub async fn retire_hidden_lifecycle_package(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+    ) -> UseResult<ExtensionLifecycleResult> {
+        self.retire_lifecycle_visibility(identity, env!("CARGO_PKG_VERSION"))
             .await
     }
 

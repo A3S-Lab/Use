@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use a3s_use_core::{
     LockedPluginPackage, PlanScope, PluginDesiredState, PluginHostPackageState,
-    PluginObservedState, PluginOperationPlan, PluginPackageId, PluginSurfaceRef, UseError,
-    UseResult,
+    PluginObservedState, PluginOperationConfirmation, PluginOperationPlan,
+    PluginOperationPlanEnvelope, PluginPackageId, PluginSurfaceRef, UseError, UseResult,
 };
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionRegistrySnapshot, InstalledExtension,
@@ -18,11 +20,12 @@ use crate::plugin_lifecycle::{
 use super::enablement_store::{
     operation_conflict, CognitivePackageArtifactState, CognitivePackageEnablementStore,
     PendingCognitivePackageEnablement, StoredCognitivePackageEnablement,
-    StoredCognitivePackageEnablementOperation, ENABLEMENT_STATE_SCHEMA_V2,
+    StoredCognitivePackageEnablementOperation,
 };
 use super::grant::authorize_planned_operation;
 use super::plan::now_ms;
 use super::plan::{enablement_operation, package_state_revision};
+use super::reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
 use super::{package_manager_error, CognitivePackageManager};
 
 pub const COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA: &str =
@@ -211,18 +214,57 @@ impl CognitivePackageEnablementResult {
 }
 
 impl CognitivePackageManager {
-    /// Change one schema-v3 package's desired visibility without replacing its
+    /// Apply one exact host-reviewed enablement plan without replacing its
     /// immutable artifact generation or installed dependency graph.
     ///
     /// The package state generation is Use-owned and distinct from the
     /// immutable receipt lifecycle generation. The operation ID and complete
     /// result are durable, so a host restart resumes checkpoints or replays the
     /// exact prior result.
-    pub async fn set_enablement(
+    pub async fn apply_enablement(
+        &self,
+        request: &CognitivePackageEnablementRequest,
+        reviewed_plan: PluginOperationPlanEnvelope,
+        confirmation: Option<PluginOperationConfirmation>,
+    ) -> UseResult<CognitivePackageEnablementResult> {
+        request.validate()?;
+        let authorization =
+            ReviewedCognitivePackageAuthorizationProvider::new(reviewed_plan, confirmation)?;
+        let reviewed = Self::with_plan_scope_lifecycle_and_authorization(
+            self.registry.clone(),
+            self.scope.clone(),
+            self.lifecycle.clone(),
+            Arc::new(authorization),
+        )?;
+        reviewed.apply_reviewed_enablement(request).await
+    }
+
+    async fn apply_reviewed_enablement(
         &self,
         request: &CognitivePackageEnablementRequest,
     ) -> UseResult<CognitivePackageEnablementResult> {
         request.validate()?;
+        let reviewed_plan = self.authorization.reviewed_plan().ok_or_else(|| {
+            enablement_error(
+                "use.plugin.package_reviewed_plan_required",
+                "Enablement apply requires the exact plan returned by plan_enablement.",
+            )
+        })?;
+        let expected_action = if request.enabled {
+            a3s_use_core::PluginOperationAction::Enable
+        } else {
+            a3s_use_core::PluginOperationAction::Disable
+        };
+        if reviewed_plan.plan.operation_id != request.operation_id
+            || reviewed_plan.plan.package_id != request.package_id.as_str()
+            || reviewed_plan.plan.scope != self.scope
+            || reviewed_plan.plan.action != expected_action
+        {
+            return Err(enablement_error(
+                "use.plugin.package_reviewed_plan_mismatch",
+                "The reviewed enablement plan does not bind the exact request and scope.",
+            ));
+        }
         let store = self.enablement_store();
         let _operation_guard = store
             .lock_operation(&self.scope, &request.operation_id)
@@ -294,28 +336,10 @@ impl CognitivePackageManager {
         }
 
         if reconciled.enabled == request.enabled {
-            let snapshot = self.registry.snapshot().await?;
-            let state =
-                project_installed_state(&extension, reconciled.state_generation, &snapshot, None)?;
-            let result =
-                CognitivePackageEnablementResult::new(request, admitted_at_ms, false, state)?;
-            let mut state_after = reconciled;
-            state_after.updated_at_ms = admitted_at_ms;
-            state_after.validate()?;
-            let operation = StoredCognitivePackageEnablementOperation::new(
-                self.scope.clone(),
-                request.clone(),
-                None,
-                None,
-                None,
-                result.clone(),
-                state_after.clone(),
-            )?;
-            store.put_operation(&operation).await?;
-            if current.as_ref() != Some(&state_after) {
-                store.put_state(&state_after).await?;
-            }
-            return Ok(result);
+            return Err(enablement_error(
+                "use.plugin.package_enablement_plan_stale",
+                "The reviewed enablement plan is no longer applicable; plan the current state again.",
+            ));
         }
 
         let state_generation_after = reconciled
@@ -371,13 +395,12 @@ impl CognitivePackageManager {
             &extension.manifest,
         )?;
         let mut pending = reconciled;
-        pending.schema = ENABLEMENT_STATE_SCHEMA_V2.to_string();
         pending.active = Some(PendingCognitivePackageEnablement {
             request_digest,
             request: request.clone(),
             intent,
-            envelope: Some(generated.envelope),
-            authorization: Some(authorization),
+            envelope: generated.envelope,
+            authorization,
             state_generation_after,
             started_at_ms: admitted_at_ms,
         });
@@ -536,17 +559,15 @@ impl CognitivePackageManager {
                 "The immutable package generation changed while enablement was pending.",
             ));
         }
-        if let Some(envelope) = &active.envelope {
-            let mut prior_receipt = extension.receipt.clone();
-            prior_receipt.enabled = !active.request.enabled;
-            if envelope.plan.state.receipt_digest.as_deref()
-                != Some(prior_receipt.descriptor_digest()?.as_str())
-            {
-                return Err(package_manager_error(
-                    "use.plugin.package_generation_changed",
-                    "The exact installed receipt changed after enablement planning.",
-                ));
-            }
+        let mut prior_receipt = extension.receipt.clone();
+        prior_receipt.enabled = !active.request.enabled;
+        if active.envelope.plan.state.receipt_digest.as_deref()
+            != Some(prior_receipt.descriptor_digest()?.as_str())
+        {
+            return Err(package_manager_error(
+                "use.plugin.package_generation_changed",
+                "The exact installed receipt changed after enablement planning.",
+            ));
         }
         let completed_at_fallback = now_ms()?;
         let identity = ExtensionLifecycleIdentity::new(
@@ -559,29 +580,15 @@ impl CognitivePackageManager {
             self.registry.clone(),
             self.registry.lifecycle_package_root(&identity),
         )?;
-        if active.requires_authority_revalidation() {
-            let envelope = active.envelope.as_ref().ok_or_else(|| {
-                enablement_error(
-                    "use.plugin.package_enablement_state_invalid",
-                    "A plan-bound enablement operation omitted its immutable envelope.",
-                )
-            })?;
-            self.authorization.verify_plan(envelope)?;
-        }
+        self.authorization.verify_plan(&active.envelope)?;
         let grants = active
             .authorization
-            .as_ref()
-            .zip(active.envelope.as_ref())
-            .map(|(authorization, envelope)| {
-                authorization.lifecycle_unit(self.grant_store(), envelope)
-            })
-            .transpose()?
-            .flatten();
-        let lifecycle = match (&active.envelope, grants.as_ref()) {
-            (Some(envelope), Some(grants)) if active.request.enabled => {
+            .lifecycle_unit(self.grant_store(), &active.envelope)?;
+        let lifecycle = match grants.as_ref() {
+            Some(grants) if active.request.enabled => {
                 coordinator
                     .apply_enable_with_grants(
-                        envelope,
+                        &active.envelope,
                         &active.intent,
                         &extension.manifest,
                         grants,
@@ -589,10 +596,10 @@ impl CognitivePackageManager {
                     )
                     .await?
             }
-            (Some(envelope), Some(grants)) => {
+            Some(grants) => {
                 coordinator
                     .apply_disable_with_grants(
-                        envelope,
+                        &active.envelope,
                         &active.intent,
                         &extension.manifest,
                         grants,
@@ -600,12 +607,14 @@ impl CognitivePackageManager {
                     )
                     .await?
             }
-            _ => {
-                coordinator
+            None => {
+                let lifecycle = coordinator
                     .apply(&active.intent, &extension.manifest, || {
                         now_ms().unwrap_or(completed_at_fallback)
                     })
-                    .await?
+                    .await?;
+                coordinator.complete_single_cutover(&active.intent).await?;
+                lifecycle
             }
         };
         let completed_at_ms = lifecycle.completed_at_ms.ok_or_else(|| {
@@ -654,7 +663,7 @@ impl CognitivePackageManager {
             active.request.clone(),
             active.envelope.clone(),
             active.authorization.clone(),
-            active.envelope.as_ref().map(|_| active.started_at_ms),
+            active.started_at_ms,
             result,
             state_after,
         )?;

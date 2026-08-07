@@ -5,6 +5,9 @@ description: A3S Use、共享 Plugin Manager、Runtime Broker 与 A3S 宿主之�
 
 # 架构
 
+本文描述的是开发预览版架构，不是已发布产品。当前认知包输入只有 manifest
+v3、catalog v3、receipt v3、plan v4、host protocol v4 和 manager tools v3。
+
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、Web 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
 ```text
@@ -20,7 +23,7 @@ description: A3S Use、共享 Plugin Manager、Runtime Broker 与 A3S 宿主之�
                     ┌─────────────┴─────────────┐
                     │                           │
                native plane               cognitive plane
-          Runtime Task/Service       MCP · OKF · Flow · Skill · UI · context
+          Runtime Task/Service             MCP · OKF · Flow · Skill · UI
                     │                           │
                     └─────────────┬─────────────┘
                                   ▼

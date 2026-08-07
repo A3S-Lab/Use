@@ -5,6 +5,10 @@ description: Responsibility boundaries across A3S Use, the shared Plugin Manager
 
 # Architecture
 
+This is the architecture of the development preview, not a description of a
+released product. Only manifest v3, catalog v3, receipt v3, plan v4, host
+protocol v4, and manager tools v3 are current cognitive-package inputs.
+
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, Web, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
 ```text
@@ -20,7 +24,7 @@ The target architecture separates package management, workload scheduling, and h
                     ┌─────────────┴─────────────┐
                     │                           │
                native plane               cognitive plane
-          Runtime Task/Service       MCP · OKF · Flow · Skill · UI · context
+          Runtime Task/Service             MCP · OKF · Flow · Skill · UI
                     │                           │
                     └─────────────┬─────────────┘
                                   ▼

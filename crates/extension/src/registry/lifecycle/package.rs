@@ -101,17 +101,14 @@ impl ExtensionLifecyclePackage {
         downloaded: DownloadedRemotePackage,
     ) -> UseResult<Self> {
         let registry = downloaded.resolved().clone();
-        let verified_catalog = downloaded
-            .verified_catalog()
-            .filter(|catalog| catalog.record.is_package_plan_ready())
-            .cloned();
+        let verified_catalog = downloaded.verified_catalog().clone();
         let source = prepare_package_source(downloaded.path()).await?;
         Self::prepare(
             expected_package_id,
             source,
             ExtensionTrust::RegistryTuf,
             Some(registry),
-            verified_catalog,
+            Some(verified_catalog),
             env!("CARGO_PKG_VERSION"),
         )
         .await
@@ -306,9 +303,9 @@ fn validate_provenance(
 ) -> UseResult<()> {
     match (trust, registry, verified_catalog) {
         (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None) => Ok(()),
-        (ExtensionTrust::RegistryTuf, Some(registry), catalog) => {
+        (ExtensionTrust::RegistryTuf, Some(registry), Some(catalog)) => {
             registry.validate_provenance()?;
-            if catalog.is_some_and(|catalog| !catalog.record.is_package_plan_ready()) {
+            if !catalog.record.is_package_plan_ready() {
                 return Err(UseError::new(
                     "use.extension.trust_invalid",
                     "Lifecycle registry evidence is not package-plan ready.",

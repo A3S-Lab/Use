@@ -33,7 +33,7 @@ const PLUGIN_V3_COGNITIVE_PACKAGE_SHA256: &str =
 const PLUGIN_V3_COGNITIVE_PACKAGE_STATS: &str =
     include_str!("../fixtures/packages/plugin-v3-cognitive/package.stats.json").trim_ascii_end();
 const COMPLETE_PACKAGE_CATALOG: &[u8] =
-    include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v1.json");
+    include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v3.json");
 const TUF_ROOT: &[u8] = include_bytes!("../fixtures/registry/plugin-v3/metadata/root.json");
 const TUF_TARGETS: &[u8] = include_bytes!("../fixtures/registry/plugin-v3/metadata/targets.json");
 const TUF_SNAPSHOT: &[u8] = include_bytes!("../fixtures/registry/plugin-v3/metadata/snapshot.json");

@@ -68,7 +68,7 @@ plugins {
 
   trusted_registries = ["a3s"]
   trusted_publishers = ["a3s"]
-  allowed_surfaces   = ["mcp", "skill", "tool", "ui"]
+  allowed_surfaces   = ["flow", "mcp", "okf", "skill", "tool", "ui"]
 
   permissions {
     native_execution = false
@@ -85,7 +85,7 @@ plugins {
 
 An omitted ceiling means zero, empty, or `false`. Duplicates, unknown fields, broad network patterns, and unattended secret grants fail closed.
 
-The example is the current host policy v1 and intentionally omits `okf`. Core selection and manager-toolset v2 now define the canonical value, but the umbrella host must explicitly version or compatibly extend its ACL policy before it may authorize an OKF-bearing operation.
+The example uses the current six-surface inventory. A host must parse this ACL policy with its exact current contract and reject an unknown or incomplete inventory; it must not widen authority through defaults.
 
 ## Activation order
 

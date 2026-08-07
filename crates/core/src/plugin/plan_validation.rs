@@ -12,21 +12,12 @@ use super::plan::{
 use super::validation::{
     strictly_sorted_unique, valid_machine_id, valid_package_id, valid_permission_name, valid_sha256,
 };
-use super::{
-    PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA,
-    PLUGIN_OPERATION_PLAN_SCHEMA_V2, PLUGIN_OPERATION_PLAN_SCHEMA_V3,
-    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
-};
+use super::{PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA_V4};
 
 impl PluginOperationPlan {
     pub fn validate(&self) -> UseResult<()> {
-        if !matches!(
-            self.schema.as_str(),
-            PLUGIN_OPERATION_PLAN_SCHEMA
-                | PLUGIN_OPERATION_PLAN_SCHEMA_V2
-                | PLUGIN_OPERATION_PLAN_SCHEMA_V3
-                | PLUGIN_OPERATION_PLAN_SCHEMA_V4
-        ) || Self::validate_operation_id(&self.operation_id).is_err()
+        if self.schema != PLUGIN_OPERATION_PLAN_SCHEMA_V4
+            || Self::validate_operation_id(&self.operation_id).is_err()
             || !valid_package_id(&self.package_id)
             || !valid_machine_id(&self.component_id)
             || self
@@ -37,8 +28,6 @@ impl PluginOperationPlan {
                 .prior_package_lock_digest
                 .as_deref()
                 .is_some_and(|value| !valid_sha256(value))
-            || self.prior_package_lock_digest.is_some()
-                != (self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V3)
             || self.prior_package_lock_digest.is_some()
                 && (self.action != PluginOperationAction::Upgrade
                     || self.package_lock_digest.is_none())
@@ -304,22 +293,10 @@ impl PluginOperationPlan {
             })
         };
         let okf_changes = planned_okf_changes(self.action, &self.packages)?;
-        let schema_matches = if matches!(
-            self.action,
-            PluginOperationAction::Enable | PluginOperationAction::Disable
-        ) {
-            self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V4
-        } else if self.prior_package_lock_digest.is_some() {
-            self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V3
-        } else if okf_changes.is_empty() {
-            self.schema == PLUGIN_OPERATION_PLAN_SCHEMA
-        } else {
-            self.schema == PLUGIN_OPERATION_PLAN_SCHEMA_V2
-        };
         if !valid
             || self.impact.drain_required != drain_required
             || self.impact.okf_changes != okf_changes
-            || !schema_matches
+            || self.schema != PLUGIN_OPERATION_PLAN_SCHEMA_V4
         {
             return Err(plan_error(
                 "The aggregate plugin operation impact is inconsistent with the package delta.",

@@ -328,10 +328,3 @@ pub(super) fn attach_rollback_error(primary: UseError, rollback: UseError) -> Us
 pub(super) fn graph_error(message: impl Into<String>) -> UseError {
     UseError::new("use.plugin.package_graph_invalid", message)
 }
-
-pub(super) fn cutover_evidence_required() -> UseError {
-    UseError::new(
-        "use.plugin.package_graph_cutover_evidence_required",
-        "The capability host cannot provide exact snapshot evidence required for grant composition.",
-    )
-}

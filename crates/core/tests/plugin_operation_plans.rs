@@ -6,14 +6,14 @@ use a3s_use_core::{
     PlannedWorkspaceImpact, PluginCatalogRecord, PluginOperationAction,
     PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanEnvelope,
     PluginPlanSource, PluginSurfaceKind, PluginSurfaceRef, SurfaceChangeKind,
-    VerifiedCatalogProvenance, PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA,
+    VerifiedCatalogProvenance, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
     PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
-const CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-v1.json");
-const INSTALL_PLAN: &[u8] = include_bytes!("../fixtures/plugins/operation-plan-install-v1.json");
+const CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-v3.json");
+const INSTALL_PLAN: &[u8] = include_bytes!("../fixtures/plugins/operation-plan-install-v4.json");
 const INSTALL_PLAN_DIGEST: &str =
-    include_str!("../fixtures/plugins/operation-plan-install-v1.sha256").trim_ascii_end();
+    include_str!("../fixtures/plugins/operation-plan-install-v4.sha256").trim_ascii_end();
 const OPERATION_CONFIRMATION: &[u8] =
     include_bytes!("../fixtures/plugins/operation-confirmation-v1.json");
 const OPERATION_CONFIRMATION_DIGEST: &str =
@@ -84,7 +84,7 @@ fn install_plan() -> PluginOperationPlan {
     };
 
     PluginOperationPlan {
-        schema: PLUGIN_OPERATION_PLAN_SCHEMA.to_owned(),
+        schema: PLUGIN_OPERATION_PLAN_SCHEMA_V4.to_owned(),
         operation_id: "install:acme-research:0001".to_owned(),
         created_at_ms: 1_785_360_000_000,
         expires_at_ms: 1_785_360_600_000,

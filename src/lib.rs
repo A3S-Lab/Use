@@ -20,8 +20,6 @@ pub mod plugin_lifecycle;
 #[cfg(feature = "extensions")]
 pub mod plugin_runtime;
 #[cfg(feature = "extensions")]
-mod release_bundles;
-#[cfg(feature = "extensions")]
 mod surface_reconciler;
 
 #[cfg(feature = "ocr")]

@@ -15,14 +15,13 @@ use tokio::fs;
 
 use super::digest::package_sha256;
 use super::package::{
-    copy_package, io_error, lock_is_contended, owned_package_path, read_manifest, sha256,
-    unique_suffix, unix_timestamp, validate_surface_files, write_receipt, RegistryLock,
+    io_error, lock_is_contended, owned_package_path, read_manifest, sha256, validate_surface_files,
+    RegistryLock,
 };
 use super::registry_io::{read_registry_snapshot, write_registry_snapshot};
-use super::remote::{prepare_remote_package, ResolvedRemotePackage, TrustedRegistry};
-use super::route_lock::{acquire_drain_lock, deadline_after, open_route_lock};
-use super::source::prepare_package_source;
-use super::{ExtensionManifest, ExtensionPaths, McpTransport};
+use super::remote::ResolvedRemotePackage;
+use super::route_lock::{deadline_after, open_route_lock};
+use super::{ExtensionManifest, ExtensionPaths};
 
 mod cutover;
 mod lifecycle;
@@ -36,11 +35,8 @@ pub use lifecycle::{
     ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
 };
 
-const RECEIPT_SCHEMA_VERSION_V1: u32 = 1;
-const RECEIPT_SCHEMA_VERSION_V2: u32 = 2;
 const RECEIPT_SCHEMA_VERSION_V3: u32 = 3;
 pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 1;
-const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 const WATCH_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,7 +57,6 @@ pub struct ExtensionReceipt {
     pub version: String,
     pub package_root: PathBuf,
     pub manifest_sha256: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_sha256: Option<String>,
     pub trust: ExtensionTrust,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -69,9 +64,7 @@ pub struct ExtensionReceipt {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verified_catalog: Option<VerifiedPluginCatalogRecord>,
     pub installed_at_unix: u64,
-    #[serde(default = "enabled_by_default")]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lifecycle_generation: Option<u64>,
 }
 
@@ -92,10 +85,6 @@ impl ExtensionReceipt {
     }
 }
 
-fn enabled_by_default() -> bool {
-    true
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledExtension {
@@ -106,38 +95,6 @@ pub struct InstalledExtension {
 impl InstalledExtension {
     pub fn surfaces(&self) -> Vec<&'static str> {
         self.manifest.surface_kinds()
-    }
-
-    pub fn cli_executable(&self) -> Option<PathBuf> {
-        self.manifest
-            .cli
-            .as_ref()
-            .map(|surface| self.receipt.package_root.join(&surface.executable))
-    }
-
-    pub fn mcp_executable(&self) -> Option<PathBuf> {
-        self.manifest
-            .mcp
-            .as_ref()
-            .map(|surface| self.receipt.package_root.join(&surface.executable))
-    }
-
-    pub fn mcp_args(&self) -> Option<&[String]> {
-        self.manifest
-            .mcp
-            .as_ref()
-            .map(|surface| surface.args.as_slice())
-    }
-
-    pub fn mcp_transport(&self) -> Option<McpTransport> {
-        self.manifest.mcp.as_ref().map(|surface| surface.transport)
-    }
-
-    pub fn skill_path(&self) -> Option<PathBuf> {
-        self.manifest
-            .skill
-            .as_ref()
-            .map(|surface| self.receipt.package_root.join(&surface.path))
     }
 
     pub fn enabled(&self) -> bool {
@@ -156,24 +113,21 @@ impl InstalledExtension {
                 "The installed extension does not retain verified package-planning evidence.",
             )
         })?;
-        if !matches!(
-            self.receipt.schema_version,
-            RECEIPT_SCHEMA_VERSION_V2 | RECEIPT_SCHEMA_VERSION_V3
-        ) || self.receipt.trust != ExtensionTrust::RegistryTuf
+        if self.receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3
+            || self.receipt.trust != ExtensionTrust::RegistryTuf
         {
             return Err(plan_evidence_error(
                 "The installed extension receipt is not plan-ready registry state.",
             ));
         }
-        let package_digest = self.receipt.package_sha256.as_deref().ok_or_else(|| {
-            plan_evidence_error("The installed extension receipt omitted its package digest.")
-        })?;
         validate_catalog_binding(
             catalog,
             self.receipt.registry.as_ref(),
             &self.manifest,
             &self.receipt.manifest_sha256,
-            package_digest,
+            self.receipt.package_sha256.as_deref().ok_or_else(|| {
+                plan_evidence_error("The cognitive-package receipt omitted its package digest.")
+            })?,
         )?;
         Ok(catalog)
     }
@@ -222,9 +176,7 @@ pub struct ExtensionRouteBinding {
     #[serde(default)]
     pub package_root: PathBuf,
     pub manifest_sha256: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_sha256: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lifecycle_generation: Option<u64>,
     pub enabled: bool,
     pub surfaces: Vec<String>,
@@ -283,15 +235,6 @@ impl ExtensionRegistrySnapshot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActivationResult {
-    pub package_id: String,
-    pub changed: bool,
-    pub enabled: bool,
-    pub generation: u64,
-}
-
 pub struct ExtensionRouteLease {
     extension: InstalledExtension,
     file: File,
@@ -307,19 +250,6 @@ impl Drop for ExtensionRouteLease {
     fn drop(&mut self) {
         let _ = FileExt::unlock(&self.file);
     }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct InstallOptions {
-    pub force: bool,
-    pub allow_unsigned: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstallResult {
-    pub changed: bool,
-    pub extension: InstalledExtension,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -490,23 +420,25 @@ impl ExtensionRegistry {
         &self,
         binding: &ExtensionRouteBinding,
     ) -> UseResult<Option<InstalledExtension>> {
-        let extension = if let Some(generation) = binding.lifecycle_generation {
-            let package_sha256 = binding.package_sha256.as_deref().ok_or_else(|| {
-                UseError::new(
-                    "use.extension.lifecycle_binding_invalid",
-                    "A lifecycle snapshot binding omitted its package digest.",
-                )
-            })?;
-            let identity = ExtensionLifecycleIdentity::new(
-                &binding.package_id,
-                format!("sha256:{package_sha256}"),
-                format!("sha256:{}", binding.manifest_sha256),
-                generation,
-            )?;
-            self.get_lifecycle_generation(&identity).await?
-        } else {
-            self.get(&binding.package_id).await?
-        };
+        let package_sha256 = binding.package_sha256.as_deref().ok_or_else(|| {
+            UseError::new(
+                "use.extension.lifecycle_binding_invalid",
+                "A cognitive-package snapshot binding omitted its package digest.",
+            )
+        })?;
+        let generation = binding.lifecycle_generation.ok_or_else(|| {
+            UseError::new(
+                "use.extension.lifecycle_binding_invalid",
+                "A cognitive-package snapshot binding omitted its generation.",
+            )
+        })?;
+        let identity = ExtensionLifecycleIdentity::new(
+            &binding.package_id,
+            format!("sha256:{package_sha256}"),
+            format!("sha256:{}", binding.manifest_sha256),
+            generation,
+        )?;
+        let extension = self.get_lifecycle_generation(&identity).await?;
         Ok(extension.filter(|extension| published_binding_matches_extension(binding, extension)))
     }
 
@@ -519,7 +451,30 @@ impl ExtensionRegistry {
         Ok(installed_dependents(&installed, &package_id))
     }
 
-    pub async fn find_route(&self, route: &str) -> UseResult<Option<InstalledExtension>> {
+    /// Pin the exact currently published cognitive-package generation for a
+    /// host-owned dispatch. The lease participates in lifecycle drain and
+    /// never launches package-owned processes outside the surface lifecycle.
+    pub async fn acquire_published_route(
+        &self,
+        route: &str,
+    ) -> UseResult<Option<ExtensionRouteLease>> {
+        let Some(candidate) = self
+            .find_route_for_host_version(route, env!("CARGO_PKG_VERSION"))
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.acquire_extension_lease_for_host_version(
+            candidate,
+            Some(route),
+            env!("CARGO_PKG_VERSION"),
+        )
+        .await
+    }
+
+    /// Resolve the exact currently published cognitive-package generation
+    /// without acquiring a dispatch lease.
+    pub async fn find_published_route(&self, route: &str) -> UseResult<Option<InstalledExtension>> {
         self.find_route_for_host_version(route, env!("CARGO_PKG_VERSION"))
             .await
     }
@@ -544,544 +499,6 @@ impl ExtensionRegistry {
             && extension.supports_use_version(host_version)
             && published_binding_matches_extension(binding, &extension))
         .then_some(extension))
-    }
-
-    /// Pin an active route generation for the lifetime of one delegated call.
-    /// Disable and uninstall operations acquire the matching exclusive lock
-    /// before deleting package files, so an accepted invocation cannot lose its
-    /// executable halfway through dispatch.
-    pub async fn acquire_route(&self, route: &str) -> UseResult<Option<ExtensionRouteLease>> {
-        let Some(candidate) = self.find_route(route).await? else {
-            return Ok(None);
-        };
-        self.acquire_extension_lease(candidate, Some(route)).await
-    }
-
-    pub async fn acquire_extension(
-        &self,
-        package_id: &str,
-    ) -> UseResult<Option<ExtensionRouteLease>> {
-        let package_id = normalize_package_id(package_id)?;
-        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
-        let Some(binding) = published
-            .routes
-            .iter()
-            .find(|binding| binding.enabled && binding.package_id == package_id)
-        else {
-            return Ok(None);
-        };
-        let Some(candidate) = self.get_snapshot_binding(binding).await? else {
-            return Ok(None);
-        };
-        if !candidate.receipt.enabled || !candidate.supports_use_version(env!("CARGO_PKG_VERSION"))
-        {
-            return Ok(None);
-        }
-        self.acquire_extension_lease(candidate, None).await
-    }
-
-    pub async fn install_local(
-        &self,
-        expected_package_id: &str,
-        source: &Path,
-        options: InstallOptions,
-    ) -> UseResult<InstallResult> {
-        let expected_package_id = normalize_package_id(expected_package_id)?;
-        if !options.allow_unsigned {
-            return Err(UseError::new(
-                "use.extension.trust_required",
-                "Unsigned local extensions require explicit trust approval.",
-            )
-            .with_suggestion("Rerun the explicit install with --allow-unsigned."));
-        }
-
-        let source = prepare_package_source(source).await?;
-        self.install_prepared(
-            &expected_package_id,
-            source.root(),
-            options.force,
-            ExtensionTrust::LocalExplicit,
-            None,
-            None,
-        )
-        .await
-    }
-
-    /// Install a package carried by the same verified A3S Use release.
-    ///
-    /// The caller supplies the digest shown in the reviewed umbrella plan.
-    /// This method resolves and validates the release-owned directory again,
-    /// refusing activation if any byte changed between review and apply.
-    pub async fn install_release_bundle(
-        &self,
-        expected_package_id: &str,
-        source: &Path,
-        expected_package_sha256: &str,
-        force: bool,
-    ) -> UseResult<InstallResult> {
-        let expected_package_id = normalize_package_id(expected_package_id)?;
-        let bundle = super::inspect_release_bundle(source).await?;
-        if bundle.package_id != expected_package_id {
-            return Err(UseError::new(
-                "use.extension.identity_mismatch",
-                format!(
-                    "Requested extension '{}' but the release bundle declares '{}'.",
-                    expected_package_id, bundle.package_id
-                ),
-            ));
-        }
-        if bundle.package_sha256 != expected_package_sha256 {
-            return Err(UseError::new(
-                "use.extension.release_bundle_changed",
-                format!(
-                    "Release bundle '{}' changed after its installation plan was reviewed.",
-                    expected_package_id
-                ),
-            ));
-        }
-        self.install_prepared(
-            &expected_package_id,
-            source,
-            force,
-            ExtensionTrust::ReleaseBundle,
-            None,
-            None,
-        )
-        .await
-    }
-
-    /// Install an extension selected through a fully verified TUF repository.
-    ///
-    /// Metadata is resolved and the optional reviewed plan is checked before
-    /// the target payload is downloaded. The package manifest must repeat the
-    /// exact ID and version carried by the signed target metadata.
-    pub async fn install_remote(
-        &self,
-        expected_package_id: &str,
-        registry: &TrustedRegistry,
-        requested_version: Option<&str>,
-        channel: &str,
-        expected_plan_digest: Option<&str>,
-        force: bool,
-    ) -> UseResult<InstallResult> {
-        let expected_package_id = normalize_package_id(expected_package_id)?;
-        let prepared = prepare_remote_package(
-            registry,
-            &expected_package_id,
-            requested_version,
-            channel,
-            expected_plan_digest,
-        )
-        .await?;
-        if !force {
-            if let Some(result) = self
-                .converged_remote_install(
-                    &expected_package_id,
-                    prepared.resolved(),
-                    prepared
-                        .verified_catalog()
-                        .filter(|catalog| catalog.record.is_package_plan_ready()),
-                )
-                .await?
-            {
-                return Ok(result);
-            }
-        }
-        let downloaded = prepared.download().await?;
-        let provenance = downloaded.resolved().clone();
-        let verified_catalog = downloaded
-            .verified_catalog()
-            .filter(|catalog| catalog.record.is_package_plan_ready())
-            .cloned();
-        let source = prepare_package_source(downloaded.path()).await?;
-        self.install_prepared(
-            &expected_package_id,
-            source.root(),
-            force,
-            ExtensionTrust::RegistryTuf,
-            Some(provenance),
-            verified_catalog,
-        )
-        .await
-    }
-
-    async fn converged_remote_install(
-        &self,
-        expected_package_id: &str,
-        resolved: &ResolvedRemotePackage,
-        verified_catalog: Option<&VerifiedPluginCatalogRecord>,
-    ) -> UseResult<Option<InstallResult>> {
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
-        let Some(current) = self.get(expected_package_id).await? else {
-            return Ok(None);
-        };
-        let same_target = current.receipt.trust == ExtensionTrust::RegistryTuf
-            && current.receipt.version == resolved.version
-            && registry_identity(current.receipt.registry.as_ref())
-                == registry_identity(Some(resolved))
-            && current.receipt.verified_catalog.as_ref() == verified_catalog;
-        if !same_target {
-            return Ok(None);
-        }
-        let installed = self.list().await?;
-        self.publish_snapshot_locked(&installed).await?;
-        Ok(Some(InstallResult {
-            changed: false,
-            extension: current,
-        }))
-    }
-
-    async fn install_prepared(
-        &self,
-        expected_package_id: &str,
-        source: &Path,
-        force: bool,
-        trust: ExtensionTrust,
-        registry: Option<ResolvedRemotePackage>,
-        verified_catalog: Option<VerifiedPluginCatalogRecord>,
-    ) -> UseResult<InstallResult> {
-        match (trust, registry.as_ref(), verified_catalog.as_ref()) {
-            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None)
-            | (ExtensionTrust::RegistryTuf, Some(_), None)
-            | (ExtensionTrust::RegistryTuf, Some(_), Some(_)) => {}
-            _ => {
-                return Err(UseError::new(
-                    "use.extension.trust_invalid",
-                    "Extension installation provenance is internally inconsistent.",
-                ))
-            }
-        }
-
-        let (manifest, manifest_bytes) = read_manifest(source).await?;
-        if manifest.package_id != expected_package_id {
-            return Err(UseError::new(
-                "use.extension.identity_mismatch",
-                format!(
-                    "Requested extension '{}' but the package declares '{}'.",
-                    expected_package_id, manifest.package_id
-                ),
-            ));
-        }
-        if manifest.schema_version == 3 {
-            return Err(UseError::new(
-                "use.extension.lifecycle_required",
-                "Schema-v3 cognitive packages must be installed through the package lifecycle coordinator.",
-            )
-            .with_suggestion(
-                "Use the cognitive-package install or apply flow so every declared surface is committed atomically.",
-            ));
-        }
-        if !manifest.supports_use_version(env!("CARGO_PKG_VERSION"))? {
-            return Err(UseError::new(
-                "use.extension.host_incompatible",
-                format!(
-                    "Extension '{}' {} does not support A3S Use {}.",
-                    manifest.package_id,
-                    manifest.version,
-                    env!("CARGO_PKG_VERSION")
-                ),
-            )
-            .with_detail("requiresUse", manifest.requires_use.clone())
-            .with_detail("hostVersion", env!("CARGO_PKG_VERSION")));
-        }
-        if let Some(registry) = &registry {
-            if registry.package_id != manifest.package_id || registry.version != manifest.version {
-                return Err(UseError::new(
-                    "use.extension.registry_identity_mismatch",
-                    format!(
-                        "Signed target '{}@{}' does not match package manifest '{}@{}'.",
-                        registry.package_id,
-                        registry.version,
-                        manifest.package_id,
-                        manifest.version
-                    ),
-                ));
-            }
-        }
-        validate_surface_files(&manifest, source).await?;
-        let package_digest = package_sha256(source).await?;
-        validate_catalog_package(
-            verified_catalog.as_ref(),
-            registry.as_ref(),
-            &manifest,
-            &manifest_bytes,
-            &package_digest,
-        )?;
-
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
-        let installed = self.list().await?;
-        if let Some(conflict) = installed.iter().find(|extension| {
-            extension.receipt.package_id != expected_package_id
-                && extension.receipt.route == manifest.route
-        }) {
-            return Err(UseError::new(
-                "use.extension.route_conflict",
-                format!(
-                    "Route '{}' is already owned by extension '{}'.",
-                    manifest.route, conflict.receipt.package_id
-                ),
-            ));
-        }
-
-        let digest = sha256(&manifest_bytes);
-        if let Some(current) = installed
-            .iter()
-            .find(|extension| extension.receipt.package_id == expected_package_id)
-        {
-            let current_package_digest = match &current.receipt.package_sha256 {
-                Some(digest) => digest.clone(),
-                None => package_sha256(&current.receipt.package_root).await?,
-            };
-            let same_provenance = current.receipt.trust == trust
-                && registry_identity(current.receipt.registry.as_ref())
-                    == registry_identity(registry.as_ref())
-                && current.receipt.verified_catalog.as_ref() == verified_catalog.as_ref();
-            if !force
-                && current.receipt.version == manifest.version
-                && current_package_digest == package_digest
-                && same_provenance
-            {
-                self.publish_snapshot_locked(&installed).await?;
-                return Ok(InstallResult {
-                    changed: false,
-                    extension: current.clone(),
-                });
-            }
-            if !force
-                && current.receipt.version == manifest.version
-                && current_package_digest != package_digest
-            {
-                return Err(UseError::new(
-                    "use.extension.version_conflict",
-                    format!(
-                        "Extension '{}' version {} is already active with different content.",
-                        expected_package_id, manifest.version
-                    ),
-                )
-                .with_suggestion("Use a new version or rerun the explicit install with --force."));
-            }
-        }
-
-        let package_parent = self.paths.package_parent(expected_package_id);
-        fs::create_dir_all(&package_parent).await.map_err(|error| {
-            io_error("create extension package directory", &package_parent, error)
-        })?;
-        let staging = tempfile::Builder::new()
-            .prefix(".staging-")
-            .tempdir_in(&package_parent)
-            .map_err(|error| {
-                io_error("create extension staging directory", &package_parent, error)
-            })?;
-        copy_package(source, staging.path()).await?;
-        let (staged_manifest, staged_bytes) = read_manifest(staging.path()).await?;
-        if staged_manifest != manifest || sha256(&staged_bytes) != digest {
-            return Err(UseError::new(
-                "use.extension.package_changed",
-                "The extension manifest changed while the package was staged.",
-            ));
-        }
-        validate_surface_files(&staged_manifest, staging.path()).await?;
-        if package_sha256(staging.path()).await? != package_digest {
-            return Err(UseError::new(
-                "use.extension.package_changed",
-                "The extension package changed while it was staged.",
-            ));
-        }
-
-        let activation = unique_suffix();
-        let target = self
-            .paths
-            .package_root(expected_package_id, &manifest.version, &activation);
-        let staging = staging.keep();
-        if let Err(error) = fs::rename(&staging, &target).await {
-            let _ = fs::remove_dir_all(&staging).await;
-            return Err(io_error("activate extension package", &target, error));
-        }
-
-        let enabled = installed
-            .iter()
-            .find(|extension| extension.receipt.package_id == expected_package_id)
-            .map(|extension| extension.receipt.enabled)
-            .unwrap_or(true);
-
-        let receipt = ExtensionReceipt {
-            schema_version: if verified_catalog.is_some() {
-                RECEIPT_SCHEMA_VERSION_V2
-            } else {
-                RECEIPT_SCHEMA_VERSION_V1
-            },
-            package_id: expected_package_id.to_string(),
-            component_id: format!("use/{expected_package_id}"),
-            route: manifest.route.clone(),
-            version: manifest.version.clone(),
-            package_root: target.clone(),
-            manifest_sha256: digest,
-            package_sha256: Some(package_digest),
-            trust,
-            registry,
-            verified_catalog,
-            installed_at_unix: unix_timestamp(),
-            enabled,
-            lifecycle_generation: None,
-        };
-        let receipt_path = self.paths.receipt_path(expected_package_id);
-        if let Err(error) = write_receipt(&receipt_path, &receipt).await {
-            let _ = fs::remove_dir_all(&target).await;
-            return Err(error);
-        }
-
-        // Previous immutable package generations remain available while calls
-        // that pinned them drain. Explicit uninstall and the future package GC
-        // are the only operations allowed to remove these directories.
-        let current = self.list().await?;
-        self.publish_snapshot_locked(&current).await?;
-
-        Ok(InstallResult {
-            changed: true,
-            extension: InstalledExtension { receipt, manifest },
-        })
-    }
-
-    pub async fn enable(&self, package_id: &str) -> UseResult<ActivationResult> {
-        let package_id = normalize_package_id(package_id)?;
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
-        let extension = self.get(&package_id).await?.ok_or_else(|| {
-            UseError::new(
-                "use.extension.not_installed",
-                format!("Extension '{package_id}' is not installed."),
-            )
-        })?;
-        reject_lifecycle_managed(&extension.receipt)?;
-        let changed = !extension.receipt.enabled;
-        if changed {
-            let mut receipt = extension.receipt;
-            receipt.enabled = true;
-            write_receipt(&self.paths.receipt_path(&package_id), &receipt).await?;
-        }
-        let installed = self.list().await?;
-        let snapshot = self.publish_snapshot_locked(&installed).await?;
-        Ok(ActivationResult {
-            package_id,
-            changed,
-            enabled: true,
-            generation: snapshot.generation,
-        })
-    }
-
-    pub async fn disable(&self, package_id: &str) -> UseResult<ActivationResult> {
-        self.disable_with_timeout(package_id, DEFAULT_DRAIN_TIMEOUT)
-            .await
-    }
-
-    pub async fn disable_with_timeout(
-        &self,
-        package_id: &str,
-        timeout: Duration,
-    ) -> UseResult<ActivationResult> {
-        deadline_after(timeout)?;
-        let package_id = normalize_package_id(package_id)?;
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
-        let extension = self.get(&package_id).await?.ok_or_else(|| {
-            UseError::new(
-                "use.extension.not_installed",
-                format!("Extension '{package_id}' is not installed."),
-            )
-        })?;
-        reject_lifecycle_managed(&extension.receipt)?;
-        let changed = extension.receipt.enabled;
-        if changed {
-            let mut receipt = extension.receipt;
-            receipt.enabled = false;
-            write_receipt(&self.paths.receipt_path(&package_id), &receipt).await?;
-        }
-        let installed = self.list().await?;
-        let snapshot = self.publish_snapshot_locked(&installed).await?;
-        // Route visibility changes before draining. New calls fail closed while
-        // accepted calls retain their shared generation lease. Keep the
-        // registry lock for the drain so a concurrent enable cannot republish
-        // the route before all accepted calls have released their leases.
-        let _drain =
-            acquire_drain_lock(&self.paths.package_lock_path(&package_id), timeout).await?;
-        Ok(ActivationResult {
-            package_id,
-            changed,
-            enabled: false,
-            generation: snapshot.generation,
-        })
-    }
-
-    pub async fn uninstall(&self, package_id: &str) -> UseResult<UninstallResult> {
-        let package_id = normalize_package_id(package_id)?;
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
-        let Some(extension) = self.get(&package_id).await? else {
-            // A previous uninstall may have committed receipt removal and then
-            // stopped before deleting its immutable package generations. The
-            // missing receipt already makes the route invisible; reconcile the
-            // projection and finish the owned cleanup on retry.
-            let installed = self.list().await?;
-            self.publish_snapshot_locked(&installed).await?;
-            let package_parent = self.paths.package_parent(&package_id);
-            reject_lifecycle_orphan_cleanup(&package_parent).await?;
-            let changed = remove_package_parent_if_present(&package_parent).await?;
-            return Ok(UninstallResult {
-                package_id,
-                changed,
-            });
-        };
-        reject_lifecycle_managed(&extension.receipt)?;
-        let installed = self.list().await?;
-        ensure_no_installed_dependents(&installed, &package_id)?;
-        if extension.receipt.enabled {
-            let mut receipt = extension.receipt.clone();
-            receipt.enabled = false;
-            write_receipt(&self.paths.receipt_path(&package_id), &receipt).await?;
-            let installed = self.list().await?;
-            self.publish_snapshot_locked(&installed).await?;
-        }
-
-        // Keep both locks until the receipt and every immutable package
-        // generation are gone. An enable or install cannot interleave between
-        // route removal and package deletion.
-        let _drain = acquire_drain_lock(
-            &self.paths.package_lock_path(&package_id),
-            DEFAULT_DRAIN_TIMEOUT,
-        )
-        .await?;
-        if !owned_package_path(&self.paths, &package_id, &extension.receipt.package_root) {
-            return Err(UseError::new(
-                "use.extension.ownership_invalid",
-                "The extension receipt does not own its package directory.",
-            )
-            .with_detail("routeDisabled", true));
-        }
-        let receipt_path = self.paths.receipt_path(&package_id);
-        fs::remove_file(&receipt_path)
-            .await
-            .map_err(|error| io_error("disable extension route", &receipt_path, error))?;
-        // Publish receipt removal before best-effort storage cleanup. If the
-        // latter is interrupted, a retry enters the no-receipt recovery path
-        // above without re-exposing the route.
-        let installed = self.list().await?;
-        self.publish_snapshot_locked(&installed).await?;
-        let package_parent = self.paths.package_parent(&package_id);
-        remove_package_parent_if_present(&package_parent).await?;
-        Ok(UninstallResult {
-            package_id,
-            changed: true,
-        })
-    }
-
-    async fn acquire_extension_lease(
-        &self,
-        candidate: InstalledExtension,
-        expected_route: Option<&str>,
-    ) -> UseResult<Option<ExtensionRouteLease>> {
-        self.acquire_extension_lease_for_host_version(
-            candidate,
-            expected_route,
-            env!("CARGO_PKG_VERSION"),
-        )
-        .await
     }
 
     async fn acquire_extension_lease_for_host_version(
@@ -1160,56 +577,37 @@ impl ExtensionRegistry {
                 ),
             )
         })?;
-        if !matches!(
-            receipt.schema_version,
-            RECEIPT_SCHEMA_VERSION_V1 | RECEIPT_SCHEMA_VERSION_V2 | RECEIPT_SCHEMA_VERSION_V3
-        ) {
+        if receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3 {
             return Err(UseError::new(
                 "use.extension.receipt_incompatible",
                 format!(
-                    "Extension receipt schema {} is not supported.",
+                    "Extension receipt schema {} is obsolete; remove the pre-release state and reinstall the package.",
                     receipt.schema_version
                 ),
             ));
         }
-        match (
-            receipt.schema_version,
-            receipt.verified_catalog.as_ref(),
-            receipt.package_sha256.as_ref(),
-        ) {
-            (RECEIPT_SCHEMA_VERSION_V1, None, _)
-            | (RECEIPT_SCHEMA_VERSION_V2, Some(_), Some(_))
-            | (RECEIPT_SCHEMA_VERSION_V3, _, Some(_)) => {}
-            _ => {
-                return Err(UseError::new(
-                    "use.extension.receipt_invalid",
-                    format!(
-                        "Extension receipt for '{}' has inconsistent catalog evidence.",
-                        receipt.package_id
-                    ),
-                ))
-            }
-        }
-        match (receipt.schema_version, receipt.lifecycle_generation) {
-            (RECEIPT_SCHEMA_VERSION_V1 | RECEIPT_SCHEMA_VERSION_V2, None)
-            | (RECEIPT_SCHEMA_VERSION_V3, Some(1..)) => {}
-            _ => {
-                return Err(UseError::new(
-                    "use.extension.lifecycle_receipt_invalid",
-                    format!(
-                        "Extension receipt for '{}' has an invalid lifecycle generation.",
-                        receipt.package_id
-                    ),
-                ))
-            }
-        }
-        if receipt.package_sha256.as_deref().is_some_and(|digest| {
-            digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-        }) {
+        let generation = receipt.lifecycle_generation.ok_or_else(|| {
+            UseError::new(
+                "use.extension.lifecycle_receipt_invalid",
+                "A cognitive-package receipt omitted its generation.",
+            )
+        })?;
+        let expected_package_sha256 = receipt.package_sha256.as_deref().ok_or_else(|| {
+            UseError::new(
+                "use.extension.lifecycle_receipt_invalid",
+                "A cognitive-package receipt omitted its package digest.",
+            )
+        })?;
+        if generation == 0
+            || expected_package_sha256.len() != 64
+            || !expected_package_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
             return Err(UseError::new(
-                "use.extension.receipt_invalid",
+                "use.extension.lifecycle_receipt_invalid",
                 format!(
-                    "Extension receipt for '{}' has an invalid package digest.",
+                    "Extension receipt for '{}' has an invalid generation or package digest.",
                     receipt.package_id
                 ),
             ));
@@ -1220,7 +618,7 @@ impl ExtensionRegistry {
             receipt.verified_catalog.as_ref(),
         ) {
             (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None) => {}
-            (ExtensionTrust::RegistryTuf, Some(registry), catalog) => {
+            (ExtensionTrust::RegistryTuf, Some(registry), Some(catalog)) => {
                 registry.validate_provenance()?;
                 if registry.package_id != receipt.package_id || registry.version != receipt.version
                 {
@@ -1232,7 +630,7 @@ impl ExtensionRegistry {
                         ),
                     ));
                 }
-                if catalog.is_some_and(|catalog| !catalog.record.is_package_plan_ready()) {
+                if !catalog.record.is_package_plan_ready() {
                     return Err(UseError::new(
                         "use.extension.receipt_invalid",
                         format!(
@@ -1278,48 +676,32 @@ impl ExtensionRegistry {
                 ),
             ));
         }
-        if receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 {
-            let generation = receipt.lifecycle_generation.ok_or_else(|| {
-                UseError::new(
-                    "use.extension.lifecycle_receipt_invalid",
-                    "A lifecycle receipt omitted its exact package generation.",
-                )
-            })?;
-            let package_sha256 = receipt.package_sha256.as_deref().ok_or_else(|| {
-                UseError::new(
-                    "use.extension.lifecycle_receipt_invalid",
-                    "A lifecycle receipt omitted its exact package digest.",
-                )
-            })?;
-            if manifest.schema_version != 3
-                || package_sha256.bytes().any(|byte| byte.is_ascii_uppercase())
-                || receipt.package_root
-                    != self
-                        .paths
-                        .lifecycle_package_root(&package_id, generation, package_sha256)
-            {
-                return Err(UseError::new(
-                    "use.extension.lifecycle_receipt_invalid",
-                    format!(
-                        "Lifecycle receipt for '{}' does not bind its immutable generation.",
-                        package_id
-                    ),
-                ));
-            }
+        if receipt.package_root
+            != self
+                .paths
+                .lifecycle_package_root(&package_id, generation, expected_package_sha256)
+        {
+            return Err(UseError::new(
+                "use.extension.lifecycle_receipt_invalid",
+                format!(
+                    "Lifecycle receipt for '{}' does not bind its immutable generation.",
+                    package_id
+                ),
+            ));
         }
         validate_surface_files(&manifest, &receipt.package_root).await?;
+        let package_digest = package_sha256(&receipt.package_root).await?;
+        if expected_package_sha256 != package_digest {
+            return Err(UseError::new(
+                "use.extension.package_digest_mismatch",
+                format!(
+                    "Installed package '{}' no longer matches its recorded digest.",
+                    receipt.package_id
+                ),
+            )
+            .with_suggestion("Reinstall the extension from its trusted source."));
+        }
         if let Some(catalog) = receipt.verified_catalog.as_ref() {
-            let package_digest = package_sha256(&receipt.package_root).await?;
-            if receipt.package_sha256.as_deref() != Some(package_digest.as_str()) {
-                return Err(UseError::new(
-                    "use.extension.package_digest_mismatch",
-                    format!(
-                        "Installed package '{}' no longer matches its recorded digest.",
-                        receipt.package_id
-                    ),
-                )
-                .with_suggestion("Reinstall the extension from its trusted source."));
-            }
             validate_catalog_package(
                 Some(catalog),
                 receipt.registry.as_ref(),
@@ -1333,11 +715,8 @@ impl ExtensionRegistry {
 }
 
 async fn verify_package_integrity(extension: &InstalledExtension) -> UseResult<()> {
-    let Some(expected) = extension.receipt.package_sha256.as_deref() else {
-        return Ok(());
-    };
     let actual = package_sha256(&extension.receipt.package_root).await?;
-    if actual != expected {
+    if extension.receipt.package_sha256.as_deref() != Some(actual.as_str()) {
         return Err(UseError::new(
             "use.extension.package_digest_mismatch",
             format!(
@@ -1374,17 +753,18 @@ fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding
 
 fn active_lifecycle_bindings(
     routes: &[ExtensionRouteBinding],
-) -> BTreeMap<&str, (u64, &str, Option<&str>, &str, &str)> {
+) -> BTreeMap<&str, (u64, &str, &str, &str, &str)> {
     routes
         .iter()
         .filter_map(|binding| {
             let generation = binding.lifecycle_generation?;
+            let package_sha256 = binding.package_sha256.as_deref()?;
             binding.enabled.then_some((
                 binding.package_id.as_str(),
                 (
                     generation,
                     binding.manifest_sha256.as_str(),
-                    binding.package_sha256.as_deref(),
+                    package_sha256,
                     binding.version.as_str(),
                     binding.route.as_str(),
                 ),
@@ -1404,39 +784,19 @@ fn lifecycle_route_lock_path(
     paths: &ExtensionPaths,
     receipt: &ExtensionReceipt,
 ) -> UseResult<PathBuf> {
-    match receipt.lifecycle_generation {
-        Some(generation) if receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 => {
-            Ok(paths.lifecycle_package_lock_path(&receipt.package_id, generation))
-        }
-        None if matches!(
-            receipt.schema_version,
-            RECEIPT_SCHEMA_VERSION_V1 | RECEIPT_SCHEMA_VERSION_V2
-        ) =>
-        {
-            Ok(paths.package_lock_path(&receipt.package_id))
-        }
-        _ => Err(UseError::new(
+    if receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3 {
+        return Err(UseError::new(
             "use.extension.lifecycle_receipt_invalid",
             "An extension receipt has inconsistent route-lease generation evidence.",
-        )),
-    }
-}
-
-fn reject_lifecycle_managed(receipt: &ExtensionReceipt) -> UseResult<()> {
-    if receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 || receipt.lifecycle_generation.is_some()
-    {
-        return Err(UseError::new(
-            "use.extension.lifecycle_managed",
-            format!(
-                "Cognitive package '{}' is owned by the package lifecycle coordinator.",
-                receipt.package_id
-            ),
-        )
-        .with_suggestion(
-            "Use the cognitive-package lifecycle operation instead of the legacy extension toggle.",
         ));
     }
-    Ok(())
+    let generation = receipt.lifecycle_generation.ok_or_else(|| {
+        UseError::new(
+            "use.extension.lifecycle_receipt_invalid",
+            "A cognitive-package receipt omitted its route-lease generation.",
+        )
+    })?;
+    Ok(paths.lifecycle_package_lock_path(&receipt.package_id, generation))
 }
 
 fn installed_dependents(installed: &[InstalledExtension], package_id: &str) -> Vec<String> {
@@ -1473,53 +833,6 @@ fn ensure_no_installed_dependents(
     ))
 }
 
-async fn reject_lifecycle_orphan_cleanup(path: &Path) -> UseResult<()> {
-    let mut entries = match fs::read_dir(path).await {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(io_error("inspect extension package", path, error)),
-    };
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|error| io_error("inspect extension package", path, error))?
-    {
-        if entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| name.starts_with("lifecycle-"))
-        {
-            return Err(UseError::new(
-                "use.extension.lifecycle_managed",
-                "A lifecycle-managed package generation requires exact coordinator-owned cleanup.",
-            ));
-        }
-    }
-    Ok(())
-}
-
-async fn remove_package_parent_if_present(path: &Path) -> UseResult<bool> {
-    let metadata = match fs::symlink_metadata(path).await {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(io_error("inspect extension package", path, error)),
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err(UseError::new(
-            "use.extension.ownership_invalid",
-            format!(
-                "Refusing to remove invalid extension package directory '{}'.",
-                path.display()
-            ),
-        )
-        .with_detail("routeDisabled", true));
-    }
-    fs::remove_dir_all(path).await.map_err(|error| {
-        io_error("remove extension package", path, error).with_detail("routeDisabled", true)
-    })?;
-    Ok(true)
-}
-
 fn normalize_package_id(value: &str) -> UseResult<String> {
     let value = value.strip_prefix("use/").unwrap_or(value);
     if !super::valid_package_id(value) {
@@ -1529,17 +842,6 @@ fn normalize_package_id(value: &str) -> UseResult<String> {
         ));
     }
     Ok(value.to_string())
-}
-
-fn registry_identity(registry: Option<&ResolvedRemotePackage>) -> Option<(&str, &str, &str, &str)> {
-    registry.map(|registry| {
-        (
-            registry.registry_name.as_str(),
-            registry.registry_url.as_str(),
-            registry.root_sha256.as_str(),
-            registry.sha256.as_str(),
-        )
-    })
 }
 
 fn validate_catalog_package(

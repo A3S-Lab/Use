@@ -1,87 +1,34 @@
 ---
 title: 快速开始
-description: 安装 A3S Use，检查本机能力，并了解稳定包管理基础与认知插件平台基线的边界。
+description: 从源码构建 A3S Use 开发预览版、检查当前能力，并了解尚未满足的发布条件。
 ---
 
 # 快速开始
 
-A3S Use 是 A3S 生态的 **AI Native Package Manager**。它不替代 `apt`、Homebrew 或 WinGet，而是管理参与 A3S 能力与安全模型的原生工具和认知插件。
+A3S Use 是 A3S 的 **AI Native Package Manager**，用于解析和管理原生能力，
+以及包含 Tool、MCP、OKF、A3S Flow、Skill、UI 的版本化认知包依赖图。
 
-## 当前可用范围
+:::caution 开发预览
+A3S Use 尚未发布受支持的产品版本，也未达到 production-ready。当前仅适合
+从源码构建后进行开发和评估。仓库 tag、内部 schema 编号或单元测试通过都不
+代表产品已经发布。
+:::
 
-| 能力                                                         | 状态                                                  |
-| ------------------------------------------------------------ | ----------------------------------------------------- |
-| 本地目录与有界归档安装                                       | v0.2 可用                                             |
-| Release 摘要审查与 TUF Registry                              | v0.2 可用                                             |
-| 具名 Registry 替换、启用、停用、移除与刷新                   | 由 umbrella host 提供                                 |
-| 原生 CLI、标准 MCP、内容绑定 Skill                           | v0.2 可用                                             |
-| schema-v3 Tool、MCP、OKF、Flow、Skill、UI 合约               | `main` 已实现控制面基线                               |
-| schema-v3 SemVer 依赖解析、精确 lock 与图生命周期            | signed remote standalone CLI 已可用                   |
-| schema-v3 package commit/remove 与 capability 发布/隐藏/排空 | P0 generation-bound host 已实现                       |
-| OKF（Open Knowledge Format）知识表面                         | standalone SQLite/FTS5 生命周期与带引用搜索已实现     |
-| A3S Flow 工作流表面                                          | Code CLI/TUI/Web 本地持久 runtime 与热插拔 E2E 已就绪 |
-| 完整 Plugin Manager apply saga 与生产产品集成                | 开发中                                                |
+## `main` 已实现什么
 
-认知插件合约、dependency resolver/lock/graph coordinator 与 P0 package/capability host 已进入 `main`。signed remote schema-v3 record 通过 `a3s-use install` 进入同一图生命周期。standalone host 现已通过 scope-isolated SQLite/FTS5 后端索引和查询 OKF，并验证 signed generation cutover。Umbrella host 已提供稳定名称 Registry 替换与启停；A3S Code 已组合真实 Flow preflight host，解析精确 `flow.json` 身份，并让 CLI、TUI 与 Web 共用 workspace-local 持久 runtime。Code/Web 托管的 Knowledge Workspace/session carrier、Service/Gateway 组合、分布式 Flow 调度/恢复、retention 与完整跨平台实进程门禁仍在收口。没有精确 promoted Knowledge evidence，OKF 表面不会发布。生产部署前请以 [路线图](./roadmap) 为准。
+| 领域         | 当前实现                                                                                |
+| ------------ | --------------------------------------------------------------------------------------- |
+| 包格式       | Manifest v3、六类命名表面、必需的包 README                                              |
+| 依赖         | 有界 SemVer 解析、精确 Registry/TUF lock、前向准备、一次切换、反向退休                  |
+| 信任         | 可替换的宿主持有 Registry 与完整 catalog-v3 provenance                                  |
+| 生命周期     | install、upgrade、uninstall、enable、disable 统一走不可变 plan-v4 审查/apply            |
+| 本地表面宿主 | Tool Task、stdio MCP、Skill/UI projection、SQLite/FTS5 OKF、注入式 `a3s-flow` preflight |
+| 托管宿主     | Runtime Service、HTTP MCP/Gateway、托管 Knowledge/UI 组合仍在开发                       |
+| 平台         | Linux/macOS 开发门禁；Windows 仍是预览检查，不是发布级一致性                            |
 
-## 安装发布版
-
-推荐通过 A3S CLI 安装完整、已验证的发布包：
-
-```bash
-a3s install use --source release
-a3s use doctor --json
-a3s use capabilities --json
-```
-
-预构建归档也发布在 [GitHub Releases](https://github.com/A3S-Lab/Use/releases)。请保持归档中的二进制、Skills、Dashboard、模型资产、许可证和 provenance 文件完整；单独复制 facade binary 不是完整产品表面。
-
-## 试用内置能力
-
-渲染网页并将结果写入本地文件：
-
-```bash
-a3s use browser render https://example.com --output page.html
-```
-
-使用本地 OCR 并返回 JSON：
-
-```bash
-a3s use ocr extract ./scan.png --json
-```
-
-查看不可变能力快照：
-
-```bash
-a3s-use capability snapshot --json
-```
-
-## 安装认知包
-
-通过 umbrella Plugin Manager 执行经过审查的用户生命周期：
-
-```bash
-a3s plugin search research
-a3s plugin inspect acme/research
-a3s plugin install acme/research --channel stable
-a3s plugin upgrade acme/research
-a3s plugin uninstall acme/research
-```
-
-standalone engine 也可以从显式、由宿主选择的 Registry 一次安装 signed package 及其完整 SemVer 依赖闭包：
-
-```bash
-a3s-use install acme/research \
-  --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
-  --version 2.0.0 \
-  --json
-
-a3s-use uninstall acme/research --json
-```
-
-应用单独审查过的解析结果时，增加 `--package-lock-digest sha256:<64-hex-digits>`。lock 漂移会在下载任何 archive 之前失败。Runtime Service、HTTP MCP 与 Flow package 需要 embedding host 显式提供 Runtime/Gateway 或 A3S Flow lifecycle factory；standalone OKF 使用内置 SQLite/FTS5 Knowledge host。
+当前只接受一条预览协议基线：manifest v3、catalog v3、receipt v3、plan v4、
+host protocol v4、manager tools v3、pending graph v2，以及 enablement
+state/operation v2。过时的预览状态会被拒绝，并提示清理后重新安装。
 
 ## 从源码构建
 
@@ -92,39 +39,65 @@ git clone https://github.com/A3S-Lab/Use.git
 cd Use
 cargo build --workspace --bins --locked
 ./target/debug/a3s-use doctor --json
+./target/debug/a3s-use capability snapshot --json
 ```
 
-开发检查必须在 Use 仓库内运行：
+在 Use checkout 内运行仓库门禁：
 
 ```bash
 cargo fmt --all -- --check
-cargo test --workspace --all-features --locked
+cargo test --workspace --all-targets --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
-## 安装本地包
+## 试用开发版 CLI
 
-未签名的本地目录、`.tar.gz`、`.tgz` 或 `.zip` 需要明确授信：
+standalone CLI 可以从显式、由宿主选择的 Registry 解析一个签名包及其完整
+SemVer 依赖闭包：
 
 ```bash
-a3s-use component install acme/calendar \
-  --from ./calendar-package \
-  --allow-unsigned \
+a3s-use install acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --version 2.0.0 \
   --json
 
-a3s-use component status calendar --json
-a3s-use extension disable acme/calendar --json
-a3s-use extension enable acme/calendar --json
-a3s-use component uninstall calendar --json
+a3s-use upgrade acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --json
+
+a3s-use uninstall acme/research --json
 ```
 
-包 ID 是稳定生命周期身份，route 只是展示和分发别名。A3S Use 保留原生 `argv`、stdin、stdout、stderr、退出状态和标准 MCP，不添加通用 action envelope。
+应用单独审查过的解析结果时增加
+`--package-lock-digest sha256:<64-hex-digits>`。lock 漂移会在下载 archive
+前失败。以上 Registry 值仅用于说明；项目当前没有宣传公共生产 Registry。
+
+对已经精确 promoted 的 OKF projection 执行带引用搜索：
+
+```bash
+a3s-use knowledge search "retrieval policy" --limit 5 --json
+```
+
+Runtime Service、HTTP MCP、Flow、Knowledge、Skill、UI 的 readiness 都依赖
+embedding host 显式提供 owner。owner 缺失时直接 fail closed，不会替换为宽松
+runner 或 source-only binding。
+
+## 为什么现在没有一键安装脚本
+
+跨平台一键安装器属于首个受支持版本的发布门禁。它必须在 Linux、macOS、
+Windows 上安装带 checksum、签名、SBOM、provenance、license 和完整资产的
+可复现归档。在这些产物和平台门禁完成前发布便利脚本，会制造一个虚假的
+产品发布入口。
 
 ## 下一步
 
-- [理解 native + cognitive 包模型](./package-model)
-- [使用 A3S Flow 打包持久工作流](./flow)
-- [设计 OKF 可共享知识包](./okf)
-- [配置供应链信任和授权边界](./trust-security)
-- [查看 Plugin Manager、Use 与 Runtime 的所有权](./architecture)
-- [跟踪开发里程碑](./roadmap)
+- [理解认知包模型](./package-model)
+- [使用 A3S Flow 打包工作流](./flow)
+- [设计 OKF 知识包](./okf)
+- [配置 Registry 信任与授权](./trust-security)
+- [查看 Use 与宿主之间的所有权](./architecture)
+- [跟踪发布阻塞项](./roadmap)

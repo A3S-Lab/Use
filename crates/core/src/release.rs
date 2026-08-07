@@ -225,7 +225,7 @@ impl McpReleaseDescriptor {
                 "The MCP release schema or kind is not supported.",
             ));
         }
-        reject_tool_dependencies_in_legacy_v1(&self.dependencies)?;
+        reject_unsupported_tool_dependencies(&self.dependencies)?;
         validate_common(
             &self.name,
             &self.version,
@@ -271,7 +271,7 @@ impl SkillReleaseDescriptor {
                 "The Skill release schema or kind is not supported.",
             ));
         }
-        reject_tool_dependencies_in_legacy_v1(&self.dependencies)?;
+        reject_unsupported_tool_dependencies(&self.dependencies)?;
         validate_common(
             &self.name,
             &self.version,
@@ -348,7 +348,7 @@ impl ToolReleaseDescriptor {
     }
 }
 
-fn reject_tool_dependencies_in_legacy_v1(dependencies: &[ReleaseDependency]) -> UseResult<()> {
+fn reject_unsupported_tool_dependencies(dependencies: &[ReleaseDependency]) -> UseResult<()> {
     if dependencies
         .iter()
         .any(|dependency| dependency.kind == ReleaseKind::Tool)

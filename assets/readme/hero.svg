@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
   <title id="title">A3S Use — AI Native Package Manager</title>
-  <desc id="desc">One install resolves an exact versioned cognitive package graph whose Tool, MCP, OKF, A3S Flow, Skill, and UI contributions publish through one recoverable cutover, with a3s-flow as the only workflow engine.</desc>
+  <desc id="desc">Development-preview package manager that resolves an exact versioned cognitive package graph whose Tool, MCP, OKF, A3S Flow, Skill, and UI contributions publish through one recoverable cutover.</desc>
 
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
@@ -26,11 +26,11 @@
     <text x="64" y="45" fill="#929dad" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" letter-spacing="1.3">AI NATIVE PACKAGE MANAGER</text>
   </g>
 
-  <g transform="translate(805 44)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">
-    <circle cx="8" cy="8" r="5" fill="#55dda2"/>
-    <text x="24" y="14" fill="#c7cfda">LINUX + MACOS</text>
-    <circle cx="214" cy="8" r="5" fill="#f0b65b"/>
-    <text x="230" y="14" fill="#c7cfda">WINDOWS PREVIEW</text>
+  <g transform="translate(744 44)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">
+    <circle cx="8" cy="8" r="5" fill="#f0b65b"/>
+    <text x="24" y="14" fill="#c7cfda">DEVELOPMENT PREVIEW</text>
+    <circle cx="260" cy="8" r="5" fill="#55dda2"/>
+    <text x="276" y="14" fill="#c7cfda">SCHEMA 3 / PLAN 4</text>
   </g>
 
   <g transform="translate(54 150)">

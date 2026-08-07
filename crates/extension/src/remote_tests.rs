@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
 use a3s_use_core::{
-    CatalogPlanningTarget, ExecutablePlanningSurface, PlanPackageRole, PlanningArtifactRef,
+    CatalogPlanningTarget, ExecutablePlanningSurface, PlanningArtifactRef,
     PlanningSurfaceActivation, PluginCatalogRecord, PluginPlanningBundle, PluginSurfaceKind,
-    PluginSurfaceRef, ToolReleaseDescriptor, PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
-    PLUGIN_PLANNING_BUNDLE_SCHEMA,
+    ToolReleaseDescriptor, PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
 use sha2::{Digest, Sha256};
 
@@ -13,10 +12,9 @@ use super::test_support::{
     PACKAGE_VERSION,
 };
 use super::*;
-use crate::{ExtensionPaths, ExtensionRegistry, ExtensionTrust};
 
 const COMPLETE_CATALOG: &[u8] =
-    include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v1.json");
+    include_bytes!("../../core/fixtures/plugins/complete-package-catalog-v3.json");
 
 #[tokio::test]
 async fn tuf_refresh_verifies_metadata_without_downloading_targets() {
@@ -54,79 +52,6 @@ async fn tuf_catalog_lists_signed_packages_without_downloading_targets() {
     assert_eq!(catalog.packages[0].package_id, "a3s/science");
     assert_eq!(catalog.packages[0].version, PACKAGE_VERSION);
     assert_eq!(catalog.packages[0].target, catalog.host_target);
-    assert!(server
-        .requests()
-        .iter()
-        .all(|request| !request.starts_with("/targets/")));
-}
-
-#[tokio::test]
-async fn tuf_install_records_signed_provenance_and_converges() {
-    let archive = extension_archive(PACKAGE_VERSION);
-    let repository = TestRepository::new(archive, 1, FUTURE);
-    let server = TestServer::start(repository.routes.clone());
-    let temp = tempfile::tempdir().unwrap();
-    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
-
-    let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
-        .await
-        .unwrap();
-    let digest = prepared.resolved().plan_digest().unwrap();
-    drop(prepared);
-    assert!(server
-        .requests()
-        .iter()
-        .all(|request| !request.starts_with("/targets/")));
-
-    let paths = ExtensionPaths::new(
-        temp.path().join("data"),
-        temp.path().join("extension-state"),
-    );
-    let registry = ExtensionRegistry::new(paths);
-    let installed = registry
-        .install_remote(
-            "a3s/science",
-            &trusted,
-            None,
-            "stable",
-            Some(&digest),
-            false,
-        )
-        .await
-        .unwrap();
-    assert!(installed.changed);
-    assert_eq!(
-        installed.extension.receipt.trust,
-        ExtensionTrust::RegistryTuf
-    );
-    let provenance = installed.extension.receipt.registry.as_ref().unwrap();
-    assert_eq!(provenance.package_id, "a3s/science");
-    assert_eq!(provenance.version, PACKAGE_VERSION);
-    assert_eq!(provenance.sha256, repository.target_sha256);
-    assert_eq!(
-        installed.extension.plan_ready_catalog().unwrap_err().code,
-        "use.extension.plan_evidence_missing"
-    );
-    assert!(installed.extension.cli_executable().unwrap().is_file());
-    let package_root = &installed.extension.receipt.package_root;
-    assert!(package_root.join("web/activity.html").is_file());
-    assert!(package_root.join("web/activity.css").is_file());
-    assert!(package_root.join("web/activity.js").is_file());
-
-    server.clear_requests();
-    let second = registry
-        .install_remote(
-            "a3s/science",
-            &trusted,
-            None,
-            "stable",
-            Some(&digest),
-            false,
-        )
-        .await
-        .unwrap();
-    assert!(!second.changed);
-    assert_eq!(registry.list().await.unwrap().len(), 1);
     assert!(server
         .requests()
         .iter()
@@ -225,109 +150,6 @@ async fn catalog_v3_rejects_planning_target_metadata_drift_before_download() {
         request != &format!("/targets/{planning_target}")
             && request != &format!("/targets/{archive_target}")
     }));
-}
-
-#[tokio::test]
-async fn tuf_catalog_v2_install_persists_and_revalidates_plan_ready_evidence() {
-    let archive = extension_archive(PACKAGE_VERSION);
-    let temp = tempfile::tempdir().unwrap();
-    let archive_path = temp.path().join("science.tar.gz");
-    tokio::fs::write(&archive_path, &archive).await.unwrap();
-    let source = crate::source::prepare_package_source(&archive_path)
-        .await
-        .unwrap();
-    let fingerprint = crate::digest::package_fingerprint(source.root())
-        .await
-        .unwrap();
-    let manifest_bytes = tokio::fs::read(source.root().join("a3s-use-extension.acl"))
-        .await
-        .unwrap();
-    let target = host_target().unwrap();
-    let target_name = format!(
-        "extensions/a3s/science/{PACKAGE_VERSION}/stable/{target}/a3s-use-science-{PACKAGE_VERSION}-{target}.tar.gz"
-    );
-    let mut catalog = PluginCatalogRecord::from_json(COMPLETE_CATALOG).unwrap();
-    catalog.schema = PLUGIN_CATALOG_SCHEMA_V2.to_owned();
-    catalog.package_id = "a3s/science".to_owned();
-    catalog.display_name = "A3S Science".to_owned();
-    catalog.description = "Scientific research capabilities for A3S agents.".to_owned();
-    catalog.publisher = "a3s".to_owned();
-    catalog.version = PACKAGE_VERSION.to_owned();
-    catalog.requires_use = ">=0.2.0, <0.4.0".to_owned();
-    catalog.target = target;
-    catalog.archive.target_name = target_name.clone();
-    catalog.archive.length = archive.len() as u64;
-    catalog.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&archive));
-    catalog.package.expanded_bytes = fingerprint.byte_count;
-    catalog.package.file_count = fingerprint.file_count;
-    catalog.package.sha256 = Some(format!("sha256:{}", fingerprint.sha256));
-    catalog.package.manifest_sha256 = Some(format!("sha256:{:x}", Sha256::digest(&manifest_bytes)));
-    catalog.repository = "https://github.com/A3S-Lab/Science".to_owned();
-    catalog
-        .surfaces
-        .iter_mut()
-        .find(|surface| surface.kind == PluginSurfaceKind::Ui && surface.id == "review")
-        .unwrap()
-        .requires = vec![PluginSurfaceRef {
-        kind: PluginSurfaceKind::Tool,
-        id: "index".to_owned(),
-    }];
-    catalog.validate().unwrap();
-
-    let repository = TestRepository::with_target_metadata(
-        archive,
-        target_name,
-        serde_json::to_value(&catalog).unwrap(),
-        9,
-        FUTURE,
-    );
-    let server = TestServer::start(repository.routes.clone());
-    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
-    let registry = ExtensionRegistry::new(ExtensionPaths::new(
-        temp.path().join("data"),
-        temp.path().join("extension-state"),
-    ));
-
-    let installed = registry
-        .install_remote("a3s/science", &trusted, None, "stable", None, false)
-        .await
-        .unwrap();
-
-    assert_eq!(installed.extension.receipt.schema_version, 2);
-    let verified = installed
-        .extension
-        .receipt
-        .verified_catalog
-        .as_ref()
-        .unwrap();
-    assert_eq!(verified.record, catalog);
-    assert_eq!(
-        installed.extension.receipt.registry.as_ref(),
-        Some(&ResolvedRemotePackage::from_verified_catalog(verified).unwrap())
-    );
-    assert!(registry.get("a3s/science").await.unwrap().is_some());
-    let removal = installed
-        .extension
-        .remove_transition(
-            PlanPackageRole::Root,
-            &[PluginSurfaceRef {
-                kind: PluginSurfaceKind::Ui,
-                id: "review".to_owned(),
-            }],
-        )
-        .unwrap();
-    assert_eq!(removal.before.as_ref().unwrap().release.surfaces.len(), 5);
-    assert_eq!(removal.surfaces.len(), 5);
-    assert!(removal.after.is_none());
-
-    tokio::fs::write(
-        installed.extension.cli_executable().unwrap(),
-        b"tampered executable",
-    )
-    .await
-    .unwrap();
-    let error = registry.get("a3s/science").await.unwrap_err();
-    assert_eq!(error.code, "use.extension.package_digest_mismatch");
 }
 
 #[tokio::test]

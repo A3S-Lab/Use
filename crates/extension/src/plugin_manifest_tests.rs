@@ -39,9 +39,6 @@ fn parses_schema_v3_named_multi_surfaces() {
     let manifest = ExtensionManifest::parse_acl(NAMED_SURFACE_MANIFEST).unwrap();
 
     assert_eq!(manifest.schema_version, 3);
-    assert!(manifest.cli.is_none());
-    assert!(manifest.mcp.is_none());
-    assert!(manifest.skill.is_none());
     assert_eq!(manifest.tools.len(), 2);
     assert_eq!(manifest.mcp_servers.len(), 2);
     assert!(manifest.flows.is_empty());
@@ -219,21 +216,19 @@ fn rejects_duplicate_or_missing_named_surface_dependencies() {
 }
 
 #[test]
-fn rejects_legacy_mixing_and_unsafe_schema_v3_tool_contracts() {
-    let legacy_cli = r#"
+fn rejects_obsolete_cli_surfaces_and_unsafe_schema_v3_tool_contracts() {
+    let obsolete_cli = r#"
 
   cli {
-    executable = "bin/legacy"
+    executable = "bin/obsolete"
   }
 "#;
     let mixed = NAMED_SURFACE_MANIFEST.replace(
         "\n  tool \"convert\" {",
-        &format!("{legacy_cli}\n  tool \"convert\" {{"),
+        &format!("{obsolete_cli}\n  tool \"convert\" {{"),
     );
     let error = ExtensionManifest::parse_acl(&mixed).unwrap_err();
-    assert!(error
-        .message
-        .contains("Schema version 3 cannot declare legacy"));
+    assert!(error.message.contains("Unknown extension surface 'cli'"));
 
     let interactive = NAMED_SURFACE_MANIFEST.replace("interactive = false", "interactive = true");
     let error = ExtensionManifest::parse_acl(&interactive).unwrap_err();
@@ -241,6 +236,19 @@ fn rejects_legacy_mixing_and_unsafe_schema_v3_tool_contracts() {
 
     let escaping = NAMED_SURFACE_MANIFEST.replace("tools/convert/bin/convert", "../bin/convert");
     assert!(ExtensionManifest::parse_acl(&escaping).is_err());
+}
+
+#[test]
+fn rejects_pre_release_manifest_schemas_with_a_rebuild_instruction() {
+    for schema_version in [1, 2] {
+        let manifest = NAMED_SURFACE_MANIFEST.replace(
+            "schema_version = 3",
+            &format!("schema_version = {schema_version}"),
+        );
+        let error = ExtensionManifest::parse_acl(&manifest).unwrap_err();
+        assert!(error.message.contains("schema version 3"));
+        assert!(error.message.contains("rebuild"));
+    }
 }
 
 #[test]

@@ -82,7 +82,7 @@ impl CognitivePackageEnablementPlanResult {
     fn completed(
         request: CognitivePackageEnablementRequest,
         planned_at_ms: u64,
-        plan: Option<PluginOperationPlanEnvelope>,
+        plan: PluginOperationPlanEnvelope,
         result: CognitivePackageEnablementResult,
     ) -> UseResult<Self> {
         let state = result.state.clone();
@@ -91,7 +91,7 @@ impl CognitivePackageEnablementPlanResult {
             planned_at_ms,
             CognitivePackageEnablementPlanStatus::Completed,
             state,
-            plan,
+            Some(plan),
             Some(result),
         )
     }
@@ -154,13 +154,9 @@ impl CognitivePackageEnablementPlanResult {
             }
             CognitivePackageEnablementPlanStatus::Completed => {
                 let result = self.result.as_ref().ok_or_else(plan_result_error)?;
+                let plan = self.plan.as_ref().ok_or_else(plan_result_error)?;
                 result.validate_for(&self.request)?;
-                if result.state != self.state
-                    || self
-                        .plan
-                        .as_ref()
-                        .is_some_and(|plan| self.validate_plan_binding(plan).is_err())
-                {
+                if result.state != self.state || self.validate_plan_binding(plan).is_err() {
                     return Err(plan_result_error());
                 }
             }
@@ -281,13 +277,11 @@ impl CognitivePackageManager {
                 if completed.request != *request {
                     return Err(operation_conflict());
                 }
-                let mut result = completed.result;
-                result.replayed = true;
                 return CognitivePackageEnablementPlanResult::completed(
                     request.clone(),
                     planned_at_ms,
                     completed.envelope,
-                    result,
+                    completed.result,
                 );
             }
         }

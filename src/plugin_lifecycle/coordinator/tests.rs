@@ -63,15 +63,31 @@ impl PluginPackageLifecycleHost for RecordingHosts {
 
 #[async_trait]
 impl PluginCapabilityLifecycleHost for RecordingHosts {
-    async fn publish_capability(
+    async fn publish_capability_with_cutover(
         &self,
         _intent: &PluginLifecycleIntent,
         key: &str,
-    ) -> UseResult<PluginLifecycleEvidence> {
-        self.execute("capability.publish".to_string(), key).await
+    ) -> UseResult<PluginCapabilityPublication> {
+        let evidence = self.execute("capability.publish".to_string(), key).await?;
+        Ok(PluginCapabilityPublication::new(
+            evidence,
+            PluginCapabilityCutoverEvidence::new(1, 2, format!("sha256:{}", "a".repeat(64)))?,
+        ))
     }
 
-    async fn hide_capability(
+    async fn hide_capability_with_cutover(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        key: &str,
+    ) -> UseResult<PluginCapabilityPublication> {
+        let evidence = self.execute("capability.hide".to_string(), key).await?;
+        Ok(PluginCapabilityPublication::new(
+            evidence,
+            PluginCapabilityCutoverEvidence::new(1, 2, format!("sha256:{}", "b".repeat(64)))?,
+        ))
+    }
+
+    async fn retire_hidden_capability(
         &self,
         _intent: &PluginLifecycleIntent,
         key: &str,
@@ -304,34 +320,6 @@ fn clock() -> impl Fn() -> u64 {
 fn clock_from(start: u64) -> impl Fn() -> u64 {
     let clock = Arc::new(AtomicU64::new(start));
     move || clock.fetch_add(1, Ordering::Relaxed) + 1
-}
-
-#[tokio::test]
-async fn capability_hosts_without_cutover_evidence_fail_before_mutation() {
-    let host = RecordingHosts::default();
-    let enable = intent(PluginLifecycleAction::Enable);
-    let publish = host
-        .publish_capability_with_cutover(
-            &enable,
-            &enable.checkpoints.last().unwrap().idempotency_key,
-        )
-        .await
-        .unwrap_err();
-    assert_eq!(
-        publish.code,
-        "use.plugin.capability_cutover_evidence_required"
-    );
-
-    let disable = intent(PluginLifecycleAction::Disable);
-    let hide = host
-        .hide_capability_with_cutover(
-            &disable,
-            &disable.checkpoints.first().unwrap().idempotency_key,
-        )
-        .await
-        .unwrap_err();
-    assert_eq!(hide.code, "use.plugin.capability_cutover_evidence_required");
-    assert!(host.calls().await.is_empty());
 }
 
 #[tokio::test]

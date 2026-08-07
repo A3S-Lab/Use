@@ -2,201 +2,86 @@
   <img
     src="assets/readme/hero.svg"
     width="100%"
-    alt="A3S Use resolves an exact cognitive-package graph and publishes Tool, MCP, OKF, A3S Flow, Skill, and UI through one capability cutover"
+    alt="A3S Use resolves one exact cognitive-package graph and publishes Tool, MCP, OKF, A3S Flow, Skill, and UI through one atomic cutover"
   />
 </p>
 
 <p align="center">
-  <strong>One trusted package lifecycle for native tools and cognitive plugins on Linux, macOS, and Windows.</strong>
+  <strong>AI Native Package Manager for native capabilities and versioned cognitive packages.</strong>
 </p>
 
 <p align="center">
   <a href="https://a3s-lab.github.io/Use/">Website</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#one-package-six-cognitive-surfaces">Package model</a> ·
-  <a href="#replaceable-registries-exact-locks">Registries</a> ·
-  <a href="#architecture">Architecture</a> ·
+  <a href="#build-and-verify">Build</a> ·
+  <a href="#cognitive-package-format">Package format</a> ·
+  <a href="#replaceable-registries-and-exact-locks">Registries</a> ·
+  <a href="#current-contract-baseline">Contracts</a> ·
   <a href="#implementation-status">Status</a> ·
   <a href="ROADMAP.md">Roadmap</a>
 </p>
 
-## AI-native packaging, in one sentence
+> [!WARNING]
+> **Development preview — not production-ready.** The cognitive-package
+> platform has not shipped a supported product release. Pre-release manifests,
+> receipts, operation records, catalog metadata, and host protocols are not
+> compatibility targets: unsupported state is rejected with a cleanup and
+> reinstall instruction. Version tags do not change this release status.
 
-**A3S Use installs platform-native executables and agent-facing cognition as
-one versioned, verifiable package graph.** A package can contribute Tool, MCP,
-OKF, A3S Flow, Skill, and UI surfaces; Use resolves its SemVer dependencies,
-binds every artifact to exact trust evidence, and projects only capabilities
-that are ready for the admitted package generation.
+## What A3S Use is
 
-A3S Use is the package manager for the A3S capability and security model. It
-does not replace `apt`, Homebrew, or WinGet for arbitrary system software. The
-umbrella CLI exposes built-in domains through `a3s use …` and cognitive-package
-lifecycle through `a3s plugin …`; the standalone `a3s-use` engine remains
-available for automation, embedding, and diagnostics.
+A3S Use resolves, verifies, installs, upgrades, and removes an exact SemVer
+package graph. A cognitive package can contribute six named surfaces:
+**Tool, MCP, OKF, A3S Flow, Skill, and UI**. The package graph is the lifecycle
+unit; its surfaces are prepared together and become visible through one
+immutable capability-snapshot cutover.
 
-> [!IMPORTANT]
-> `v0.2` is the stable native package-management line. The current `main`
-> branch is the `v0.3` cognitive-package line. Signed schema-v3 packages have
-> deterministic dependency resolution, Registry/TUF-bound locks,
-> dependency-forward installation, atomic capability publication, reverse
-> uninstall, and crash replay. A3S Code now composes executable Tool Tasks,
-> stdio MCP, immutable Skill/UI projection, and the real `a3s-flow` Native
-> TypeScript host. CLI, TUI, and Web resolve the same strict `flow.json`
-> identity and share workspace-local durable execution/history; Web verifies
-> install, run, exact-generation upgrade, uninstall, and process-restart
-> recovery. Dependency-graph upgrade now binds exact prior and candidate locks
-> in operation plan v3, classifies Add/Replace/Remove/Retain, downloads only
-> changed candidates, cuts over additions/replacements/removals once, preserves
-> shared dependencies, and retires unreferenced prior generations in reverse
-> order with crash-safe replay. Managed hosts negotiate graph plan v3 and
-> reviewed enablement plan v4 through host capabilities v4; v1-v3 remain
-> frozen. Grant-aware graph paths now
-> persist candidate Workspace Grants before package preparation, bind the exact
-> Registry snapshot cutover, drain accepted calls before revoking prior grants,
-> and roll back package and Grant candidates together before cutover. The
-> standalone manager now binds trusted policy authority, exact confirmation,
-> canonical Grant changes, resolved Grants, and signed ceilings into durable
-> replay evidence, then selects the Grant-aware path for every permission-bearing
-> graph mutation. A reviewed-host authorization provider also preserves an
-> externally reviewed operation ID, lifetime, scope, policy, complete lock-bound
-> envelope, and confirmation without regenerating child authority; planner,
-> lock, policy, or replay drift fails closed. The Grant-aware package manager
-> retains the complete User or Workspace plan scope and rejects
-> pending-operation replay when only the scope kind changes under the same ID.
-> Embedding hosts can now call the same canonical Grant planner to bind exact
-> install/upgrade/uninstall impacts before review; the API exposes no parallel
-> proposal algorithm and Use re-derives all Grant evidence during apply.
-> A permission-free Workspace plan still binds its exact enablement transition
-> without inventing Grant digests, so scope validation remains complete for
-> static Skill/UI packages. Use now also owns durable schema-v3 package
-> enablement state independently of the immutable artifact generation:
-> enable/disable is operation- and package-locked, expected-generation checked,
-> checkpoint resumable, and operation-result replayable without rewriting
-> package bytes or the installed dependency graph. Every changed toggle is now
-> reviewed as operation plan v4 over one exact `Retain` artifact transition.
-> With an injected authorization provider, permission-bearing enable prepares
-> the exact Workspace Grant before atomic capability publication; disable hides
-> atomically, checkpoints Grant cutover, drains accepted calls, and only then
-> revokes the exact prior Grant. The immutable plan, confirmation, Grant
-> snapshot/change set, resolved Grants, ceilings, and admission time survive
-> restart. Managed hosts now persist an explicit enablement planning request
-> and its exact plan-v4 or terminal NoChange result, then reuse the existing
-> digest-only apply request with confirmation. The direct enablement-v1 request
-> remains a compatibility path. Local Code CLI and Web now expose the same
-> User-scoped reviewed plan/apply contract; NoChange has no synthetic mutation
-> identity, and completed apply replays after daemon restart. Code TUI now
-> exposes the idle-only `/packages` panel over that same exact-plan review,
-> confirmation, and digest-bound apply service. The standalone SQLite/FTS5
-> Knowledge host now performs scope-isolated stage/promote/search/remove,
-> publishes only live promoted projections, and proves signed
-> install/query/upgrade/uninstall with cited generation cutover. A3S Code/Web
-> managed Workspace/session carriers, Service/HTTP hosts,
-> distributed Flow scheduling/resumption, complete real-process cross-platform
-> E2E, and production retention remain release gates. The A3S Code
-> umbrella and managed-host graph paths now
-> invoke the public Grant planner and reviewed provider with exact scope,
-> revision, authority, confirmation, and replay evidence.
-> [ROADMAP.md](ROADMAP.md) is the source of truth.
+It is designed for A3S hosts on Linux, macOS, and Windows. It does not try to
+replace `apt`, Homebrew, or WinGet for arbitrary system software. A3S Use owns
+package trust, immutable generations, receipts, dependency ordering, lifecycle
+journals, and capability evidence. Runtime, Gateway, Flow, Knowledge, and UI
+hosts keep ownership of execution and presentation.
 
-## Proof in the codebase
+The current architecture has three non-negotiable properties:
 
-The package model is exercised as code, not only described in prose:
+- **One package graph:** dependencies install forward; retirement runs in
+  reverse; retained dependencies must match their exact lock evidence.
+- **One reviewed mutation path:** planning is read-only; apply accepts the
+  reviewed operation ID, plan digest, and confirmation. There is no direct
+  enable/disable mutation API.
+- **One current protocol baseline:** pre-release formats are rejected rather
+  than decoded, migrated, or silently defaulted.
+
+## Proof in this repository
+
+The implementation and fixtures exercise the product model directly:
 
 - [`plugin-v3-cognitive`](crates/extension/fixtures/packages/plugin-v3-cognitive/)
-  contains all six cognitive surface kinds in one content-addressed package.
-- [`A3sFlowLifecycleHost`](src/flow_runtime/lifecycle.rs) delegates preflight
-  to the real `a3s-flow` `NativeTsRuntime` and never treats source presence as
-  runtime readiness.
-- [`FlowRuntimeBindingStore`](src/flow_runtime/store.rs) retains symlink-safe,
-  exact-generation Flow evidence so a candidate generation cannot hide the
-  last published generation.
-- Package receipts, route leases, Runtime bindings, and Runtime observation
-  retain exact N/N+1 generations; staging a candidate cannot replace the
-  snapshot-selected generation, and retirement removes only receipt-owned N.
-- Package lifecycle intents, journals, Runtime/Flow/OKF bindings, Knowledge
-  receipts/observations, and capability evidence retain the complete
-  `PlanScope { kind, id }`. Durable paths separate `user` and `workspace`
-  before hashing the scope ID, so equal IDs cannot alias state across kinds;
-  no scope-ID-only record is decoded or migrated.
-- [`CognitivePackageManager`](src/cognitive_package/) installs a verified
-  dependency closure forward, reuses exact shared nodes, publishes graph
-  additions, replacements, and removals once, and retires only unreferenced
-  packages in reverse dependency order. Its injectable authorization provider
-  binds host-owned actor and policy authority before the plan becomes
-  immutable; pending-v2 records retain exact confirmation and Grant evidence
-  without asking again during crash replay. Embedding hosts bind a full User
-  or Workspace `PlanScope` through planning, every six-surface lifecycle
-  checkpoint, and live observation; replay compares both kind and ID.
-- [`CognitivePackageEnablementRequest`](src/cognitive_package/enablement.rs)
-  drives enable/disable through the same six-surface lifecycle. Its durable
-  Use-owned state generation advances independently from immutable receipt
-  generations across toggles, upgrades, uninstall, and reinstall; complete
-  operation results survive process restart and replay exactly. Changed
-  toggles bind plan-v4 retained-artifact evidence; permission-bearing toggles
-  persist the complete reviewed authorization bundle and revalidate its
-  provider and receipt before recovery.
-- [`CognitivePackageEnablementPlanResult`](src/cognitive_package/enablement_plan.rs)
-  exposes the exact Use-generated plan-v4 before mutation. `NoChange` is a
-  terminal result without a synthetic plan, while completed operation IDs
-  return their durable result for idempotent replay.
-- [`PluginHostEnablementPlanRequest`](crates/core/src/plugin/host_enablement_plan.rs)
-  adds reviewed enablement to host capability v4. Managed hosts persist the
-  planning request/result and reuse the existing operation ID plus plan digest
-  apply protocol; direct enablement v1 stays compatibility-only.
-- [`PluginGrantLifecycleUnit`](src/plugin_lifecycle/grant.rs) binds one reviewed
-  package plan to its exact Workspace Grant changes and signed ceilings. The
-  grant-aware graph paths persist candidates before package preparation,
-  checkpoint exact cutover evidence, and delay prior-grant revocation until
-  accepted calls drain.
-- [`bind_cognitive_package_grant_impacts`](src/cognitive_package/grant.rs)
-  lets an umbrella or managed host bind the exact User/Workspace Grant impact
-  with the manager-owned planner before review. Scope, state revision, prior
-  Grant evidence, operation authority, and lifecycle transition all fail
-  closed on drift; proposals and receipts remain internal to apply.
-- [`capability watch`](src/capability_registry.rs) lets resident hosts observe
-  package and projection changes without restarting.
-- [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) provides the
-  standalone cross-platform Knowledge host. Each complete User or Workspace
-  scope has an isolated SQLite/FTS5 database; stage, promote, selection, and
-  receipt-owned removal are transactional. Search results cite the exact
-  package, surface, generation, index, concept path, and source digest.
-- A3S Code's
-  [`CodeCognitivePackageLifecycleFactory`](https://github.com/A3S-Lab/CLI/blob/main/src/components/cognitive_lifecycle.rs)
-  injects the real Flow host and publishes a typed exact-generation catalog to
-  both TUI and Web.
-- The detached
-  [Web hot-plug gate](https://github.com/A3S-Lab/CLI/blob/main/tests/web_plugin_marketplace.rs)
-  proves `install → run → upgrade → run → uninstall → restart`, including
-  source-drift rejection before compiler/event mutation and path-free history
-  retention for both Flow generations.
+  is a content-addressed package containing all six surface kinds.
+- [`PluginPackageResolver`](crates/core/src/plugin/package_resolution.rs)
+  resolves bounded SemVer closures and rejects cycles, incompatible releases,
+  and cross-Registry ambiguity.
+- [`CognitivePackageManager`](src/cognitive_package/) binds signed catalog
+  evidence, exact locks, reviewed plans, authorization, and crash replay.
+- [`PluginPackageGraphLifecycleCoordinator`](src/plugin_lifecycle/graph.rs)
+  prepares dependency closures, performs one durable Registry cutover, drains
+  accepted calls, and retires exact prior generations.
+- [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) stages,
+  promotes, searches, and removes scope-isolated OKF projections with exact
+  package-generation citations.
+- [`A3sFlowLifecycleHost`](src/flow_runtime/lifecycle.rs) delegates Flow
+  preflight to the real `a3s-flow` Native TypeScript runtime and records an
+  exact-generation binding.
+- Contract fixtures under [`crates/core/fixtures/plugins`](crates/core/fixtures/plugins/)
+  freeze canonical JSON and SHA-256 digests for the current schemas.
 
-## Quick start
+CI runs formatting, workspace tests, Clippy, release-container conformance,
+and platform jobs. Windows currently has a narrower preview gate; see
+[Platform support](#platform-support).
 
-Install the verified release through the umbrella A3S CLI, then inspect the
-host and its live capability snapshot:
+## Build and verify
 
-```bash
-a3s install use --source release
-a3s use doctor --json
-a3s use capabilities --json
-```
-
-Try the built-in Browser and local OCR capabilities:
-
-```bash
-a3s use browser render https://example.com --output page.html
-a3s install use/ocr
-a3s use ocr extract ./scan.png --json
-```
-
-The pinned OCR installer uses an immutable A3S OCR release bundle instead of
-depending on the upstream model CDN at install time. It bounds connection
-setup and stalled reads without a total transfer deadline. Interrupted bodies
-resume from a validated byte offset, while range-ignoring servers restart the
-staging file. The exact bundle length and SHA-256 still gate activation, and
-extraction admits only the four declared model assets.
-
-Build the standalone engine from source:
+Rust 1.85 or newer is required. Until the product release gate is complete,
+build from source:
 
 ```bash
 git clone https://github.com/A3S-Lab/Use.git
@@ -206,8 +91,18 @@ cargo build --workspace --bins --locked
 ./target/debug/a3s-use capability snapshot --json
 ```
 
-Install one signed cognitive package and its complete dependency closure from
-a host-selected Registry:
+The standalone CLI currently exposes package-graph lifecycle, diagnostics,
+capability observation, built-in Browser/OCR routes, and cited OKF search:
+
+```text
+a3s-use install <publisher/name> [registry options] [--json]
+a3s-use upgrade <publisher/name> [registry options] [--json]
+a3s-use uninstall <publisher/name> [--json]
+a3s-use knowledge search <query> [--limit <n>] [--json]
+a3s-use capability snapshot|watch [options] [--json]
+```
+
+Example development install from an explicitly trusted Registry:
 
 ```bash
 a3s-use install acme/research \
@@ -216,65 +111,45 @@ a3s-use install acme/research \
   --trust-root sha256:<64-hex-digits> \
   --version 2.0.0 \
   --json
+```
 
-a3s-use knowledge search "package activation" --json
+When a lock was reviewed separately, bind apply to it:
 
-a3s-use upgrade acme/research \
+```bash
+a3s-use install acme/research \
   --registry-name packages \
   --registry-url https://packages.example.org/a3s/ \
   --trust-root sha256:<64-hex-digits> \
+  --package-lock-digest sha256:<64-hex-digits> \
   --json
-
-a3s-use uninstall acme/research --json
 ```
 
-Add `--package-lock-digest sha256:<64-hex-digits>` when applying a separately
-reviewed resolution. A mismatch fails before a package archive is downloaded.
+A mismatched lock digest fails before an archive download. Example package and
+Registry names above are illustrative; this repository does not advertise a
+public production Registry.
 
-Prebuilt archives are available from
-[GitHub Releases](https://github.com/A3S-Lab/Use/releases). A release archive
-is one product surface: keep its binary, Skills, Dashboard, model assets,
-licenses, and provenance files together.
+## Cognitive-package format
 
-## One package, six cognitive surfaces
-
-A cognitive package is an npm-like distribution unit with one stable
-`<publisher>/<name>` identity, one version, one ACL manifest, one required
-`README.md`, optional SemVer dependencies, and zero or more named
-contributions.
+A cognitive package is an npm-like immutable distribution unit with one
+`<publisher>/<name>` identity, one SemVer version, a required ACL manifest,
+required package documentation, optional package dependencies, and zero or
+more named surface contributions.
 
 ```text
 acme-research/
-├── a3s-use-extension.acl   identity · version · dependencies · surfaces
+├── a3s-use-extension.acl   package identity, dependencies, surfaces
 ├── README.md               required package documentation
 ├── tools/                  native Task or Service artifacts
-├── releases/               content-bound Tool/MCP descriptors
-├── flows/                  A3S Flow TypeScript workflow sources
+├── releases/               immutable Tool or MCP descriptors
+├── flows/                  A3S Flow TypeScript sources
 ├── skills/                 SKILL.md files and supporting content
 ├── ui/                     integrity-bound static assets
-└── okf/                    conformant knowledge bundles
+└── okf/                    Open Knowledge Format bundles
 ```
 
-Only the manifest and `README.md` names are fixed; contribution paths are
-manifest-owned. The manifest uses
-[A3S ACL](https://github.com/A3S-Lab/ACL), the A3S Agent Configuration
-Language. ACL is not HCL and must be parsed with `a3s-acl`.
-
-| Surface | Package contribution | Runtime owner and readiness boundary |
-| --- | --- | --- |
-| **Tool** | Native Task or long-lived Service | Selected Runtime provider, exact executable evidence, and health |
-| **MCP** | stdio, HTTP, or immutable release descriptor | Runtime/Gateway adapter and standard MCP readiness |
-| **OKF** | Open Knowledge Format concept graph | A3S Knowledge stage, promotion, observation, and scoped projection |
-| **A3S Flow** | `flows/*.ts` source and explicit Tool/MCP/OKF edges | `a3s-flow` preflight plus exact-generation compiled binding; A3S Code adds workspace-local durable runs and path-free observation |
-| **Skill** | Content-bound `SKILL.md` and supporting files | Static validation; projected only after declared dependencies are ready |
-| **UI** | Integrity-bound static entry point | Sandboxed host rendering and bound Skill/MCP/Flow readiness |
-
-The **package generation is the lifecycle unit**. Individual surfaces can be
-selected and projected by name, but they cannot be independently installed,
-upgraded, enabled, disabled, or uninstalled outside their owning package.
-
-<details>
-<summary><strong>Open a complete schema-v3 ACL example</strong></summary>
+Only the manifest and `README.md` names are fixed. Contribution paths are
+manifest-owned. The manifest is A3S ACL (`.acl`) and must be parsed with
+[`a3s-acl`](https://github.com/A3S-Lab/ACL); ACL is not HCL.
 
 ```acl
 extension "acme/research" {
@@ -286,10 +161,6 @@ extension "acme/research" {
 
   dependency "acme/base" {
     version = "^1.4.0"
-  }
-
-  dependency "acme/vector-store" {
-    version = ">=2.1.0, <3.0.0"
   }
 
   repository {
@@ -310,16 +181,17 @@ extension "acme/research" {
   }
 
   mcp "library" {
-    transport  = "streamable-http"
-    release    = "releases/library-mcp-v1.json"
-    activation = "eager"
+    transport  = "stdio"
+    executable = "tools/library/bin/library-mcp"
+    args       = []
+    activation = "lazy"
     optional   = false
   }
 
-  okf "domain-knowledge" {
+  okf "domain" {
     format_version         = "0.2"
-    root                   = "okf/domain-knowledge"
-    content_digest         = "sha256:bd85b0b63adb32bdf616384a619286af4c32401542655dd09e00450902ab478d"
+    root                   = "okf/domain"
+    content_digest         = "sha256:355b6f00153630b082e60a0f7e0b67fbbb74b2a29067bca481f7eefecbb86c7a"
     concept_count          = 4
     file_count             = 7
     expanded_bytes         = 2053
@@ -338,7 +210,7 @@ extension "acme/research" {
     export         = "run"
     requires_tool  = ["convert"]
     requires_mcp   = ["library"]
-    requires_okf   = ["domain-knowledge"]
+    requires_okf   = ["domain"]
     optional       = false
   }
 
@@ -346,7 +218,7 @@ extension "acme/research" {
     path          = "skills/review/SKILL.md"
     requires_tool = ["convert"]
     requires_mcp  = ["library"]
-    requires_okf  = ["domain-knowledge"]
+    requires_okf  = ["domain"]
     requires_flow = ["review"]
     optional      = false
   }
@@ -361,227 +233,97 @@ extension "acme/research" {
 }
 ```
 
-</details>
-
-## Replaceable Registries, exact locks
-
-Registry endpoints and trust roots are **host input**, never compiled into the
-package engine. A host can select a mirror, a private service, or another
-explicitly trusted TUF Registry without changing the resolver or package
-journal. `CognitivePackageManager` accepts a root Registry plus a bounded set
-of dependency Registries; every resolved node records its own source and TUF
-provenance.
-
-Dependency declarations contain only a canonical package ID and a SemVer
-requirement. They cannot smuggle in a URL, trust root, target, or mutable tag.
-Resolution fails closed on missing releases, incompatible constraints, cycles,
-search bounds, or the same package appearing in more than one enabled source.
-
-The canonical `a3s.use.plugin-package-lock.v1` freezes for every package:
-
-- selected version and satisfied dependency edges;
-- archive, expanded-package, and manifest digests;
-- host target and A3S Use compatibility;
-- Registry name, URL, channel, and target; and
-- TUF root identity plus timestamp, snapshot, and targets versions.
-
-The standalone command accepts an explicit replaceable root Registry. The
-umbrella host supports named add, list, show, refresh, stable-name replace,
-enable/disable, and remove:
-
-```bash
-a3s registry add https://packages.example.org/a3s/ \
-  --trust-root ./root.json \
-  --yes
-a3s registry refresh packages
-a3s registry disable packages --yes
-a3s registry replace packages https://mirror.example.org/a3s/ \
-  --trust-root ./mirror-root.json \
-  --yes
-a3s registry enable packages --yes
-
-a3s plugin search research
-a3s plugin inspect acme/research
-a3s --output json plugin install acme/research --dry-run
-a3s --output json plugin apply <operation-id> \
-  --plan-digest <reviewed-plan-sha256> \
-  --yes
-```
-
-Disabling a source removes it from Marketplace browsing, package lookup,
-dependency resolution, refresh, and upgrade selection without deleting its ACL
-or trust material. Replacement preserves the stable name and enabled state,
-copies a file-backed TUF root into a content-addressed, symlink-safe managed
-directory, and atomically switches the ACL only after the new trust material is
-durable. The built-in official source cannot be replaced or toggled.
-
-An installed receipt remains bound to its source name, URL, TUF root, channel,
-and target digest. Removing, disabling, or changing that identity blocks
-upgrades until the exact source is restored and enabled or the package is
-explicitly migrated or reinstalled. Source administration never rewrites
-receipt provenance.
-
-## One A3S Flow model
-
-A packaged Flow is an `a3s-flow` workflow, not a second workflow engine. The
-different files describe layers of one identity:
-
-| Layer | Responsibility |
-| --- | --- |
-| `a3s-use-extension.acl` | Package identity, source, export, lifecycle metadata, and Tool/MCP/OKF edges |
-| `flows/*.ts` | Code-authored workflow and step handlers |
-| `native-ts` | The currently supported source-to-runtime adapter |
-| `flow.json` | A3S Code visual design and deployment document for the same Flow identity |
-| `a3s-flow` | The sole engine for preflight, durable execution, event history, replay, scheduling, and observation |
-
-`engine = "a3s-flow"` and `runtime = "native-ts"` are fixed by the current
-schema. Use validates and content-binds the source, then
-`A3sFlowLifecycleHost` calls the real `a3s-flow` compiler preflight. A durable
-binding records the exact scope, package, surface, lifecycle generation,
-manifest/package/source digests, export, entrypoint, and compiled artifact
-digest.
-
-Source integrity alone never marks a Flow ready. Capability projection reads
-the binding for the **exact installed generation**, rechecks both source and
-compiled artifact, and reports `Failed` on substitution. `stop` preserves the
-binding for blue/green drain; `remove` deletes only the receipt-owned
-generation. A missing binding remains pending.
-
-The concrete Use adapter is implemented. A3S Code injects it through the shared
-lifecycle factory, resolves its compiler from host configuration, and exposes
-the typed live catalog through `GET /api/v1/plugins/flows`. TUI and Web consume
-the same generation/revision watcher. Code's strict, path-free `installedFlow`
-reference binds package, Flow, version, lifecycle generation, and source digest.
-Before each new run, Code revalidates the current regular source file and
-package containment, stages verified bytes under `.a3s/flow-runtime/`,
-preflights the compiler, and only then creates a run binding and append-only
-`a3s-flow` events. CLI/TUI `run`, `status`, and `logs` plus Web run/list/detail/
-events APIs use that same store without OS login. Histories remain readable
-after upgrade, disable, uninstall, and Code Web restart. The standalone Use
-factory still fails closed when no lifecycle adapter is injected; distributed
-workers, automatic scheduling/resumption, and production retention remain
-release gates.
-
-```text
-GET  /api/v1/plugins/flows
-POST /api/v1/plugins/flows/resolve
-POST /api/v1/plugins/flows/run
-GET  /api/v1/plugins/flows/runs
-GET  /api/v1/plugins/flows/runs/{runId}
-GET  /api/v1/plugins/flows/runs/{runId}/events
-```
-
-The current Code runtime is single-node and guards the local event store with
-one cross-process workspace lock. It is durable across process restart; it does
-not claim distributed worker placement. These routes are integrated at the Web
-API layer; the current Marketplace frontend has no Flow run/history controls,
-so CLI/TUI remain the interactive local execution surfaces.
-
-## Trust and lifecycle
-
-Every install enters through one explicit trust decision:
-
-| Source | Trust decision | Intended use |
+| Surface | Package contribution | Readiness owner |
 | --- | --- | --- |
-| Local directory or archive | Human review plus `--allow-unsigned` | Development and private packages |
-| Release-bundled package | Exact digest in a reviewed component plan | First-party release content |
-| Remote Registry | Pinned TUF root, signed metadata, rollback checks, target digest | Production distribution |
+| Tool | Native Task or long-lived Service | Selected Runtime provider and exact executable/service evidence |
+| MCP | stdio, HTTP, or immutable release descriptor | Runtime/Gateway adapter and standard MCP readiness |
+| OKF | Open Knowledge Format concept graph | Knowledge host stage, promotion, observation, and cited retrieval |
+| A3S Flow | TypeScript workflow source with explicit surface edges | `a3s-flow` preflight and exact compiled binding |
+| Skill | Content-bound `SKILL.md` plus supporting files | Static projection after required dependencies are ready |
+| UI | Integrity-bound static entry point | Sandboxed host rendering with declared Skill/MCP/Flow bindings |
 
-The activation order keeps untrusted bytes away from live routes:
+Surfaces are selectable for projection, but they are not independently
+installed, upgraded, or removed outside their owning package generation.
+
+## One A3S Flow lifecycle
+
+A3S Use does not define a second workflow engine.
+
+- The package manifest declares the `flow` surface, source digest, export, and
+  Tool/MCP/OKF dependencies.
+- `a3s-flow` owns compilation and execution semantics.
+- A host may use `flow.json` as a visual design or deployment document, but it
+  is not another package receipt, dependency resolver, or lifecycle journal.
+- A3S Code is a local host and A3S OS may be a remote execution target; both
+  must resolve the same package-owned Flow identity.
+
+Required Flow publication fails closed when the embedding host does not inject
+the declared Flow runtime. There is no source-presence fallback.
+
+## Replaceable Registries and exact locks
+
+Registry URLs and trust roots are host input, never compiled into the resolver.
+A host can select a mirror, private Registry, or another explicitly trusted TUF
+source without changing package logic. Each dependency can resolve from a
+different enabled source, but the same package appearing in multiple enabled
+sources is rejected as ambiguous.
+
+Current Registry rules:
+
+- TUF target `custom.a3s` metadata contains one complete catalog-v3 record.
+- The catalog record, archive, expanded package, and manifest all have exact
+  digest/size evidence.
+- Prepared downloads and installed Registry/TUF receipts must retain the full
+  verified catalog record and its provenance.
+- An installed receipt remains bound to its source name, URL, root digest,
+  release channel, target, and TUF role versions.
+- Replacing source configuration never rewrites installed receipt provenance;
+  restoring the exact source or reinstalling is required before upgrade.
+
+The canonical package lock freezes selected versions, dependency edges, host
+target, `requires_use`, archive and package digests, Registry identity, and TUF
+provenance for every node. Resolution fails closed on cycles, incompatible
+constraints, missing providers, source ambiguity, and configured search bounds.
+
+## Reviewed lifecycle
 
 ```text
-resolve signed dependency graph
-    → freeze exact package lock
-    → build and review immutable plan
-    → revalidate every Registry before payload download
-    → verify and stage dependencies before dependents
-    → prepare grants, Runtime, A3S Flow, static surfaces, and OKF
-    → publish the changed closure in one capability generation
-    → checkpoint the exact cutover and drain accepted prior calls
-    → revoke superseded grants
-    → remove unused packages in reverse dependency order
+verified catalog set
+        ↓
+resolve SemVer closure → freeze exact lock → build immutable plan
+        ↓                                      ↓
+policy + confirmation                  reviewed plan digest
+        └──────────────────────┬───────────────┘
+                               ↓
+download changed nodes → commit disabled → prepare dependencies forward
+                               ↓
+                  one durable capability cutover
+                               ↓
+             drain prior calls → retire generations reverse
 ```
 
-Local packages remain available for explicit development workflows:
+Install, upgrade, uninstall, enable, and disable are durable operations. Apply
+revalidates the exact package locks, catalog evidence, host capabilities,
+policy authority, scope, confirmation, and current state before mutation.
+Upgrade plans bind both the prior and candidate locks and classify every node
+as `Add`, `Replace`, `Remove`, or `Retain`.
 
-```bash
-a3s-use component install acme/calendar \
-  --from ./calendar-package \
-  --allow-unsigned \
-  --json
+The manager MCP toolset exposes read-only planning separately from mutation:
 
-a3s-use component status calendar --json
-a3s-use extension disable acme/calendar --json
-a3s-use extension enable acme/calendar --json
-a3s-use component uninstall calendar --json
+```text
+plugin_plan_install     plugin_plan_upgrade     plugin_plan_uninstall
+plugin_plan_enable      plugin_plan_disable     plugin_apply_plan
 ```
 
-The graph coordinator resolves exact Add/Replace/Remove/Retain transitions.
-Operation plan v3 binds the complete prior/candidate lock union. Host
-capabilities v4 advertises graph plan v3 plus reviewed enablement plan v4, while
-v1-v3 stay frozen so an older managed host cannot accept unsupported evidence.
-The engine downloads only Add/Replace archives, prepares candidates
-dependency-first, removes unreferenced routes in the same snapshot cutover,
-automatically restores the prior graph after a pre-cutover failure, and retires
-prior generations in reverse order with durable crash replay. Shared exact
-dependencies remain selected and are neither downloaded nor rewritten.
-The grant-aware graph coordinator persists candidate grants before package or
-Runtime preparation, requires exact Registry generation and snapshot evidence
-at cutover, restores package and Grant candidates together after a pre-cutover
-upgrade failure, and drains prior calls before revoking prior grants. The
-standalone manager derives canonical proposals, change sets, resolved Grants,
-and candidate ceilings from the final plan, persists the complete authorization
-bundle, revalidates injected authority on replay, and uses a grant-free path
-only when the immutable plan contains no Grant-bearing package transition. The
-public reviewed-host provider now accepts only the same complete envelope and
-exact confirmation, reproduces the signed dependency lock in a clean
-workspace, and rejects policy drift during interrupted replay. The umbrella
-Plugin Manager and managed-host adapters now snapshot the exact User/Workspace
-Grant scope at the durable planner revision, evaluate provisional host policy,
-invoke the public canonical Grant-impact planner with the final authority, and
-re-evaluate the immutable result before invoking that provider. Scope,
-revision, prebound-impact, policy, or authority drift fails closed. A signed
-Tool Task integration proves exact Grant receipt persistence, no legacy child
-mutation, and durable result replay. Managed Code/Web Knowledge scope/session
-carriers plus production Service and Gateway composition are still being
-wired.
-Schema-v3 enable/disable uses the package lifecycle's hide, drain, stop,
-prepare, and publish checkpoints without changing package bytes or dependency
-ownership. The optimistic generation is the durable Use-owned package state
-generation, not the immutable artifact generation. Reused operation IDs with
-different requests and stale generations fail before lifecycle mutation.
-Every changed operation binds plan-v4 receipt, manifest, scope, state revision,
-and capability-generation evidence. When the retained package has permissions,
-the injected authorization provider must return the exact reviewed plan and
-confirmation: enable performs Grant prepare before atomic publication, while
-disable commits atomic hide before drain and exact Grant revocation. Missing
-review authority returns `use.plugin.package_confirmation_required` with the
-immutable plan before lifecycle mutation. The fenced managed-host adapter now
-uses capability v4 to persist an enablement planning request/result, bind exact
-confirmation to the returned operation ID and plan digest, and apply through
-the existing digest-only request. Direct enablement request v1 remains a
-permission-free compatibility path. Local Code CLI and Web now persist and
-display the User-scoped Use plan, collect exact confirmation, and apply only
-its operation ID and canonical digest. The old Web toggle is schema-v1/v2
-compatibility-only. Code TUI `/packages` lists the authoritative installed
-snapshot, creates the same reviewed enablement plan, shows its permission and
-impact evidence, and applies only after exact confirmation.
-Registry visibility and the Grant journal are separate durable systems. The
-Registry now embeds a bounded `a3s.use.registry-cutover.v1` record in the same
-atomic `registry.json` write as each Grant-bearing visibility transition. The
-lifecycle checkpoint idempotency key binds the request digest, exact before and
-after generations, and capability snapshot digest. Replay returns that original
-evidence even after unrelated Registry mutations, while key reuse for a
-different transition fails closed. Once the package or Grant journal owns the
-evidence, cleanup changes neither the Registry generation nor the capability
-digest. Admission also fails before receipt or visibility mutation when the
-128-record pending bound is full.
-The storage layer preserves exact package and Runtime generations across
-candidate preparation, cutover, drain, rollback, and receipt-owned removal.
-Required surfaces fail closed when their owning adapter is absent: Runtime
-Service and HTTP MCP need Runtime/Gateway, OKF needs Knowledge, and Flow needs
-the `a3s-flow` lifecycle host. No path silently falls back to a different
-provider, execution model, or Registry.
+`plugin_apply_plan` is the only manager mutation entry point. A `NoChange`
+enablement result is terminal and has no synthetic mutation identity. Crash
+recovery resumes the exact stored plan and authorization; re-reading a finished
+operation returns its durable result without repeating side effects.
+
+Workspace Grants are composed into the same graph saga. Candidate grants are
+persisted before package preparation, the exact Registry cutover is recorded,
+accepted calls drain before prior grants are revoked, and a pre-cutover failure
+rolls package and Grant candidates back together.
 
 ## Architecture
 
@@ -589,149 +331,129 @@ provider, execution model, or Registry.
   <img
     src="assets/readme/architecture.svg"
     width="100%"
-    alt="Replaceable package sources flow through one host Plugin Manager and A3S Use lifecycle into exact-generation Runtime, Flow, Knowledge, Skill, and UI capability evidence consumed by Code, Web, agents, and MCP"
+    alt="Trusted sources enter one reviewed Plugin Manager and A3S Use graph lifecycle before an atomic capability snapshot reaches A3S hosts"
   />
 </p>
 
-The ownership boundaries are deliberate:
+| Boundary | Owns | Does not own |
+| --- | --- | --- |
+| Host Plugin Manager | Registry configuration, trust roots, policy, user confirmation, reviewed plan/apply | Package bytes or provider scheduling internals |
+| A3S Use | Verification, exact locks, immutable generations, receipts, grants, lifecycle journals, cutover evidence | Generic scheduling or UI rendering |
+| Runtime/Gateway | Tool and MCP provider execution, health, and drain | Package resolution or trust policy |
+| A3S Flow | Workflow compilation, execution, replay, and observation | A parallel package lifecycle |
+| Knowledge host | OKF validation, indexing, promotion, cited search | Process execution |
+| A3S Code/Web/OS | Product UX, workspace/session scope, rendering, injected providers | A second package manager |
 
-- **The umbrella host** owns named Registry configuration, trust roots,
-  enabled state, ACL policy, confirmation, secrets, and Runtime provider
-  composition.
-- **The shared Plugin Manager** is the only lifecycle application service for
-  CLI, Web, management MCP, and remote managed-host adapters.
-- **A3S Use** owns package validation, exact versions, immutable generations,
-  an independent monotonic package-state generation, operation journals,
-  Workspace Grant prepare/cutover/rollback evidence, receipts, route leases,
-  binding evidence, and capability reconciliation.
-- **Runtime, A3S Flow, Gateway, and A3S Knowledge adapters** own execution,
-  serving, preflight, and indexing. Their typed evidence is required before
-  publication.
-- **Package processes** retain native `argv`, stdin, stdout, stderr, status,
-  HTTP, and standard MCP semantics. Use does not invent a universal action
-  envelope or load untrusted code through `dlopen`.
-- **A3S Code, Web, agents, and managed hosts** consume the atomic capability
-  snapshot and watch its generation/revision for hot-plug updates.
-
-The complete multi-resource mutation is a durable, idempotent saga because
-package storage, grants, Runtime, Gateway, Knowledge, and capability projection
-do not share one database transaction. The boundaries are frozen in
-[ADR-001](docs/adr-001-plugin-runtime-broker-boundary.md) and
+See [Plugin Platform Architecture](docs/plugin-platform-architecture.md),
+[Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md), and
 [ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md).
+
+## Current contract baseline
+
+Only the following cognitive-package protocol line is accepted:
+
+| Contract | Current schema |
+| --- | --- |
+| Package manifest | schema version `3` |
+| Signed catalog record | `a3s.use.plugin-catalog.v3` |
+| Installed receipt | schema version `3` |
+| Operation plan | `a3s.use.plugin-operation-plan.v4` |
+| Host capabilities | `a3s.use.plugin-host-capabilities.v4` (protocol `4`) |
+| Manager MCP toolset | `a3s.use.plugin-manager-tools.v3` |
+| Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
+| Enablement state / operation | `v2` / `v2` |
+
+SemVer dependency constraints, `requires_use`, OS/target checks, and
+host/provider capability checks are product behavior, not backward-compatibility
+branches. Older pre-release schemas and persisted state are deliberately not
+migrated. Delete the unsupported state and reinstall with the current build.
 
 ## Implementation status
 
-| Area | Current state on `main` |
+| Area | Status |
 | --- | --- |
-| Native package foundation | Available: bounded local/archive install, release bundles, TUF targets, receipts, atomic schema-v1/v2 lifecycle, snapshots, and watch |
-| Schema-v3 package format | Implemented: Tool, MCP, OKF, A3S Flow, Skill, UI, required README, typed dependencies, and readiness graph |
-| Dependency graph lifecycle | Available for signed remote packages: deterministic resolve, plan-v3 prior/candidate lock binding, Add/Replace/Remove/Retain, selected downloads, shared-node retention, one atomic publication, automatic pre-cutover rollback, reverse retirement/uninstall, and crash replay |
-| Replaceable Registry input | Available in the package engine; host-selected URL/trust root and bounded dependency source set, with no compiled endpoint |
-| Umbrella Registry management | Available: add/list/show/refresh, stable-name replace, enable/disable, and remove; disabled sources stay visible but are excluded from browsing and resolution |
-| Tool/MCP runtime lifecycle | Typed adapters plus bounded exact-generation N/N+1 Runtime binding storage and observation implemented; standalone supports executable Tool Tasks and stdio MCP, while Services/HTTP require injected providers |
-| A3S Flow lifecycle | Concrete `a3s-flow` preflight adapter, exact-generation binding store, artifact/source reinspection, lifecycle evidence, and capability observation implemented |
-| A3S Flow product wiring | Exact `flow.json` identity, Code CLI/TUI plus Web API local durable execution and path-free observation, typed live catalog, and install/upgrade/uninstall/restart E2E implemented; visible Web run/history controls, distributed scheduling/resumption, and production retention remain pending |
-| OKF lifecycle | Manifest/catalog/plan, validation, exact-generation binding, last-good reconciliation, lifecycle adapter, transactional stage/promote/remove, and signed install/upgrade/uninstall coverage implemented |
-| Standalone Knowledge | Implemented: bundled cross-platform SQLite/FTS5 backend, complete User/Workspace scope isolation, exact capability/session projection checks, concept/source-digest citations, restart-safe search, draining-generation queries, and atomic signed upgrade cutover |
-| Managed Knowledge integration | Pending: Code/Web-managed Workspace and session projection carriers, umbrella policy wiring, and production retention/garbage collection |
-| Package enablement core | Implemented for schema-v3 packages: operation- and package-scoped cross-process locking, Use-owned monotonic state generations, plan-v4 retained-artifact review, stale-generation rejection, durable authorization/checkpoint recovery, exact result replay, atomic capability cutover, Grant-before-publish enable, hide/cutover/drain-before-revoke disable, and non-destructive package/dependency retention |
-| Reviewed enablement | Host capability v4 adds explicit managed planning with durable plan-v4/NoChange results; local Code CLI, idle-only TUI `/packages`, and Web use the same User-scoped reviewed plan/apply contract and restart-safe result replay. Confirmed mutation reuses exact operation ID/digest, policy/fence checks where applicable, the reviewed authorization provider, and the same Use saga. Direct enablement v1 and the old Web toggle are compatibility-only |
-| Scope identity | Lifecycle intent/journal, Runtime and Flow bindings, OKF receipts/observations/bindings, and capability evidence retain full User/Workspace `PlanScope`; stores use `<kind>/<sha256(id)>`, evidence digests bind both fields, and same-ID cross-kind substitution tests fail closed |
-| Durable Registry cutover | Implemented for package-graph and enablement publication/hide: the atomic Registry snapshot carries bounded operation-keyed request/generation/digest evidence, replay survives unrelated mutations, conflicting key reuse fails closed, and post-journal cleanup causes no capability generation or digest inflation |
-| Workspace Grant graph saga | Graph saga, standalone wiring, reviewed-host forwarding, public manager-owned host impact planning, and umbrella/managed-host invocation are implemented: exact User/Workspace scope and revision snapshots, external operation identity/envelope/confirmation, canonical snapshot/change-set/resolved-Grant/ceiling persistence, automatic Grant-aware path selection, scope-kind/tamper/policy-drift rejection, exact Registry cutover, joint rollback, drain-before-revoke, and authorization-stable crash replay |
-| Skill/UI lifecycle | Immutable validation and typed static projection implemented |
-| Hot-plug projection | Capability snapshot/watch plus Code TUI readiness and detached-Web install-run-upgrade-run-uninstall-restart E2E implemented; a signed schema-v3 Web regression covers reviewed disable, generation-2 withdrawal, daemon restart/replay/NoChange, and generation-3 re-enable restoration; production-provider and complete cross-platform real-process gates remain |
-| Upgrade/rollback | Product-level remote upgrade, Add/Replace/Remove/Retain planning, package and Runtime N/N+1 retention, one graph cutover, joint package/Grant pre-cutover rollback, drain-before-Grant-revoke retirement, exact removal, dependency GC, and generation-stable crash replay implemented; standalone, reviewed-host, umbrella, and managed-host Grant plan/apply selection are wired, while production providers remain release gates |
+| Six-surface ACL package contract | Implemented and fixture-backed |
+| Signed catalog-v3, TUF verification, replaceable source input | Implemented in the engine |
+| Bounded SemVer dependency resolution and exact locks | Implemented |
+| Install, upgrade, uninstall graph ordering | Implemented |
+| Durable atomic Registry cutover and exact replay | Implemented |
+| Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
+| Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
+| Standalone Task, stdio MCP, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
+| Flow, Service, HTTP MCP, Knowledge, and UI composition in every managed host | In progress |
+| A3S Code TUI/Web and other cross-repository product integration | Integration exists; release qualification remains |
+| Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
+| Public Registry operations, signed distribution, retention, support runbooks | Release blocker |
 
-The baseline intentionally fails closed when required permission, Runtime,
-Gateway, Flow, Knowledge, or apply evidence is incomplete. Schema-v3 packages
-cannot bypass the graph manager through legacy extension toggles.
-
-> [!NOTE]
-> The cognitive-package platform is pre-1.0. Until its first stable release,
-> unpublished schemas, APIs, and receipts may be replaced or removed outright;
-> they are not compatibility commitments. Package SemVer constraints, host
-> version requirements, and target checks remain package-manager correctness
-> rules.
-
-Inspect immutable readiness evidence:
-
-```bash
-a3s use doctor --json
-a3s use component list --json
-a3s-use capability snapshot --json
-```
-
-Resident hosts can observe hot-plug changes without restarting:
-
-```bash
-a3s-use capability watch \
-  --after-generation 12 \
-  --after-revision <sha256> \
-  --timeout-ms 30000 \
-  --json
-```
+**Production-ready: no.** The code has a substantial tested foundation, but
+the unfinished rows above remain required release gates. [ROADMAP.md](ROADMAP.md)
+tracks the remaining product work without converting completed internals into a
+release claim.
 
 ## Platform support
 
-| Platform | Status | Current guarantee |
+| Target | Current gate | Product status |
 | --- | --- | --- |
-| macOS arm64 / x86_64 | Supported | Release archives, managed providers, package lifecycle, and complete Browser gates |
-| Linux arm64 / x86_64 | Supported | Release archives, managed providers, package lifecycle, and complete Browser gates |
-| WSL | Supported through Linux | Linux runtime and filesystem contract |
-| Windows x86_64 | Preview | Release archive, package-contract compile/test gates, Edge core profile, and local OCR process coverage |
+| Linux x86_64 / arm64 | Full workspace CI plus release-container conformance | Development preview |
+| macOS arm64 / x86_64 | Workspace build and tests | Development preview |
+| Windows x86_64 | Workspace compile plus Core, facade, CLI, and docs tests | Preview; full runtime matrix pending |
 
-Windows participates in the package target and release matrix, but complete
-runtime parity still depends on the remaining plugin lifecycle and advanced
-Browser gates.
+All filesystem state uses platform-aware paths and avoids symlink/reparse-point
+traversal. Platform compilation is not the same as production qualification.
 
-## Workspace
+## Repository layout
 
-| Crate | Responsibility |
-| --- | --- |
-| `a3s-use` | Facade, package graph engine, lifecycle adapters, capability reconciliation, and MCP entry points |
-| `a3s-use-core` | Canonical package, catalog, Flow graph, plan, permission, grant, release, OKF, Knowledge, and managed-host contracts |
-| `a3s-use-extension` | ACL manifests, recursive package/Flow/OKF validation, TUF catalog, package store, receipts, leases, and grants |
-| `a3s-use-mcp-release-fixture` | Non-published headless MCP process and digest-pinned OCI lifecycle conformance gate |
-| `a3s-use-science` | Reference external package implementation |
-
-Browser and OCR are maintained in independent repositories and pinned to exact
-revisions for release assembly.
+```text
+Use/
+├── crates/core/             canonical contracts, resolver, plans, grants
+├── crates/extension/        ACL packages, TUF Registry, receipts, package store
+├── crates/science/          real cognitive-package fixture and tooling
+├── src/cognitive_package/   reviewed package-graph application service
+├── src/plugin_lifecycle/    durable six-surface lifecycle and host boundaries
+├── src/plugin_runtime/      Runtime provider selection and exact bindings
+├── src/okf_knowledge/       standalone OKF Knowledge backend
+├── website/                 GitHub Pages documentation site
+└── docs/                    architecture, contracts, ADRs, and release design
+```
 
 ## Development
 
-Run checks from this repository, not from the parent A3S monorepo:
+Run checks from this repository, not from the A3S monorepo root:
 
 ```bash
 cargo fmt --all -- --check
-cargo test --workspace --all-features --locked
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
+cargo test --workspace --all-targets
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo check -p a3s-use --no-default-features
+cargo check -p a3s-use --no-default-features --features extensions
 ```
 
-On x86_64 Linux with Docker and `musl-tools`, run the real digest-pinned MCP
-release gate:
+Build and validate the documentation site:
 
 ```bash
-./scripts/mcp-release-container-conformance.sh
+cd website
+npm ci
+npm run format:check
+npm run lint
+npm run build
+npm run check:site
 ```
+
+Contribution rules are documented in [AGENTS.md](AGENTS.md). Public Rust types
+should remain typed and `Send + Sync` where applicable; I/O uses Tokio; ACL is
+the default human-authored configuration format.
 
 ## Documentation
 
-- [Official website](https://a3s-lab.github.io/Use/)
-- [Plugin Platform Roadmap](ROADMAP.md)
-- [Plugin Platform Architecture](docs/plugin-platform-architecture.md)
-- [Plugin Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md)
-- [Plugin Contract Reference](docs/plugin-contracts.md)
-- [Cognitive Package Development Plan](docs/plugin-platform-development-plan.md)
-- [Runtime Broker ADR](docs/adr-001-plugin-runtime-broker-boundary.md)
-- [Cognitive Package Lifecycle Saga ADR](docs/adr-002-cognitive-package-lifecycle-saga.md)
-- [External Repository Capabilities](docs/external-repositories.md)
-- [Immutable Release Descriptors](docs/release-descriptors.md)
-- [Agent Browser Compatibility Baseline](docs/agent-browser-parity.md)
-- [Third-Party Notices](THIRD_PARTY_NOTICES.md)
+- [Product roadmap](ROADMAP.md)
+- [Plugin contract reference](docs/plugin-contracts.md)
+- [Plugin platform architecture](docs/plugin-platform-architecture.md)
+- [Lifecycle and security](docs/plugin-platform-lifecycle-and-security.md)
+- [Development plan](docs/plugin-platform-development-plan.md)
+- [Release descriptors](docs/release-descriptors.md)
+- [Documentation website](https://a3s-lab.github.io/Use/)
 
 ## License
 
-A3S Use is licensed under the [MIT License](LICENSE). Release archives retain
-third-party licenses and provenance notices.
+Apache-2.0. See [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

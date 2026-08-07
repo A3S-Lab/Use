@@ -1,40 +1,26 @@
 use a3s_use_core::{
-    CatalogSurface, PlanActor, PlanAuthority, PlanPackageChangeKind, PlanPackageRole,
-    PlanPolicyDecision, PlanScope, PlanScopeKind, PlannedOperationImpact, PlannedPackageTransition,
+    PlanActor, PlanAuthority, PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision,
+    PlanScope, PlanScopeKind, PlannedOperationImpact, PlannedPackageTransition,
     PlannedStateEvidence, PlannedWorkspaceImpact, PluginCatalogRecord, PluginDesiredState,
     PluginHostApplyRequest, PluginHostApplyResult, PluginHostCapabilities,
     PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
-    PluginHostEnablementPlanStatus, PluginHostEnablementRequest, PluginHostEnablementResult,
-    PluginHostManager, PluginHostObservationRequest, PluginHostObservationResult,
-    PluginHostObservationStatus, PluginHostPackageState, PluginHostPlanRequest,
-    PluginHostPlanResult, PluginHostUnavailableReason, PluginManagedScope, PluginObservedState,
-    PluginOperationAction, PluginOperationConfirmation, PluginOperationPlanBinding,
-    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageId, PluginSurfaceKind,
-    PluginSurfaceRef, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
-    PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
-    PLUGIN_HOST_CAPABILITIES_SCHEMA_V2, PLUGIN_HOST_CAPABILITIES_SCHEMA_V3,
+    PluginHostEnablementPlanStatus, PluginHostManager, PluginHostObservationRequest,
+    PluginHostObservationResult, PluginHostObservationStatus, PluginHostPackageState,
+    PluginHostPlanRequest, PluginHostPlanResult, PluginHostUnavailableReason, PluginManagedScope,
+    PluginObservedState, PluginOperationAction, PluginOperationConfirmation,
+    PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
+    PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, VerifiedCatalogProvenance,
+    VerifiedPluginCatalogRecord, PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
     PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
-    PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA, PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA,
-    PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
     PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
-    PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V2, PLUGIN_HOST_PROTOCOL_LEVEL_V3,
-    PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_MANAGED_SCOPE_SCHEMA,
-    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA_V3,
-    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
+    PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
-const HOST_CAPABILITIES: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v1.json");
+const HOST_CAPABILITIES: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v4.json");
 const HOST_CAPABILITIES_DIGEST: &str =
-    include_str!("../fixtures/plugins/host-capabilities-v1.sha256").trim_ascii_end();
-const HOST_CAPABILITIES_V2: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v2.json");
-const HOST_CAPABILITIES_V2_DIGEST: &str =
-    include_str!("../fixtures/plugins/host-capabilities-v2.sha256").trim_ascii_end();
-const HOST_CAPABILITIES_V3: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v3.json");
-const HOST_CAPABILITIES_V3_DIGEST: &str =
-    include_str!("../fixtures/plugins/host-capabilities-v3.sha256").trim_ascii_end();
-const HOST_CAPABILITIES_V4: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v4.json");
-const HOST_CAPABILITIES_V4_DIGEST: &str =
     include_str!("../fixtures/plugins/host-capabilities-v4.sha256").trim_ascii_end();
 const MANAGED_SCOPE: &[u8] = include_bytes!("../fixtures/plugins/managed-scope-v1.json");
 const MANAGED_SCOPE_DIGEST: &str =
@@ -64,7 +50,7 @@ fn scope() -> PluginManagedScope {
 }
 
 fn capabilities() -> PluginHostCapabilities {
-    PluginHostCapabilities::v1(
+    PluginHostCapabilities::v4(
         "host:node-01",
         env!("CARGO_PKG_VERSION"),
         "use:0.2.1:linux-x86_64",
@@ -89,37 +75,6 @@ fn candidate() -> VerifiedPluginCatalogRecord {
         },
     )
     .unwrap()
-}
-
-fn flow_candidate() -> VerifiedPluginCatalogRecord {
-    let candidate = candidate();
-    let mut record = candidate.record;
-    record.surfaces.insert(
-        0,
-        CatalogSurface {
-            kind: PluginSurfaceKind::Flow,
-            id: "reason".to_owned(),
-            optional: false,
-            workload: None,
-            mcp_transport: None,
-            mcp_tool_count: None,
-            okf_bundle: None,
-            requires: vec![PluginSurfaceRef {
-                kind: PluginSurfaceKind::Okf,
-                id: "domain-knowledge".to_owned(),
-            }],
-        },
-    );
-    record.surfaces[2].requires.insert(
-        0,
-        PluginSurfaceRef {
-            kind: PluginSurfaceKind::Flow,
-            id: "reason".to_owned(),
-        },
-    );
-    let mut provenance = candidate.provenance;
-    provenance.catalog_record_digest = record.descriptor_digest().unwrap();
-    VerifiedPluginCatalogRecord::new(record, provenance).unwrap()
 }
 
 fn plan_request() -> PluginHostPlanRequest {
@@ -372,14 +327,18 @@ fn package_identity_is_typed_and_uses_one_validation_rule() {
 }
 
 #[test]
-fn capabilities_freeze_one_versioned_host_contract() {
+fn capabilities_freeze_the_single_current_host_contract() {
     let capabilities = capabilities();
     capabilities.validate().unwrap();
-    assert_eq!(capabilities.protocol_level, 1);
+    assert_eq!(capabilities.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V4);
+    assert_eq!(capabilities.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V4);
+    assert_eq!(capabilities.catalog_schemas, ["a3s.use.plugin-catalog.v3"]);
+    assert_eq!(capabilities.plan_schemas, [PLUGIN_OPERATION_PLAN_SCHEMA_V4]);
     assert!(capabilities.exclusive_managed_scope_mutation);
     assert_eq!(
         capabilities.surface_kinds,
         vec![
+            PluginSurfaceKind::Flow,
             PluginSurfaceKind::Mcp,
             PluginSurfaceKind::Okf,
             PluginSurfaceKind::Skill,
@@ -390,168 +349,27 @@ fn capabilities_freeze_one_versioned_host_contract() {
     assert!(capabilities
         .contract_schemas
         .contains(&PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned()));
+    assert!(capabilities
+        .contract_schemas
+        .contains(&PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned()));
+    assert!(capabilities
+        .contract_schemas
+        .contains(&PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned()));
+    assert!(!capabilities
+        .contract_schemas
+        .iter()
+        .any(|schema| schema.contains("host-enablement-request")));
 
-    let mut mixed = capabilities.clone();
-    mixed.protocol_level = 2;
-    assert!(mixed.validate().is_err());
+    let mut retired = serde_json::to_value(&capabilities).unwrap();
+    retired["schema"] = serde_json::json!("a3s.use.plugin-host-capabilities.v3");
+    retired["protocolLevel"] = serde_json::json!(3);
+    assert!(PluginHostCapabilities::from_json(&serde_json::to_vec(&retired).unwrap()).is_err());
+
     let mut expanded = capabilities;
     expanded
         .contract_schemas
         .push("a3s.use.plugin-host-universal-action.v1".to_owned());
     assert!(expanded.validate().is_err());
-}
-
-#[test]
-fn capabilities_v2_advertises_flow_without_rewriting_v1() {
-    let v1 = capabilities();
-    let v2 = PluginHostCapabilities::v2(
-        "host:node-01",
-        env!("CARGO_PKG_VERSION"),
-        "use:0.3.0:linux-x86_64",
-    )
-    .unwrap();
-    assert_eq!(v1.protocol_level, 1);
-    assert!(!v1.surface_kinds.contains(&PluginSurfaceKind::Flow));
-    assert_eq!(v2.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V2);
-    assert_eq!(v2.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V2);
-    assert_eq!(v2.surface_kinds[0], PluginSurfaceKind::Flow);
-    assert!(v2
-        .contract_schemas
-        .contains(&PLUGIN_HOST_CAPABILITIES_SCHEMA_V2.to_owned()));
-    assert_eq!(
-        PluginHostCapabilities::from_json(&v2.canonical_bytes().unwrap()).unwrap(),
-        v2
-    );
-
-    let fixture = PluginHostCapabilities::from_json(HOST_CAPABILITIES_V2).unwrap();
-    assert_eq!(
-        fixture,
-        PluginHostCapabilities::v2(
-            "host:node-01",
-            env!("CARGO_PKG_VERSION"),
-            "use:0.2.1:linux-x86_64",
-        )
-        .unwrap()
-    );
-    assert_eq!(
-        fixture.canonical_bytes().unwrap(),
-        canonical_fixture(HOST_CAPABILITIES_V2)
-    );
-    assert_eq!(
-        fixture.descriptor_digest().unwrap(),
-        HOST_CAPABILITIES_V2_DIGEST
-    );
-}
-
-#[test]
-fn capabilities_v3_advertises_graph_upgrade_plans_without_rewriting_prior_versions() {
-    let v1 = capabilities();
-    let v2 = PluginHostCapabilities::v2(
-        "host:node-01",
-        env!("CARGO_PKG_VERSION"),
-        "use:0.3.0:linux-x86_64",
-    )
-    .unwrap();
-    let v3 = PluginHostCapabilities::v3(
-        "host:node-01",
-        env!("CARGO_PKG_VERSION"),
-        "use:0.3.0:linux-x86_64",
-    )
-    .unwrap();
-
-    assert_eq!(v3.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V3);
-    assert_eq!(v3.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V3);
-    assert_eq!(v3.surface_kinds, v2.surface_kinds);
-    assert!(!v1.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V3));
-    assert!(!v2.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V3));
-    assert!(v3.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V3));
-    assert!(v3
-        .contract_schemas
-        .contains(&PLUGIN_HOST_CAPABILITIES_SCHEMA_V3.to_owned()));
-
-    let mut expanded_v2 = v2.clone();
-    expanded_v2
-        .plan_schemas
-        .push(PLUGIN_OPERATION_PLAN_SCHEMA_V3.to_owned());
-    assert!(expanded_v2.validate().is_err());
-    let mut narrowed_v3 = v3;
-    narrowed_v3.plan_schemas.pop();
-    assert!(narrowed_v3.validate().is_err());
-
-    let fixture = PluginHostCapabilities::from_json(HOST_CAPABILITIES_V3).unwrap();
-    assert_eq!(
-        fixture,
-        PluginHostCapabilities::v3(
-            "host:node-01",
-            env!("CARGO_PKG_VERSION"),
-            "use:0.2.1:linux-x86_64",
-        )
-        .unwrap()
-    );
-    assert_eq!(
-        fixture.canonical_bytes().unwrap(),
-        canonical_fixture(HOST_CAPABILITIES_V3)
-    );
-    assert_eq!(
-        fixture.descriptor_digest().unwrap(),
-        HOST_CAPABILITIES_V3_DIGEST
-    );
-}
-
-#[test]
-fn capabilities_v4_adds_enablement_review_without_rewriting_prior_versions() {
-    let v3 = PluginHostCapabilities::v3(
-        "host:node-01",
-        env!("CARGO_PKG_VERSION"),
-        "use:0.3.0:linux-x86_64",
-    )
-    .unwrap();
-    let v4 = PluginHostCapabilities::v4(
-        "host:node-01",
-        env!("CARGO_PKG_VERSION"),
-        "use:0.3.0:linux-x86_64",
-    )
-    .unwrap();
-
-    assert_eq!(v4.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V4);
-    assert_eq!(v4.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V4);
-    assert!(!v3.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V4));
-    assert!(v4.supports_plan_schema(PLUGIN_OPERATION_PLAN_SCHEMA_V4));
-    assert!(v4
-        .contract_schemas
-        .contains(&PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned()));
-    assert!(v4
-        .contract_schemas
-        .contains(&PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned()));
-    assert_eq!(
-        PluginHostCapabilities::from_json(&v4.canonical_bytes().unwrap()).unwrap(),
-        v4
-    );
-
-    let fixture = PluginHostCapabilities::from_json(HOST_CAPABILITIES_V4).unwrap();
-    assert_eq!(
-        fixture,
-        PluginHostCapabilities::v4(
-            "host:node-01",
-            env!("CARGO_PKG_VERSION"),
-            "use:0.2.1:linux-x86_64",
-        )
-        .unwrap()
-    );
-    assert_eq!(
-        fixture.canonical_bytes().unwrap(),
-        canonical_fixture(HOST_CAPABILITIES_V4)
-    );
-    assert_eq!(
-        fixture.descriptor_digest().unwrap(),
-        HOST_CAPABILITIES_V4_DIGEST
-    );
-
-    let mut expanded_v3 = v3;
-    expanded_v3
-        .contract_schemas
-        .push(PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned());
-    assert!(expanded_v3.validate().is_err());
 }
 
 #[test]
@@ -602,26 +420,6 @@ fn host_enablement_plan_is_explicit_and_reuses_digest_only_apply() {
     assert!(apply
         .validate_for_enablement_plan(&no_change, &capabilities)
         .is_err());
-}
-
-#[test]
-fn host_protocol_v1_rejects_flow_plans_while_v2_accepts_them() {
-    let v1 = capabilities();
-    let mut request = plan_request();
-    request.candidate = Some(flow_candidate());
-    request.capabilities_digest = v1.descriptor_digest().unwrap();
-    request.validate().unwrap();
-    let error = request.validate_for_capabilities(&v1).unwrap_err();
-    assert_eq!(error.code, "use.plugin.host_surface_unsupported");
-
-    let v2 = PluginHostCapabilities::v2(
-        "host:node-01",
-        env!("CARGO_PKG_VERSION"),
-        "use:0.3.0:linux-x86_64",
-    )
-    .unwrap();
-    request.capabilities_digest = v2.descriptor_digest().unwrap();
-    request.validate_for_capabilities(&v2).unwrap();
 }
 
 #[test]
@@ -787,57 +585,15 @@ fn apply_binds_only_the_stored_plan_and_exact_confirmation() {
 }
 
 #[test]
-fn enablement_and_observation_share_one_use_owned_state_projection() {
+fn observation_uses_the_use_owned_state_projection() {
     let capabilities_digest = capabilities().descriptor_digest().unwrap();
-    let request = PluginHostEnablementRequest {
-        schema: PLUGIN_HOST_ENABLEMENT_REQUEST_SCHEMA.to_owned(),
-        request_id: "request:enable:0001".to_owned(),
-        operation_id: "use-toggle:0001".to_owned(),
-        assignment_generation: 4,
-        capabilities_digest: capabilities_digest.clone(),
-        scope: scope(),
-        package_id: PluginPackageId::parse("acme/knowledge").unwrap(),
-        expected_package_generation: 13,
-        enabled: true,
-    };
-    request.validate().unwrap();
-    let mut request_with_unknown = serde_json::to_value(&request).unwrap();
-    request_with_unknown["unexpected"] = serde_json::json!(true);
-    assert!(PluginHostEnablementRequest::from_json(
-        &serde_json::to_vec(&request_with_unknown).unwrap()
-    )
-    .is_err());
-    let mut enabled_state = installed_state(PluginDesiredState::Enabled);
-    enabled_state.package_generation = Some(14);
-    let result = PluginHostEnablementResult {
-        schema: PLUGIN_HOST_ENABLEMENT_RESULT_SCHEMA.to_owned(),
-        request_id: request.request_id.clone(),
-        operation_id: request.operation_id.clone(),
-        assignment_generation: request.assignment_generation,
-        capabilities_digest: capabilities_digest.clone(),
-        scope: request.scope.clone(),
-        package_id: request.package_id.clone(),
-        completed_at_ms: 1_785_360_200_000,
-        operation_result_digest: DIGEST_A.to_owned(),
-        changed: true,
-        state: enabled_state,
-        replayed: false,
-    };
-    result.validate_for(&request, &capabilities()).unwrap();
-    let mut result_with_unknown = serde_json::to_value(&result).unwrap();
-    result_with_unknown["unexpected"] = serde_json::json!(true);
-    assert!(PluginHostEnablementResult::from_json(
-        &serde_json::to_vec(&result_with_unknown).unwrap()
-    )
-    .is_err());
-
     let observe = PluginHostObservationRequest {
         schema: PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA.to_owned(),
         request_id: "request:observe:0001".to_owned(),
-        assignment_generation: request.assignment_generation,
+        assignment_generation: 4,
         capabilities_digest,
-        scope: request.scope,
-        package_id: request.package_id,
+        scope: scope(),
+        package_id: PluginPackageId::parse("acme/knowledge").unwrap(),
     };
     let available = PluginHostObservationResult {
         schema: PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA.to_owned(),
@@ -917,8 +673,6 @@ fn public_host_types_and_service_port_are_send_sync() {
     assert_send_sync::<PluginHostApplyResult>();
     assert_send_sync::<PluginHostEnablementPlanRequest>();
     assert_send_sync::<PluginHostEnablementPlanResult>();
-    assert_send_sync::<PluginHostEnablementRequest>();
-    assert_send_sync::<PluginHostEnablementResult>();
     assert_send_sync::<PluginHostObservationRequest>();
     assert_send_sync::<PluginHostObservationResult>();
     assert_manager_port::<dyn PluginHostManager>();

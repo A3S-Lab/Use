@@ -4,8 +4,8 @@ use a3s_use_core::{
     PlannedStateEvidence, PluginCatalogRecord, PluginOperationAction, PluginOperationPlanBinding,
     PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageDependency,
     PluginPackageLock, PluginPackageLockHost, PluginPackageResolver, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V2, PLUGIN_CATALOG_SCHEMA_V3,
-    PLUGIN_OPERATION_PLAN_SCHEMA_V3, PLUGIN_PACKAGE_LOCK_SCHEMA,
+    VerifiedPluginCatalogRecord, PLUGIN_CATALOG_SCHEMA_V3, PLUGIN_OPERATION_PLAN_SCHEMA_V4,
+    PLUGIN_PACKAGE_LOCK_SCHEMA,
 };
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
@@ -162,7 +162,7 @@ fn only_catalog_v3_may_publish_package_dependencies() {
     record.dependencies = vec![dependency("acme/base", "^1.0.0")];
     record.validate().unwrap();
 
-    record.schema = PLUGIN_CATALOG_SCHEMA_V2.to_string();
+    record.schema = "a3s.use.plugin-catalog.v2".to_string();
     assert_eq!(
         record.validate().unwrap_err().code,
         "use.plugin.catalog_invalid"
@@ -426,7 +426,7 @@ fn upgrade_envelope_binds_the_prior_candidate_union_and_removed_nodes() {
     )
     .unwrap();
 
-    assert_eq!(envelope.plan.schema, PLUGIN_OPERATION_PLAN_SCHEMA_V3);
+    assert_eq!(envelope.plan.schema, PLUGIN_OPERATION_PLAN_SCHEMA_V4);
     assert_eq!(
         envelope.plan.prior_package_lock_digest.as_deref(),
         Some(prior.descriptor_digest().unwrap().as_str())

@@ -33,8 +33,9 @@ async fn dependency_closure_upgrade_cuts_over_once_then_retires_prior_generation
     assert!(records
         .iter()
         .all(|record| record.status == PluginLifecycleOperationStatus::Completed));
+    let calls = fixture.host.calls.lock().await;
     assert_eq!(
-        fixture.host.calls.lock().await.as_slice(),
+        &calls[..calls.len() - 1],
         [
             "acme/base:commit",
             "acme/base:okf-prepare",
@@ -45,17 +46,24 @@ async fn dependency_closure_upgrade_cuts_over_once_then_retires_prior_generation
             "batch:acme/base,acme/root",
             "acme/root:hide",
             "acme/root:drain",
+            "acme/base:hide",
+            "acme/base:drain",
             "acme/root:skill-remove",
             "acme/root:okf-remove",
             "acme/root:remove",
-            "acme/base:hide",
-            "acme/base:drain",
             "acme/base:skill-remove",
             "acme/base:okf-remove",
             "acme/base:remove",
             "batch:acme/base,acme/root",
             "acme/base:remove",
         ]
+    );
+    assert_eq!(
+        calls.last(),
+        Some(&format!(
+            "cutover-complete:{}",
+            publication_key(&fixture.envelope).unwrap()
+        ))
     );
 }
 
@@ -188,8 +196,12 @@ async fn failed_upgrade_preparation_rolls_back_ambiguous_surfaces_and_blocks_pla
         },
     })
     .unwrap();
-    let envelope =
-        PluginOperationPlanEnvelope::new_with_package_lock(plan, next_lock.clone()).unwrap();
+    let envelope = PluginOperationPlanEnvelope::new_with_upgrade_package_locks(
+        plan,
+        old_lock.clone(),
+        next_lock.clone(),
+    )
+    .unwrap();
     let next_manifest = manifest_version("acme/root", None, "1.1.0");
     let prior_manifest = manifest_version("acme/root", None, "1.0.0");
     let next_state = envelope.plan.packages[0].after.as_ref().unwrap();

@@ -1,34 +1,55 @@
 extension "a3s/science" {
-  schema_version = 1
+  schema_version = 3
   version        = "0.2.2"
   route          = "science"
+  requires_use   = ">=0.3.0, <0.4.0"
   actions        = ["read"]
 
-  cli {
-    executable  = "bin/a3s-use-science"
-    json_output = true
+  repository {
+    url = "https://github.com/A3S-Lab/Use"
   }
 
-  mcp {
+  tool "science" {
+    workload    = "task"
+    interface   = "cli"
+    executable  = "bin/a3s-use-science"
+    command     = "a3s-use-science"
+    json_output = true
+    interactive = false
+    timeout_ms  = 120000
+    activation  = "lazy"
+    optional    = false
+  }
+
+  mcp "science" {
     executable = "bin/a3s-use-science"
     args       = ["serve", "--mcp"]
     transport  = "stdio"
+    activation = "lazy"
+    optional   = false
   }
 
-  skill {
-    path = "skills/a3s-use-science/SKILL.md"
+  skill "science" {
+    path          = "skills/a3s-use-science/SKILL.md"
+    requires_tool = ["science"]
+    requires_mcp  = ["science"]
+    requires_okf  = []
+    requires_flow = []
+    optional      = false
   }
 
-  contributes {
-    activity_bar "research" {
-      title       = "科研"
-      description = "Prepare reviewable, evidence-backed research tasks across disciplines."
-      icon        = "flask-conical"
-      entry       = "web/activity.html"
-      styles      = ["web/activity.css"]
-      scripts     = ["web/activity.js"]
-      skill       = "a3s-use-science"
-      order       = 120
-    }
+  ui "research" {
+    title     = "科研"
+    description = "Prepare reviewable, evidence-backed research tasks across disciplines."
+    icon      = "flask-conical"
+    entry     = "web/activity.html"
+    styles    = ["web/activity.css"]
+    scripts   = ["web/activity.js"]
+    skill     = "science"
+    bind_tool = ["science"]
+    bind_mcp  = ["science"]
+    bind_flow = []
+    order     = 120
+    optional  = false
   }
 }

@@ -1,987 +1,341 @@
 # A3S Use Plugin Lifecycle and Security
 
-- Status: accepted M0 contract baseline; runtime implementation in progress
-- Planning baseline: 2026-07-30
-- Product amendment: first-class OKF knowledge contribution accepted; M0K-A
-  bundle contract frozen 2026-07-31, M0K-B control plane frozen 2026-08-01,
-  M0K-C-A adapter/store foundation frozen 2026-08-02, and package-level
-  six-surface saga, P0 package/capability hosts, and cognitive-package
-  dependency/lock foundation frozen 2026-08-03; unified A3S Flow semantics
-  plus A3S Code TUI/Web host/catalog integration frozen 2026-08-04,
-  bounded exact-generation package/Runtime N/N+1 storage, and the Grant-aware
-  graph saga foundation frozen 2026-08-05; public Grant-impact planning and
-  umbrella/managed-host authority forwarding plus plan-v4 permission-bearing
-  enablement core connected 2026-08-06; local A3S Code CLI/Web reviewed
-  enablement and restart replay connected 2026-08-06; Code TUI `/packages`
-  reviewed enablement and full `PlanScope` lifecycle/store isolation connected
-  2026-08-07; standalone SQLite/FTS5 Knowledge, exact scoped retrieval, and
-  signed atomic generation cutover connected 2026-08-07
-- Architecture: [Plugin Platform Architecture](plugin-platform-architecture.md)
-- Contracts: [Plugin Contract Reference](plugin-contracts.md)
-- Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
+Status: development preview
+Last updated: 2026-08-07
 
-This document is the operational companion to the plugin platform
-architecture. It defines lifecycle consistency, failure recovery, security,
-storage, public application contracts, and observability.
+## Purpose
 
-The checked-in M0/M0K contracts cover Tool, MCP, OKF, Flow, Skill, and UI. The shared
-OKF bundle inspector, schema-v3 parser, package validator, exact host evidence,
-reconciler gate, injected Knowledge port, evidence-checking client, persistent
-generation store, and standalone SQLite/FTS5 index backend are implemented. A
-package-level checkpoint journal and typed OKF lifecycle adapter implement
-stage/promote/hide/remove. P0 package/capability hosts add generation-bound commit,
-publish/hide, lease drain, and exact removal. A3S Code composes the supported
-Tool Task, stdio MCP, A3S Flow, Skill, and UI host set; managed Code/Web
-Workspace/session Knowledge carriers, Runtime Service, and Gateway/HTTP MCP
-providers remain pending. Standalone and
-host-reviewed Grant planning/apply are implemented, including exact
-umbrella/managed-host scope, revision, authority, confirmation, and replay
-binding; local Code CLI/Web and managed-host reviewed enablement forward that
-same evidence. The directly
-injected Use authorization path now applies the same evidence to
-permission-bearing enable/disable. Without promoted observation, an OKF
-surface stays unpublished.
+This document defines lifecycle ordering, trust boundaries, recovery rules, and
+security invariants for the current A3S Use cognitive-package baseline.
 
-The dependency foundation adds canonical schema-v3 SemVer edges, a bounded
-deterministic transitive resolver, exact Registry/TUF-bound package locks,
-dependency-forward download and preparation, exact retained-node verification,
-single-snapshot graph publication, reverse uninstall, and crash-safe partial
-receipt recovery. Signed remote schema-v3 `install`/`uninstall` and compatible
-remote `component` commands call this graph coordinator. Code TUI/Web inject
-their supported host set through the public lifecycle factory and consume one
-exact-generation watcher; the management MCP remains intentionally read-only,
-and fenced managed-host mutations reuse the same Manager composition.
+The product has not shipped a supported release. Superseded preview formats and
+disk records are rejected rather than migrated or interpreted.
 
-Flow has one engine, `a3s-flow`. Use verifies its bounded source and explicit
-Tool/MCP/OKF dependency edges; a typed host adapter owns Native TypeScript
-preflight, durable execution, replay, and observation. `flow.json` remains a
-design/deployment document for that same identity, never an independent
-package or lifecycle mechanism.
+## Threat model
 
-## Complete End-to-End Lifecycle Flow
+A3S Use assumes that package archives, Registry responses, package manifests,
+surface payloads, local package directories, managed state directories, and
+provider processes may be malformed or malicious. It also assumes ordinary
+process crashes, partial filesystem writes, stale plans, expired metadata,
+concurrent commands, and host/provider drift.
 
-The following is the normative full lifecycle flow, from metadata-only search
-through selective installation, active use, upgrade, disable, uninstall,
-retained data, and crash recovery. The same Plugin Manager serves CLI, Web,
-and management MCP adapters. Solid arrows are normal transitions. Dotted
-arrows represent recovery after durable operation intent has been recorded.
+The engine must prevent:
 
-```mermaid
-flowchart TD
-  actor["User or authorized agent"] --> command{"Requested operation"}
+- package or path escape;
+- unsigned or provenance-drifting code/data activation;
+- dependency confusion across enabled sources;
+- mixed package or capability generations;
+- permission escalation after review;
+- provider substitution after planning;
+- visibility before required readiness;
+- removal while prior calls still hold leases;
+- replay under a different scope, policy, plan, or confirmation; and
+- heuristic recovery after exact evidence was deleted.
 
-  subgraph discovery["1. Discovery and resolution"]
-    catalog["Refresh and search verified metadata<br/>No package payload download"]
-    inspect["Inspect provenance, surfaces, permissions,<br/>sizes, compatibility, and withdrawal state"]
-    installChoice{"Install selected release?"}
-    resolveInstall["Resolve exact package versions and dependency graph<br/>Freeze Registry/TUF-bound package lock<br/>Action: install"]
-    resolveUpgrade["Resolve N+1, permission diff, dependencies,<br/>and provider requirements<br/>Action: upgrade"]
-    resolveUninstall["Resolve owned resources, workspace impact,<br/>leases, and retained data<br/>Action: uninstall"]
-    hostContext["Allocate operationId and host context<br/>Bind actor, scope, policy identity, lifetime,<br/>capability generation, and state revision"]
-    executable{"Resulting package state contains<br/>Tool or Runtime-backed MCP surfaces?"}
-    planningTarget["Fetch only signed catalog-v3 planning-v1.json<br/>Verify exact TUF name, length, SHA-256,<br/>package identity, and executable surface closure"]
-    providerPreflight["Host Runtime broker preflight<br/>Use host-configured assignment and capabilities;<br/>package cannot select or register a provider"]
-    providerCapable{"One explicit provider can enforce<br/>the required workload and permission profile?"}
-    rejectPlanning["Reject as unplannable<br/>No archive download and no mutation"]
-    grantProposal["Resolve canonical pre-confirmation grant proposal<br/>Bind operation, actor, scope, policy, package,<br/>permission ceiling, lifetime, and state revision"]
-    runtimePlan["Build provider-neutral Runtime templates<br/>Bind the grant-proposal digest, then select again<br/>against the same provider/build/capability evidence"]
-    buildPlan["Persist canonical expiring plan<br/>Bind package lock/digest, Registry/TUF evidence,<br/>scope, grant proposals, provider evidence, and impact"]
-  end
+## Trust chain
 
-  command -- "Search / inspect / install" --> catalog
-  catalog --> inspect
-  inspect --> installChoice
-  installChoice -- "No" --> idle["No mutation"]
-  installChoice -- "Yes" --> resolveInstall
-  command -- "Upgrade" --> resolveUpgrade
-  command -- "Uninstall" --> resolveUninstall
-  resolveInstall --> hostContext
-  resolveUpgrade --> hostContext
-  resolveUninstall --> hostContext
-  hostContext --> executable
-  executable -- "No Runtime Tool/MCP planning target" --> buildPlan
-  executable -- "Yes" --> planningTarget
-  planningTarget --> providerPreflight
-  providerPreflight --> providerCapable
-  providerCapable -- "No" --> rejectPlanning
-  rejectPlanning --> command
-  providerCapable -- "Yes" --> grantProposal
-  grantProposal --> runtimePlan
-  runtimePlan --> buildPlan
-
-  subgraph authorization["2. Authorization and immutable apply"]
-    policy{"ACL policy decision"}
-    confirmation{"User confirms the exact plan?"}
-    confirmationEvidence["Persist confirmation evidence binding<br/>planDigest + each grant proposal digest"]
-    denied["Denied or cancelled<br/>No mutation"]
-    apply["Apply with operationId + canonical planDigest"]
-    loadPlan["Load the immutable reviewed plan<br/>from the durable manager store"]
-    resultExists{"Durable terminal result already exists?"}
-    replayResult["Return the same result with replayed=true<br/>No child process or side effect"]
-    reresolve["Repeat trust, dependency, permission,<br/>provider, ownership, and impact resolution"]
-    exact{"Still exactly matches the plan?"}
-    drift["Reject expired or changed plan<br/>Require a new review"]
-    finalizeProposals["Deterministically finalize validated grant proposals<br/>No side effect or package-controlled input"]
-    intent["Persist durable operation intent<br/>and per-surface idempotency keys"]
-    plannedAction{"Planned action"}
-  end
-
-  buildPlan --> policy
-  policy -- "deny" --> denied
-  policy -- "ask" --> confirmation
-  confirmation -- "No" --> denied
-  confirmation -- "Yes" --> confirmationEvidence
-  confirmationEvidence --> apply
-  policy -- "allow within every ceiling" --> apply
-  apply --> loadPlan
-  loadPlan --> resultExists
-  resultExists -- "Yes" --> replayResult
-  replayResult --> command
-  resultExists -- "No" --> reresolve
-  reresolve --> exact
-  exact -- "No" --> drift
-  drift --> command
-  exact -- "Yes" --> finalizeProposals
-  finalizeProposals --> intent
-  intent --> grantNeeded
-
-  subgraph packageInstall["3. Package installation or upgrade staging"]
-    stage["Revalidate the complete lock before payload download<br/>then fetch dependencies before dependents<br/>to bounded staging roots"]
-    verify["Verify TUF metadata, archive length/digest,<br/>manifest, paths, descriptors, artifacts,<br/>compatibility, and permission ceiling"]
-    valid{"All verification gates pass?"}
-    rejectPackage["Delete or quarantine staging data<br/>Record typed failure; preserve N on upgrade"]
-    commit["Atomically commit immutable package generation<br/>and candidate installed-disabled receipt"]
-    grantNeeded{"Planned exact-generation<br/>Grant transition?"}
-    persistCandidateGrant["Persist validated candidate Grant or retirement intent<br/>without replacing N authorization"]
-    desiredAfterCommit{"Desired state after commit?"}
-  end
-
-  grantNeeded -- "Yes" --> persistCandidateGrant
-  grantNeeded -- "No" --> plannedAction
-  persistCandidateGrant --> plannedAction
-  plannedAction -- "install / upgrade" --> stage
-  stage --> verify
-  verify --> valid
-  valid -- "No" --> rejectPackage
-  rejectPackage --> completeResult
-  valid -- "Yes" --> commit
-  commit --> desiredAfterCommit
-
-  subgraph reconcile["4. Surface reconciliation"]
-    observe["Observe package, desired state, grants,<br/>bindings, projections, Runtime, and Gateway"]
-    graph["Build required surface dependency closure<br/>All surfaces required unless explicitly optional"]
-    provider{"Explicit provider still satisfies<br/>artifact, Task/Service, isolation, network,<br/>health, mount, resource, and secret capabilities?"}
-    staticVerify["Verify Skill, UI, and OKF content<br/>and declared dependency references"]
-    taskPrepare["For each CLI Tool:<br/>prepare exact-generation Runtime Task binding<br/>or constrained legacy native binding"]
-    serviceApply["For each HTTP Tool:<br/>apply private Runtime Service<br/>and wait for declared health"]
-    mcpTransport{"For each MCP surface"}
-    mcpHttp["Streamable HTTP:<br/>apply Runtime Service, pass health,<br/>then complete standard MCP probe"]
-    mcpStdio["stdio:<br/>prepare supervised bidirectional session<br/>and complete standard MCP probe"]
-    closure{"Required dependency closure usable?"}
-    previous{"Superseded generation N exists?"}
-    previousState{"Was generation N active?"}
-    keepPrevious["Keep generation N active<br/>Record N+1 failure and remediation"]
-    keepPreviousDisabled["Keep generation N installed-disabled<br/>Record N+1 failure and remediation"]
-    broken["Withhold or revoke required capabilities<br/>Keep package installed; observed broken"]
-    readyBindings["Persist non-secret bindings<br/>and receipt-owned projections"]
-    degradedBindings["Persist required bindings only<br/>Record optional-surface failures"]
-    projectionReady{"Skill roots, command shims, UI/OKF indexes,<br/>and backend bindings committed?"}
-    publishReady["Atomically publish one capability generation<br/>Checkpoint exact Grant cutover when planned<br/>Then drain/remove any superseded generation"]
-    publishDegraded["Atomically publish required capabilities<br/>Checkpoint exact Grant cutover when planned<br/>Mark aggregate degraded; retry optional surfaces"]
-  end
-
-  desiredAfterCommit -- "installed-disabled" --> installedDisabled["Installed and disabled"]
-  desiredAfterCommit -- "enabled" --> observe
-  observe --> graph
-  graph --> provider
-  provider -- "No" --> previous
-  provider -- "Yes" --> staticVerify
-  provider -- "Yes" --> taskPrepare
-  provider -- "Yes" --> serviceApply
-  provider -- "Yes" --> mcpTransport
-  mcpTransport -- "Streamable HTTP" --> mcpHttp
-  mcpTransport -- "stdio" --> mcpStdio
-  mcpTransport -- "none declared" --> closure
-  staticVerify --> closure
-  taskPrepare --> closure
-  serviceApply --> closure
-  mcpHttp --> closure
-  mcpStdio --> closure
-  closure -- "Required failure" --> previous
-  previous -- "Yes" --> previousState
-  previousState -- "Yes" --> keepPrevious
-  previousState -- "No" --> keepPreviousDisabled
-  previous -- "No" --> broken
-  closure -- "All declared surfaces ready" --> readyBindings
-  closure -- "Only optional surfaces failed" --> degradedBindings
-  readyBindings --> projectionReady
-  degradedBindings --> projectionReady
-  projectionReady -- "No" --> previous
-  projectionReady -- "Yes, complete" --> publishReady
-  projectionReady -- "Yes, required only" --> publishDegraded
-  publishReady --> ready["Enabled and ready"]
-  publishDegraded --> degraded["Enabled and degraded"]
-
-  subgraph use["5. Active use and observation"]
-    watch["Session watches capability revision"]
-    useRequest["Flow run, Skill/UI/OKF load,<br/>or Tool/MCP invocation"]
-    visible{"Authorized exact-generation binding visible?"}
-    rejectUse["Reject new use<br/>disabled, stale, incompatible, or unauthorized"]
-    lease["Acquire exact-generation shared lease"]
-    surfaceKind{"Surface kind"}
-    runTask["CLI Tool:<br/>run one Runtime Task with native argv,<br/>bounded input/output, and exit status"]
-    callService["HTTP Tool:<br/>call private Service through scoped Gateway binding"]
-    callMcp["MCP:<br/>use standard MCP client and declared transport"]
-    runFlow["A3S Flow:<br/>run exact-generation durable workflow<br/>through the injected host adapter"]
-    loadStatic["Skill/UI/OKF:<br/>load verified generation-scoped projection"]
-    release["Release lease and record bounded observation"]
-    changed{"Health or provider observation changed?"}
-  end
-
-  ready --> watch
-  degraded --> watch
-  keepPrevious --> watch
-  command -- "Use installed capability" --> useRequest
-  watch --> useRequest
-  useRequest --> visible
-  visible -- "No" --> rejectUse
-  rejectUse --> command
-  visible -- "Yes" --> lease
-  lease --> surfaceKind
-  surfaceKind -- "CLI Tool" --> runTask
-  surfaceKind -- "HTTP Tool" --> callService
-  surfaceKind -- "MCP" --> callMcp
-  surfaceKind -- "Flow" --> runFlow
-  surfaceKind -- "Skill / UI / OKF" --> loadStatic
-  runTask --> release
-  callService --> release
-  callMcp --> release
-  runFlow --> release
-  loadStatic --> release
-  release --> changed
-  changed -- "No" --> command
-  changed -- "Yes" --> observe
-
-  subgraph toggle["6. Enable and disable"]
-    togglePlan["Build immutable operation plan v4<br/>Retain exact artifact; bind receipt, scope,<br/>capability generation, and Grant impact"]
-    togglePolicy{"Authorize enable or disable<br/>allow / ask / deny"}
-    toggleConfirm{"User confirms?"}
-    toggleIntent["Persist durable toggle intent, exact plan,<br/>confirmation, authorization bundle,<br/>and idempotency keys"]
-    toggleGrantNeeded{"Permission-bearing<br/>Grant transition?"}
-    toggleGrantPrepare["Prepare candidate Grant or<br/>exact retirement intent"]
-    toggleAction{"Enable or disable?"}
-    setEnabled["Reconcile desired enabled"]
-    setDisabled["Reconcile desired installed-disabled"]
-  end
-
-  command -- "Enable / disable" --> togglePlan
-  togglePlan --> togglePolicy
-  togglePolicy -- "deny" --> denied
-  togglePolicy -- "ask" --> toggleConfirm
-  toggleConfirm -- "No" --> denied
-  toggleConfirm -- "Yes" --> toggleIntent
-  togglePolicy -- "allow" --> toggleIntent
-  toggleIntent --> toggleGrantNeeded
-  toggleGrantNeeded -- "Yes" --> toggleGrantPrepare
-  toggleGrantPrepare --> toggleAction
-  toggleGrantNeeded -- "No" --> toggleAction
-  toggleAction -- "Enable" --> setEnabled
-  setEnabled --> observe
-  toggleAction -- "Disable" --> setDisabled
-
-  subgraph remove["7. Disable, uninstall, and retained data"]
-    referenceGate{"New protected workspace reference<br/>not covered by reviewed plan?"}
-    setAbsent["Persist desired absent"]
-    revokeGrant["Persist exact-generation Grant tombstone<br/>when the reviewed plan retires one"]
-    hide["Atomically hide routes and projections<br/>Checkpoint exact Grant cutover when planned<br/>Block new calls"]
-    drain["Drain exact-generation leases<br/>or reach reviewed timeout policy"]
-    removalAction{"Desired state"}
-    stop["Stop eager Tool/MCP/Flow workloads<br/>Keep immutable package and data"]
-    removeRuntime["Stop and remove Runtime units,<br/>Gateway routes, and endpoint bindings"]
-    removeProjection["Remove receipt-owned Skill roots,<br/>command shims, UI/OKF indexes, and bindings"]
-    removePackage["Remove scope receipt and unreferenced<br/>immutable package generations"]
-    retain["Retain plugin data and secret records by default"]
-    removed["Absent / removed"]
-    purge{"Separate explicit user-only purge?"}
-    purgeData["Delete reviewed plugin data and secret records"]
-  end
-
-  plannedAction -- "uninstall" --> referenceGate
-  referenceGate -- "Yes" --> drift
-  referenceGate -- "No" --> setAbsent
-  setAbsent --> hide
-  setDisabled --> hide
-  hide --> drain
-  drain --> revokeGrant
-  revokeGrant --> removalAction
-  removalAction -- "installed-disabled" --> stop
-  stop --> installedDisabled
-  removalAction -- "absent" --> removeRuntime
-  removeRuntime --> removeProjection
-  removeProjection --> removePackage
-  removePackage --> retain
-  retain --> removed
-  removed --> purge
-  purge -- "No" --> completeResult
-  purge -- "Yes, explicitly reviewed" --> purgeData
-  purgeData --> completeResult
-
-  subgraph completion["8. Durable completion and replay"]
-    completeResult["Persist append-only terminal result<br/>Bind operationId, planDigest, timestamps,<br/>typed outcome, and capability before/after"]
-    returnResult["Return operation result<br/>A repeated apply reuses this record"]
-  end
-
-  installedDisabled --> completeResult
-  ready --> completeResult
-  degraded --> completeResult
-  keepPrevious --> completeResult
-  keepPreviousDisabled --> completeResult
-  broken --> completeResult
-  completeResult --> returnResult
-  returnResult --> command
-  idle --> command
-  denied --> command
-
-  subgraph recovery["9. Crash recovery and reconciliation"]
-    restart["Restart finds incomplete operation"]
-    compare["Compare durable intent with package, receipt, grant,<br/>Runtime, Gateway, binding, projection, and lease observations"]
-    recoveryCase{"Last durable evidence"}
-    cleanStage["Delete bounded staging data<br/>Re-plan if necessary"]
-    repairReceipt["Reconstruct or quarantine receipt<br/>from verified immutable package"]
-    repairBinding["Inspect exact Runtime unit<br/>Reconstruct binding without adopting unknown units"]
-    continueRemoval["Continue route drain, stop, removal,<br/>or generation garbage collection"]
-  end
-
-  intent -. "Crash or process restart after durable intent" .-> restart
-  toggleIntent -. "Crash or process restart" .-> restart
-  setEnabled -. "Restart reconciles desired state" .-> restart
-  setDisabled -. "Restart reconciles desired state" .-> restart
-  setAbsent -. "Restart reconciles desired state" .-> restart
-  restart --> compare
-  compare --> recoveryCase
-  recoveryCase -- "staging only" --> cleanStage
-  cleanStage --> command
-  recoveryCase -- "package committed" --> repairReceipt
-  repairReceipt --> observe
-  recoveryCase -- "Runtime applied / binding missing" --> repairBinding
-  repairBinding --> observe
-  recoveryCase -- "routes hidden / old generation leased" --> continueRemoval
-  continueRemoval --> drain
-
-  classDef stable fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20;
-  classDef failure fill:#ffebee,stroke:#c62828,color:#7f0000;
-  classDef durable fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
-  classDef runtime fill:#fff8e1,stroke:#f9a825,color:#5d4037;
-  class ready,degraded,installedDisabled,removed,keepPrevious,keepPreviousDisabled stable;
-  class denied,drift,rejectPlanning,rejectPackage,rejectUse,broken failure;
-  class hostContext,planningTarget,grantProposal,buildPlan,confirmationEvidence,intent,togglePlan,toggleIntent,toggleGrantPrepare,commit,persistCandidateGrant,revokeGrant,publishReady,publishDegraded,setEnabled,setDisabled,setAbsent,completeResult,returnResult,replayResult durable;
-  class providerPreflight,providerCapable,runtimePlan,taskPrepare,serviceApply,mcpHttp,mcpStdio,runTask,callService,runFlow,removeRuntime runtime;
+```text
+host Registry configuration
+  → TUF root/timestamp/snapshot/targets
+  → complete catalog-v3 record in custom.a3s
+  → archive target + length + digest
+  → expanded package + manifest digest
+  → exact package lock
+  → immutable operation plan + confirmation
+  → package receipt + lifecycle journal
+  → Registry cutover + capability evidence
 ```
 
-The graph has nine important invariants:
+Every arrow is verified. No later object may omit or weaken an earlier
+identity. Registry/TUF receipts require both resolved source provenance and the
+complete verified catalog record.
 
-- search and inspection never download a package archive;
-- an executable plan downloads only the small, separately signed planning
-  target before review;
-- provider choice is host input and is rechecked without fallback;
-- a repeated `operationId + planDigest` returns the durable result without
-  starting another child process or side effect;
-- package installation commits a disabled receipt before any capability is
-  published;
-- a required Flow is unpublished until its Tool/MCP/OKF closure is usable, and
-  a required Skill is invisible until its Flow or direct dependency closure is usable;
-- a stored grant alone never publishes a capability;
-- upgrade switches all required N+1 bindings in one capability generation or
-  keeps N active; and
-- disable or uninstall hides new routes before waiting for existing leases.
+## Security principals
 
-### Flow readiness and cutover
-
-A Flow is an executable orchestration surface but owns no ambient authority.
-Its package source is admitted only after bounded UTF-8 and digest validation.
-The typed `a3s-flow` host then preflights the exact engine, runtime adapter,
-source, export, package version, and generation. Tool, MCP, and OKF dependencies
-must already be ready. Only matching host observation may publish the Flow and
-its dependent Skill/UI surfaces.
-
-Disable hides the complete package generation before stopping new Flow starts.
-Uninstall removes Flow host state before removing its dependencies or package
-root. Durable run history follows explicit host retention policy and is not
-silently deleted as package content.
-
-### OKF readiness and cutover
-
-An OKF surface follows the static-content branch but has a distinct A3S
-Knowledge observation. It is not a Runtime Task or Service and it does not gain
-authority from concept text or YAML frontmatter.
-
-M0K-B freezes the machine evidence used by this flow:
-`a3s.use.okf-projection-receipt.v2` records the full-scope staged candidate,
-`a3s.use.okf-knowledge-observation.v2` records full-scope
-staged/promoted/failed/removed state and last-good selection, and
-`a3s.use.okf-capability-projection.v2` contains only exact promoted evidence.
-M0K-C-A persists their combined `a3s.use.okf-knowledge-binding.v2` record and
-reconstructs selection only from retained exact promoted evidence. The
-standalone M0K-C-B host supplies one bundled SQLite/FTS5 database per complete
-User/Workspace scope. The package lifecycle performs
-stage-store-promote-store, reuses retained promoted evidence after restart,
-hides without deleting on disable, and delegates only the exact receipt to
-Knowledge on uninstall. Managed Code/Web Workspace/session carriers remain
-pending.
-
-Before publication, the candidate exact generation must provide evidence for:
-
-1. its manifest-local surface ID, Open Knowledge Format version, package and
-   expanded-bundle digests, file/concept counts, and configured limits;
-2. valid UTF-8 Markdown, properly delimited frontmatter, one non-empty scalar
-   `type` per non-reserved concept, canonical in-root paths, reserved index/log
-   handling, bounded standard Markdown links, and preserved extension fields;
-3. an idempotent A3S Knowledge staging result bound to package, scope, surface,
-   generation, bundle digest, and index schema/build identity;
-4. atomic promotion of that exact staged index plus a non-secret observation
-   digest; and
-5. any same-generation consumer dependencies required by Skill or other host
-   projections.
-
-The capability snapshot selects the new OKF generation only after promotion.
-If conformance, staging, or indexing fails, the candidate is `broken` or
-`degraded` according to required closure and the last good searchable
-generation remains selected. Crash replay uses the parent operation ID and OKF
-surface idempotency key; it must neither duplicate an index nor infer success
-from a staging directory.
-
-The binding and SQLite stores separate `user` and `workspace` before the
-SHA-256 scope-ID directory. The binding layer then uses validated publisher/
-package and OKF surface segments, fixed-width generation filenames, bounded
-regular JSON files, atomic replacement, and a cross-process lock. Observation
-updates are monotonic. Failed or staged N+1 keeps exact promoted N as
-last-good; promoted N+1 switches the published capability. An in-flight
-session holding exact retained N remains queryable during drain, and candidate
-rollback can reuse N. Only receipt-owned removal invalidates that exact
-projection. The stores retain at most 32 generations and require explicit
-cleanup instead of deleting live evidence automatically.
-
-Search requests bind the complete scope and an explicit set of reviewed
-capability/session projections. Results cite package, surface, generation,
-projection receipt, index, concept path, and source digest; they do not claim
-line-level citation. Database initialization, stage, promotion, selection, and
-removal are transactional. Because the database format is still pre-release,
-only the current `PRAGMA user_version` is accepted; unknown versions are
-rejected without migration or rewrite.
-
-Disable hides the OKF capability from new sessions without deleting personal
-knowledge. Uninstall removes only the package receipt-owned projection and
-index generation after references are checked. Raw compiler sources, personal
-notes, retained plugin data, and another package's OKF index are outside that
-receipt and remain untouched.
-
-## Lifecycle and Consistency
-
-Package storage, Runtime providers, Gateway, and Code/Web cannot participate in
-one ACID transaction. Lifecycle therefore uses a durable, idempotent saga with
-an operation record and compensating actions.
-
-The durability boundary has three non-overlapping layers:
-
-- the shared Plugin Manager stores immutable reviewed plans, apply intent, and
-  terminal results keyed by `operationId`; it owns expiry, replay, adapter
-  equivalence, and capability generation/revision evidence;
-- the umbrella component lifecycle owns cross-component download and component
-  mutation checkpoints; and
-- the A3S Use package journal owns the canonical package/surface sequence and
-  non-secret checkpoint evidence, while the package, grant, Runtime, Gateway,
-  Skill/UI, and Knowledge stores retain detailed resource receipts.
-
-For dependency-bearing operations, the reviewed package lock is the immutable
-package-graph sequence. Each changed package keeps its existing surface journal;
-the graph coordinator invokes those journals in topological order and owns the
-single closure publication boundary. Retained packages have no new lifecycle
-unit or side effect.
-
-The manager record never duplicates per-surface checkpoints. After a crash, it
-re-enters the exact umbrella apply command, which resumes the matching A3S Use
-intent. That intent validates every completed receipt and executes only its
-next deterministic checkpoint. This separation keeps one package journal as
-the sequencing source of truth while each typed host remains the ownership
-source of truth for its resources.
-
-The implemented package checkpoint schedules are:
-
-| Action | Canonical order |
+| Principal | Authority |
 | --- | --- |
-| Install | commit installed-disabled package → prepare surfaces in dependency order → publish one capability generation |
-| Upgrade candidate | retain exact N → commit N+1 disabled → prepare candidate surfaces → publish the changed closure once → retire replaced N in reverse order; a pre-cutover failure automatically removes candidates and restores N, with durable rollback/retirement replay |
-| Enable | persist reviewed plan-v4 authorization → prepare candidate Grant when required → prepare surfaces in dependency order → publish one capability generation with exact cutover evidence → commit and complete Grant operation |
-| Disable | persist reviewed plan-v4 authorization and Grant retirement intent → hide package capability with exact cutover evidence → commit Grant cutover → drain accepted calls → revoke the exact prior Grant → stop surfaces in reverse dependency order |
-| Uninstall | hide package capability → drain accepted calls → remove receipt-owned surfaces in reverse dependency order → remove package |
+| User/host policy | Select sources, approve plan, grant bounded permissions |
+| Plugin Manager | Produce immutable plan and apply only reviewed evidence |
+| A3S Use | Verify/install packages and coordinate exact lifecycle |
+| Runtime/Gateway/Flow/Knowledge host | Execute or project only assigned, authorized generation |
+| Package process/content | Implement its declared native protocol; no policy authority |
+| UI/Skill | Static content with only explicit host bindings |
 
-Tool, MCP, OKF, Flow, Skill, and UI are contributions inside this sequence. No
-surface receives an independent install or uninstall record.
+A package cannot choose its trust root, source, provider, secret, workspace
+scope, or Grant.
 
-The package-graph schedules are:
-
-| Action | Canonical order |
-| --- | --- |
-| Install | revalidate all locked metadata → download dependencies forward → commit/prepare changed packages forward → verify retained nodes → publish changed closure once |
-| Upgrade | negotiate host capabilities v3 → revalidate plan-v3 prior/candidate locks → classify Add/Replace/Remove/Retain → download and prepare only changed N+1 forward → publish candidates and removed routes once → on pre-cutover failure restore N, otherwise hide/drain/remove replaced and unreferenced N in reverse prior-lock order |
-| Uninstall | hide/drain each changed package in reverse lock order → remove dependent before dependency → preserve every Retain node |
-
-Every retained node must still match the lock's version, catalog, package and
-manifest digests, Registry/TUF provenance, host compatibility, enabled receipt,
-and current published snapshot. Receipt state alone is not visibility evidence.
-The immutable Registry snapshot is the graph commit point, so a crash after
-writing only some enabled receipts leaves the new graph invisible until exact
-replay publishes the complete closure. Before a removed selected receipt leaves
-the primary store, it is copied to its content-bound retained-generation path;
-the cutover then removes its route atomically, and reverse retirement can hide,
-drain, and delete that exact generation without allowing a later snapshot to
-reintroduce it.
-
-The package store persists lifecycle-managed state as the current receipt
-schema. The
-receipt and derived route binding carry the exact positive lifecycle
-generation; the deterministic immutable root also binds that generation and
-package digest. Commit is installed-disabled, publish and hide replace one
-complete route snapshot, accepted calls hold shared leases, and drain obtains
-the exclusive lease before exact removal. Superseded pre-release receipt and
-toggle paths are removed rather than migrated; package SemVer and host/target
-requirements remain independent runtime correctness checks.
-
-### Install and enable
-
-1. Resolve verified metadata and SemVer constraints into an exact package lock.
-2. Snapshot active grant evidence, derive the sorted root/dependency change
-   set, and bind both digests into the canonical expiring plan.
-3. Re-resolve on apply, persist an operation intent, and prepare every planned
-   candidate Grant or retirement intent before package/Runtime side effects.
-4. Revalidate every locked Registry/TUF/catalog input before any payload
-   download, then download and verify dependencies before dependents.
-5. Atomically commit each changed immutable package and a disabled receipt in
-   dependency order; exact published `Retain` generations are reused.
-6. Record desired `enabled` state and reconcile Tool, MCP, OKF, Flow, Skill, and UI
-   bindings in dependency order.
-7. Wait for mandatory Services and MCP probes; prepare lazy Tasks.
-8. Atomically publish all changed packages in one capability generation and
-   checkpoint exact Grant cutover evidence when required.
-9. Mark the operation complete and garbage-collect safe staging data.
-
-If activation fails, the package remains installed but disabled or broken with
-typed diagnostics. No partial command shim, endpoint, MCP route, OKF generation,
-Flow, Skill, or UI is advertised as ready.
-
-Enabling an already installed package does not repeat resolution or package
-commit. It builds a plan-v4 `Retain` transition bound to the exact receipt,
-manifest, scope, package-state revision, and capability generation. When the
-package is permission-bearing, the coordinator persists its reviewed
-authorization bundle and candidate Grant before preparing surfaces, then
-requires atomic Registry publication evidence before Grant cutover. Missing
-confirmation returns `use.plugin.package_confirmation_required` with the
-immutable plan and performs no lifecycle mutation.
-
-### Upgrade
-
-Generation N remains active while N+1 is staged and reconciled. Services use a
-health-gated blue/green binding. After N+1 is fully ready, one atomic snapshot
-switch routes new work to N+1. Generation N drains, stops, and is collected
-only after all leases release. N and N+1 grants use separate digest-keyed
-records during this interval. A failed N+1 leaves N active and revokes the
-candidate Grant unless the durable operation remains resumable. The Grant-aware
-graph path persists N+1 authorization before package preparation, checkpoints
-the exact Registry snapshot transition, drains calls admitted by N, and only
-then revokes N. A pre-cutover publication failure restores both package and
-Grant candidates. The parent package manager carries the complete User or
-Workspace plan scope through every checkpoint; replay rejects a caller that
-keeps the scope ID but changes its kind.
-
-A Workspace-scoped operation always records one exact activation impact. When
-the selected package graph has no permission ceilings, both Grant digests stay
-absent and only the action-derived enablement transition changes. This keeps
-the Workspace scope structurally bound without creating a fictitious Grant or
-entering the Grant sub-saga.
-
-An added permission, secret request, provider requirement, external
-dependency, command alias, or public interface is plan drift and requires a
-new grant or confirmation.
-
-### Disable and uninstall
-
-Disable first binds an immutable plan-v4 retained-artifact transition and any
-exact prior Grant retirement. It atomically publishes a snapshot without the
-plugin, commits Grant cutover evidence, drains invocations, revokes the exact
-prior Grant, and only then stops eager workloads. The immutable package and
-retained data remain.
-
-Uninstall:
-
-1. records desired `absent`;
-2. persists the Grant operation intent and exact prior retirement evidence;
-3. atomically removes new-call routes and session projections;
-4. checkpoints the exact capability cutover;
-5. drains exact-generation leases held by accepted prior calls;
-6. persists exact-generation Grant tombstones;
-7. stops and removes Runtime units, Gateway bindings, receipt-owned shims,
-   projections, receipts, and unreferenced package generations; and
-8. retains plugin data and secrets unless a separate purge is authorized.
-
-For a cascade graph uninstall, these steps run in reverse topological order.
-A package cannot be removed before its installed dependents, and shared
-dependencies selected as `Retain` remain installed and published.
-
-Global uninstall is rejected while another protected workspace grant depends
-on the release unless the reviewed plan includes that impact.
-
-### Crash recovery
-
-On startup, the reconciler scans incomplete operations and compares durable
-intent with package, receipt, grant, Runtime, Gateway, and projection
-observations.
-
-| Last durable point | Recovery |
-| --- | --- |
-| Download only | Delete bounded staging data and retry |
-| Package committed, receipt absent | Reconstruct or quarantine from verified manifest |
-| Disabled receipt committed | Resume reconciliation without publishing |
-| Candidate grant committed, bindings absent | Revalidate the exact plan and resume or tombstone the candidate |
-| Enable Grant prepared, Registry cutover absent | Revalidate plan-v4 authorization and exact receipt, then retry atomic publication without minting another Grant |
-| Disable Registry/Grant cutover committed, drain incomplete | Keep the prior Grant active, resume exact-generation drain, then revoke and stop |
-| Enablement terminal result present | Replay the stored result without reauthorization or another capability generation |
-| Runtime unit applied, binding absent | Inspect exact unit and reconstruct binding |
-| Binding ready, snapshot absent | Revalidate grants and publish atomically |
-| Some graph receipts enabled, closure snapshot absent | Keep the partial receipts invisible and replay the exact lock-bound batch publication |
-| Closure published, package journals incomplete | Re-publish the exact idempotent lock batch, complete each journal, then commit graph metadata |
-| Root receipt and installed-root graph removed, uninstall pending | Recover the exact lock, manifests, generations, and admission from pending evidence and continue reverse removal |
-| Desired absent, cutover committed, Grant still active | Drain accepted prior calls, persist the planned exact-generation tombstone, then continue cleanup |
-| Snapshot removed, workload running | Continue drain and stop |
-| Old generation still referenced | Preserve it and retry garbage collection |
-
-Every external mutation carries an idempotency key derived from operation,
-surface, and generation. Recovery never guesses that an unknown provider unit
-belongs to the plugin.
-
-Registry visibility and the Grant journal do not share an ACID transaction.
-The Registry closes that crash window by embedding a bounded
-`a3s.use.registry-cutover.v1` record in the same atomic snapshot write as
-publication or hide. The lifecycle checkpoint idempotency key binds the request
-digest, exact generation transition, and capability snapshot digest. Recovery
-therefore replays the original cutover evidence after an unrelated mutation
-instead of inferring it from the latest snapshot. Reusing a key for another
-mutation fails closed, and the 128-record bound fails before receipt or
-visibility mutation. Once the package or Grant journal durably owns the
-evidence, idempotent acknowledgement removes only pending metadata without
-generation or capability-digest inflation.
-
-The A3S Use journal stores bounded canonical JSON under
-`operations/plugins/<user|workspace>/<sha256(scope.id)>/` and validated package
-segments. The intent and record retain the complete scope; same-ID scope-kind
-substitution is a distinct path and an ownership mismatch. Writes use a
-cross-process lock, atomic replacement, file and parent sync, symlink rejection,
-strict schemas, and monotonic
-checkpoint times. Replaying a completed checkpoint with different outcome or
-evidence is a conflict. Runtime preparation and cleanup evidence is derived
-from stable reviewed plan identity rather than volatile observation timestamps,
-so same-key concurrent replay converges.
-
-## Security Architecture
-
-The integrity chain is:
+## Operation state machine
 
 ```text
-trusted registry root
-  -> signed catalog target metadata
-  -> verified catalog-v3 planning target name, length, and digest
-  -> typed executable planning bundle
-  -> package archive digest
-  -> manifest and surface content digests
-  -> release descriptor digest
-  -> signed permission ceiling
-  -> active workspace grant snapshot
-  -> canonical workspace grant proposal
-  -> host-selected provider/build/capability evidence
-  -> Runtime template semantics digest
-  -> sorted multi-package grant change set
-  -> immutable operation plan digest
-  -> user confirmation digest for ask decisions
-  -> finalized workspace grant digest
-  -> exact-generation workspace grant receipt
-  -> executable or image artifact digest
-  -> binding receipt
-  -> capability snapshot generation
+planned ──confirm──▶ applying ──all checkpoints──▶ completed
+                       │
+                       ├── pre-cutover failure ──▶ rolling-back ──▶ rolled-back
+                       │
+                       └── process crash ──▶ exact replay of applying
 ```
 
-Breaking any link fails closed.
+`completed` and `rolled-back` are terminal. A rolled-back operation ID cannot
+be reused with a new plan. A completed operation returns its stored result.
 
-### Permission model
+Operation IDs, scope, actor, policy authority, plan digest, lock digests,
+confirmation, and authorization are immutable once apply begins.
 
-Permissions are typed ceilings evaluated per package digest, surface,
-workspace, and actor:
+## Package install
 
-- filesystem read/write roots;
-- network egress domains and private inbound Service exposure;
-- child-process and native execution;
-- secret names, never secret values;
-- CPU, memory, process, storage, execution-time, and output limits;
-- UI backend binding and method/path ceilings where configured; and
-- user-only destructive operations.
+1. Refresh/verify the host-selected Registry set.
+2. Resolve the bounded SemVer dependency closure.
+3. Freeze the exact package lock and plan-v4 envelope.
+4. Obtain policy decision and exact confirmation.
+5. Revalidate catalog, lock, host/provider capability, scope, and state.
+6. Download only selected archive targets and verify length/digests.
+7. Validate package root, ACL manifest, required `README.md`, and surface graph.
+8. Commit immutable package generations as installed-disabled.
+9. Persist candidate Workspace Grants.
+10. Prepare dependencies before dependents across typed surface hosts.
+11. Publish the complete changed closure through one durable Registry cutover.
+12. Record package and Grant cutover evidence, then retire the Registry replay
+    record.
 
-Skill instructions, OKF concepts, Tool output, MCP descriptions, OpenAPI text,
-UI messages, and catalog descriptions are untrusted content. They cannot
-create a grant, change provider selection, add a dependency, or authorize
-lifecycle mutation. OKF Attested Computation metadata cannot implicitly invoke
-an executor or attester.
+No required surface is visible before step 11. A failure before cutover removes
+unpublished candidates and restores the prior Registry snapshot.
 
-Secrets are delivered by reference at invocation or Service start. They are
-excluded from manifests, descriptors, plans, receipts, binding snapshots,
-logs, diagnostics, and UI state.
+## Package upgrade
 
-The initial grant contract is
-`a3s.use.plugin-workspace-grant.v1`. It binds the workspace and immutable
-package generation to both the signed ceiling and the canonical resolved
-permission digest, plus policy/actor/confirmation evidence and optional
-expiry. Subset evaluation is structural: filesystem and UI paths may only
-narrow, network hosts stay exact, ports/methods/secrets may only be removed,
-resource values may only decrease, and boolean authorities cannot change from
-false to true. Secret-bearing grants require an explicit user confirmation;
-agent grants containing secrets are invalid.
-
-Before persistence, `a3s.use.plugin-workspace-grant-proposal.v1` binds the
-operation, exact package generation, resolved permission subset, policy
-decision, and review window without claiming confirmation. An `allow` proposal
-finalizes at trusted apply time. An `ask` proposal requires a
-`a3s.use.plugin-grant-confirmation.v1` record created at the user boundary that
-binds the operation ID, immutable plan digest, proposal digest, user actor, and
-confirmation time. Finalization rejects plan/proposal substitution, future
-evidence, and expired review windows. This two-phase ordering avoids a circular
-digest between a pre-confirmation plan and a final grant containing
-confirmation evidence.
-
-Before-state uses
-`a3s.use.plugin-workspace-grant-snapshot.v1`: sorted active evidence binds
-package ID/digest, receipt revision, grant digest, scope, and global state
-revision. The corresponding
-`a3s.use.plugin-workspace-grant-changes.v1` record contains sorted per-package
-before evidence and/or after proposals. Its validator derives the exact package
-keys and sides required by the plan's Add, Replace, and Remove transitions,
-including dependencies. `grantBeforeDigest` binds the snapshot and
-`grantAfterDigest` binds the change set.
-
-Every `ask` apply also carries
-`a3s.use.plugin-operation-confirmation.v1`, including revoke-only uninstall
-where no new proposal exists. Proposal confirmations must share its plan and
-confirmation time. Resolution emits candidate grants for preparation and
-exact-current evidence for delayed retirement; persistence ordering remains a
-durable saga checkpoint around capability cutover.
-
-The before snapshot is read under the durable grant-store lock. Traversal is
-bounded and validates the hashed scope root plus every publisher, package, and
-generation path. Both receipts and revocation tombstones participate in stale
-state-revision detection. Only granted receipts become active evidence, sorted
-uniquely by package ID. If both N and N+1 remain granted after an interrupted
-operation, planning stops with an unstable-snapshot error until the saga
-recovers; it never guesses which generation capability publication selected.
-Abandoned atomic-write temporary files are ignored because they were never
-activated.
-
-The grant sub-saga persists
-`a3s.use.plugin-workspace-grant-operation.v1` before its first side effect. Its
-immutable intent contains the exact resolved operation identity, planned and
-observed before state, candidate receipts and signed ceilings, prior receipts,
-and next state/capability generations. Phase replacements and grant records use
-the same store lock and atomic-file discipline:
-
-1. `intent-recorded` exists before candidate writes;
-2. `preparing` is durable while candidate writes replay;
-3. `prepared` guarantees every candidate record is exact and active;
-4. `cutover-committed` contains
-   `a3s.use.plugin-workspace-grant-cutover.v1` generation and snapshot evidence;
-5. `retiring` replays exact old-generation tombstones; and
-6. `completed` means all grant-side effects converged.
-
-Before cutover, failure may branch from the first three phases to
-`rolling-back` and then `rolled-back`. The rollback record binds
-`a3s.use.plugin-workspace-grant-rollback.v1` evidence and restores the exact
-prior Grant/tombstone at every candidate path, or removes only the candidate
-when that path did not previously exist. Rollback after cutover is rejected.
-
-Cutover evidence cannot be from the future or bind another capability
-generation. Candidate drift blocks cutover. Retirement without cutover is
-rejected. A same-generation permission replacement is verified as the new
-receipt and is not subsequently tombstoned. The Grant-aware graph coordinator
-places candidate persistence before package/Runtime readiness, exact Registry
-publication before the cutover checkpoint, accepted-call drain before Grant
-retirement, and provider/package cleanup afterward. Standalone and umbrella
-Plugin Managers derive the canonical inputs after policy and confirmation and
-select this path when Grants are required; the fenced managed-host path reuses
-the same planner and reviewed provider for graph operations. The Use
-enablement coordinator now applies the same ordering to plan-v4 `Retain`
-transitions when authorization is injected. Managed-host enablement request v1
-remains permission-free compatibility-only; capability v4 carries a separate
-enablement plan request and reuses digest-only apply so fenced hosts and local
-Code CLI/Web can expose permission-bearing toggle review without changing v1.
-
-Durable authorization uses two storage schemas:
-`a3s.use.plugin-workspace-grant-receipt.v1` for a revisioned active decision
-and `a3s.use.plugin-workspace-grant-revocation.v1` for a tombstone that binds
-the exact prior revision and grant digest. Records live at
-`<state-root>/grants/<scope-sha256>/<publisher>/<package>/<package-sha256>.json`.
-They are bounded, atomically replaced under a cross-process lock, protected by
-real-directory and regular-file checks, and never deleted during ordinary
-revocation.
-
-Each immutable package digest has an independent record. N therefore remains
-authorized while an N+1 candidate is prepared, but only the generation in the
-atomic capability snapshot is visible to new calls. After snapshot cutover and
-lease drain, the N record transitions to a tombstone. A failed or abandoned
-candidate is likewise revoked unless its durable operation remains resumable.
-
-```mermaid
-stateDiagram-v2
-  [*] --> Missing
-  Missing --> Granted: validated receipt, revision > 0
-  Granted --> Granted: higher revision and non-regressing grant time
-  Granted --> Revoked: exact prior receipt and higher revision
-  Revoked --> Granted: higher revision and grant time >= revocation time
-  Granted --> Granted: identical write is idempotent
-  Revoked --> Revoked: identical write is idempotent
-  Granted --> Rejected: stale, conflicting, expired, or ceiling mismatch
-  Revoked --> Rejected: stale or pre-revocation regrant
-```
-
-`observe` returns durable evidence only. Invocation and reconciliation must use
-the active resolver so the exact scope, package ID and digest, current signed
-ceiling, permission subset, and clock are checked again. Missing and revoked
-records return no authority; malformed or moved records fail closed.
-
-### Agent authority
-
-The management MCP exposes bounded search, inspect, status, plan, and apply
-operations over the same Plugin Manager used by CLI and Web. Default mutation
-policy is `ask`. Trust-root changes, unsigned/local install, secret grants, and
-data purge remain user-only.
-
-The M4 implementation stops at bounded search, inspect, installed-state reads,
-and immutable install/upgrade/uninstall plan creation. Apply and toggle tools
-are not published until M6; the Use worker additionally denies those names if
-they are ever attached accidentally. The only currently supported management
-scope is `user/current`, and callers cannot provide a registry URL, local path,
-executable, endpoint, secret reference, or selective surface set.
-
-Using a Tool is separate from managing a plugin. The agent can invoke only a
-Tool binding already projected into its authorized session. It cannot supply a
-provider, executable path, endpoint, package root, or secret reference.
-
-## Storage and Projection
-
-The target logical layout is:
+Upgrade binds both exact prior and candidate locks. Each union node is
+classified as Add, Replace, Remove, or Retain.
 
 ```text
-data/use/
-  plugins/                 immutable canonical generations
-  state/
-    receipts/              installed ownership and desired state
-    operations/            durable lifecycle saga records
-    bindings/              non-secret Runtime and host bindings
-    grants/                workspace permission decisions
-  projections/
-    <host>/<scope>/         generated Skills, command shims, UI/OKF indexes
-  plugin-data/             retained mutable plugin data
-  cache/                   evictable metadata and artifact cache
-  staging/                 bounded incomplete operations
+download Add/Replace only
+→ prepare Add/Replace dependency-forward
+→ publish candidates and remove obsolete routes atomically
+→ mark prior receipts hidden after route absence is proven
+→ drain calls admitted by the prior snapshot
+→ revoke exact prior Grants
+→ remove Replace/Remove generations reverse-prior-lock
 ```
 
-Package payload is user-wide and deduplicated by digest. Grants, enablement,
-bindings, and projections are scope-specific. Mutable plugin data is never
-stored under an immutable package generation.
+Retain is accepted only when installed receipt, catalog evidence, source
+provenance, selected surfaces, and package generation match the lock exactly.
 
-Runtime units and endpoint bindings are workspace-scoped in the initial
-contract, even when two workspaces use the same package bytes. Cross-workspace
-process or Service sharing would combine permission and data boundaries and is
-therefore a separate future design, not an implicit optimization.
+After cutover, rollback to an old mixed graph is forbidden. Recovery finishes
+retirement. Before cutover, package and Grant candidates roll back together.
 
-The workspace grant store is rooted at
-`<state-root>/grants/<scope-sha256>/<publisher>/<package>/`. The final filename
-is the lowercase package SHA-256, so simultaneous N and N+1 records cannot
-overwrite one another. Within an exact generation, only a higher revision with
-a non-regressing authorization time may replace current state. Revocation
-requires the exact current receipt and persists a tombstone; a moved,
-conflicting, stale, malformed, oversized, symlinked, or non-regular record
-fails closed.
+## Package uninstall
 
-The Runtime binding store is rooted at
-`<state-root>/bindings/runtime/<user|workspace>/<scope-sha256>/<publisher>/<package>/<surface>/`
-with one fixed-width generation receipt per file. It never uses a
-caller-provided scope, package, surface, or generation as an unchecked path.
-The cross-process-locked store retains at most 32 exact generations, validates
-every directory entry, fails closed on moved, malformed, oversized, symlinked,
-or non-regular receipts, and removes only the exact receipt presented by its
-owner. N and N+1 therefore coexist during preparation. Within one Service
-generation, only a newer observation with unchanged immutable binding evidence
-may refresh the receipt.
+Uninstall begins from the installed graph record and exact lock. It refuses to
+remove a package still referenced by another installed graph.
 
-Live observation also binds the Service receipt to the Runtime process start
-time. A restart within the same unit generation marks the old endpoint receipt
-stale, forcing Gateway rebinding and a new MCP initialize probe. During
-uninstall, the saga revokes the Gateway route first, calls the explicit
-provider to stop and remove the exact Runtime unit/generation, then removes the
-exact-current binding receipt. Provider build drift blocks new apply but does
-not redirect or silently prevent cleanup of an already-owned unit.
+1. Plan the exact removal closure in reverse dependency order.
+2. Atomically remove its routes from the Registry snapshot.
+3. Record package-keyed hide evidence and Grant cutover.
+4. Drain route leases for every removed generation.
+5. Revoke exact prior Grants.
+6. Stop and remove surfaces in reverse dependency order.
+7. Delete only receipt-owned immutable roots and records.
+8. Remove the installed graph record after all package removals succeed.
 
-Runtime-to-reconciler observation is also scope- and generation-explicit. The
-observer accepts the workspace identity, canonical package digest, and exact
-package generation, reads only matching receipt-owned surfaces, and resolves
-only their recorded providers. Release-backed Tool Tasks, Tool Services, and
-Streamable HTTP MCP are merged with disjoint compatibility-host and UI
-observations. An absent receipt stays pending; a stale binding cannot publish
-its dependency closure. A process-wide caller without a workspace identity
-and exact generation must not choose a `current` or default binding.
+The engine never scans and deletes “similar” paths. Missing exact graph evidence
+is an error, not permission to infer an uninstall set.
 
-Pre-release storage is not migrated in place. An unsupported schema is rejected
-without inferred defaults or rewriting; users recreate unpublished local state
-with the current build. Once the first stable storage contract ships, later
-changes require an explicit version and migration decision.
+## Enable and disable
 
-## Public Application Contracts
+Enablement changes desired visibility without changing package bytes or the
+dependency lock. It uses a separate monotonic state generation.
 
-All adapters call one application service:
+### Planning
+
+The request binds package ID, complete scope, desired boolean, expected state
+generation, and operation ID. Planning returns:
+
+- `Planned` with an exact plan-v4 retained-artifact transition; or
+- terminal `NoChange` without a mutation plan.
+
+### Enable apply
 
 ```text
-search(query, filters, page)
-inspect(plugin_id, version?)
-list_installed(scope)
-status(plugin_id, scope)
-plan_install | plan_upgrade | plan_uninstall
-apply(operation_id, plan_digest, authority_context)
-enable | disable
-watch(after_revision)
+verify exact installed artifact and receipt
+→ persist candidate Grant if required
+→ prepare surfaces dependency-forward
+→ publish exact package generation through durable cutover
+→ commit Grant cutover
+→ store terminal result
 ```
 
-Tool execution is a separate data-plane contract:
+### Disable apply
 
 ```text
-resolve_binding(plugin_id, tool_id, scope, generation?)
-invoke_task(binding, argv, input_reference?)
-resolve_service(binding)
+verify exact installed artifact and receipt
+→ hide exact package generation through durable cutover
+→ commit Grant cutover
+→ drain calls admitted by prior generation
+→ revoke prior Grant
+→ stop surfaces reverse-order
+→ store terminal result
 ```
 
-The implementation accepts only installed binding IDs. This contract is not
-published as a general plugin action RPC and does not replace native CLI or
-HTTP semantics.
+Manager clients cannot call direct enable/disable mutation tools. They plan and
+then call `plugin_apply_plan` with the reviewed operation ID and plan digest.
+
+## Atomic cutover rules
+
+Visibility mutation is owned by cutover-aware host methods. Each returns:
+
+- package-keyed lifecycle evidence;
+- Registry generation before and after; and
+- exact immutable snapshot digest.
+
+Host traits do not contain a fallback publisher. A host unable to prove the
+cutover cannot implement the current trait.
+
+The Registry persists bounded replay records until both package and Grant
+journals own the evidence. Reusing an idempotency key with a different request
+fails before mutation.
+
+Prior-generation receipt retirement is separate from visibility mutation. It
+requires the exact prior route to be absent. If the route is still present,
+retirement fails before changing the receipt.
+
+## Workspace Grants
+
+The signed catalog contains the maximum permission ceiling. Policy can grant a
+subset only. Grant identity binds:
+
+- complete User/Workspace scope;
+- package and selected surfaces;
+- immutable package generation;
+- operation and plan;
+- permission set and ceiling digest;
+- policy authority/revision; and
+- expiry/confirmation evidence.
+
+Planning snapshots current Grants and emits canonical changes and resolutions.
+Apply recomputes them. Scope-kind substitution, stale revision, altered
+confirmation, changed ceiling, or provider drift fails before side effects.
+
+Two active granted generations for the same package make the scope unstable and
+block planning until the owning operation recovers.
+
+## Provider security
+
+### Runtime and Gateway
+
+Tool and MCP provider selection is host-owned. Planning verifies that a
+compatible provider exists before archive download. Final apply binds the same
+provider ID, build, capabilities, target, interface, and activation semantics.
+
+Required provider failure stays unpublished. No implicit native process or
+alternate provider is selected.
+
+### A3S Flow
+
+The host must inject the declared `a3s-flow` adapter. Exact source/export,
+package generation, dependency edges, and preflight evidence are bound. A
+`flow.json` document cannot authorize or publish a Flow independently.
+
+### Knowledge
+
+OKF promotion is atomic and scope-isolated. Query authorization requires an
+exact current or leased projection. Search results cite package, surface,
+generation, index, concept path, and source digest. Removed projections become
+invalid immediately after receipt-owned retirement.
+
+### UI and Skill
+
+Static content is integrity-bound and host-rendered. UI requires sandbox,
+origin, CSP, navigation, and backend-binding policy from the embedding host.
+Neither UI nor Skill receives ambient filesystem, network, process, or secret
+authority.
+
+## Filesystem and archive safety
+
+The package and state stores enforce:
+
+- canonical relative paths;
+- no parent traversal or absolute paths;
+- no symlink/reparse-point traversal;
+- no hard-link or duplicate normalized archive entry ambiguity;
+- bounded file count, per-file bytes, and expanded bytes;
+- immutable content-addressed generation roots;
+- package-owned selected and retained receipt paths;
+- exclusive operation/Registry locks; and
+- atomic file replacement with directory synchronization where available.
+
+Temporary files are created inside validated owned directories. Tests must not
+leave roots, locks, sockets, or provider processes behind.
+
+## TUF and Registry failure rules
+
+Fail closed on:
+
+- expired or rollbacked metadata;
+- root, timestamp, snapshot, targets, length, or digest mismatch;
+- incomplete or malformed `custom.a3s` catalog data;
+- catalog/archive/manifest/package disagreement;
+- same package in multiple enabled sources;
+- changed source identity for an installed receipt; and
+- missing verified catalog evidence in a Registry/TUF receipt.
+
+Cached reads are allowed only after current trusted metadata verifies. Registry
+replacement changes future source selection, not historical receipt evidence.
+
+## Crash recovery
+
+Recovery loads the exact stored request, plan, confirmation, authorization,
+locks, lifecycle intents, Grant operation, and cutover record. It resumes the
+first incomplete checkpoint with the same idempotency key.
+
+`replayed = false` means an interrupted operation resumed work. `replayed =
+true` is reserved for returning a previously completed terminal result.
+
+Recovery rejects:
+
+- changed plan/lock/catalog/receipt/provider/policy evidence;
+- missing required package or Grant journal;
+- conflicting operation ownership;
+- cutover key reused for another request;
+- unknown schema or unknown fields; and
+- deleted graph evidence needed to determine the closure.
+
+The engine does not reconstruct missing authority or guess a cleanup graph.
+
+## Storage schemas
+
+Current disk schemas are listed in [plugin-contracts.md](plugin-contracts.md).
+All records are bounded and canonical. Unknown preview versions fail closed.
+
+The SQLite Knowledge backend accepts only its current `user_version`. It creates
+new state atomically and never migrates an unknown pre-release database.
 
 ## Observability
 
-Every lifecycle operation has an operation ID, actor, scope, plan digest,
-package digest, provider evidence, start/end time, and typed outcome. Events
-follow the repository convention:
+Diagnostics should expose non-secret evidence sufficient to identify:
 
-```text
-use.plugin.install.planned
-use.plugin.install.completed
-use.plugin.surface.reconciling
-use.plugin.surface.ready
-use.plugin.surface.failed
-use.plugin.capability.published
-use.plugin.uninstall.completed
-```
+- operation/action/scope and plan digest;
+- Registry/source and TUF role versions;
+- package and surface generation;
+- lifecycle checkpoint and retry status;
+- provider selection and readiness;
+- Registry generation/snapshot digest;
+- Grant cutover and drain state; and
+- actionable cleanup/reinstall instructions for unsupported state.
 
-Status separates desired state, aggregate observed state, each surface state,
-last transition, retryability, and remediation. Logs are fetched through the
-owning Runtime provider and are bounded and redacted.
+Logs and JSON errors must not echo secrets, full untrusted descriptor values, or
+arbitrary package content.
+
+## Security acceptance tests
+
+Required gates include:
+
+- current-schema canonical digest round trips;
+- superseded-schema rejection;
+- catalog/manifest/receipt provenance mismatch;
+- dependency cycle, ambiguity, and search-bound failures;
+- plan, confirmation, policy, scope, Grant, provider, and generation drift;
+- path/link/archive attacks on Unix and Windows;
+- interruption at every package/Grant/cutover/drain/removal checkpoint;
+- mixed-generation and stale-route prevention;
+- exact completed-result replay; and
+- complete real-process lifecycle on each supported platform.
+
+The final cross-platform and operational gates remain incomplete; therefore the
+product remains a development preview.

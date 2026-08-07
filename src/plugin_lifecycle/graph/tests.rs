@@ -90,14 +90,6 @@ impl PluginPackageLifecycleHost for RecordingHost {
 
 #[async_trait]
 impl PluginCapabilityLifecycleHost for RecordingHost {
-    async fn publish_capability(
-        &self,
-        intent: &PluginLifecycleIntent,
-        key: &str,
-    ) -> UseResult<PluginLifecycleEvidence> {
-        self.evidence("single-publish", intent, key).await
-    }
-
     async fn publish_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
@@ -118,7 +110,27 @@ impl PluginCapabilityLifecycleHost for RecordingHost {
         ))
     }
 
-    async fn hide_capability(
+    async fn hide_capability_with_cutover(
+        &self,
+        intent: &PluginLifecycleIntent,
+        key: &str,
+    ) -> UseResult<PluginCapabilityPublication> {
+        let evidence = self.evidence("hide", intent, key).await?;
+        let generation_before = self
+            .cutover_generation_before
+            .load(Ordering::Relaxed)
+            .max(1);
+        Ok(PluginCapabilityPublication::new(
+            evidence,
+            PluginCapabilityCutoverEvidence::new(
+                generation_before,
+                generation_before + 1,
+                digest('6'),
+            )?,
+        ))
+    }
+
+    async fn retire_hidden_capability(
         &self,
         intent: &PluginLifecycleIntent,
         key: &str,
@@ -321,12 +333,21 @@ impl PluginUiLifecycleHost for RecordingHost {
 
 #[async_trait]
 impl PluginGraphCapabilityLifecycleHost for RecordingHost {
-    async fn publish_capabilities(
+    async fn publish_capabilities_with_cutover(
         &self,
         _package_lock: &a3s_use_core::PluginPackageLock,
         intents: &[PluginLifecycleIntent],
         key: &str,
-    ) -> UseResult<Vec<PluginPackagePublicationEvidence>> {
+    ) -> UseResult<PluginGraphCapabilityPublication> {
+        let mut fail = self.fail_exact_publication_once.lock().await;
+        if *fail {
+            *fail = false;
+            return Err(UseError::new(
+                "use.plugin.test_publication_failure",
+                "The lifecycle test host rejected capability publication.",
+            ));
+        }
+        drop(fail);
         self.calls.lock().await.push(format!(
             "batch:{}",
             intents
@@ -335,7 +356,7 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
                 .collect::<Vec<_>>()
                 .join(",")
         ));
-        let mut evidence = intents
+        let mut packages = intents
             .iter()
             .map(|intent| {
                 let evidence = PluginLifecycleEvidence::new(format!(
@@ -349,29 +370,8 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
             self.publication_fault.lock().await.take(),
             Some(PublicationFault::ReverseEvidence)
         ) {
-            evidence.reverse();
+            packages.reverse();
         }
-        Ok(evidence)
-    }
-
-    async fn publish_capabilities_with_cutover(
-        &self,
-        package_lock: &a3s_use_core::PluginPackageLock,
-        intents: &[PluginLifecycleIntent],
-        key: &str,
-    ) -> UseResult<PluginGraphCapabilityPublication> {
-        let mut fail = self.fail_exact_publication_once.lock().await;
-        if *fail {
-            *fail = false;
-            return Err(UseError::new(
-                "use.plugin.test_publication_failure",
-                "The lifecycle test host rejected capability publication.",
-            ));
-        }
-        drop(fail);
-        let packages = self
-            .publish_capabilities(package_lock, intents, key)
-            .await?;
         let mut drift = self.drift_cutover_generation_once.lock().await;
         let configured = self.cutover_generation_before.load(Ordering::Relaxed);
         let mut generation_before = configured.max(1);
@@ -816,8 +816,12 @@ fn upgrade_graph_fixture() -> UpgradeGraphFixture {
         },
     })
     .unwrap();
-    let envelope =
-        PluginOperationPlanEnvelope::new_with_package_lock(plan, next_lock.clone()).unwrap();
+    let envelope = PluginOperationPlanEnvelope::new_with_upgrade_package_locks(
+        plan,
+        prior_lock.clone(),
+        next_lock.clone(),
+    )
+    .unwrap();
     let temp = tempfile::tempdir().unwrap();
     let host = Arc::new(RecordingHost::default());
     let package_root = |package_id: &str| temp.path().join(package_id.replace('/', "-"));
@@ -919,8 +923,9 @@ async fn dependency_closure_prepares_forward_then_publishes_once() {
     assert!(records
         .iter()
         .all(|record| record.status == PluginLifecycleOperationStatus::Completed));
+    let calls = fixture.host.calls.lock().await;
     assert_eq!(
-        fixture.host.calls.lock().await.as_slice(),
+        &calls[..calls.len() - 1],
         [
             "acme/base:commit",
             "acme/base:okf-prepare",
@@ -930,6 +935,13 @@ async fn dependency_closure_prepares_forward_then_publishes_once() {
             "acme/root:skill-prepare",
             "batch:acme/base,acme/root",
         ]
+    );
+    assert_eq!(
+        calls.last(),
+        Some(&format!(
+            "cutover-complete:{}",
+            publication_key(&fixture.envelope).unwrap()
+        ))
     );
 }
 
@@ -942,14 +954,22 @@ async fn dependency_closure_reuses_a_reviewed_retained_dependency() {
         .await
         .unwrap();
     assert_eq!(records.len(), 1);
+    let calls = fixture.host.calls.lock().await;
     assert_eq!(
-        fixture.host.calls.lock().await.as_slice(),
+        &calls[..calls.len() - 1],
         [
             "acme/root:commit",
             "acme/root:okf-prepare",
             "acme/root:skill-prepare",
             "batch:acme/root",
         ]
+    );
+    assert_eq!(
+        calls.last(),
+        Some(&format!(
+            "cutover-complete:{}",
+            publication_key(&fixture.envelope).unwrap()
+        ))
     );
 }
 
