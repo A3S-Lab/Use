@@ -213,13 +213,18 @@ Status: pending
 
 - Define retention and garbage collection for packages, prior generations,
   TUF cache, Grants, Flow history, OKF indexes, UI storage, and journals.
-- Treat the implemented standalone OKF scope quota/GC as one completed storage
-  control, not as completion of cross-product backup, repair, or retention
-  operations.
+- Treat the implemented standalone OKF scope quota/GC, integrity audit,
+  non-overwriting verified database backup, and derived FTS repair as bounded
+  storage controls, not as completion of cross-product restore, authority
+  recovery, backup rotation, or retention operations.
 - Add diagnostics for plan, download, prepare, cutover, drain, rollback, and
   recovery using non-secret evidence.
-- Define backup/restore and repair boundaries. Missing exact evidence must
-  remain fail-closed; repair cannot invent authority.
+- [x] Define and implement the standalone OKF repair boundary: only FTS rows
+  derived from validated documents may be rebuilt; receipt, scope, projection,
+  binding, and lifecycle evidence remain immutable and fail closed.
+- [ ] Define coordinated backup/restore and repair boundaries for every state
+  family. Missing exact evidence must remain fail-closed; restore or repair
+  cannot invent authority.
 - Complete threat-model review, security response, upgrade policy, rollback
   policy, and support runbooks.
 - Establish performance budgets for catalog refresh, resolution, install,

@@ -206,6 +206,73 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     assert_eq!(storage["removedTombstones"], 0);
     assert!(storage["retainedExpandedBytes"].as_u64().unwrap() > 0);
 
+    let audited = Command::new(binary())
+        .args(["knowledge", "audit", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(audited.status.success(), "{audited:?}");
+    let integrity = &json(&audited)["data"]["knowledge"]["integrity"];
+    assert_eq!(integrity["scope"]["kind"], "user");
+    assert!(integrity["documentCount"].as_u64().unwrap() > 0);
+    assert_eq!(
+        integrity["documentCount"],
+        integrity["indexedDocumentCount"]
+    );
+
+    let backup_path = temp.path().join("knowledge.a3s-okf-backup");
+    let backup = Command::new(binary())
+        .args([
+            "knowledge",
+            "backup",
+            backup_path.to_str().unwrap(),
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(backup.status.success(), "{backup:?}");
+    let backup_json = json(&backup);
+    assert_eq!(
+        backup_json["data"]["knowledge"]["backup"]["scope"]["id"],
+        "user/current"
+    );
+    assert!(backup_path.is_file());
+
+    let verified = Command::new(binary())
+        .args([
+            "knowledge",
+            "verify-backup",
+            backup_path.to_str().unwrap(),
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(verified.status.success(), "{verified:?}");
+    assert_eq!(json(&verified)["data"]["knowledge"]["verified"], true);
+
+    let unconfirmed_repair = Command::new(binary())
+        .args(["knowledge", "repair-search-index", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(!unconfirmed_repair.status.success());
+    assert_eq!(
+        json(&unconfirmed_repair)["error"]["code"],
+        "use.cli.invalid_usage"
+    );
+    let repaired = Command::new(binary())
+        .args(["knowledge", "repair-search-index", "--yes", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(repaired.status.success(), "{repaired:?}");
+    assert_eq!(
+        json(&repaired)["data"]["knowledge"]["repair"]["after"]["storage"]["retainedProjections"],
+        1
+    );
+
     let removed = cognitive_uninstall(&home, "acme/knowledge");
     assert!(removed.status.success(), "{removed:?}");
     assert_eq!(json(&removed)["data"]["changed"], true);

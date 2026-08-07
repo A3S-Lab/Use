@@ -11,6 +11,8 @@ use super::{
     OkfKnowledgeSearchResponse, OkfKnowledgeStageRequest,
 };
 
+mod audit;
+mod backup;
 mod filesystem;
 mod index;
 mod policy;
@@ -20,6 +22,11 @@ mod schema;
 mod search;
 mod storage;
 
+pub use audit::{
+    OkfKnowledgeIntegrityReport, OkfKnowledgeSearchIndexRepair,
+    OKF_KNOWLEDGE_INTEGRITY_REPORT_SCHEMA, OKF_KNOWLEDGE_SEARCH_INDEX_REPAIR_SCHEMA,
+};
+pub use backup::{OkfKnowledgeBackupManifest, OKF_KNOWLEDGE_BACKUP_SCHEMA};
 use filesystem::{prepare_scope_database, LockMode};
 pub use policy::{
     OkfKnowledgeStoragePolicy, DEFAULT_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES,
@@ -100,6 +107,70 @@ impl SqliteOkfKnowledgeAdapter {
         .map_err(|error| blocking_error("account for OKF Knowledge storage", error))?
     }
 
+    /// Validate SQLite, receipt, scope, foreign-key, and derived FTS evidence.
+    pub async fn audit(&self, scope: &PlanScope) -> UseResult<OkfKnowledgeIntegrityReport> {
+        let guard = self.database_guard(scope, LockMode::Shared).await?;
+        require_database(&guard.path).await?;
+        let scope = scope.clone();
+        let policy = self.policy;
+        tokio::task::spawn_blocking(move || {
+            let connection = schema::open(&guard.path, false)
+                .map_err(|error| sqlite_error("open audited Knowledge database", error))?;
+            audit::audit(&connection, &scope, &policy)
+        })
+        .await
+        .map_err(|error| blocking_error("audit OKF Knowledge storage", error))?
+    }
+
+    /// Rebuild only the FTS5 rows derived from validated retained documents.
+    pub async fn repair_search_index(
+        &self,
+        scope: &PlanScope,
+    ) -> UseResult<OkfKnowledgeSearchIndexRepair> {
+        let guard = self.database_guard(scope, LockMode::Exclusive).await?;
+        require_database(&guard.path).await?;
+        let scope = scope.clone();
+        let policy = self.policy;
+        tokio::task::spawn_blocking(move || {
+            let mut connection = schema::open(&guard.path, false)
+                .map_err(|error| sqlite_error("open repairable Knowledge database", error))?;
+            audit::repair_search_index(&mut connection, &scope, &policy)
+        })
+        .await
+        .map_err(|error| blocking_error("repair the OKF Knowledge search index", error))?
+    }
+
+    /// Write a consistent, digest-bound snapshot without overwriting a file.
+    pub async fn backup(
+        &self,
+        scope: &PlanScope,
+        destination: impl Into<PathBuf>,
+    ) -> UseResult<OkfKnowledgeBackupManifest> {
+        let destination = destination.into();
+        let guard = self.database_guard(scope, LockMode::Exclusive).await?;
+        require_database(&guard.path).await?;
+        let scope = scope.clone();
+        let policy = self.policy;
+        let created_at_ms = now_ms()?;
+        tokio::task::spawn_blocking(move || {
+            backup::create(&guard.path, &scope, &policy, &destination, created_at_ms)
+        })
+        .await
+        .map_err(|error| blocking_error("back up OKF Knowledge storage", error))?
+    }
+
+    /// Verify an offline backup without changing live Knowledge state.
+    pub async fn verify_backup(
+        backup_path: impl Into<PathBuf>,
+        expected_scope: Option<&PlanScope>,
+    ) -> UseResult<OkfKnowledgeBackupManifest> {
+        let backup_path = backup_path.into();
+        let expected_scope = expected_scope.cloned();
+        tokio::task::spawn_blocking(move || backup::verify(&backup_path, expected_scope.as_ref()))
+            .await
+            .map_err(|error| blocking_error("verify an OKF Knowledge backup", error))?
+    }
+
     fn scope_directory(&self, scope: &PlanScope) -> UseResult<PathBuf> {
         if !valid_machine_id(&scope.id) {
             return Err(UseError::new(
@@ -118,6 +189,27 @@ impl SqliteOkfKnowledgeAdapter {
     ) -> UseResult<filesystem::ScopeDatabaseGuard> {
         let directory = self.scope_directory(scope)?;
         prepare_scope_database(&self.state_root, &self.root, &directory, mode).await
+    }
+}
+
+async fn require_database(path: &Path) -> UseResult<()> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_file() => Ok(()),
+        Ok(_) => Err(UseError::new(
+            "use.okf.knowledge_database_path_invalid",
+            "The Knowledge database path is not an owned regular file.",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(UseError::new(
+            "use.okf.knowledge_database_missing",
+            "The complete User or Workspace scope has no Knowledge database to operate on.",
+        )),
+        Err(error) => Err(UseError::new(
+            "use.okf.knowledge_database_io",
+            format!(
+                "Failed to inspect Knowledge database '{}': {error}",
+                path.display()
+            ),
+        )),
     }
 }
 

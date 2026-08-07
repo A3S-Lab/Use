@@ -332,8 +332,19 @@ default policy allows 512 MiB of retained expanded content, 256 retained
 projections, 32 generations per surface, and 256 tombstones per complete
 scope. Hard ceilings are 8 GiB, 1,024 projections, 32 generations per surface,
 and 1,024 tombstones. `a3s-use knowledge usage --json` exposes non-secret
-scope-local usage and allocation evidence; backup and repair procedures remain
-a release gate.
+scope-local usage and allocation evidence. `knowledge audit` checks SQLite,
+foreign keys, exact receipt/scope accounting, and FTS consistency. `knowledge
+backup` produces a non-overwriting `a3s.use.okf-knowledge-backup.v1` database
+snapshot with exact length and SHA-256; `verify-backup` reopens and audits it
+offline. Confirmed `repair-search-index` may rebuild only FTS rows derived from
+validated documents. It cannot rewrite receipts, projections, bindings,
+lifecycle evidence, or Grants.
+
+The scope-local backup is corruption evidence, not a signature or complete
+recovery authority. Coordinated restore, binding and lifecycle recovery,
+backup rotation, and whole-product procedures remain release gates. The
+detailed boundary is documented in
+[OKF Knowledge operations](okf-knowledge-operations.md).
 
 ## Observability
 
