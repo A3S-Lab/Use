@@ -219,12 +219,17 @@ block planning until the owning operation recovers.
 
 ### Runtime and Gateway
 
-Tool and MCP provider selection is host-owned. Planning verifies that a
-compatible provider exists before archive download. Final apply binds the same
-provider ID, build, capabilities, target, interface, and activation semantics.
+Tool and MCP provider selection is host-owned. The separately signed planning
+target may select the built-in native provider only for an exact package-local
+Tool Task or stdio MCP launcher. Release-backed Tasks, Services, and HTTP MCP
+require an explicitly injected Runtime or Gateway provider. Final apply binds
+the same provider ID, build, capabilities, target, interface, and activation
+semantics.
 
-Required provider failure stays unpublished. No implicit native process or
-alternate provider is selected.
+After download, the planning target is rebound to the digest-bound manifest
+and release descriptors before lifecycle admission. Required provider failure
+stays unpublished; there is no `PATH` lookup, unsigned native fallback, or
+provider substitution.
 
 ### A3S Flow
 

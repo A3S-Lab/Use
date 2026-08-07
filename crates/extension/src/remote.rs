@@ -363,6 +363,7 @@ impl PreparedRemotePackage {
     }
 
     pub async fn download(self) -> UseResult<DownloadedRemotePackage> {
+        let planning_bundle = self.load_planning_bundle().await?;
         let temporary = tokio::task::spawn_blocking(tempfile::tempdir)
             .await
             .map_err(|error| {
@@ -403,6 +404,7 @@ impl PreparedRemotePackage {
             path,
             resolved: self.resolved,
             verified_catalog: self.verified_catalog,
+            planning_bundle,
             _temporary: temporary,
         })
     }
@@ -418,6 +420,7 @@ pub struct DownloadedRemotePackage {
     path: PathBuf,
     resolved: ResolvedRemotePackage,
     verified_catalog: VerifiedPluginCatalogRecord,
+    planning_bundle: Option<PluginPlanningBundle>,
     _temporary: TempDir,
 }
 
@@ -432,6 +435,10 @@ impl DownloadedRemotePackage {
 
     pub fn verified_catalog(&self) -> &VerifiedPluginCatalogRecord {
         &self.verified_catalog
+    }
+
+    pub fn planning_bundle(&self) -> Option<&PluginPlanningBundle> {
+        self.planning_bundle.as_ref()
     }
 }
 

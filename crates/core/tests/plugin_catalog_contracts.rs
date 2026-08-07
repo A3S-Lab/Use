@@ -507,6 +507,89 @@ fn planning_bundle_rejects_mutable_artifacts_and_unsupported_catalog_surfaces() 
 }
 
 #[test]
+fn planning_bundle_binds_package_native_tool_and_stdio_mcp_launchers() {
+    let mut catalog = plan_ready_catalog();
+    catalog.record.surfaces.retain(|surface| {
+        (surface.kind == PluginSurfaceKind::Mcp && surface.id == "library")
+            || (surface.kind == PluginSurfaceKind::Tool && surface.id == "convert")
+    });
+    catalog.record.surfaces[0].mcp_transport = Some(a3s_use_core::CatalogMcpTransport::Stdio);
+    catalog
+        .record
+        .permission_ceiling
+        .surfaces
+        .retain(|permission| {
+            (permission.surface.kind == PluginSurfaceKind::Mcp
+                && permission.surface.id == "library")
+                || (permission.surface.kind == PluginSurfaceKind::Tool
+                    && permission.surface.id == "convert")
+        });
+    catalog.record.permission_ceiling.surfaces[0].native_execution = true;
+    catalog.record.permission_ceiling.surfaces[0].private_service = false;
+    catalog.record.permission_ceiling_digest = catalog
+        .record
+        .permission_ceiling
+        .descriptor_digest()
+        .unwrap();
+
+    let bundle = PluginPlanningBundle {
+        schema: PLUGIN_PLANNING_BUNDLE_SCHEMA.to_owned(),
+        package_id: catalog.record.package_id.clone(),
+        version: catalog.record.version.clone(),
+        channel: catalog.record.channel,
+        target: catalog.record.target.clone(),
+        archive_sha256: catalog.record.archive.sha256.clone(),
+        package_sha256: catalog.record.package.sha256.clone().unwrap(),
+        manifest_sha256: catalog.record.package.manifest_sha256.clone().unwrap(),
+        permission_ceiling_digest: catalog.record.permission_ceiling_digest.clone(),
+        surfaces: vec![
+            ExecutablePlanningSurface::McpStdio {
+                id: "library".to_owned(),
+                activation: PlanningSurfaceActivation::Lazy,
+                executable: "bin/acme-research".to_owned(),
+                args: vec!["serve".to_owned(), "--mcp".to_owned()],
+            },
+            ExecutablePlanningSurface::ToolTaskNative {
+                id: "convert".to_owned(),
+                activation: PlanningSurfaceActivation::Lazy,
+                executable: "bin/acme-research".to_owned(),
+                command: "acme-convert".to_owned(),
+                json_output: true,
+                timeout_ms: 120_000,
+            },
+        ],
+    };
+    let bytes = bundle.canonical_bytes().unwrap();
+    catalog.record.planning = Some(CatalogPlanningTarget {
+        target_name: "extensions/acme/research/2.0.0/stable/linux-x86_64/planning-v1.json"
+            .to_owned(),
+        length: bytes.len() as u64,
+        sha256: format!("sha256:{:x}", Sha256::digest(&bytes)),
+    });
+    catalog.provenance.catalog_record_digest = catalog.record.descriptor_digest().unwrap();
+
+    assert_eq!(
+        PluginPlanningBundle::from_catalog_target(&bytes, &catalog).unwrap(),
+        bundle
+    );
+
+    let mut escaping = bundle.clone();
+    let ExecutablePlanningSurface::McpStdio { executable, .. } = &mut escaping.surfaces[0] else {
+        panic!("first planning surface should be stdio MCP");
+    };
+    *executable = "../bin/acme-research".to_owned();
+    assert!(escaping.validate().is_err());
+
+    let mut unbounded = bundle;
+    let ExecutablePlanningSurface::ToolTaskNative { timeout_ms, .. } = &mut unbounded.surfaces[1]
+    else {
+        panic!("second planning surface should be native Tool Task");
+    };
+    *timeout_ms = 60 * 60 * 1000 + 1;
+    assert!(unbounded.validate().is_err());
+}
+
+#[test]
 fn current_verified_catalog_derives_a_plan_ready_selected_install_transition() {
     let verified = plan_ready_catalog();
     let transition = verified

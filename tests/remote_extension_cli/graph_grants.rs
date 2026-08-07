@@ -10,11 +10,11 @@ use a3s_use::cognitive_package::{
 };
 use a3s_use_core::{
     CatalogPlanningTarget, ExecutablePlanningSurface, PlanActor, PlanAuthority, PlanPolicyDecision,
-    PlanScope, PlanScopeKind, PlanningArtifactRef, PlanningSurfaceActivation,
-    PluginOperationConfirmation, PluginOperationPlan, PluginOperationPlanDraft,
-    PluginOperationPlanEnvelope, PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle,
-    PluginWorkspaceGrantChangeSet, ToolReleaseDescriptor, ToolWorkloadClass, UseResult,
-    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
+    PlanScope, PlanScopeKind, PlanningSurfaceActivation, PluginOperationConfirmation,
+    PluginOperationPlan, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
+    PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle, PluginWorkspaceGrantChangeSet,
+    ToolWorkloadClass, UseResult, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
 use a3s_use_extension::{StoredWorkspaceGrant, WorkspaceGrantLifecyclePhase, WorkspaceGrantStore};
 use async_trait::async_trait;
@@ -877,10 +877,6 @@ fn cognitive_tool_targets_version(
     catalog.package.file_count = fingerprint.1;
     catalog.package.sha256 = Some(format!("sha256:{}", fingerprint.0));
     catalog.package.manifest_sha256 = Some(manifest_sha256);
-    let descriptor = ToolReleaseDescriptor::from_json(include_bytes!(
-        "../../crates/core/fixtures/releases/tool-task-release-v1.json"
-    ))
-    .unwrap();
     let planning_target =
         format!("extensions/{package_id}/{version}/stable/{target}/planning-v1.json");
     let planning = PluginPlanningBundle {
@@ -893,21 +889,13 @@ fn cognitive_tool_targets_version(
         package_sha256: catalog.package.sha256.clone().unwrap(),
         manifest_sha256: catalog.package.manifest_sha256.clone().unwrap(),
         permission_ceiling_digest: catalog.permission_ceiling_digest.clone(),
-        surfaces: vec![ExecutablePlanningSurface::ToolTask {
+        surfaces: vec![ExecutablePlanningSurface::ToolTaskNative {
             id: "convert".to_string(),
             activation: PlanningSurfaceActivation::Lazy,
+            executable: "tools/convert/bin/convert".to_string(),
             command: "acme-worker-convert".to_string(),
             json_output: true,
             timeout_ms: 120_000,
-            artifact: PlanningArtifactRef {
-                uri: format!(
-                    "oci://registry.example/acme/worker@{}",
-                    descriptor.artifact.digest
-                ),
-                digest: descriptor.artifact.digest.clone(),
-                media_type: descriptor.artifact.media_type.clone(),
-            },
-            descriptor,
         }],
     };
     let planning_bytes = planning.canonical_bytes().unwrap();

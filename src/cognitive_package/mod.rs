@@ -11,6 +11,7 @@ mod enablement_store;
 mod grant;
 mod hosts;
 mod install;
+mod native_provider;
 mod plan;
 mod reviewed_authorization;
 mod store;
@@ -44,6 +45,7 @@ pub use grant::{
     CognitivePackageAuthorizationProvider, StandaloneCognitivePackageAuthorizationProvider,
 };
 pub use hosts::{StandaloneCognitivePackageLifecycleFactory, A3S_FLOW_NATIVE_TS_COMPILER_ENV};
+pub use native_provider::plan_native_provider_evidence;
 pub use reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
 
 /// Stable user-level scope shared by the standalone facade and embedding A3S
