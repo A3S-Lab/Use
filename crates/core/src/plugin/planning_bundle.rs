@@ -6,7 +6,8 @@ use crate::{
 };
 
 use super::validation::{
-    strictly_sorted_unique, valid_http_path, valid_package_id, valid_sha256, valid_target,
+    strictly_sorted_unique, valid_http_path, valid_package_id, valid_portable_scope_path,
+    valid_sha256, valid_target,
 };
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, CatalogMcpTransport,
@@ -16,6 +17,7 @@ use super::{
 };
 
 const PLANNING_BUNDLE_ERROR: &str = "use.plugin.planning_bundle_invalid";
+const MAX_NATIVE_TASK_TIMEOUT_MS: u64 = 60 * 60 * 1000;
 
 /// Small executable planning contract downloaded before a plugin archive.
 ///
@@ -60,6 +62,16 @@ pub struct PlanningArtifactRef {
     deny_unknown_fields
 )]
 pub enum ExecutablePlanningSurface {
+    /// Package-local executable invoked directly by the native A3S launcher.
+    ToolTaskNative {
+        id: String,
+        activation: PlanningSurfaceActivation,
+        executable: String,
+        command: String,
+        json_output: bool,
+        timeout_ms: u64,
+    },
+    /// Digest-pinned OCI Tool Task admitted through an explicit Runtime.
     ToolTask {
         id: String,
         activation: PlanningSurfaceActivation,
@@ -81,6 +93,13 @@ pub enum ExecutablePlanningSurface {
         activation: PlanningSurfaceActivation,
         descriptor: McpReleaseDescriptor,
         artifact: PlanningArtifactRef,
+    },
+    /// Package-local stdio MCP server invoked per client connection.
+    McpStdio {
+        id: String,
+        activation: PlanningSurfaceActivation,
+        executable: String,
+        args: Vec<String>,
     },
 }
 
@@ -214,11 +233,13 @@ impl PluginPlanningBundle {
 impl ExecutablePlanningSurface {
     pub fn reference(&self) -> PluginSurfaceRef {
         match self {
-            Self::ToolTask { id, .. } | Self::ToolService { id, .. } => PluginSurfaceRef {
+            Self::ToolTaskNative { id, .. }
+            | Self::ToolTask { id, .. }
+            | Self::ToolService { id, .. } => PluginSurfaceRef {
                 kind: PluginSurfaceKind::Tool,
                 id: id.clone(),
             },
-            Self::McpService { id, .. } => PluginSurfaceRef {
+            Self::McpService { id, .. } | Self::McpStdio { id, .. } => PluginSurfaceRef {
                 kind: PluginSurfaceKind::Mcp,
                 id: id.clone(),
             },
@@ -227,6 +248,25 @@ impl ExecutablePlanningSurface {
 
     fn validate(&self) -> UseResult<()> {
         match self {
+            Self::ToolTaskNative {
+                id,
+                executable,
+                command,
+                timeout_ms,
+                ..
+            } => {
+                validate_surface_id(id)?;
+                if !valid_package_executable(executable)
+                    || !valid_command(command)
+                    || *timeout_ms == 0
+                    || *timeout_ms > MAX_NATIVE_TASK_TIMEOUT_MS
+                {
+                    return Err(planning_error(
+                        "A native Tool Task planning contract is invalid.",
+                    ));
+                }
+                Ok(())
+            }
             Self::ToolTask {
                 id,
                 command,
@@ -298,6 +338,21 @@ impl ExecutablePlanningSurface {
                     .map_err(|_| planning_error("An MCP Service release descriptor is invalid."))?;
                 artifact.validate_for(&descriptor.artifact.digest, &descriptor.artifact.media_type)
             }
+            Self::McpStdio {
+                id,
+                executable,
+                args,
+                ..
+            } => {
+                validate_surface_id(id)?;
+                if !valid_package_executable(executable)
+                    || args.len() > 64
+                    || args.iter().any(|argument| !valid_argument(argument))
+                {
+                    return Err(planning_error("An MCP stdio planning contract is invalid."));
+                }
+                Ok(())
+            }
         }
     }
 
@@ -308,7 +363,7 @@ impl ExecutablePlanningSurface {
             ));
         }
         let shape_matches = match self {
-            Self::ToolTask { .. } => {
+            Self::ToolTaskNative { .. } | Self::ToolTask { .. } => {
                 catalog.workload == Some(ToolWorkloadClass::Task) && catalog.mcp_transport.is_none()
             }
             Self::ToolService { .. } => {
@@ -318,6 +373,10 @@ impl ExecutablePlanningSurface {
             Self::McpService { .. } => {
                 catalog.workload.is_none()
                     && catalog.mcp_transport == Some(CatalogMcpTransport::StreamableHttp)
+            }
+            Self::McpStdio { .. } => {
+                catalog.workload.is_none()
+                    && catalog.mcp_transport == Some(CatalogMcpTransport::Stdio)
             }
         };
         if !shape_matches {
@@ -370,6 +429,14 @@ fn valid_command(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn valid_package_executable(value: &str) -> bool {
+    value != "." && valid_portable_scope_path(value)
+}
+
+fn valid_argument(value: &str) -> bool {
+    value.len() <= 4096 && !value.chars().any(char::is_control)
 }
 
 fn planning_error(message: impl Into<String>) -> UseError {

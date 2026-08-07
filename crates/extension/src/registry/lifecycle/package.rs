@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use a3s_use_core::{UseError, UseResult, VerifiedPluginCatalogRecord};
+use a3s_use_core::{PluginPlanningBundle, UseError, UseResult, VerifiedPluginCatalogRecord};
 use tokio::fs;
 
 use super::{
@@ -13,6 +13,7 @@ use crate::registry::{
 };
 use crate::remote::{DownloadedRemotePackage, ResolvedRemotePackage};
 use crate::source::{prepare_package_source, PreparedPackageSource};
+use crate::surface_files::validate_planning_bundle_package_binding;
 use crate::ExtensionManifest;
 
 impl ExtensionLifecyclePackage {
@@ -48,6 +49,7 @@ impl ExtensionLifecyclePackage {
             expected_package_id,
             source,
             ExtensionTrust::LocalExplicit,
+            None,
             None,
             None,
             host_version,
@@ -91,6 +93,7 @@ impl ExtensionLifecyclePackage {
             ExtensionTrust::ReleaseBundle,
             None,
             None,
+            None,
             env!("CARGO_PKG_VERSION"),
         )
         .await
@@ -102,6 +105,7 @@ impl ExtensionLifecyclePackage {
     ) -> UseResult<Self> {
         let registry = downloaded.resolved().clone();
         let verified_catalog = downloaded.verified_catalog().clone();
+        let planning_bundle = downloaded.planning_bundle().cloned();
         let source = prepare_package_source(downloaded.path()).await?;
         Self::prepare(
             expected_package_id,
@@ -109,6 +113,7 @@ impl ExtensionLifecyclePackage {
             ExtensionTrust::RegistryTuf,
             Some(registry),
             Some(verified_catalog),
+            planning_bundle,
             env!("CARGO_PKG_VERSION"),
         )
         .await
@@ -120,6 +125,7 @@ impl ExtensionLifecyclePackage {
         trust: ExtensionTrust,
         registry: Option<ResolvedRemotePackage>,
         verified_catalog: Option<VerifiedPluginCatalogRecord>,
+        planning_bundle: Option<PluginPlanningBundle>,
         host_version: &str,
     ) -> UseResult<Self> {
         let expected_package_id = normalize_package_id(expected_package_id)?;
@@ -168,6 +174,26 @@ impl ExtensionLifecyclePackage {
             &manifest_bytes,
             &package_sha256,
         )?;
+        match (verified_catalog.as_ref(), planning_bundle.as_ref()) {
+            (Some(catalog), Some(bundle)) if catalog.record.planning.is_some() => {
+                bundle.validate_catalog_binding(catalog)?;
+                validate_planning_bundle_package_binding(bundle, &manifest, source.root()).await?;
+            }
+            (Some(catalog), None) if catalog.record.planning.is_none() => {}
+            (Some(_), _) => {
+                return Err(UseError::new(
+                    "use.extension.planning_package_mismatch",
+                    "The downloaded package and its signed catalog disagree about executable planning evidence.",
+                ));
+            }
+            (None, None) => {}
+            (None, Some(_)) => {
+                return Err(UseError::new(
+                    "use.extension.planning_package_mismatch",
+                    "Unsigned package state cannot carry Registry planning evidence.",
+                ));
+            }
+        }
         Ok(Self {
             source,
             manifest,

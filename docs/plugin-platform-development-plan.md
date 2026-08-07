@@ -34,6 +34,8 @@ Completed in the Use repository:
 
 - manifest v3 and all six named surface contracts;
 - catalog v3, complete TUF metadata, verified provenance, and exact receipts;
+- separately signed package-native Tool/stdio MCP planning targets rebound to
+  the digest-bound manifest after download;
 - bounded SemVer resolver, package lock, prior/candidate upgrade binding;
 - operation plan v4, confirmation, policy and host/provider evidence;
 - manager toolset v3 with plan/apply enablement;

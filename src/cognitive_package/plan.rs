@@ -2,18 +2,19 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    LockedPluginPackage, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
-    PlanQualifiedSurfaceRef, PlanScope, PlannedOperationImpact, PlannedPackageTransition,
-    PlannedProviderEvidence, PlannedStateEvidence, PluginOperationAction,
-    PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
-    PluginPackageLock, PluginSurfaceKind, PluginWorkspaceGrantSnapshot, UseResult,
+    LockedPluginPackage, PlanPackageChangeKind, PlanPackageRole, PlanQualifiedSurfaceRef,
+    PlanScope, PlannedOperationImpact, PlannedPackageTransition, PlannedProviderEvidence,
+    PlannedStateEvidence, PluginOperationAction, PluginOperationPlanBinding,
+    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageLock, PluginSurfaceKind,
+    PluginWorkspaceGrantSnapshot, UseResult,
 };
 use a3s_use_extension::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 use sha2::{Digest, Sha256};
 
 use super::{
-    all_catalog_surfaces, current_host_target,
+    all_catalog_surfaces,
     grant::{plan_workspace_grants, PlannedWorkspaceGrantOperation},
+    native_provider::native_provider_evidence,
     package_manager_error, CognitivePackageAuthorizationProvider,
     CognitivePackageEnablementRequest, InstallDisposition, UninstallDisposition,
     UpgradeDisposition,
@@ -719,13 +720,6 @@ pub(super) fn static_provider_evidence<'a>(
     packages: impl IntoIterator<Item = &'a LockedPluginPackage>,
     manifests: &BTreeMap<String, ExtensionManifest>,
 ) -> UseResult<Vec<PlannedProviderEvidence>> {
-    let target = current_host_target()?;
-    let provider_id = "a3s-use-native-launcher";
-    let provider_build_id = format!("a3s-use:{}:{target}", env!("CARGO_PKG_VERSION"));
-    let capability_digest = digest(&format!(
-        "a3s-use-native-launcher-v1\n{}\n{target}",
-        env!("CARGO_PKG_VERSION")
-    ));
     let mut providers = Vec::new();
     for package in packages {
         let manifest = manifests.get(package.package_id()).ok_or_else(|| {
@@ -756,27 +750,22 @@ pub(super) fn static_provider_evidence<'a>(
                         "An executable cognitive-package surface omitted its permission ceiling.",
                     )
                 })?;
-            providers.push(PlannedProviderEvidence {
-                surface: PlanQualifiedSurfaceRef {
+            if !permission.native_execution || permission.private_service {
+                return Err(package_manager_error(
+                    "use.plugin.runtime_provider_required",
+                    format!(
+                        "Package-local executable surface '{}/{}' requires explicit native execution authority.",
+                        package.package_id(), surface.id
+                    ),
+                ));
+            }
+            providers.push(native_provider_evidence(
+                PlanQualifiedSurfaceRef {
                     package_id: package.package_id().to_string(),
                     surface: surface.reference(),
                 },
-                provider_id: provider_id.to_string(),
-                provider_build_id: provider_build_id.clone(),
-                capability_digest: capability_digest.clone(),
-                semantics_profile_digest: digest(&format!(
-                    "a3s-use-static-surface-v1\n{}\n{:?}\n{}\n{}",
-                    package.package_id(),
-                    surface.kind,
-                    surface.id,
-                    state.release.package_sha256
-                )),
-                enforcement: if permission.native_execution {
-                    PlanEnforcementProfile::NativeUnconfined
-                } else {
-                    PlanEnforcementProfile::Container
-                },
-            });
+                &state.release.package_sha256,
+            )?);
         }
     }
     providers.sort_by(|left, right| left.surface.cmp(&right.surface));

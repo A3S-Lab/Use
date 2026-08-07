@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
-    inspect_okf_bundle_files, McpReleaseDescriptor, OkfBundleFile, ToolReleaseDescriptor,
+    inspect_okf_bundle_files, ExecutablePlanningSurface, McpReleaseDescriptor, OkfBundleFile,
+    PlanningSurfaceActivation, PluginPlanningBundle, ToolReleaseDescriptor,
     ToolWorkloadContract as ToolReleaseWorkload, UseError, UseResult, MAX_RELEASE_DESCRIPTOR_BYTES,
 };
 use sha2::{Digest, Sha256};
@@ -12,12 +13,15 @@ use super::package::{
     io_error, validate_surface_file, validate_text_asset, MAX_ACTIVITY_HTML_BYTES,
     MAX_ACTIVITY_RESOURCE_BYTES,
 };
-use super::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
+use super::{ExtensionManifest, PluginMcpLaunch, SurfaceActivation, ToolTaskSource, ToolWorkload};
 
 const MAX_TOOL_API_CONTRACT_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_FLOW_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_SKILL_BYTES: u64 = 2 * 1024 * 1024;
 const SURFACE_FILE_EVIDENCE_SCHEMA: &[u8] = b"a3s.use.plugin-surface-files.v1\0";
+
+#[cfg(test)]
+mod planning_binding_tests;
 
 /// Content-addressed evidence for the immutable package files owned by one
 /// named plugin surface.
@@ -144,6 +148,210 @@ pub(super) async fn validate_named_surface_files(
         }
     }
     Ok(())
+}
+
+/// Bind the separately signed planning target to the exact digest-bound
+/// package manifest and release descriptors before lifecycle admission.
+pub(crate) async fn validate_planning_bundle_package_binding(
+    bundle: &PluginPlanningBundle,
+    manifest: &ExtensionManifest,
+    package_root: &Path,
+) -> UseResult<()> {
+    for planning in &bundle.surfaces {
+        match planning {
+            ExecutablePlanningSurface::ToolTaskNative {
+                id,
+                activation,
+                executable,
+                command,
+                json_output,
+                timeout_ms,
+            } => {
+                let tool = manifest_tool(manifest, id)?;
+                let ToolWorkload::Task(task) = &tool.workload else {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'tool/{id}' is not the manifest Tool Task."
+                    )));
+                };
+                let ToolTaskSource::Executable {
+                    executable: manifest_executable,
+                } = &task.source
+                else {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'tool/{id}' is not package-native."
+                    )));
+                };
+                if !activation_matches(*activation, tool.activation)
+                    || manifest_executable != Path::new(executable)
+                    || task.command != *command
+                    || task.json_output != *json_output
+                    || task.timeout_ms != *timeout_ms
+                {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'tool/{id}' does not match its native manifest launcher."
+                    )));
+                }
+            }
+            ExecutablePlanningSurface::ToolTask {
+                id,
+                activation,
+                command,
+                json_output,
+                timeout_ms,
+                descriptor,
+                ..
+            } => {
+                let tool = manifest_tool(manifest, id)?;
+                let ToolWorkload::Task(task) = &tool.workload else {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'tool/{id}' is not the manifest Tool Task."
+                    )));
+                };
+                let ToolTaskSource::Release { release } = &task.source else {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'tool/{id}' is not release-backed."
+                    )));
+                };
+                if !activation_matches(*activation, tool.activation)
+                    || task.command != *command
+                    || task.json_output != *json_output
+                    || task.timeout_ms != *timeout_ms
+                    || &read_tool_release_descriptor("Tool Task", &package_root.join(release))
+                        .await?
+                        != descriptor
+                {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'tool/{id}' does not match its release-backed manifest launcher."
+                    )));
+                }
+            }
+            ExecutablePlanningSurface::ToolService {
+                id,
+                activation,
+                base_path,
+                descriptor,
+                ..
+            } => {
+                let tool = manifest_tool(manifest, id)?;
+                let ToolWorkload::Service(service) = &tool.workload else {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'tool/{id}' is not the manifest Tool Service."
+                    )));
+                };
+                if !activation_matches(*activation, tool.activation)
+                    || service.base_path != *base_path
+                    || &read_tool_release_descriptor(
+                        "Tool Service",
+                        &package_root.join(&service.release),
+                    )
+                    .await?
+                        != descriptor
+                {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'tool/{id}' does not match its Service release."
+                    )));
+                }
+            }
+            ExecutablePlanningSurface::McpService {
+                id,
+                activation,
+                descriptor,
+                ..
+            } => {
+                let mcp = manifest_mcp(manifest, id)?;
+                let PluginMcpLaunch::StreamableHttp { release } = &mcp.launch else {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'mcp/{id}' is not the manifest Streamable HTTP service."
+                    )));
+                };
+                let path = package_root.join(release);
+                let bytes = read_bounded_file(
+                    "MCP release descriptor",
+                    &path,
+                    MAX_RELEASE_DESCRIPTOR_BYTES as u64,
+                    "use.extension.release_descriptor_invalid",
+                )
+                .await?;
+                let manifest_descriptor = McpReleaseDescriptor::from_json(&bytes)
+                    .map_err(|error| release_descriptor_error("MCP", &path, error))?;
+                if !activation_matches(*activation, mcp.activation)
+                    || &manifest_descriptor != descriptor
+                {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'mcp/{id}' does not match its Service release."
+                    )));
+                }
+            }
+            ExecutablePlanningSurface::McpStdio {
+                id,
+                activation,
+                executable,
+                args,
+            } => {
+                let mcp = manifest_mcp(manifest, id)?;
+                let PluginMcpLaunch::Stdio {
+                    executable: manifest_executable,
+                    args: manifest_args,
+                } = &mcp.launch
+                else {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'mcp/{id}' is not the manifest stdio launcher."
+                    )));
+                };
+                if !activation_matches(*activation, mcp.activation)
+                    || manifest_executable != Path::new(executable)
+                    || manifest_args != args
+                {
+                    return Err(planning_package_error(format!(
+                        "Planning surface 'mcp/{id}' does not match its stdio manifest launcher."
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn manifest_tool<'a>(
+    manifest: &'a ExtensionManifest,
+    id: &str,
+) -> UseResult<&'a super::ToolSurface> {
+    manifest
+        .tools
+        .iter()
+        .find(|surface| surface.id == id)
+        .ok_or_else(|| {
+            planning_package_error(format!(
+                "Planning surface 'tool/{id}' is absent from the package manifest."
+            ))
+        })
+}
+
+fn manifest_mcp<'a>(
+    manifest: &'a ExtensionManifest,
+    id: &str,
+) -> UseResult<&'a super::PluginMcpSurface> {
+    manifest
+        .mcp_servers
+        .iter()
+        .find(|surface| surface.id == id)
+        .ok_or_else(|| {
+            planning_package_error(format!(
+                "Planning surface 'mcp/{id}' is absent from the package manifest."
+            ))
+        })
+}
+
+fn activation_matches(planning: PlanningSurfaceActivation, manifest: SurfaceActivation) -> bool {
+    matches!(
+        (planning, manifest),
+        (PlanningSurfaceActivation::Eager, SurfaceActivation::Eager)
+            | (PlanningSurfaceActivation::Lazy, SurfaceActivation::Lazy)
+    )
+}
+
+fn planning_package_error(message: impl Into<String>) -> UseError {
+    UseError::new("use.extension.planning_package_mismatch", message)
 }
 
 /// Load and revalidate the exact OKF bytes declared by one installed surface.

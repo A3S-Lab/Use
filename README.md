@@ -238,8 +238,8 @@ extension "acme/research" {
 
 | Surface | Package contribution | Readiness owner |
 | --- | --- | --- |
-| Tool | Native Task or long-lived Service | Selected Runtime provider and exact executable/service evidence |
-| MCP | stdio, HTTP, or immutable release descriptor | Runtime/Gateway adapter and standard MCP readiness |
+| Tool | Package-local native Task or digest-pinned Task/Service release | Signed planning launcher plus the native provider, or an explicitly selected Runtime |
+| MCP | Package-local stdio server or digest-pinned HTTP release | Signed stdio launcher plus the native provider, or Runtime/Gateway readiness |
 | OKF | Open Knowledge Format concept graph | Knowledge host stage, promotion, observation, and cited retrieval |
 | A3S Flow | TypeScript workflow source with explicit surface edges | `a3s-flow` preflight and exact compiled binding |
 | Skill | Content-bound `SKILL.md` plus supporting files | Static projection after required dependencies are ready |
@@ -289,8 +289,14 @@ sources is rejected as ambiguous.
 Current Registry rules:
 
 - TUF target `custom.a3s` metadata contains one complete catalog-v3 record.
+- Every executable catalog carries one separately signed `planning-v1.json`
+  target. It distinguishes package-local Tool/stdio MCP launchers from
+  release-backed Runtime workloads before the archive is downloaded.
 - The catalog record, archive, expanded package, and manifest all have exact
   digest/size evidence.
+- Archive admission rebinds every planning launcher to the exact digest-bound
+  `.acl` manifest and release descriptor; surface kind, activation, executable,
+  argv, command, timeout, and transport drift fail closed.
 - Prepared downloads and installed Registry/TUF receipts must retain the full
   verified catalog record and its provenance.
 - An installed receipt remains bound to its source name, URL, root digest,
@@ -392,6 +398,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, replaceable source input | Implemented in the engine |
+| Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
 | Durable atomic Registry cutover and exact replay | Implemented |

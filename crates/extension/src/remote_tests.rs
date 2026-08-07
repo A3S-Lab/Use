@@ -83,6 +83,30 @@ async fn catalog_v3_loads_only_the_exact_signed_planning_target() {
 }
 
 #[tokio::test]
+async fn executable_archive_download_retains_its_verified_planning_bundle() {
+    let (repository, expected, archive_target, planning_target) = planning_test_repository(false);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+    let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    server.clear_requests();
+
+    let downloaded = prepared.download().await.unwrap();
+
+    assert_eq!(downloaded.planning_bundle(), Some(&expected));
+    assert!(server
+        .requests()
+        .iter()
+        .any(|request| request == &format!("/targets/{planning_target}")));
+    assert!(server
+        .requests()
+        .iter()
+        .any(|request| request == &format!("/targets/{archive_target}")));
+}
+
+#[tokio::test]
 async fn catalog_v3_static_package_has_no_planning_target_download() {
     let archive = extension_archive(PACKAGE_VERSION);
     let target = host_target().unwrap();

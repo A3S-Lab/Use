@@ -119,6 +119,10 @@ fn plan_surface(
     policy: RuntimeWorkloadPolicy,
 ) -> UseResult<RuntimeSurfacePlan> {
     match surface {
+        ExecutablePlanningSurface::ToolTaskNative { .. }
+        | ExecutablePlanningSurface::McpStdio { .. } => Err(bundle_plan_error(
+            "Package-native launchers are owned by the static A3S provider, not Runtime.",
+        )),
         ExecutablePlanningSurface::ToolTask {
             command,
             json_output,
@@ -203,6 +207,8 @@ fn representable_policy(
         .as_ref()
         .ok_or_else(unsupported_authority)?;
     let shape_matches = match surface {
+        ExecutablePlanningSurface::ToolTaskNative { .. }
+        | ExecutablePlanningSurface::McpStdio { .. } => return Err(unsupported_authority()),
         ExecutablePlanningSurface::ToolTask { descriptor, .. } => {
             let ToolWorkloadContract::Task {
                 timeout_ms,
