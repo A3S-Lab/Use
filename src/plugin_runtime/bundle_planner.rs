@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use a3s_runtime::contract::{ArtifactRef, IsolationLevel, NetworkMode};
 use a3s_use_core::{
-    ExecutablePlanningSurface, PlanScope, PlannedPackageState, PluginPlanningBundle,
-    PluginSurfaceKind, PluginWorkspaceGrantProposal, SurfacePermissionCeiling,
-    ToolWorkloadContract, UseError, UseResult,
+    CatalogMcpTransport, CatalogSurface, ExecutablePlanningSurface, PlanScope, PlannedPackageState,
+    PluginPlanningBundle, PluginSurfaceKind, PluginWorkspaceGrantProposal,
+    SurfacePermissionCeiling, ToolWorkloadClass, ToolWorkloadContract, UseError, UseResult,
 };
 use a3s_use_extension::{
     PluginMcpLaunch, PluginMcpSurface, SurfaceActivation, ToolServiceSurface, ToolTaskSource,
@@ -59,7 +59,7 @@ pub fn plan_runtime_bundle(
         ));
     }
 
-    let selected = package
+    let executable = package
         .release
         .surfaces
         .iter()
@@ -69,26 +69,28 @@ pub fn plan_runtime_bundle(
                 PluginSurfaceKind::Tool | PluginSurfaceKind::Mcp
             )
         })
-        .map(|surface| surface.reference())
         .collect::<Vec<_>>();
-    if selected.is_empty() || selected.windows(2).any(|pair| pair[0] >= pair[1]) {
+    let planned = bundle.surfaces.iter().collect::<Vec<_>>();
+    if executable.len() != planned.len()
+        || executable
+            .iter()
+            .zip(&planned)
+            .any(|(catalog, planning)| !planning_matches_catalog(planning, catalog))
+    {
         return Err(bundle_plan_error(
-            "Runtime bundle planning requires sorted selected executable surfaces.",
+            "The Runtime planning bundle does not match the exact selected executable workloads.",
         ));
     }
 
     let authorization_digest = proposal.descriptor_digest()?;
-    let mut plans = Vec::with_capacity(selected.len());
-    for surface_ref in selected {
-        let surface = bundle
-            .surfaces
-            .iter()
-            .find(|surface| surface.reference() == surface_ref)
-            .ok_or_else(|| {
-                bundle_plan_error(
-                    "The planning bundle omits a selected executable package surface.",
-                )
-            })?;
+    let managed = executable
+        .into_iter()
+        .zip(planned)
+        .filter(|(_, surface)| !is_native_planning_surface(surface))
+        .collect::<Vec<_>>();
+    let mut plans = Vec::with_capacity(managed.len());
+    for (catalog, surface) in managed {
+        let surface_ref = catalog.reference();
         let permission = package
             .permissions
             .surfaces
@@ -111,6 +113,39 @@ pub fn plan_runtime_bundle(
         plans.push(plan_surface(context, surface, policy)?);
     }
     Ok(plans)
+}
+
+fn is_native_planning_surface(surface: &ExecutablePlanningSurface) -> bool {
+    matches!(
+        surface,
+        ExecutablePlanningSurface::ToolTaskNative { .. }
+            | ExecutablePlanningSurface::McpStdio { .. }
+    )
+}
+
+fn planning_matches_catalog(
+    planning: &ExecutablePlanningSurface,
+    catalog: &CatalogSurface,
+) -> bool {
+    if planning.reference() != catalog.reference() {
+        return false;
+    }
+    match planning {
+        ExecutablePlanningSurface::ToolTaskNative { .. }
+        | ExecutablePlanningSurface::ToolTask { .. } => {
+            catalog.workload == Some(ToolWorkloadClass::Task) && catalog.mcp_transport.is_none()
+        }
+        ExecutablePlanningSurface::ToolService { .. } => {
+            catalog.workload == Some(ToolWorkloadClass::Service) && catalog.mcp_transport.is_none()
+        }
+        ExecutablePlanningSurface::McpService { .. } => {
+            catalog.workload.is_none()
+                && catalog.mcp_transport == Some(CatalogMcpTransport::StreamableHttp)
+        }
+        ExecutablePlanningSurface::McpStdio { .. } => {
+            catalog.workload.is_none() && catalog.mcp_transport == Some(CatalogMcpTransport::Stdio)
+        }
+    }
 }
 
 fn plan_surface(

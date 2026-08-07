@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
-    CatalogMcpTransport, ExecutablePlanningSurface, PlanEnforcementProfile,
+    CatalogMcpTransport, CatalogSurface, ExecutablePlanningSurface, PlanEnforcementProfile,
     PlanQualifiedSurfaceRef, PlannedPackageState, PlannedPackageTransition,
     PlannedProviderEvidence, PluginPlanningBundle, PluginSurfaceKind, ToolWorkloadClass, UseResult,
 };
@@ -12,11 +12,11 @@ use super::{current_host_target, package_manager_error};
 /// Produce the exact built-in provider evidence for package-local Tool Tasks
 /// and stdio MCP launchers described by signed planning targets.
 ///
-/// Release-backed Tool/MCP services intentionally fail closed here. They need
-/// an explicit Runtime/Gateway provider selection rather than the native
-/// package launcher. Callers must first verify each bundle with
-/// `PluginPlanningBundle::validate_catalog_binding`; this function then binds
-/// that evidence to the selected transition state and native provider.
+/// Release-backed Tool Tasks, Tool Services, and HTTP MCP Services are
+/// validated but skipped here. They must be selected separately through an
+/// explicit Runtime/Gateway provider. This lets one package safely mix native
+/// and managed executable surfaces without either provider claiming the
+/// other's workload.
 pub fn plan_native_provider_evidence(
     packages: &[PlannedPackageTransition],
     planning_bundles: &BTreeMap<String, PluginPlanningBundle>,
@@ -48,6 +48,7 @@ pub fn plan_native_provider_evidence(
             ))
         })?;
         validate_bundle_state(bundle, state)?;
+        validate_bundle_surface_set(bundle, &executable)?;
         for surface in executable {
             let reference = PlanQualifiedSurfaceRef {
                 package_id: package.package_id.clone(),
@@ -79,20 +80,18 @@ pub fn plan_native_provider_evidence(
                         package.package_id, surface.id
                     ))
                 })?;
-            let native = match planning {
-                ExecutablePlanningSurface::ToolTaskNative { .. } => {
-                    surface.kind == PluginSurfaceKind::Tool
-                        && surface.workload == Some(ToolWorkloadClass::Task)
-                }
-                ExecutablePlanningSurface::McpStdio { .. } => {
-                    surface.kind == PluginSurfaceKind::Mcp
-                        && surface.mcp_transport == Some(CatalogMcpTransport::Stdio)
-                }
-                _ => false,
-            };
-            if !native || !permission.native_execution || permission.private_service {
+            if !planning_matches_catalog(planning, surface) {
                 return Err(native_provider_error(format!(
-                    "Executable surface '{}/{}' requires an explicitly selected Runtime provider.",
+                    "Executable planning evidence for '{}/{}' does not match its selected catalog workload.",
+                    package.package_id, surface.id
+                )));
+            }
+            if !is_native_planning_surface(planning) {
+                continue;
+            }
+            if !permission.native_execution || permission.private_service {
+                return Err(native_provider_error(format!(
+                    "Native executable surface '{}/{}' lacks exact native-launcher authority.",
                     package.package_id, surface.id
                 )));
             }
@@ -104,6 +103,60 @@ pub fn plan_native_provider_evidence(
     }
     providers.sort_by(|left, right| left.surface.cmp(&right.surface));
     Ok(providers)
+}
+
+fn validate_bundle_surface_set(
+    bundle: &PluginPlanningBundle,
+    executable: &[&CatalogSurface],
+) -> UseResult<()> {
+    let selected = executable
+        .iter()
+        .map(|surface| surface.reference())
+        .collect::<Vec<_>>();
+    let planned = bundle
+        .surfaces
+        .iter()
+        .map(ExecutablePlanningSurface::reference)
+        .collect::<Vec<_>>();
+    if planned != selected {
+        return Err(native_provider_error(
+            "The signed planning bundle does not cover the exact selected executable surfaces.",
+        ));
+    }
+    Ok(())
+}
+
+fn is_native_planning_surface(surface: &ExecutablePlanningSurface) -> bool {
+    matches!(
+        surface,
+        ExecutablePlanningSurface::ToolTaskNative { .. }
+            | ExecutablePlanningSurface::McpStdio { .. }
+    )
+}
+
+fn planning_matches_catalog(
+    planning: &ExecutablePlanningSurface,
+    catalog: &CatalogSurface,
+) -> bool {
+    if planning.reference() != catalog.reference() {
+        return false;
+    }
+    match planning {
+        ExecutablePlanningSurface::ToolTaskNative { .. }
+        | ExecutablePlanningSurface::ToolTask { .. } => {
+            catalog.workload == Some(ToolWorkloadClass::Task) && catalog.mcp_transport.is_none()
+        }
+        ExecutablePlanningSurface::ToolService { .. } => {
+            catalog.workload == Some(ToolWorkloadClass::Service) && catalog.mcp_transport.is_none()
+        }
+        ExecutablePlanningSurface::McpService { .. } => {
+            catalog.workload.is_none()
+                && catalog.mcp_transport == Some(CatalogMcpTransport::StreamableHttp)
+        }
+        ExecutablePlanningSurface::McpStdio { .. } => {
+            catalog.workload.is_none() && catalog.mcp_transport == Some(CatalogMcpTransport::Stdio)
+        }
+    }
 }
 
 pub(super) fn native_provider_evidence(
@@ -184,12 +237,13 @@ mod tests {
 
         let mut release_backed = bundle;
         release_backed.surfaces[1] = planning_release_task();
-        let error = plan_native_provider_evidence(
+        let providers = plan_native_provider_evidence(
             &[native_transition().0],
             &BTreeMap::from([("acme/research".to_owned(), release_backed)]),
         )
-        .unwrap_err();
-        assert_eq!(error.code, "use.plugin.runtime_provider_required");
+        .unwrap();
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].surface.surface.id, "library");
     }
 
     fn native_transition() -> (PlannedPackageTransition, PluginPlanningBundle) {

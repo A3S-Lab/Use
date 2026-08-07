@@ -149,7 +149,7 @@ fn host_grant_planner_matches_manager_planner_for_permission_bearing_user_instal
         plan_workspace_grants(&mut manager_draft, &binding, &snapshot, false, true)
             .unwrap()
             .unwrap();
-    bind_cognitive_package_grant_impacts(&mut host_draft, &binding, &snapshot).unwrap();
+    let host_grants = bind_cognitive_package_grants(&mut host_draft, &binding, &snapshot).unwrap();
 
     assert_eq!(
         host_draft.workspace_impacts,
@@ -165,6 +165,11 @@ fn host_grant_planner_matches_manager_planner_for_permission_bearing_user_instal
             .grant_after_digest
             .as_deref(),
         Some(change_set_digest.as_str())
+    );
+    let expected_proposal = manager_grants.change_set.changes[0].after.as_ref().unwrap();
+    assert_eq!(
+        host_grants.proposal(&expected_proposal.package_id),
+        Some(expected_proposal)
     );
     assert_eq!(
         host_draft.bind(binding.clone()).unwrap(),

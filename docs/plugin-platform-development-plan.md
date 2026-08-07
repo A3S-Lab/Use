@@ -62,15 +62,17 @@ Status: in progress
 
 ### A1 Runtime Service
 
-- Compose production Task and Service providers through typed
-  `RuntimeClientRegistry` objects.
-- Bind provider/build/capability evidence during planning and revalidate during
-  apply.
+- [x] Compose native and managed provider-neutral package plans through typed
+  `RuntimeClientRegistry` objects, including mixed-surface packages.
+- [x] Bind canonical pre-confirmation Grant proposals into final
+  provider/build/capability/enforcement/semantics evidence in A3S Use.
+- Reconstruct the exact selected provider evidence in the CLI apply path.
 - Implement exact-generation health, invocation, drain, and removal.
 - [x] Consume only Runtime-published generation-bound loopback Service
   endpoints and enforce Gateway drain/remove ordering in the shared lifecycle
   adapter.
-- Prove no native fallback when the selected provider disappears.
+- [x] Prove no native fallback when the selected provider disappears during
+  Use-owned selection.
 
 Acceptance:
 
