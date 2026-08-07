@@ -8,8 +8,6 @@ use sha2::{Digest, Sha256};
 use super::index::{PreparedIndex, INDEX_SCHEMA};
 use crate::okf_knowledge::OkfKnowledgeStageSpec;
 
-const MAX_REMOVED_TOMBSTONES: usize = 32;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ProjectionState {
     Staged,
@@ -18,7 +16,7 @@ pub(super) enum ProjectionState {
 }
 
 impl ProjectionState {
-    fn parse(value: &str) -> UseResult<Self> {
+    pub(super) fn parse(value: &str) -> UseResult<Self> {
         match value {
             "staged" => Ok(Self::Staged),
             "promoted" => Ok(Self::Promoted),
@@ -127,9 +125,14 @@ pub(super) fn load_projection(
                     error.message
                 ))
             })?;
-            if receipt.descriptor_digest()? != receipt_digest || !valid_sha256(&index_digest) {
+            if receipt.surface.package_id != package_id
+                || receipt.surface.surface.id != surface_id
+                || receipt.generation != generation
+                || receipt.descriptor_digest()? != receipt_digest
+                || !valid_sha256(&index_digest)
+            {
                 return Err(database_invalid(
-                    "The retained Knowledge projection digest evidence is invalid.",
+                    "The retained Knowledge projection identity or digest evidence is invalid.",
                 ));
             }
             Ok(StoredProjection {
@@ -238,26 +241,6 @@ fn selected_generation_from_receipt(
     })
 }
 
-pub(super) fn prune_removed_tombstones(
-    connection: &Connection,
-    package_id: &str,
-    surface_id: &str,
-) -> UseResult<()> {
-    connection
-        .execute(
-            "DELETE FROM knowledge_projections
-             WHERE package_id = ?1 AND surface_id = ?2 AND state = 'removed'
-               AND generation NOT IN (
-                   SELECT generation FROM knowledge_projections
-                   WHERE package_id = ?1 AND surface_id = ?2 AND state = 'removed'
-                   ORDER BY generation DESC LIMIT ?3
-               )",
-            params![package_id, surface_id, MAX_REMOVED_TOMBSTONES as i64],
-        )
-        .map_err(|error| database_io("prune removed Knowledge tombstones", error))?;
-    Ok(())
-}
-
 pub(super) fn projection_id(spec: &OkfKnowledgeStageSpec) -> String {
     let identity = format!(
         "{}\n{}\n{}\n{}\n{}\n{}",
@@ -306,7 +289,7 @@ pub(super) fn database_conflict(message: impl Into<String>) -> UseError {
     UseError::new("use.okf.knowledge_database_conflict", message)
 }
 
-fn database_invalid(message: impl Into<String>) -> UseError {
+pub(super) fn database_invalid(message: impl Into<String>) -> UseError {
     UseError::new("use.okf.knowledge_database_invalid", message)
 }
 

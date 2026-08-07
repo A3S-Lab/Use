@@ -9,7 +9,7 @@ description: How Open Knowledge Format becomes a first-class, non-executable A3S
 
 In A3S Use, OKF is a first-class cognitive surface alongside Tool, MCP, Flow, Skill, and UI, but it is not an executable workload.
 
-> Current status: the standalone lifecycle includes a bundled cross-platform SQLite/FTS5 Knowledge backend, complete User/Workspace isolation, transactional stage/promote/remove, exact projection-authorized cited search, restart recovery, and signed install/query/upgrade/uninstall coverage. A3S Code/Web-managed Workspace and session carriers plus production retention/GC remain pending; without exact promoted evidence, the surface is not published.
+> Current status: the standalone lifecycle includes a bundled cross-platform SQLite/FTS5 Knowledge backend, complete User/Workspace isolation, transactional stage/promote/remove, exact projection-authorized cited search, restart recovery, bounded storage quota/retention/GC, and signed install/query/upgrade/uninstall coverage. A3S Code/Web-managed Workspace and session carriers, leased-query qualification, and operational backup/repair remain pending; without exact promoted evidence, the surface is not published.
 
 ## Bundle structure
 
@@ -95,6 +95,29 @@ The frozen host boundary uses three canonical records:
 
 The standalone backend keeps one SQLite/FTS5 database per complete scope. A current capability snapshot selects the newly promoted generation. An already-open session holding the exact prior projection may continue querying it during drain; receipt-owned removal invalidates that projection. Unknown database `user_version` values are rejected without migration or rewrite because no stable Knowledge database format has shipped yet.
 
+## Storage policy and diagnostics
+
+The default standalone policy bounds each complete User or Workspace scope to:
+
+- 512 MiB of retained expanded OKF content;
+- 256 retained projections across all packages and surfaces;
+- 32 retained generations for any one surface; and
+- 256 scope-wide removal tombstones.
+
+Expanded bytes come from each immutable projection receipt and are revalidated when accounting is rebuilt after restart. Staging checks byte and projection quota inside the same immediate transaction that inserts the candidate, so a rejected candidate cannot change the selected generation or consume a partial row. Receipt-owned removal frees quota, globally prunes old tombstones, vacuums free SQLite pages, and truncates the WAL.
+
+Inspect the default User scope or an exact Workspace scope without reading concept content:
+
+```bash
+a3s-use knowledge usage --json
+a3s-use knowledge usage \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --json
+```
+
+The report includes retained projections, tombstones, expanded bytes, active policy limits, allocated database bytes, and reclaimable bytes. Workspace diagnostics require an explicit `--scope-id`; the CLI never guesses a current Workspace identity. These controls harden the standalone backend; they do not claim that Code/Web managed carriers or whole-product backup and repair are complete.
+
 ## Compilation is not installation
 
 PDF, Office, image, email, archive, and web content are compiler inputs—not OKF search authority. An independent knowledge compiler may normalize those sources into OKF, but the install plan reviews the final normalized bundle. Installation does not download or execute a compiler that changes reviewed content.
@@ -107,4 +130,4 @@ PDF, Office, image, email, archive, and web content are compiler inputs—not OK
 - Disable only hides the OKF capability from new sessions.
 - Uninstall removes only package receipt-owned projection/index content, never personal notes, raw sources, or another package's index.
 
-See M0K in the [roadmap](./roadmap) and the repository's [OKF contribution workstream](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-development-plan.md#okf-contribution-workstream) for implementation order.
+See the [roadmap](./roadmap) and the repository's [Managed Knowledge workstream](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-development-plan.md#a3-managed-knowledge) for the remaining implementation order.

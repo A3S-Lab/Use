@@ -123,6 +123,9 @@ rejection. They are not supported decode paths.
 - [x] Typed lifecycle hosts for Tool, MCP, OKF, Flow, Skill, and UI.
 - [x] Standalone executable Task, stdio MCP, immutable Skill/UI, and
   SQLite/FTS5 OKF Knowledge composition.
+- [x] Scope-kind-isolated OKF storage policy with atomic receipt-accounted byte
+  and projection quotas, per-surface generation bounds, global tombstone
+  pruning, SQLite/WAL compaction, and exact-scope usage diagnostics.
 - [x] Real `a3s-flow` Native TypeScript preflight and exact-generation binding
   in injected hosts and the explicitly configured standalone CLI lifecycle.
 - [x] Workspace Grant proposal/change/resolution/ceiling binding.
@@ -153,8 +156,10 @@ Status: in progress
   hosts with exact plan-time and apply-time evidence.
 - [ ] Compose HTTP/streamable MCP through Gateway with health, drain, and
   exact-generation retirement.
-- [ ] Complete managed Knowledge Workspace/session carriers and projection
-  retention/garbage collection.
+- [x] Complete bounded storage quota, projection retention, tombstone garbage
+  collection, and physical compaction in the standalone Knowledge backend.
+- [ ] Complete managed Code/Web Knowledge Workspace/session carriers and prove
+  leased prior-generation query semantics through those hosts.
 - [ ] Complete UI sandbox origin, CSP, backend bindings, navigation policy,
   and generation drain across desktop and Web hosts.
 - [ ] Prove that every required surface remains unpublished when its owner or
@@ -224,8 +229,9 @@ Status: pending
 - [ ] Produce reproducible multi-platform archives, SBOMs, provenance,
   signatures, checksums, and installation scripts from one release workflow.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair
-  procedures for packages, cutover evidence, Grants, Flow history, and OKF
-  projections.
+  procedures for packages, cutover evidence, Grants, Flow history, UI state,
+  and OKF projections; the implemented OKF scope policy does not replace
+  backup, repair, or whole-product operating procedures.
 - [ ] Add telemetry and diagnostics for plan, download, cutover, drain,
   rollback, and recovery without exposing secrets.
 - [ ] Complete threat model review, privilege boundaries, security response,

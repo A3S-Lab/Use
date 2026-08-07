@@ -13,12 +13,21 @@ use super::{
 
 mod filesystem;
 mod index;
+mod policy;
 mod projection;
 mod record;
 mod schema;
 mod search;
+mod storage;
 
 use filesystem::{prepare_scope_database, LockMode};
+pub use policy::{
+    OkfKnowledgeStoragePolicy, DEFAULT_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES,
+    DEFAULT_OKF_KNOWLEDGE_SCOPE_PROJECTIONS, DEFAULT_OKF_KNOWLEDGE_SCOPE_TOMBSTONES,
+    MAX_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES, MAX_OKF_KNOWLEDGE_SCOPE_PROJECTIONS,
+    MAX_OKF_KNOWLEDGE_SCOPE_TOMBSTONES,
+};
+pub use storage::OkfKnowledgeStorageUsage;
 
 /// Cross-platform production Knowledge backend for standalone A3S Use.
 ///
@@ -30,14 +39,20 @@ use filesystem::{prepare_scope_database, LockMode};
 pub struct SqliteOkfKnowledgeAdapter {
     state_root: PathBuf,
     root: PathBuf,
+    policy: OkfKnowledgeStoragePolicy,
 }
 
 impl SqliteOkfKnowledgeAdapter {
     pub fn new(state_root: impl Into<PathBuf>) -> Self {
+        Self::with_policy(state_root, OkfKnowledgeStoragePolicy::default())
+    }
+
+    pub fn with_policy(state_root: impl Into<PathBuf>, policy: OkfKnowledgeStoragePolicy) -> Self {
         let state_root = state_root.into();
         Self {
             root: state_root.join("knowledge").join("sqlite"),
             state_root,
+            policy,
         }
     }
 
@@ -45,8 +60,44 @@ impl SqliteOkfKnowledgeAdapter {
         Self::new(paths.state_root())
     }
 
+    pub fn from_extension_paths_with_policy(
+        paths: &ExtensionPaths,
+        policy: OkfKnowledgeStoragePolicy,
+    ) -> Self {
+        Self::with_policy(paths.state_root(), policy)
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub const fn policy(&self) -> &OkfKnowledgeStoragePolicy {
+        &self.policy
+    }
+
+    pub async fn usage(&self, scope: &PlanScope) -> UseResult<OkfKnowledgeStorageUsage> {
+        let guard = self.database_guard(scope, LockMode::Shared).await?;
+        let exists = tokio::fs::try_exists(&guard.path).await.map_err(|error| {
+            UseError::new(
+                "use.okf.knowledge_database_io",
+                format!(
+                    "Failed to inspect Knowledge database '{}': {error}",
+                    guard.path.display()
+                ),
+            )
+        })?;
+        if !exists {
+            return Ok(OkfKnowledgeStorageUsage::empty(scope.clone(), &self.policy));
+        }
+        let scope = scope.clone();
+        let policy = self.policy;
+        tokio::task::spawn_blocking(move || {
+            let connection = schema::open(&guard.path, false)
+                .map_err(|error| sqlite_error("open accounted Knowledge database", error))?;
+            storage::usage(&connection, &scope, &policy)
+        })
+        .await
+        .map_err(|error| blocking_error("account for OKF Knowledge storage", error))?
     }
 
     fn scope_directory(&self, scope: &PlanScope) -> UseResult<PathBuf> {
@@ -85,10 +136,11 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
             .database_guard(&spec.scope, LockMode::Exclusive)
             .await?;
         let now_ms = now_ms()?;
+        let policy = self.policy;
         tokio::task::spawn_blocking(move || {
             let mut connection = schema::open(&guard.path, true)
                 .map_err(|error| sqlite_error("open staged Knowledge database", error))?;
-            record::stage(&mut connection, &spec, &prepared, now_ms)
+            record::stage(&mut connection, &spec, &prepared, now_ms, &policy)
         })
         .await
         .map_err(|error| blocking_error("stage the OKF Knowledge index", error))?
@@ -129,10 +181,13 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
             .database_guard(&receipt.scope, LockMode::Exclusive)
             .await?;
         let now_ms = now_ms()?;
+        let policy = self.policy;
         tokio::task::spawn_blocking(move || {
             let mut connection = schema::open(&guard.path, false)
                 .map_err(|error| sqlite_error("open removable Knowledge database", error))?;
-            record::remove(&mut connection, &receipt, now_ms)
+            let removed = record::remove(&mut connection, &receipt, now_ms)?;
+            storage::collect_garbage(&mut connection, &policy)?;
+            Ok(removed)
         })
         .await
         .map_err(|error| blocking_error("remove the receipt-owned OKF Knowledge index", error))?

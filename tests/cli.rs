@@ -186,6 +186,95 @@ fn knowledge_search_fails_closed_without_an_active_projection() {
     assert_eq!(value["error"]["code"], "use.okf.knowledge_unavailable");
 }
 
+#[cfg(feature = "extensions")]
+#[test]
+fn knowledge_usage_reports_an_empty_exact_default_scope() {
+    let temporary = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["knowledge", "usage", "--json"])
+        .env("A3S_USE_HOME", temporary.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let storage = &value["data"]["knowledge"]["storage"];
+    assert_eq!(storage["scope"]["kind"], "user");
+    assert_eq!(storage["scope"]["id"], "user/current");
+    assert_eq!(storage["retainedProjections"], 0);
+    assert_eq!(storage["removedTombstones"], 0);
+    assert_eq!(storage["retainedExpandedBytes"], 0);
+    assert_eq!(storage["maxScopeProjections"], 256);
+    assert_eq!(storage["maxScopeExpandedBytes"], 512 * 1024 * 1024);
+    assert_eq!(storage["maxSurfaceGenerations"], 32);
+    assert_eq!(storage["maxScopeTombstones"], 256);
+    assert_eq!(storage["reclaimableDatabaseBytes"], 0);
+}
+
+#[cfg(feature = "extensions")]
+#[test]
+fn knowledge_usage_reports_an_empty_exact_workspace_scope() {
+    let temporary = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args([
+            "knowledge",
+            "usage",
+            "--scope-kind",
+            "workspace",
+            "--scope-id",
+            "workspace/acme-project",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", temporary.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let storage = &value["data"]["knowledge"]["storage"];
+    assert_eq!(storage["scope"]["kind"], "workspace");
+    assert_eq!(storage["scope"]["id"], "workspace/acme-project");
+    assert_eq!(storage["retainedProjections"], 0);
+    assert_eq!(storage["removedTombstones"], 0);
+    assert_eq!(storage["retainedExpandedBytes"], 0);
+}
+
+#[cfg(feature = "extensions")]
+#[test]
+fn knowledge_usage_rejects_an_unknown_scope_kind() {
+    let temporary = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args([
+            "knowledge",
+            "usage",
+            "--scope-kind",
+            "organization",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", temporary.path())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["error"]["code"], "use.cli.invalid_usage");
+}
+
+#[cfg(feature = "extensions")]
+#[test]
+fn knowledge_usage_requires_an_exact_workspace_scope_id() {
+    let temporary = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["knowledge", "usage", "--scope-kind", "workspace", "--json"])
+        .env("A3S_USE_HOME", temporary.path())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["error"]["code"], "use.cli.invalid_usage");
+}
+
 #[cfg(feature = "browser")]
 #[test]
 fn browser_help_succeeds_and_render_rejects_an_option_as_a_value() {

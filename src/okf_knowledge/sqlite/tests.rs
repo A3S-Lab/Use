@@ -295,6 +295,242 @@ async fn stage_replay_is_idempotent_and_conflicting_operation_fails_closed() {
     assert_eq!(error.code, "use.okf.knowledge_database_conflict");
 }
 
+#[tokio::test]
+async fn scope_quota_is_atomic_reusable_after_removal_and_survives_restart() {
+    let temporary = TempDir::new().unwrap();
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let first_files = knowledge_files("first quota generation", "first quota latency");
+    let first_spec = stage_spec(1, workspace_scope.clone(), "acme/first", &first_files);
+    let second_files = knowledge_files("second quota generation", "second quota latency");
+    let second_spec = stage_spec(1, workspace_scope.clone(), "acme/second", &second_files);
+    let policy = OkfKnowledgeStoragePolicy::new(
+        first_spec
+            .bundle
+            .expanded_bytes
+            .max(second_spec.bundle.expanded_bytes),
+        4,
+        2,
+        4,
+    )
+    .unwrap();
+    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::with_policy(
+        temporary.path(),
+        policy,
+    ));
+    let client = OkfKnowledgeClient::new(adapter.clone());
+    let first = stage_and_promote(&client, first_spec, first_files).await;
+
+    let before = adapter.usage(&workspace_scope).await.unwrap();
+    assert_eq!(before.retained_projections, 1);
+    assert_eq!(
+        before.retained_expanded_bytes,
+        first.receipt.bundle.expanded_bytes
+    );
+    assert_eq!(before.removed_tombstones, 0);
+
+    let error = client
+        .stage(OkfKnowledgeStageRequest::new(second_spec.clone(), second_files.clone()).unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_scope_quota_exceeded");
+    assert_eq!(adapter.usage(&workspace_scope).await.unwrap(), before);
+    assert!(!client
+        .search(
+            &OkfKnowledgeSearchRequest::new(
+                workspace_scope.clone(),
+                "first quota generation",
+                5,
+                vec![projection(&first)],
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap()
+        .hits
+        .is_empty());
+
+    client.remove(&first.receipt).await.unwrap();
+    let removed = adapter.usage(&workspace_scope).await.unwrap();
+    assert_eq!(removed.retained_projections, 0);
+    assert_eq!(removed.retained_expanded_bytes, 0);
+    assert_eq!(removed.removed_tombstones, 1);
+    assert_eq!(removed.reclaimable_database_bytes, 0);
+
+    drop(client);
+    drop(adapter);
+    let restarted_adapter = Arc::new(SqliteOkfKnowledgeAdapter::with_policy(
+        temporary.path(),
+        policy,
+    ));
+    let restarted = OkfKnowledgeClient::new(restarted_adapter.clone());
+    stage_and_promote(&restarted, second_spec, second_files).await;
+    let after_restart = restarted_adapter.usage(&workspace_scope).await.unwrap();
+    assert_eq!(after_restart.retained_projections, 1);
+    assert_eq!(after_restart.removed_tombstones, 1);
+}
+
+#[tokio::test]
+async fn scope_projection_limit_and_scope_kind_are_independent() {
+    let temporary = TempDir::new().unwrap();
+    let policy = OkfKnowledgeStoragePolicy::new(1024 * 1024, 1, 1, 4).unwrap();
+    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::with_policy(
+        temporary.path(),
+        policy,
+    ));
+    let client = OkfKnowledgeClient::new(adapter.clone());
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let first_files = knowledge_files("workspace quota", "workspace latency");
+    stage_and_promote(
+        &client,
+        stage_spec(1, workspace_scope.clone(), "acme/first", &first_files),
+        first_files,
+    )
+    .await;
+
+    let second_files = knowledge_files("workspace overflow", "overflow latency");
+    let error = client
+        .stage(
+            OkfKnowledgeStageRequest::new(
+                stage_spec(1, workspace_scope.clone(), "acme/second", &second_files),
+                second_files,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.okf.knowledge_scope_projection_limit_exceeded"
+    );
+
+    let user_scope = scope(PlanScopeKind::User);
+    let user_files = knowledge_files("user quota", "user latency");
+    stage_and_promote(
+        &client,
+        stage_spec(1, user_scope.clone(), "acme/second", &user_files),
+        user_files,
+    )
+    .await;
+    assert_eq!(
+        adapter
+            .usage(&workspace_scope)
+            .await
+            .unwrap()
+            .retained_projections,
+        1
+    );
+    assert_eq!(
+        adapter
+            .usage(&user_scope)
+            .await
+            .unwrap()
+            .retained_projections,
+        1
+    );
+}
+
+#[tokio::test]
+async fn removal_bounds_scope_tombstones_and_reclaims_sqlite_pages() {
+    let temporary = TempDir::new().unwrap();
+    let policy = OkfKnowledgeStoragePolicy::new(1024 * 1024, 4, 1, 2).unwrap();
+    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::with_policy(
+        temporary.path(),
+        policy,
+    ));
+    let client = OkfKnowledgeClient::new(adapter.clone());
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let mut receipts = Vec::new();
+    for package in ["acme/first", "acme/second", "acme/third"] {
+        let files = knowledge_files(package, "retired latency");
+        let binding = stage_and_promote(
+            &client,
+            stage_spec(1, workspace_scope.clone(), package, &files),
+            files,
+        )
+        .await;
+        client.remove(&binding.receipt).await.unwrap();
+        receipts.push(binding.receipt);
+    }
+
+    let usage = adapter.usage(&workspace_scope).await.unwrap();
+    assert_eq!(usage.retained_projections, 0);
+    assert_eq!(usage.removed_tombstones, 2);
+    assert_eq!(usage.retained_expanded_bytes, 0);
+    assert_eq!(usage.reclaimable_database_bytes, 0);
+
+    let oldest = client.observe(&receipts[0]).await.unwrap_err();
+    assert_eq!(oldest.code, "use.okf.knowledge_projection_missing");
+    client.remove(&receipts[2]).await.unwrap();
+}
+
+#[tokio::test]
+async fn storage_accounting_rejects_receipt_row_identity_tampering() {
+    let temporary = TempDir::new().unwrap();
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let client = OkfKnowledgeClient::new(adapter.clone());
+    let files = knowledge_files("tamper-resistant quota", "tamper-resistant latency");
+    let staged = client
+        .stage(
+            OkfKnowledgeStageRequest::new(
+                stage_spec(1, workspace_scope.clone(), "acme/research", &files),
+                files,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let mut tampered = staged.receipt.clone();
+    tampered.surface.package_id = "acme/other".to_owned();
+    let receipt_bytes = tampered.canonical_bytes().unwrap();
+    let receipt_digest = tampered.descriptor_digest().unwrap();
+    let path = adapter
+        .scope_directory(&workspace_scope)
+        .unwrap()
+        .join("knowledge.sqlite3");
+    let connection = super::schema::open(&path, false).unwrap();
+    connection
+        .execute(
+            "UPDATE knowledge_projections
+             SET receipt_json = ?1, receipt_digest = ?2
+             WHERE package_id = 'acme/research' AND surface_id = 'domain-knowledge'
+               AND generation = 1",
+            rusqlite::params![receipt_bytes, receipt_digest],
+        )
+        .unwrap();
+    drop(connection);
+
+    let error = adapter.usage(&workspace_scope).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_database_invalid");
+}
+
+#[test]
+fn storage_policy_rejects_unbounded_or_inconsistent_limits() {
+    for error in [
+        OkfKnowledgeStoragePolicy::new(0, 1, 1, 1).unwrap_err(),
+        OkfKnowledgeStoragePolicy::new(MAX_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES + 1, 1, 1, 1)
+            .unwrap_err(),
+        OkfKnowledgeStoragePolicy::new(1, 0, 1, 1).unwrap_err(),
+        OkfKnowledgeStoragePolicy::new(1, MAX_OKF_KNOWLEDGE_SCOPE_PROJECTIONS + 1, 1, 1)
+            .unwrap_err(),
+        OkfKnowledgeStoragePolicy::new(1, 1, 0, 1).unwrap_err(),
+        OkfKnowledgeStoragePolicy::new(1, 1, 2, 1).unwrap_err(),
+        OkfKnowledgeStoragePolicy::new(
+            1,
+            MAX_OKF_KNOWLEDGE_SCOPE_PROJECTIONS,
+            crate::okf_knowledge::MAX_OKF_KNOWLEDGE_GENERATIONS + 1,
+            1,
+        )
+        .unwrap_err(),
+        OkfKnowledgeStoragePolicy::new(1, 1, 1, 0).unwrap_err(),
+        OkfKnowledgeStoragePolicy::new(1, 1, 1, MAX_OKF_KNOWLEDGE_SCOPE_TOMBSTONES + 1)
+            .unwrap_err(),
+    ] {
+        assert_eq!(error.code, "use.okf.knowledge_storage_policy_invalid");
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn backend_rejects_symlinked_database_roots() {

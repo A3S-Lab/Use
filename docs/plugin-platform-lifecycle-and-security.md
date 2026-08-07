@@ -255,7 +255,12 @@ package generation, dependency edges, and preflight evidence are bound. A
 OKF promotion is atomic and scope-isolated. Query authorization requires an
 exact current or leased projection. Search results cite package, surface,
 generation, index, concept path, and source digest. Removed projections become
-invalid immediately after receipt-owned retirement.
+invalid immediately after receipt-owned retirement. The standalone backend
+accounts immutable receipt `expanded_bytes` across the complete scope before
+staging, independently bounds retained projections and per-surface
+generations, globally prunes removal tombstones, and compacts SQLite plus its
+WAL after removal. User and Workspace scopes with the same textual ID remain
+physically distinct.
 
 ### UI and Skill
 
@@ -322,7 +327,13 @@ Current disk schemas are listed in [plugin-contracts.md](plugin-contracts.md).
 All records are bounded and canonical. Unknown preview versions fail closed.
 
 The SQLite Knowledge backend accepts only its current `user_version`. It creates
-new state atomically and never migrates an unknown pre-release database.
+new state atomically and never migrates an unknown pre-release database. Its
+default policy allows 512 MiB of retained expanded content, 256 retained
+projections, 32 generations per surface, and 256 tombstones per complete
+scope. Hard ceilings are 8 GiB, 1,024 projections, 32 generations per surface,
+and 1,024 tombstones. `a3s-use knowledge usage --json` exposes non-secret
+scope-local usage and allocation evidence; backup and repair procedures remain
+a release gate.
 
 ## Observability
 
