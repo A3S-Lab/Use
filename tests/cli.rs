@@ -173,6 +173,21 @@ fn machine_errors_are_single_json_documents() {
     assert_eq!(value["error"]["code"], "use.route_unknown");
 }
 
+#[cfg(feature = "extensions")]
+#[test]
+fn knowledge_search_fails_closed_without_an_active_projection() {
+    let temporary = tempfile::tempdir().unwrap();
+    let output = Command::new(binary())
+        .args(["knowledge", "search", "package activation", "--json"])
+        .env("A3S_USE_HOME", temporary.path())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["error"]["code"], "use.okf.knowledge_unavailable");
+}
+
 #[cfg(feature = "browser")]
 #[test]
 fn browser_help_succeeds_and_render_rejects_an_option_as_a_value() {

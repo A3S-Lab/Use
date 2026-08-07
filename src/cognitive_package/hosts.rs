@@ -4,14 +4,17 @@ use a3s_runtime::contract::RuntimeObservation;
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_extension::{
     ExtensionLifecyclePackage, ExtensionManifest, ExtensionRegistry, PluginFlowSurface,
-    PluginMcpLaunch, PluginMcpSurface, PluginOkfSurface, ToolSurface, ToolTaskSource, ToolWorkload,
+    PluginMcpLaunch, PluginMcpSurface, ToolSurface, ToolTaskSource, ToolWorkload,
 };
 use async_trait::async_trait;
 
+use crate::okf_knowledge::{
+    OkfKnowledgeBindingStore, OkfKnowledgeClient, SqliteOkfKnowledgeAdapter,
+};
 use crate::plugin_lifecycle::{
-    ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost, PluginFlowLifecycleHost,
-    PluginLifecycleCoordinator, PluginLifecycleEvidence, PluginLifecycleHosts,
-    PluginLifecycleIntent, PluginMcpServiceReadiness, PluginOkfLifecycleHost,
+    ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost, OkfKnowledgeLifecycleHost,
+    PluginFlowLifecycleHost, PluginLifecycleCoordinator, PluginLifecycleEvidence,
+    PluginLifecycleHosts, PluginLifecycleIntent, PluginMcpServiceReadiness,
     PluginRuntimeServiceReadinessHost, RuntimePluginSurfaceLifecycleHost,
     StaticPluginSurfaceLifecycleHost,
 };
@@ -24,9 +27,9 @@ use super::CognitivePackageLifecycleFactory;
 /// Narrow lifecycle composition used by the standalone package engine.
 ///
 /// Embedding hosts may wrap this factory for executable Tool Tasks, stdio MCP,
-/// Skill, and UI packages. It deliberately rejects Runtime Service, HTTP MCP,
-/// A3S Flow, and OKF surfaces until the host supplies their real lifecycle
-/// adapters.
+/// Skill, UI, and OKF packages. It deliberately rejects Runtime Service, HTTP
+/// MCP, and A3S Flow surfaces until the host supplies their real lifecycle
+/// adapters. OKF uses the scope-isolated SQLite/FTS5 Knowledge backend.
 #[derive(Debug, Default)]
 pub struct StandaloneCognitivePackageLifecycleFactory;
 
@@ -80,23 +83,6 @@ pub(super) fn validate_available_hosts(manifest: &ExtensionManifest) -> UseResul
         )
         .with_suggestion(
             "Install through an A3S host with an explicit a3s-flow compiler/runtime adapter, then replay the exact package lock.",
-        ));
-    }
-
-    if !manifest.okf.is_empty() {
-        return Err(provider_error(
-            "use.plugin.okf_provider_required",
-            format!(
-                "Cognitive package '{}' requires an injected A3S Knowledge provider for OKF surfaces.",
-                manifest.package_id
-            ),
-        )
-        .with_detail(
-            "surfaces",
-            serde_json::json!(manifest.okf.iter().map(|value| &value.id).collect::<Vec<_>>()),
-        )
-        .with_suggestion(
-            "Install through an A3S host with an explicit Knowledge adapter, then replay the exact package lock.",
         ));
     }
 
@@ -187,8 +173,14 @@ fn coordinator(
         RuntimeBindingStore::from_extension_paths(paths),
         Arc::new(UnavailableRuntimeServiceReadinessHost),
     ));
-    let static_surfaces = Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root));
-    let okf = Arc::new(UnavailableOkfLifecycleHost);
+    let static_surfaces = Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root.clone()));
+    let okf = Arc::new(OkfKnowledgeLifecycleHost::new(
+        package_root.clone(),
+        OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(
+            paths,
+        ))),
+        OkfKnowledgeBindingStore::from_extension_paths(paths),
+    ));
     let flow = Arc::new(UnavailableFlowLifecycleHost);
     let hosts = PluginLifecycleHosts::new(
         package,
@@ -239,8 +231,6 @@ impl PluginRuntimeServiceReadinessHost for UnavailableRuntimeServiceReadinessHos
     }
 }
 
-struct UnavailableOkfLifecycleHost;
-
 struct UnavailableFlowLifecycleHost;
 
 #[async_trait]
@@ -277,43 +267,6 @@ fn flow_unavailable() -> UseError {
     provider_error(
         "use.plugin.flow_provider_required",
         "No a3s-flow compiler/runtime lifecycle adapter was injected for this cognitive-package operation.",
-    )
-}
-
-#[async_trait]
-impl PluginOkfLifecycleHost for UnavailableOkfLifecycleHost {
-    async fn prepare_okf(
-        &self,
-        _intent: &PluginLifecycleIntent,
-        _surface: &PluginOkfSurface,
-        _idempotency_key: &str,
-    ) -> UseResult<PluginLifecycleEvidence> {
-        Err(okf_unavailable())
-    }
-
-    async fn stop_okf(
-        &self,
-        _intent: &PluginLifecycleIntent,
-        _surface: &PluginOkfSurface,
-        _idempotency_key: &str,
-    ) -> UseResult<PluginLifecycleEvidence> {
-        Err(okf_unavailable())
-    }
-
-    async fn remove_okf(
-        &self,
-        _intent: &PluginLifecycleIntent,
-        _surface: &PluginOkfSurface,
-        _idempotency_key: &str,
-    ) -> UseResult<PluginLifecycleEvidence> {
-        Err(okf_unavailable())
-    }
-}
-
-fn okf_unavailable() -> UseError {
-    provider_error(
-        "use.plugin.okf_provider_required",
-        "No A3S Knowledge lifecycle adapter was injected for this cognitive-package operation.",
     )
 }
 
@@ -382,13 +335,12 @@ mod tests {
     }
 
     #[test]
-    fn okf_surfaces_fail_before_lifecycle_composition_without_knowledge() {
+    fn standalone_accepts_okf_surfaces_with_the_local_knowledge_backend() {
         let manifest = ExtensionManifest::parse_acl(include_str!(
             "../../crates/extension/fixtures/manifests/plugin-v3-okf.acl"
         ))
         .unwrap();
-        let error = validate_available_hosts(&manifest).unwrap_err();
-        assert_eq!(error.code, "use.plugin.okf_provider_required");
+        validate_available_hosts(&manifest).unwrap();
     }
 
     #[test]

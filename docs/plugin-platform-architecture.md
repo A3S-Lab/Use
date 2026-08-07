@@ -13,7 +13,9 @@
   host-capabilities-v4 reviewed enablement planning accepted 2026-08-06; local
   A3S Code CLI/Web reviewed enablement and restart replay accepted 2026-08-06;
   Code TUI `/packages` reviewed enablement and end-to-end full `PlanScope`
-  lifecycle identity accepted 2026-08-07
+  lifecycle identity accepted 2026-08-07; standalone SQLite/FTS5 Knowledge,
+  scoped cited retrieval, and signed atomic generation cutover accepted
+  2026-08-07
 - Roadmap: [A3S Use Plugin Platform Roadmap](../ROADMAP.md)
 - Delivery plan: [Plugin Platform Development Plan](plugin-platform-development-plan.md)
 - Operations: [Plugin Lifecycle and Security](plugin-platform-lifecycle-and-security.md)
@@ -68,9 +70,11 @@ provider. The fenced managed-host adapter now plans enablement explicitly under
 host capability v4 and applies the reviewed result through the existing
 digest-only request. Local Code CLI, idle-only TUI `/packages`, and Web now use
 the same User-scoped reviewed plan/apply contract with durable restart replay.
-Production provider composition, the A3S Knowledge index backend, and scoped
-cited retrieval remain to be implemented. Missing promoted evidence therefore
-stays explicitly unpublished.
+The standalone composition now supplies a cross-platform SQLite/FTS5 Knowledge
+host with complete User/Workspace isolation, transactional generation cutover,
+exact projection-authorized search, and concept/source-digest citations.
+Missing promoted evidence stays explicitly unpublished. Managed Code/Web
+Workspace/session carriers and production Service/Gateway composition remain.
 
 Flow has one engine identity: `a3s-flow`. The manifest separately names the
 currently admitted `native-ts` runtime adapter and content-bound source. Use
@@ -122,7 +126,8 @@ The design optimizes for:
 7. diagnosable partial failure and crash recovery;
 8. no ambient authority from Skill text, UI or OKF content, CLI arguments, or
    remote service responses; and
-9. compatibility with existing extension schema v1/v2 packages.
+9. one current pre-release contract without migration branches for unpublished
+   schemas, APIs, receipts, or database layouts.
 
 The design does not make Runtime a package manager, make A3S Use a scheduler,
 or invent another agent RPC protocol.
@@ -511,7 +516,11 @@ The machine boundary is split deliberately:
 - `a3s.use.okf-knowledge-observation.v2` reports full-scope host state and the
   selected last-good generation; and
 - `a3s.use.okf-capability-projection.v2` contains only exact full-scope
-  promoted evidence safe for a scope-aware capability generation.
+  promoted evidence safe for a scope-aware capability generation;
+- `a3s.use.okf-knowledge-search-request.v1` carries one complete scope, bounded
+  query, result limit, and exact reviewed capability/session projections; and
+- `a3s.use.okf-knowledge-search-response.v1` returns deterministic concepts
+  cited to package, surface, generation, index, path, and source digest.
 
 OKF conformance is deliberately permissive. Unknown concept types and
 frontmatter keys remain valid, missing optional indexes remain valid, and safe
@@ -539,6 +548,16 @@ with atomic file replacement and a cross-process store lock. The highest
 candidate observation is authoritative: it may select a retained exact
 promoted record as last-good, while a highest `removed` record suppresses all
 fallback.
+
+The standalone M0K-C-B host stores each complete User or Workspace scope in a
+separate bundled SQLite/FTS5 database. Schema initialization, stage, promotion,
+selection, and receipt-owned removal are transactional. Search never scans all
+retained indexes: a caller supplies exact projections from its reviewed
+capability snapshot or session. A newly published snapshot selects N+1 while
+an in-flight session holding exact N may continue querying N until retirement;
+after receipt-owned removal, N fails closed. The database accepts only its one
+current pre-release `user_version` and never migrates or rewrites an unknown
+version.
 
 OKF content is guidance and evidence, not authority. Frontmatter, concept text,
 links, resources, or compiler provenance cannot grant filesystem, network,
@@ -618,9 +637,9 @@ Embedding hosts implement `CognitivePackageLifecycleFactory` to compose their
 typed Runtime, Gateway, A3S Flow, Knowledge, Skill, and UI adapters. Registry
 resolution and graph orchestration remain single-source Use logic; a host may
 not fork the resolver or create per-surface installation units. The standalone
-factory supports native executable Tasks, stdio MCP, and immutable Skill/UI
-projection, and fails before publication when a required Runtime Service, HTTP
-MCP, Flow, or OKF owner is absent.
+factory supports native executable Tasks, stdio MCP, immutable Skill/UI
+projection, and local SQLite/FTS5 OKF Knowledge. It fails before publication
+when a required Runtime Service, HTTP MCP, or Flow owner is absent.
 
 A3S Code now composes executable Tool Tasks, stdio MCP, the real `a3s-flow`
 preflight host, and immutable Skill/UI projection through this factory. Its TUI
@@ -631,7 +650,8 @@ coordinator: plan v3 binds the complete prior/candidate lock union,
 Add/Replace archives prepare forward, removed routes leave in the same
 publication, and replaced or unreferenced generations retire in reverse order.
 Exact shared dependencies remain selected without download or receipt rewrite.
-Production Knowledge, Runtime Service, and Gateway/HTTP MCP remain pending.
+Managed Code/Web Knowledge carriers, Runtime Service, and Gateway/HTTP MCP
+remain pending.
 Local Code CLI, TUI `/packages`, Web, and the fenced managed-host adapter
 already persist plan-v4/NoChange planning
 evidence and inject the reviewed authorization provider during digest-only
@@ -1020,13 +1040,13 @@ state, and exact sorted named-surface inventory. Catalog/manifest inventory
 drift or a dependency-open selection fails the capability snapshot instead of
 letting the planner infer state.
 
-The existing process-wide capability snapshot has no workspace identity and
-therefore does not select one implicitly. Automatic capability/session
-publication remains pending until the lifecycle caller supplies the explicit
-scope plus Runtime, A3S Flow, compatibility-host, Skill, UI, and Knowledge observations.
-The OKF Knowledge-host observation contract already joins the shared
-reconciler: missing remains pending, staged remains unpublished, failed cannot
-replace last-good, and only exact promoted evidence is healthy.
+The standalone capability snapshot uses its explicit default User scope and
+publishes only OKF projections re-observed from the live SQLite/FTS5 host.
+Managed A3S Code/Web callers must still carry an explicit Workspace and exact
+session projection instead of selecting an implicit process-wide default. The
+OKF Knowledge-host observation joins the shared reconciler: missing remains
+pending, staged remains unpublished, failed cannot replace last-good, and only
+exact promoted evidence is healthy.
 
 Current provider evidence matters:
 
@@ -1067,10 +1087,10 @@ whose required carrier is absent is not projected into that session. A target
 OKF binding requires a compatible Knowledge host and cited-retrieval carrier;
 it never resolves through Runtime.
 
-The Use-owned OKF binding store retains at most 32 generations and refuses to
-discard ownership evidence implicitly. Reaching the bound requires explicit
-receipt-owned cleanup by the package lifecycle adapter and, once wired, its
-production parent saga. This prevents storage pressure
+The Use-owned OKF binding and SQLite stores retain at most 32 generations and
+refuse to discard live ownership evidence implicitly. Reaching the bound
+requires explicit receipt-owned cleanup by the package lifecycle adapter; only
+removed tombstones may be pruned. This prevents storage pressure
 from silently orphaning a Knowledge index or resurrecting an older promoted
 generation after removal.
 
@@ -1123,38 +1143,29 @@ and UI hosts. A3S Use additionally composes plan-v4 permission-bearing
 enablement with exact Grant cutover and recovery when reviewed authority is
 injected. Host capability v4 exposes that path to fenced managed hosts without
 adding another lifecycle, and local Code CLI, TUI `/packages`, and Web expose
-the same User-scoped review/apply contract. Production
-Service/Gateway/Knowledge providers, complete graph upgrade/uninstall
-construction, and cross-platform crash E2E still bound the product readiness
-claim.
+the same User-scoped review/apply contract. Production Service/Gateway
+providers, managed Workspace/session Knowledge carriers, complete graph
+upgrade/uninstall construction, and cross-platform crash E2E still bound the
+product readiness claim.
 
-## Compatibility and Migration
+## Pre-release Evolution
 
-Migration is additive:
+The cognitive-package platform has not reached a stable 1.0 contract. Its
+development rules are intentionally simple:
 
-1. parse schema v1/v2 unchanged and adapt singular `cli`, `mcp`, and `skill`
-   fields into named internal surfaces;
-2. interpret legacy `cli` as one Tool Task with user exposure and retain its
-   existing direct launcher behavior;
-3. add schema v3 fixtures for multiple Tools, MCP servers, Flows, Skills, and UIs;
-4. add the frozen OKF manifest/package fixture and versioned catalog, plan,
-   receipt, projection, and A3S Knowledge observation contracts without
-   reinterpreting the existing schema-v3 fixture;
-5. add Flow as a first-class `a3s-flow` contribution with a typed runtime
-   adapter, then migrate `flow.json` through an import/deployment adapter rather
-   than preserving a second engine;
-6. introduce the Tool release descriptor and Runtime mapping behind typed
-   interfaces;
-7. move Science to registry-only delivery and model its real executables or
-   Services as Tool surfaces;
-8. project dependency-ready Flow, Skills, UI, and OKF from the shared reconciler;
-9. make CLI, Web, and management MCP use the same Plugin Manager; and
-10. deprecate the native compatibility runner only after supported Runtime
-   providers pass equivalent Task and stdio-session conformance.
+1. keep one current manifest, catalog, plan/apply, host, receipt, and database
+   contract;
+2. delete superseded pre-release decoders, adapters, toggles, and fixtures;
+3. reject unknown versions without migration or inferred defaults;
+4. do not rewrite unpublished local state—users recreate it with the current
+   build; and
+5. retain package SemVer resolution, host-version requirements, platform
+   targets, and signed provenance because they determine whether a current
+   package can run safely.
 
-No migration converts a Tool into an MCP server. A publisher may expose both
-when both interfaces are useful, but they remain distinct surfaces sharing one
-package generation.
+Once a contract ships in the first stable product release, later incompatible
+changes require an explicit version and migration decision. That future rule
+does not turn today's pre-release paths into compatibility commitments.
 
 ## Required Architecture Decisions
 

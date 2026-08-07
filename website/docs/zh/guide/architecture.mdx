@@ -94,9 +94,9 @@ surface enable：   前向准备 surface → 一次发布
 surface disable：  hide → drain → 反向停止 surface
 ```
 
-Runtime Tool/MCP、immutable Flow/Skill/UI evidence 与 OKF Knowledge adapter 已实现。P0 schema-v3 package/capability host 可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 route lease，并只移除 receipt-owned root。依赖基础又增加了精确 retained-node 校验、crash-safe 原子图发布、durable admission/lock record，以及 partial install/uninstall 后的 journal recovery；signed remote standalone CLI 已使用该图。A3S Code 的 Plugin Manager 现已通过 public lifecycle factory 组合 executable Tool Task、stdio MCP、真实 A3S Flow preflight host、Skill 与 UI；TUI/Web 共用一个 watcher 并热插拔精确 generation。生产 grant/Knowledge/Runtime Service/Gateway 组合、持久 Flow run routing 与旧 Runtime generation 退休仍在进行，因此该基础不代表完整 production saga 已交付。
+Runtime Tool/MCP、immutable Flow/Skill/UI evidence 与 OKF Knowledge adapter 已实现。standalone host 还提供 bundled SQLite/FTS5 后端，具备完整 User/Workspace 隔离、事务化 generation cutover、精确 projection 授权搜索，以及 concept/source-digest citation。P0 schema-v3 package/capability host 可把已验证 generation 提交为 installed-disabled，发布或隐藏 exact-generation snapshot，排空 route lease，并只移除 receipt-owned root。依赖基础又增加了精确 retained-node 校验、crash-safe 原子图发布、durable admission/lock record，以及 partial install/uninstall 后的 journal recovery；signed remote standalone CLI 已使用该图。A3S Code 的 Plugin Manager 现已通过 public lifecycle factory 组合 executable Tool Task、stdio MCP、真实 A3S Flow preflight host、Skill 与 UI；TUI/Web 共用一个 watcher 并热插拔精确 generation。Code/Web 托管的 Knowledge Workspace/session carrier、Runtime Service/Gateway 组合、持久 Flow run routing 与旧 Runtime generation 退休仍在进行，因此该基础不代表完整 production saga 已交付。
 
-Embedding host 实现 `CognitivePackageLifecycleFactory`，提供精确的 Runtime、Gateway、A3S Flow、Skill/UI 与 A3S Knowledge adapter，并复用 Use 的 resolver、graph journal 和 capability cutover，而不是创建另一个 package manager。standalone factory 支持 executable Task、stdio MCP 和 immutable Skill/UI projection；必需的 Service、HTTP MCP、Flow 或 OKF owner 未注入时，会在发布前失败。Code 会显式注入 Flow host，但这不会为其他 embedding 创建 fallback。
+Embedding host 实现 `CognitivePackageLifecycleFactory`，提供精确的 Runtime、Gateway、A3S Flow、Skill/UI 与 A3S Knowledge adapter，并复用 Use 的 resolver、graph journal 和 capability cutover，而不是创建另一个 package manager。standalone factory 支持 executable Task、stdio MCP、immutable Skill/UI projection 与本地 SQLite/FTS5 OKF Knowledge；必需的 Service、HTTP MCP 或 Flow owner 未注入时，会在发布前失败。Code 会显式注入 Flow host，但这不会为其他 embedding 创建 fallback。
 
 [ADR-002](https://github.com/A3S-Lab/Use/blob/main/docs/adr-002-cognitive-package-lifecycle-saga.md) 冻结了该生命周期边界。
 
@@ -106,6 +106,6 @@ Surface Reconciler 观察 desired state、generation receipt、grant、binding�
 
 Flow 只有一个引擎身份。Native TypeScript 是执行适配器，`flow.json` 是可视化设计/部署文档，Code 是本地宿主，OS 是远程目标。这些路径不能创建并行 package receipt 或 lifecycle journal。
 
-OKF 的宿主边界与 Runtime 不同：它不运行进程。Use 验证并记录精确 package generation；A3S Knowledge 负责合规检查后的原子 promotion、索引与带引用检索。失败的新 OKF generation 不得替换最后一个可搜索 generation。
+OKF 的宿主边界与 Runtime 不同：它不运行进程。Use 验证并记录精确 package generation；Knowledge host 负责合规检查后的原子 promotion、索引与带引用检索。失败的新 OKF generation 不得替换最后一个可搜索 generation。新发布 snapshot 选择 N+1，正在运行且持有精确 N projection 的 session 可继续查询，直到 receipt-owned retirement 移除 N。
 
 详细设计见 [Plugin Platform Architecture](https://github.com/A3S-Lab/Use/blob/main/docs/plugin-platform-architecture.md)。

@@ -10,6 +10,7 @@ use super::{
     SurfaceReconcileSnapshot,
 };
 
+#[cfg(test)]
 pub(crate) fn reconcile_with_runtime(
     manifest: &ExtensionManifest,
     desired: PluginDesiredState,

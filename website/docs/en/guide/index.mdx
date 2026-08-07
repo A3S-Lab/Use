@@ -18,11 +18,11 @@ A3S Use is the **AI Native Package Manager** for the A3S ecosystem. It does not 
 | Schema-v3 Tool, MCP, OKF, Flow, Skill, and UI contracts               | Control-plane baseline implemented on `main`                  |
 | Schema-v3 SemVer dependency resolver, exact lock, and graph lifecycle | Available for signed remote standalone CLI installs           |
 | Schema-v3 package commit/remove and capability publish/hide/drain     | P0 generation-bound hosts implemented                         |
-| OKF (Open Knowledge Format) knowledge surface                         | M0K-C-A lifecycle adapter ready; production backend pending   |
+| OKF (Open Knowledge Format) knowledge surface                         | Standalone SQLite/FTS5 lifecycle and cited search implemented |
 | A3S Flow workflow surface                                             | Code CLI/TUI/Web local durable runtime and hot-plug E2E ready |
 | Complete Plugin Manager apply saga and production product integration | In development                                                |
 
-The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`. Signed remote schema-v3 records enter that graph from both `a3s-use install` and compatible remote `component install`. The umbrella host provides stable-name Registry replace and enable/disable, while A3S Code composes the real Flow preflight host, resolves exact `flow.json` identities, and shares one workspace-local durable runtime across CLI, TUI, and Web. Production grant/Knowledge/Service/Gateway composition, distributed Flow scheduling/resumption, retention, and prior-generation retirement are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
+The cognitive plugin contracts, dependency resolver/lock/graph coordinator, and P0 package/capability hosts are on `main`. Signed remote schema-v3 records enter that graph from `a3s-use install`. The standalone host now indexes and queries OKF through a scope-isolated SQLite/FTS5 backend and proves signed generation cutover. The umbrella host provides stable-name Registry replace and enable/disable, while A3S Code composes the real Flow preflight host, resolves exact `flow.json` identities, and shares one workspace-local durable runtime across CLI, TUI, and Web. Managed Code/Web Knowledge Workspace/session carriers, Service/Gateway composition, distributed Flow scheduling/resumption, retention, and complete cross-platform real-process gates are still converging. An OKF surface remains unpublished without exact promoted Knowledge evidence. Use the [roadmap](./roadmap) as the source of truth before production deployment.
 
 ## Install a release
 
@@ -84,8 +84,9 @@ a3s-use uninstall acme/research --json
 
 Add `--package-lock-digest sha256:<64-hex-digits>` when applying a separately
 reviewed resolution. Lock drift fails before any archive download. Runtime
-Service, HTTP MCP, Flow, and OKF packages require their embedding host's explicit
-Runtime/Gateway, A3S Flow, or A3S Knowledge lifecycle factory.
+Service, HTTP MCP, and Flow packages require their embedding host's explicit
+Runtime/Gateway or A3S Flow lifecycle factory. Standalone OKF uses the bundled
+SQLite/FTS5 Knowledge host.
 
 ## Build from source
 

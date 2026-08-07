@@ -7,7 +7,7 @@ use a3s_use_core::{
 };
 use async_trait::async_trait;
 
-use super::OkfKnowledgeBinding;
+use super::{OkfKnowledgeBinding, OkfKnowledgeSearchRequest, OkfKnowledgeSearchResponse};
 
 /// Immutable identity reviewed before one OKF candidate is staged.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +48,7 @@ impl OkfKnowledgeStageSpec {
 #[derive(Debug, PartialEq, Eq)]
 pub struct OkfKnowledgeStageRequest {
     spec: OkfKnowledgeStageSpec,
-    files: Vec<OkfBundleFile>,
+    files: Arc<[OkfBundleFile]>,
 }
 
 impl OkfKnowledgeStageRequest {
@@ -60,7 +60,10 @@ impl OkfKnowledgeStageRequest {
             &files,
         )?;
         spec.bundle.verify_inspection(&inspection)?;
-        Ok(Self { spec, files })
+        Ok(Self {
+            spec,
+            files: files.into(),
+        })
     }
 
     pub fn spec(&self) -> &OkfKnowledgeStageSpec {
@@ -69,6 +72,10 @@ impl OkfKnowledgeStageRequest {
 
     pub fn files(&self) -> &[OkfBundleFile] {
         &self.files
+    }
+
+    pub(crate) fn shared_files(&self) -> Arc<[OkfBundleFile]> {
+        self.files.clone()
     }
 
     pub fn validate_receipt(&self, receipt: &OkfProjectionReceipt) -> UseResult<()> {
@@ -103,6 +110,11 @@ pub trait OkfKnowledgeAdapter: Send + Sync {
     async fn observe(&self, receipt: &OkfProjectionReceipt) -> UseResult<OkfKnowledgeObservation>;
 
     async fn remove(&self, receipt: &OkfProjectionReceipt) -> UseResult<OkfKnowledgeObservation>;
+
+    async fn search(
+        &self,
+        request: &OkfKnowledgeSearchRequest,
+    ) -> UseResult<OkfKnowledgeSearchResponse>;
 }
 
 /// Evidence-checking client around an injected Knowledge adapter.
@@ -159,6 +171,16 @@ impl OkfKnowledgeClient {
             ));
         }
         OkfKnowledgeBinding::new(receipt.clone(), observation)
+    }
+
+    pub async fn search(
+        &self,
+        request: &OkfKnowledgeSearchRequest,
+    ) -> UseResult<OkfKnowledgeSearchResponse> {
+        request.validate()?;
+        let response = self.adapter.search(request).await?;
+        response.validate_for(request)?;
+        Ok(response)
     }
 }
 

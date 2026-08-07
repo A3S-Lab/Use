@@ -224,6 +224,128 @@ async fn store_rejects_stale_and_conflicting_same_generation_writes() {
 }
 
 #[tokio::test]
+async fn receipt_owned_cleanup_can_remove_an_older_superseded_generation() {
+    let temporary = TempDir::new().unwrap();
+    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let first_receipt = receipt(1);
+    store
+        .put(&binding(
+            &first_receipt,
+            OkfKnowledgeObservedState::Promoted,
+            Some(&first_receipt),
+            1_001,
+        ))
+        .await
+        .unwrap();
+    let second_receipt = receipt(2);
+    let second = binding(
+        &second_receipt,
+        OkfKnowledgeObservedState::Promoted,
+        Some(&second_receipt),
+        2_001,
+    );
+    store.put(&second).await.unwrap();
+
+    let removed = binding(
+        &first_receipt,
+        OkfKnowledgeObservedState::Removed,
+        None,
+        2_002,
+    );
+    store.put(&removed).await.unwrap();
+    assert_eq!(
+        store
+            .get(&scope(PlanScopeKind::Workspace), &surface(), 1)
+            .await
+            .unwrap(),
+        Some(removed)
+    );
+    let snapshot = store
+        .snapshot(&scope(PlanScopeKind::Workspace), &surface())
+        .await
+        .unwrap();
+    assert_eq!(snapshot.selected, Some(second));
+    assert_eq!(snapshot.projection.unwrap().generation, 2);
+}
+
+#[tokio::test]
+async fn next_stage_prunes_retired_tombstones_at_the_generation_bound() {
+    let temporary = TempDir::new().unwrap();
+    let store = OkfKnowledgeBindingStore::new(temporary.path());
+    let first_receipt = receipt(1);
+    store
+        .put(&binding(
+            &first_receipt,
+            OkfKnowledgeObservedState::Promoted,
+            Some(&first_receipt),
+            1_001,
+        ))
+        .await
+        .unwrap();
+
+    for generation in 2..=MAX_OKF_KNOWLEDGE_GENERATIONS as u64 {
+        let current = receipt(generation);
+        let previous = receipt(generation - 1);
+        store
+            .put(&binding(
+                &current,
+                OkfKnowledgeObservedState::Staged,
+                Some(&previous),
+                generation * 1_000,
+            ))
+            .await
+            .unwrap();
+        store
+            .put(&binding(
+                &current,
+                OkfKnowledgeObservedState::Promoted,
+                Some(&current),
+                generation * 1_000 + 1,
+            ))
+            .await
+            .unwrap();
+        store
+            .put(&binding(
+                &previous,
+                OkfKnowledgeObservedState::Removed,
+                None,
+                generation * 1_000 + 2,
+            ))
+            .await
+            .unwrap();
+    }
+
+    let next = receipt(MAX_OKF_KNOWLEDGE_GENERATIONS as u64 + 1);
+    let selected = receipt(MAX_OKF_KNOWLEDGE_GENERATIONS as u64);
+    store
+        .put(&binding(
+            &next,
+            OkfKnowledgeObservedState::Staged,
+            Some(&selected),
+            next.staged_at_ms + 1,
+        ))
+        .await
+        .unwrap();
+    assert!(store
+        .get(&scope(PlanScopeKind::Workspace), &surface(), 1)
+        .await
+        .unwrap()
+        .is_none());
+    let snapshot = store
+        .snapshot(&scope(PlanScopeKind::Workspace), &surface())
+        .await
+        .unwrap();
+    assert_eq!(
+        snapshot.latest.unwrap().receipt.generation,
+        MAX_OKF_KNOWLEDGE_GENERATIONS as u64 + 1
+    );
+    assert_eq!(
+        snapshot.selected.unwrap().receipt.generation,
+        MAX_OKF_KNOWLEDGE_GENERATIONS as u64
+    );
+}
+
+#[tokio::test]
 async fn store_rejects_missing_selected_generation_and_tampered_json() {
     let temporary = TempDir::new().unwrap();
     let store = OkfKnowledgeBindingStore::new(temporary.path());

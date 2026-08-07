@@ -7,7 +7,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use a3s_use_core::{InstalledPluginPlanEvidence, PluginSurfaceRef, Readiness, UseError, UseResult};
+use a3s_use_core::{
+    InstalledPluginPlanEvidence, OkfCapabilityProjection, PluginSurfaceRef, Readiness, UseError,
+    UseResult,
+};
 #[cfg(feature = "extensions")]
 use a3s_use_core::{
     PlanQualifiedSurfaceRef, PluginSurfaceKind, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
@@ -18,12 +21,17 @@ use tokio::io::AsyncReadExt;
 
 #[cfg(feature = "extensions")]
 use crate::surface_reconciler::{
-    reconcile_with_runtime, PluginDesiredState, PluginObservedState, SurfaceObservations,
-    SurfaceObservedState, SurfaceReconcileSnapshot,
+    reconcile_with_runtime_and_knowledge, PluginDesiredState, PluginObservedState,
+    SurfaceObservations, SurfaceObservedState, SurfaceReconcileSnapshot,
 };
 #[cfg(feature = "extensions")]
 use crate::{
-    cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE, flow_runtime::FlowRuntimeBindingStore,
+    cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE,
+    flow_runtime::FlowRuntimeBindingStore,
+    okf_knowledge::{
+        OkfKnowledgeBinding, OkfKnowledgeBindingStore, OkfKnowledgeClient,
+        SqliteOkfKnowledgeAdapter,
+    },
 };
 
 const SCHEMA_VERSION: u32 = 1;
@@ -40,6 +48,23 @@ pub(crate) struct CapabilityRegistrySnapshot {
     pub generation: u64,
     pub revision: String,
     pub capabilities: Vec<CapabilityBinding>,
+}
+
+impl CapabilityRegistrySnapshot {
+    #[cfg(feature = "extensions")]
+    pub(crate) fn knowledge_projections(&self) -> Vec<OkfCapabilityProjection> {
+        let mut projections = self
+            .capabilities
+            .iter()
+            .flat_map(|capability| capability.knowledge.iter().cloned())
+            .collect::<Vec<_>>();
+        projections.sort_by(|left, right| {
+            left.surface
+                .cmp(&right.surface)
+                .then_with(|| left.generation.cmp(&right.generation))
+        });
+        projections
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -174,6 +199,8 @@ pub(crate) struct CapabilityBinding {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     flows: Vec<FlowSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    knowledge: Vec<OkfCapabilityProjection>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     activity_bar: Vec<ActivityBarContribution>,
 }
 
@@ -284,6 +311,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             }),
             skills,
             flows: Vec::new(),
+            knowledge: Vec::new(),
             activity_bar: Vec::new(),
         })
     }
@@ -307,6 +335,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             mcp: None,
             skills: Vec::new(),
             flows: Vec::new(),
+            knowledge: Vec::new(),
             activity_bar: Vec::new(),
         })
     }
@@ -351,6 +380,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             mcp: None,
             skills,
             flows: Vec::new(),
+            knowledge: Vec::new(),
             activity_bar: Vec::new(),
         })
     }
@@ -374,6 +404,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             mcp: None,
             skills: Vec::new(),
             flows: Vec::new(),
+            knowledge: Vec::new(),
             activity_bar: Vec::new(),
         })
     }
@@ -399,6 +430,7 @@ fn box_capability() -> CapabilityBinding {
         mcp: None,
         skills: Vec::new(),
         flows: Vec::new(),
+        knowledge: Vec::new(),
         activity_bar: Vec::new(),
     }
 }
@@ -631,17 +663,37 @@ async fn project_extension(
     surfaces: Vec<String>,
 ) -> UseResult<CapabilityBinding> {
     let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let scope = default_plan_scope();
     let flow_observations = flow_observations_from_store(
         extension,
         &FlowRuntimeBindingStore::from_extension_paths(&paths),
-        &default_plan_scope(),
+        &scope,
     )
     .await?;
+    let knowledge_evidence = knowledge_evidence_from_store(
+        extension,
+        &OkfKnowledgeBindingStore::from_extension_paths(&paths),
+        &OkfKnowledgeClient::new(std::sync::Arc::new(
+            SqliteOkfKnowledgeAdapter::from_extension_paths(&paths),
+        )),
+        &scope,
+    )
+    .await?;
+    let mut host_observations = flow_observations;
+    for (surface, state) in knowledge_evidence.failures {
+        if host_observations.insert(surface, state).is_some() {
+            return Err(UseError::new(
+                "use.capability.host_observation_invalid",
+                "Two production hosts reported the same cognitive-package surface.",
+            ));
+        }
+    }
     project_extension_for_host_with_flow_observations(
         extension,
         surfaces,
         env!("CARGO_PKG_VERSION"),
-        &flow_observations,
+        &host_observations,
+        &knowledge_evidence.bindings,
     )
     .await
 }
@@ -658,6 +710,7 @@ async fn project_extension_for_host(
         surfaces,
         host_version,
         &SurfaceObservations::new(),
+        &[],
     )
     .await
 }
@@ -668,6 +721,7 @@ async fn project_extension_for_host_with_flow_observations(
     surfaces: Vec<String>,
     host_version: &str,
     flow_observations: &SurfaceObservations,
+    knowledge_bindings: &[OkfKnowledgeBinding],
 ) -> UseResult<CapabilityBinding> {
     let receipt = &extension.receipt;
     let compatible = extension.supports_use_version(host_version);
@@ -675,7 +729,11 @@ async fn project_extension_for_host_with_flow_observations(
         let observations =
             surface_observations(extension, receipt.enabled && compatible, flow_observations)
                 .await?;
-        Some(reconcile_with_runtime(
+        let knowledge = knowledge_bindings
+            .iter()
+            .map(|binding| (binding.receipt.clone(), binding.observation.clone()))
+            .collect::<Vec<_>>();
+        Some(reconcile_with_runtime_and_knowledge(
             &extension.manifest,
             if receipt.enabled {
                 PluginDesiredState::Enabled
@@ -685,6 +743,7 @@ async fn project_extension_for_host_with_flow_observations(
             compatible,
             &observations,
             None,
+            &knowledge,
         )?)
     } else {
         None
@@ -738,6 +797,7 @@ async fn project_extension_for_host_with_flow_observations(
     }
     let mut activity_bar = Vec::new();
     let mut flows = Vec::new();
+    let mut knowledge = Vec::new();
     if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
         for surface in &extension.manifest.flows {
             if !snapshot.publishes(PluginSurfaceKind::Flow, &surface.id) {
@@ -788,6 +848,15 @@ async fn project_extension_for_host_with_flow_observations(
         });
     }
     if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
+        for binding in knowledge_bindings {
+            if snapshot.publishes(PluginSurfaceKind::Okf, &binding.receipt.surface.surface.id) {
+                knowledge.push(OkfCapabilityProjection::from_promoted(
+                    &binding.receipt,
+                    &binding.observation,
+                )?);
+            }
+        }
+        knowledge.sort_by(|left, right| left.surface.cmp(&right.surface));
         for surface in &extension.manifest.ui {
             if !snapshot.publishes(PluginSurfaceKind::Ui, &surface.id) {
                 continue;
@@ -841,6 +910,7 @@ async fn project_extension_for_host_with_flow_observations(
         mcp,
         skills,
         flows,
+        knowledge,
         activity_bar,
     })
 }
@@ -851,17 +921,22 @@ async fn surface_observations(
     inspect_enabled_surfaces: bool,
     flow_observations: &SurfaceObservations,
 ) -> UseResult<SurfaceObservations> {
-    if flow_observations.keys().any(|surface| {
-        surface.kind != PluginSurfaceKind::Flow
-            || !extension
-                .manifest
-                .flows
-                .iter()
-                .any(|flow| flow.id == surface.id)
+    if flow_observations.keys().any(|surface| match surface.kind {
+        PluginSurfaceKind::Flow => !extension
+            .manifest
+            .flows
+            .iter()
+            .any(|flow| flow.id == surface.id),
+        PluginSurfaceKind::Okf => !extension
+            .manifest
+            .okf
+            .iter()
+            .any(|okf| okf.id == surface.id),
+        _ => true,
     }) {
         return Err(UseError::new(
-            "use.capability.flow_observation_invalid",
-            "A3S Flow host observations must reference only Flow surfaces in the admitted package generation.",
+            "use.capability.host_observation_invalid",
+            "Production host observations must reference only their admitted Flow or OKF surfaces.",
         ));
     }
     if !inspect_enabled_surfaces {
@@ -945,6 +1020,62 @@ async fn flow_observations_from_store(
         observations.insert(reference, state);
     }
     Ok(observations)
+}
+
+#[cfg(feature = "extensions")]
+struct KnowledgeEvidence {
+    bindings: Vec<OkfKnowledgeBinding>,
+    failures: SurfaceObservations,
+}
+
+#[cfg(feature = "extensions")]
+async fn knowledge_evidence_from_store(
+    extension: &a3s_use_extension::InstalledExtension,
+    store: &OkfKnowledgeBindingStore,
+    client: &OkfKnowledgeClient,
+    scope: &a3s_use_core::PlanScope,
+) -> UseResult<KnowledgeEvidence> {
+    let mut bindings = Vec::new();
+    let mut failures = SurfaceObservations::new();
+    let Some(generation) = extension.receipt.lifecycle_generation else {
+        return Ok(KnowledgeEvidence { bindings, failures });
+    };
+    let Some(package_sha256) = extension.receipt.package_sha256.as_deref() else {
+        return Ok(KnowledgeEvidence { bindings, failures });
+    };
+    let package_digest = format!("sha256:{package_sha256}");
+    let manifest_digest = format!("sha256:{}", extension.receipt.manifest_sha256);
+
+    for surface in &extension.manifest.okf {
+        let reference = PluginSurfaceRef {
+            kind: PluginSurfaceKind::Okf,
+            id: surface.id.clone(),
+        };
+        let qualified = PlanQualifiedSurfaceRef {
+            package_id: extension.receipt.package_id.clone(),
+            surface: reference.clone(),
+        };
+        let Some(binding) = store.get(scope, &qualified, generation).await? else {
+            continue;
+        };
+        let exact = binding.receipt.scope == *scope
+            && binding.receipt.surface == qualified
+            && binding.receipt.generation == generation
+            && binding.receipt.package_digest == package_digest
+            && binding.receipt.manifest_digest == manifest_digest
+            && binding.receipt.bundle == surface.bundle;
+        if !exact {
+            failures.insert(reference, SurfaceObservedState::Failed);
+            continue;
+        }
+        match client.observe(&binding.receipt).await {
+            Ok(observed) if observed == binding => bindings.push(observed),
+            Ok(_) | Err(_) => {
+                failures.insert(reference, SurfaceObservedState::Failed);
+            }
+        }
+    }
+    Ok(KnowledgeEvidence { bindings, failures })
 }
 
 #[cfg(feature = "extensions")]
@@ -1342,6 +1473,104 @@ extension "acme/slack" {
 
     #[cfg(feature = "extensions")]
     #[tokio::test]
+    async fn promoted_sqlite_knowledge_enters_the_scope_aware_capability_projection() {
+        const MANIFEST: &str = include_str!(
+            "../crates/extension/fixtures/packages/plugin-v3-okf/package/a3s-use-extension.acl"
+        );
+        const PACKAGE_DIGEST: &str =
+            include_str!("../crates/extension/fixtures/packages/plugin-v3-okf/package.sha256");
+        let temporary = tempfile::tempdir().unwrap();
+        let package_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("crates/extension/fixtures/packages/plugin-v3-okf/package");
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(MANIFEST).unwrap();
+        let mut extension = installed_extension(manifest.clone(), package_root.clone(), true);
+        let package_digest = PACKAGE_DIGEST.trim().to_owned();
+        extension.receipt.package_sha256 =
+            Some(package_digest.strip_prefix("sha256:").unwrap().to_owned());
+        extension.receipt.manifest_sha256 = format!("{:x}", Sha256::digest(MANIFEST.as_bytes()));
+        extension.receipt.lifecycle_generation = Some(7);
+        let paths = a3s_use_extension::ExtensionPaths::new(
+            temporary.path().join("data"),
+            temporary.path().join("state"),
+        );
+        let adapter = std::sync::Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(&paths));
+        let client = OkfKnowledgeClient::new(adapter);
+        let store = OkfKnowledgeBindingStore::from_extension_paths(&paths);
+        let surface = &manifest.okf[0];
+        let files = a3s_use_extension::load_okf_bundle_files(surface, &package_root)
+            .await
+            .unwrap();
+        let scope = default_plan_scope();
+        let staged = client
+            .stage(
+                crate::okf_knowledge::OkfKnowledgeStageRequest::new(
+                    crate::okf_knowledge::OkfKnowledgeStageSpec {
+                        operation_id: "capability-knowledge-stage".to_owned(),
+                        scope: scope.clone(),
+                        surface: PlanQualifiedSurfaceRef {
+                            package_id: manifest.package_id.clone(),
+                            surface: PluginSurfaceRef {
+                                kind: PluginSurfaceKind::Okf,
+                                id: surface.id.clone(),
+                            },
+                        },
+                        generation: 7,
+                        package_digest: package_digest.clone(),
+                        manifest_digest: format!("sha256:{}", extension.receipt.manifest_sha256),
+                        bundle: surface.bundle.clone(),
+                    },
+                    files,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        store.put(&staged).await.unwrap();
+        let promoted = client.promote(&staged.receipt).await.unwrap();
+        store.put(&promoted).await.unwrap();
+
+        let evidence = knowledge_evidence_from_store(&extension, &store, &client, &scope)
+            .await
+            .unwrap();
+        assert!(evidence.failures.is_empty());
+        let binding = project_extension_for_host_with_flow_observations(
+            &extension,
+            extension
+                .surfaces()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            "0.3.0",
+            &SurfaceObservations::new(),
+            &evidence.bindings,
+        )
+        .await
+        .unwrap();
+        assert!(binding.enabled);
+        assert_eq!(binding.knowledge.len(), 1);
+        assert_eq!(binding.knowledge[0].scope, scope);
+        assert_eq!(binding.knowledge[0].generation, 7);
+
+        let response = client
+            .search(
+                &crate::okf_knowledge::OkfKnowledgeSearchRequest::new(
+                    scope,
+                    "package activation",
+                    5,
+                    binding.knowledge,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.hits[0].citation.path,
+            "concepts/package-lifecycle.md"
+        );
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
     async fn schema_three_projects_only_dependency_ready_named_skills() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("skills").join("guide").join("SKILL.md");
@@ -1512,6 +1741,7 @@ extension "acme/slack" {
             surfaces,
             "0.3.0",
             &flow_observations,
+            &[],
         )
         .await
         .unwrap();
@@ -1685,6 +1915,7 @@ extension "acme/slack" {
                 .collect(),
             "0.3.0",
             &flow_observations,
+            &[],
         )
         .await
         .unwrap();
