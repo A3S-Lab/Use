@@ -324,6 +324,11 @@ Current Registry rules:
 - Every executable catalog carries one separately signed `planning-v1.json`
   target. It distinguishes package-local Tool/stdio MCP launchers from
   release-backed Runtime workloads before the archive is downloaded.
+- Mixed packages are planned as one exact provider set: native Tool Tasks and
+  stdio MCP remain on the built-in launcher, while release-backed Tool Tasks,
+  Tool Services, and HTTP MCP require explicit host assignments from a typed
+  `RuntimeClientRegistry`. Missing Grants, generations, assignments, or
+  providers fail without fallback.
 - The catalog record, archive, expanded package, and manifest all have exact
   digest/size evidence.
 - Archive admission rebinds every planning launcher to the exact digest-bound
@@ -442,6 +447,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
+| Mixed native/managed provider planning | Implemented in Use: canonical pre-confirmation Grant proposals feed exact Runtime templates, while the combined evidence remains sorted and complete; CLI apply reconstruction is still open |
 | Exact published-generation dispatch lease | Implemented in the Use Registry and the Code TUI/Web Knowledge query carrier; accepted queries hold exact package-generation leases through backend search and final Registry revision verification |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
 | Managed Runtime Service endpoint and Gateway retirement contract | Typed generation-bound loopback endpoint consumption plus drain-before-stop and route-remove-before-Runtime-remove are implemented and contract-tested; production provider/Gateway injection remains open |

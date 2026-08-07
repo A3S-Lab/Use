@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
     PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPolicyDecision,
@@ -132,6 +132,28 @@ pub trait CognitivePackageAuthorizationProvider: Send + Sync {
         changes: Option<&PluginWorkspaceGrantChangeSet>,
         now_ms: u64,
     ) -> UseResult<CognitivePackageAuthorizationEvidence>;
+}
+
+/// Canonical pre-confirmation Grant proposals produced while a trusted host
+/// binds one cognitive-package draft.
+///
+/// Runtime planning uses only these immutable proposals to bind executable
+/// semantics to the same operation identity, scope, authority, and permission
+/// ceiling as the package plan. Confirmation evidence and finalized Grants
+/// remain private to the apply-time authorization lifecycle.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CognitivePackageGrantPlan {
+    proposals: BTreeMap<String, PluginWorkspaceGrantProposal>,
+}
+
+impl CognitivePackageGrantPlan {
+    pub fn proposals(&self) -> &BTreeMap<String, PluginWorkspaceGrantProposal> {
+        &self.proposals
+    }
+
+    pub fn proposal(&self, package_id: &str) -> Option<&PluginWorkspaceGrantProposal> {
+        self.proposals.get(package_id)
+    }
 }
 
 /// Fail-closed policy used when an embedding host does not inject its own
@@ -477,6 +499,20 @@ pub fn bind_cognitive_package_grant_impacts(
     binding: &PluginOperationPlanBinding,
     snapshot: &PluginWorkspaceGrantSnapshot,
 ) -> UseResult<()> {
+    bind_cognitive_package_grants(draft, binding, snapshot).map(drop)
+}
+
+/// Bind canonical Grant impacts and return only the pre-confirmation proposals
+/// needed by typed Runtime provider planning.
+///
+/// This is the shared host adapter for the two-pass provider protocol. It uses
+/// exactly the same planner as apply, rejects prebound impact evidence, and
+/// never returns confirmations, resolved Grants, or lifecycle receipts.
+pub fn bind_cognitive_package_grants(
+    draft: &mut PluginOperationPlanDraft,
+    binding: &PluginOperationPlanBinding,
+    snapshot: &PluginWorkspaceGrantSnapshot,
+) -> UseResult<CognitivePackageGrantPlan> {
     let (enabled_before, enabled_after) = match draft.action {
         a3s_use_core::PluginOperationAction::Install => (false, true),
         a3s_use_core::PluginOperationAction::Upgrade => (true, true),
@@ -484,7 +520,22 @@ pub fn bind_cognitive_package_grant_impacts(
         a3s_use_core::PluginOperationAction::Enable => (false, true),
         a3s_use_core::PluginOperationAction::Disable => (true, false),
     };
-    plan_workspace_grants(draft, binding, snapshot, enabled_before, enabled_after).map(drop)
+    let planned = plan_workspace_grants(draft, binding, snapshot, enabled_before, enabled_after)?;
+    let mut proposals = BTreeMap::new();
+    if let Some(planned) = planned {
+        for change in planned.change_set.changes {
+            let Some(proposal) = change.after else {
+                continue;
+            };
+            let package_id = proposal.package_id.clone();
+            if proposals.insert(package_id, proposal).is_some() {
+                return Err(authorization_error(
+                    "The canonical Grant plan contains a duplicate candidate package.",
+                ));
+            }
+        }
+    }
+    Ok(CognitivePackageGrantPlan { proposals })
 }
 
 pub(super) async fn authorize_planned_operation(

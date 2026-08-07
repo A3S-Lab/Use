@@ -243,6 +243,9 @@ Implemented:
 - provider-neutral Runtime templates for release-backed Tool Tasks, HTTP Tool
   Services, and Streamable HTTP MCP Services;
 - explicit `RuntimeClientRegistry` selection and immutable provider evidence;
+- Use-owned mixed native/managed provider aggregation that binds canonical
+  pre-confirmation Grant proposals, exact package generations, and explicit
+  Runtime assignments into one sorted complete evidence set without fallback;
 - CLI component-plan transport of the verified planning bundle without package
   archive download;
 - a package-lifecycle Tool/MCP adapter that revalidates immutable files, uses
@@ -257,8 +260,10 @@ Implemented:
 
 Remaining:
 
-- host broker integration into the shared Plugin Manager's final draft;
-- two-pass preflight/authorization/final selection;
+- host broker integration of the Use-owned final selection into the shared
+  Plugin Manager's final draft;
+- capability preflight and apply-time reconstruction around the implemented
+  authorization-bound final selection;
 - workspace-aware grant-change and package-journal coordination;
 - parent-saga coordination of the implemented exact Runtime N/N+1 store and
   prior-generation retirement after capability cutover;

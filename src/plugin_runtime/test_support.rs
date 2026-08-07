@@ -23,7 +23,7 @@ use async_trait::async_trait;
 
 use super::*;
 
-pub(super) const DIGEST_A: &str =
+pub(crate) const DIGEST_A: &str =
     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const DIGEST_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
@@ -91,7 +91,7 @@ pub(super) fn task_surface() -> ToolTaskSurface {
     }
 }
 
-pub(super) fn service_descriptor() -> ToolReleaseDescriptor {
+pub(crate) fn service_descriptor() -> ToolReleaseDescriptor {
     ToolReleaseDescriptor::from_json(include_bytes!(
         "../../crates/core/fixtures/releases/tool-service-release-v1.json"
     ))
@@ -166,7 +166,7 @@ pub(super) fn evidence(
     }
 }
 
-pub(super) struct FakeRuntime {
+pub(crate) struct FakeRuntime {
     capabilities: RuntimeCapabilities,
     converge: bool,
     fail_apply: bool,
@@ -179,7 +179,7 @@ pub(super) struct FakeRuntime {
 }
 
 impl FakeRuntime {
-    pub(super) fn new(capabilities: RuntimeCapabilities, converge: bool) -> Self {
+    pub(crate) fn new(capabilities: RuntimeCapabilities, converge: bool) -> Self {
         Self {
             capabilities,
             converge,
