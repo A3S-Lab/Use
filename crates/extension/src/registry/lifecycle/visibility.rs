@@ -61,7 +61,7 @@ impl ExtensionRegistry {
         cutover_request: Option<&ExtensionLifecycleCutoverRequest>,
         require_already_hidden: bool,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
-        let _lock = RegistryLock::acquire(&self.paths.registry_lock_path())?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
         let selected = self.get(identity.package_id()).await?;
         let selected_is_exact = selected
             .as_ref()

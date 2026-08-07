@@ -56,7 +56,9 @@ impl ExtensionRegistry {
             ));
         }
 
-        let _lock = crate::package::RegistryLock::acquire(&self.paths().registry_lock_path())?;
+        let _lock =
+            crate::package::RegistryLock::acquire_for_mutation(&self.paths().registry_lock_path())
+                .await?;
         let snapshot_before =
             crate::registry_io::read_registry_snapshot(&self.paths().registry_snapshot_path())
                 .await?;
@@ -254,7 +256,9 @@ impl ExtensionRegistry {
                 "A lifecycle rollback must bind newer candidate and exact prior generations of one package.",
             ));
         }
-        let _lock = crate::package::RegistryLock::acquire(&self.paths().registry_lock_path())?;
+        let _lock =
+            crate::package::RegistryLock::acquire_for_mutation(&self.paths().registry_lock_path())
+                .await?;
         let published =
             crate::registry_io::read_registry_snapshot(&self.paths().registry_snapshot_path())
                 .await?;
