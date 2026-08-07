@@ -12,6 +12,13 @@ mod lifecycle_generations;
 
 const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 
+#[test]
+fn published_generation_lease_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    assert_send_sync::<ExtensionRouteLease>();
+}
+
 fn registry(root: &Path) -> ExtensionRegistry {
     ExtensionRegistry::new(ExtensionPaths::new(root.join("data"), root.join("state")))
 }

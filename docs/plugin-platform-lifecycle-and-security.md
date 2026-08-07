@@ -255,7 +255,11 @@ package generation, dependency edges, and preflight evidence are bound. A
 OKF promotion is atomic and scope-isolated. Query authorization requires an
 exact current or leased projection. Search results cite package, surface,
 generation, index, concept path, and source digest. Removed projections become
-invalid immediately after receipt-owned retirement. The standalone backend
+invalid immediately after receipt-owned retirement. The Use Registry exposes
+exact published-generation lease acquisition from package, manifest, and
+lifecycle-generation identity. A managed host must hold that lease for the
+entire accepted query so lifecycle drain precedes receipt-owned removal. The
+standalone backend
 accounts immutable receipt `expanded_bytes` across the complete scope before
 staging, independently bounds retained projections and per-surface
 generations, globally prunes removal tombstones, and compacts SQLite plus its

@@ -1002,7 +1002,7 @@ async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_pr
         .await
         .unwrap();
     let old_lease = registry
-        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .acquire_published_lifecycle_generation(&first)
         .await
         .unwrap()
         .unwrap();
@@ -1061,6 +1061,21 @@ async fn lifecycle_upgrade_retains_routes_until_cutover_and_retires_the_exact_pr
         .publish_lifecycle_package_for_host_version(&next, "0.3.0")
         .await
         .unwrap();
+    assert!(registry
+        .acquire_published_lifecycle_generation(&first)
+        .await
+        .unwrap()
+        .is_none());
+    let next_lease = registry
+        .acquire_published_lifecycle_generation(&next)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        next_lease.extension().receipt.lifecycle_generation,
+        Some(18)
+    );
+    drop(next_lease);
     assert_eq!(
         registry
             .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
