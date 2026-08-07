@@ -110,7 +110,7 @@ For OKF, the standalone SQLite/FTS5 host is implemented: missing Knowledge evide
 
 The cognitive-package platform is pre-1.0. Unknown receipt or database versions fail closed, and unpublished state is recreated rather than migrated or rewritten. This policy does not weaken package SemVer resolution, host-version requirements, target checks, or signed provenance verification.
 
-For Flow, source integrity and lifecycle ordering are implemented, but an embedding host must inject the exact `a3s-flow` compiler/runtime adapter. The standalone engine rejects a required Flow before mutation instead of publishing source-only readiness.
+For Flow, source integrity and lifecycle ordering are implemented. Embedding hosts inject the exact `a3s-flow` compiler/runtime adapter; the standalone CLI injects the same host only when `A3S_FLOW_NATIVE_TS_COMPILER` is an absolute path. Missing or failed preflight keeps the exact candidate unpublished instead of presenting source-only readiness; a repaired retry must resume its durable admitted plan and generation.
 
 ## Platform isolation boundary
 

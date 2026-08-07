@@ -124,7 +124,7 @@ rejection. They are not supported decode paths.
 - [x] Standalone executable Task, stdio MCP, immutable Skill/UI, and
   SQLite/FTS5 OKF Knowledge composition.
 - [x] Real `a3s-flow` Native TypeScript preflight and exact-generation binding
-  adapter for injected hosts.
+  in injected hosts and the explicitly configured standalone CLI lifecycle.
 - [x] Workspace Grant proposal/change/resolution/ceiling binding.
 - [x] Candidate Grant persistence before prepare, cutover checkpointing,
   drain-before-revoke, and joint pre-cutover rollback.
@@ -135,6 +135,9 @@ rejection. They are not supported decode paths.
 - [x] Canonical fixtures and digest goldens for the current contract line.
 - [x] Unit, integration, remote Registry, crash-replay, grant, Flow, OKF, and
   CLI tests in the Use workspace.
+- [x] Signed standalone CLI Flow/OKF/Skill/UI install, process-restart
+  observation, exact upgrade, uninstall, failed-preflight non-publication, and
+  repaired exact replay coverage on Unix.
 - [x] Linux CI, macOS workspace tests, and Windows preview compile/facade gates.
 - [x] GitHub Pages documentation application and bilingual documentation.
 

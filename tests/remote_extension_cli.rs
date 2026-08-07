@@ -36,6 +36,9 @@ fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_a3s-use")
 }
 
+#[cfg(unix)]
+#[path = "remote_extension_cli/flow_lifecycle.rs"]
+mod flow_lifecycle;
 #[path = "remote_extension_cli/graph_grants.rs"]
 mod graph_grants;
 #[path = "remote_extension_cli/graph_install.rs"]
@@ -297,6 +300,190 @@ fn cognitive_skill_target_version(
     catalog.package.manifest_sha256 = Some(manifest_sha256);
     catalog.license = "MIT".to_string();
     catalog.repository = format!("https://github.com/acme/{route}");
+    catalog.availability = CatalogAvailability::Available;
+    catalog.validate().unwrap();
+
+    TestTarget {
+        target_name: catalog.archive.target_name.clone(),
+        custom: Some(serde_json::to_value(catalog).unwrap()),
+        archive,
+    }
+}
+
+#[cfg(unix)]
+fn cognitive_flow_target_version(
+    fixture_root: &std::path::Path,
+    version: &str,
+    target: &str,
+) -> TestTarget {
+    let package_id = "acme/flow-suite";
+    let route = "flow-suite";
+    let package_root = fixture_root.join("package");
+    std::fs::create_dir_all(package_root.join("flows")).unwrap();
+    std::fs::create_dir_all(package_root.join("skills/reason")).unwrap();
+    std::fs::create_dir_all(package_root.join("ui/reason")).unwrap();
+    std::fs::create_dir_all(package_root.join("okf/domain/concepts")).unwrap();
+
+    let manifest = format!(
+        r#"extension "{package_id}" {{
+  schema_version = 3
+  version        = "{version}"
+  route          = "{route}"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read"]
+
+  repository {{
+    url      = "https://github.com/acme/flow-suite"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }}
+
+  okf "domain" {{
+    format_version         = "0.2"
+    root                   = "okf/domain"
+    content_digest         = "sha256:355b6f00153630b082e60a0f7e0b67fbbb74b2a29067bca481f7eefecbb86c7a"
+    concept_count          = 1
+    file_count             = 2
+    expanded_bytes         = 427
+    max_files              = 64
+    max_concepts           = 32
+    max_expanded_bytes     = 1048576
+    max_document_bytes     = 262144
+    max_links_per_document = 128
+    optional               = false
+  }}
+
+  flow "reason" {{
+    engine        = "a3s-flow"
+    runtime       = "native-ts"
+    source        = "flows/reason.ts"
+    export        = "run"
+    requires_tool = []
+    requires_mcp  = []
+    requires_okf  = ["domain"]
+    optional      = false
+  }}
+
+  skill "reason" {{
+    path          = "skills/reason/SKILL.md"
+    requires_tool = []
+    requires_mcp  = []
+    requires_okf  = ["domain"]
+    requires_flow = ["reason"]
+    optional      = false
+  }}
+
+  ui "reason" {{
+    entry     = "ui/reason/index.html"
+    styles    = ["ui/reason/index.css"]
+    scripts   = ["ui/reason/index.js"]
+    skill     = "reason"
+    bind_tool = []
+    bind_mcp  = []
+    bind_flow = ["reason"]
+    optional  = false
+  }}
+}}
+"#
+    );
+    std::fs::write(package_root.join("a3s-use-extension.acl"), &manifest).unwrap();
+    std::fs::write(
+        package_root.join("README.md"),
+        format!("# Flow Suite {version}\n\nStandalone Flow lifecycle fixture.\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        package_root.join("flows/reason.ts"),
+        format!(
+            "export function run() {{ return {{ type: 'complete', output: {{ version: '{version}' }} }}; }}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        package_root.join("skills/reason/SKILL.md"),
+        "---\nname: reason\ndescription: Exercise the installed Flow and Knowledge surfaces\n---\n# Reason\n",
+    )
+    .unwrap();
+    std::fs::write(
+        package_root.join("ui/reason/index.html"),
+        "<!doctype html><html><body><main id=\"app\">Reason</main></body></html>\n",
+    )
+    .unwrap();
+    std::fs::write(
+        package_root.join("ui/reason/index.css"),
+        "body { font-family: sans-serif; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        package_root.join("ui/reason/index.js"),
+        "document.querySelector('#app').dataset.ready = 'true';\n",
+    )
+    .unwrap();
+    std::fs::write(
+        package_root.join("okf/domain/index.md"),
+        include_bytes!(
+            "../crates/extension/fixtures/packages/plugin-v3-cognitive/package/okf/domain/index.md"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        package_root.join("okf/domain/concepts/lifecycle.md"),
+        include_bytes!(
+            "../crates/extension/fixtures/packages/plugin-v3-cognitive/package/okf/domain/concepts/lifecycle.md"
+        ),
+    )
+    .unwrap();
+
+    let archive = package_directory_archive(&package_root);
+    let fingerprint = package_fingerprint(&package_root);
+    let manifest_sha256 = format!("sha256:{:x}", Sha256::digest(manifest.as_bytes()));
+    let parsed = a3s_use_extension::ExtensionManifest::parse_acl(&manifest).unwrap();
+    let graph = parsed.plugin_surfaces().unwrap();
+    let mut catalog = PluginCatalogRecord::from_json(OKF_CATALOG_V3).unwrap();
+    catalog.schema = PLUGIN_CATALOG_SCHEMA_V3.to_string();
+    catalog.package_id = package_id.to_string();
+    catalog.display_name = format!("Flow Suite {version}");
+    catalog.description = "Standalone A3S Flow lifecycle fixture.".to_string();
+    catalog.publisher = "acme".to_string();
+    catalog.keywords = vec!["fixture".to_string(), "flow".to_string()];
+    catalog.categories = vec!["workflow".to_string()];
+    catalog.version = version.to_string();
+    catalog.channel = PluginReleaseChannel::Stable;
+    catalog.requires_use = ">=0.3.0, <0.4.0".to_string();
+    catalog.dependencies.clear();
+    catalog.target = target.to_string();
+    catalog.surfaces = graph
+        .iter()
+        .map(|surface| CatalogSurface {
+            kind: surface.surface.kind,
+            id: surface.surface.id.clone(),
+            optional: surface.optional,
+            workload: None,
+            mcp_transport: None,
+            mcp_tool_count: None,
+            okf_bundle: parsed
+                .okf
+                .iter()
+                .find(|okf| {
+                    surface.surface.kind == PluginSurfaceKind::Okf && okf.id == surface.surface.id
+                })
+                .map(|okf| okf.bundle.clone()),
+            requires: surface.dependencies.clone(),
+        })
+        .collect();
+    catalog.permission_ceiling.surfaces.clear();
+    catalog.permission_ceiling_digest = catalog.permission_ceiling.descriptor_digest().unwrap();
+    catalog.planning = None;
+    catalog.archive.target_name = format!(
+        "extensions/{package_id}/{version}/stable/{target}/{route}-{version}-{target}.tar.gz"
+    );
+    catalog.archive.length = archive.len() as u64;
+    catalog.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&archive));
+    catalog.package.expanded_bytes = fingerprint.2;
+    catalog.package.file_count = fingerprint.1;
+    catalog.package.sha256 = Some(format!("sha256:{}", fingerprint.0));
+    catalog.package.manifest_sha256 = Some(manifest_sha256);
+    catalog.license = "MIT".to_string();
+    catalog.repository = "https://github.com/acme/flow-suite".to_string();
     catalog.availability = CatalogAvailability::Available;
     catalog.validate().unwrap();
 
