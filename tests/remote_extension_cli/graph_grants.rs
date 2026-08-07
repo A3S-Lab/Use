@@ -102,7 +102,7 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     let manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         extension_registry.clone(),
         managed_scope.clone(),
-        Arc::new(StandaloneCognitivePackageLifecycleFactory),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(ConfirmAllPlans {
             authorization_count: authorization_count.clone(),
         }),
@@ -130,7 +130,7 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     let wrong_scope_manager = CognitivePackageManager::with_scope_lifecycle_and_authorization(
         extension_registry.clone(),
         MANAGED_SCOPE_ID,
-        Arc::new(StandaloneCognitivePackageLifecycleFactory),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(ConfirmAllPlans {
             authorization_count: authorization_count.clone(),
         }),
@@ -648,7 +648,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
             source_home.join("state"),
         )),
         reviewed_scope.clone(),
-        Arc::new(StandaloneCognitivePackageLifecycleFactory),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(ConfirmAllPlans {
             authorization_count: Arc::new(AtomicUsize::new(0)),
         }),
@@ -699,7 +699,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
     let target_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         target_extension_registry.clone(),
         reviewed_scope.clone(),
-        Arc::new(StandaloneCognitivePackageLifecycleFactory),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(
             ReviewedCognitivePackageAuthorizationProvider::new(
                 reviewed.clone(),
@@ -751,7 +751,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
     let drifted_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         target_extension_registry.clone(),
         reviewed_scope.clone(),
-        Arc::new(StandaloneCognitivePackageLifecycleFactory),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(
             ReviewedCognitivePackageAuthorizationProvider::new(drifted, Some(drifted_confirmation))
                 .unwrap(),
@@ -777,7 +777,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
     let replay_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         target_extension_registry,
         reviewed_scope,
-        Arc::new(StandaloneCognitivePackageLifecycleFactory),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(
             ReviewedCognitivePackageAuthorizationProvider::new(
                 reviewed.clone(),

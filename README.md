@@ -71,6 +71,9 @@ The implementation and fixtures exercise the product model directly:
 - [`A3sFlowLifecycleHost`](src/flow_runtime/lifecycle.rs) delegates Flow
   preflight to the real `a3s-flow` Native TypeScript runtime and records an
   exact-generation binding.
+- [`StandaloneCognitivePackageLifecycleFactory`](src/cognitive_package/hosts.rs)
+  composes that host only from an explicit absolute compiler path; failed
+  preflight remains unpublished and can replay from exact durable evidence.
 - Contract fixtures under [`crates/core/fixtures/plugins`](crates/core/fixtures/plugins/)
   freeze canonical JSON and SHA-256 digests for the current schemas.
 
@@ -258,7 +261,22 @@ A3S Use does not define a second workflow engine.
   must resolve the same package-owned Flow identity.
 
 Required Flow publication fails closed when the embedding host does not inject
-the declared Flow runtime. There is no source-presence fallback.
+the declared Flow runtime. There is no source-presence or `PATH` fallback. The
+standalone CLI opts in with the same reviewed absolute compiler path for
+install, upgrade, and uninstall across process restarts:
+
+```bash
+A3S_FLOW_NATIVE_TS_COMPILER=/opt/a3s/bin/a3s-flow-native-compiler \
+  a3s-use install acme/workflows [registry options] --json
+```
+
+`CognitivePackageManager::new` remains provider-free and deterministic;
+`CognitivePackageManager::from_env` is the explicit standalone composition.
+A missing or failing compiler leaves the candidate installed-disabled. The
+capability snapshot retains only a non-active diagnostic record with
+`capabilityReady = false` and no Flow, Skill, OKF, or UI projection. A repaired
+retry resumes the same admitted plan and exact generation instead of guessing
+or republishing partial state.
 
 ## Replaceable Registries and exact locks
 
@@ -379,8 +397,8 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Durable atomic Registry cutover and exact replay | Implemented |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
-| Standalone Task, stdio MCP, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
-| Flow, Service, HTTP MCP, Knowledge, and UI composition in every managed host | In progress |
+| Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
+| Runtime Service, HTTP MCP, managed Knowledge, and sandboxed UI composition in every declared host | In progress |
 | A3S Code TUI/Web and other cross-repository product integration | Integration exists; release qualification remains |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
 | Public Registry operations, signed distribution, retention, support runbooks | Release blocker |

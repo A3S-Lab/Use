@@ -41,8 +41,8 @@ Completed in the Use repository:
 - dependency-forward install, one cutover, reverse uninstall and upgrade GC;
 - durable Registry cutover replay and exact lifecycle journals;
 - Workspace Grant composition, joint rollback, and drain-before-revoke;
-- standalone executable Task, stdio MCP, Skill/UI, and SQLite/FTS5 OKF hosts;
-- injectable real `a3s-flow` Native TypeScript lifecycle host;
+- standalone executable Task, stdio MCP, Skill/UI, SQLite/FTS5 OKF, and
+  explicitly configured real `a3s-flow` Native TypeScript lifecycle hosts;
 - CLI diagnostics, package graph commands, Knowledge search, and watchers;
 - current-schema fixtures, digest goldens, remote Registry tests, recovery
   tests, and GitHub Pages site.
@@ -241,6 +241,9 @@ Status: pending
 - route absence before retirement;
 - drain before Grant/package removal;
 - pre-cutover joint rollback and post-cutover retirement recovery;
+- failed Flow compiler preflight leaves no published binding or active named
+  capability, and a repaired retry resumes the exact durable candidate
+  generation;
 - no-op terminal result replay.
 
 ### Security tests

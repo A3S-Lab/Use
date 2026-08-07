@@ -418,8 +418,7 @@ pub(crate) async fn upgrade_remote_extension(
 
 #[cfg(feature = "extensions")]
 pub(crate) async fn uninstall_extension(package_id: &str) -> UseResult<ExtensionUninstallView> {
-    let registry = a3s_use_extension::ExtensionRegistry::from_env()?;
-    let manager = crate::cognitive_package::CognitivePackageManager::new(registry)?;
+    let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
     let result = manager.uninstall(package_id).await?;
     let package_graph = serde_json::to_value(&result).map_err(|error| {
         UseError::new(

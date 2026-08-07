@@ -43,7 +43,7 @@ pub use grant::{
     bind_cognitive_package_grant_impacts, CognitivePackageAuthorizationEvidence,
     CognitivePackageAuthorizationProvider, StandaloneCognitivePackageAuthorizationProvider,
 };
-pub use hosts::StandaloneCognitivePackageLifecycleFactory;
+pub use hosts::{StandaloneCognitivePackageLifecycleFactory, A3S_FLOW_NATIVE_TS_COMPILER_ENV};
 pub use reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
 
 /// Stable user-level scope shared by the standalone facade and embedding A3S
@@ -187,7 +187,10 @@ pub(super) enum UpgradeDisposition {
 
 impl CognitivePackageManager {
     pub fn from_env() -> UseResult<Self> {
-        Self::new(ExtensionRegistry::from_env()?)
+        Self::with_lifecycle(
+            ExtensionRegistry::from_env()?,
+            Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory::from_env()?),
+        )
     }
 
     pub fn new(registry: ExtensionRegistry) -> UseResult<Self> {
@@ -198,7 +201,7 @@ impl CognitivePackageManager {
         Self::with_scope_and_lifecycle(
             registry,
             scope_id,
-            Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory),
+            Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory::default()),
         )
     }
 
@@ -229,7 +232,7 @@ impl CognitivePackageManager {
         Self::with_scope_lifecycle_and_authorization(
             registry,
             COGNITIVE_PACKAGE_DEFAULT_SCOPE,
-            Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory),
+            Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory::default()),
             authorization,
         )
     }

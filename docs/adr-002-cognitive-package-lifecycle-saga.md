@@ -180,8 +180,8 @@ Implemented in Use:
 - pre-cutover package and Grant rollback;
 - drain-before-Grant-revoke retirement;
 - plan-v4 reviewed enable/disable and terminal `NoChange`;
-- standalone Task, stdio MCP, Skill/UI, OKF Knowledge hosts;
-- injectable real A3S Flow host;
+- standalone Task, stdio MCP, Skill/UI, OKF Knowledge, and explicitly
+  configured real A3S Flow hosts;
 - exact scope propagation and authorization-stable recovery; and
 - unit/integration/failure-injection coverage for the core saga.
 

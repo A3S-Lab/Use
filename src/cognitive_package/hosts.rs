@@ -1,3 +1,4 @@
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use a3s_runtime::contract::RuntimeObservation;
@@ -8,6 +9,7 @@ use a3s_use_extension::{
 };
 use async_trait::async_trait;
 
+use crate::flow_runtime::{A3sFlowLifecycleHost, FlowRuntimeBindingStore};
 use crate::okf_knowledge::{
     OkfKnowledgeBindingStore, OkfKnowledgeClient, SqliteOkfKnowledgeAdapter,
 };
@@ -27,11 +29,50 @@ use super::CognitivePackageLifecycleFactory;
 /// Narrow lifecycle composition used by the standalone package engine.
 ///
 /// Embedding hosts may wrap this factory for executable Tool Tasks, stdio MCP,
-/// Skill, UI, and OKF packages. It deliberately rejects Runtime Service, HTTP
-/// MCP, and A3S Flow surfaces until the host supplies their real lifecycle
-/// adapters. OKF uses the scope-isolated SQLite/FTS5 Knowledge backend.
-#[derive(Debug, Default)]
-pub struct StandaloneCognitivePackageLifecycleFactory;
+/// Skill, UI, OKF, and explicitly configured A3S Flow packages. It deliberately
+/// rejects Runtime Service and HTTP MCP surfaces until the host supplies their
+/// real lifecycle adapters. OKF uses the scope-isolated SQLite/FTS5 Knowledge
+/// backend.
+#[derive(Debug, Clone, Default)]
+pub struct StandaloneCognitivePackageLifecycleFactory {
+    flow_compiler_binary: Option<PathBuf>,
+}
+
+/// Cross-host environment variable selecting the reviewed native TypeScript
+/// compiler used by standalone A3S Flow package lifecycle operations.
+pub const A3S_FLOW_NATIVE_TS_COMPILER_ENV: &str = "A3S_FLOW_NATIVE_TS_COMPILER";
+
+impl StandaloneCognitivePackageLifecycleFactory {
+    /// Construct the deterministic provider-free standalone lifecycle.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Construct the standalone lifecycle with one explicit compiler identity.
+    ///
+    /// The path must be absolute and lexically stable. Binary availability is
+    /// checked by the asynchronous `a3s-flow` preflight before publication, so
+    /// a missing or failing compiler cannot publish a package generation.
+    pub fn with_flow_compiler(compiler_binary: impl Into<PathBuf>) -> UseResult<Self> {
+        let compiler_binary = compiler_binary.into();
+        validate_flow_compiler_path(&compiler_binary)?;
+        Ok(Self {
+            flow_compiler_binary: Some(compiler_binary),
+        })
+    }
+
+    /// Read the optional standalone Flow provider from the process environment.
+    pub fn from_env() -> UseResult<Self> {
+        match std::env::var_os(A3S_FLOW_NATIVE_TS_COMPILER_ENV) {
+            Some(value) => Self::with_flow_compiler(PathBuf::from(value)),
+            None => Ok(Self::default()),
+        }
+    }
+
+    pub fn flow_compiler_binary(&self) -> Option<&Path> {
+        self.flow_compiler_binary.as_deref()
+    }
+}
 
 impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFactory {
     fn name(&self) -> &'static str {
@@ -39,7 +80,7 @@ impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFac
     }
 
     fn validate_manifest(&self, manifest: &ExtensionManifest) -> UseResult<()> {
-        validate_available_hosts(manifest)
+        validate_available_hosts(manifest, self.flow_compiler_binary())
     }
 
     fn install_coordinator(
@@ -48,7 +89,12 @@ impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFac
         candidate: ExtensionLifecyclePackage,
         package_root: std::path::PathBuf,
     ) -> UseResult<PluginLifecycleCoordinator> {
-        Ok(install_coordinator(registry, candidate, package_root))
+        Ok(install_coordinator(
+            registry,
+            candidate,
+            package_root,
+            self.flow_compiler_binary(),
+        ))
     }
 
     fn published_install_coordinator(
@@ -56,7 +102,11 @@ impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFac
         registry: ExtensionRegistry,
         package_root: std::path::PathBuf,
     ) -> UseResult<PluginLifecycleCoordinator> {
-        Ok(published_install_coordinator(registry, package_root))
+        Ok(published_install_coordinator(
+            registry,
+            package_root,
+            self.flow_compiler_binary(),
+        ))
     }
 
     fn uninstall_coordinator(
@@ -64,12 +114,43 @@ impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFac
         registry: ExtensionRegistry,
         package_root: std::path::PathBuf,
     ) -> UseResult<PluginLifecycleCoordinator> {
-        Ok(uninstall_coordinator(registry, package_root))
+        Ok(uninstall_coordinator(
+            registry,
+            package_root,
+            self.flow_compiler_binary(),
+        ))
     }
 }
 
-pub(super) fn validate_available_hosts(manifest: &ExtensionManifest) -> UseResult<()> {
-    if !manifest.flows.is_empty() {
+fn validate_flow_compiler_path(compiler_binary: &Path) -> UseResult<()> {
+    if compiler_binary.as_os_str().is_empty()
+        || !compiler_binary.is_absolute()
+        || compiler_binary
+            .components()
+            .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
+    {
+        return Err(provider_error(
+            "use.plugin.flow_compiler_path_invalid",
+            format!(
+                "{A3S_FLOW_NATIVE_TS_COMPILER_ENV} must identify one absolute, lexically stable compiler path."
+            ),
+        )
+        .with_detail(
+            "compilerBinary",
+            serde_json::json!(compiler_binary.to_string_lossy()),
+        )
+        .with_suggestion(
+            "Set the variable to the reviewed absolute path of the a3s-flow native TypeScript compiler.",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_available_hosts(
+    manifest: &ExtensionManifest,
+    flow_compiler_binary: Option<&Path>,
+) -> UseResult<()> {
+    if !manifest.flows.is_empty() && flow_compiler_binary.is_none() {
         return Err(provider_error(
             "use.plugin.flow_provider_required",
             format!(
@@ -82,7 +163,9 @@ pub(super) fn validate_available_hosts(manifest: &ExtensionManifest) -> UseResul
             serde_json::json!(manifest.flows.iter().map(|value| &value.id).collect::<Vec<_>>()),
         )
         .with_suggestion(
-            "Install through an A3S host with an explicit a3s-flow compiler/runtime adapter, then replay the exact package lock.",
+            format!(
+                "Set {A3S_FLOW_NATIVE_TS_COMPILER_ENV} to the reviewed absolute compiler path or install through an A3S host with an explicit a3s-flow adapter."
+            ),
         ));
     }
 
@@ -125,24 +208,38 @@ pub(super) fn install_coordinator(
     registry: ExtensionRegistry,
     candidate: ExtensionLifecyclePackage,
     package_root: impl Into<std::path::PathBuf>,
+    flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     let paths = registry.paths().clone();
     let package = Arc::new(ExtensionPackageLifecycleHost::new(
         registry.clone(),
         candidate,
     ));
-    coordinator(registry, package, package_root, &paths)
+    coordinator(
+        registry,
+        package,
+        package_root,
+        &paths,
+        flow_compiler_binary,
+    )
 }
 
 pub(super) fn uninstall_coordinator(
     registry: ExtensionRegistry,
     package_root: impl Into<std::path::PathBuf>,
+    flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     let paths = registry.paths().clone();
     let package = Arc::new(ExtensionPackageLifecycleHost::for_installed(
         registry.clone(),
     ));
-    coordinator(registry, package, package_root, &paths)
+    coordinator(
+        registry,
+        package,
+        package_root,
+        &paths,
+        flow_compiler_binary,
+    )
 }
 
 /// Resume an install whose exact generation is already committed and visible.
@@ -151,12 +248,19 @@ pub(super) fn uninstall_coordinator(
 pub(super) fn published_install_coordinator(
     registry: ExtensionRegistry,
     package_root: impl Into<std::path::PathBuf>,
+    flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     let paths = registry.paths().clone();
     let package = Arc::new(ExtensionPackageLifecycleHost::for_installed(
         registry.clone(),
     ));
-    coordinator(registry, package, package_root, &paths)
+    coordinator(
+        registry,
+        package,
+        package_root,
+        &paths,
+        flow_compiler_binary,
+    )
 }
 
 fn coordinator(
@@ -164,6 +268,7 @@ fn coordinator(
     package: Arc<dyn crate::plugin_lifecycle::PluginPackageLifecycleHost>,
     package_root: impl Into<std::path::PathBuf>,
     paths: &a3s_use_extension::ExtensionPaths,
+    flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     let package_root = package_root.into();
     let capability = Arc::new(ExtensionCapabilityLifecycleHost::new(registry));
@@ -181,7 +286,15 @@ fn coordinator(
         ))),
         OkfKnowledgeBindingStore::from_extension_paths(paths),
     ));
-    let flow = Arc::new(UnavailableFlowLifecycleHost);
+    let flow: Arc<dyn PluginFlowLifecycleHost> = match flow_compiler_binary {
+        Some(compiler_binary) => Arc::new(A3sFlowLifecycleHost::new(
+            package_root.clone(),
+            compiler_binary,
+            paths.state_root().join("flow-runtime").join("cache"),
+            FlowRuntimeBindingStore::from_extension_paths(paths),
+        )),
+        None => Arc::new(UnavailableFlowLifecycleHost),
+    };
     let hosts = PluginLifecycleHosts::new(
         package,
         capability,
@@ -330,7 +443,7 @@ mod tests {
             "../../crates/extension/fixtures/manifests/plugin-v3.acl"
         ))
         .unwrap();
-        let error = validate_available_hosts(&manifest).unwrap_err();
+        let error = validate_available_hosts(&manifest, None).unwrap_err();
         assert_eq!(error.code, "use.plugin.runtime_provider_required");
     }
 
@@ -340,12 +453,40 @@ mod tests {
             "../../crates/extension/fixtures/manifests/plugin-v3-okf.acl"
         ))
         .unwrap();
-        validate_available_hosts(&manifest).unwrap();
+        validate_available_hosts(&manifest, None).unwrap();
     }
 
     #[test]
     fn flow_surfaces_fail_before_lifecycle_composition_without_a3s_flow() {
-        let manifest = ExtensionManifest::parse_acl(
+        let manifest = flow_manifest();
+        let factory = StandaloneCognitivePackageLifecycleFactory::default();
+        let error = factory.validate_manifest(&manifest).unwrap_err();
+        assert_eq!(error.code, "use.plugin.flow_provider_required");
+    }
+
+    #[test]
+    fn explicit_absolute_a3s_flow_compiler_admits_flow_surfaces() {
+        let temp = tempfile::tempdir().unwrap();
+        let factory = StandaloneCognitivePackageLifecycleFactory::with_flow_compiler(
+            temp.path().join("a3s-flow-native-compiler"),
+        )
+        .unwrap();
+
+        factory.validate_manifest(&flow_manifest()).unwrap();
+    }
+
+    #[test]
+    fn relative_a3s_flow_compiler_is_rejected_before_composition() {
+        let error = StandaloneCognitivePackageLifecycleFactory::with_flow_compiler(
+            "bin/a3s-flow-native-compiler",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "use.plugin.flow_compiler_path_invalid");
+    }
+
+    fn flow_manifest() -> ExtensionManifest {
+        ExtensionManifest::parse_acl(
             r#"
 extension "acme/flow" {
   schema_version = 3
@@ -372,9 +513,7 @@ extension "acme/flow" {
 }
 "#,
         )
-        .unwrap();
-        let error = validate_available_hosts(&manifest).unwrap_err();
-        assert_eq!(error.code, "use.plugin.flow_provider_required");
+        .unwrap()
     }
 
     #[test]
