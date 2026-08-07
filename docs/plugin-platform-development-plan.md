@@ -45,6 +45,9 @@ Completed in the Use repository:
 - Workspace Grant composition, joint rollback, and drain-before-revoke;
 - standalone executable Task, stdio MCP, Skill/UI, SQLite/FTS5 OKF, and
   explicitly configured real `a3s-flow` Native TypeScript lifecycle hosts;
+- typed Runtime Service endpoint consumption and an injected Gateway lifecycle
+  port that drains routes before Runtime stop, removes routes before Runtime
+  removal, and retains the exact binding receipt until both complete;
 - whole-scope OKF expanded-byte/projection quotas, per-surface generation
   limits, globally bounded tombstones, post-removal SQLite/WAL compaction, and
   exact-scope storage usage diagnostics;
@@ -64,6 +67,9 @@ Status: in progress
 - Bind provider/build/capability evidence during planning and revalidate during
   apply.
 - Implement exact-generation health, invocation, drain, and removal.
+- [x] Consume only Runtime-published generation-bound loopback Service
+  endpoints and enforce Gateway drain/remove ordering in the shared lifecycle
+  adapter.
 - Prove no native fallback when the selected provider disappears.
 
 Acceptance:
@@ -75,6 +81,8 @@ Acceptance:
 ### A2 HTTP MCP and Gateway
 
 - Compose HTTP/streamable MCP with Gateway-owned endpoint lifecycle.
+- [x] Define the typed bind, drain, and receipt-owned remove boundary used by
+  Tool Services and Streamable HTTP MCP.
 - Bind private service identity, MCP endpoint, health, and permission ceiling.
 - Drain prior sessions and routes before removing the prior generation.
 - Keep standard MCP transport; do not add an A3S RPC dialect.

@@ -248,7 +248,10 @@ Implemented:
 - a package-lifecycle Tool/MCP adapter that revalidates immutable files, uses
   explicit selected clients, health-gates Tool Services, requires Gateway plus
   standard initialize evidence for HTTP MCP, persists bindings, and performs
-  idempotent receipt-owned stop/removal; and
+  idempotent receipt-owned stop/removal;
+- exact typed consumption of Runtime-published loopback Service endpoints and
+  a Gateway lifecycle port that must drain before Runtime stop, then remove
+  the route before Runtime removal; and
 - fail-closed rejection while complete provider/grant lifecycle evidence is
   unavailable.
 
@@ -261,7 +264,8 @@ Remaining:
   prior-generation retirement after capability cutover;
 - production provider injection for every CLI/Web/Cloud host;
 - secret, filesystem, egress, and child-process enforcement adapters;
-- Gateway route and MCP initialization orchestration;
+- production Gateway route implementation/injection and MCP initialization
+  orchestration;
 - stdio MCP supervision; and
 - cross-platform lifecycle E2E.
 

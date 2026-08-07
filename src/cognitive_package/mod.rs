@@ -44,7 +44,10 @@ pub use grant::{
     bind_cognitive_package_grant_impacts, CognitivePackageAuthorizationEvidence,
     CognitivePackageAuthorizationProvider, StandaloneCognitivePackageAuthorizationProvider,
 };
-pub use hosts::{StandaloneCognitivePackageLifecycleFactory, A3S_FLOW_NATIVE_TS_COMPILER_ENV};
+pub use hosts::{
+    ManagedCognitivePackageLifecycleFactory, StandaloneCognitivePackageLifecycleFactory,
+    A3S_FLOW_NATIVE_TS_COMPILER_ENV,
+};
 pub use native_provider::plan_native_provider_evidence;
 pub use reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
 

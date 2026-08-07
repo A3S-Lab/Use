@@ -1,8 +1,10 @@
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use a3s_runtime::contract::RuntimeObservation;
-use a3s_use_core::{UseError, UseResult};
+use a3s_runtime::contract::{RuntimeObservation, RuntimeServiceEndpoint};
+use a3s_use_core::{
+    PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
+};
 use a3s_use_extension::{
     ExtensionLifecyclePackage, ExtensionManifest, ExtensionRegistry, PluginFlowSurface,
     PluginMcpLaunch, PluginMcpSurface, ToolSurface, ToolTaskSource, ToolWorkload,
@@ -38,6 +40,30 @@ pub struct StandaloneCognitivePackageLifecycleFactory {
     flow_compiler_binary: Option<PathBuf>,
 }
 
+/// Host-composed lifecycle for release-backed Runtime Tasks and Services.
+///
+/// The selection contains exact process-local Runtime clients plus the
+/// provider evidence already bound into the reviewed package plan. Gateway
+/// readiness owns private endpoint publication, MCP initialization, route
+/// drain, and route removal. Neither dependency can be selected by package
+/// content.
+#[derive(Clone)]
+pub struct ManagedCognitivePackageLifecycleFactory {
+    selection: RuntimeProviderSelection,
+    readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    flow_compiler_binary: Option<PathBuf>,
+}
+
+impl std::fmt::Debug for ManagedCognitivePackageLifecycleFactory {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ManagedCognitivePackageLifecycleFactory")
+            .field("selection", &self.selection)
+            .field("flow_compiler_binary", &self.flow_compiler_binary)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Cross-host environment variable selecting the reviewed native TypeScript
 /// compiler used by standalone A3S Flow package lifecycle operations.
 pub const A3S_FLOW_NATIVE_TS_COMPILER_ENV: &str = "A3S_FLOW_NATIVE_TS_COMPILER";
@@ -71,6 +97,30 @@ impl StandaloneCognitivePackageLifecycleFactory {
 
     pub fn flow_compiler_binary(&self) -> Option<&Path> {
         self.flow_compiler_binary.as_deref()
+    }
+}
+
+impl ManagedCognitivePackageLifecycleFactory {
+    pub fn new(
+        selection: RuntimeProviderSelection,
+        readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    ) -> Self {
+        Self {
+            selection,
+            readiness,
+            flow_compiler_binary: None,
+        }
+    }
+
+    pub fn with_flow_compiler(mut self, compiler_binary: impl Into<PathBuf>) -> UseResult<Self> {
+        let compiler_binary = compiler_binary.into();
+        validate_flow_compiler_path(&compiler_binary)?;
+        self.flow_compiler_binary = Some(compiler_binary);
+        Ok(self)
+    }
+
+    pub fn selection(&self) -> &RuntimeProviderSelection {
+        &self.selection
     }
 }
 
@@ -118,6 +168,64 @@ impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFac
             registry,
             package_root,
             self.flow_compiler_binary(),
+        ))
+    }
+}
+
+impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactory {
+    fn name(&self) -> &'static str {
+        "managed-runtime-gateway"
+    }
+
+    fn validate_manifest(&self, manifest: &ExtensionManifest) -> UseResult<()> {
+        validate_managed_hosts(
+            manifest,
+            &self.selection,
+            self.flow_compiler_binary.as_deref(),
+        )
+    }
+
+    fn install_coordinator(
+        &self,
+        registry: ExtensionRegistry,
+        candidate: ExtensionLifecyclePackage,
+        package_root: std::path::PathBuf,
+    ) -> UseResult<PluginLifecycleCoordinator> {
+        Ok(managed_install_coordinator(
+            registry,
+            candidate,
+            package_root,
+            self.selection.clone(),
+            self.readiness.clone(),
+            self.flow_compiler_binary.as_deref(),
+        ))
+    }
+
+    fn published_install_coordinator(
+        &self,
+        registry: ExtensionRegistry,
+        package_root: std::path::PathBuf,
+    ) -> UseResult<PluginLifecycleCoordinator> {
+        Ok(managed_published_install_coordinator(
+            registry,
+            package_root,
+            self.selection.clone(),
+            self.readiness.clone(),
+            self.flow_compiler_binary.as_deref(),
+        ))
+    }
+
+    fn uninstall_coordinator(
+        &self,
+        registry: ExtensionRegistry,
+        package_root: std::path::PathBuf,
+    ) -> UseResult<PluginLifecycleCoordinator> {
+        Ok(managed_uninstall_coordinator(
+            registry,
+            package_root,
+            self.selection.clone(),
+            self.readiness.clone(),
+            self.flow_compiler_binary.as_deref(),
         ))
     }
 }
@@ -204,6 +312,78 @@ pub(super) fn validate_available_hosts(
     Ok(())
 }
 
+fn validate_managed_hosts(
+    manifest: &ExtensionManifest,
+    selection: &RuntimeProviderSelection,
+    flow_compiler_binary: Option<&Path>,
+) -> UseResult<()> {
+    if !manifest.flows.is_empty() && flow_compiler_binary.is_none() {
+        return Err(provider_error(
+            "use.plugin.flow_provider_required",
+            format!(
+                "Cognitive package '{}' requires an injected a3s-flow lifecycle provider.",
+                manifest.package_id
+            ),
+        ));
+    }
+    let mut required = manifest
+        .tools
+        .iter()
+        .filter(|surface| {
+            !matches!(
+                &surface.workload,
+                ToolWorkload::Task(task)
+                    if matches!(&task.source, ToolTaskSource::Executable { .. })
+            )
+        })
+        .map(|surface| PlanQualifiedSurfaceRef {
+            package_id: manifest.package_id.clone(),
+            surface: PluginSurfaceRef {
+                kind: PluginSurfaceKind::Tool,
+                id: surface.id.clone(),
+            },
+        })
+        .chain(
+            manifest
+                .mcp_servers
+                .iter()
+                .filter(|surface| matches!(surface.launch, PluginMcpLaunch::StreamableHttp { .. }))
+                .map(|surface| PlanQualifiedSurfaceRef {
+                    package_id: manifest.package_id.clone(),
+                    surface: PluginSurfaceRef {
+                        kind: PluginSurfaceKind::Mcp,
+                        id: surface.id.clone(),
+                    },
+                }),
+        )
+        .collect::<Vec<_>>();
+    required.sort();
+    let missing = required
+        .iter()
+        .filter(|required| {
+            !selection
+                .surfaces()
+                .iter()
+                .any(|selected| selected.plan().surface() == **required)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(provider_error(
+            "use.plugin.runtime_provider_required",
+            format!(
+                "Cognitive package '{}' lacks exact managed Runtime selections.",
+                manifest.package_id
+            ),
+        )
+        .with_detail(
+            "surfaces",
+            serde_json::to_value(missing).unwrap_or_default(),
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn install_coordinator(
     registry: ExtensionRegistry,
     candidate: ExtensionLifecyclePackage,
@@ -220,6 +400,8 @@ pub(super) fn install_coordinator(
         package,
         package_root,
         &paths,
+        RuntimeProviderSelection::default(),
+        Arc::new(UnavailableRuntimeServiceReadinessHost),
         flow_compiler_binary,
     )
 }
@@ -238,6 +420,8 @@ pub(super) fn uninstall_coordinator(
         package,
         package_root,
         &paths,
+        RuntimeProviderSelection::default(),
+        Arc::new(UnavailableRuntimeServiceReadinessHost),
         flow_compiler_binary,
     )
 }
@@ -259,6 +443,70 @@ pub(super) fn published_install_coordinator(
         package,
         package_root,
         &paths,
+        RuntimeProviderSelection::default(),
+        Arc::new(UnavailableRuntimeServiceReadinessHost),
+        flow_compiler_binary,
+    )
+}
+
+fn managed_install_coordinator(
+    registry: ExtensionRegistry,
+    candidate: ExtensionLifecyclePackage,
+    package_root: impl Into<std::path::PathBuf>,
+    selection: RuntimeProviderSelection,
+    readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    flow_compiler_binary: Option<&Path>,
+) -> PluginLifecycleCoordinator {
+    let paths = registry.paths().clone();
+    let package = Arc::new(ExtensionPackageLifecycleHost::new(
+        registry.clone(),
+        candidate,
+    ));
+    coordinator(
+        registry,
+        package,
+        package_root,
+        &paths,
+        selection,
+        readiness,
+        flow_compiler_binary,
+    )
+}
+
+fn managed_uninstall_coordinator(
+    registry: ExtensionRegistry,
+    package_root: impl Into<std::path::PathBuf>,
+    selection: RuntimeProviderSelection,
+    readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    flow_compiler_binary: Option<&Path>,
+) -> PluginLifecycleCoordinator {
+    let paths = registry.paths().clone();
+    let package = Arc::new(ExtensionPackageLifecycleHost::for_installed(
+        registry.clone(),
+    ));
+    coordinator(
+        registry,
+        package,
+        package_root,
+        &paths,
+        selection,
+        readiness,
+        flow_compiler_binary,
+    )
+}
+
+fn managed_published_install_coordinator(
+    registry: ExtensionRegistry,
+    package_root: impl Into<std::path::PathBuf>,
+    selection: RuntimeProviderSelection,
+    readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    flow_compiler_binary: Option<&Path>,
+) -> PluginLifecycleCoordinator {
+    managed_uninstall_coordinator(
+        registry,
+        package_root,
+        selection,
+        readiness,
         flow_compiler_binary,
     )
 }
@@ -268,15 +516,17 @@ fn coordinator(
     package: Arc<dyn crate::plugin_lifecycle::PluginPackageLifecycleHost>,
     package_root: impl Into<std::path::PathBuf>,
     paths: &a3s_use_extension::ExtensionPaths,
+    selection: RuntimeProviderSelection,
+    readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
     flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     let package_root = package_root.into();
     let capability = Arc::new(ExtensionCapabilityLifecycleHost::new(registry));
     let runtime = Arc::new(RuntimePluginSurfaceLifecycleHost::new(
         &package_root,
-        RuntimeProviderSelection::default(),
+        selection,
         RuntimeBindingStore::from_extension_paths(paths),
-        Arc::new(UnavailableRuntimeServiceReadinessHost),
+        readiness,
     ));
     let static_surfaces = Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root.clone()));
     let okf = Arc::new(OkfKnowledgeLifecycleHost::new(
@@ -321,6 +571,7 @@ impl PluginRuntimeServiceReadinessHost for UnavailableRuntimeServiceReadinessHos
         _surface: &ToolSurface,
         _plan: &RuntimeSurfacePlan,
         _observation: &RuntimeObservation,
+        _runtime_endpoint: &RuntimeServiceEndpoint,
         _idempotency_key: &str,
     ) -> UseResult<RuntimeEndpointRef> {
         Err(provider_error(
@@ -335,11 +586,36 @@ impl PluginRuntimeServiceReadinessHost for UnavailableRuntimeServiceReadinessHos
         _surface: &PluginMcpSurface,
         _plan: &RuntimeSurfacePlan,
         _observation: &RuntimeObservation,
+        _runtime_endpoint: &RuntimeServiceEndpoint,
         _idempotency_key: &str,
     ) -> UseResult<PluginMcpServiceReadiness> {
         Err(provider_error(
             "use.plugin.runtime_provider_required",
             "No MCP Gateway readiness host was injected for this cognitive-package operation.",
+        ))
+    }
+
+    async fn drain_service(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
+        _idempotency_key: &str,
+    ) -> UseResult<()> {
+        Err(provider_error(
+            "use.plugin.runtime_provider_required",
+            "No Gateway lifecycle host was injected to drain this cognitive-package Service.",
+        ))
+    }
+
+    async fn remove_service(
+        &self,
+        _intent: &PluginLifecycleIntent,
+        _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
+        _idempotency_key: &str,
+    ) -> UseResult<()> {
+        Err(provider_error(
+            "use.plugin.runtime_provider_required",
+            "No Gateway lifecycle host was injected to remove this cognitive-package Service binding.",
         ))
     }
 }
@@ -454,6 +730,22 @@ mod tests {
         ))
         .unwrap();
         validate_available_hosts(&manifest, None).unwrap();
+    }
+
+    #[test]
+    fn managed_factory_requires_an_exact_selection_for_each_runtime_surface() {
+        let manifest = ExtensionManifest::parse_acl(include_str!(
+            "../../crates/extension/fixtures/manifests/plugin-v3.acl"
+        ))
+        .unwrap();
+        let factory = ManagedCognitivePackageLifecycleFactory::new(
+            RuntimeProviderSelection::default(),
+            Arc::new(UnavailableRuntimeServiceReadinessHost),
+        );
+
+        let error = factory.validate_manifest(&manifest).unwrap_err();
+        assert_eq!(factory.name(), "managed-runtime-gateway");
+        assert_eq!(error.code, "use.plugin.runtime_provider_required");
     }
 
     #[test]
