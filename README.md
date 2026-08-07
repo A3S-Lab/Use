@@ -80,8 +80,9 @@ The implementation and fixtures exercise the product model directly:
 CI runs formatting, workspace tests, Clippy, release-container conformance,
 and platform jobs. The Windows preview gate also runs signed Registry,
 dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF scenarios
-through the real CLI; the remaining platform matrix is still narrower than the
-release gate. See [Platform support](#platform-support).
+through the real CLI, including killed-process cleanup replay after graph
+cutover; the remaining platform matrix is still narrower than the release gate.
+See [Platform support](#platform-support).
 
 ## Build and verify
 
@@ -428,7 +429,7 @@ release claim.
 | --- | --- | --- |
 | Linux x86_64 / arm64 | Full workspace CI plus release-container conformance | Development preview |
 | macOS arm64 / x86_64 | Workspace build and tests | Development preview |
-| Windows x86_64 | Workspace compile plus Core/facade tests and signed Registry, graph, Grant, Flow, and OKF CLI lifecycles | Preview; full runtime/recovery matrix pending |
+| Windows x86_64 | Workspace compile plus signed Registry/graph/Grant/Flow/OKF CLI lifecycles and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
 All filesystem state uses platform-aware paths and avoids symlink/reparse-point
 traversal. Platform compilation is not the same as production qualification.

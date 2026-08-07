@@ -72,7 +72,8 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
 
 - Windows x86_64 已通过真实 `a3s-use` 进程运行签名 Registry 信任/lock、
   依赖图 install/upgrade/uninstall、Grant、standalone Flow preflight/生命周期
-  和 OKF cutover 场景。
+  和 OKF cutover 场景；还会在 upgrade 完成 cutover 后杀死进程，再重放已移除
+  依赖的清理，且 capability generation 不会膨胀。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
 - 覆盖下载中断、归档提取、cutover、drain、进程崩溃、重启、杀毒软件争用
