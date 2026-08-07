@@ -36,7 +36,7 @@ fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_a3s-use")
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[path = "remote_extension_cli/flow_lifecycle.rs"]
 mod flow_lifecycle;
 #[path = "remote_extension_cli/graph_grants.rs"]
@@ -310,7 +310,7 @@ fn cognitive_skill_target_version(
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn cognitive_flow_target_version(
     fixture_root: &std::path::Path,
     version: &str,
