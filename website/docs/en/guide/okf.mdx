@@ -9,7 +9,7 @@ description: How Open Knowledge Format becomes a first-class, non-executable A3S
 
 In A3S Use, OKF is a first-class cognitive surface alongside Tool, MCP, Flow, Skill, and UI, but it is not an executable workload.
 
-> Current status: the standalone lifecycle includes a bundled cross-platform SQLite/FTS5 Knowledge backend, complete User/Workspace isolation, transactional stage/promote/remove, exact projection-authorized cited search, restart recovery, bounded storage quota/retention/GC, and signed install/query/upgrade/uninstall coverage. A3S Code/Web-managed Workspace and session carriers, leased-query qualification, and operational backup/repair remain pending; without exact promoted evidence, the surface is not published.
+> Current status: the standalone lifecycle includes a bundled cross-platform SQLite/FTS5 Knowledge backend, complete User/Workspace isolation, transactional stage/promote/remove, exact projection-authorized cited search, restart recovery, bounded storage quota/retention/GC, scope-local integrity audit, verified database backup, authority-preserving FTS repair, and signed real-process coverage. A3S Code/Web-managed leased-query qualification, coordinated restore, and whole-product recovery remain pending; without exact promoted evidence, the surface is not published.
 
 ## Bundle structure
 
@@ -116,7 +116,30 @@ a3s-use knowledge usage \
   --json
 ```
 
-The report includes retained projections, tombstones, expanded bytes, active policy limits, allocated database bytes, and reclaimable bytes. Workspace diagnostics require an explicit `--scope-id`; the CLI never guesses a current Workspace identity. These controls harden the standalone backend; they do not claim that Code/Web managed carriers or whole-product backup and repair are complete.
+The report includes retained projections, tombstones, expanded bytes, active policy limits, allocated database bytes, and reclaimable bytes. Workspace diagnostics require an explicit `--scope-id`; the CLI never guesses a current Workspace identity.
+
+Audit the current database without exposing concept content:
+
+```bash
+a3s-use knowledge audit --json
+```
+
+Audit verifies SQLite integrity, foreign keys, exact receipt/scope accounting, and FTS consistency. Create and then independently verify a non-overwriting scope snapshot:
+
+```bash
+a3s-use knowledge backup ./user.a3s-okf-backup --json
+a3s-use knowledge verify-backup ./user.a3s-okf-backup --json
+```
+
+The versioned backup manifest binds complete scope, creation time, exact database length and SHA-256, storage accounting, and policy limits. The digest detects corruption; it is not a package or Registry signature. The artifact does not contain Registry receipts, immutable package roots, Knowledge bindings, lifecycle journals, Grants, Flow history, or UI state.
+
+If audit reports only a derived FTS mismatch, an operator may explicitly rebuild FTS from already-validated documents:
+
+```bash
+a3s-use knowledge repair-search-index --yes --json
+```
+
+Repair never edits projection receipts, selected generations, bindings, lifecycle evidence, or Grants. Copying a backup into live state is unsupported: coordinated restore and whole-product recovery remain release gates. See the [OKF Knowledge operations runbook](https://github.com/A3S-Lab/Use/blob/main/docs/okf-knowledge-operations.md).
 
 ## Compilation is not installation
 

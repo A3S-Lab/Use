@@ -1,7 +1,7 @@
 # A3S Use Plugin Contract Reference
 
 Status: development preview
-Last updated: 2026-08-07
+Last updated: 2026-08-08
 
 ## Scope
 
@@ -45,6 +45,7 @@ current set.
 | Workspace Grant | `a3s.use.plugin-workspace-grant.v1` |
 | Registry cutover | `a3s.use.registry-cutover.v1` |
 | OKF Knowledge binding | `a3s.use.okf-knowledge-binding.v2` |
+| OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
 The host capability inventory is exact: catalog v3, plan v4, and manager
 toolset v3 only. A host advertising a different inventory is rejected.
@@ -106,6 +107,25 @@ Only an exact promoted binding may enter the capability snapshot.
 The standalone SQLite/FTS5 backend creates the one current database schema for
 new state and rejects every unknown `user_version`. It does not migrate or
 rewrite pre-release databases.
+
+One scope-local backup file starts with the fixed A3S OKF backup header, a
+bounded manifest length and SHA-256, the versioned JSON manifest, and the exact
+compact SQLite snapshot bytes.
+The manifest binds complete scope, creation time, database length and SHA-256,
+storage accounting, and policy limits. Verification rejects unknown fields,
+scope substitution, symlinks, length/digest mismatch, unsupported SQLite
+schema, invalid receipts, inconsistent accounting, and FTS corruption.
+
+The backup digest detects corruption but is not a Registry signature. A
+verified database cannot recreate package receipts, immutable package roots,
+Knowledge bindings, lifecycle journals, or Grants. Restore remains unsupported
+until those authorities can be validated together.
+
+Search-index repair is deliberately narrower than lifecycle repair. It first
+validates core SQLite integrity, foreign keys, projection receipts, row
+identity, scope, and accounting, then derives FTS rows from the retained
+document table and repeats the complete audit. It never edits lifecycle
+authority.
 
 ## Flow contract
 
@@ -299,7 +319,7 @@ closed. Contract, plan, package, dependency, Registry, target, and journal
 sizes are bounded by checked constants.
 
 Human-authored configuration remains ACL. JSON is used for signed/canonical
-machine records, receipts, locks, plans, and command output.
+machine records, receipts, locks, plans, backup manifests, and command output.
 
 ## Golden fixtures
 

@@ -11,6 +11,8 @@ use crate::extension_cli::{
 };
 use std::time::Duration;
 
+mod knowledge;
+
 pub struct CommandOutput {
     pub human: String,
     pub json: serde_json::Value,
@@ -56,7 +58,7 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "upgrade" => package_command_alias("upgrade", &args[1..]).await,
         "uninstall" => package_command_alias("uninstall", &args[1..]).await,
         "component" => component(&args[1..]).await,
-        "knowledge" => knowledge(&args[1..]).await,
+        "knowledge" => knowledge::run(&args[1..]).await,
         "browser" => browser(&args[1..]).await,
         "ocr" => ocr(&args[1..]).await,
         "box" => {
@@ -103,6 +105,10 @@ fn help() -> CommandOutput {
             "  a3s-use component list|status|install|upgrade|uninstall [args] [--json]\n",
             "  a3s-use knowledge search <query> [--limit <n>] [--json]\n",
             "  a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
+            "  a3s-use knowledge audit [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
+            "  a3s-use knowledge backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
+            "  a3s-use knowledge verify-backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
+            "  a3s-use knowledge repair-search-index --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
             "  a3s-use browser doctor [--json]\n",
             "  a3s-use browser render <url> [--output <path>] [--screenshot <path>] [--json]\n",
             "  a3s-use browser open|list|navigate|snapshot|click|type|press|select|scroll|screenshot|close [args] [--json]\n",
@@ -220,99 +226,6 @@ async fn capability(args: &[String]) -> UseResult<CommandOutput> {
         Some(value) => Err(usage_error(format!("unknown capability command '{value}'"))),
         None => Err(usage_error("capability requires snapshot or watch")),
     }
-}
-
-#[cfg(feature = "extensions")]
-async fn knowledge(args: &[String]) -> UseResult<CommandOutput> {
-    match args.first().map(String::as_str) {
-        Some("search") => {
-            validate_knowledge_search_options(args)?;
-            let query = value_argument(args, 1, "knowledge search requires a query")?;
-            let limit = usize::try_from(integer_option(args, "--limit", 10)?)
-                .map_err(|_| usage_error("--limit exceeds the platform range"))?;
-            let snapshot = capability_registry_snapshot().await?;
-            let projections = snapshot.knowledge_projections();
-            if projections.is_empty() {
-                return Err(UseError::new(
-                    "use.okf.knowledge_unavailable",
-                    "No promoted OKF Knowledge projection is active in the current User scope.",
-                )
-                .with_suggestion(
-                    "Install and enable a signed cognitive package with an OKF surface, then retry the search.",
-                ));
-            }
-            let paths = a3s_use_extension::ExtensionPaths::from_env()?;
-            let client = crate::okf_knowledge::OkfKnowledgeClient::new(std::sync::Arc::new(
-                crate::okf_knowledge::SqliteOkfKnowledgeAdapter::from_extension_paths(&paths),
-            ));
-            let request = crate::okf_knowledge::OkfKnowledgeSearchRequest::new(
-                a3s_use_core::PlanScope {
-                    kind: a3s_use_core::PlanScopeKind::User,
-                    id: crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
-                },
-                query,
-                limit,
-                projections,
-            )?;
-            let response = client.search(&request).await?;
-            Ok(CommandOutput::success(
-                format!(
-                    "Found {} cited OKF concept(s) for '{query}'.",
-                    response.hits.len()
-                ),
-                serde_json::json!({ "knowledge": response }),
-            ))
-        }
-        Some("usage") => {
-            validate_knowledge_usage_options(args)?;
-            let kind = match option_argument(args, "--scope-kind")?.unwrap_or("user") {
-                "user" => a3s_use_core::PlanScopeKind::User,
-                "workspace" => a3s_use_core::PlanScopeKind::Workspace,
-                value => {
-                    return Err(usage_error(format!(
-                        "--scope-kind must be 'user' or 'workspace', received '{value}'"
-                    )))
-                }
-            };
-            let scope_id = option_argument(args, "--scope-id")?;
-            if kind == a3s_use_core::PlanScopeKind::Workspace && scope_id.is_none() {
-                return Err(usage_error(
-                    "--scope-id is required when --scope-kind is 'workspace'",
-                ));
-            }
-            let scope = a3s_use_core::PlanScope {
-                kind,
-                id: scope_id
-                    .unwrap_or(crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE)
-                    .to_owned(),
-            };
-            let paths = a3s_use_extension::ExtensionPaths::from_env()?;
-            let adapter =
-                crate::okf_knowledge::SqliteOkfKnowledgeAdapter::from_extension_paths(&paths);
-            let usage = adapter.usage(&scope).await?;
-            Ok(CommandOutput::success(
-                format!(
-                    "Knowledge scope {}/{} retains {} projection(s), {} tombstone(s), and {} expanded byte(s).",
-                    usage.scope.kind.as_str(),
-                    usage.scope.id,
-                    usage.retained_projections,
-                    usage.removed_tombstones,
-                    usage.retained_expanded_bytes,
-                ),
-                serde_json::json!({ "knowledge": { "storage": usage } }),
-            ))
-        }
-        Some(value) => Err(usage_error(format!("unknown knowledge command '{value}'"))),
-        None => Err(usage_error("knowledge requires search or usage")),
-    }
-}
-
-#[cfg(not(feature = "extensions"))]
-async fn knowledge(_args: &[String]) -> UseResult<CommandOutput> {
-    Err(UseError::new(
-        "use.okf.knowledge_disabled",
-        "OKF Knowledge support is disabled in this custom build.",
-    ))
 }
 
 async fn doctor(domain: Option<&str>) -> UseResult<CommandOutput> {
@@ -1235,45 +1148,6 @@ fn validate_capability_options(args: &[String], watch: bool) -> UseResult<()> {
                 index += 2;
             }
             value => return Err(usage_error(format!("unknown capability option '{value}'"))),
-        }
-    }
-    Ok(())
-}
-
-#[cfg(feature = "extensions")]
-fn validate_knowledge_search_options(args: &[String]) -> UseResult<()> {
-    let mut index = 2;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--json" => index += 1,
-            "--limit" => {
-                if args.get(index + 1).is_none() {
-                    return Err(usage_error("--limit requires a value"));
-                }
-                index += 2;
-            }
-            value => return Err(usage_error(format!("unknown knowledge option '{value}'"))),
-        }
-    }
-    Ok(())
-}
-
-#[cfg(feature = "extensions")]
-fn validate_knowledge_usage_options(args: &[String]) -> UseResult<()> {
-    let mut index = 1;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--json" => index += 1,
-            "--scope-kind" | "--scope-id" => {
-                if args
-                    .get(index + 1)
-                    .is_none_or(|value| value.starts_with('-'))
-                {
-                    return Err(usage_error(format!("{} requires a value", args[index])));
-                }
-                index += 2;
-            }
-            value => return Err(usage_error(format!("unknown knowledge option '{value}'"))),
         }
     }
     Ok(())

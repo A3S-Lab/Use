@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-07
+Last updated: 2026-08-08
 
 ## Product status
 
@@ -73,6 +73,7 @@ publishes one capability generation, and retires unused generations in reverse.
 | Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
 | Enablement state | `a3s.use.cognitive-package-enablement-state.v2` |
 | Enablement operation | `a3s.use.cognitive-package-enablement-operation.v2` |
+| OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
 Negative fixtures for superseded inputs remain only to prove fail-closed
 rejection. They are not supported decode paths.
@@ -126,6 +127,9 @@ rejection. They are not supported decode paths.
 - [x] Scope-kind-isolated OKF storage policy with atomic receipt-accounted byte
   and projection quotas, per-surface generation bounds, global tombstone
   pruning, SQLite/WAL compaction, and exact-scope usage diagnostics.
+- [x] Scope-local OKF SQLite/receipt/FTS integrity audit, non-overwriting
+  digest-bound database backup and offline verification, plus repair limited to
+  rebuilding the derived search index from validated documents.
 - [x] Real `a3s-flow` Native TypeScript preflight and exact-generation binding
   in injected hosts and the explicitly configured standalone CLI lifecycle.
 - [x] Workspace Grant proposal/change/resolution/ceiling binding.
@@ -140,7 +144,8 @@ rejection. They are not supported decode paths.
   CLI tests in the Use workspace.
 - [x] Signed standalone CLI Flow/OKF/Skill/UI install, process-restart
   observation, exact upgrade, uninstall, failed-preflight non-publication, and
-  repaired exact replay coverage on Unix and Windows x86_64.
+  repaired exact replay coverage on Unix and Windows x86_64. The OKF fixture
+  also exercises audit, backup, offline verification, and confirmed FTS repair.
 - [x] Linux CI, macOS workspace tests, and Windows preview compile/facade plus
   signed Registry, dependency-graph, Grant, Flow, OKF lifecycle, and
   killed-process cutover-replay gates.
@@ -230,8 +235,9 @@ Status: pending
   signatures, checksums, and installation scripts from one release workflow.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair
   procedures for packages, cutover evidence, Grants, Flow history, UI state,
-  and OKF projections; the implemented OKF scope policy does not replace
-  backup, repair, or whole-product operating procedures.
+  and OKF projections. Scope-local OKF database audit, verified backup, and
+  derived-index repair are implemented, but restore, binding/authority
+  recovery, backup rotation, and whole-product procedures remain open.
 - [ ] Add telemetry and diagnostics for plan, download, cutover, drain,
   rollback, and recovery without exposing secrets.
 - [ ] Complete threat model review, privilege boundaries, security response,

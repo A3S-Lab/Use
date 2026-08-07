@@ -1,6 +1,6 @@
 use a3s_use_core::{OkfProjectionReceipt, PlanScope, UseError, UseResult};
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::policy::{
     OkfKnowledgeStoragePolicy, MAX_OKF_KNOWLEDGE_SCOPE_PROJECTIONS,
@@ -11,8 +11,8 @@ use super::projection::{database_invalid, database_io, load_projection, Projecti
 const MAX_RETAINED_RECEIPT_BYTES: usize = 256 * 1024;
 
 /// Non-secret, scope-local Knowledge storage evidence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OkfKnowledgeStorageUsage {
     pub scope: PlanScope,
     pub retained_projections: usize,

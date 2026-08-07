@@ -1,3 +1,4 @@
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::Arc;
 
 use a3s_use_core::{
@@ -503,6 +504,156 @@ async fn storage_accounting_rejects_receipt_row_identity_tampering() {
 
     let error = adapter.usage(&workspace_scope).await.unwrap_err();
     assert_eq!(error.code, "use.okf.knowledge_database_invalid");
+    let repair = adapter
+        .repair_search_index(&workspace_scope)
+        .await
+        .unwrap_err();
+    assert_eq!(repair.code, "use.okf.knowledge_database_invalid");
+    let backup = temporary.path().join("tampered.a3s-okf-backup");
+    let error = adapter.backup(&workspace_scope, &backup).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_database_invalid");
+    assert!(!backup.exists());
+}
+
+#[tokio::test]
+async fn audit_and_repair_rebuild_only_the_derived_search_index() {
+    let temporary = TempDir::new().unwrap();
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let client = OkfKnowledgeClient::new(adapter.clone());
+    let files = knowledge_files("auditable throughput", "auditable latency");
+    let promoted = stage_and_promote(
+        &client,
+        stage_spec(1, workspace_scope.clone(), "acme/research", &files),
+        files,
+    )
+    .await;
+
+    let healthy = adapter.audit(&workspace_scope).await.unwrap();
+    assert_eq!(healthy.scope, workspace_scope);
+    assert_eq!(healthy.document_count, 2);
+    assert_eq!(healthy.indexed_document_count, 2);
+    assert_eq!(healthy.storage.retained_projections, 1);
+
+    let path = adapter
+        .scope_directory(&workspace_scope)
+        .unwrap()
+        .join("knowledge.sqlite3");
+    let connection = super::schema::open(&path, false).unwrap();
+    connection
+        .execute(
+            "DELETE FROM knowledge_documents_fts
+             WHERE rowid = (SELECT MIN(rowid) FROM knowledge_documents_fts)",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+
+    let error = adapter.audit(&workspace_scope).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_search_index_invalid");
+
+    let repaired = adapter.repair_search_index(&workspace_scope).await.unwrap();
+    assert_eq!(repaired.scope, workspace_scope);
+    assert_eq!(repaired.rebuilt_document_count, 2);
+    assert_eq!(repaired.after.document_count, 2);
+    assert_eq!(repaired.after.indexed_document_count, 2);
+    assert_eq!(repaired.after.storage.retained_projections, 1);
+    assert_eq!(
+        client.observe(&promoted.receipt).await.unwrap().observation,
+        promoted.observation
+    );
+    assert!(!client
+        .search(
+            &OkfKnowledgeSearchRequest::new(
+                workspace_scope,
+                "auditable throughput",
+                5,
+                vec![projection(&promoted)],
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap()
+        .hits
+        .is_empty());
+}
+
+#[tokio::test]
+async fn backup_is_scope_bound_verified_and_never_overwrites() {
+    let temporary = TempDir::new().unwrap();
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let client = OkfKnowledgeClient::new(adapter.clone());
+    let files = knowledge_files("backed-up throughput", "backed-up latency");
+    stage_and_promote(
+        &client,
+        stage_spec(1, workspace_scope.clone(), "acme/research", &files),
+        files,
+    )
+    .await;
+    let backup = temporary.path().join("workspace.a3s-okf-backup");
+
+    let created = adapter.backup(&workspace_scope, &backup).await.unwrap();
+    assert_eq!(created.scope, workspace_scope);
+    assert_eq!(created.storage.retained_projections, 1);
+    assert!(created.database_bytes > 0);
+    assert!(created.database_sha256.starts_with("sha256:"));
+    assert!(backup.is_file());
+
+    let verified = SqliteOkfKnowledgeAdapter::verify_backup(&backup, Some(&workspace_scope))
+        .await
+        .unwrap();
+    assert_eq!(verified, created);
+    let mut unknown_field = serde_json::to_value(&created).unwrap();
+    unknown_field["storage"]["unexpected"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<OkfKnowledgeBackupManifest>(unknown_field).is_err());
+
+    let manifest_tamper = temporary.path().join("manifest-tamper.a3s-okf-backup");
+    std::fs::copy(&backup, &manifest_tamper).unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&manifest_tamper)
+        .unwrap();
+    let manifest_offset = u64::try_from(b"A3S-OKF-BACKUP\n".len() + 4 + 32).unwrap();
+    file.seek(SeekFrom::Start(manifest_offset)).unwrap();
+    let mut manifest_byte = [0_u8; 1];
+    file.read_exact(&mut manifest_byte).unwrap();
+    file.seek(SeekFrom::Start(manifest_offset)).unwrap();
+    file.write_all(&[manifest_byte[0] ^ 0xff]).unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+    let error = SqliteOkfKnowledgeAdapter::verify_backup(&manifest_tamper, Some(&workspace_scope))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_backup_invalid");
+
+    let wrong_scope = scope(PlanScopeKind::User);
+    let error = SqliteOkfKnowledgeAdapter::verify_backup(&backup, Some(&wrong_scope))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_backup_scope_mismatch");
+
+    let overwrite = adapter.backup(&workspace_scope, &backup).await.unwrap_err();
+    assert_eq!(overwrite.code, "use.okf.knowledge_backup_exists");
+
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&backup)
+        .unwrap();
+    file.seek(SeekFrom::End(-1)).unwrap();
+    let mut final_byte = [0_u8; 1];
+    file.read_exact(&mut final_byte).unwrap();
+    file.seek(SeekFrom::End(-1)).unwrap();
+    file.write_all(&[final_byte[0] ^ 0xff]).unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+
+    let error = SqliteOkfKnowledgeAdapter::verify_backup(&backup, Some(&workspace_scope))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_backup_invalid");
 }
 
 #[test]

@@ -47,7 +47,8 @@ host target, and provider capability checks remain mandatory correctness rules.
   SQLite/FTS5 OKF, and injected `a3s-flow` Native TypeScript preflight.
 - The standalone Knowledge backend enforces whole-scope expanded-byte and
   projection quotas, per-surface generation limits, global tombstone pruning,
-  SQLite/WAL compaction, and exact-scope usage diagnostics.
+  SQLite/WAL compaction, exact-scope usage diagnostics, SQLite/receipt/FTS
+  audit, non-overwriting verified database backup, and derived-index repair.
 - GitHub Pages and bilingual product documentation exist, but they describe a
   development preview only.
 
@@ -97,9 +98,10 @@ host target, and provider capability checks remain mandatory correctness rules.
   replacement, offline recovery, and incident procedures.
 - Publish reproducible archives, checksums, signatures, SBOMs, provenance, and
   cross-platform installation scripts from one release workflow.
-- Exercise whole-product storage quota/repair, backup, telemetry, security
-  response, and support runbooks. The implemented OKF scope policy covers only
-  the standalone Knowledge backend.
+- Exercise coordinated restore, binding/authority recovery, backup rotation,
+  whole-product storage policy, telemetry, security response, and support
+  runbooks. The implemented OKF scope audit/backup/FTS repair covers only the
+  standalone Knowledge database.
 
 ## Production-ready definition
 

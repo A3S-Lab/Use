@@ -68,7 +68,9 @@ The implementation and fixtures exercise the product model directly:
 - [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) stages,
   promotes, searches, and removes scope-isolated OKF projections with exact
   package-generation citations, bounded receipt-accounted storage, global
-  tombstone pruning, and physical SQLite compaction after removal.
+  tombstone pruning, physical SQLite compaction after removal, integrity
+  auditing, non-overwriting verified backups, and authority-preserving FTS
+  repair.
 - [`A3sFlowLifecycleHost`](src/flow_runtime/lifecycle.rs) delegates Flow
   preflight to the real `a3s-flow` Native TypeScript runtime and records an
   exact-generation binding.
@@ -100,7 +102,7 @@ cargo build --workspace --bins --locked
 
 The standalone CLI currently exposes package-graph lifecycle, diagnostics,
 capability observation, built-in Browser/OCR routes, cited OKF search, and
-exact-scope Knowledge storage accounting:
+exact-scope Knowledge storage operations:
 
 ```text
 a3s-use install <publisher/name> [registry options] [--json]
@@ -108,6 +110,10 @@ a3s-use upgrade <publisher/name> [registry options] [--json]
 a3s-use uninstall <publisher/name> [--json]
 a3s-use knowledge search <query> [--limit <n>] [--json]
 a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
+a3s-use knowledge audit [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
+a3s-use knowledge backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
+a3s-use knowledge verify-backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
+a3s-use knowledge repair-search-index --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use capability snapshot|watch [options] [--json]
 ```
 
@@ -117,9 +123,19 @@ generations per surface, and 256 removal tombstones. Staging checks the whole
 scope atomically; receipt-owned removal frees quota, prunes old tombstones, and
 compacts SQLite plus its WAL. `knowledge usage --json` reports the exact scope,
 current counts, quota, allocated database bytes, and reclaimable bytes. These
-standalone storage controls do not complete the still-pending Code/Web managed
-Workspace and session carriers. Workspace diagnostics require an explicit
-`--scope-id`; the command never guesses a current Workspace identity.
+standalone controls also audit SQLite, receipt, scope, foreign-key, and FTS
+consistency. Backup writes one versioned, SHA-256-bound SQLite snapshot without
+overwriting an existing file; verification reopens and audits the embedded
+database offline. Search-index repair requires `--yes` and rebuilds only FTS
+rows derived from already-validated documents. It never rewrites package
+receipts, projection state, or authorization evidence.
+
+The backup is an integrity-checked scope database snapshot, not a signed trust
+artifact or a whole-product restore. Registry receipts, immutable package
+roots, lifecycle journals, Grants, Flow history, bindings, and UI state still
+require their own coordinated backup/restore procedure. Workspace operations
+require an explicit `--scope-id`; the CLI never guesses a current Workspace
+identity. See [OKF Knowledge operations](docs/okf-knowledge-operations.md).
 
 Example development install from an explicitly trusted Registry:
 
@@ -406,6 +422,7 @@ Only the following cognitive-package protocol line is accepted:
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v3` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
 | Enablement state / operation | `v2` / `v2` |
+| OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
 SemVer dependency constraints, `requires_use`, OS/target checks, and
 host/provider capability checks are product behavior, not backward-compatibility
@@ -427,6 +444,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
 | Scope-bounded OKF quota, retention, tombstone GC, SQLite compaction, and usage diagnostics | Implemented in the standalone Knowledge backend |
+| Scope-local OKF integrity audit, verified database backup, and derived FTS repair | Implemented and real-process tested; restore and whole-product recovery remain open |
 | Runtime Service, HTTP MCP, managed Knowledge, and sandboxed UI composition in every declared host | In progress |
 | A3S Code TUI/Web and other cross-repository product integration | Integration exists; release qualification remains |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
@@ -498,6 +516,7 @@ the default human-authored configuration format.
 - [Lifecycle and security](docs/plugin-platform-lifecycle-and-security.md)
 - [Development plan](docs/plugin-platform-development-plan.md)
 - [Release descriptors](docs/release-descriptors.md)
+- [OKF Knowledge operations](docs/okf-knowledge-operations.md)
 - [Documentation website](https://a3s-lab.github.io/Use/)
 
 ## License
