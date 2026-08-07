@@ -45,6 +45,9 @@ host target, and provider capability checks remain mandatory correctness rules.
   exact-generation drain, and fail-closed corruption handling.
 - Standalone composition exists for Tool Task, stdio MCP, Skill/UI projection,
   SQLite/FTS5 OKF, and injected `a3s-flow` Native TypeScript preflight.
+- The standalone Knowledge backend enforces whole-scope expanded-byte and
+  projection quotas, per-surface generation limits, global tombstone pruning,
+  SQLite/WAL compaction, and exact-scope usage diagnostics.
 - GitHub Pages and bilingual product documentation exist, but they describe a
   development preview only.
 
@@ -53,8 +56,11 @@ host target, and provider capability checks remain mandatory correctness rules.
 ### 1. Managed-host provider composition — in progress
 
 - Add production Runtime Service and HTTP MCP/Gateway providers.
-- Complete managed Knowledge Workspace/session carriers and UI sandbox
-  ownership, CSP, backend binding, drain, retention, and garbage collection.
+- Complete managed Knowledge Workspace/session carriers and leased prior-
+  generation query qualification. Standalone OKF quota/retention/GC is
+  implemented, but managed composition is not.
+- Complete UI sandbox ownership, CSP, backend binding, drain, retention, and
+  garbage collection.
 - Prove required surfaces remain unpublished whenever ownership or exact
   readiness evidence is missing.
 
@@ -91,8 +97,9 @@ host target, and provider capability checks remain mandatory correctness rules.
   replacement, offline recovery, and incident procedures.
 - Publish reproducible archives, checksums, signatures, SBOMs, provenance, and
   cross-platform installation scripts from one release workflow.
-- Exercise storage quota/repair, backup, telemetry, security response, and
-  support runbooks.
+- Exercise whole-product storage quota/repair, backup, telemetry, security
+  response, and support runbooks. The implemented OKF scope policy covers only
+  the standalone Knowledge backend.
 
 ## Production-ready definition
 

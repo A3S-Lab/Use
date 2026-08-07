@@ -199,6 +199,13 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
         "acme/knowledge"
     );
 
+    let usage = knowledge_usage(&home);
+    assert!(usage.status.success(), "{usage:?}");
+    let storage = &json(&usage)["data"]["knowledge"]["storage"];
+    assert_eq!(storage["retainedProjections"], 1);
+    assert_eq!(storage["removedTombstones"], 0);
+    assert!(storage["retainedExpandedBytes"].as_u64().unwrap() > 0);
+
     let removed = cognitive_uninstall(&home, "acme/knowledge");
     assert!(removed.status.success(), "{removed:?}");
     assert_eq!(json(&removed)["data"]["changed"], true);
@@ -212,6 +219,13 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
         json(&searched)["error"]["code"],
         "use.okf.knowledge_unavailable"
     );
+    let usage = knowledge_usage(&home);
+    assert!(usage.status.success(), "{usage:?}");
+    let storage = &json(&usage)["data"]["knowledge"]["storage"];
+    assert_eq!(storage["retainedProjections"], 0);
+    assert_eq!(storage["removedTombstones"], 1);
+    assert_eq!(storage["retainedExpandedBytes"], 0);
+    assert_eq!(storage["reclaimableDatabaseBytes"], 0);
 }
 
 #[test]
@@ -276,6 +290,14 @@ fn signed_okf_upgrade_atomically_switches_the_cited_capability_generation() {
 fn knowledge_search(home: &std::path::Path, query: &str) -> Output {
     Command::new(binary())
         .args(["knowledge", "search", query, "--json"])
+        .env("A3S_USE_HOME", home)
+        .output()
+        .unwrap()
+}
+
+fn knowledge_usage(home: &std::path::Path) -> Output {
+    Command::new(binary())
+        .args(["knowledge", "usage", "--json"])
         .env("A3S_USE_HOME", home)
         .output()
         .unwrap()

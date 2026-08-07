@@ -5,20 +5,21 @@ use a3s_use_core::{
 use rusqlite::{params, Connection, TransactionBehavior};
 
 use super::index::{PreparedIndex, INDEX_SCHEMA};
+use super::policy::OkfKnowledgeStoragePolicy;
 use super::projection::{
     advancing_timestamp, database_conflict, database_io, generation_i64, load_projection,
-    observation, projection_id, prune_removed_tombstones, require_projection, selected_generation,
-    timestamp_i64, validate_stage_replay, ProjectionState,
+    observation, projection_id, require_projection, selected_generation, timestamp_i64,
+    validate_stage_replay, ProjectionState,
 };
-use crate::okf_knowledge::{
-    OkfKnowledgeBinding, OkfKnowledgeStageSpec, MAX_OKF_KNOWLEDGE_GENERATIONS,
-};
+use super::storage;
+use crate::okf_knowledge::{OkfKnowledgeBinding, OkfKnowledgeStageSpec};
 
 pub(super) fn stage(
     connection: &mut Connection,
     spec: &OkfKnowledgeStageSpec,
     index: &PreparedIndex,
     now_ms: u64,
+    policy: &OkfKnowledgeStoragePolicy,
 ) -> UseResult<OkfKnowledgeBinding> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -53,11 +54,9 @@ pub(super) fn stage(
         return OkfKnowledgeBinding::new(existing.receipt, observation);
     }
 
-    prune_removed_tombstones(
-        &transaction,
-        &spec.surface.package_id,
-        &spec.surface.surface.id,
-    )?;
+    storage::prune_tombstones(&transaction, policy.max_scope_tombstones())?;
+    let usage = storage::usage(&transaction, &spec.scope, policy)?;
+    storage::enforce_stage(&usage, spec.bundle.expanded_bytes, policy)?;
     let retained: i64 = transaction
         .query_row(
             "SELECT COUNT(*) FROM knowledge_projections
@@ -66,11 +65,12 @@ pub(super) fn stage(
             |row| row.get(0),
         )
         .map_err(|error| database_io("count retained Knowledge generations", error))?;
-    if retained >= MAX_OKF_KNOWLEDGE_GENERATIONS as i64 {
+    if retained >= policy.max_surface_generations() as i64 {
         return Err(UseError::new(
             "use.okf.knowledge_database_generation_limit",
             format!(
-                "The Knowledge database reached its retained-generation limit of {MAX_OKF_KNOWLEDGE_GENERATIONS}; receipt-owned removal is required before another stage."
+                "The Knowledge surface reached its retained-generation limit of {}; receipt-owned removal is required before another stage.",
+                policy.max_surface_generations()
             ),
         ));
     }

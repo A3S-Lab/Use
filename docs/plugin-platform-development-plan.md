@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Development Plan
 
 Status: active
-Last updated: 2026-08-07
+Last updated: 2026-08-08
 
 ## Objective
 
@@ -45,7 +45,10 @@ Completed in the Use repository:
 - Workspace Grant composition, joint rollback, and drain-before-revoke;
 - standalone executable Task, stdio MCP, Skill/UI, SQLite/FTS5 OKF, and
   explicitly configured real `a3s-flow` Native TypeScript lifecycle hosts;
-- CLI diagnostics, package graph commands, Knowledge search, and watchers;
+- whole-scope OKF expanded-byte/projection quotas, per-surface generation
+  limits, globally bounded tombstones, post-removal SQLite/WAL compaction, and
+  exact-scope storage usage diagnostics;
+- CLI diagnostics, package graph commands, Knowledge search/usage, and watchers;
 - current-schema fixtures, digest goldens, remote Registry tests, recovery
   tests, and GitHub Pages site.
 
@@ -83,9 +86,12 @@ Acceptance:
 
 ### A3 Managed Knowledge
 
-- Add Code/Web Workspace and session carriers for exact OKF projections.
-- Implement retention, quota, garbage collection, and leased prior-generation
-  query semantics.
+- [x] Enforce atomic receipt-accounted expanded-byte and projection quotas for
+  each complete User/Workspace scope in the standalone SQLite backend.
+- [x] Bound per-surface generations and scope-wide tombstones, reclaim removed
+  index pages, truncate the WAL, and expose typed usage evidence.
+- [ ] Add Code/Web Workspace and session carriers for exact OKF projections.
+- [ ] Prove leased prior-generation query semantics through managed hosts.
 - Preserve complete User/Workspace scope in every database, request, citation,
   and observation.
 
@@ -207,6 +213,9 @@ Status: pending
 
 - Define retention and garbage collection for packages, prior generations,
   TUF cache, Grants, Flow history, OKF indexes, UI storage, and journals.
+- Treat the implemented standalone OKF scope quota/GC as one completed storage
+  control, not as completion of cross-product backup, repair, or retention
+  operations.
 - Add diagnostics for plan, download, prepare, cutover, drain, rollback, and
   recovery using non-secret evidence.
 - Define backup/restore and repair boundaries. Missing exact evidence must

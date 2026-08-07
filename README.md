@@ -67,7 +67,8 @@ The implementation and fixtures exercise the product model directly:
   accepted calls, and retires exact prior generations.
 - [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) stages,
   promotes, searches, and removes scope-isolated OKF projections with exact
-  package-generation citations.
+  package-generation citations, bounded receipt-accounted storage, global
+  tombstone pruning, and physical SQLite compaction after removal.
 - [`A3sFlowLifecycleHost`](src/flow_runtime/lifecycle.rs) delegates Flow
   preflight to the real `a3s-flow` Native TypeScript runtime and records an
   exact-generation binding.
@@ -98,15 +99,27 @@ cargo build --workspace --bins --locked
 ```
 
 The standalone CLI currently exposes package-graph lifecycle, diagnostics,
-capability observation, built-in Browser/OCR routes, and cited OKF search:
+capability observation, built-in Browser/OCR routes, cited OKF search, and
+exact-scope Knowledge storage accounting:
 
 ```text
 a3s-use install <publisher/name> [registry options] [--json]
 a3s-use upgrade <publisher/name> [registry options] [--json]
 a3s-use uninstall <publisher/name> [--json]
 a3s-use knowledge search <query> [--limit <n>] [--json]
+a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use capability snapshot|watch [options] [--json]
 ```
+
+The default Knowledge policy bounds each complete User or Workspace scope to
+512 MiB of receipt-accounted expanded content, 256 retained projections, 32
+generations per surface, and 256 removal tombstones. Staging checks the whole
+scope atomically; receipt-owned removal frees quota, prunes old tombstones, and
+compacts SQLite plus its WAL. `knowledge usage --json` reports the exact scope,
+current counts, quota, allocated database bytes, and reclaimable bytes. These
+standalone storage controls do not complete the still-pending Code/Web managed
+Workspace and session carriers. Workspace diagnostics require an explicit
+`--scope-id`; the command never guesses a current Workspace identity.
 
 Example development install from an explicitly trusted Registry:
 
@@ -413,6 +426,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
+| Scope-bounded OKF quota, retention, tombstone GC, SQLite compaction, and usage diagnostics | Implemented in the standalone Knowledge backend |
 | Runtime Service, HTTP MCP, managed Knowledge, and sandboxed UI composition in every declared host | In progress |
 | A3S Code TUI/Web and other cross-repository product integration | Integration exists; release qualification remains |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
