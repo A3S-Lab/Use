@@ -48,15 +48,18 @@ jobs:
       - name: Run MCP release fixture tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use-mcp-release-fixture --locked
-      # Windows remains a preview target: the compile gate above covers the
-      # CLI/MCP/Skill and packaging contracts. Browser provider and driver
-      # validation runs in the independent A3S Browser repository.
+      # Windows remains a preview target. Browser provider and driver
+      # validation runs in the independent A3S Browser repository, while the
+      # complete Runtime/MCP/watcher/failure-injection matrix remains pending.
       - name: Run facade unit tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --lib --bin a3s-use --locked
       - name: Run facade CLI integration tests (Windows preview)
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --test cli --locked -- --nocapture
+      - name: Run signed cognitive-package lifecycle tests (Windows preview)
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use --test remote_extension_cli --locked -- --nocapture
       - name: Run facade documentation tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --doc --locked

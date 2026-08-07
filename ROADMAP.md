@@ -137,8 +137,9 @@ rejection. They are not supported decode paths.
   CLI tests in the Use workspace.
 - [x] Signed standalone CLI Flow/OKF/Skill/UI install, process-restart
   observation, exact upgrade, uninstall, failed-preflight non-publication, and
-  repaired exact replay coverage on Unix.
-- [x] Linux CI, macOS workspace tests, and Windows preview compile/facade gates.
+  repaired exact replay coverage on Unix and Windows x86_64.
+- [x] Linux CI, macOS workspace tests, and Windows preview compile/facade plus
+  signed Registry, dependency-graph, Grant, Flow, and OKF lifecycle gates.
 - [x] GitHub Pages documentation application and bilingual documentation.
 
 ## Remaining development plan
@@ -200,8 +201,11 @@ Status: pending
 
 - [ ] Run full workspace and real-process package lifecycle tests on Linux
   x86_64/arm64 and macOS arm64/x86_64.
-- [ ] Expand Windows from compile/facade coverage to the complete Registry,
-  filesystem, Runtime, MCP, Flow, OKF, watcher, and crash-recovery matrix.
+- [x] Run signed Registry trust/lock, dependency-graph install/upgrade/uninstall,
+  Grant, standalone Flow preflight/lifecycle, and OKF cutover scenarios through
+  real `a3s-use` processes on Windows x86_64.
+- [ ] Expand the remaining Windows gate to the complete filesystem, Runtime,
+  MCP, watcher, failure-injection, and crash-recovery matrix.
 - [ ] Test interrupted download, archive extraction, cutover, drain, removal,
   process crash, reboot, antivirus contention, and Windows reparse points.
 - [ ] Verify release archives install and run without repository-local paths.

@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use super::*;
@@ -70,7 +69,7 @@ fn missing_flow_compiler_fails_preflight_without_publishing_capabilities() {
     let repository = TestRepository::with_targets(vec![package], 73, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let missing = temp.path().join("missing-a3s-flow-native-compiler");
+    let missing = flow_compiler_path(temp.path(), "missing-a3s-flow-native-compiler");
 
     let output = flow_registry_command(&server, &repository, &home, &missing, "install", "1.0.0");
     assert!(!output.status.success(), "{output:?}");
@@ -110,12 +109,23 @@ fn missing_flow_compiler_fails_preflight_without_publishing_capabilities() {
 }
 
 fn fake_flow_compiler(root: &Path) -> PathBuf {
-    let compiler = root.join("a3s-flow-native-compiler");
+    let compiler = flow_compiler_path(root, "a3s-flow-native-compiler");
     write_fake_flow_compiler(&compiler);
     compiler
 }
 
+fn flow_compiler_path(root: &Path, stem: &str) -> PathBuf {
+    if cfg!(windows) {
+        root.join(format!("{stem}.cmd"))
+    } else {
+        root.join(stem)
+    }
+}
+
+#[cfg(unix)]
 fn write_fake_flow_compiler(compiler: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
     std::fs::write(
         compiler,
         r#"#!/bin/sh
@@ -139,6 +149,34 @@ chmod +x "$output"
     let mut permissions = std::fs::metadata(compiler).unwrap().permissions();
     permissions.set_mode(0o755);
     std::fs::set_permissions(compiler, permissions).unwrap();
+}
+
+#[cfg(windows)]
+fn write_fake_flow_compiler(compiler: &Path) {
+    std::fs::write(
+        compiler,
+        "@echo off\r\n\
+setlocal EnableExtensions\r\n\
+if /I not \"%~1\"==\"compile\" exit /b 2\r\n\
+shift\r\n\
+set \"output=\"\r\n\
+:parse\r\n\
+if \"%~1\"==\"\" goto done\r\n\
+if /I \"%~1\"==\"-o\" goto output\r\n\
+:next\r\n\
+shift\r\n\
+goto parse\r\n\
+:output\r\n\
+shift\r\n\
+set \"output=%~1\"\r\n\
+goto next\r\n\
+:done\r\n\
+if not defined output exit /b 3\r\n\
+> \"%output%\" echo @echo off\r\n\
+>> \"%output%\" echo exit /b 0\r\n\
+exit /b 0\r\n",
+    )
+    .unwrap();
 }
 
 fn flow_registry_command(
