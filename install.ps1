@@ -198,6 +198,7 @@ $StageRoot = $null
 $InstallLock = $null
 $LockPath = $null
 $TemporaryShim = $null
+$BackupShim = $null
 
 New-Item -ItemType Directory -Path $DownloadRoot | Out-Null
 try {
@@ -370,12 +371,16 @@ if not defined A3S_USE_BROWSER_SKILLS_DIR set "A3S_USE_BROWSER_SKILLS_DIR=$Brows
 "@ -replace "`r?`n", "`r`n"
     [IO.File]::WriteAllText($TemporaryShim, $ShimContent, [Text.UTF8Encoding]::new($false))
     if ([IO.File]::Exists($ShimPath)) {
-        [IO.File]::Replace($TemporaryShim, $ShimPath, $null, $true)
+        $BackupShim = Join-Path $BinDir ".a3s-use-backup-$([guid]::NewGuid().ToString('N')).cmd"
+        [IO.File]::Replace($TemporaryShim, $ShimPath, $BackupShim, $true)
+        $TemporaryShim = $null
+        [IO.File]::Delete($BackupShim)
+        $BackupShim = $null
     }
     else {
         [IO.File]::Move($TemporaryShim, $ShimPath)
+        $TemporaryShim = $null
     }
-    $TemporaryShim = $null
 
     if (-not $NoPathUpdate) {
         $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -408,6 +413,9 @@ finally {
     }
     if ($null -ne $TemporaryShim -and (Test-Path -LiteralPath $TemporaryShim -PathType Leaf)) {
         Remove-Item -LiteralPath $TemporaryShim -Force
+    }
+    if ($null -ne $BackupShim -and (Test-Path -LiteralPath $BackupShim -PathType Leaf)) {
+        Remove-Item -LiteralPath $BackupShim -Force
     }
     if (Test-Path -LiteralPath $DownloadRoot) {
         Remove-Item -LiteralPath $DownloadRoot -Recurse -Force

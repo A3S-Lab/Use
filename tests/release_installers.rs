@@ -215,6 +215,11 @@ fn windows_installer_verifies_and_atomically_activates_the_release() {
         &install_root,
         &bin_dir,
     ));
+    assert_eq!(
+        fs::read_dir(&bin_dir).unwrap().count(),
+        1,
+        "managed shim replacement left a temporary or backup file"
+    );
 
     fs::write(release_root.join("README.md"), b"tampered\r\n").unwrap();
     let tamper_server = release_server(&archive_name, archive, &digest);
