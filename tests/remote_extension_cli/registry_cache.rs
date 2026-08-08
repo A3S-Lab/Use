@@ -7,18 +7,9 @@ fn cache_command(
     action: &str,
     extra: &[&str],
 ) -> Output {
+    configure_registry(server, repository, home, &[]);
     Command::new(binary())
-        .args([
-            "registry",
-            "cache",
-            action,
-            "--registry-name",
-            "fixture",
-            "--registry-url",
-            server.base_url(),
-            "--trust-root",
-            &repository.root_sha256,
-        ])
+        .args(["registry", "cache", action, "--registry-name", "fixture"])
         .args(extra)
         .arg("--json")
         .env("A3S_USE_HOME", home)
@@ -38,7 +29,12 @@ fn registry_cache_usage_and_confirmed_prune_are_bounded_and_zero_network() {
 
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
-    let cache_directory = home.join("state/remote-registries/fixture/verified-targets/sha256");
+    let source = registry_source_snapshot(&home)["sources"][0].clone();
+    let source_identity = source["sourceIdentity"].as_str().unwrap();
+    let cache_directory = home
+        .join("state/remote-registries/fixture/sources")
+        .join(source_identity)
+        .join("verified-targets/sha256");
     std::fs::write(cache_directory.join(".target-999-999.tmp"), b"stale").unwrap();
     std::fs::write(
         cache_directory.join(format!(".target-{}.part", "d".repeat(64))),
@@ -63,28 +59,62 @@ fn registry_cache_usage_and_confirmed_prune_are_bounded_and_zero_network() {
     assert!(cache["policy"]["maxBytes"].as_u64().unwrap() >= target_bytes);
     assert!(server.requests().is_empty());
 
-    let mismatched_source = Command::new(binary())
+    let replacement_url = format!("{}replacement/", server.base_url());
+    let revision = registry_source_snapshot(&home)["revision"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let replaced = Command::new(binary())
         .args([
             "registry",
-            "cache",
-            "usage",
-            "--registry-name",
+            "source",
+            "replace",
             "fixture",
-            "--registry-url",
-            &format!("{}replacement/", server.base_url()),
+            "--url",
+            &replacement_url,
             "--trust-root",
             &repository.root_sha256,
+            "--expected-revision",
+            &revision,
+            "--yes",
             "--json",
         ])
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
-    assert!(!mismatched_source.status.success(), "{mismatched_source:?}");
+    assert!(replaced.status.success(), "{replaced:?}");
+    let replacement_usage = cache_command(&server, &repository, &home, "usage", &[]);
+    assert!(replacement_usage.status.success(), "{replacement_usage:?}");
     assert_eq!(
-        json(&mismatched_source)["error"]["code"],
-        "use.extension.catalog_cache_invalid"
+        json(&replacement_usage)["data"]["registryCache"]["targetEntries"],
+        0
     );
+    assert_eq!(std::fs::read_dir(&cache_directory).unwrap().count(), 3);
     assert!(server.requests().is_empty());
+
+    let replacement_revision = registry_source_snapshot(&home)["revision"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let restored = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "replace",
+            "fixture",
+            "--url",
+            server.base_url(),
+            "--trust-root",
+            &repository.root_sha256,
+            "--expected-revision",
+            &replacement_revision,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(restored.status.success(), "{restored:?}");
 
     let unconfirmed = cache_command(
         &server,
@@ -137,13 +167,14 @@ fn registry_cache_policy_rejects_an_oversized_target_before_download() {
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
 
-    let installed = cognitive_registry_install(
+    configure_registry(
         &server,
         &repository,
         &home,
-        "acme/root",
         &["--cache-max-bytes", "1", "--cache-min-free-bytes", "0"],
     );
+
+    let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(!installed.status.success(), "{installed:?}");
     assert_eq!(
         json(&installed)["error"]["code"],

@@ -125,10 +125,6 @@ fn cognitive_package_offline_flag_is_explicit_and_non_repeatable() {
         "--offline".to_string(),
         "--registry-name".to_string(),
         "fixture".to_string(),
-        "--registry-url".to_string(),
-        "https://registry.example/".to_string(),
-        "--trust-root".to_string(),
-        "0".repeat(64),
     ];
     validate_component_install_options(&install).unwrap();
     assert!(flag_argument(&install, "--offline").unwrap());
@@ -150,37 +146,27 @@ fn cognitive_package_offline_flag_is_explicit_and_non_repeatable() {
 }
 
 #[test]
-fn cognitive_package_cache_policy_options_are_typed_and_non_repeatable() {
-    let args = vec![
+fn cognitive_package_commands_select_persisted_sources_without_inline_trust_overrides() {
+    let selected = vec![
         "install".to_string(),
         "acme/root".to_string(),
-        "--cache-max-bytes".to_string(),
-        "1024".to_string(),
-        "--cache-max-entries".to_string(),
-        "8".to_string(),
-        "--cache-min-free-bytes".to_string(),
-        "0".to_string(),
+        "--registry-name".to_string(),
+        "packages".to_string(),
     ];
-    validate_component_install_options(&args).unwrap();
-    let policy = registry_cache::cache_policy(&args).unwrap();
-    assert_eq!(policy.max_bytes(), 1024);
-    assert_eq!(policy.max_entries(), 8);
-    assert_eq!(policy.min_free_bytes(), 0);
+    validate_component_install_options(&selected).unwrap();
 
-    let mut duplicate = args.clone();
-    duplicate.extend(["--cache-max-bytes".to_string(), "2048".to_string()]);
-    let error = registry_cache::cache_policy(&duplicate).unwrap_err();
-    assert_eq!(error.code, "use.cli.invalid_usage");
-    assert_eq!(error.message, "--cache-max-bytes may be provided only once");
-
-    let invalid = vec![
-        "install".to_string(),
-        "acme/root".to_string(),
-        "--cache-max-entries".to_string(),
-        "-1".to_string(),
-    ];
-    let error = registry_cache::cache_policy(&invalid).unwrap_err();
-    assert_eq!(error.code, "use.cli.invalid_usage");
+    for option in [
+        "--registry-url",
+        "--trust-root",
+        "--trusted-root",
+        "--cache-max-bytes",
+    ] {
+        let mut inline = selected.clone();
+        inline.extend([option.to_string(), "value".to_string()]);
+        let error = validate_component_install_options(&inline).unwrap_err();
+        assert_eq!(error.code, "use.cli.invalid_usage");
+        assert!(error.message.contains("unknown component install option"));
+    }
 }
 
 #[cfg(feature = "browser")]

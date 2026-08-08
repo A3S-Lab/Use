@@ -121,6 +121,8 @@ fn schema_v3_cli_upgrade_publishes_the_candidate_graph_and_reports_exact_transit
     let installed =
         cognitive_registry_install(&first_server, &first_repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
+    let replaced = replace_registry(&next_server, &next_repository, &home);
+    assert!(replaced.status.success(), "{replaced:?}");
     let upgraded = cognitive_registry_upgrade(
         &next_server,
         &next_repository,
@@ -184,14 +186,14 @@ async fn schema_v3_cli_upgrade_uses_only_verified_cached_targets_when_offline() 
 
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
-    let trusted = TrustedRegistry::new(
-        "fixture",
-        server.base_url(),
-        &repository.root_sha256,
-        None,
-        home.join("state/remote-registries/fixture"),
-    )
+    let configured = a3s_use_extension::RegistrySourceStore::new(ExtensionPaths::new(
+        home.join("data"),
+        home.join("state"),
+    ))
+    .resolve(Some("fixture"))
+    .await
     .unwrap();
+    let trusted = configured.root().clone();
     prepare_remote_package(&trusted, "acme/root", Some("1.1.0"), "stable", None)
         .await
         .unwrap()

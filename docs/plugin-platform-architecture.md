@@ -176,20 +176,30 @@ network, filesystem, or secret authority.
 
 ## Replaceable Registry architecture
 
-The host owns an ordered, bounded set of named Registry configurations:
+The host owns a bounded set of named Registry configurations. The standalone
+host persists at most 64 entries in one canonical ACL document; managed hosts
+inject the same typed model:
 
 ```text
 RegistryConfig
 ├── stable name
 ├── base URL
-├── root metadata or root digest
+├── bootstrap root digest and optional managed root bytes
 ├── enabled state
-└── cache/storage location
+├── verified-target cache policy
+├── source identity and isolated TUF/cache location
+└── reviewed configuration revision
 ```
 
-The resolver receives this set per request. Packages cannot embed dependency
-source URLs. A host may replace a mirror or trust root configuration, but that
-does not mutate existing receipts. Installed provenance remains immutable.
+The first enabled standalone source becomes the default. A request selects one
+enabled root source and receives every other enabled source for dependency
+resolution. Packages cannot embed dependency source URLs. Replacement,
+default selection, enablement, disablement, and removal use compare-and-swap
+against the exact reviewed ACL revision. A changed name/URL/bootstrap-root
+identity receives a new datastore; disabling, removal, and replacement retain
+the old datastore so restoring the exact identity can reuse its evidence. None
+of these operations mutate existing receipts. Installed provenance remains
+immutable.
 
 TUF target metadata contains the complete current catalog record. There is no
 partial metadata or older-catalog fallback. Remote preparation retains:

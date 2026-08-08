@@ -350,6 +350,15 @@ There is no implicit cache fallback after a network or metadata-refresh
 failure, and explicit offline mode performs no network request. Registry
 replacement changes future source selection, not historical receipt evidence.
 
+The standalone host persists the bounded enabled source set in canonical ACL.
+Authority-changing source operations require the exact revision returned by
+the preceding list operation plus explicit confirmation. An optional bootstrap
+root file is copied only after regular-file, size, JSON, and complete SHA-256
+checks. Name, canonical URL, and bootstrap-root digest derive the source
+identity and its isolated datastore, so replacement cannot reinterpret old TUF
+metadata or cached targets under new trust. Disable/remove preserve that state;
+restoring the exact identity reuses it without rewriting installed provenance.
+
 Each `TrustedRegistry` carries a typed verified-target cache policy. The
 standalone default permits 4 GiB and 4,096 entries while retaining 256 MiB of
 free space. Verified targets and resumable partials share those byte and entry

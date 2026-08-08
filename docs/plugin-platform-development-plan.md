@@ -36,6 +36,9 @@ Completed in the Use repository:
 - catalog v3, complete TUF metadata, verified provenance, and exact receipts;
 - content-addressed verified archive/planning-target caching plus explicit
   zero-network install and upgrade with full cached-evidence revalidation;
+- canonical ACL Registry source state with a bounded enabled set, default
+  selection, revision-bound confirmed mutations, managed trusted-root import,
+  and identity-isolated TUF/cache state reused by exact source restoration;
 - typed per-Registry cache byte/entry/free-space bounds, oldest-first
   retention, stale-write cleanup, usage evidence, and confirmed zero-network
   garbage collection;
@@ -241,7 +244,8 @@ Status: in progress
   extraction and command conflicts, bind packaged OCR/Skill resources, and
   activate one version atomically.
 - Publish complete catalog-v3 records and planning targets only.
-- Define source replacement and exact-provenance restoration workflows.
+- [x] Define and implement revision-reviewed source replacement, disable/remove
+  without evidence deletion, and exact-identity provenance restoration.
 - [x] Deterministically serialize archives and publish per-platform SPDX SBOMs,
   GitHub OIDC provenance/SBOM attestations, and a keyless Sigstore checksum
   bundle from a workflow with pinned Actions and release tools.

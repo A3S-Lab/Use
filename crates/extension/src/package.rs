@@ -260,22 +260,12 @@ pub(crate) async fn activate_temporary_file(
     target: PathBuf,
     action: &'static str,
 ) -> UseResult<()> {
-    let error_target = target.clone();
-    tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        temporary.persist(target).map_err(|error| error.error)
-    })
-    .await
-    .map_err(|error| {
-        UseError::new(
-            "use.extension.io",
-            format!(
-                "Failed to {action} '{}': atomic replacement task failed: {error}",
-                error_target.display()
-            ),
-        )
-    })?
-    .map_err(|error| io_error(action, &error_target, error))
+    // The files are created in the same owned directory, so rename is the
+    // atomic commit. Tokio delegates to std, whose Windows path conversion
+    // supports verbatim paths beyond the legacy 260-character limit.
+    fs::rename(&temporary, &target)
+        .await
+        .map_err(|error| io_error(action, &target, error))
 }
 
 #[cfg(unix)]
@@ -456,5 +446,36 @@ mod registry_lock_tests {
             };
 
         assert_eq!(error.code, "use.extension.busy");
+    }
+}
+
+#[cfg(test)]
+mod atomic_activation_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn atomic_activation_replaces_a_target_beyond_the_legacy_windows_path_limit() {
+        let temporary_root = tempfile::tempdir().unwrap();
+        let parent = temporary_root
+            .path()
+            .join("a".repeat(100))
+            .join("b".repeat(100));
+        std::fs::create_dir_all(&parent).unwrap();
+        let temporary = parent.join(format!(".{}.tmp", "c".repeat(64)));
+        let target = parent.join("d".repeat(64));
+        assert!(temporary.as_os_str().len() > 260);
+        std::fs::write(&temporary, b"new").unwrap();
+        std::fs::write(&target, b"old").unwrap();
+
+        activate_temporary_file(
+            temporary.clone(),
+            target.clone(),
+            "activate long-path test file",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        assert!(!temporary.exists());
     }
 }

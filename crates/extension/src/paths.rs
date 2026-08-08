@@ -118,6 +118,53 @@ impl ExtensionPaths {
             .join("remote-registries")
             .join(registry_name))
     }
+
+    pub(crate) fn registry_sources_path(&self) -> PathBuf {
+        self.state_root.join("registries.acl")
+    }
+
+    pub(crate) fn registry_sources_lock_path(&self) -> PathBuf {
+        self.state_root.join(".registries.lock")
+    }
+
+    pub(crate) fn registry_source_datastore(
+        &self,
+        registry_name: &str,
+        source_identity: &str,
+    ) -> UseResult<PathBuf> {
+        super::remote::validate_registry_name(registry_name)?;
+        validate_sha256_path_segment(source_identity, "Registry source identity")?;
+        Ok(self
+            .state_root
+            .join("remote-registries")
+            .join(registry_name)
+            .join("sources")
+            .join(source_identity))
+    }
+
+    pub(crate) fn registry_trusted_root_path(&self, root_sha256: &str) -> UseResult<PathBuf> {
+        validate_sha256_path_segment(root_sha256, "Registry trust-root digest")?;
+        Ok(self
+            .state_root
+            .join("registry-trust-roots")
+            .join("sha256")
+            .join(format!("{root_sha256}.json")))
+    }
+}
+
+fn validate_sha256_path_segment(value: &str, label: &str) -> UseResult<()> {
+    if value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        Ok(())
+    } else {
+        Err(UseError::new(
+            "use.extension.registry_sources_invalid",
+            format!("{label} must be exactly 64 lowercase hexadecimal characters."),
+        ))
+    }
 }
 
 fn configured_root(
@@ -202,6 +249,22 @@ mod tests {
         assert_eq!(
             paths.tuf_datastore("a3s").unwrap(),
             PathBuf::from("/state/use/remote-registries/a3s")
+        );
+        assert_eq!(
+            paths
+                .registry_source_datastore("a3s", &"b".repeat(64))
+                .unwrap(),
+            PathBuf::from(format!(
+                "/state/use/remote-registries/a3s/sources/{}",
+                "b".repeat(64)
+            ))
+        );
+        assert_eq!(
+            paths.registry_trusted_root_path(&"c".repeat(64)).unwrap(),
+            PathBuf::from(format!(
+                "/state/use/registry-trust-roots/sha256/{}.json",
+                "c".repeat(64)
+            ))
         );
         assert_eq!(
             paths.tuf_datastore("../escape").unwrap_err().code,

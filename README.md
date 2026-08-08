@@ -60,6 +60,9 @@ The implementation and fixtures exercise the product model directly:
 - [`PluginPackageResolver`](crates/core/src/plugin/package_resolution.rs)
   resolves bounded SemVer closures and rejects cycles, incompatible releases,
   and cross-Registry ambiguity.
+- [`RegistrySourceStore`](crates/extension/src/registry_sources/mod.rs) persists
+  canonical revision-addressed ACL source configuration, imports digest-bound
+  trusted roots, and isolates TUF metadata and caches by source identity.
 - [`CognitivePackageManager`](src/cognitive_package/) binds signed catalog
   evidence, exact locks, reviewed plans, authorization, and crash replay.
 - [`bind_cognitive_package_provider_plan`](src/cognitive_package/provider_plan.rs)
@@ -170,8 +173,8 @@ capability observation, built-in Browser/OCR routes, cited OKF search, and
 exact-scope Knowledge storage operations:
 
 ```text
-a3s-use install <publisher/name> [registry options] [--offline] [--json]
-a3s-use upgrade <publisher/name> [registry options] [--offline] [--json]
+a3s-use install <publisher/name> [--registry-name <name>] [--offline] [--json]
+a3s-use upgrade <publisher/name> [--registry-name <name>] [--offline] [--json]
 a3s-use uninstall <publisher/name> [--json]
 a3s-use knowledge search <query> [--limit <n>] [--json]
 a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
@@ -179,8 +182,12 @@ a3s-use knowledge audit [--scope-kind <user|workspace>] [--scope-id <id>] [--jso
 a3s-use knowledge backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use knowledge verify-backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use knowledge repair-search-index --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use registry cache usage [registry and cache options] [--json]
-a3s-use registry cache prune [registry and cache options] --yes [--json]
+a3s-use registry source list [--json]
+a3s-use registry source add <name> --url <https-url> --trust-root <sha256> [source options] [--json]
+a3s-use registry source replace <name> --url <https-url> --trust-root <sha256> --expected-revision <sha256> --yes [source options] [--json]
+a3s-use registry source default|enable|disable|remove <name> --expected-revision <sha256> --yes [--json]
+a3s-use registry cache usage [--registry-name <name>] [--json]
+a3s-use registry cache prune [--registry-name <name>] [cache options] --yes [--json]
 a3s-use capability snapshot|watch [options] [--json]
 ```
 
@@ -204,13 +211,50 @@ require their own coordinated backup/restore procedure. Workspace operations
 require an explicit `--scope-id`; the CLI never guesses a current Workspace
 identity. See [OKF Knowledge operations](docs/okf-knowledge-operations.md).
 
-Example development install from an explicitly trusted Registry:
+### Replaceable Registry sources
+
+The standalone CLI persists a bounded set of named Registry sources in
+canonical A3S ACL. The first enabled source becomes the default. Every enabled
+source is supplied to dependency resolution, while `--registry-name` selects
+the root source for one operation. Duplicate package identities across enabled
+sources fail as ambiguous.
+
+Configure trust before package resolution:
+
+```bash
+a3s-use registry source add packages \
+  --url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --json
+```
+
+`--trusted-root /absolute/path/root.json` additionally imports an exact
+digest-matching root into the managed, content-addressed trust-root store.
+Source list output includes the complete configuration revision. Replacing
+authority requires that reviewed revision and explicit confirmation:
+
+```bash
+a3s-use registry source list --json
+
+a3s-use registry source replace packages \
+  --url https://mirror.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --expected-revision sha256:<reviewed-configuration-revision> \
+  --yes \
+  --json
+```
+
+Replacing, disabling, or removing a source never rewrites installed receipts
+and never deletes its identity-bound TUF metadata or target cache. Re-enabling
+or restoring the exact name, URL, and bootstrap-root digest reuses that exact
+state. A changed source identity receives a separate datastore, preventing old
+metadata or cached targets from crossing the trust boundary.
+
+Example development install from the configured Registry:
 
 ```bash
 a3s-use install acme/research \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --version 2.0.0 \
   --json
 ```
@@ -220,8 +264,6 @@ When a lock was reviewed separately, bind apply to it:
 ```bash
 a3s-use install acme/research \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --package-lock-digest sha256:<64-hex-digits> \
   --json
 ```
@@ -238,8 +280,6 @@ installed again without network access:
 ```bash
 a3s-use install acme/research \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --version 2.0.0 \
   --offline \
   --json
@@ -252,19 +292,18 @@ cache:
 ```bash
 a3s-use upgrade acme/research \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --version 2.1.0 \
   --offline \
   --json
 ```
 
-Offline mode is explicit and fail-closed. It still requires the Registry name,
-URL, and trust-root digest; revalidates cached TUF signatures, expiry, source
-identity, target length, and SHA-256; and returns `registryAccess: "cached"` in
-JSON. Normal online operations return `registryAccess: "refreshed"`. Missing,
-expired, or tampered cache evidence is an error. An online command never falls
-back to cached targets after a network or refresh failure.
+Offline mode is explicit and fail-closed. It loads the same persisted Registry
+source revision; revalidates cached TUF signatures, expiry, source identity,
+target length, and SHA-256; and returns `registryAccess: "cached"` plus
+`registrySourceRevision` in JSON. Normal online operations return
+`registryAccess: "refreshed"`. Missing, disabled, expired, or tampered source
+or cache evidence is an error. An online command never falls back to cached
+targets after a network or refresh failure.
 
 ### Verified target cache operations
 
@@ -283,8 +322,6 @@ Inspect cache usage without making a Registry request:
 ```bash
 a3s-use registry cache usage \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --json
 ```
 
@@ -294,8 +331,6 @@ so the standalone CLI requires explicit confirmation:
 ```bash
 a3s-use registry cache prune \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --cache-max-bytes 2147483648 \
   --cache-max-entries 2048 \
   --cache-min-free-bytes 536870912 \
@@ -303,13 +338,14 @@ a3s-use registry cache prune \
   --json
 ```
 
-The three cache-policy options are also accepted by `install` and `upgrade`.
-Standalone overrides apply to that command; embedding hosts set the typed
-`VerifiedTargetCachePolicy` on `TrustedRegistry`. Cache usage and pruning are
-zero-network operations and validate any retained catalog-cache source identity
-before inspecting or deleting targets. GC never changes installed package
-roots, receipts, capability generations, or lifecycle journals. See
-[Registry cache operations](docs/registry-cache-operations.md).
+The durable policy is configured on `registry source add` or `replace`.
+Confirmed prune may use a stricter one-command override; it does not rewrite
+the source configuration. Embedding hosts use the same typed
+`VerifiedTargetCachePolicy`. Cache usage and pruning are zero-network
+operations and validate any retained catalog-cache source identity before
+inspecting or deleting targets. GC never changes installed package roots,
+receipts, capability generations, or lifecycle journals. See [Registry cache
+operations](docs/registry-cache-operations.md).
 
 ## Cognitive-package format
 
@@ -447,7 +483,7 @@ install, upgrade, and uninstall across process restarts:
 
 ```bash
 A3S_FLOW_NATIVE_TS_COMPILER=/opt/a3s/bin/a3s-flow-native-compiler \
-  a3s-use install acme/workflows [registry options] --json
+  a3s-use install acme/workflows --registry-name packages --json
 ```
 
 `CognitivePackageManager::new` remains provider-free and deterministic;
@@ -608,6 +644,7 @@ Only the following cognitive-package protocol line is accepted:
 | Contract | Current schema |
 | --- | --- |
 | Package manifest | schema version `3` |
+| Registry source configuration | ACL schema version `1` |
 | Signed catalog record | `a3s.use.plugin-catalog.v3` |
 | Installed receipt | schema version `3` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
@@ -627,7 +664,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Area | Status |
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
-| Signed catalog-v3, TUF verification, replaceable source input | Implemented in the engine |
+| Signed catalog-v3, TUF verification, and durable replaceable Registry sources | Implemented in the engine and standalone CLI |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |

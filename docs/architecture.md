@@ -85,8 +85,10 @@ removed independently of its package generation.
 
 ## Resolution and provenance
 
-Registries are named, replaceable host configuration. Packages cannot select
-their source. The resolver uses only enabled sources, applies SemVer,
+Registries are named, replaceable host configuration. The standalone host
+persists a canonical, revision-addressed ACL set and isolates TUF/cache state by
+the exact name/URL/bootstrap-root identity. Packages cannot select their
+source. The resolver uses only enabled sources, applies SemVer,
 `requires_use`, host target, and provider requirements, then freezes the
 selected catalog-v3 records in one exact package lock.
 

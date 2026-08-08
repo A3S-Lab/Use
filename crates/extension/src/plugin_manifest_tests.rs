@@ -35,6 +35,17 @@ fn schema_v3_okf_acl_fixture_has_a_stable_digest() {
 }
 
 #[test]
+fn registry_management_route_is_reserved_from_cognitive_packages() {
+    let manifest = NAMED_SURFACE_MANIFEST.replace(
+        "route          = \"research\"",
+        "route          = \"registry\"",
+    );
+    let error = ExtensionManifest::parse_acl(&manifest).unwrap_err();
+    assert_eq!(error.code, "use.extension.manifest_invalid");
+    assert!(error.message.contains("invalid or reserved"));
+}
+
+#[test]
 fn parses_schema_v3_named_multi_surfaces() {
     let manifest = ExtensionManifest::parse_acl(NAMED_SURFACE_MANIFEST).unwrap();
 

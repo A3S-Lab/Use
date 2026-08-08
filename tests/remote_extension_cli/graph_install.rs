@@ -560,6 +560,88 @@ async fn schema_v3_manager_resolves_dependencies_from_host_injected_registries()
 }
 
 #[test]
+fn schema_v3_cli_resolves_dependencies_from_the_persisted_source_set() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let base = cognitive_skill_target(temp.path(), "acme/base", "base", Vec::new(), &target);
+    let root = cognitive_skill_target(
+        temp.path(),
+        "acme/root",
+        "root",
+        vec![PluginPackageDependency::new("acme/base", "^1.0.0").unwrap()],
+        &target,
+    );
+    let root_repository = TestRepository::with_targets(vec![root], 41, FUTURE);
+    let dependency_repository = TestRepository::with_targets(vec![base], 43, FUTURE);
+    let root_server = TestServer::start(root_repository.routes.clone());
+    let dependency_server = TestServer::start(dependency_repository.routes.clone());
+    let home = temp.path().join("home");
+
+    for (name, server, repository) in [
+        ("root", &root_server, &root_repository),
+        ("dependency", &dependency_server, &dependency_repository),
+    ] {
+        let configured = Command::new(binary())
+            .args([
+                "registry",
+                "source",
+                "add",
+                name,
+                "--url",
+                server.base_url(),
+                "--trust-root",
+                &repository.root_sha256,
+                "--json",
+            ])
+            .env("A3S_USE_HOME", &home)
+            .output()
+            .unwrap();
+        assert!(configured.status.success(), "{configured:?}");
+    }
+
+    let installed = Command::new(binary())
+        .args([
+            "install",
+            "acme/root",
+            "--registry-name",
+            "root",
+            "--version",
+            "1.0.0",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(installed.status.success(), "{installed:?}");
+    let installed = json(&installed);
+    let packages = installed["data"]["packageGraph"]["packageLock"]["packages"]
+        .as_array()
+        .unwrap();
+    let root = packages
+        .iter()
+        .find(|package| package["catalog"]["record"]["packageId"] == "acme/root")
+        .unwrap();
+    let dependency = packages
+        .iter()
+        .find(|package| package["catalog"]["record"]["packageId"] == "acme/base")
+        .unwrap();
+    assert_eq!(root["catalog"]["provenance"]["registryName"], "root");
+    assert_eq!(
+        dependency["catalog"]["provenance"]["registryName"],
+        "dependency"
+    );
+    assert_eq!(target_request_count(&root_server), 1);
+    assert_eq!(target_request_count(&dependency_server), 1);
+    assert_eq!(
+        installed["data"]["registrySourceRevision"]
+            .as_str()
+            .unwrap()
+            .len(),
+        64
+    );
+}
+
+#[test]
 fn schema_v3_install_rejects_state_reintroduced_after_cutover_evidence_was_retired() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();

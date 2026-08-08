@@ -25,22 +25,36 @@ installer 要求 Cosign，并在下载平台归档前按精确 A3S Use tag workf
 
 ## 可替换的 Registry 来源
 
-远端 Registry 是具名、由宿主持有的 ACL 配置。运维方可以增加镜像或私有 Registry，在稳定名称下替换 URL 与 trust root，在不删除信任状态的情况下停用，并在之后重新启用或移除。保留的内置 `a3s` 身份不能被替换、切换状态或移除。Release bundle 始终是独立于远端 Registry 的并列来源。
+远端 Registry 是具名、由宿主持有的 ACL 配置。standalone CLI 最多持久化
+64 个 source，把第一个 enabled source 设为 default，并把全部 enabled source
+交给 dependency resolution。Release bundle 始终独立于远端 Registry。
 
 ```bash
-a3s registry add https://packages.example.org/a3s/ \
-  --trust-root ./root.json \
-  --yes
-
-a3s registry disable packages --yes
-a3s registry replace packages https://mirror.example.org/a3s/ \
+a3s-use registry source add packages \
+  --url https://packages.example.org/a3s/ \
   --trust-root sha256:<64-hex-digits> \
-  --yes
-a3s registry enable packages --yes
-a3s registry refresh packages
+  --trusted-root /absolute/path/root.json \
+  --json
+
+a3s-use registry source list --json
+a3s-use registry source replace packages \
+  --url https://mirror.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --expected-revision sha256:<reviewed-configuration-revision> \
+  --yes \
+  --json
 ```
 
-只有启用的来源参与 Marketplace 浏览、package lookup、依赖解析、refresh 与升级；已停用来源仍会显示在 source status 中。文件形式的替换 root 会先复制到内容寻址、symlink-safe 的托管路径，再切换 ACL；替换会保留来源的 enabled 状态。同一个 package identity 同时出现在多个启用 Registry 时会以歧义失败。来源管理不会改写已安装 receipt：升级继续绑定记录中的 source name、URL、TUF root、channel 与 target digest，身份漂移时 fail closed。
+`default`、`enable`、`disable` 与 `remove` 使用同一个 reviewed-revision 和
+confirmation boundary。只有 enabled source 参与 package lookup、dependency
+resolution、refresh 与 upgrade；disabled source 仍显示在 list 中。导入 root
+之前必须通过 regular-file、大小、JSON 与完整 digest 检查。每个 canonical
+name/URL/bootstrap-root identity 使用独立 TUF/cache datastore；replace 保留
+enabled 状态，绝不会让旧 metadata 在新 trust 下生效。disable/remove 会保留
+旧 state，因此恢复完全相同的 identity 后可以复用。同一 package identity
+同时出现在多个 enabled Registry 时会以歧义失败。source 管理不会改写已安装
+receipt；upgrade 继续绑定记录的 source 与 target provenance，identity 漂移时
+fail closed。
 
 ## 不可变计划
 
