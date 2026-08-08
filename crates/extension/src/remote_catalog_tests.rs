@@ -256,12 +256,16 @@ async fn package_graph_downloads_the_complete_dependency_closure_in_install_orde
         ["acme/base", "acme/root"]
     );
     assert_eq!(
+        std::fs::read(downloads[0].path()).unwrap(),
+        std::fs::read(downloads[1].path()).unwrap()
+    );
+    assert_eq!(
         server
             .requests()
             .iter()
             .filter(|request| request.starts_with("/targets/"))
             .count(),
-        2
+        1
     );
 }
 

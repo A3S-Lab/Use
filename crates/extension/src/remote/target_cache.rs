@@ -8,11 +8,9 @@ use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
+use crate::package::io_error;
 
-use super::target_cache_inventory::{
-    admit_target_write, ensure_staging_capacity, inspect_cache, prune_cache,
-};
+use super::target_cache_inventory::{ensure_staging_capacity, inspect_cache, prune_cache};
 use super::{
     normalize_sha256, TrustedRegistry, VerifiedTargetCachePolicy, VerifiedTargetCachePruneResult,
     VerifiedTargetCacheUsage, MAX_REMOTE_ARCHIVE_BYTES, VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
@@ -22,83 +20,16 @@ const VERIFIED_TARGETS_DIRECTORY: &str = "verified-targets";
 const SHA256_DIRECTORY: &str = "sha256";
 const TARGET_CACHE_LOCK: &str = ".target-cache.lock";
 
+mod resume;
+
+pub(in crate::remote) use resume::ResumableTarget;
+
 struct TargetCacheLock(File);
 
 impl Drop for TargetCacheLock {
     fn drop(&mut self) {
         let _ = FileExt::unlock(&self.0);
     }
-}
-
-pub(super) async fn persist_verified_target(
-    datastore: &Path,
-    source: &Path,
-    expected_length: u64,
-    expected_sha256: &str,
-    policy: VerifiedTargetCachePolicy,
-) -> UseResult<()> {
-    let expected_sha256 = validated_evidence(expected_length, expected_sha256)?;
-    let _lock = acquire_target_cache_lock(datastore, true)?;
-    let cache_directory = ensure_cache_directory(datastore).await?;
-    let target = cache_directory.join(&expected_sha256);
-    match fs::symlink_metadata(&target).await {
-        Ok(metadata) => {
-            validate_regular_metadata(
-                &target,
-                &metadata,
-                expected_length,
-                "use.extension.registry_target_cache_invalid",
-                "The verified target cache entry is not a bounded regular file.",
-            )?;
-            verify_file(
-                &target,
-                None,
-                expected_length,
-                &expected_sha256,
-                "use.extension.registry_target_cache_invalid",
-            )
-            .await?;
-            admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
-            return Ok(());
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(io_error("inspect verified target cache", &target, error)),
-    }
-
-    admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
-
-    let temporary = cache_directory.join(format!(".target-{}.tmp", unique_suffix()));
-    let mut options = fs::OpenOptions::new();
-    options.create_new(true).write(true);
-    let mut output = options
-        .open(&temporary)
-        .await
-        .map_err(|error| io_error("create verified target cache", &temporary, error))?;
-    if let Err(error) = verify_file(
-        source,
-        Some(&mut output),
-        expected_length,
-        &expected_sha256,
-        "use.extension.registry_target_invalid",
-    )
-    .await
-    {
-        let _ = fs::remove_file(&temporary).await;
-        return Err(error);
-    }
-    if let Err(error) = output.sync_all().await {
-        let _ = fs::remove_file(&temporary).await;
-        return Err(io_error("sync verified target cache", &temporary, error));
-    }
-    drop(output);
-    secure_file(&temporary).await?;
-    if let Err(error) =
-        activate_temporary_file(temporary.clone(), target, "activate verified target cache").await
-    {
-        let _ = fs::remove_file(&temporary).await;
-        return Err(error);
-    }
-    sync_parent_directory(&cache_directory, "verified target cache").await
 }
 
 pub(super) async fn stage_cached_target(
@@ -199,6 +130,8 @@ pub(super) async fn prune_registry_target_cache(
         after,
         removed_target_entries: removed.target_entries,
         removed_target_bytes: removed.target_bytes,
+        removed_partial_entries: removed.partial_entries,
+        removed_partial_bytes: removed.partial_bytes,
         removed_stale_entries: removed.stale_entries,
         removed_stale_bytes: removed.stale_bytes,
     })
@@ -214,6 +147,8 @@ fn usage(
         registry_url: registry.base_url().to_string(),
         target_entries: stats.target_entries,
         target_bytes: stats.target_bytes,
+        partial_entries: stats.partial_entries,
+        partial_bytes: stats.partial_bytes,
         stale_entries: stats.stale_entries,
         stale_bytes: stats.stale_bytes,
         available_bytes: stats.available_bytes,

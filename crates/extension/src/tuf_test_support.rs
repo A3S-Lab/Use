@@ -2,12 +2,7 @@
 
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
-use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::Duration;
 
 use a3s_use_core::{
     CatalogArchive, CatalogAvailability, CatalogPackage, CatalogSurface, PluginCatalogRecord,
@@ -19,6 +14,11 @@ use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+
+#[path = "tuf_test_support/server.rs"]
+mod server;
+
+pub(crate) use server::TestServer;
 
 pub(crate) const FUTURE: &str = "2999-01-01T00:00:00Z";
 pub(crate) const EXPIRED: &str = "2000-01-01T00:00:00Z";
@@ -426,108 +426,5 @@ fn host_target() -> &'static str {
         ("linux", "x86_64") => "linux-x86_64",
         ("windows", "x86_64") => "windows-x86_64",
         (os, arch) => panic!("unsupported TUF test target {os}-{arch}"),
-    }
-}
-
-pub(crate) struct TestServer {
-    base_url: String,
-    routes: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-    requests: Arc<Mutex<Vec<String>>>,
-    stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl TestServer {
-    pub(crate) fn start(routes: HashMap<String, Vec<u8>>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let base_url = format!("http://{}/", listener.local_addr().unwrap());
-        let routes = Arc::new(Mutex::new(routes));
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let stop = Arc::new(AtomicBool::new(false));
-        let thread_routes = Arc::clone(&routes);
-        let thread_requests = Arc::clone(&requests);
-        let thread_stop = Arc::clone(&stop);
-        let thread = std::thread::spawn(move || {
-            while !thread_stop.load(Ordering::Relaxed) {
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        stream.set_nonblocking(false).unwrap();
-                        let routes = Arc::clone(&thread_routes);
-                        let requests = Arc::clone(&thread_requests);
-                        std::thread::spawn(move || serve(stream, &routes, &requests));
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(5));
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-        Self {
-            base_url,
-            routes,
-            requests,
-            stop,
-            thread: Some(thread),
-        }
-    }
-
-    pub(crate) fn base_url(&self) -> &str {
-        &self.base_url
-    }
-
-    pub(crate) fn requests(&self) -> Vec<String> {
-        self.requests.lock().unwrap().clone()
-    }
-
-    pub(crate) fn clear_requests(&self) {
-        self.requests.lock().unwrap().clear();
-    }
-
-    pub(crate) fn replace_routes(&self, routes: HashMap<String, Vec<u8>>) {
-        *self.routes.lock().unwrap() = routes;
-    }
-}
-
-impl Drop for TestServer {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
-fn serve(
-    mut stream: TcpStream,
-    routes: &Mutex<HashMap<String, Vec<u8>>>,
-    requests: &Mutex<Vec<String>>,
-) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let mut buffer = [0_u8; 8192];
-    let Ok(size) = stream.read(&mut buffer) else {
-        return;
-    };
-    let request = String::from_utf8_lossy(&buffer[..size]);
-    let path = request
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .unwrap_or("/")
-        .to_string();
-    requests.lock().unwrap().push(path.clone());
-    let body = routes.lock().unwrap().get(&path).cloned();
-    let (status, body) = body
-        .as_deref()
-        .map(|body| ("200 OK", body))
-        .unwrap_or(("404 Not Found", b"not found"));
-    let header = format!(
-        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-    if stream.write_all(header.as_bytes()).is_ok() && stream.write_all(body).is_ok() {
-        let _ = stream.flush();
-        let _ = stream.shutdown(Shutdown::Write);
     }
 }

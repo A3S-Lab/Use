@@ -3,11 +3,13 @@ use std::path::{Path, PathBuf};
 use a3s_use_core::{PluginPlanningBundle, UseError, UseResult, VerifiedPluginCatalogRecord};
 use tempfile::TempDir;
 use tokio::fs;
-use tough::{Prefix, Repository, TargetName};
+use tough::{Repository, TargetName};
+use url::Url;
 
 use crate::package::io_error;
 
-use super::target_cache::{persist_verified_target, stage_cached_target};
+use super::resumable_http;
+use super::target_cache::{stage_cached_target, ResumableTarget};
 use super::target_cache_inventory::ensure_staging_capacity;
 use super::{
     hex_lower, RemoteRegistryAccess, ResolvedRemotePackage, VerifiedTargetCachePolicy,
@@ -20,8 +22,7 @@ pub struct PreparedRemotePackage {
     target_name: TargetName,
     resolved: ResolvedRemotePackage,
     verified_catalog: VerifiedPluginCatalogRecord,
-    datastore: PathBuf,
-    target_cache_policy: VerifiedTargetCachePolicy,
+    registry: super::TrustedRegistry,
     access: RemoteRegistryAccess,
 }
 
@@ -40,8 +41,7 @@ impl PreparedRemotePackage {
         target_name: TargetName,
         resolved: ResolvedRemotePackage,
         verified_catalog: VerifiedPluginCatalogRecord,
-        datastore: PathBuf,
-        target_cache_policy: VerifiedTargetCachePolicy,
+        registry: super::TrustedRegistry,
         access: RemoteRegistryAccess,
     ) -> Self {
         Self {
@@ -49,8 +49,7 @@ impl PreparedRemotePackage {
             target_name,
             resolved,
             verified_catalog,
-            datastore,
-            target_cache_policy,
+            registry,
             access,
         }
     }
@@ -107,21 +106,23 @@ impl PreparedRemotePackage {
                 download_and_cache_target(
                     &self.repository,
                     &target_name,
-                    &self.datastore,
+                    self.registry.datastore(),
+                    &self.registry.targets_url()?,
+                    self.repository.root().signed.consistent_snapshot,
                     expected.length,
                     digest,
-                    self.target_cache_policy,
+                    self.registry.target_cache_policy(),
                     true,
                 )
                 .await?
             }
             RemoteRegistryAccess::Cached => {
                 stage_cached_target(
-                    &self.datastore,
+                    self.registry.datastore(),
                     "planning-v1.json",
                     expected.length,
                     digest,
-                    self.target_cache_policy,
+                    self.registry.target_cache_policy(),
                 )
                 .await?
             }
@@ -147,21 +148,23 @@ impl PreparedRemotePackage {
                 download_and_cache_target(
                     &self.repository,
                     &self.target_name,
-                    &self.datastore,
+                    self.registry.datastore(),
+                    &self.registry.targets_url()?,
+                    self.repository.root().signed.consistent_snapshot,
                     self.resolved.length,
                     &self.resolved.sha256,
-                    self.target_cache_policy,
+                    self.registry.target_cache_policy(),
                     false,
                 )
                 .await?
             }
             RemoteRegistryAccess::Cached => {
                 stage_cached_target(
-                    &self.datastore,
+                    self.registry.datastore(),
                     &self.resolved.archive_name,
                     self.resolved.length,
                     &self.resolved.sha256,
-                    self.target_cache_policy,
+                    self.registry.target_cache_policy(),
                 )
                 .await?
             }
@@ -181,11 +184,35 @@ async fn download_and_cache_target(
     repository: &Repository,
     target_name: &TargetName,
     datastore: &Path,
+    targets_url: &Url,
+    consistent_snapshot: bool,
     expected_length: u64,
     expected_sha256: &str,
     target_cache_policy: VerifiedTargetCachePolicy,
     planning: bool,
 ) -> UseResult<(TempDir, PathBuf)> {
+    let verification_stream = repository
+        .read_target(target_name)
+        .await
+        .map_err(|error| {
+            target_download_error(
+                planning,
+                format!(
+                    "The current TUF repository cannot verify target '{}': {error}",
+                    target_name.raw()
+                ),
+            )
+        })?
+        .ok_or_else(|| {
+            target_download_error(
+                planning,
+                format!(
+                    "The signed TUF target '{}' is no longer available.",
+                    target_name.raw()
+                ),
+            )
+        })?;
+    drop(verification_stream);
     let temporary = tokio::task::spawn_blocking(tempfile::tempdir)
         .await
         .map_err(|error| {
@@ -201,27 +228,38 @@ async fn download_and_cache_target(
             )
         })?;
     ensure_staging_capacity(temporary.path(), expected_length, target_cache_policy).await?;
-    repository
-        .save_target(target_name, temporary.path(), Prefix::None)
-        .await
-        .map_err(|error| {
-            target_download_error(
-                planning,
-                format!(
-                    "Failed to download and verify TUF target '{}': {error}",
-                    target_name.raw()
-                ),
-            )
-        })?;
-    let path = temporary.path().join(target_name.resolved());
-    persist_verified_target(
+    let mut target = ResumableTarget::begin(
         datastore,
-        &path,
         expected_length,
         expected_sha256,
         target_cache_policy,
     )
     .await?;
+    if !target.is_ready() {
+        let url = resumable_http::target_url(
+            targets_url,
+            target_name,
+            expected_sha256,
+            consistent_snapshot,
+        )
+        .map_err(|error| target_download_error(planning, error.message))?;
+        let error_code = if planning {
+            "use.extension.registry_planning_target_invalid"
+        } else {
+            "use.extension.registry_download_failed"
+        };
+        resumable_http::download(&mut target, &url, error_code).await?;
+    }
+    let file_name = target_name
+        .resolved()
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            target_download_error(planning, "The Registry target staging name is invalid.")
+        })?;
+    let path = temporary.path().join(file_name);
+    target.stage_into(&path).await?;
     Ok((temporary, path))
 }
 

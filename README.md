@@ -208,10 +208,14 @@ back to cached targets after a network or refresh failure.
 ### Verified target cache operations
 
 Each Registry has an independent default cache limit of 4 GiB and 4,096
-verified targets, with a 256 MiB free-space reserve. The same typed policy is
-enforced before downloading and while committing a verified target. Stale
-atomic-write files are removed first, followed by the oldest verified targets
-until the byte, entry, and disk-space bounds are satisfied.
+combined verified targets and resumable partials, with a 256 MiB free-space
+reserve. The same typed policy is enforced before downloading and while
+committing a verified target. Interrupted HTTP downloads retain a digest-bound
+`.target-<sha256>.part` file and retry from its exact length. A resumed response
+must return the exact signed byte range; the complete file is rehashed before
+atomic promotion. Stale atomic-write files are removed first, followed by the
+oldest resumable partials and then the oldest verified targets until the byte,
+entry, and disk-space bounds are satisfied.
 
 Inspect cache usage without making a Registry request:
 
@@ -445,9 +449,12 @@ Current Registry rules:
   metadata and exact Registry name, URL, and trust root. It never refreshes the
   network and never weakens source or package-lock provenance.
 - A typed per-Registry policy bounds retained bytes and entries and reserves
-  staging/cache disk space before target requests and commits. Automatic and
-  confirmed GC remove stale writes, then the oldest verified targets, under
-  the same cache lock and synchronize the directory after deletion.
+  staging/cache disk space before target requests and commits. Digest-bound
+  partials survive process interruption, resume only through an exact HTTP
+  range response, and are never staged before full signed-length and SHA-256
+  verification. Automatic and confirmed GC remove stale writes, then the
+  oldest partials and verified targets, under the same cache lock and
+  synchronize the directory after deletion.
 - Watchers read immutable publications without waiting behind writers. If a
   one-time crash reconciliation briefly owns the Registry lock, lifecycle
   writers wait asynchronously for at most two seconds; genuinely concurrent
@@ -560,7 +567,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, replaceable source input | Implemented in the engine |
-| Verified target cache, explicit offline install/upgrade, bounded retention, usage, and confirmed GC | Implemented and zero-network tested; bounded download resume remains open |
+| Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |

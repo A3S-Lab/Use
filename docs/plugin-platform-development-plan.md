@@ -233,11 +233,13 @@ Status: in progress
 - [x] Enforce bounded cache bytes/entries and disk-space admission; expose
   source-bound zero-network usage and confirmed oldest-first garbage
   collection with stale-write cleanup.
+- [x] Add bounded, integrity-preserving download resume with durable
+  digest-bound partials, exact Range validation, full signed-byte
+  re-verification, and partial-aware retention.
 - Publish complete catalog-v3 records and planning targets only.
 - Define source replacement and exact-provenance restoration workflows.
 - Produce reproducible archives, checksums, signatures, SBOMs, and provenance.
 - Verify release archives in clean Linux/macOS/Windows environments.
-- Add bounded, integrity-preserving download resume.
 
 Acceptance: an operator can bootstrap trust, install, rotate/replace sources,
 recover offline, audit provenance, and remove the product using published

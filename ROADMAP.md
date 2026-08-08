@@ -243,7 +243,9 @@ Status: in progress
 - [x] Enforce typed per-Registry byte/entry limits, minimum free-space
   admission, oldest-first retention, stale-write cleanup, zero-network usage,
   and confirmed garbage collection.
-- [ ] Add bounded, integrity-preserving download resume.
+- [x] Add bounded, integrity-preserving download resume with durable
+  digest-bound partials, exact HTTP range validation, full-file verification,
+  and cache-policy/GC accounting.
 - [ ] Produce reproducible multi-platform archives, SBOMs, provenance,
   signatures, checksums, and installation scripts from one release workflow.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair

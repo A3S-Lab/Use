@@ -1,7 +1,7 @@
 use a3s_use_core::{UseError, UseResult};
 use serde::Serialize;
 
-pub const VERIFIED_TARGET_CACHE_SCHEMA_VERSION: u32 = 1;
+pub const VERIFIED_TARGET_CACHE_SCHEMA_VERSION: u32 = 2;
 pub const DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 pub const DEFAULT_VERIFIED_TARGET_CACHE_MAX_ENTRIES: u64 = 4_096;
 pub const DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES: u64 = 256 * 1024 * 1024;
@@ -12,8 +12,9 @@ const MAX_VERIFIED_TARGET_CACHE_POLICY_ENTRIES: u64 = 100_000;
 /// Per-Registry bounds for verified package archives and planning targets.
 ///
 /// The policy is enforced before a target request and again while committing
-/// the verified target. Oldest verified targets are removed first. Cache
-/// removal never changes installed package generations or trust receipts.
+/// the verified target. Resumable partials share the same limits and are
+/// removed before the oldest verified targets. Cache removal never changes
+/// installed package generations or trust receipts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedTargetCachePolicy {
@@ -80,6 +81,8 @@ pub struct VerifiedTargetCacheUsage {
     pub registry_url: String,
     pub target_entries: u64,
     pub target_bytes: u64,
+    pub partial_entries: u64,
+    pub partial_bytes: u64,
     pub stale_entries: u64,
     pub stale_bytes: u64,
     pub available_bytes: u64,
@@ -94,6 +97,8 @@ pub struct VerifiedTargetCachePruneResult {
     pub after: VerifiedTargetCacheUsage,
     pub removed_target_entries: u64,
     pub removed_target_bytes: u64,
+    pub removed_partial_entries: u64,
+    pub removed_partial_bytes: u64,
     pub removed_stale_entries: u64,
     pub removed_stale_bytes: u64,
 }

@@ -328,6 +328,16 @@ synchronize the file and containing directory. A dedicated target-cache lock
 coordinates readers and writers. Cache paths, entries, and staging names reject
 links, non-regular files, traversal, and unexpected lengths.
 
+An interrupted online download retains only
+`.target-<sha256>.part` in the same Registry cache. Its regular-file length is
+the next requested byte. HTTPS redirects cannot downgrade; a `206` response
+must carry the exact `Content-Range` and remaining length. If a server ignores
+Range with a complete `200`, the old partial is truncated before the response
+is written. A mismatched range, oversized body, symlink, non-regular partial,
+or final digest mismatch fails closed; unsafe partials are discarded. A fully
+written partial left before promotion is reverified and promoted without a
+network request on the next operation.
+
 Cached install or upgrade is available only through an explicit offline path.
 It revalidates the locally trusted TUF metadata, including signatures and
 expiry, and binds the same Registry name, URL, trust-root digest, catalog,
@@ -342,21 +352,25 @@ replacement changes future source selection, not historical receipt evidence.
 
 Each `TrustedRegistry` carries a typed verified-target cache policy. The
 standalone default permits 4 GiB and 4,096 entries while retaining 256 MiB of
-free space. Target length must fit before any target request. The downloader
-also checks its temporary staging filesystem; cache commit rechecks the cache
-filesystem after the verified download because they may be different volumes.
+free space. Verified targets and resumable partials share those byte and entry
+bounds. Target length must fit before any target request. The downloader checks
+the complete target requirement on its temporary staging filesystem and the
+remaining target bytes on the cache filesystem because they may be different
+volumes.
 
 Under the exclusive target-cache lock, admission and confirmed pruning remove
-bounded stale atomic-write files, then verified targets in oldest-modified-time
-and digest order. Directory synchronization follows deletion. Inventory rejects
-unknown names, links, non-regular entries, zero/oversized verified targets, and
-more than 100,000 scanned entries. Source-bound usage and pruning construct no
-network transport and validate a retained catalog-cache identity when present.
+bounded stale atomic-write files, then resumable partials, then verified targets
+in oldest-modified-time and digest order. The active digest is protected and
+only its remaining bytes are reserved. Directory synchronization follows
+deletion. Inventory rejects unknown names, links, non-regular entries,
+zero/oversized verified targets, oversized partials, and more than 100,000
+scanned entries. Source-bound usage and pruning construct no network transport
+and validate a retained catalog-cache identity when present.
 
 GC changes only future cache availability. It never removes installed package
 generations, receipts, Grants, bindings, capability state, or journals. A later
 explicit offline operation fails closed if GC removed one of its exact targets.
-Bounded download resume remains supply-chain release work.
+Partial downloads are not offline evidence and never authorize package staging.
 
 ## Crash recovery
 
