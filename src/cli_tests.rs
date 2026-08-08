@@ -117,6 +117,38 @@ async fn component_usage_lists_upgrade_as_a_supported_lifecycle_action() {
     );
 }
 
+#[test]
+fn cognitive_package_offline_flag_is_explicit_and_non_repeatable() {
+    let install = vec![
+        "install".to_string(),
+        "acme/root".to_string(),
+        "--offline".to_string(),
+        "--registry-name".to_string(),
+        "fixture".to_string(),
+        "--registry-url".to_string(),
+        "https://registry.example/".to_string(),
+        "--trust-root".to_string(),
+        "0".repeat(64),
+    ];
+    validate_component_install_options(&install).unwrap();
+    assert!(flag_argument(&install, "--offline").unwrap());
+
+    let mut duplicate = install.clone();
+    duplicate.push("--offline".to_string());
+    validate_component_install_options(&duplicate).unwrap();
+    let error = flag_argument(&duplicate, "--offline").unwrap_err();
+    assert_eq!(error.code, "use.cli.invalid_usage");
+    assert_eq!(error.message, "--offline may be provided only once");
+
+    let upgrade = vec![
+        "upgrade".to_string(),
+        "acme/root".to_string(),
+        "--offline".to_string(),
+    ];
+    validate_component_upgrade_options(&upgrade).unwrap();
+    assert!(flag_argument(&upgrade, "--offline").unwrap());
+}
+
 #[cfg(feature = "browser")]
 #[test]
 fn browser_component_presence_preserves_runtime_ownership() {

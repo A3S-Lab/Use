@@ -34,6 +34,8 @@ Completed in the Use repository:
 
 - manifest v3 and all six named surface contracts;
 - catalog v3, complete TUF metadata, verified provenance, and exact receipts;
+- content-addressed verified archive/planning-target caching plus explicit
+  zero-network install and upgrade with full cached-evidence revalidation;
 - separately signed package-native Tool/stdio MCP planning targets rebound to
   the digest-bound manifest after download;
 - bounded SemVer resolver, package lock, prior/candidate upgrade binding;
@@ -218,10 +220,13 @@ recovery, and residue assertions.
 ## Workstream E — Registry and supply-chain operations
 
 Priority: P0 release gate
-Status: pending
+Status: in progress
 
 - Operate a documented TUF Registry with root rotation, expiry, rollback
-  protection, mirror replacement, cached offline reads, and incident recovery.
+  protection, mirror replacement, and incident recovery.
+- [x] Persist verified archives and signed planning targets by SHA-256 and
+  support explicit fail-closed offline install/upgrade without network
+  fallback.
 - Publish complete catalog-v3 records and planning targets only.
 - Define source replacement and exact-provenance restoration workflows.
 - Produce reproducible archives, checksums, signatures, SBOMs, and provenance.

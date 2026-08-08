@@ -1,10 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{
-    PlanScope, PluginOperationAction, PluginPackageLockHost, PluginReleaseChannel, UseResult,
-};
+use a3s_use_core::{PlanScope, PluginOperationAction, PluginReleaseChannel, UseResult};
 use a3s_use_extension::{
-    download_selected_locked_remote_packages, resolve_remote_package_lock,
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest, InstalledExtension,
     TrustedRegistry,
 };
@@ -19,10 +16,11 @@ use super::plan::{
     install_generations, install_operation, install_plan_packages, now_ms,
     operation_provider_evidence, package_state_revision,
 };
+use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
 use super::store::PendingPackageGraphOperation;
 use super::{
-    current_host_target, installed_matches_lock, package_manager_error,
-    CognitivePackageInstallResult, CognitivePackageManager, InstallDisposition,
+    installed_matches_lock, package_manager_error, CognitivePackageInstallResult,
+    CognitivePackageManager, InstallDisposition,
 };
 
 struct PreparedInstallPackage {
@@ -31,11 +29,8 @@ struct PreparedInstallPackage {
 }
 
 impl CognitivePackageManager {
-    /// Resolve, revalidate, download, prepare, and atomically publish one
-    /// complete schema-v3 dependency closure. The root Registry and enabled
-    /// dependency Registries are supplied by the host and remain replaceable.
     #[allow(clippy::too_many_arguments)]
-    pub async fn install_remote(
+    pub(super) async fn install_remote_with_access(
         &self,
         root_registry: &TrustedRegistry,
         dependency_registries: &[TrustedRegistry],
@@ -43,14 +38,15 @@ impl CognitivePackageManager {
         requested_version: Option<&str>,
         channel: PluginReleaseChannel,
         expected_package_lock_digest: Option<&str>,
+        access: RegistryAccess,
     ) -> UseResult<CognitivePackageInstallResult> {
-        let lock = resolve_remote_package_lock(
+        let lock = resolve_package_lock(
+            access,
             root_registry,
             dependency_registries,
             package_id,
             requested_version,
             channel,
-            PluginPackageLockHost::new(current_host_target()?, env!("CARGO_PKG_VERSION"))?,
         )
         .await?;
         let lock_digest = lock.descriptor_digest()?;
@@ -113,8 +109,7 @@ impl CognitivePackageManager {
             })
             .collect();
         let downloads =
-            download_selected_locked_remote_packages(&lock, &registries, &selected_downloads)
-                .await?;
+            download_selected_packages(access, &lock, &registries, &selected_downloads).await?;
         let mut prepared = Vec::new();
         let mut manifests = installed
             .iter()

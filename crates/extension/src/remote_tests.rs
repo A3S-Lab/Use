@@ -107,6 +107,92 @@ async fn executable_archive_download_retains_its_verified_planning_bundle() {
 }
 
 #[tokio::test]
+async fn verified_targets_are_content_addressed_and_reusable_without_network() {
+    let (repository, expected, _, _) = planning_test_repository(false);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let datastore = temp.path().join("tuf");
+    let trusted = trusted_registry(&server, &repository, datastore.clone());
+
+    refresh_remote_registry(&trusted).await.unwrap();
+    let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    let archive_sha256 = prepared.resolved().sha256.clone();
+    let planning_sha256 = prepared
+        .verified_catalog()
+        .record
+        .planning
+        .as_ref()
+        .unwrap()
+        .sha256
+        .trim_start_matches("sha256:")
+        .to_owned();
+    let online = prepared.download().await.unwrap();
+    let online_archive = std::fs::read(online.path()).unwrap();
+
+    for digest in [&archive_sha256, &planning_sha256] {
+        let path = datastore
+            .join("verified-targets")
+            .join("sha256")
+            .join(digest);
+        assert!(
+            path.is_file(),
+            "missing verified target cache {}",
+            path.display()
+        );
+    }
+
+    server.clear_requests();
+    let cached = prepare_cached_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    let cached = cached.download().await.unwrap();
+
+    assert_eq!(cached.planning_bundle(), Some(&expected));
+    assert_eq!(std::fs::read(cached.path()).unwrap(), online_archive);
+    assert!(server.requests().is_empty());
+}
+
+#[tokio::test]
+async fn cached_target_tampering_and_missing_content_fail_closed_without_network() {
+    let archive = extension_archive(PACKAGE_VERSION);
+    let repository = TestRepository::new(archive, 17, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let datastore = temp.path().join("tuf");
+    let trusted = trusted_registry(&server, &repository, datastore.clone());
+
+    refresh_remote_registry(&trusted).await.unwrap();
+    let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    let digest = prepared.resolved().sha256.clone();
+    prepared.download().await.unwrap();
+    let cache_path = datastore
+        .join("verified-targets")
+        .join("sha256")
+        .join(&digest);
+
+    std::fs::write(&cache_path, b"tampered cache bytes").unwrap();
+    server.clear_requests();
+    let prepared = prepare_cached_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    let error = prepared.download().await.unwrap_err();
+    assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
+    assert!(server.requests().is_empty());
+
+    std::fs::remove_file(&cache_path).unwrap();
+    let prepared = prepare_cached_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    let error = prepared.download().await.unwrap_err();
+    assert_eq!(error.code, "use.extension.registry_target_cache_missing");
+    assert!(server.requests().is_empty());
+}
+
+#[tokio::test]
 async fn catalog_v3_static_package_has_no_planning_target_download() {
     let archive = extension_archive(PACKAGE_VERSION);
     let target = host_target().unwrap();

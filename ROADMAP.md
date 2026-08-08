@@ -88,7 +88,11 @@ rejection. They are not supported decode paths.
 - [x] Canonical catalog-v3 record with complete surface inventory, package and
   manifest digests, planning target, provider requirements, and permission
   ceiling.
-- [x] Complete current TUF metadata validation and offline cached verification.
+- [x] Complete current TUF metadata validation and cache verified archives and
+  signed planning targets by SHA-256.
+- [x] Support explicit zero-network install and upgrade from only unexpired,
+  revalidated cached metadata and targets; reject missing or tampered evidence
+  without implicit online-to-cache fallback.
 - [x] Registry/TUF receipts require the exact verified catalog record and
   source provenance.
 
@@ -230,10 +234,14 @@ and failure-injection scenarios.
 
 ### M5 — Production supply chain and operations
 
-Status: pending
+Status: in progress
 
 - [ ] Publish and operate at least one documented Registry with root rotation,
   expiry, mirror replacement, offline recovery, and incident procedures.
+- [x] Persist verified archives and planning targets in a content-addressed
+  cache and support explicit fail-closed offline install/upgrade.
+- [ ] Define cache size limits, retention, garbage collection, disk-space
+  admission, and bounded download resume.
 - [ ] Produce reproducible multi-platform archives, SBOMs, provenance,
   signatures, checksums, and installation scripts from one release workflow.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair

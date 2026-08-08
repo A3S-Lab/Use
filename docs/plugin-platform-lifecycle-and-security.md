@@ -321,8 +321,26 @@ Fail closed on:
 - changed source identity for an installed receipt; and
 - missing verified catalog evidence in a Registry/TUF receipt.
 
-Cached reads are allowed only after current trusted metadata verifies. Registry
+Online target verification stores archives and separately signed planning
+targets by SHA-256 under the Registry datastore. Writes stream the target,
+verify its signed length and digest, atomically replace the destination, and
+synchronize the file and containing directory. A dedicated target-cache lock
+coordinates readers and writers. Cache paths, entries, and staging names reject
+links, non-regular files, traversal, and unexpected lengths.
+
+Cached install or upgrade is available only through an explicit offline path.
+It revalidates the locally trusted TUF metadata, including signatures and
+expiry, and binds the same Registry name, URL, trust-root digest, catalog,
+package lock, planning target, archive length, and archive digest as an online
+operation. Every cached target is streamed into fresh staging and rehashed;
+the digest-shaped filename is never trusted as evidence. Missing, expired, or
+tampered evidence fails closed.
+
+There is no implicit cache fallback after a network or metadata-refresh
+failure, and explicit offline mode performs no network request. Registry
 replacement changes future source selection, not historical receipt evidence.
+Cache capacity, retention, and garbage collection remain operational release
+work rather than part of this integrity boundary.
 
 ## Crash recovery
 

@@ -28,6 +28,7 @@ pub(crate) struct ExtensionInstallView {
     pub changed: bool,
     pub extension: ExtensionView,
     pub package_graph: Option<serde_json::Value>,
+    pub registry_access: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -285,6 +286,7 @@ pub(crate) async fn install_remote_extension(
     version: Option<&str>,
     channel: &str,
     expected_package_lock_digest: Option<&str>,
+    offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     let paths = a3s_use_extension::ExtensionPaths::from_env()?;
     let registry = a3s_use_extension::TrustedRegistry::new(
@@ -306,16 +308,29 @@ pub(crate) async fn install_remote_extension(
         }
     };
     let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
-    let result = manager
-        .install_remote(
-            &registry,
-            &[],
-            package_id,
-            version,
-            release_channel,
-            expected_package_lock_digest,
-        )
-        .await?;
+    let result = if offline {
+        manager
+            .install_cached(
+                &registry,
+                &[],
+                package_id,
+                version,
+                release_channel,
+                expected_package_lock_digest,
+            )
+            .await?
+    } else {
+        manager
+            .install_remote(
+                &registry,
+                &[],
+                package_id,
+                version,
+                release_channel,
+                expected_package_lock_digest,
+            )
+            .await?
+    };
     let extension = extension_view(result.root.clone())?;
     let package_graph = serde_json::to_value(&result).map_err(|error| {
         UseError::new(
@@ -327,6 +342,7 @@ pub(crate) async fn install_remote_extension(
         changed: result.changed,
         extension,
         package_graph: Some(package_graph),
+        registry_access: if offline { "cached" } else { "refreshed" },
     })
 }
 
@@ -341,6 +357,7 @@ pub(crate) async fn upgrade_remote_extension(
     version: Option<&str>,
     channel: &str,
     expected_package_lock_digest: Option<&str>,
+    offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     let paths = a3s_use_extension::ExtensionPaths::from_env()?;
     let registry = a3s_use_extension::TrustedRegistry::new(
@@ -362,16 +379,29 @@ pub(crate) async fn upgrade_remote_extension(
         }
     };
     let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
-    let result = manager
-        .upgrade_remote(
-            &registry,
-            &[],
-            package_id,
-            version,
-            release_channel,
-            expected_package_lock_digest,
-        )
-        .await?;
+    let result = if offline {
+        manager
+            .upgrade_cached(
+                &registry,
+                &[],
+                package_id,
+                version,
+                release_channel,
+                expected_package_lock_digest,
+            )
+            .await?
+    } else {
+        manager
+            .upgrade_remote(
+                &registry,
+                &[],
+                package_id,
+                version,
+                release_channel,
+                expected_package_lock_digest,
+            )
+            .await?
+    };
     let extension = extension_view(result.root.clone())?;
     let package_graph = serde_json::to_value(&result).map_err(|error| {
         UseError::new(
@@ -383,6 +413,7 @@ pub(crate) async fn upgrade_remote_extension(
         changed: result.changed,
         extension,
         package_graph: Some(package_graph),
+        registry_access: if offline { "cached" } else { "refreshed" },
     })
 }
 
@@ -397,6 +428,7 @@ pub(crate) async fn install_remote_extension(
     _version: Option<&str>,
     _channel: &str,
     _expected_package_lock_digest: Option<&str>,
+    _offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())
 }
@@ -412,6 +444,7 @@ pub(crate) async fn upgrade_remote_extension(
     _version: Option<&str>,
     _channel: &str,
     _expected_package_lock_digest: Option<&str>,
+    _offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())
 }

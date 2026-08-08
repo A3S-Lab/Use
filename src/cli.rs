@@ -99,8 +99,8 @@ fn help() -> CommandOutput {
             "  a3s-use capability snapshot [--json]\n",
             "  a3s-use capability watch [--after-generation <n>] [--after-revision <sha256>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use doctor [browser|box|ocr] [--json]\n",
-            "  a3s-use install <publisher/name> [registry options] [--json]\n",
-            "  a3s-use upgrade <publisher/name> [registry options] [--json]\n",
+            "  a3s-use install <publisher/name> [registry options] [--offline] [--json]\n",
+            "  a3s-use upgrade <publisher/name> [registry options] [--offline] [--json]\n",
             "  a3s-use uninstall <publisher/name> [--json]\n",
             "  a3s-use component list|status|install|upgrade|uninstall [args] [--json]\n",
             "  a3s-use knowledge search <query> [--limit <n>] [--json]\n",
@@ -293,6 +293,7 @@ async fn component(args: &[String]) -> UseResult<CommandOutput> {
 async fn component_upgrade(args: &[String]) -> UseResult<CommandOutput> {
     let id = value_argument(args, 1, "component upgrade requires an ID")?;
     validate_component_upgrade_options(args)?;
+    let offline = flag_argument(args, "--offline")?;
     if builtin_diagnostic(id).is_some() {
         return Err(UseError::new(
             "use.plugin.package_upgrade_unsupported",
@@ -346,6 +347,7 @@ async fn component_upgrade(args: &[String]) -> UseResult<CommandOutput> {
         version,
         channel,
         expected_lock,
+        offline,
     )
     .await?;
     Ok(CommandOutput::success(
@@ -363,6 +365,7 @@ async fn component_upgrade(args: &[String]) -> UseResult<CommandOutput> {
         serde_json::json!({
             "component": external_component_value(&result.extension, id.starts_with("use/")),
             "changed": result.changed,
+            "registryAccess": result.registry_access,
             "packageGraph": result.package_graph
         }),
     ))
@@ -436,6 +439,12 @@ async fn component_status(id: &str) -> UseResult<CommandOutput> {
 async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
     let id = value_argument(args, 1, "component install requires an ID")?;
     validate_component_install_options(args)?;
+    let offline = flag_argument(args, "--offline")?;
+    if offline && builtin_diagnostic(id).is_some() {
+        return Err(usage_error(
+            "--offline is available only for Registry-backed cognitive packages",
+        ));
+    }
     if matches!(id, "browser" | "use/browser") {
         #[cfg(feature = "browser")]
         {
@@ -580,6 +589,7 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
         version,
         channel,
         expected_package_lock,
+        offline,
     )
     .await?;
     Ok(CommandOutput::success(
@@ -594,6 +604,7 @@ async fn component_install(args: &[String]) -> UseResult<CommandOutput> {
         serde_json::json!({
             "component": external_component_value(&result.extension, id.starts_with("use/")),
             "changed": result.changed,
+            "registryAccess": result.registry_access,
             "packageGraph": result.package_graph
         }),
     ))
@@ -1040,11 +1051,23 @@ fn option_argument<'a>(args: &'a [String], name: &str) -> UseResult<Option<&'a s
     Ok(value)
 }
 
+fn flag_argument(args: &[String], name: &str) -> UseResult<bool> {
+    let count = args
+        .iter()
+        .filter(|argument| argument.as_str() == name)
+        .count();
+    if count > 1 {
+        Err(usage_error(format!("{name} may be provided only once")))
+    } else {
+        Ok(count == 1)
+    }
+}
+
 fn validate_component_install_options(args: &[String]) -> UseResult<()> {
     let mut index = 2;
     while index < args.len() {
         match args[index].as_str() {
-            "--json" | "--force" => index += 1,
+            "--json" | "--force" | "--offline" => index += 1,
             "--registry-name"
             | "--registry-url"
             | "--trust-root"
@@ -1071,7 +1094,7 @@ fn validate_component_upgrade_options(args: &[String]) -> UseResult<()> {
     let mut index = 2;
     while index < args.len() {
         match args[index].as_str() {
-            "--json" => index += 1,
+            "--json" | "--offline" => index += 1,
             "--registry-name"
             | "--registry-url"
             | "--trust-root"

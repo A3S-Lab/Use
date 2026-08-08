@@ -356,6 +356,25 @@ pub(super) async fn load_refreshed_plugin_candidates(
     Ok(entries.into_iter().map(|entry| entry.plugin).collect())
 }
 
+pub(super) async fn load_cached_plugin_candidates(
+    registry: &TrustedRegistry,
+) -> UseResult<Vec<VerifiedPluginCatalogRecord>> {
+    let repository = load_verified_cached_repository(registry).await?;
+    Ok(collect_catalog_entries(registry, &repository)?
+        .into_iter()
+        .map(|entry| entry.plugin)
+        .collect())
+}
+
+pub(super) async fn load_verified_cached_repository(
+    registry: &TrustedRegistry,
+) -> UseResult<Repository> {
+    let (repository, stamp) = load_cached_repository(registry).await?;
+    let metadata = verified_registry_metadata(registry, &repository)?;
+    verify_stamp_metadata(&stamp, &metadata)?;
+    Ok(repository)
+}
+
 async fn load_cached_catalog(
     registry: &TrustedRegistry,
     host: &PluginCatalogHost,
