@@ -92,12 +92,17 @@ host target, and provider capability checks remain mandatory correctness rules.
 - Cover interrupted download, archive extraction, cutover, drain, process
   crash, reboot, antivirus contention, and Windows reparse points.
 
-### 5. Supply chain and operations — pending
+### 5. Supply chain and operations — in progress
 
 - Operate a documented Registry with signing, root rotation, expiry, mirror
   replacement, offline recovery, and incident procedures.
-- Publish reproducible archives, checksums, signatures, SBOMs, provenance, and
-  cross-platform installation scripts from one release workflow.
+- Deterministic archive serialization, cross-platform installers, per-platform
+  SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and a verified keyless
+  Sigstore checksum bundle now come from one workflow with pinned Actions and
+  release tools.
+- Reproduce the native binaries and final archive digests in independent clean
+  environments, retain verification evidence outside the Release asset trust
+  boundary, and make installer signature enforcement explicit.
 - Exercise coordinated restore, binding/authority recovery, backup rotation,
   whole-product storage policy, telemetry, security response, and support
   runbooks. The implemented OKF scope audit/backup/FTS repair covers only the

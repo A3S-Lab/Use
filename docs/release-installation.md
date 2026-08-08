@@ -42,11 +42,57 @@ unmanaged command conflict all fail closed. Temporary downloads and staging
 directories are removed. The installer never activates partially extracted
 content.
 
-The published checksum and archive currently share the GitHub Release HTTPS
-trust boundary. This detects corruption, truncation, platform mismatch, and a
-different archive under an expected checksum. It is not an independent
-signature. Reproducible archives, signed checksum evidence, SBOMs, and
-provenance attestations remain required before a supported product release.
+The installer itself consumes the checksum and archive through the same GitHub
+Release HTTPS trust boundary. This detects corruption, truncation, platform
+mismatch, and a different archive under an expected checksum, but it does not
+independently authenticate `checksums.txt`.
+
+Each tagged Release also publishes:
+
+- deterministic tar.gz or ZIP serialization using the tag commit timestamp,
+  sorted paths, normalized ownership and modes, and fixed compression tools;
+- one `a3s-use-<version>-<platform>.spdx.json` SBOM per archive;
+- GitHub OIDC build-provenance and SBOM attestations for every archive;
+- `checksums.txt.sigstore.json`, a keyless Sigstore bundle that authenticates
+  `checksums.txt` through the public transparency log; and
+- checksums covering every archive, SBOM, and installer.
+
+Every Action and release tool version is immutable in the workflow. The
+archive packager is byte-reproducible for an identical staged tree and is
+tested against source-path, creation-order, and timestamp drift. Native binary
+rebuild comparison across independent clean environments, installer-enforced
+signature verification, and the other product gates remain incomplete.
+
+## Independent release verification
+
+Install Cosign and GitHub CLI, choose the exact release, and download its
+evidence before running an installer:
+
+```bash
+version=0.3.0
+tag="v${version}"
+archive="a3s-use-${version}-darwin-arm64.tar.gz"
+
+gh release download "${tag}" --repo A3S-Lab/Use \
+  --pattern "${archive}" \
+  --pattern "${archive%.tar.gz}.spdx.json" \
+  --pattern checksums.txt \
+  --pattern checksums.txt.sigstore.json
+
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/A3S-Lab/Use/.github/workflows/release.yml@refs/tags/${tag}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  checksums.txt
+
+grep "  ${archive}$" checksums.txt | sha256sum --check --strict
+gh attestation verify "${archive}" --repo A3S-Lab/Use
+```
+
+Replace the archive name with the exact target from [Supported targets](#supported-targets).
+On macOS, use `shasum -a 256` to compare the selected line when GNU
+`sha256sum` is unavailable. Verification must use the exact tag identity shown
+above; a different workflow ref or OIDC issuer is not equivalent evidence.
 
 ## Unix usage
 

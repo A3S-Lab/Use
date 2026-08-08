@@ -79,12 +79,15 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
 - 覆盖下载中断、归档提取、cutover、drain、进程崩溃、重启、杀毒软件争用
   和 Windows reparse point。
 
-### 5. 供应链与运维 — 待完成
+### 5. 供应链与运维 — 进行中
 
 - 运营一个有文档的 Registry，覆盖签名、root rotation、expiry、mirror
   replacement、offline recovery 与 incident procedure。
-- 从同一 release workflow 发布可复现归档、checksum、签名、SBOM、
-  provenance 和跨平台安装脚本。
+- 同一套固定 Action 与发布工具版本的 workflow 已生成确定性归档、跨平台
+  安装脚本、逐平台 SPDX SBOM、GitHub OIDC provenance/SBOM attestation，
+  以及经过本地复核的 keyless Sigstore checksum bundle。
+- 仍需在独立干净环境中复现原生二进制与最终归档 digest，把验证证据保留在
+  Release asset 信任边界之外，并明确强制 installer signature policy。
 - 演练存储配额/修复、备份、telemetry、安全响应与支持 runbook。
 
 ## Production-ready 定义

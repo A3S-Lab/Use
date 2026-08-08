@@ -129,10 +129,18 @@ changing the active command. See
 [Verified release installation](docs/release-installation.md) for the trust
 boundary and custom-path options.
 
-The checksum and archive currently share the GitHub Release HTTPS trust
-boundary. Independently signed checksums, SBOMs, provenance attestations, and
-reproducible archives remain release gates, so this installation path does not
-change the preview status above.
+Tagged releases now publish deterministically serialized archives, one SPDX
+JSON SBOM per platform, GitHub OIDC build-provenance and SBOM attestations, and
+a keyless Sigstore bundle for `checksums.txt`. The Release workflow pins every
+Action plus the Rust, Python, Syft, and Cosign versions, derives archive
+timestamps from the tag commit, and verifies its checksum signature before
+publication. The default installers still consume the checksum through the
+GitHub Release HTTPS boundary; operators can independently verify the Sigstore
+bundle and GitHub attestation first by following
+[Verified release installation](docs/release-installation.md#independent-release-verification).
+Independent clean rebuilds of the native binaries and installer-enforced
+signature policy remain release gates, so this does not change the preview
+status above.
 
 ### Build and verify
 
@@ -626,9 +634,9 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Scope-local OKF integrity audit, verified database backup, and derived FTS repair | Implemented and real-process tested; restore and whole-product recovery remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
 | A3S Code CLI/TUI/Web integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, Web marketplace lifecycle, and TUI `/packages` review are tested; release qualification remains |
-| Verified preview installers | Linux/macOS and Windows installers enforce HTTPS, exact release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, and managed command ownership; signatures/SBOM/provenance remain open |
+| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, a verified keyless Sigstore checksum bundle, pinned Actions, and pinned release tools are implemented; independent native-binary rebuild comparison and installer-enforced signature policy remain open |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
-| Public Registry operations, signed distribution, retention, support runbooks | Release blocker |
+| Public Registry operations, independent native-binary rebuilds, installer signature enforcement, retention, support runbooks | Release blocker |
 
 **Production-ready: no.** The code has a substantial tested foundation, but
 the unfinished rows above remain required release gates. [ROADMAP.md](ROADMAP.md)

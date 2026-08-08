@@ -17,6 +17,12 @@ A3S Use 的核心安全原则是：**包内容可以描述需求，但不能给�
 
 搜索只在已验证、受大小限制的目录元数据上运行，不下载 package archive。模型或浏览器不能创造目录中不存在的安装身份。
 
+## Release artifact 证据
+
+带 tag 的 preview release 会对每个平台的 staged tree 做确定性序列化，并为每个归档发布一份 SPDX JSON SBOM。GitHub OIDC 会为归档创建 build-provenance 与 SBOM attestation；`checksums.txt.sigstore.json` 是 checksum manifest 的 keyless Sigstore bundle，release job 会先按精确 tag workflow identity 复核该 bundle，再发布资产。所有 Action 以及 Rust、Python、Syft、Cosign 版本均已固定。
+
+默认 installer 仍从同一个 GitHub Release HTTPS 边界获取 `checksums.txt` 与归档。需要独立证据的运维方应在执行 installer 前验证 Sigstore bundle、选定 checksum 与 GitHub attestation。确定性归档序列化并不证明原生二进制可在独立干净 builder 上复现；该对比与 installer 强制验签策略仍是 release gate。
+
 ## 可替换的 Registry 来源
 
 远端 Registry 是具名、由宿主持有的 ACL 配置。运维方可以增加镜像或私有 Registry，在稳定名称下替换 URL 与 trust root，在不删除信任状态的情况下停用，并在之后重新启用或移除。保留的内置 `a3s` 身份不能被替换、切换状态或移除。Release bundle 始终是独立于远端 Registry 的并列来源。
