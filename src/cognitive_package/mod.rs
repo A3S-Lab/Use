@@ -38,7 +38,8 @@ pub use enablement::{
     COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA, COGNITIVE_PACKAGE_ENABLEMENT_RESULT_SCHEMA,
 };
 pub use enablement_plan::{
-    CognitivePackageEnablementPlanResult, CognitivePackageEnablementPlanStatus,
+    CognitivePackageEnablementDraft, CognitivePackageEnablementPlanResult,
+    CognitivePackageEnablementPlanStatus, CognitivePackageEnablementPreparation,
     COGNITIVE_PACKAGE_ENABLEMENT_PLAN_RESULT_SCHEMA,
 };
 pub use grant::{
@@ -103,6 +104,20 @@ pub trait CognitivePackageLifecycleFactory: Send + Sync {
     fn name(&self) -> &'static str;
 
     fn validate_manifest(&self, manifest: &ExtensionManifest) -> UseResult<()>;
+
+    /// Validate host-owned lifecycle availability before Runtime provider
+    /// preflight. Managed hosts override this so a provider-neutral enablement
+    /// draft can be created before its exact Runtime selection exists.
+    fn validate_manifest_for_planning(&self, manifest: &ExtensionManifest) -> UseResult<()> {
+        self.validate_manifest(manifest)
+    }
+
+    /// Validate adapters needed only to retire an already receipt-bound
+    /// generation. Runtime provider ownership is resolved from durable binding
+    /// receipts, so managed hosts must not require a new activation selection.
+    fn validate_manifest_for_retirement(&self, manifest: &ExtensionManifest) -> UseResult<()> {
+        self.validate_manifest(manifest)
+    }
 
     fn install_coordinator(
         &self,

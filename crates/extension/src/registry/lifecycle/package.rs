@@ -202,6 +202,7 @@ impl ExtensionLifecyclePackage {
             trust,
             registry,
             verified_catalog,
+            planning_bundle,
         })
     }
 
@@ -237,6 +238,7 @@ impl ExtensionLifecyclePackage {
         receipt.trust == self.trust
             && receipt.registry == self.registry
             && receipt.verified_catalog == self.verified_catalog
+            && receipt.planning_bundle == self.planning_bundle
     }
 }
 

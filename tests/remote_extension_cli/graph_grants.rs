@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use a3s_use::cognitive_package::{
     CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider,
-    CognitivePackageEnablementRequest, ReviewedCognitivePackageAuthorizationProvider,
-    StandaloneCognitivePackageLifecycleFactory,
+    CognitivePackageEnablementPreparation, CognitivePackageEnablementRequest,
+    ReviewedCognitivePackageAuthorizationProvider, StandaloneCognitivePackageLifecycleFactory,
 };
 use a3s_use_core::{
     CatalogPlanningTarget, ExecutablePlanningSurface, PlanActor, PlanAuthority, PlanPolicyDecision,
@@ -356,6 +356,8 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         .unwrap()
         .unwrap();
     let lifecycle_generation = installed.receipt.lifecycle_generation.unwrap();
+    assert!(installed.receipt.planning_bundle.is_some());
+    assert!(installed.plan_ready_planning_bundle().unwrap().is_some());
     let install_plan = manager
         .install_remote(
             &registry,
@@ -555,6 +557,15 @@ async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutov
         true,
     )
     .unwrap();
+    let prepared = restarted.prepare_enablement(&enable).await.unwrap();
+    let CognitivePackageEnablementPreparation::Draft(prepared) = prepared else {
+        panic!("re-enable must produce a provider-neutral draft");
+    };
+    assert!(prepared.planning_bundles.contains_key("acme/worker"));
+    assert_eq!(
+        prepared.installed_generations.get("acme/worker"),
+        Some(&lifecycle_generation)
+    );
     let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
     assert_eq!(
         apply_planned_enablement(&restarted, &enable)

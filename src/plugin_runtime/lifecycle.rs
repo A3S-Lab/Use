@@ -35,6 +35,17 @@ pub struct RuntimeBindingObservation {
 }
 
 impl PluginRuntimeClient {
+    /// Verify that this client still represents the exact provider evidence
+    /// captured by a durable Runtime binding receipt.
+    ///
+    /// Retirement resolves from the receipt rather than a new activation plan,
+    /// so provider ID, build, normalized capabilities, and required lifecycle
+    /// features must all remain unchanged before a service is drained.
+    pub async fn verify_binding_provider(&self, receipt: &RuntimeBindingReceipt) -> UseResult<()> {
+        receipt.validate()?;
+        self.verify_receipt_provider(receipt, true).await
+    }
+
     pub async fn observe_binding(
         &self,
         receipt: &RuntimeBindingReceipt,

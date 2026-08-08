@@ -191,6 +191,7 @@ impl ExtensionRegistry {
             trust: candidate.trust,
             registry: candidate.registry.clone(),
             verified_catalog: candidate.verified_catalog.clone(),
+            planning_bundle: candidate.planning_bundle.clone(),
             installed_at_unix: unix_timestamp(),
             enabled: false,
             lifecycle_generation: Some(identity.generation),

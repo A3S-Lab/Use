@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use a3s_use_core::{LockedPluginPackage, UseError, UseResult, VerifiedPluginCatalogRecord};
+use a3s_use_core::{
+    LockedPluginPackage, PluginPlanningBundle, UseError, UseResult, VerifiedPluginCatalogRecord,
+};
 use olpc_cjson::CanonicalFormatter;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -113,6 +115,7 @@ pub struct ExtensionLifecyclePackage {
     pub(super) trust: ExtensionTrust,
     pub(super) registry: Option<ResolvedRemotePackage>,
     pub(super) verified_catalog: Option<VerifiedPluginCatalogRecord>,
+    pub(super) planning_bundle: Option<PluginPlanningBundle>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
