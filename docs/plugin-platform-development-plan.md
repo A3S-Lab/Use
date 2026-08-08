@@ -242,8 +242,11 @@ Status: in progress
   activate one version atomically.
 - Publish complete catalog-v3 records and planning targets only.
 - Define source replacement and exact-provenance restoration workflows.
-- Produce reproducible archives, independently verifiable checksums, keyless
-  signatures, SBOMs, and provenance attestations.
+- [x] Deterministically serialize archives and publish per-platform SPDX SBOMs,
+  GitHub OIDC provenance/SBOM attestations, and a keyless Sigstore checksum
+  bundle from a workflow with pinned Actions and release tools.
+- Reproduce native binaries and final archive digests in independent clean
+  environments and make installer signature policy explicit and enforceable.
 - Verify release archives in clean Linux/macOS/Windows environments.
 
 Acceptance: an operator can bootstrap trust, install, rotate/replace sources,

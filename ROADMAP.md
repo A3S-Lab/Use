@@ -250,9 +250,14 @@ Status: in progress
   release workflow with HTTPS downgrade prevention, safe extraction,
   packaged OCR/Skill binding, versioned atomic activation, and tamper/conflict
   tests.
-- [ ] Make multi-platform archives reproducible and publish SBOMs, provenance
-  attestations, keyless signatures, and independently verifiable checksums
-  from one release workflow.
+- [x] Deterministically serialize multi-platform archives and publish one SPDX
+  SBOM per platform, GitHub OIDC provenance/SBOM attestations, and a locally
+  reverified keyless Sigstore bundle for complete checksum evidence from one
+  workflow with pinned Actions and release tools.
+- [ ] Reproduce native binaries and final archive digests in independent clean
+  build environments, make installers enforce an explicit independent
+  signature policy, and retain verification evidence outside the Release
+  asset trust boundary.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair
   procedures for packages, cutover evidence, Grants, Flow history, UI state,
   and OKF projections. Scope-local OKF database audit, verified backup, and

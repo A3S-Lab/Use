@@ -92,9 +92,12 @@ Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1
 & $installer
 ```
 
-This is still a development-preview distribution path. The checksum and
-archive currently share the GitHub Release trust boundary; signatures, SBOMs,
-provenance attestations, and reproducible archives remain release gates.
+This is still a development-preview distribution path. Tagged releases add
+deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC
+provenance/SBOM attestations, and a keyless Sigstore checksum bundle. The
+default installer still consumes its checksum through the GitHub Release HTTPS
+boundary; verify the independent evidence described in
+[Trust & Security](./trust-security) when that boundary is insufficient.
 
 ## Build from source
 
@@ -160,13 +163,13 @@ Runtime Service, HTTP MCP, Flow, Knowledge, Skill, and UI readiness always
 depends on an explicit embedding-host owner. Missing ownership fails closed;
 Use does not substitute a permissive runner or source-only binding.
 
-## Why there is no standalone Use installer yet
+## What still blocks a supported standalone installer
 
-The A3S CLI already has cross-platform install scripts. A supported standalone
-Use installer still belongs to the first Use release gate. It must install
-reproducible archives with checksums, signatures, SBOM, provenance, licenses,
-and all required assets on Linux, macOS, and Windows. The preview component
-carried by the CLI does not replace that gate.
+The preview installer and signed release evidence exist, but a supported
+product installer still requires independent clean rebuild comparison for the
+native binaries, an explicit installer-enforced signature policy, the complete
+cross-platform recovery matrix, and the remaining product operations. The
+preview component carried by the CLI does not replace those gates.
 
 ## Next steps
 

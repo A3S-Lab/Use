@@ -29,7 +29,7 @@ fn release_workflow_publishes_both_verified_installers() {
             "release assets must include {installer}"
         );
     }
-    assert!(workflow.contains("sha256sum *.tar.gz *.zip install.sh install.ps1"));
+    assert!(workflow.contains("checksums.txt.sigstore.json"));
     assert!(workflow.contains("export A3S_USE_OCR_HOME=\"${install_root}/ocr-models\""));
     assert!(workflow.contains("$env:A3S_USE_OCR_HOME = \"$root/ocr-models\""));
     assert!(unix.contains("checksums.txt"));
