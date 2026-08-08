@@ -246,8 +246,13 @@ Status: in progress
 - [x] Add bounded, integrity-preserving download resume with durable
   digest-bound partials, exact HTTP range validation, full-file verification,
   and cache-policy/GC accounting.
-- [ ] Produce reproducible multi-platform archives, SBOMs, provenance,
-  signatures, checksums, and installation scripts from one release workflow.
+- [x] Publish checksum-verifying Linux/macOS and Windows installers from the
+  release workflow with HTTPS downgrade prevention, safe extraction,
+  packaged OCR/Skill binding, versioned atomic activation, and tamper/conflict
+  tests.
+- [ ] Make multi-platform archives reproducible and publish SBOMs, provenance
+  attestations, keyless signatures, and independently verifiable checksums
+  from one release workflow.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair
   procedures for packages, cutover evidence, Grants, Flow history, UI state,
   and OKF projections. Scope-local OKF database audit, verified backup, and

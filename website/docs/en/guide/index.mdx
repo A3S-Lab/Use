@@ -67,6 +67,35 @@ not mean that Use has shipped a supported product release. Build from source
 in the next section to verify the exact implementation on current `main`.
 :::
 
+## Install the standalone Use preview
+
+The standalone Use release installer is separate from the root `a3s` CLI
+installer above. Download it before execution so you can inspect the script.
+It selects the host archive, retrieves the release checksum over HTTPS, and
+publishes the command only after SHA-256 and extraction checks pass. The
+managed command also binds the packaged OCR models, OCR Skills, and Browser
+Skills without replacing explicit environment overrides.
+
+Linux or macOS:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSLo /tmp/a3s-use-install.sh \
+  https://raw.githubusercontent.com/A3S-Lab/Use/main/install.sh
+sh /tmp/a3s-use-install.sh
+```
+
+Windows x86_64 with PowerShell 7:
+
+```powershell
+$installer = Join-Path $env:TEMP 'a3s-use-install.ps1'
+Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1 -OutFile $installer
+& $installer
+```
+
+This is still a development-preview distribution path. The checksum and
+archive currently share the GitHub Release trust boundary; signatures, SBOMs,
+provenance attestations, and reproducible archives remain release gates.
+
 ## Build from source
 
 Rust 1.85 or newer is required:

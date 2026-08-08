@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://a3s-lab.github.io/Use/">Website</a> ·
-  <a href="#build-and-verify">Build</a> ·
+  <a href="#install-or-build">Install</a> ·
   <a href="#cognitive-package-format">Package format</a> ·
   <a href="#replaceable-registries-and-exact-locks">Registries</a> ·
   <a href="#current-contract-baseline">Contracts</a> ·
@@ -91,7 +91,50 @@ through the real CLI, including killed-process cleanup replay after graph
 cutover; the remaining platform matrix is still narrower than the release gate.
 See [Platform support](#platform-support).
 
-## Build and verify
+## Install or build
+
+Tagged archives remain development previews. The installers select the current
+OS and architecture, download `checksums.txt` and the exact archive over HTTPS,
+verify SHA-256 before extraction, reject unsafe archive entries, and atomically
+publish a user-scoped command. Download the installer first so it can be
+reviewed before execution.
+
+Linux or macOS:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSLo /tmp/a3s-use-install.sh \
+  https://raw.githubusercontent.com/A3S-Lab/Use/main/install.sh
+sh /tmp/a3s-use-install.sh
+```
+
+Windows x86_64 with PowerShell 7:
+
+```powershell
+$installer = Join-Path $env:TEMP 'a3s-use-install.ps1'
+Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1 -OutFile $installer
+& $installer
+```
+
+Pass `--version <version>` on Unix or `-Version <version>` on Windows to pin a
+tag. Unix installs under `$XDG_DATA_HOME/a3s-use` (or
+`$HOME/.local/share/a3s-use`) and links from `$HOME/.local/bin`. Windows uses
+`%LOCALAPPDATA%\A3S\Use`, creates an owned command shim under
+`%LOCALAPPDATA%\A3S\bin`, and adds that bin directory to the user `PATH` unless
+`-NoPathUpdate` is set. The managed launcher binds the packaged OCR models,
+OCR Skills, and Browser Skills while preserving explicit environment
+overrides. Reinstalling the same version revalidates the complete installed
+tree. A checksum mismatch, tampered existing release, unsafe path, link/reparse
+point, concurrent installer, or unmanaged command conflict fails without
+changing the active command. See
+[Verified release installation](docs/release-installation.md) for the trust
+boundary and custom-path options.
+
+The checksum and archive currently share the GitHub Release HTTPS trust
+boundary. Independently signed checksums, SBOMs, provenance attestations, and
+reproducible archives remain release gates, so this installation path does not
+change the preview status above.
+
+### Build and verify
 
 Rust 1.85 or newer is required. Until the product release gate is complete,
 build from source:
@@ -583,6 +626,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Scope-local OKF integrity audit, verified database backup, and derived FTS repair | Implemented and real-process tested; restore and whole-product recovery remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
 | A3S Code CLI/TUI/Web integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, Web marketplace lifecycle, and TUI `/packages` review are tested; release qualification remains |
+| Verified preview installers | Linux/macOS and Windows installers enforce HTTPS, exact release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, and managed command ownership; signatures/SBOM/provenance remain open |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
 | Public Registry operations, signed distribution, retention, support runbooks | Release blocker |
 
@@ -651,6 +695,7 @@ the default human-authored configuration format.
 - [Plugin platform architecture](docs/plugin-platform-architecture.md)
 - [Lifecycle and security](docs/plugin-platform-lifecycle-and-security.md)
 - [Development plan](docs/plugin-platform-development-plan.md)
+- [Verified release installation](docs/release-installation.md)
 - [Release descriptors](docs/release-descriptors.md)
 - [OKF Knowledge operations](docs/okf-knowledge-operations.md)
 - [Registry cache operations](docs/registry-cache-operations.md)

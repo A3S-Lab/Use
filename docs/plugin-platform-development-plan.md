@@ -236,9 +236,14 @@ Status: in progress
 - [x] Add bounded, integrity-preserving download resume with durable
   digest-bound partials, exact Range validation, full signed-byte
   re-verification, and partial-aware retention.
+- [x] Publish user-scoped Linux/macOS and Windows installers that select the
+  exact platform archive, enforce its release checksum, reject unsafe
+  extraction and command conflicts, bind packaged OCR/Skill resources, and
+  activate one version atomically.
 - Publish complete catalog-v3 records and planning targets only.
 - Define source replacement and exact-provenance restoration workflows.
-- Produce reproducible archives, checksums, signatures, SBOMs, and provenance.
+- Produce reproducible archives, independently verifiable checksums, keyless
+  signatures, SBOMs, and provenance attestations.
 - Verify release archives in clean Linux/macOS/Windows environments.
 
 Acceptance: an operator can bootstrap trust, install, rotate/replace sources,
