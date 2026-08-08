@@ -71,6 +71,7 @@ publishes one capability generation, and retires unused generations in reverse.
 | Host capabilities | `a3s.use.plugin-host-capabilities.v4`, protocol 4 |
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
+| Lifecycle diagnostic | `a3s.use.plugin-lifecycle-diagnostic.v1` |
 | Enablement state | `a3s.use.cognitive-package-enablement-state.v2` |
 | Enablement operation | `a3s.use.cognitive-package-enablement-operation.v2` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
@@ -122,6 +123,12 @@ rejection. They are not supported decode paths.
 - [x] Immutable N/N+1 package roots and receipt-owned retirement.
 - [x] Durable Registry cutover replay, lifecycle journals, operation locking,
   exact terminal result replay, and tamper rejection.
+- [x] Package-scoped latest/previous lifecycle checkpoint diagnostics with
+  bounded status, digest, timing, failure-code, and rollback evidence; output
+  excludes idempotency keys, credentials, tokens, secret values, and
+  package-authored error text.
+- [x] Both applying and rolling-back journals retain exclusive operation
+  ownership until terminal completion.
 - [x] Cutover-aware host traits only; no fallback publication API.
 - [x] Prior-generation retirement fails unless the graph route is already
   absent.
@@ -282,8 +289,10 @@ Status: in progress
   and OKF projections. Scope-local OKF database audit, verified backup, and
   derived-index repair are implemented, but restore, binding/authority
   recovery, backup rotation, and whole-product procedures remain open.
-- [ ] Add telemetry and diagnostics for plan, download, cutover, drain,
-  rollback, and recovery without exposing secrets.
+- [x] Expose bounded, secret-free latest/previous lifecycle checkpoint
+  diagnostics through `extension inspect --json`.
+- [ ] Add broader telemetry and diagnostics for plan, download, provider
+  readiness, cutover, drain, rollback, and recovery without exposing secrets.
 - [ ] Complete threat model review, privilege boundaries, security response,
   upgrade policy, and support runbooks.
 

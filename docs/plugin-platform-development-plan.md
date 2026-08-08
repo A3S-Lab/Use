@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Development Plan
 
 Status: active
-Last updated: 2026-08-08
+Last updated: 2026-08-09
 
 ## Objective
 
@@ -65,6 +65,9 @@ Completed in the Use repository:
 - whole-scope OKF expanded-byte/projection quotas, per-surface generation
   limits, globally bounded tombstones, post-removal SQLite/WAL compaction, and
   exact-scope storage usage diagnostics;
+- versioned, package-scoped latest/previous lifecycle checkpoint diagnostics
+  that exclude idempotency keys, credentials, tokens, secret values, and
+  package-authored error text;
 - CLI diagnostics, package graph commands, Knowledge search/usage, and watchers;
 - current-schema fixtures, digest goldens, remote Registry tests, recovery
   tests, and GitHub Pages site.
@@ -278,8 +281,11 @@ Status: pending
   non-overwriting verified database backup, and derived FTS repair as bounded
   storage controls, not as completion of cross-product restore, authority
   recovery, backup rotation, or retention operations.
-- Add diagnostics for plan, download, prepare, cutover, drain, rollback, and
-  recovery using non-secret evidence.
+- [x] Expose latest/previous package lifecycle checkpoint status, bounded
+  failure codes, digests, timings, and rollback evidence through
+  `extension inspect --json` without secret-bearing fields.
+- Add broader diagnostics for plan, download, provider readiness, cutover,
+  drain, rollback, and recovery using non-secret evidence.
 - [x] Define and implement the standalone OKF repair boundary: only FTS rows
   derived from validated documents may be rebuilt; receipt, scope, projection,
   binding, and lifecycle evidence remain immutable and fail closed.
@@ -322,6 +328,9 @@ Status: pending
   capability, and a repaired retry resumes the exact durable candidate
   generation;
 - no-op terminal result replay.
+- latest/previous checkpoint diagnostics remain bounded and omit idempotency
+  keys and secret-bearing fields;
+- a rolling-back operation rejects a conflicting new intent.
 
 ### Security tests
 

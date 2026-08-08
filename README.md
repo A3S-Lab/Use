@@ -179,6 +179,7 @@ exact-scope Knowledge storage operations:
 a3s-use install <publisher/name> [--registry-name <name>] [--offline] [--json]
 a3s-use upgrade <publisher/name> [--registry-name <name>] [--offline] [--json]
 a3s-use uninstall <publisher/name> [--json]
+a3s-use extension inspect <publisher/name> [--json]
 a3s-use knowledge search <query> [--limit <n>] [--json]
 a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use knowledge audit [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
@@ -213,6 +214,14 @@ roots, lifecycle journals, Grants, Flow history, bindings, and UI state still
 require their own coordinated backup/restore procedure. Workspace operations
 require an explicit `--scope-id`; the CLI never guesses a current Workspace
 identity. See [OKF Knowledge operations](docs/okf-knowledge-operations.md).
+
+`extension inspect --json` includes the latest and previous durable lifecycle
+operations for the default User scope. The versioned diagnostic projection
+reports action, status, generation, artifact digests, checkpoint progress,
+bounded error codes, timings, and rollback evidence. It deliberately omits
+checkpoint idempotency keys, credentials, tokens, secret values, and
+package-authored error text. This is checkpoint evidence for diagnosis, not a
+telemetry service or backup/restore mechanism.
 
 ### Replaceable Registry sources
 
@@ -611,6 +620,10 @@ plugin_plan_enable      plugin_plan_disable     plugin_apply_plan
 enablement result is terminal and has no synthetic mutation identity. Crash
 recovery resumes the exact stored plan and authorization; re-reading a finished
 operation returns its durable result without repeating side effects.
+Applying and rolling-back records both retain exclusive operation ownership;
+a different intent cannot replace either one before it reaches a terminal
+record. Inspection reads the latest and previous records under the same
+package-scoped journal lock.
 
 Workspace Grants are composed into the same graph saga. Candidate grants are
 persisted before package preparation, the exact Registry cutover is recorded,
@@ -654,6 +667,7 @@ Only the following cognitive-package protocol line is accepted:
 | Host capabilities | `a3s.use.plugin-host-capabilities.v4` (protocol `4`) |
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
+| Lifecycle diagnostic | `a3s.use.plugin-lifecycle-diagnostic.v1` |
 | Enablement state / operation | `v2` / `v2` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
@@ -674,6 +688,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
 | Durable atomic Registry cutover and exact replay | Implemented |
+| Secret-free lifecycle checkpoint diagnostics | Implemented for latest/previous package operations through `extension inspect --json`; broader operational telemetry remains open |
 | Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |

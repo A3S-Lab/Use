@@ -13,7 +13,7 @@ use tokio::io::AsyncWriteExt;
 
 use super::journal::{record_error, PluginLifecycleCheckpointOutcome};
 use super::model::{valid_machine_id, PluginLifecycleIntent};
-use super::PluginLifecycleOperationRecord;
+use super::{PluginLifecycleDiagnostic, PluginLifecycleOperationRecord};
 
 const MAX_OPERATION_BYTES: u64 = 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -60,7 +60,11 @@ impl PluginLifecycleJournalStore {
             if current.intent == *intent {
                 return Ok(current);
             }
-            if current.status == super::PluginLifecycleOperationStatus::Applying {
+            if matches!(
+                current.status,
+                super::PluginLifecycleOperationStatus::Applying
+                    | super::PluginLifecycleOperationStatus::RollingBack
+            ) {
                 return Err(store_error(
                     "use.plugin.lifecycle_busy",
                     "Another lifecycle operation is still active for this cognitive package.",
@@ -103,6 +107,34 @@ impl PluginLifecycleJournalStore {
             validate_record_ownership(record, scope, package_id)?;
         }
         Ok(record)
+    }
+
+    /// Project the latest and previous durable operation into bounded,
+    /// secret-free checkpoint diagnostics.
+    pub async fn diagnose(
+        &self,
+        scope: &PlanScope,
+        package_id: &str,
+    ) -> UseResult<PluginLifecycleDiagnostic> {
+        let directory = self.package_directory(scope, package_id)?;
+        if !validate_existing_directory_chain(&self.state_root, &directory).await? {
+            return PluginLifecycleDiagnostic::from_records(scope, package_id, None, None);
+        }
+        let _lock = acquire_lock(&self.state_root, &directory).await?;
+        let latest = read_optional_record(&directory.join("active.json")).await?;
+        let previous = read_optional_record(&directory.join("last.json")).await?;
+        if let Some(record) = &latest {
+            validate_record_ownership(record, scope, package_id)?;
+        }
+        if let Some(record) = &previous {
+            validate_record_ownership(record, scope, package_id)?;
+        }
+        PluginLifecycleDiagnostic::from_records(
+            scope,
+            package_id,
+            latest.as_ref(),
+            previous.as_ref(),
+        )
     }
 
     pub async fn record_checkpoint(

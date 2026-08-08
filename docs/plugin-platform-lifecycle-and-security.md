@@ -406,6 +406,10 @@ Recovery rejects:
 - deleted graph evidence needed to determine the closure.
 
 The engine does not reconstruct missing authority or guess a cleanup graph.
+An `applying` or `rolling-back` package journal remains active ownership: a
+different operation cannot replace it. Only a terminal `completed` or
+`rolled-back` record may be moved to previous history when the next reviewed
+intent begins.
 
 ## Storage schemas
 
@@ -434,12 +438,25 @@ detailed boundary is documented in
 
 ## Observability
 
-Diagnostics should expose non-secret evidence sufficient to identify:
+`a3s-use extension inspect <publisher/name> --json` currently exposes
+`a3s.use.plugin-lifecycle-diagnostic.v1` for the default User scope. The
+projection reads the latest and previous records under the package-scoped
+journal lock and includes:
 
-- operation/action/scope and plan digest;
+- operation, action, scope, generation, and plan/intent/artifact digests;
+- total and completed checkpoint counts;
+- per-checkpoint kind, surface, required flag, bounded state, evidence digest,
+  bounded error code, and observation time; and
+- terminal completion time and rollback evidence digest when present.
+
+The projection never contains checkpoint idempotency keys, provider
+credentials, endpoint tokens, secret values, arbitrary package-authored error
+text, or package content. It is read-only lifecycle evidence, not a telemetry
+backend and not recovery authority.
+
+Broader diagnostics still need non-secret evidence sufficient to identify:
+
 - Registry/source and TUF role versions;
-- package and surface generation;
-- lifecycle checkpoint and retry status;
 - provider selection and readiness;
 - Registry generation/snapshot digest;
 - Grant cutover and drain state; and

@@ -6,6 +6,7 @@
 //! independently installable packages.
 
 mod coordinator;
+mod diagnostic;
 mod enablement;
 mod grant;
 mod graph;
@@ -23,6 +24,11 @@ pub use coordinator::{
     PluginLifecycleCoordinator, PluginLifecycleEvidence, PluginLifecycleHosts,
     PluginMcpLifecycleHost, PluginOkfLifecycleHost, PluginPackageLifecycleHost,
     PluginSkillLifecycleHost, PluginToolLifecycleHost, PluginUiLifecycleHost,
+};
+pub use diagnostic::{
+    PluginLifecycleCheckpointDiagnostic, PluginLifecycleCheckpointDiagnosticStatus,
+    PluginLifecycleDiagnostic, PluginLifecycleOperationDiagnostic,
+    PLUGIN_LIFECYCLE_DIAGNOSTIC_SCHEMA,
 };
 pub use grant::{PluginCapabilityCutoverEvidence, PluginGrantLifecycleUnit};
 pub use graph::{

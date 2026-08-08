@@ -1,7 +1,7 @@
 # A3S Use Plugin Contract Reference
 
 Status: development preview
-Last updated: 2026-08-08
+Last updated: 2026-08-09
 
 ## Scope
 
@@ -39,6 +39,7 @@ current set.
 | Installed package graph | `a3s.use.installed-package-graph.v1` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
 | Lifecycle intent/operation | `a3s.use.plugin-lifecycle-intent/operation.v2` |
+| Lifecycle diagnostic | `a3s.use.plugin-lifecycle-diagnostic.v1` |
 | Enablement request/result | `a3s.use.cognitive-package-enablement-request/result.v1` |
 | Enablement plan result | `a3s.use.cognitive-package-enablement-plan-result.v1` |
 | Enablement state/operation | `a3s.use.cognitive-package-enablement-state/operation.v2` |
@@ -312,6 +313,14 @@ replaced. Loading rejects:
 - a missing exact journal required for recovery.
 
 Deletion of recovery evidence is corruption, not permission to infer state.
+
+The lifecycle diagnostic is a read-only JSON projection, not a mutable disk
+record or recovery input. It reports latest/previous operation identity,
+action, status, generation, digests, checkpoint progress, bounded failure
+codes, timings, and rollback evidence. It omits checkpoint idempotency keys,
+credentials, tokens, secret values, package-authored error text, and package
+content. Consumers must not treat the projection as authority to recreate a
+missing journal.
 
 ## Canonicalization and limits
 

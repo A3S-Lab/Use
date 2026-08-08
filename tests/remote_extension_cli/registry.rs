@@ -334,6 +334,29 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
         inspected["data"]["extension"]["registry"]["targetName"],
         repository.target_name
     );
+    let lifecycle = &inspected["data"]["lifecycle"];
+    assert_eq!(
+        lifecycle["schema"],
+        "a3s.use.plugin-lifecycle-diagnostic.v1"
+    );
+    assert_eq!(lifecycle["scope"]["kind"], "user");
+    assert_eq!(lifecycle["scope"]["id"], "user/current");
+    assert_eq!(lifecycle["packageId"], "a3s/science");
+    assert_eq!(lifecycle["latest"]["status"], "completed");
+    assert_eq!(
+        lifecycle["latest"]["completedCheckpoints"],
+        lifecycle["latest"]["totalCheckpoints"]
+    );
+    let checkpoints = lifecycle["latest"]["checkpoints"].as_array().unwrap();
+    assert!(!checkpoints.is_empty());
+    assert!(checkpoints.iter().all(|checkpoint| matches!(
+        checkpoint["status"].as_str(),
+        Some("applied" | "optional-failed")
+    )));
+    let encoded_lifecycle = serde_json::to_string(lifecycle).unwrap();
+    assert!(!encoded_lifecycle.contains("idempotencyKey"));
+    assert!(!encoded_lifecycle.contains("credential"));
+    assert!(!encoded_lifecycle.contains("token"));
 
     let second = registry_install(&server, &repository, &home, Some(&package_lock_digest), &[]);
     assert!(second.status.success(), "{second:?}");
