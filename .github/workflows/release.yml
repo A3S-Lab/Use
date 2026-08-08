@@ -250,6 +250,7 @@ jobs:
           install_root="${RUNNER_TEMP}/installed-${{ matrix.name }}"
           install -d "${install_root}"
           tar xzf "${ARCHIVE}" -C "${install_root}"
+          export A3S_USE_OCR_HOME="${install_root}/ocr-models"
           export A3S_USE_OCR_SKILLS_DIR="${install_root}/ocr-skills"
           test -x "${install_root}/a3s-use"
           test -x "${install_root}/a3s-use-browser-driver"
@@ -366,6 +367,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $root = Join-Path $env:RUNNER_TEMP "installed-${{ matrix.name }}"
           Expand-Archive -Path $env:ARCHIVE -DestinationPath $root
+          $env:A3S_USE_OCR_HOME = "$root/ocr-models"
           $env:A3S_USE_OCR_SKILLS_DIR = "$root/ocr-skills"
           @(
             "$root/a3s-use.exe",
@@ -533,14 +535,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+      - name: Stage verified installers
+        shell: bash
+        run: |
+          install -m 0755 install.sh artifacts/install.sh
+          install -m 0644 install.ps1 artifacts/install.ps1
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum *.tar.gz *.zip > checksums.txt
+          sha256sum *.tar.gz *.zip install.sh install.ps1 > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
@@ -548,4 +558,6 @@ jobs:
           files: |
             artifacts/*.tar.gz
             artifacts/*.zip
+            artifacts/install.sh
+            artifacts/install.ps1
             artifacts/checksums.txt

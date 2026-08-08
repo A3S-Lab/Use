@@ -60,6 +60,9 @@ jobs:
       - name: Run signed cognitive-package lifecycle tests (Windows preview)
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --test remote_extension_cli --locked -- --nocapture
+      - name: Run verified release installer tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use --test release_installers --locked -- --nocapture
       - name: Run facade documentation tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --doc --locked
