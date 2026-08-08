@@ -338,9 +338,19 @@ Current Registry rules:
   semantics and must retain the same provider ID, build, normalized
   capabilities, and enforcement. The final policy decision must also remain
   unchanged.
-- Apply-time adapters re-derive Grant proposals from the immutable reviewed
-  plan and durable snapshot, then require reconstructed provider evidence to
-  match exactly. Product CLI apply wiring remains a release task.
+- Installed schema-v3 receipts retain the exact signed planning bundle for
+  every executable package. Enablement can therefore be reviewed again after
+  restart without consulting a mutable Registry, while catalog, manifest, and
+  installed package bytes are still revalidated.
+- Apply-time host adapters re-derive Grant proposals from the immutable
+  reviewed plan and durable snapshot, reconstruct the exact Runtime selection,
+  and require provider evidence to match byte-for-byte. The shared A3S CLI,
+  TUI, Web, and managed-host enablement paths persist the reconstruction inputs
+  instead of process-local clients.
+- Retirement never chooses a new activation provider. Disable, uninstall, and
+  prior-generation upgrade cleanup reopen the provider recorded by the exact
+  Runtime binding receipt; provider ID, build, and normalized capabilities are
+  rechecked before a Service is drained and removed.
 - The catalog record, archive, expanded package, and manifest all have exact
   digest/size evidence.
 - Archive admission rebinds every planning launcher to the exact digest-bound
@@ -384,6 +394,14 @@ revalidates the exact package locks, catalog evidence, host capabilities,
 policy authority, scope, confirmation, and current state before mutation.
 Upgrade plans bind both the prior and candidate locks and classify every node
 as `Add`, `Replace`, `Remove`, or `Retain`.
+
+Managed activation and retirement intentionally use different evidence. An
+enable or candidate install/upgrade uses host-owned two-pass provider selection.
+A disable, uninstall, or prior-generation upgrade cleanup carries no candidate
+selection and retires the exact receipt-owned binding. If a stopped binding is
+re-enabled with new authorization semantics, the old binding is retired before
+the same package generation is rebound; conflicting immutable receipts are
+never overwritten in place.
 
 The manager MCP toolset exposes read-only planning separately from mutation:
 
@@ -459,14 +477,14 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
-| Mixed native/managed provider planning | Implemented in Use: unbound drafts, assigned-provider preflight, host policy, canonical Grant-bound final selection, exact lifecycle generations, and apply-time evidence verification are contract-tested; shared CLI planning/apply wiring remains open |
+| Mixed native/managed provider planning | Implemented in Use and the shared A3S host path: unbound drafts, assigned-provider preflight, host policy, canonical Grant-bound final selection, durable planning bundles/Grant snapshots/provider generations, exact apply-time reconstruction, restart replay, and provider-drift rejection are tested |
 | Exact published-generation dispatch lease | Implemented in the Use Registry and the Code TUI/Web Knowledge query carrier; accepted queries hold exact package-generation leases through backend search and final Registry revision verification |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
-| Managed Runtime Service endpoint and Gateway retirement contract | Typed generation-bound loopback endpoint consumption plus drain-before-stop and route-remove-before-Runtime-remove are implemented and contract-tested; production provider/Gateway injection remains open |
+| Managed Runtime receipt lifecycle | Typed generation-bound endpoints, receipt-owned provider reconnection, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are contract-tested; production provider/Gateway injection remains open |
 | Scope-bounded OKF quota, retention, tombstone GC, SQLite compaction, and usage diagnostics | Implemented in the standalone Knowledge backend |
 | Scope-local OKF integrity audit, verified database backup, and derived FTS repair | Implemented and real-process tested; restore and whole-product recovery remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
-| A3S Code TUI/Web and other cross-repository product integration | Integration exists; release qualification remains |
+| A3S Code CLI/TUI/Web integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, Web marketplace lifecycle, and TUI `/packages` review are tested; release qualification remains |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
 | Public Registry operations, signed distribution, retention, support runbooks | Release blocker |
 

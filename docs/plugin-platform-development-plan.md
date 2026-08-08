@@ -78,8 +78,9 @@ Status: in progress
   reject missing prior generations and counter exhaustion.
 - [x] Expose apply-time Grant reconstruction and exact reviewed-provider
   evidence verification without persisting process-local Runtime clients.
-- Wire the implemented two-pass planning and reconstruction contracts into the
-  shared CLI plan/apply path.
+- [x] Wire two-pass planning and exact apply-time reconstruction into the
+  shared CLI install and reviewed enable/disable paths, with durable planning
+  bundles, Grant snapshots, and provider generations across restart.
 - Implement exact-generation health, invocation, drain, and removal.
 - [x] Consume only Runtime-published generation-bound loopback Service
   endpoints and enforce Gateway drain/remove ordering in the shared lifecycle
