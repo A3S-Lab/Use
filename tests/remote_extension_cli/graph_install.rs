@@ -390,6 +390,46 @@ fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
 }
 
 #[test]
+fn schema_v3_offline_install_replays_the_verified_cached_dependency_graph() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let base = cognitive_skill_target(temp.path(), "acme/base", "base", Vec::new(), &target);
+    let root = cognitive_skill_target(
+        temp.path(),
+        "acme/root",
+        "root",
+        vec![PluginPackageDependency::new("acme/base", "^1.0.0").unwrap()],
+        &target,
+    );
+    let repository = TestRepository::with_targets(vec![root, base], 29, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+
+    let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
+    assert!(installed.status.success(), "{installed:?}");
+    let online_lock = json(&installed)["data"]["packageGraph"]["packageLock"].clone();
+    assert_eq!(json(&installed)["data"]["registryAccess"], "refreshed");
+    let removed = cognitive_uninstall(&home, "acme/root");
+    assert!(removed.status.success(), "{removed:?}");
+
+    server.clear_requests();
+    let reinstalled =
+        cognitive_registry_install(&server, &repository, &home, "acme/root", &["--offline"]);
+    assert!(reinstalled.status.success(), "{reinstalled:?}");
+    let reinstalled = json(&reinstalled);
+    assert_eq!(reinstalled["data"]["registryAccess"], "cached");
+    assert_eq!(
+        reinstalled["data"]["packageGraph"]["packageLock"],
+        online_lock
+    );
+    assert_eq!(
+        reinstalled["data"]["packageGraph"]["installedPackages"],
+        serde_json::json!(["acme/base", "acme/root"])
+    );
+    assert!(server.requests().is_empty());
+}
+
+#[test]
 fn schema_v3_uninstall_retains_a_dependency_owned_by_another_root() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();

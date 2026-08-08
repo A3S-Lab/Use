@@ -109,8 +109,8 @@ capability observation, built-in Browser/OCR routes, cited OKF search, and
 exact-scope Knowledge storage operations:
 
 ```text
-a3s-use install <publisher/name> [registry options] [--json]
-a3s-use upgrade <publisher/name> [registry options] [--json]
+a3s-use install <publisher/name> [registry options] [--offline] [--json]
+a3s-use upgrade <publisher/name> [registry options] [--offline] [--json]
 a3s-use uninstall <publisher/name> [--json]
 a3s-use knowledge search <query> [--limit <n>] [--json]
 a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
@@ -166,6 +166,42 @@ a3s-use install acme/research \
 A mismatched lock digest fails before an archive download. Example package and
 Registry names above are illustrative; this repository does not advertise a
 public production Registry.
+
+An online install verifies current TUF metadata and stores each selected
+archive and signed `planning-v1.json` target in the Registry datastore's
+content-addressed cache. After that exact graph has been removed, it can be
+installed again without network access:
+
+```bash
+a3s-use install acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --version 2.0.0 \
+  --offline \
+  --json
+```
+
+The same flag supports an upgrade only when the host has already refreshed the
+candidate's TUF metadata and verified every selected target into the same
+cache:
+
+```bash
+a3s-use upgrade acme/research \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --version 2.1.0 \
+  --offline \
+  --json
+```
+
+Offline mode is explicit and fail-closed. It still requires the Registry name,
+URL, and trust-root digest; revalidates cached TUF signatures, expiry, source
+identity, target length, and SHA-256; and returns `registryAccess: "cached"` in
+JSON. Normal online operations return `registryAccess: "refreshed"`. Missing,
+expired, or tampered cache evidence is an error. An online command never falls
+back to cached targets after a network or refresh failure.
 
 ## Cognitive-package format
 
@@ -358,6 +394,13 @@ Current Registry rules:
   argv, command, timeout, and transport drift fail closed.
 - Prepared downloads and installed Registry/TUF receipts must retain the full
   verified catalog record and its provenance.
+- Online preparation persists verified archives and signed planning targets at
+  `<registry-datastore>/verified-targets/sha256/<digest>`. Cache reads reject
+  links and non-regular files, stream-copy and rehash the target, and verify its
+  signed length before package admission.
+- Explicit cached resolution revalidates the last trusted, unexpired TUF
+  metadata and exact Registry name, URL, and trust root. It never refreshes the
+  network and never weakens source or package-lock provenance.
 - Watchers read immutable publications without waiting behind writers. If a
   one-time crash reconciliation briefly owns the Registry lock, lifecycle
   writers wait asynchronously for at most two seconds; genuinely concurrent
@@ -470,6 +513,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, replaceable source input | Implemented in the engine |
+| Verified target cache and explicit offline install/upgrade | Implemented and zero-network tested; cache quota, retention, and GC remain open |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |

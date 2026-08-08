@@ -1,11 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{
-    PlanPackageChangeKind, PlanScope, PluginOperationAction, PluginPackageLockHost,
-    PluginReleaseChannel, UseResult,
-};
+use a3s_use_core::{PluginOperationAction, PluginReleaseChannel, UseResult};
 use a3s_use_extension::{
-    download_selected_locked_remote_packages, resolve_remote_package_lock,
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest,
     ExtensionRegistrySnapshot, InstalledExtension, TrustedRegistry,
 };
@@ -19,9 +15,11 @@ use crate::plugin_lifecycle::{
 use super::grant::authorize_planned_operation;
 use super::install::verify_expected_lock;
 use super::plan::{now_ms, package_state_revision, upgrade_operation};
+use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
 use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
+use super::upgrade_validation::validate_pending_upgrade;
 use super::{
-    current_host_target, installed_matches_lock, package_manager_error, CognitivePackageManager,
+    installed_matches_lock, package_manager_error, CognitivePackageManager,
     CognitivePackageUpgradeResult, UpgradeDisposition,
 };
 
@@ -31,11 +29,8 @@ struct PreparedUpgradePackage {
 }
 
 impl CognitivePackageManager {
-    /// Resolve and atomically upgrade one installed cognitive-package graph.
-    /// Candidate generations are prepared dependency-first, published once,
-    /// and exact prior generations retire only after the snapshot cutover.
     #[allow(clippy::too_many_arguments)]
-    pub async fn upgrade_remote(
+    pub(super) async fn upgrade_remote_with_access(
         &self,
         root_registry: &TrustedRegistry,
         dependency_registries: &[TrustedRegistry],
@@ -43,14 +38,15 @@ impl CognitivePackageManager {
         requested_version: Option<&str>,
         channel: PluginReleaseChannel,
         expected_package_lock_digest: Option<&str>,
+        access: RegistryAccess,
     ) -> UseResult<CognitivePackageUpgradeResult> {
-        let candidate_lock = resolve_remote_package_lock(
+        let candidate_lock = resolve_package_lock(
+            access,
             root_registry,
             dependency_registries,
             package_id,
             requested_version,
             channel,
-            PluginPackageLockHost::new(current_host_target()?, env!("CARGO_PKG_VERSION"))?,
         )
         .await?;
         let candidate_digest = candidate_lock.descriptor_digest()?;
@@ -150,12 +146,9 @@ impl CognitivePackageManager {
                 .then_some(package_id.clone())
             })
             .collect();
-        let downloads = download_selected_locked_remote_packages(
-            &candidate_lock,
-            &registries,
-            &selected_downloads,
-        )
-        .await?;
+        let downloads =
+            download_selected_packages(access, &candidate_lock, &registries, &selected_downloads)
+                .await?;
         let mut prepared = BTreeMap::new();
         for download in downloads {
             let package_id = download.resolved().package_id.clone();
@@ -986,46 +979,6 @@ fn validate_prepared_candidates(
         return Err(package_manager_error(
             "use.plugin.package_graph_invalid",
             "The prepared upgrade set does not equal the changed dependency closure.",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_pending_upgrade(
-    pending: &PendingPackageGraphOperation,
-    candidate_lock: &a3s_use_core::PluginPackageLock,
-    graph: Option<&super::store::InstalledPackageGraph>,
-    scope: &PlanScope,
-) -> UseResult<()> {
-    pending.validate()?;
-    let prior = pending.prior_package_lock.as_ref().ok_or_else(|| {
-        package_manager_error(
-            "use.plugin.package_graph_invalid",
-            "A pending upgrade omitted its prior dependency lock.",
-        )
-    })?;
-    if pending.envelope.plan.action != PluginOperationAction::Upgrade
-        || pending.envelope.package_lock.as_ref() != Some(candidate_lock)
-        || pending
-            .envelope
-            .prior_package_lock
-            .as_ref()
-            .is_some_and(|bound| bound != prior)
-        || pending
-            .envelope
-            .plan
-            .packages
-            .iter()
-            .any(|transition| transition.change == PlanPackageChangeKind::Remove)
-            && pending.envelope.prior_package_lock.as_ref() != Some(prior)
-        || &pending.envelope.plan.scope != scope
-        || graph.is_none_or(|graph| {
-            graph.package_lock != *prior && graph.package_lock != *candidate_lock
-        })
-    {
-        return Err(package_manager_error(
-            "use.plugin.package_graph_busy",
-            "The pending cognitive-package upgrade no longer matches the resolved or installed graph.",
         ));
     }
     Ok(())

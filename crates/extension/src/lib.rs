@@ -49,9 +49,11 @@ pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
 };
 pub use remote::{
-    download_locked_remote_packages, download_selected_locked_remote_packages,
-    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, prepare_remote_package,
-    refresh_remote_registry, resolve_remote_package_lock, search_cached_plugins,
+    download_locked_cached_remote_packages, download_locked_remote_packages,
+    download_selected_locked_cached_remote_packages, download_selected_locked_remote_packages,
+    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages,
+    prepare_cached_remote_package, prepare_remote_package, refresh_remote_registry,
+    resolve_cached_remote_package_lock, resolve_remote_package_lock, search_cached_plugins,
     search_remote_plugins, DownloadedRemotePackage, PluginCatalogAvailability, PluginCatalogHost,
     PluginCatalogInspection, PluginCatalogPage, PluginCatalogSearch, PluginCatalogSnapshot,
     PluginCatalogSnapshotSource, PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry,

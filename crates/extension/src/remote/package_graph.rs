@@ -7,11 +7,17 @@ use a3s_use_core::{
 };
 use semver::{Version, VersionReq};
 
-use super::catalog::load_refreshed_plugin_candidates;
+use super::catalog::{load_cached_plugin_candidates, load_refreshed_plugin_candidates};
 use super::{
-    prepare_remote_package, DownloadedRemotePackage, PreparedRemotePackage, ResolvedRemotePackage,
-    TrustedRegistry,
+    prepare_cached_remote_package, prepare_remote_package, DownloadedRemotePackage,
+    PreparedRemotePackage, ResolvedRemotePackage, TrustedRegistry,
 };
+
+#[derive(Clone, Copy)]
+enum RegistrySnapshotAccess {
+    Refreshed,
+    Cached,
+}
 
 /// Resolve one exact schema-v3 root and its complete transitive dependency
 /// closure from the host-selected set of replaceable named Registries.
@@ -28,12 +34,60 @@ pub async fn resolve_remote_package_lock(
     channel: PluginReleaseChannel,
     host: PluginPackageLockHost,
 ) -> UseResult<PluginPackageLock> {
+    resolve_remote_package_lock_with_access(
+        root_registry,
+        dependency_registries,
+        root_package_id,
+        requested_version,
+        channel,
+        host,
+        RegistrySnapshotAccess::Refreshed,
+    )
+    .await
+}
+
+/// Resolve an exact dependency closure only from locally cached, still-valid
+/// TUF snapshots. No Registry network transport is constructed.
+#[allow(clippy::too_many_arguments)]
+pub async fn resolve_cached_remote_package_lock(
+    root_registry: &TrustedRegistry,
+    dependency_registries: &[TrustedRegistry],
+    root_package_id: &str,
+    requested_version: Option<&str>,
+    channel: PluginReleaseChannel,
+    host: PluginPackageLockHost,
+) -> UseResult<PluginPackageLock> {
+    resolve_remote_package_lock_with_access(
+        root_registry,
+        dependency_registries,
+        root_package_id,
+        requested_version,
+        channel,
+        host,
+        RegistrySnapshotAccess::Cached,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn resolve_remote_package_lock_with_access(
+    root_registry: &TrustedRegistry,
+    dependency_registries: &[TrustedRegistry],
+    root_package_id: &str,
+    requested_version: Option<&str>,
+    channel: PluginReleaseChannel,
+    host: PluginPackageLockHost,
+    access: RegistrySnapshotAccess,
+) -> UseResult<PluginPackageLock> {
     host.validate()?;
     let registries = unique_registries(root_registry, dependency_registries)?;
     let mut candidates = Vec::new();
     let mut root_candidates = Vec::new();
     for registry in registries.values() {
-        let records = load_refreshed_plugin_candidates(registry).await?;
+        let records = match access {
+            RegistrySnapshotAccess::Refreshed => load_refreshed_plugin_candidates(registry).await?,
+            RegistrySnapshotAccess::Cached => load_cached_plugin_candidates(registry).await?,
+        };
         if registry.name() == root_registry.name() {
             root_candidates.extend(records.iter().cloned());
         }
@@ -79,6 +133,20 @@ pub async fn download_locked_remote_packages(
     download_selected_locked_remote_packages(package_lock, registries, &selected).await
 }
 
+/// Revalidate and stage a complete exact lock only from verified local target
+/// caches, preserving dependency-forward order without network access.
+pub async fn download_locked_cached_remote_packages(
+    package_lock: &PluginPackageLock,
+    registries: &[TrustedRegistry],
+) -> UseResult<Vec<DownloadedRemotePackage>> {
+    let selected = package_lock
+        .packages
+        .iter()
+        .map(|package| package.package_id().to_string())
+        .collect();
+    download_selected_locked_cached_remote_packages(package_lock, registries, &selected).await
+}
+
 /// Revalidate the complete lock before downloading only the selected package
 /// payloads. Retained shared nodes still receive exact Registry/TUF metadata
 /// verification, but their immutable archives are not fetched again.
@@ -86,6 +154,37 @@ pub async fn download_selected_locked_remote_packages(
     package_lock: &PluginPackageLock,
     registries: &[TrustedRegistry],
     selected_package_ids: &BTreeSet<String>,
+) -> UseResult<Vec<DownloadedRemotePackage>> {
+    download_selected_locked_remote_packages_with_access(
+        package_lock,
+        registries,
+        selected_package_ids,
+        RegistrySnapshotAccess::Refreshed,
+    )
+    .await
+}
+
+/// Revalidate the complete lock against cached TUF metadata before staging the
+/// selected immutable payloads from the verified content-addressed cache.
+pub async fn download_selected_locked_cached_remote_packages(
+    package_lock: &PluginPackageLock,
+    registries: &[TrustedRegistry],
+    selected_package_ids: &BTreeSet<String>,
+) -> UseResult<Vec<DownloadedRemotePackage>> {
+    download_selected_locked_remote_packages_with_access(
+        package_lock,
+        registries,
+        selected_package_ids,
+        RegistrySnapshotAccess::Cached,
+    )
+    .await
+}
+
+async fn download_selected_locked_remote_packages_with_access(
+    package_lock: &PluginPackageLock,
+    registries: &[TrustedRegistry],
+    selected_package_ids: &BTreeSet<String>,
+    access: RegistrySnapshotAccess,
 ) -> UseResult<Vec<DownloadedRemotePackage>> {
     package_lock.validate()?;
     if selected_package_ids.len() > package_lock.packages.len()
@@ -116,14 +215,28 @@ pub async fn download_selected_locked_remote_packages(
         verify_registry_binding(registry, &locked.catalog)?;
         let expected = ResolvedRemotePackage::from_verified_catalog(&locked.catalog)?;
         let expected_plan_digest = expected.plan_digest()?;
-        let candidate = prepare_remote_package(
-            registry,
-            locked.package_id(),
-            Some(locked.version()),
-            locked.catalog.record.channel.as_str(),
-            Some(&expected_plan_digest),
-        )
-        .await?;
+        let candidate = match access {
+            RegistrySnapshotAccess::Refreshed => {
+                prepare_remote_package(
+                    registry,
+                    locked.package_id(),
+                    Some(locked.version()),
+                    locked.catalog.record.channel.as_str(),
+                    Some(&expected_plan_digest),
+                )
+                .await?
+            }
+            RegistrySnapshotAccess::Cached => {
+                prepare_cached_remote_package(
+                    registry,
+                    locked.package_id(),
+                    Some(locked.version()),
+                    locked.catalog.record.channel.as_str(),
+                    Some(&expected_plan_digest),
+                )
+                .await?
+            }
+        };
         if candidate.verified_catalog() != &locked.catalog || candidate.resolved() != &expected {
             return Err(package_graph_error(
                 "use.plugin.package_lock_changed",

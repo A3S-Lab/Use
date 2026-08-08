@@ -9,26 +9,24 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use a3s_use_core::{
-    PluginPlanningBundle, UseError, UseResult, VerifiedCatalogProvenance,
-    VerifiedPluginCatalogRecord,
-};
+use a3s_use_core::{UseError, UseResult, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord};
 use fs2::FileExt;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use tough::{ExpirationEnforcement, HttpTransportBuilder, IntoVec, Limits, Prefix, Repository};
+use tough::{ExpirationEnforcement, HttpTransportBuilder, Limits, Repository};
 use tough::{RepositoryLoader, TargetName};
 use url::Url;
 
 use super::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
 
 mod catalog;
+mod download;
 mod package_graph;
 mod target;
+mod target_cache;
 
 pub use catalog::{
     inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, search_cached_plugins,
@@ -37,9 +35,11 @@ pub use catalog::{
     VerifiedRegistryCatalog, VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES,
     MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
+pub use download::{DownloadedRemotePackage, PreparedRemotePackage};
 pub use package_graph::{
-    download_locked_remote_packages, download_selected_locked_remote_packages,
-    resolve_remote_package_lock,
+    download_locked_cached_remote_packages, download_locked_remote_packages,
+    download_selected_locked_cached_remote_packages, download_selected_locked_remote_packages,
+    resolve_cached_remote_package_lock, resolve_remote_package_lock,
 };
 use target::{
     decode_registry_target_metadata, resolved_remote_package, validate_target_metadata,
@@ -271,175 +271,10 @@ impl ResolvedRemotePackage {
     }
 }
 
-/// Verified repository state retained until its exact target is downloaded.
-pub struct PreparedRemotePackage {
-    repository: Repository,
-    target_name: TargetName,
-    resolved: ResolvedRemotePackage,
-    verified_catalog: VerifiedPluginCatalogRecord,
-}
-
-impl std::fmt::Debug for PreparedRemotePackage {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("PreparedRemotePackage")
-            .field("resolved", &self.resolved)
-            .finish_non_exhaustive()
-    }
-}
-
-impl PreparedRemotePackage {
-    pub fn resolved(&self) -> &ResolvedRemotePackage {
-        &self.resolved
-    }
-
-    pub fn verified_catalog(&self) -> &VerifiedPluginCatalogRecord {
-        &self.verified_catalog
-    }
-
-    /// Download and verify only the small executable planning target.
-    ///
-    /// Static schema-v3 packages have no planning target and return `None`.
-    /// A package with executable surfaces resolves one exact separately signed
-    /// TUF target.
-    pub async fn load_planning_bundle(&self) -> UseResult<Option<PluginPlanningBundle>> {
-        let catalog = &self.verified_catalog;
-        let Some(expected) = catalog.record.planning.as_ref() else {
-            return Ok(None);
-        };
-        let target_name = TargetName::new(expected.target_name.clone()).map_err(|_| {
-            planning_target_error("The catalog-v3 planning target name is invalid.")
-        })?;
-        if target_name.raw() != target_name.resolved() {
-            return Err(planning_target_error(
-                "The catalog-v3 planning target path is not portable.",
-            ));
-        }
-        let target = self
-            .repository
-            .all_targets()
-            .find(|(name, _)| *name == &target_name)
-            .map(|(_, target)| target)
-            .ok_or_else(|| {
-                planning_target_error(
-                    "The catalog-v3 planning target is absent from signed TUF metadata.",
-                )
-            })?;
-        let signed_digest = format!("sha256:{}", hex_lower(target.hashes.sha256.as_ref()));
-        if target.length != expected.length
-            || signed_digest != expected.sha256
-            || target.custom.contains_key(REGISTRY_METADATA_KEY)
-        {
-            return Err(planning_target_error(
-                "The signed TUF planning target does not match the catalog evidence.",
-            ));
-        }
-
-        let stream = self
-            .repository
-            .read_target(&target_name)
-            .await
-            .map_err(|error| {
-                planning_target_error(format!(
-                    "Failed to read the signed TUF planning target: {error}"
-                ))
-            })?
-            .ok_or_else(|| {
-                planning_target_error("The signed TUF planning target disappeared during download.")
-            })?;
-        let bytes = stream.into_vec().await.map_err(|error| {
-            planning_target_error(format!(
-                "Failed to download and verify the TUF planning target: {error}"
-            ))
-        })?;
-        PluginPlanningBundle::from_catalog_target(&bytes, catalog)
-            .map(Some)
-            .map_err(|error| {
-                planning_target_error(format!(
-                    "The signed plugin planning bundle is invalid: {}",
-                    error.message
-                ))
-            })
-    }
-
-    pub async fn download(self) -> UseResult<DownloadedRemotePackage> {
-        let planning_bundle = self.load_planning_bundle().await?;
-        let temporary = tokio::task::spawn_blocking(tempfile::tempdir)
-            .await
-            .map_err(|error| {
-                UseError::new(
-                    "use.extension.registry_download_failed",
-                    format!("Failed to create the remote package staging task: {error}"),
-                )
-            })?
-            .map_err(|error| {
-                UseError::new(
-                    "use.extension.registry_download_failed",
-                    format!("Failed to create remote package staging: {error}"),
-                )
-            })?;
-        self.repository
-            .save_target(&self.target_name, temporary.path(), Prefix::None)
-            .await
-            .map_err(|error| {
-                UseError::new(
-                    "use.extension.registry_download_failed",
-                    format!(
-                        "Failed to download and verify TUF target '{}': {error}",
-                        self.resolved.target_name
-                    ),
-                )
-            })?;
-        let path = temporary.path().join(self.target_name.resolved());
-        let metadata = fs::metadata(&path)
-            .await
-            .map_err(|error| io_error("inspect downloaded TUF target", &path, error))?;
-        if !metadata.is_file() || metadata.len() != self.resolved.length {
-            return Err(UseError::new(
-                "use.extension.registry_target_invalid",
-                "The downloaded TUF target does not match its signed length.",
-            ));
-        }
-        Ok(DownloadedRemotePackage {
-            path,
-            resolved: self.resolved,
-            verified_catalog: self.verified_catalog,
-            planning_bundle,
-            _temporary: temporary,
-        })
-    }
-}
-
-fn planning_target_error(message: impl Into<String>) -> UseError {
-    UseError::new("use.extension.registry_planning_target_invalid", message)
-}
-
-/// One downloaded archive kept alive through extension activation.
-#[derive(Debug)]
-pub struct DownloadedRemotePackage {
-    path: PathBuf,
-    resolved: ResolvedRemotePackage,
-    verified_catalog: VerifiedPluginCatalogRecord,
-    planning_bundle: Option<PluginPlanningBundle>,
-    _temporary: TempDir,
-}
-
-impl DownloadedRemotePackage {
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    pub fn resolved(&self) -> &ResolvedRemotePackage {
-        &self.resolved
-    }
-
-    pub fn verified_catalog(&self) -> &VerifiedPluginCatalogRecord {
-        &self.verified_catalog
-    }
-
-    pub fn planning_bundle(&self) -> Option<&PluginPlanningBundle> {
-        self.planning_bundle.as_ref()
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoteRegistryAccess {
+    Refreshed,
+    Cached,
 }
 
 struct MetadataLock(File);
@@ -458,6 +293,45 @@ pub async fn prepare_remote_package(
     channel: &str,
     expected_plan_digest: Option<&str>,
 ) -> UseResult<PreparedRemotePackage> {
+    prepare_remote_package_with_access(
+        registry,
+        package_id,
+        requested_version,
+        channel,
+        expected_plan_digest,
+        RemoteRegistryAccess::Refreshed,
+    )
+    .await
+}
+
+/// Select one exact package only from the last verified, unexpired local TUF
+/// snapshot. This function never constructs a network transport.
+pub async fn prepare_cached_remote_package(
+    registry: &TrustedRegistry,
+    package_id: &str,
+    requested_version: Option<&str>,
+    channel: &str,
+    expected_plan_digest: Option<&str>,
+) -> UseResult<PreparedRemotePackage> {
+    prepare_remote_package_with_access(
+        registry,
+        package_id,
+        requested_version,
+        channel,
+        expected_plan_digest,
+        RemoteRegistryAccess::Cached,
+    )
+    .await
+}
+
+async fn prepare_remote_package_with_access(
+    registry: &TrustedRegistry,
+    package_id: &str,
+    requested_version: Option<&str>,
+    channel: &str,
+    expected_plan_digest: Option<&str>,
+    access: RemoteRegistryAccess,
+) -> UseResult<PreparedRemotePackage> {
     if !super::valid_package_id(package_id) {
         return Err(UseError::new(
             "use.extension.id_invalid",
@@ -475,7 +349,10 @@ pub async fn prepare_remote_package(
         })
         .transpose()?;
     validate_channel(channel)?;
-    let repository = load_repository(registry).await?;
+    let repository = match access {
+        RemoteRegistryAccess::Refreshed => load_repository(registry).await?,
+        RemoteRegistryAccess::Cached => catalog::load_verified_cached_repository(registry).await?,
+    };
 
     let host_target = host_target()?;
     let host_use_version = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|error| {
@@ -570,12 +447,14 @@ pub async fn prepare_remote_package(
         verified_catalog_record(registry, &repository, metadata.catalog_record().clone())?;
     let resolved = resolved_remote_package(registry, &repository, &metadata, &target_name, &target);
     resolved.verify_expected_plan(expected_plan_digest)?;
-    Ok(PreparedRemotePackage {
+    Ok(PreparedRemotePackage::new(
         repository,
         target_name,
         resolved,
         verified_catalog,
-    })
+        registry.datastore().to_path_buf(),
+        access,
+    ))
 }
 
 fn verified_catalog_record(

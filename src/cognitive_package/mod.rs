@@ -14,10 +14,12 @@ mod install;
 mod native_provider;
 mod plan;
 mod provider_plan;
+mod registry_access;
 mod reviewed_authorization;
 mod store;
 mod uninstall;
 mod upgrade;
+mod upgrade_validation;
 
 use a3s_use_core::{
     LockedPluginPackage, PlanScope, PlanScopeKind, PluginOperationPlanEnvelope, PluginPackageLock,

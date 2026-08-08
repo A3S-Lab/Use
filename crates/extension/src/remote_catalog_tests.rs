@@ -138,7 +138,7 @@ async fn package_graph_resolution_and_download_replay_the_exact_verified_lock() 
         .all(|request| !request.starts_with("/targets/")));
 
     server.clear_requests();
-    let downloads = download_locked_remote_packages(&lock, &[trusted])
+    let downloads = download_locked_remote_packages(&lock, std::slice::from_ref(&trusted))
         .await
         .unwrap();
     assert_eq!(downloads.len(), 1);
@@ -152,6 +152,26 @@ async fn package_graph_resolution_and_download_replay_the_exact_verified_lock() 
             .count(),
         1
     );
+
+    server.clear_requests();
+    let cached_lock = resolve_cached_remote_package_lock(
+        &trusted,
+        &[],
+        "acme/knowledge",
+        Some("1.0.0"),
+        PluginReleaseChannel::Stable,
+        PluginPackageLockHost::new(host_target().unwrap(), env!("CARGO_PKG_VERSION")).unwrap(),
+    )
+    .await
+    .unwrap();
+    let cached_downloads = download_locked_cached_remote_packages(&cached_lock, &[trusted])
+        .await
+        .unwrap();
+
+    assert_eq!(cached_lock, lock);
+    assert_eq!(cached_downloads.len(), 1);
+    assert!(cached_downloads[0].path().is_file());
+    assert!(server.requests().is_empty());
 }
 
 #[tokio::test]

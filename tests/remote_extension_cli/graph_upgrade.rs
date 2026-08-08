@@ -158,6 +158,67 @@ fn schema_v3_cli_upgrade_publishes_the_candidate_graph_and_reports_exact_transit
     assert_eq!(json(&replay)["data"]["changed"], false);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn schema_v3_cli_upgrade_uses_only_verified_cached_targets_when_offline() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let first = cognitive_skill_target_version(
+        &temp.path().join("first"),
+        "acme/root",
+        "root",
+        "1.0.0",
+        Vec::new(),
+        &target,
+    );
+    let next = cognitive_skill_target_version(
+        &temp.path().join("next"),
+        "acme/root",
+        "root",
+        "1.1.0",
+        Vec::new(),
+        &target,
+    );
+    let repository = TestRepository::with_targets(vec![first, next], 59, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+
+    let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
+    assert!(installed.status.success(), "{installed:?}");
+    let trusted = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        &repository.root_sha256,
+        None,
+        home.join("state/remote-registries/fixture"),
+    )
+    .unwrap();
+    prepare_remote_package(&trusted, "acme/root", Some("1.1.0"), "stable", None)
+        .await
+        .unwrap()
+        .download()
+        .await
+        .unwrap();
+
+    server.clear_requests();
+    let upgraded = cognitive_registry_upgrade(
+        &server,
+        &repository,
+        &home,
+        "acme/root",
+        "1.1.0",
+        &["--offline"],
+    );
+    assert!(upgraded.status.success(), "{upgraded:?}");
+    let upgraded = json(&upgraded);
+    assert_eq!(upgraded["data"]["registryAccess"], "cached");
+    assert_eq!(upgraded["data"]["component"]["version"], "1.1.0");
+    assert_eq!(
+        upgraded["data"]["packageGraph"]["replacedPackages"],
+        serde_json::json!(["acme/root"])
+    );
+    assert!(server.requests().is_empty());
+}
+
 #[test]
 fn schema_v3_cli_upgrade_reuses_an_exact_dependency_owned_by_another_root() {
     let temp = tempfile::tempdir().unwrap();
