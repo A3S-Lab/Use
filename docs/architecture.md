@@ -57,7 +57,7 @@ code accepts one preview baseline only:
 | Receipt | numeric schema 3 |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v4`, protocol 4 |
-| Manager tools | `a3s.use.plugin-manager-tools.v3` |
+| Manager tools | `a3s.use.plugin-manager-tools.v4` |
 | Pending graph | `a3s.use.pending-package-graph-operation.v2` |
 | Enablement state/operation | v2 |
 

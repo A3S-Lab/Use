@@ -100,7 +100,7 @@ pub use resolved_grant_changes::{ResolvedWorkspaceGrant, ResolvedWorkspaceGrantC
 
 pub const PLUGIN_CATALOG_SCHEMA_V3: &str = "a3s.use.plugin-catalog.v3";
 pub const INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA: &str = "a3s.use.installed-plugin-plan-evidence.v1";
-pub const PLUGIN_MANAGER_TOOLSET_SCHEMA_V3: &str = "a3s.use.plugin-manager-tools.v3";
+pub const PLUGIN_MANAGER_TOOLSET_SCHEMA_V4: &str = "a3s.use.plugin-manager-tools.v4";
 pub const PLUGIN_OPERATION_CONFIRMATION_SCHEMA: &str = "a3s.use.plugin-operation-confirmation.v1";
 /// Current draft schema for every package lifecycle operation.
 pub const PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3: &str = "a3s.use.plugin-operation-plan-draft.v3";

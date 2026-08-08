@@ -34,7 +34,7 @@ current set.
 | Host enablement plan request/result | `a3s.use.plugin-host-enablement-plan-request/result.v1` |
 | Host apply request/result | `a3s.use.plugin-host-apply-request/result.v1` |
 | Host observation request/result | `a3s.use.plugin-host-observation-request/result.v1` |
-| Manager MCP toolset | `a3s.use.plugin-manager-tools.v3` |
+| Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
 | Installed receipt | numeric schema version `3` |
 | Installed package graph | `a3s.use.installed-package-graph.v1` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
@@ -48,7 +48,9 @@ current set.
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
 The host capability inventory is exact: catalog v3, plan v4, and manager
-toolset v3 only. A host advertising a different inventory is rejected.
+toolset v4 only. Toolset v4 exposes optional canonical `registryName` only on
+install planning; upgrade stays bound to installed Registry provenance. A host
+advertising a different inventory is rejected.
 
 ## Package manifest
 
