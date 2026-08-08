@@ -142,11 +142,15 @@ Action plus the Rust, Python, Syft, and Cosign versions, derives archive
 timestamps from the tag commit, and verifies its checksum signature before
 publication. The installers now fail closed unless Cosign authenticates that
 same bundle against the exact tag identity before the archive is downloaded.
-Operators can additionally verify the GitHub attestation by following
+For every target, a second clean runner without a compiled-artifact cache
+rebuilds all shipped native executables and must byte-match the primary
+archive. Its deterministic `.reproducibility.json` evidence is attested,
+checksummed, signed, and published beside the archive. Operators can
+additionally verify the GitHub attestations by following
 [Verified release installation](docs/release-installation.md#additional-independent-verification).
-Independent clean rebuild comparison for native binaries, evidence retention
-outside GitHub Release, and the remaining product gates are still open, so
-this does not change the preview status above.
+An externally operated full-archive witness, evidence retention outside GitHub
+Release, and the remaining product gates are still open, so this does not
+change the preview status above.
 
 ### Build and verify
 
@@ -640,9 +644,9 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Scope-local OKF integrity audit, verified database backup, and derived FTS repair | Implemented and real-process tested; restore and whole-product recovery remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
 | A3S Code CLI/TUI/Web integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, Web marketplace lifecycle, and TUI `/packages` review are tested; release qualification remains |
-| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, pinned Actions, and pinned release tools are implemented; independent native-binary rebuild comparison and off-Release evidence retention remain open |
+| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, pinned Actions/tools, and cache-free clean-runner byte comparison for every shipped native executable are implemented; an externally operated full-archive witness and off-Release evidence retention remain open |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
-| Public Registry operations, independent native-binary rebuilds, off-Release evidence retention, support runbooks | Release blocker |
+| Public Registry operations, external full-archive reproducibility witness, off-Release evidence retention, support runbooks | Release blocker |
 
 **Production-ready: no.** The code has a substantial tested foundation, but
 the unfinished rows above remain required release gates. [ROADMAP.md](ROADMAP.md)

@@ -62,15 +62,22 @@ Each tagged Release also publishes:
 - deterministic tar.gz or ZIP serialization using the tag commit timestamp,
   sorted paths, normalized ownership and modes, and fixed compression tools;
 - one `a3s-use-<version>-<platform>.spdx.json` SBOM per archive;
+- one `a3s-use-<version>-<platform>.reproducibility.json` record proving that
+  every shipped native executable byte-matched a second build on a clean
+  cache-free runner;
 - GitHub OIDC build-provenance and SBOM attestations for every archive;
+- a GitHub OIDC attestation for every independent-rebuild record;
 - `checksums.txt.sigstore.json`, a keyless Sigstore bundle that authenticates
   `checksums.txt` through the public transparency log; and
-- checksums covering every archive, SBOM, and installer.
+- checksums covering every archive, SBOM, rebuild record, and installer.
 
 Every Action and release tool version is immutable in the workflow. The
 archive packager is byte-reproducible for an identical staged tree and is
-tested against source-path, creation-order, and timestamp drift. Native binary
-rebuild comparison across independent clean environments, evidence retention
+tested against source-path, creation-order, and timestamp drift. A separate
+runner checks out the frozen source commit and Browser revision, uses the same
+pinned toolchain without a compiled-artifact cache, rebuilds every native
+executable, and compares it directly with the primary archive. An externally
+operated witness for the complete staged tree/final archive, evidence retention
 outside GitHub Release, and the other product gates remain incomplete.
 
 ## Additional independent verification
@@ -83,10 +90,12 @@ running a reviewed installer:
 version=0.3.0
 tag="v${version}"
 archive="a3s-use-${version}-darwin-arm64.tar.gz"
+rebuild="a3s-use-${version}-darwin-arm64.reproducibility.json"
 
 gh release download "${tag}" --repo A3S-Lab/Use \
   --pattern "${archive}" \
   --pattern "${archive%.tar.gz}.spdx.json" \
+  --pattern "${rebuild}" \
   --pattern checksums.txt \
   --pattern checksums.txt.sigstore.json
 
@@ -97,7 +106,9 @@ cosign verify-blob \
   checksums.txt
 
 grep "  ${archive}$" checksums.txt | sha256sum --check --strict
+grep "  ${rebuild}$" checksums.txt | sha256sum --check --strict
 gh attestation verify "${archive}" --repo A3S-Lab/Use
+gh attestation verify "${rebuild}" --repo A3S-Lab/Use
 ```
 
 Replace the archive name with the exact target from [Supported targets](#supported-targets).

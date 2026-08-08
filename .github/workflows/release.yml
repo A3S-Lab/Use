@@ -540,6 +540,113 @@ jobs:
             ${{ env.SBOM }}
           if-no-files-found: error
 
+  reproducibility:
+    name: independent-rebuild (${{ matrix.name }})
+    needs: [validate, binaries]
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=.
+      SOURCE_DATE_EPOCH: ${{ needs.validate.outputs.source_date_epoch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: darwin-arm64
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            name: darwin-x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            name: linux-arm64
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            name: linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.validate.outputs.source_revision }}
+      - name: Check out pinned Browser release content
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ env.A3S_BROWSER_REPOSITORY }}
+          ref: ${{ env.A3S_BROWSER_REVISION }}
+          path: external/browser
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.A3S_RELEASE_PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: ${{ env.A3S_RELEASE_RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - name: Require clean independent target directories
+        shell: bash
+        run: |
+          test ! -e target
+          test ! -e external/browser/target
+      - name: Independently rebuild Use binaries without a build cache
+        run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use -p a3s-use-science
+      - name: Independently rebuild the pinned Browser driver without a build cache
+        run: cargo build --manifest-path external/browser/Cargo.toml --release --locked --target "${{ matrix.target }}" -p a3s-use-browser-driver
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: a3s-use-${{ matrix.name }}
+          path: primary-release
+      - name: Compare independent Unix rebuild with the primary archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate.outputs.version }}"
+          archive="primary-release/a3s-use-${version}-${{ matrix.name }}.tar.gz"
+          evidence="a3s-use-${version}-${{ matrix.name }}.reproducibility.json"
+          python scripts/verify-release-rebuild.py \
+            --archive "${archive}" \
+            --platform "${{ matrix.name }}" \
+            --source-revision "${{ needs.validate.outputs.source_revision }}" \
+            --output "${evidence}" \
+            --binary a3s-use "target/${{ matrix.target }}/release/a3s-use" \
+            --binary a3s-use-browser-driver "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver" \
+            --binary extensions/a3s/science/bin/a3s-use-science "target/${{ matrix.target }}/release/a3s-use-science"
+          echo "EVIDENCE=${evidence}" >> "${GITHUB_ENV}"
+      - name: Compare independent Windows rebuild with the primary archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ needs.validate.outputs.version }}"
+          $archive = "primary-release/a3s-use-$version-${{ matrix.name }}.zip"
+          $evidence = "a3s-use-$version-${{ matrix.name }}.reproducibility.json"
+          python scripts/verify-release-rebuild.py `
+            --archive $archive `
+            --platform "${{ matrix.name }}" `
+            --source-revision "${{ needs.validate.outputs.source_revision }}" `
+            --output $evidence `
+            --binary a3s-use.exe "target/${{ matrix.target }}/release/a3s-use.exe" `
+            --binary a3s-use-browser-driver.exe "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver.exe" `
+            --binary extensions/a3s/science/bin/a3s-use-science "target/${{ matrix.target }}/release/a3s-use-science.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Independent release rebuild did not match" }
+          "EVIDENCE=$evidence" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Attest independent rebuild evidence
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: ${{ env.EVIDENCE }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: a3s-use-${{ matrix.name }}-reproducibility
+          path: ${{ env.EVIDENCE }}
+          if-no-files-found: error
+
   publish-crates:
     name: Publish typed Rust crates
     needs: validate
@@ -608,7 +715,7 @@ jobs:
           wait_until_visible a3s-use
 
   release:
-    needs: [validate, binaries, publish-crates]
+    needs: [validate, binaries, reproducibility, publish-crates]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -633,10 +740,11 @@ jobs:
           mapfile -d '' release_files < <(
             find . -maxdepth 1 -type f \
               \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.spdx.json' \
+                 -o -name '*.reproducibility.json' \
                  -o -name 'install.sh' -o -name 'install.ps1' \) \
               -print0 | LC_ALL=C sort -z
           )
-          test "${#release_files[@]}" -eq 12
+          test "${#release_files[@]}" -eq 17
           sha256sum "${release_files[@]}" | sed 's#  \./#  #' > checksums.txt
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
@@ -670,3 +778,4 @@ jobs:
             artifacts/checksums.txt
             artifacts/checksums.txt.sigstore.json
             artifacts/*.spdx.json
+            artifacts/*.reproducibility.json

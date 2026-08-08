@@ -258,9 +258,12 @@ Status: in progress
   manifest against the exact tag workflow identity and GitHub OIDC issuer
   before archive download, fail closed on invalid evidence, and retain the
   verified manifest and bundle with the installed version.
-- [ ] Reproduce native binaries and final archive digests in independent clean
-  build environments and retain verification evidence outside the Release
-  asset trust boundary.
+- [x] Rebuild every shipped native executable for all five targets on a second
+  clean runner without a compiled-artifact cache, require a byte match with the
+  primary archive, and publish deterministic attested rebuild evidence.
+- [ ] Add an externally operated witness for the complete staged tree and final
+  archive digest, and retain verification evidence outside the Release asset
+  trust boundary.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair
   procedures for packages, cutover evidence, Grants, Flow history, UI state,
   and OKF projections. Scope-local OKF database audit, verified backup, and

@@ -103,9 +103,11 @@ host target, and provider capability checks remain mandatory correctness rules.
 - Both platform installers now require Cosign, verify the checksum manifest
   against the exact tag workflow identity before archive download, fail closed
   on invalid evidence, and retain the verified evidence with each version.
-- Reproduce the native binaries and final archive digests in independent clean
-  environments and retain verification evidence outside the Release asset
-  trust boundary.
+- Every shipped native executable is rebuilt for all release targets on a
+  second cache-free clean runner and must byte-match the primary archive;
+  deterministic evidence is attested and published.
+- Add an externally operated witness for the complete staged tree/final archive
+  and retain verification evidence outside the Release asset trust boundary.
 - Exercise coordinated restore, binding/authority recovery, backup rotation,
   whole-product storage policy, telemetry, security response, and support
   runbooks. The implemented OKF scope audit/backup/FTS repair covers only the

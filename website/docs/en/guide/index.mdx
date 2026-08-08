@@ -101,8 +101,10 @@ deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC
 provenance/SBOM attestations, and a keyless Sigstore checksum bundle. The
 installer fails closed unless Cosign verifies that bundle before downloading
 the platform archive, then retains the verified manifest and bundle with the
-installed version. See [Trust & Security](./trust-security) for the remaining
-bootstrap boundary and optional GitHub attestation verification.
+installed version. A second cache-free clean runner must also byte-match every
+shipped native executable and publishes attested reproducibility evidence. See
+[Trust & Security](./trust-security) for the remaining bootstrap boundary and
+optional GitHub attestation verification.
 
 ## Build from source
 
@@ -172,9 +174,10 @@ Use does not substitute a permissive runner or source-only binding.
 
 The preview installer and signed release evidence exist, but a supported
 product installer still requires independent clean rebuild comparison for the
-native binaries, evidence retention outside GitHub Release, the complete
-cross-platform recovery matrix, and the remaining product operations. The
-preview component carried by the CLI does not replace those gates.
+complete staged tree/final archive under an externally operated witness,
+evidence retention outside GitHub Release, the complete cross-platform
+recovery matrix, and the remaining product operations. The preview component
+carried by the CLI does not replace those gates.
 
 ## Next steps
 

@@ -248,8 +248,11 @@ Status: in progress
 - [x] Require both platform installers to authenticate the checksum manifest
   with Cosign against the exact tag workflow identity before archive download,
   fail closed, and retain the verified evidence with the installed version.
-- Reproduce native binaries and final archive digests in independent clean
-  environments and retain evidence outside the Release asset trust boundary.
+- [x] Rebuild every shipped native executable on a second cache-free clean
+  runner for all release targets, require a byte match with the primary
+  archive, and publish deterministic attested evidence.
+- Add an externally operated full-tree/final-archive witness and retain its
+  evidence outside the Release asset trust boundary.
 - Verify release archives in clean Linux/macOS/Windows environments.
 
 Acceptance: an operator can bootstrap trust, install, rotate/replace sources,

@@ -92,7 +92,9 @@ Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1
 序列化、逐平台 SPDX SBOM、GitHub OIDC provenance/SBOM attestation 与
 keyless Sigstore checksum bundle。installer 会在下载平台归档前 fail closed
 地验证该 bundle，并把已验证 manifest 与 bundle 保留在安装版本目录中。
-剩余 bootstrap 边界与可选 GitHub attestation 验证见[信任与安全](./trust-security)。
+第二台无编译缓存的干净 runner 还必须逐字节匹配全部随包原生可执行文件，并
+发布带 attestation 的 reproducibility 证据。剩余 bootstrap 边界与可选
+GitHub attestation 验证见[信任与安全](./trust-security)。
 
 ## 从源码构建
 
@@ -153,8 +155,9 @@ runner 或 source-only binding。
 ## standalone installer 仍缺少什么
 
 预览 installer 与签名 release 证据已经存在；受支持的产品 installer 仍需在
-独立干净环境中复核原生二进制、把证据保留在 GitHub Release 之外、通过完整
-跨平台恢复矩阵，并完成剩余产品运维。CLI 携带的预览组件不能替代这些门禁。
+外部运营的 witness 中复核完整 staged tree/最终归档、把证据保留在 GitHub
+Release 之外、通过完整跨平台恢复矩阵，并完成剩余产品运维。CLI 携带的预览
+组件不能替代这些门禁。
 
 ## 下一步
 
