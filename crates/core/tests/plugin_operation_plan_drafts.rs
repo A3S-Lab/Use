@@ -202,6 +202,51 @@ fn draft_rejects_missing_explicit_runtime_provider_evidence() {
 }
 
 #[test]
+fn unbound_draft_validates_planner_evidence_but_cannot_be_bound() {
+    let expected = install_plan();
+    let mut draft = PluginOperationPlanDraft::new_unbound(
+        expected.action,
+        expected.package_id.clone(),
+        expected.component_id.clone(),
+        expected.packages.clone(),
+        expected.workspace_impacts.clone(),
+        expected.impact.clone(),
+        expected.state.clone(),
+    )
+    .unwrap();
+    let bytes = serde_json::to_vec(&draft).unwrap();
+    assert_eq!(
+        PluginOperationPlanDraft::from_unbound_json(&bytes).unwrap(),
+        draft
+    );
+    assert!(draft
+        .clone()
+        .bind(PluginOperationPlanBinding {
+            operation_id: expected.operation_id.clone(),
+            created_at_ms: expected.created_at_ms,
+            expires_at_ms: expected.expires_at_ms,
+            scope: expected.scope.clone(),
+            authority: expected.authority.clone(),
+        })
+        .is_err());
+
+    draft.providers = expected.providers.clone();
+    draft.validate().unwrap();
+    assert_eq!(
+        draft
+            .bind(PluginOperationPlanBinding {
+                operation_id: expected.operation_id.clone(),
+                created_at_ms: expected.created_at_ms,
+                expires_at_ms: expected.expires_at_ms,
+                scope: expected.scope.clone(),
+                authority: expected.authority.clone(),
+            })
+            .unwrap(),
+        expected
+    );
+}
+
+#[test]
 fn okf_draft_derives_exact_bundle_impact_without_a_runtime_provider() {
     let mut plan = okf_install_plan();
     assert_eq!(plan.schema, PLUGIN_OPERATION_PLAN_SCHEMA_V4);

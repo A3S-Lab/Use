@@ -155,9 +155,14 @@ policy, grant proposals, Runtime semantics, and provider evidence:
    - bind package transitions, grant-change digest, provider evidence, impact,
      operation identity, actor, scope, expiry, capability generation, and
      state revision into one canonical plan digest.
+   - re-evaluate host policy against the final Grant-bound semantics and
+     require the exact same authority decision.
 
 If any provider observation changes between preflight and final selection,
-planning fails. It does not silently restart with another provider.
+planning fails. Managed semantics may change only because the canonical Grant
+replaces the provisional proposal; provider ID, build, normalized capability,
+and enforcement cannot drift. Planning does not silently restart with another
+provider.
 
 ## Apply and Reconciliation Protocol
 
@@ -180,6 +185,13 @@ Apply accepts only the stored operation identity and reviewed plan digest:
 13. revoke old grants and remove old Runtime units, routes, projections, and
     unreferenced immutable package files; and
 14. persist an append-only terminal result.
+
+Before step 4, the host re-derives canonical Grant proposals from the immutable
+plan plus the same durable Grant snapshot, reloads the signed planning bundle,
+reconnects the explicit provider assignment, and requires complete provider
+evidence—including Grant-bound semantics—to equal the reviewed plan. A3S Use
+exposes these reconstruction contracts; wiring them into every product apply
+entry point remains required.
 
 Runtime, Gateway, package storage, grants, and capability publication do not
 share a database transaction. The lifecycle is therefore a durable,
@@ -246,6 +258,11 @@ Implemented:
 - Use-owned mixed native/managed provider aggregation that binds canonical
   pre-confirmation Grant proposals, exact package generations, and explicit
   Runtime assignments into one sorted complete evidence set without fallback;
+- an unbound operation draft plus authorization-safe two-pass binding that
+  rejects provider/build/capability/enforcement drift and a changed final
+  policy decision;
+- exact Add/Replace/Retain/Enable provider-generation derivation and apply-time
+  Grant/provider-evidence reconstruction contracts;
 - CLI component-plan transport of the verified planning bundle without package
   archive download;
 - a package-lifecycle Tool/MCP adapter that revalidates immutable files, uses
@@ -260,10 +277,8 @@ Implemented:
 
 Remaining:
 
-- host broker integration of the Use-owned final selection into the shared
-  Plugin Manager's final draft;
-- capability preflight and apply-time reconstruction around the implemented
-  authorization-bound final selection;
+- host broker integration of the implemented two-pass final selection and
+  apply-time reconstruction into the shared Plugin Manager and CLI;
 - workspace-aware grant-change and package-journal coordination;
 - parent-saga coordination of the implemented exact Runtime N/N+1 store and
   prior-generation retirement after capability cutover;

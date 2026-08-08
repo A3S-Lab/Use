@@ -2,9 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_runtime::RuntimeClientRegistry;
 use a3s_use_core::{
-    ExecutablePlanningSurface, PlanQualifiedSurfaceRef, PlanScope, PlannedPackageState,
-    PlannedPackageTransition, PlannedProviderEvidence, PluginPlanningBundle, PluginSurfaceKind,
-    PluginWorkspaceGrantProposal, UseError, UseResult,
+    ExecutablePlanningSurface, PlanAuthority, PlanPackageChangeKind, PlanQualifiedSurfaceRef,
+    PlanScope, PlannedPackageState, PlannedPackageTransition, PlannedProviderEvidence,
+    PluginOperationAction, PluginOperationPlan, PluginOperationPlanBinding,
+    PluginOperationPlanDraft, PluginPackageLock, PluginPlanningBundle, PluginSurfaceKind,
+    PluginWorkspaceGrantProposal, PluginWorkspaceGrantSnapshot, UseError, UseResult,
 };
 
 use crate::plugin_runtime::{
@@ -12,7 +14,9 @@ use crate::plugin_runtime::{
     RuntimeProviderSelector, RuntimeSurfacePlan,
 };
 
-use super::plan_native_provider_evidence;
+use super::{
+    bind_cognitive_package_grants, plan_native_provider_evidence, CognitivePackageGrantPlan,
+};
 
 /// Complete provider result for one reviewed cognitive-package transition set.
 ///
@@ -23,6 +27,39 @@ use super::plan_native_provider_evidence;
 pub struct CognitivePackageProviderPlan {
     provider_evidence: Vec<PlannedProviderEvidence>,
     runtime_selection: RuntimeProviderSelection,
+}
+
+/// Final host-bound plan plus the exact process-local Runtime selection that
+/// produced its immutable provider evidence.
+#[derive(Debug, Clone)]
+pub struct BoundCognitivePackageProviderPlan {
+    plan: PluginOperationPlan,
+    grants: CognitivePackageGrantPlan,
+    providers: CognitivePackageProviderPlan,
+}
+
+impl BoundCognitivePackageProviderPlan {
+    pub fn plan(&self) -> &PluginOperationPlan {
+        &self.plan
+    }
+
+    pub fn grants(&self) -> &CognitivePackageGrantPlan {
+        &self.grants
+    }
+
+    pub fn providers(&self) -> &CognitivePackageProviderPlan {
+        &self.providers
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        PluginOperationPlan,
+        CognitivePackageGrantPlan,
+        CognitivePackageProviderPlan,
+    ) {
+        (self.plan, self.grants, self.providers)
+    }
 }
 
 impl CognitivePackageProviderPlan {
@@ -36,6 +73,42 @@ impl CognitivePackageProviderPlan {
 
     pub fn into_parts(self) -> (Vec<PlannedProviderEvidence>, RuntimeProviderSelection) {
         (self.provider_evidence, self.runtime_selection)
+    }
+
+    /// Require final provider observations to match an earlier capability
+    /// preflight. Managed semantics may change only because the final
+    /// canonical Grant proposal replaces the provisional proposal; provider
+    /// identity, build, normalized capabilities, and enforcement may not.
+    pub fn verify_preflight_evidence(
+        &self,
+        preflight: &[PlannedProviderEvidence],
+    ) -> UseResult<()> {
+        if preflight.len() != self.provider_evidence.len() {
+            return Err(provider_evidence_changed());
+        }
+        for (expected, selected) in preflight.iter().zip(&self.provider_evidence) {
+            let same_surface_and_provider = expected.surface == selected.surface
+                && expected.provider_id == selected.provider_id
+                && expected.provider_build_id == selected.provider_build_id
+                && expected.capability_digest == selected.capability_digest
+                && expected.enforcement == selected.enforcement;
+            let native_semantics_match = expected.provider_id != "a3s-use-native-launcher"
+                || expected.semantics_profile_digest == selected.semantics_profile_digest;
+            if !same_surface_and_provider || !native_semantics_match {
+                return Err(provider_evidence_changed());
+            }
+        }
+        Ok(())
+    }
+
+    /// Require an apply-time reconstruction to equal the immutable reviewed
+    /// evidence byte-for-byte, including the authorization-bound semantics
+    /// profile.
+    pub fn verify_reviewed_evidence(&self, reviewed: &[PlannedProviderEvidence]) -> UseResult<()> {
+        if self.provider_evidence != reviewed {
+            return Err(provider_evidence_changed());
+        }
+        Ok(())
     }
 }
 
@@ -106,6 +179,225 @@ pub async fn plan_cognitive_package_providers(
         provider_evidence,
         runtime_selection,
     })
+}
+
+/// Execute the authorization-safe two-pass provider protocol for one unbound
+/// cognitive-package draft.
+///
+/// The first pass uses the provisional host binding only to query the exact
+/// assigned providers and expose their enforcement to policy. The authority
+/// callback then returns the host decision. The second pass rebuilds canonical
+/// Grant proposals and Runtime semantics with that decision, reopens only the
+/// same assignments, and rejects provider/build/capability/enforcement drift.
+/// A final policy evaluation must return the same authority.
+#[allow(clippy::too_many_arguments)]
+pub async fn bind_cognitive_package_provider_plan<F>(
+    mut draft: PluginOperationPlanDraft,
+    provisional_binding: PluginOperationPlanBinding,
+    grant_snapshot: &PluginWorkspaceGrantSnapshot,
+    planning_bundles: &BTreeMap<String, PluginPlanningBundle>,
+    generations: &BTreeMap<String, u64>,
+    assignments: Vec<RuntimeProviderAssignment>,
+    runtime_registry: &RuntimeClientRegistry,
+    evaluate_authority: F,
+) -> UseResult<BoundCognitivePackageProviderPlan>
+where
+    F: Fn(&PluginOperationPlan) -> UseResult<PlanAuthority>,
+{
+    draft.validate_unbound()?;
+
+    let mut preflight_draft = draft.clone();
+    let preflight_grants =
+        bind_cognitive_package_grants(&mut preflight_draft, &provisional_binding, grant_snapshot)?;
+    let preflight = plan_cognitive_package_providers(
+        &preflight_draft.packages,
+        planning_bundles,
+        preflight_grants.proposals(),
+        &provisional_binding.scope,
+        generations,
+        assignments.clone(),
+        runtime_registry,
+    )
+    .await?;
+    preflight_draft.providers = preflight.provider_evidence().to_vec();
+    let preflight_plan = preflight_draft.bind(provisional_binding.clone())?;
+    let authority = evaluate_authority(&preflight_plan)?;
+    let final_binding = PluginOperationPlanBinding {
+        authority: authority.clone(),
+        ..provisional_binding
+    };
+
+    let grants = bind_cognitive_package_grants(&mut draft, &final_binding, grant_snapshot)?;
+    let providers = plan_cognitive_package_providers(
+        &draft.packages,
+        planning_bundles,
+        grants.proposals(),
+        &final_binding.scope,
+        generations,
+        assignments,
+        runtime_registry,
+    )
+    .await?;
+    providers.verify_preflight_evidence(preflight.provider_evidence())?;
+    draft.providers = providers.provider_evidence().to_vec();
+    let plan = draft.bind(final_binding)?;
+    if evaluate_authority(&plan)? != authority {
+        return Err(provider_plan_error(
+            "Final Grant-bound provider semantics changed the host authorization decision.",
+        ));
+    }
+
+    Ok(BoundCognitivePackageProviderPlan {
+        plan,
+        grants,
+        providers,
+    })
+}
+
+/// Derive the exact lifecycle generations used by managed Runtime templates.
+///
+/// Added and replaced nodes use the same dependency-order/state-revision rule
+/// as the cognitive-package saga. Retained and re-enabled nodes reuse their
+/// immutable installed lifecycle generation. `installed_generations` may
+/// contain unrelated installed packages, but every relevant retained or
+/// replaced package must have one exact positive entry.
+pub fn plan_cognitive_package_provider_generations(
+    action: PluginOperationAction,
+    packages: &[PlannedPackageTransition],
+    state_revision: u64,
+    package_lock: Option<&PluginPackageLock>,
+    planning_bundles: &BTreeMap<String, PluginPlanningBundle>,
+    installed_generations: &BTreeMap<String, u64>,
+) -> UseResult<BTreeMap<String, u64>> {
+    if state_revision == 0 {
+        return Err(provider_plan_error(
+            "Managed provider generation planning requires a positive state revision.",
+        ));
+    }
+    if matches!(
+        action,
+        PluginOperationAction::Uninstall | PluginOperationAction::Disable
+    ) {
+        if !planning_bundles.is_empty() {
+            return Err(provider_plan_error(
+                "A retiring provider plan must not carry candidate planning bundles.",
+            ));
+        }
+        return Ok(BTreeMap::new());
+    }
+    validate_package_order(packages)?;
+    let states = selected_states(packages)?;
+    validate_bundle_set(&states, planning_bundles)?;
+    let managed_packages = states
+        .keys()
+        .filter(|package_id| {
+            planning_bundles
+                .get(*package_id)
+                .is_some_and(has_managed_surfaces)
+        })
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let mut generations = BTreeMap::new();
+    match action {
+        PluginOperationAction::Install | PluginOperationAction::Upgrade => {
+            let lock = package_lock.ok_or_else(|| {
+                provider_plan_error(
+                    "A managed graph provider plan omitted its candidate package lock.",
+                )
+            })?;
+            lock.validate()?;
+            let locked = lock
+                .packages
+                .iter()
+                .map(|package| package.package_id())
+                .collect::<BTreeSet<_>>();
+            let selected = states.keys().map(String::as_str).collect::<BTreeSet<_>>();
+            if locked != selected {
+                return Err(provider_plan_error(
+                    "The candidate package lock does not match the selected provider states.",
+                ));
+            }
+            for (index, package) in lock.install_order()?.into_iter().enumerate() {
+                if !managed_packages.contains(package.package_id()) {
+                    continue;
+                }
+                let transition = packages
+                    .iter()
+                    .find(|transition| transition.package_id == package.package_id())
+                    .ok_or_else(|| {
+                        provider_plan_error(
+                            "A managed package lock node omitted its reviewed transition.",
+                        )
+                    })?;
+                let prior = installed_generations.get(package.package_id()).copied();
+                let offset = u64::try_from(index).map_err(|_| {
+                    provider_plan_error("The managed package generation offset is too large.")
+                })?;
+                let base = state_revision.checked_add(offset).ok_or_else(|| {
+                    provider_plan_error("A managed package generation cannot advance.")
+                })?;
+                let generation = match transition.change {
+                    PlanPackageChangeKind::Add => base,
+                    PlanPackageChangeKind::Replace => base.max(
+                        prior
+                            .ok_or_else(|| {
+                                provider_plan_error(
+                                    "A replacement managed package omitted its prior generation.",
+                                )
+                            })?
+                            .checked_add(1)
+                            .ok_or_else(|| {
+                                provider_plan_error(
+                                    "A replacement managed package generation is exhausted.",
+                                )
+                            })?,
+                    ),
+                    PlanPackageChangeKind::Retain => prior.ok_or_else(|| {
+                        provider_plan_error(
+                            "A retained managed package omitted its installed generation.",
+                        )
+                    })?,
+                    PlanPackageChangeKind::Remove => {
+                        return Err(provider_plan_error(
+                            "A removed package appeared in the candidate provider order.",
+                        ))
+                    }
+                };
+                if generation == 0 {
+                    return Err(provider_plan_error(
+                        "A managed package lifecycle generation must be positive.",
+                    ));
+                }
+                generations.insert(package.package_id().to_owned(), generation);
+            }
+        }
+        PluginOperationAction::Enable => {
+            for package_id in &managed_packages {
+                let generation =
+                    installed_generations
+                        .get(*package_id)
+                        .copied()
+                        .ok_or_else(|| {
+                            provider_plan_error(
+                        "An enabled managed package omitted its installed lifecycle generation.",
+                    )
+                        })?;
+                if generation == 0 {
+                    return Err(provider_plan_error(
+                        "A managed package lifecycle generation must be positive.",
+                    ));
+                }
+                generations.insert((*package_id).to_owned(), generation);
+            }
+        }
+        PluginOperationAction::Uninstall | PluginOperationAction::Disable => unreachable!(),
+    }
+    if generations.len() != managed_packages.len() {
+        return Err(provider_plan_error(
+            "Managed lifecycle generations do not cover the exact managed package set.",
+        ));
+    }
+    Ok(generations)
 }
 
 fn validate_package_order(packages: &[PlannedPackageTransition]) -> UseResult<()> {
@@ -262,6 +554,13 @@ fn provider_plan_error(message: impl Into<String>) -> UseError {
     UseError::new("use.plugin.provider_plan_invalid", message)
 }
 
+fn provider_evidence_changed() -> UseError {
+    UseError::new(
+        "use.plugin.runtime.provider_evidence_changed",
+        "The selected Runtime provider evidence changed between reviewed lifecycle stages.",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -273,11 +572,13 @@ mod tests {
     use a3s_runtime::{ProviderId, RuntimeClient, RuntimeProviderFactory, RuntimeResult};
     use a3s_use_core::{
         CatalogSurface, PlanActor, PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision,
-        PlanScopeKind, PlannedPluginRelease, PlanningArtifactRef, PlanningSurfaceActivation,
-        PluginPermissionCeiling, PluginReleaseChannel, PluginSurfaceRef, ResourcePermissionCeiling,
-        SurfacePermissionCeiling, ToolWorkloadClass, WorkspaceGrantProposalAuthority,
+        PlanScopeKind, PlannedOperationImpact, PlannedPluginRelease, PlannedStateEvidence,
+        PlanningArtifactRef, PlanningSurfaceActivation, PluginCatalogRecord, PluginPackageLockHost,
+        PluginPackageResolver, PluginPermissionCeiling, PluginPlanSource, PluginReleaseChannel,
+        PluginSurfaceRef, ResourcePermissionCeiling, SurfacePermissionCeiling, ToolWorkloadClass,
+        VerifiedCatalogProvenance, VerifiedPluginCatalogRecord, WorkspaceGrantProposalAuthority,
         PLUGIN_PERMISSION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
-        PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA,
+        PLUGIN_WORKSPACE_GRANT_PROPOSAL_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
     };
     use async_trait::async_trait;
 
@@ -353,6 +654,212 @@ mod tests {
                 .generation,
             8
         );
+        planned
+            .verify_reviewed_evidence(planned.provider_evidence())
+            .unwrap();
+
+        let mut changed = planned.provider_evidence().to_vec();
+        changed[1].provider_build_id = "build-2".to_owned();
+        let error = planned.verify_preflight_evidence(&changed).unwrap_err();
+        assert_eq!(error.code, "use.plugin.runtime.provider_evidence_changed");
+
+        let mut changed = planned.provider_evidence().to_vec();
+        changed[1].semantics_profile_digest = DIGEST_D.to_owned();
+        planned.verify_preflight_evidence(&changed).unwrap();
+        let error = planned.verify_reviewed_evidence(&changed).unwrap_err();
+        assert_eq!(error.code, "use.plugin.runtime.provider_evidence_changed");
+    }
+
+    #[tokio::test]
+    async fn two_pass_binding_replans_grant_semantics_without_provider_drift() {
+        let (transition, bundle, _) = mixed_inputs();
+        let package = transition.after.unwrap();
+        let transition = PlannedPackageTransition::resolved(
+            "acme/research",
+            PlanPackageRole::Root,
+            PlanPackageChangeKind::Add,
+            None,
+            Some(package),
+            Some(PluginPlanSource::ReleaseBundle {
+                bundle_digest: DIGEST_C.to_owned(),
+                package_digest: DIGEST_A.to_owned(),
+            }),
+        )
+        .unwrap();
+        let draft = PluginOperationPlanDraft::new_unbound(
+            PluginOperationAction::Install,
+            "acme/research",
+            "use/acme/research",
+            vec![transition],
+            Vec::new(),
+            PlannedOperationImpact {
+                download_bytes: 4096,
+                installed_bytes_after: 8192,
+                reclaimed_bytes: 0,
+                drain_required: false,
+                retained_data: false,
+                okf_changes: Vec::new(),
+            },
+            PlannedStateEvidence {
+                state_revision: 5,
+                capability_generation: 4,
+                receipt_digest: None,
+            },
+        )
+        .unwrap();
+        let provisional_binding = PluginOperationPlanBinding {
+            operation_id: "install:provider-two-pass".to_owned(),
+            created_at_ms: 10,
+            expires_at_ms: 20,
+            scope: scope(),
+            authority: PlanAuthority {
+                actor: PlanActor::User,
+                decision: PlanPolicyDecision::Ask,
+                policy_digest: DIGEST_C.to_owned(),
+                confirmation_required: true,
+            },
+        };
+        let snapshot = PluginWorkspaceGrantSnapshot {
+            schema: PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA.to_owned(),
+            scope_id: "workspace-01".to_owned(),
+            state_revision: 5,
+            grants: Vec::new(),
+        };
+        let mut registry = RuntimeClientRegistry::new();
+        registry
+            .register(Arc::new(StaticRuntimeFactory {
+                provider_id: ProviderId::parse("test-runtime").unwrap(),
+                client: Arc::new(FakeRuntime::new(runtime_capabilities(), true)),
+            }))
+            .unwrap();
+        let assignment = RuntimeProviderAssignment::new(
+            PlanQualifiedSurfaceRef {
+                package_id: "acme/research".to_owned(),
+                surface: PluginSurfaceRef {
+                    kind: PluginSurfaceKind::Tool,
+                    id: "index".to_owned(),
+                },
+            },
+            "test-runtime",
+        )
+        .unwrap();
+
+        let bound = bind_cognitive_package_provider_plan(
+            draft,
+            provisional_binding,
+            &snapshot,
+            &BTreeMap::from([("acme/research".to_owned(), bundle)]),
+            &BTreeMap::from([("acme/research".to_owned(), 8)]),
+            vec![assignment],
+            &registry,
+            |_| {
+                Ok(PlanAuthority {
+                    actor: PlanActor::User,
+                    decision: PlanPolicyDecision::Allow,
+                    policy_digest: DIGEST_D.to_owned(),
+                    confirmation_required: false,
+                })
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(bound.plan().providers.len(), 2);
+        assert_eq!(bound.plan().authority.decision, PlanPolicyDecision::Allow);
+        assert_eq!(bound.providers().runtime_selection().surfaces().len(), 1);
+        assert_eq!(
+            bound
+                .grants()
+                .proposal("acme/research")
+                .unwrap()
+                .authority
+                .decision,
+            PlanPolicyDecision::Allow
+        );
+    }
+
+    #[test]
+    fn managed_provider_generations_follow_add_replace_and_retain_lifecycles() {
+        let lock = provider_package_lock();
+        let (_, bundle, _) = mixed_inputs();
+        let bundles = BTreeMap::from([("acme/research".to_owned(), bundle)]);
+
+        let add = provider_transition(PlanPackageChangeKind::Add);
+        let generations = plan_cognitive_package_provider_generations(
+            PluginOperationAction::Install,
+            &[add],
+            7,
+            Some(&lock),
+            &bundles,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            generations,
+            BTreeMap::from([("acme/research".to_owned(), 7)])
+        );
+
+        let replace = provider_transition(PlanPackageChangeKind::Replace);
+        let generations = plan_cognitive_package_provider_generations(
+            PluginOperationAction::Upgrade,
+            &[replace],
+            7,
+            Some(&lock),
+            &bundles,
+            &BTreeMap::from([("acme/research".to_owned(), 11)]),
+        )
+        .unwrap();
+        assert_eq!(
+            generations,
+            BTreeMap::from([("acme/research".to_owned(), 12)])
+        );
+
+        let retain = provider_transition(PlanPackageChangeKind::Retain);
+        let generations = plan_cognitive_package_provider_generations(
+            PluginOperationAction::Upgrade,
+            &[retain],
+            7,
+            Some(&lock),
+            &bundles,
+            &BTreeMap::from([("acme/research".to_owned(), 11)]),
+        )
+        .unwrap();
+        assert_eq!(
+            generations,
+            BTreeMap::from([("acme/research".to_owned(), 11)])
+        );
+    }
+
+    #[test]
+    fn managed_provider_generations_reject_missing_or_exhausted_prior_generation() {
+        let lock = provider_package_lock();
+        let (_, bundle, _) = mixed_inputs();
+        let bundles = BTreeMap::from([("acme/research".to_owned(), bundle)]);
+        let replace = provider_transition(PlanPackageChangeKind::Replace);
+
+        let missing = plan_cognitive_package_provider_generations(
+            PluginOperationAction::Upgrade,
+            std::slice::from_ref(&replace),
+            7,
+            Some(&lock),
+            &bundles,
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
+        assert_eq!(missing.code, "use.plugin.provider_plan_invalid");
+        assert!(missing.message.contains("omitted its prior generation"));
+
+        let exhausted = plan_cognitive_package_provider_generations(
+            PluginOperationAction::Upgrade,
+            &[replace],
+            7,
+            Some(&lock),
+            &bundles,
+            &BTreeMap::from([("acme/research".to_owned(), u64::MAX)]),
+        )
+        .unwrap_err();
+        assert_eq!(exhausted.code, "use.plugin.provider_plan_invalid");
+        assert!(exhausted.message.contains("generation is exhausted"));
     }
 
     #[tokio::test]
@@ -576,6 +1083,74 @@ mod tests {
             bundle,
             proposal,
         )
+    }
+
+    fn provider_transition(change: PlanPackageChangeKind) -> PlannedPackageTransition {
+        let (transition, _, _) = mixed_inputs();
+        let after = transition.after.unwrap();
+        match change {
+            PlanPackageChangeKind::Add => PlannedPackageTransition::resolved(
+                "acme/research",
+                PlanPackageRole::Root,
+                change,
+                None,
+                Some(after),
+                Some(PluginPlanSource::ReleaseBundle {
+                    bundle_digest: DIGEST_C.to_owned(),
+                    package_digest: DIGEST_A.to_owned(),
+                }),
+            ),
+            PlanPackageChangeKind::Replace => {
+                let mut before = after.clone();
+                before.release.version = "1.0.0".to_owned();
+                before.release.package_sha256 = DIGEST_D.to_owned();
+                before.release.manifest_sha256 = DIGEST_C.to_owned();
+                PlannedPackageTransition::resolved(
+                    "acme/research",
+                    PlanPackageRole::Root,
+                    change,
+                    Some(before),
+                    Some(after),
+                    Some(PluginPlanSource::ReleaseBundle {
+                        bundle_digest: DIGEST_C.to_owned(),
+                        package_digest: DIGEST_A.to_owned(),
+                    }),
+                )
+            }
+            PlanPackageChangeKind::Retain => PlannedPackageTransition::resolved(
+                "acme/research",
+                PlanPackageRole::Root,
+                change,
+                Some(after.clone()),
+                Some(after),
+                None,
+            ),
+            PlanPackageChangeKind::Remove => unreachable!(),
+        }
+        .unwrap()
+    }
+
+    fn provider_package_lock() -> PluginPackageLock {
+        let record = PluginCatalogRecord::from_json(include_bytes!(
+            "../../crates/core/fixtures/plugins/catalog-record-v3.json"
+        ))
+        .unwrap();
+        let provenance = VerifiedCatalogProvenance {
+            registry_name: "official".to_owned(),
+            registry_url: "https://packages.example.test/catalog/".to_owned(),
+            root_sha256: DIGEST_D.to_owned(),
+            root_version: 1,
+            timestamp_version: 1,
+            snapshot_version: 1,
+            targets_version: 1,
+            catalog_record_digest: record.descriptor_digest().unwrap(),
+        };
+        let verified = VerifiedPluginCatalogRecord::new(record, provenance).unwrap();
+        PluginPackageResolver::new(
+            PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap(),
+        )
+        .resolve(verified, Vec::new())
+        .unwrap()
     }
 
     fn scope() -> PlanScope {

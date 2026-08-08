@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use crate::UseResult;
 
 use super::plan::{
-    PlanAuthority, PlanScope, PlannedOperationImpact, PlannedPackageTransition,
-    PlannedProviderEvidence, PlannedStateEvidence, PlannedWorkspaceImpact, PluginOperationAction,
-    PluginOperationPlan,
+    PlanAuthority, PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlanScope,
+    PlannedOperationImpact, PlannedPackageTransition, PlannedProviderEvidence,
+    PlannedStateEvidence, PlannedWorkspaceImpact, PluginOperationAction, PluginOperationPlan,
 };
 use super::plan_validation::{planned_okf_changes, planned_secret_changes};
 use super::{
@@ -72,12 +72,57 @@ impl PluginOperationPlanDraft {
         Ok(draft)
     }
 
+    /// Construct package and impact evidence before a trusted host performs
+    /// executable-provider preflight.
+    ///
+    /// An unbound draft deliberately carries no provider evidence. For
+    /// install, upgrade, and enable, the host must resolve every Tool and MCP
+    /// provider, replace `providers`, call [`Self::validate`], and only then
+    /// call [`Self::bind`]. Uninstall and disable select no new providers, so
+    /// an empty provider set is already final for those actions.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_unbound(
+        action: PluginOperationAction,
+        package_id: impl Into<String>,
+        component_id: impl Into<String>,
+        packages: Vec<PlannedPackageTransition>,
+        workspace_impacts: Vec<PlannedWorkspaceImpact>,
+        impact: PlannedOperationImpact,
+        state: PlannedStateEvidence,
+    ) -> UseResult<Self> {
+        let mut impact = impact;
+        impact.okf_changes = planned_okf_changes(action, &packages)?;
+        let draft = Self {
+            schema: PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3.to_string(),
+            action,
+            package_id: package_id.into(),
+            component_id: component_id.into(),
+            package_lock_digest: None,
+            packages,
+            providers: Vec::new(),
+            workspace_impacts,
+            impact,
+            state,
+        };
+        draft.validate_unbound()?;
+        Ok(draft)
+    }
+
     pub fn from_json(input: &[u8]) -> UseResult<Self> {
         parse_contract(
             input,
             "plugin operation plan draft",
             super::plan::PLAN_ERROR,
             Self::validate,
+        )
+    }
+
+    pub fn from_unbound_json(input: &[u8]) -> UseResult<Self> {
+        parse_contract(
+            input,
+            "unbound plugin operation plan draft",
+            super::plan::PLAN_ERROR,
+            Self::validate_unbound,
         )
     }
 
@@ -90,6 +135,25 @@ impl PluginOperationPlanDraft {
             ));
         }
         self.clone().bind_unchecked(validation_binding()).map(drop)
+    }
+
+    /// Validate package, permission, delta, impact, and durable-state evidence
+    /// while requiring provider selection to remain explicitly pending.
+    ///
+    /// Synthetic providers exist only in the validation clone for actions
+    /// that select providers. They cannot be serialized from this method or
+    /// accepted by [`Self::bind`]. Retiring actions retain the required empty
+    /// provider set.
+    pub fn validate_unbound(&self) -> UseResult<()> {
+        if self.schema != PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3 || !self.providers.is_empty() {
+            return Err(plan_error(
+                "An unbound plugin operation draft must use the current schema and contain no provider evidence.",
+            ));
+        }
+        let mut validation = self.clone();
+        validation.providers =
+            unbound_validation_providers(validation.action, &validation.packages);
+        validation.bind_unchecked(validation_binding()).map(drop)
     }
 
     pub fn bind(self, binding: PluginOperationPlanBinding) -> UseResult<PluginOperationPlan> {
@@ -125,6 +189,64 @@ impl PluginOperationPlanDraft {
         plan.validate()?;
         Ok(plan)
     }
+}
+
+fn unbound_validation_providers(
+    action: PluginOperationAction,
+    packages: &[PlannedPackageTransition],
+) -> Vec<PlannedProviderEvidence> {
+    if matches!(
+        action,
+        PluginOperationAction::Uninstall | PluginOperationAction::Disable
+    ) {
+        return Vec::new();
+    }
+    let mut providers = packages
+        .iter()
+        .filter_map(|package| {
+            package
+                .after
+                .as_ref()
+                .map(|state| (package.package_id.as_str(), state))
+        })
+        .flat_map(|(package_id, state)| {
+            state.release.surfaces.iter().filter_map(move |surface| {
+                if !matches!(
+                    surface.kind,
+                    super::PluginSurfaceKind::Tool | super::PluginSurfaceKind::Mcp
+                ) {
+                    return None;
+                }
+                let reference = surface.reference();
+                let permission = state
+                    .permissions
+                    .surfaces
+                    .iter()
+                    .find(|permission| permission.surface == reference)?;
+                Some(PlannedProviderEvidence {
+                    surface: PlanQualifiedSurfaceRef {
+                        package_id: package_id.to_owned(),
+                        surface: reference,
+                    },
+                    provider_id: "a3s-use-unbound-provider".to_owned(),
+                    provider_build_id: "host-preflight-pending".to_owned(),
+                    capability_digest:
+                        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_owned(),
+                    semantics_profile_digest:
+                        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                            .to_owned(),
+                    enforcement: if permission.native_execution {
+                        PlanEnforcementProfile::Sandbox
+                    } else {
+                        PlanEnforcementProfile::Container
+                    },
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    providers.sort_by(|left, right| left.surface.cmp(&right.surface));
+    providers
 }
 
 fn validation_binding() -> PluginOperationPlanBinding {

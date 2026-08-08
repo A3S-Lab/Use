@@ -43,6 +43,11 @@ Completed in the Use repository:
 - dependency-forward install, one cutover, reverse uninstall and upgrade GC;
 - durable Registry cutover replay and exact lifecycle journals;
 - Workspace Grant composition, joint rollback, and drain-before-revoke;
+- authorization-safe two-pass provider binding from an unbound draft through
+  assigned-provider preflight, host policy, canonical Grant semantics, and a
+  drift-checked final immutable plan;
+- exact Add/Replace/Retain/Enable lifecycle-generation derivation plus
+  apply-time Grant and provider-evidence reconstruction contracts;
 - standalone executable Task, stdio MCP, Skill/UI, SQLite/FTS5 OKF, and
   explicitly configured real `a3s-flow` Native TypeScript lifecycle hosts;
 - typed Runtime Service endpoint consumption and an injected Gateway lifecycle
@@ -66,7 +71,15 @@ Status: in progress
   `RuntimeClientRegistry` objects, including mixed-surface packages.
 - [x] Bind canonical pre-confirmation Grant proposals into final
   provider/build/capability/enforcement/semantics evidence in A3S Use.
-- Reconstruct the exact selected provider evidence in the CLI apply path.
+- [x] Implement the unbound → provisional Grant/provider preflight → host
+  authority → canonical Grant/final provider protocol, including a final
+  policy fixed-point check.
+- [x] Derive exact managed generations for Add, Replace, Retain, and Enable;
+  reject missing prior generations and counter exhaustion.
+- [x] Expose apply-time Grant reconstruction and exact reviewed-provider
+  evidence verification without persisting process-local Runtime clients.
+- Wire the implemented two-pass planning and reconstruction contracts into the
+  shared CLI plan/apply path.
 - Implement exact-generation health, invocation, drain, and removal.
 - [x] Consume only Runtime-published generation-bound loopback Service
   endpoints and enforce Gateway drain/remove ordering in the shared lifecycle
