@@ -359,6 +359,24 @@ pub(super) fn plan_workspace_grants(
     enabled_before: bool,
     enabled_after: bool,
 ) -> UseResult<Option<PlannedWorkspaceGrantOperation>> {
+    plan_workspace_grants_with_validation(
+        draft,
+        binding,
+        snapshot,
+        enabled_before,
+        enabled_after,
+        false,
+    )
+}
+
+fn plan_workspace_grants_with_validation(
+    draft: &mut PluginOperationPlanDraft,
+    binding: &PluginOperationPlanBinding,
+    snapshot: &PluginWorkspaceGrantSnapshot,
+    enabled_before: bool,
+    enabled_after: bool,
+    allow_unbound_providers: bool,
+) -> UseResult<Option<PlannedWorkspaceGrantOperation>> {
     snapshot.validate()?;
     if !draft.workspace_impacts.is_empty()
         || snapshot.scope_id != binding.scope.id
@@ -449,7 +467,7 @@ pub(super) fn plan_workspace_grants(
                 enabled_before,
                 enabled_after,
             });
-            draft.validate()?;
+            validate_grant_planning_draft(draft, allow_unbound_providers)?;
         }
         return Ok(None);
     }
@@ -473,12 +491,23 @@ pub(super) fn plan_workspace_grants(
             enabled_before,
             enabled_after,
         });
-    draft.validate()?;
+    validate_grant_planning_draft(draft, allow_unbound_providers)?;
     Ok(Some(PlannedWorkspaceGrantOperation {
         snapshot: snapshot.clone(),
         change_set,
         ceilings,
     }))
+}
+
+fn validate_grant_planning_draft(
+    draft: &PluginOperationPlanDraft,
+    allow_unbound_providers: bool,
+) -> UseResult<()> {
+    if allow_unbound_providers && draft.providers.is_empty() {
+        draft.validate_unbound()
+    } else {
+        draft.validate()
+    }
 }
 
 /// Bind the canonical cognitive-package Grant impact to a host-owned draft.
@@ -499,7 +528,8 @@ pub fn bind_cognitive_package_grant_impacts(
     binding: &PluginOperationPlanBinding,
     snapshot: &PluginWorkspaceGrantSnapshot,
 ) -> UseResult<()> {
-    bind_cognitive_package_grants(draft, binding, snapshot).map(drop)
+    let (enabled_before, enabled_after) = grant_enablement(draft.action);
+    plan_workspace_grants(draft, binding, snapshot, enabled_before, enabled_after).map(drop)
 }
 
 /// Bind canonical Grant impacts and return only the pre-confirmation proposals
@@ -513,14 +543,15 @@ pub fn bind_cognitive_package_grants(
     binding: &PluginOperationPlanBinding,
     snapshot: &PluginWorkspaceGrantSnapshot,
 ) -> UseResult<CognitivePackageGrantPlan> {
-    let (enabled_before, enabled_after) = match draft.action {
-        a3s_use_core::PluginOperationAction::Install => (false, true),
-        a3s_use_core::PluginOperationAction::Upgrade => (true, true),
-        a3s_use_core::PluginOperationAction::Uninstall => (true, false),
-        a3s_use_core::PluginOperationAction::Enable => (false, true),
-        a3s_use_core::PluginOperationAction::Disable => (true, false),
-    };
-    let planned = plan_workspace_grants(draft, binding, snapshot, enabled_before, enabled_after)?;
+    let (enabled_before, enabled_after) = grant_enablement(draft.action);
+    let planned = plan_workspace_grants_with_validation(
+        draft,
+        binding,
+        snapshot,
+        enabled_before,
+        enabled_after,
+        true,
+    )?;
     let mut proposals = BTreeMap::new();
     if let Some(planned) = planned {
         for change in planned.change_set.changes {
@@ -536,6 +567,58 @@ pub fn bind_cognitive_package_grants(
         }
     }
     Ok(CognitivePackageGrantPlan { proposals })
+}
+
+fn grant_enablement(action: a3s_use_core::PluginOperationAction) -> (bool, bool) {
+    match action {
+        a3s_use_core::PluginOperationAction::Install => (false, true),
+        a3s_use_core::PluginOperationAction::Upgrade => (true, true),
+        a3s_use_core::PluginOperationAction::Uninstall => (true, false),
+        a3s_use_core::PluginOperationAction::Enable => (false, true),
+        a3s_use_core::PluginOperationAction::Disable => (true, false),
+    }
+}
+
+/// Re-derive the canonical pre-confirmation Grant proposals from an immutable
+/// reviewed plan and the same durable scope snapshot.
+///
+/// Apply-time provider reconstruction uses this adapter instead of persisting
+/// a second copy of Grant proposals. Every re-derived plan field and workspace
+/// impact must equal the reviewed plan before any Runtime provider is opened.
+pub fn reconstruct_cognitive_package_grants(
+    plan: &PluginOperationPlan,
+    snapshot: &PluginWorkspaceGrantSnapshot,
+) -> UseResult<CognitivePackageGrantPlan> {
+    plan.validate()?;
+    let mut draft = PluginOperationPlanDraft {
+        schema: a3s_use_core::PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3.to_owned(),
+        action: plan.action,
+        package_id: plan.package_id.clone(),
+        component_id: plan.component_id.clone(),
+        package_lock_digest: plan.package_lock_digest.clone(),
+        packages: plan.packages.clone(),
+        providers: plan.providers.clone(),
+        workspace_impacts: Vec::new(),
+        impact: plan.impact.clone(),
+        state: plan.state.clone(),
+    };
+    let binding = PluginOperationPlanBinding {
+        operation_id: plan.operation_id.clone(),
+        created_at_ms: plan.created_at_ms,
+        expires_at_ms: plan.expires_at_ms,
+        scope: plan.scope.clone(),
+        authority: plan.authority.clone(),
+    };
+    let grants = bind_cognitive_package_grants(&mut draft, &binding, snapshot)?;
+    let mut reconstructed = draft.bind(binding)?;
+    reconstructed.prior_package_lock_digest = plan.prior_package_lock_digest.clone();
+    reconstructed.validate()?;
+    if &reconstructed != plan {
+        return Err(authorization_error(
+            "Apply-time Grant reconstruction does not equal the immutable reviewed plan.",
+        ));
+    }
+    Ok(grants)
 }
 
 pub(super) async fn authorize_planned_operation(

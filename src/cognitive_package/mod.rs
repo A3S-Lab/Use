@@ -43,15 +43,20 @@ pub use enablement_plan::{
 };
 pub use grant::{
     bind_cognitive_package_grant_impacts, bind_cognitive_package_grants,
-    CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider,
-    CognitivePackageGrantPlan, StandaloneCognitivePackageAuthorizationProvider,
+    reconstruct_cognitive_package_grants, CognitivePackageAuthorizationEvidence,
+    CognitivePackageAuthorizationProvider, CognitivePackageGrantPlan,
+    StandaloneCognitivePackageAuthorizationProvider,
 };
 pub use hosts::{
     ManagedCognitivePackageLifecycleFactory, StandaloneCognitivePackageLifecycleFactory,
     A3S_FLOW_NATIVE_TS_COMPILER_ENV,
 };
 pub use native_provider::plan_native_provider_evidence;
-pub use provider_plan::{plan_cognitive_package_providers, CognitivePackageProviderPlan};
+pub use provider_plan::{
+    bind_cognitive_package_provider_plan, plan_cognitive_package_provider_generations,
+    plan_cognitive_package_providers, BoundCognitivePackageProviderPlan,
+    CognitivePackageProviderPlan,
+};
 pub use reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
 
 /// Stable user-level scope shared by the standalone facade and embedding A3S

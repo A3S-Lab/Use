@@ -171,9 +171,12 @@ fn host_grant_planner_matches_manager_planner_for_permission_bearing_user_instal
         host_grants.proposal(&expected_proposal.package_id),
         Some(expected_proposal)
     );
+    let host_plan = host_draft.bind(binding.clone()).unwrap();
+    let manager_plan = manager_draft.bind(binding).unwrap();
+    assert_eq!(host_plan, manager_plan);
     assert_eq!(
-        host_draft.bind(binding.clone()).unwrap(),
-        manager_draft.bind(binding).unwrap()
+        reconstruct_cognitive_package_grants(&host_plan, &snapshot).unwrap(),
+        host_grants
     );
 }
 
@@ -215,8 +218,17 @@ fn host_grant_planner_rejects_scope_revision_and_prebound_impact_drift() {
         "use.plugin.package_authorization_invalid"
     );
 
-    draft.workspace_impacts = source.workspace_impacts;
+    let mut missing_provider = draft.clone();
+    missing_provider.providers.clear();
     let snapshot = empty_snapshot(&binding.scope.id, draft.state.state_revision);
+    assert_eq!(
+        bind_cognitive_package_grant_impacts(&mut missing_provider, &binding, &snapshot)
+            .unwrap_err()
+            .code,
+        "use.plugin.plan_invalid"
+    );
+
+    draft.workspace_impacts = source.workspace_impacts;
     assert_eq!(
         bind_cognitive_package_grant_impacts(&mut draft, &binding, &snapshot)
             .unwrap_err()
