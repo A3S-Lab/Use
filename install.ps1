@@ -33,9 +33,12 @@ function Assert-DownloadUri([uri]$Uri, [switch]$AllowQuery) {
     Fail 'downloads require HTTPS; plain HTTP is allowed only for a loopback test server'
 }
 
-function Get-ReleaseFile([uri]$Uri, [string]$Destination) {
+function Invoke-ReleaseFileDownload([uri]$Uri, [string]$Destination) {
     $Handler = [Net.Http.HttpClientHandler]::new()
     $Handler.AllowAutoRedirect = $false
+    if ($Uri.IsLoopback) {
+        $Handler.UseProxy = $false
+    }
     $Client = [Net.Http.HttpClient]::new($Handler)
     $Client.DefaultRequestHeaders.UserAgent.ParseAdd('a3s-use-installer/1.0')
     try {
@@ -85,6 +88,21 @@ function Get-ReleaseFile([uri]$Uri, [string]$Destination) {
     finally {
         $Client.Dispose()
         $Handler.Dispose()
+    }
+}
+
+function Get-ReleaseFile([uri]$Uri, [string]$Destination) {
+    foreach ($Attempt in 1..3) {
+        try {
+            Invoke-ReleaseFileDownload $Uri $Destination
+            return
+        }
+        catch {
+            if ($Attempt -eq 3) {
+                throw
+            }
+            Start-Sleep -Milliseconds (250 * $Attempt)
+        }
     }
 }
 

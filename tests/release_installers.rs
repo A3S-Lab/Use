@@ -527,11 +527,14 @@ fn serve_request(stream: &mut TcpStream, files: &HashMap<String, Vec<u8>>) {
         Some(body) => ("200 OK", body),
         None => ("404 Not Found", b"not found"),
     };
-    write!(
+    if write!(
         stream,
         "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     )
-    .unwrap();
-    stream.write_all(body).unwrap();
+    .is_err()
+    {
+        return;
+    }
+    let _ = stream.write_all(body);
 }
