@@ -4,8 +4,9 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::plugin_lifecycle::{
-    PluginLifecycleAction, PluginLifecycleCheckpointOutcome, PluginLifecycleIntent,
-    PluginLifecycleIntentSpec, PluginLifecycleOperationStatus,
+    PluginLifecycleAction, PluginLifecycleCheckpointDiagnosticStatus,
+    PluginLifecycleCheckpointOutcome, PluginLifecycleIntent, PluginLifecycleIntentSpec,
+    PluginLifecycleOperationStatus, PLUGIN_LIFECYCLE_DIAGNOSTIC_SCHEMA,
 };
 
 const OPTIONAL_SKILL_PACKAGE: &str = r#"
@@ -142,6 +143,125 @@ async fn rejects_conflicting_operation_until_current_one_completes() {
 
     let error = store.begin(&second).await.unwrap_err();
     assert_eq!(error.code, "use.plugin.lifecycle_busy");
+}
+
+#[tokio::test]
+async fn rolling_back_operation_blocks_a_different_intent() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let first = intent("install:acme-guide:rolling-back");
+    let second = intent("install:acme-guide:replacement");
+    store.begin(&first).await.unwrap();
+    let rolling_back = store.start_rollback(&first).await.unwrap();
+    assert_eq!(
+        rolling_back.status,
+        PluginLifecycleOperationStatus::RollingBack
+    );
+
+    let error = store.begin(&second).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.lifecycle_busy");
+    assert_eq!(
+        store
+            .load_active(&first.scope, &first.package_id)
+            .await
+            .unwrap(),
+        Some(rolling_back)
+    );
+}
+
+#[tokio::test]
+async fn lifecycle_diagnostics_project_bounded_non_secret_checkpoint_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let intent = intent("install:acme-guide:diagnostic");
+    let begun = store.begin(&intent).await.unwrap();
+    let package = begun.next_checkpoint().unwrap();
+    store
+        .record_failure(
+            &intent,
+            &package.idempotency_key,
+            "use.plugin.download_failed",
+            evidence('a'),
+            10,
+        )
+        .await
+        .unwrap();
+
+    let diagnostic = store
+        .diagnose(&intent.scope, &intent.package_id)
+        .await
+        .unwrap();
+    assert_eq!(diagnostic.schema, PLUGIN_LIFECYCLE_DIAGNOSTIC_SCHEMA);
+    assert_eq!(diagnostic.scope, intent.scope);
+    assert_eq!(diagnostic.package_id, intent.package_id);
+    assert!(diagnostic.previous.is_none());
+    let latest = diagnostic.latest.as_ref().unwrap();
+    assert_eq!(latest.operation_id, intent.operation_id);
+    assert_eq!(latest.status, PluginLifecycleOperationStatus::Applying);
+    assert_eq!(latest.completed_checkpoints, 0);
+    assert_eq!(latest.total_checkpoints, intent.checkpoints.len() as u32);
+    assert_eq!(
+        latest.checkpoints[0].status,
+        PluginLifecycleCheckpointDiagnosticStatus::Failed
+    );
+    assert_eq!(
+        latest.checkpoints[0].error_code.as_deref(),
+        Some("use.plugin.download_failed")
+    );
+    assert_eq!(
+        latest.checkpoints[0].evidence_digest.as_deref(),
+        Some(evidence('a').as_str())
+    );
+    assert_eq!(latest.checkpoints[0].observed_at_ms, Some(10));
+    assert_eq!(
+        latest.checkpoints[1].status,
+        PluginLifecycleCheckpointDiagnosticStatus::Pending
+    );
+
+    let value = serde_json::to_value(&diagnostic).unwrap();
+    let encoded = serde_json::to_string(&value).unwrap();
+    assert!(!encoded.contains("idempotencyKey"));
+    assert!(!encoded.contains("credentials"));
+    assert!(!encoded.contains("token"));
+}
+
+#[tokio::test]
+async fn lifecycle_diagnostics_distinguish_latest_and_previous_operations() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let first = intent("install:acme-guide:diagnostic-first");
+    let mut record = store.begin(&first).await.unwrap();
+    let mut completed_at_ms = 10;
+    while let Some(checkpoint) = record.next_checkpoint().cloned() {
+        record = store
+            .record_checkpoint(
+                &first,
+                &checkpoint.idempotency_key,
+                PluginLifecycleCheckpointOutcome::Applied,
+                evidence('a'),
+                None,
+                completed_at_ms,
+            )
+            .await
+            .unwrap();
+        completed_at_ms += 10;
+    }
+    store.complete(&first, completed_at_ms).await.unwrap();
+
+    let second = intent("install:acme-guide:diagnostic-second");
+    store.begin(&second).await.unwrap();
+    let diagnostic = store
+        .diagnose(&second.scope, &second.package_id)
+        .await
+        .unwrap();
+
+    let latest = diagnostic.latest.unwrap();
+    assert_eq!(latest.operation_id, second.operation_id);
+    assert_eq!(latest.status, PluginLifecycleOperationStatus::Applying);
+    let previous = diagnostic.previous.unwrap();
+    assert_eq!(previous.operation_id, first.operation_id);
+    assert_eq!(previous.status, PluginLifecycleOperationStatus::Completed);
+    assert_eq!(previous.completed_checkpoints, previous.total_checkpoints);
 }
 
 #[tokio::test]

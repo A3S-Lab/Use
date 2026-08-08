@@ -136,6 +136,7 @@ pub(crate) async fn extension_inspect(package_id: &str) -> UseResult<CommandOutp
             format!("Extension '{package_id}' is not installed."),
         ));
     };
+    let lifecycle = extension_lifecycle_diagnostic(package_id).await?;
     Ok(CommandOutput::success(
         format!(
             "Extension '{}' is {} on route '{}'.",
@@ -149,9 +150,34 @@ pub(crate) async fn extension_inspect(package_id: &str) -> UseResult<CommandOutp
         ),
         serde_json::json!({
             "extension": extension_value(&extension),
-            "manifest": extension.manifest
+            "manifest": extension.manifest,
+            "lifecycle": lifecycle
         }),
     ))
+}
+
+#[cfg(feature = "extensions")]
+async fn extension_lifecycle_diagnostic(package_id: &str) -> UseResult<serde_json::Value> {
+    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let scope = a3s_use_core::PlanScope {
+        kind: a3s_use_core::PlanScopeKind::User,
+        id: crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
+    };
+    let diagnostic =
+        crate::plugin_lifecycle::PluginLifecycleJournalStore::from_extension_paths(&paths)
+            .diagnose(&scope, package_id)
+            .await?;
+    serde_json::to_value(diagnostic).map_err(|error| {
+        UseError::new(
+            "use.plugin.lifecycle_diagnostic_invalid",
+            format!("Failed to encode cognitive-package lifecycle diagnostics: {error}"),
+        )
+    })
+}
+
+#[cfg(not(feature = "extensions"))]
+async fn extension_lifecycle_diagnostic(_package_id: &str) -> UseResult<serde_json::Value> {
+    Ok(serde_json::Value::Null)
 }
 
 pub(crate) async fn extension_planning_evidence(package_id: &str) -> UseResult<CommandOutput> {
