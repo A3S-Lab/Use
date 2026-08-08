@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use a3s_runtime::contract::{RuntimeObservation, RuntimeServiceEndpoint, RuntimeUnitClass};
+use a3s_runtime::{ProviderId, RuntimeClientRegistry};
 use a3s_use_core::{
     PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
 };
@@ -13,9 +14,9 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
 use crate::plugin_runtime::{
-    RuntimeBindingObservedState, RuntimeBindingReceipt, RuntimeBindingStore, RuntimeEndpointRef,
-    RuntimeMcpInitializeEvidence, RuntimeProviderSelection, RuntimeSurfaceContract,
-    RuntimeSurfacePlan, SelectedRuntimeSurface,
+    PluginRuntimeClient, RuntimeBindingObservedState, RuntimeBindingReceipt, RuntimeBindingStore,
+    RuntimeEndpointRef, RuntimeMcpInitializeEvidence, RuntimeProviderSelection,
+    RuntimeSurfaceContract, RuntimeSurfacePlan, SelectedRuntimeSurface,
 };
 
 use super::{
@@ -95,6 +96,7 @@ pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
 pub struct RuntimePluginSurfaceLifecycleHost {
     package_root: PathBuf,
     selection: RuntimeProviderSelection,
+    registry: Arc<RuntimeClientRegistry>,
     store: RuntimeBindingStore,
     readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
     deadline_at_ms: Option<u64>,
@@ -104,12 +106,14 @@ impl RuntimePluginSurfaceLifecycleHost {
     pub fn new(
         package_root: impl Into<PathBuf>,
         selection: RuntimeProviderSelection,
+        registry: Arc<RuntimeClientRegistry>,
         store: RuntimeBindingStore,
         readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
     ) -> Self {
         Self {
             package_root: package_root.into(),
             selection,
+            registry,
             store,
             readiness,
             deadline_at_ms: None,
@@ -333,7 +337,16 @@ impl RuntimePluginSurfaceLifecycleHost {
         else {
             return Ok(None);
         };
-        validate_selected_receipt(intent, selected, &receipt)?;
+        if let Err(error) = validate_selected_receipt(intent, selected, &receipt) {
+            if receipt.package_digest() != intent.package_digest
+                || receipt.generation() != intent.generation
+            {
+                return Err(error);
+            }
+            self.retire_binding(intent, &receipt, idempotency_key)
+                .await?;
+            return Ok(None);
+        }
         let observation = selected.client().observe_binding(&receipt).await?;
         let ready = matches!(
             (&receipt, observation.state),
@@ -356,7 +369,7 @@ impl RuntimePluginSurfaceLifecycleHost {
             )
             .map(Some);
         }
-        self.retire_binding(intent, selected, &receipt, idempotency_key)
+        self.retire_binding(intent, &receipt, idempotency_key)
             .await?;
         Ok(None)
     }
@@ -386,14 +399,12 @@ impl RuntimePluginSurfaceLifecycleHost {
                 "A different Runtime binding generation was preserved during lifecycle cleanup.",
             ));
         }
-        let selected = self.selected(intent, kind, surface_id)?;
-        validate_selected_receipt(intent, selected, &receipt)?;
         if let RuntimeBindingReceipt::Service(service) = &receipt {
+            let client = self.client_for_receipt(&receipt).await?;
             self.readiness
                 .drain_service(intent, service, idempotency_key)
                 .await?;
-            selected
-                .client()
+            client
                 .stop_service(
                     service,
                     request_id("stop", idempotency_key),
@@ -429,9 +440,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                 "A different Runtime binding generation was preserved during lifecycle cleanup.",
             ));
         }
-        let selected = self.selected(intent, kind, surface_id)?;
-        validate_selected_receipt(intent, selected, &receipt)?;
-        self.retire_binding(intent, selected, &receipt, idempotency_key)
+        self.retire_binding(intent, &receipt, idempotency_key)
             .await?;
         projection_evidence(label, intent, surface_id, idempotency_key)
     }
@@ -439,18 +448,17 @@ impl RuntimePluginSurfaceLifecycleHost {
     async fn retire_binding(
         &self,
         intent: &PluginLifecycleIntent,
-        selected: &SelectedRuntimeSurface,
         receipt: &RuntimeBindingReceipt,
         idempotency_key: &str,
     ) -> UseResult<()> {
         match receipt {
             RuntimeBindingReceipt::Task(_) => {}
             RuntimeBindingReceipt::Service(service) => {
+                let client = self.client_for_receipt(receipt).await?;
                 self.readiness
                     .drain_service(intent, service, idempotency_key)
                     .await?;
-                selected
-                    .client()
+                client
                     .stop_service(
                         service,
                         request_id("stop", idempotency_key),
@@ -460,8 +468,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                 self.readiness
                     .remove_service(intent, service, idempotency_key)
                     .await?;
-                selected
-                    .client()
+                client
                     .remove_service(
                         service,
                         request_id("remove", idempotency_key),
@@ -472,6 +479,33 @@ impl RuntimePluginSurfaceLifecycleHost {
         }
         self.store.remove(receipt).await?;
         Ok(())
+    }
+
+    async fn client_for_receipt(
+        &self,
+        receipt: &RuntimeBindingReceipt,
+    ) -> UseResult<PluginRuntimeClient> {
+        let provider_id = ProviderId::parse(receipt.provider_id()).map_err(|error| {
+            runtime_lifecycle_error(
+                "use.plugin.runtime_lifecycle_binding_mismatch",
+                format!("The Runtime binding provider identity is invalid: {error}"),
+            )
+        })?;
+        let client = self
+            .registry
+            .connect(&provider_id)
+            .await
+            .map_err(|error| {
+                runtime_lifecycle_error(
+                    "use.plugin.runtime_provider_unavailable",
+                    format!(
+                        "Failed to reconnect the Runtime provider recorded by the binding receipt: {error}"
+                    ),
+                )
+            })?;
+        let client = PluginRuntimeClient::new(client);
+        client.verify_binding_provider(receipt).await?;
+        Ok(client)
     }
 
     fn selected(
@@ -727,10 +761,44 @@ fn validate_selected_receipt(
     if common && exact {
         Ok(())
     } else {
+        let mut mismatches = Vec::new();
+        if receipt.surface() != &plan.surface() {
+            mismatches.push("surface");
+        }
+        if receipt.scope() != &intent.scope {
+            mismatches.push("scope");
+        }
+        if receipt.package_digest() != intent.package_digest {
+            mismatches.push("packageDigest");
+        }
+        if receipt.generation() != intent.generation {
+            mismatches.push("generation");
+        }
+        if receipt.provider_id() != provider.provider_id {
+            mismatches.push("providerId");
+        }
+        if receipt.provider_build_id() != provider.provider_build_id {
+            mismatches.push("providerBuildId");
+        }
+        if receipt.capability_digest() != provider.capability_digest {
+            mismatches.push("capabilityDigest");
+        }
+        if receipt.semantics_profile_digest() != provider.semantics_profile_digest {
+            mismatches.push("semanticsProfileDigest");
+        }
+        if !exact {
+            mismatches.push("surfaceContract");
+        }
         Err(runtime_lifecycle_error(
             "use.plugin.runtime_lifecycle_binding_mismatch",
-            "The Runtime binding receipt does not match the selected lifecycle generation.",
-        ))
+            format!(
+                "The Runtime binding receipt does not match the selected lifecycle generation; mismatched evidence: {}.",
+                mismatches.join(", ")
+            ),
+        )
+        .with_detail("mismatches", serde_json::json!(mismatches))
+        .with_detail("intentGeneration", serde_json::json!(intent.generation))
+        .with_detail("receiptGeneration", serde_json::json!(receipt.generation())))
     }
 }
 

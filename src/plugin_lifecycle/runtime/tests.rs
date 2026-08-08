@@ -51,6 +51,7 @@ async fn native_tool_and_stdio_mcp_remain_static_launchers() {
     let host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         RuntimeProviderSelection::default(),
+        Arc::new(RuntimeClientRegistry::new()),
         RuntimeBindingStore::new(temporary.path()),
         readiness.clone(),
     );
@@ -127,7 +128,7 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     let mcp_plan = mcp_plan(&intent, mcp);
     let tool_runtime = Arc::new(FakeRuntime::new(capabilities(&tool_plan, "tool-runtime")));
     let mcp_runtime = Arc::new(FakeRuntime::new(capabilities(&mcp_plan, "mcp-runtime")));
-    let selection = selection(
+    let (selection, registry) = selection(
         vec![tool_plan.clone(), mcp_plan.clone()],
         tool_runtime.clone(),
         mcp_runtime.clone(),
@@ -139,6 +140,7 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     let host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         selection,
+        registry,
         store.clone(),
         readiness.clone(),
     );
@@ -247,13 +249,13 @@ async fn runtime_lifecycle_prepares_next_generation_and_retires_only_the_prior_g
     let next_runtime = Arc::new(FakeRuntime::new(capabilities(&next_plan, "tool-runtime")));
     let prior_unused_mcp = Arc::new(FakeRuntime::new(capabilities(&prior_plan, "mcp-runtime")));
     let next_unused_mcp = Arc::new(FakeRuntime::new(capabilities(&next_plan, "mcp-runtime")));
-    let prior_selection = selection(
+    let (prior_selection, prior_registry) = selection(
         vec![prior_plan.clone()],
         prior_runtime.clone(),
         prior_unused_mcp,
     )
     .await;
-    let next_selection = selection(
+    let (next_selection, next_registry) = selection(
         vec![next_plan.clone()],
         next_runtime.clone(),
         next_unused_mcp,
@@ -265,12 +267,14 @@ async fn runtime_lifecycle_prepares_next_generation_and_retires_only_the_prior_g
     let prior_host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         prior_selection,
+        prior_registry,
         store.clone(),
         readiness.clone(),
     );
     let next_host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         next_selection,
+        next_registry,
         store.clone(),
         readiness,
     );
@@ -325,6 +329,161 @@ async fn runtime_lifecycle_prepares_next_generation_and_retires_only_the_prior_g
 }
 
 #[tokio::test]
+async fn runtime_reenable_replaces_a_stopped_binding_with_new_authorization_semantics() {
+    let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
+    let prior_intent = intent_generation(&manifest, 23, PluginLifecycleAction::Install);
+    let next_intent = PluginLifecycleIntent::from_manifest(
+        PluginLifecycleIntentSpec {
+            operation_id: "runtime-generation-23-reauthorized".to_string(),
+            plan_digest: format!("sha256:{}", "2".repeat(64)),
+            scope: prior_intent.scope.clone(),
+            package_id: prior_intent.package_id.clone(),
+            package_digest: prior_intent.package_digest.clone(),
+            manifest_digest: prior_intent.manifest_digest.clone(),
+            generation: prior_intent.generation,
+            action: PluginLifecycleAction::Enable,
+        },
+        &manifest,
+    )
+    .unwrap();
+    let tool = manifest
+        .tools
+        .iter()
+        .find(|surface| matches!(&surface.workload, ToolWorkload::Service(_)))
+        .unwrap();
+    let prior_plan = tool_plan(&prior_intent, tool);
+    let next_plan = tool_plan(&next_intent, tool);
+    assert_ne!(
+        prior_plan.spec().semantics_profile_digest,
+        next_plan.spec().semantics_profile_digest
+    );
+
+    let runtime = Arc::new(FakeRuntime::new(capabilities(&prior_plan, "tool-runtime")));
+    let prior_unused_mcp = Arc::new(FakeRuntime::new(capabilities(&prior_plan, "mcp-runtime")));
+    let next_unused_mcp = Arc::new(FakeRuntime::new(capabilities(&next_plan, "mcp-runtime")));
+    let (prior_selection, prior_registry) =
+        selection(vec![prior_plan.clone()], runtime.clone(), prior_unused_mcp).await;
+    let (next_selection, next_registry) =
+        selection(vec![next_plan.clone()], runtime.clone(), next_unused_mcp).await;
+    let temporary = tempfile::tempdir().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let readiness = Arc::new(RecordingReadiness::default());
+    let prior_host = RuntimePluginSurfaceLifecycleHost::new(
+        package_root(),
+        prior_selection,
+        prior_registry,
+        store.clone(),
+        readiness.clone(),
+    );
+    let next_host = RuntimePluginSurfaceLifecycleHost::new(
+        package_root(),
+        next_selection,
+        next_registry,
+        store.clone(),
+        readiness.clone(),
+    );
+
+    prior_host
+        .prepare_tool(
+            &prior_intent,
+            tool,
+            key(&prior_intent, PluginSurfaceKind::Tool, &tool.id),
+        )
+        .await
+        .unwrap();
+    prior_host
+        .stop_tool(&prior_intent, tool, "disable-prior-binding")
+        .await
+        .unwrap();
+    next_host
+        .prepare_tool(
+            &next_intent,
+            tool,
+            key(&next_intent, PluginSurfaceKind::Tool, &tool.id),
+        )
+        .await
+        .unwrap();
+
+    let receipt = store
+        .get_generation(
+            &next_intent.scope,
+            &next_plan.surface(),
+            next_intent.generation,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        receipt.semantics_profile_digest(),
+        next_plan
+            .spec()
+            .semantics_profile_digest
+            .as_deref()
+            .unwrap()
+    );
+    assert_eq!(runtime.apply_count.load(Ordering::SeqCst), 2);
+    assert_eq!(runtime.stop_count.load(Ordering::SeqCst), 1);
+    assert_eq!(runtime.remove_count.load(Ordering::SeqCst), 1);
+    assert_eq!(readiness.drains.load(Ordering::SeqCst), 2);
+    assert_eq!(readiness.removals.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn runtime_retirement_resolves_the_exact_provider_from_the_binding_receipt() {
+    let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
+    let intent = intent_generation(&manifest, 29, PluginLifecycleAction::Install);
+    let tool = manifest
+        .tools
+        .iter()
+        .find(|surface| matches!(&surface.workload, ToolWorkload::Service(_)))
+        .unwrap();
+    let plan = tool_plan(&intent, tool);
+    let runtime = Arc::new(FakeRuntime::new(capabilities(&plan, "tool-runtime")));
+    let unused_mcp = Arc::new(FakeRuntime::new(capabilities(&plan, "mcp-runtime")));
+    let (selection, registry) = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
+    let temporary = tempfile::tempdir().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let readiness = Arc::new(RecordingReadiness::default());
+    let activation = RuntimePluginSurfaceLifecycleHost::new(
+        package_root(),
+        selection,
+        registry.clone(),
+        store.clone(),
+        readiness.clone(),
+    );
+    activation
+        .prepare_tool(
+            &intent,
+            tool,
+            key(&intent, PluginSurfaceKind::Tool, &tool.id),
+        )
+        .await
+        .unwrap();
+
+    let retirement = RuntimePluginSurfaceLifecycleHost::new(
+        package_root(),
+        RuntimeProviderSelection::default(),
+        registry,
+        store.clone(),
+        readiness.clone(),
+    );
+    retirement
+        .remove_tool(&intent, tool, "receipt-owned-retirement")
+        .await
+        .unwrap();
+
+    assert!(store
+        .get_generation(&intent.scope, &plan.surface(), intent.generation)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(runtime.stop_count.load(Ordering::SeqCst), 1);
+    assert_eq!(runtime.remove_count.load(Ordering::SeqCst), 1);
+    assert_eq!(readiness.drains.load(Ordering::SeqCst), 1);
+    assert_eq!(readiness.removals.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn gateway_drain_failure_preserves_runtime_and_binding_for_replay() {
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
     let intent = intent(&manifest);
@@ -336,7 +495,7 @@ async fn gateway_drain_failure_preserves_runtime_and_binding_for_replay() {
     let plan = tool_plan(&intent, tool);
     let runtime = Arc::new(FakeRuntime::new(capabilities(&plan, "tool-runtime")));
     let unused_mcp = Arc::new(FakeRuntime::new(capabilities(&plan, "mcp-runtime")));
-    let selection = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
+    let (selection, registry) = selection(vec![plan.clone()], runtime.clone(), unused_mcp).await;
     let readiness = Arc::new(RecordingReadiness {
         fail_drain: true,
         ..RecordingReadiness::default()
@@ -346,6 +505,7 @@ async fn gateway_drain_failure_preserves_runtime_and_binding_for_replay() {
     let host = RuntimePluginSurfaceLifecycleHost::new(
         package_root(),
         selection,
+        registry,
         store.clone(),
         readiness.clone(),
     );
@@ -602,7 +762,7 @@ async fn selection(
     plans: Vec<RuntimeSurfacePlan>,
     tool: Arc<FakeRuntime>,
     mcp: Arc<FakeRuntime>,
-) -> RuntimeProviderSelection {
+) -> (RuntimeProviderSelection, Arc<RuntimeClientRegistry>) {
     let mut registry = RuntimeClientRegistry::new();
     let providers: [(&str, Arc<dyn RuntimeClient>); 2] =
         [("tool-runtime", tool), ("mcp-runtime", mcp)];
@@ -625,10 +785,12 @@ async fn selection(
             RuntimeProviderAssignment::new(plan.surface(), provider).unwrap()
         })
         .collect();
-    RuntimeProviderSelector::new(&registry)
+    let registry = Arc::new(registry);
+    let selection = RuntimeProviderSelector::new(&registry)
         .select(plans, assignments)
         .await
-        .unwrap()
+        .unwrap();
+    (selection, registry)
 }
 
 fn tool_plan(intent: &PluginLifecycleIntent, surface: &ToolSurface) -> RuntimeSurfacePlan {

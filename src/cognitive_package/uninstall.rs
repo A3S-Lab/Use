@@ -120,7 +120,7 @@ impl CognitivePackageManager {
                 manifests.insert(package_id.clone(), extension.manifest.clone());
             }
             for manifest in manifests.values() {
-                self.lifecycle.validate_manifest(manifest)?;
+                self.lifecycle.validate_manifest_for_retirement(manifest)?;
             }
             let snapshot = self.registry.snapshot().await?;
             let grant_snapshot = self
@@ -158,7 +158,7 @@ impl CognitivePackageManager {
         };
         self.authorization.verify_plan(&pending.envelope)?;
         for manifest in pending.manifests.values() {
-            self.lifecycle.validate_manifest(manifest)?;
+            self.lifecycle.validate_manifest_for_retirement(manifest)?;
         }
         let dispositions = pending_dispositions(&pending)?;
         let apply_time = now_ms()?;

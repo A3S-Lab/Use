@@ -20,7 +20,7 @@ use super::{
     UpgradeDisposition,
 };
 
-const PLAN_LIFETIME_MS: u64 = 60 * 60 * 1000;
+pub(super) const PLAN_LIFETIME_MS: u64 = 60 * 60 * 1000;
 
 pub(super) struct PlannedGraphOperation {
     pub envelope: PluginOperationPlanEnvelope,
@@ -45,64 +45,19 @@ pub(super) fn enablement_operation(
     grant_snapshot: &PluginWorkspaceGrantSnapshot,
     authorization: &dyn CognitivePackageAuthorizationProvider,
 ) -> UseResult<PlannedEnablementOperation> {
-    request.validate()?;
-    if package.package_id() != request.package_id.as_str()
-        || manifest.package_id != request.package_id.as_str()
-    {
+    if manifest.package_id != request.package_id.as_str() {
         return Err(package_manager_error(
             "use.plugin.package_enablement_plan_invalid",
-            "The installed package, manifest, and enablement request identities disagree.",
+            "The admitted manifest and enablement request identities disagree.",
         ));
     }
-    let state = package
-        .catalog
-        .selected_state(&all_catalog_surfaces(package))?;
-    let transition = PlannedPackageTransition::resolved(
-        package.package_id(),
-        PlanPackageRole::Root,
-        PlanPackageChangeKind::Retain,
-        Some(state.clone()),
-        Some(state.clone()),
-        None,
-    )?;
-    let providers = if request.enabled {
-        let manifests = BTreeMap::from([(package.package_id().to_string(), manifest.clone())]);
-        operation_provider_evidence(std::iter::once(package), &manifests, authorization)?
-    } else {
-        Vec::new()
-    };
-    let action = if request.enabled {
-        PluginOperationAction::Enable
-    } else {
-        PluginOperationAction::Disable
-    };
-    let drain_required = !request.enabled
-        && state
-            .permissions
-            .surfaces
-            .iter()
-            .any(|permission| permission.private_service);
-    let mut draft = PluginOperationPlanDraft::new(
-        action,
-        package.package_id(),
-        format!("use/{}", package.package_id()),
-        vec![transition],
-        providers,
-        Vec::new(),
-        PlannedOperationImpact {
-            download_bytes: 0,
-            installed_bytes_after: package.catalog.record.package.expanded_bytes,
-            reclaimed_bytes: 0,
-            drain_required,
-            retained_data: !request.enabled,
-            okf_changes: Vec::new(),
-        },
-        PlannedStateEvidence {
-            state_revision: package_state_revision(registry_generation)?,
-            capability_generation: registry_generation,
-            receipt_digest: Some(receipt_digest),
-        },
-    )?;
+    let mut draft = enablement_draft(request, package, receipt_digest, registry_generation)?;
+    let manifests = BTreeMap::from([(package.package_id().to_string(), manifest.clone())]);
+    if request.enabled {
+        draft.providers =
+            operation_provider_evidence(std::iter::once(package), &manifests, authorization)?;
+        draft.validate()?;
+    }
     let authority = authorization.bind_authority(&draft)?;
     let expires_at_ms = created_at_ms.checked_add(PLAN_LIFETIME_MS).ok_or_else(|| {
         package_manager_error(
@@ -138,6 +93,63 @@ pub(super) fn enablement_operation(
         envelope: PluginOperationPlanEnvelope::new(plan)?,
         grants,
     })
+}
+
+pub(super) fn enablement_draft(
+    request: &CognitivePackageEnablementRequest,
+    package: &LockedPluginPackage,
+    receipt_digest: String,
+    registry_generation: u64,
+) -> UseResult<PluginOperationPlanDraft> {
+    request.validate()?;
+    if package.package_id() != request.package_id.as_str() {
+        return Err(package_manager_error(
+            "use.plugin.package_enablement_plan_invalid",
+            "The installed package and enablement request identities disagree.",
+        ));
+    }
+    let state = package
+        .catalog
+        .selected_state(&all_catalog_surfaces(package))?;
+    let transition = PlannedPackageTransition::resolved(
+        package.package_id(),
+        PlanPackageRole::Root,
+        PlanPackageChangeKind::Retain,
+        Some(state.clone()),
+        Some(state.clone()),
+        None,
+    )?;
+    let action = if request.enabled {
+        PluginOperationAction::Enable
+    } else {
+        PluginOperationAction::Disable
+    };
+    let drain_required = !request.enabled
+        && state
+            .permissions
+            .surfaces
+            .iter()
+            .any(|permission| permission.private_service);
+    PluginOperationPlanDraft::new_unbound(
+        action,
+        package.package_id(),
+        format!("use/{}", package.package_id()),
+        vec![transition],
+        Vec::new(),
+        PlannedOperationImpact {
+            download_bytes: 0,
+            installed_bytes_after: package.catalog.record.package.expanded_bytes,
+            reclaimed_bytes: 0,
+            drain_required,
+            retained_data: !request.enabled,
+            okf_changes: Vec::new(),
+        },
+        PlannedStateEvidence {
+            state_revision: package_state_revision(registry_generation)?,
+            capability_generation: registry_generation,
+            receipt_digest: Some(receipt_digest),
+        },
+    )
 }
 
 #[allow(clippy::too_many_arguments)]

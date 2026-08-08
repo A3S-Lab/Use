@@ -244,6 +244,19 @@ and release descriptors before lifecycle admission. Required provider failure
 stays unpublished; there is no `PATH` lookup, unsigned native fallback, or
 provider substitution.
 
+The installed schema-v3 receipt retains the exact signed planning bundle after
+validating it against catalog, manifest, and package bytes. A host can therefore
+plan enablement after restart without fetching mutable Registry metadata. It
+persists the bundle, Grant snapshot, and provider generations with the reviewed
+plan, then reconstructs and compares the provider evidence again at apply.
+
+Retirement is not provider selection. Disable, uninstall, and prior-generation
+upgrade cleanup reconnect the provider named by the durable binding receipt.
+Services reverify provider ID, build, normalized capabilities, and lifecycle
+features before Gateway drain and provider removal. A stopped same-generation
+binding whose authorization semantics changed is retired before re-enable
+creates its replacement.
+
 Persistent Services consume only the exact loopback endpoint published inside
 the matching Runtime observation. During retirement, the Gateway binding is
 hidden and drained before the Runtime unit is stopped; the route is removed

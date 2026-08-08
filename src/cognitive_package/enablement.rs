@@ -308,7 +308,12 @@ impl CognitivePackageManager {
         let (extension, locked_package) = self
             .required_enablement_extension(&request.package_id)
             .await?;
-        self.lifecycle.validate_manifest(&extension.manifest)?;
+        if request.enabled {
+            self.lifecycle.validate_manifest(&extension.manifest)?;
+        } else {
+            self.lifecycle
+                .validate_manifest_for_retirement(&extension.manifest)?;
+        }
         let admitted_at_ms = now_ms()?;
         let reconciled = reconcile_state(
             &self.scope,
@@ -551,7 +556,12 @@ impl CognitivePackageManager {
         let (extension, _) = self
             .required_enablement_extension(&active.request.package_id)
             .await?;
-        self.lifecycle.validate_manifest(&extension.manifest)?;
+        if active.request.enabled {
+            self.lifecycle.validate_manifest(&extension.manifest)?;
+        } else {
+            self.lifecycle
+                .validate_manifest_for_retirement(&extension.manifest)?;
+        }
         let artifact = artifact_state(&extension)?;
         if current.artifact.as_ref() != Some(&artifact) {
             return Err(package_manager_error(

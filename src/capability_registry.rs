@@ -1273,6 +1273,7 @@ extension "acme/workflow" {
             trust: a3s_use_extension::ExtensionTrust::LocalExplicit,
             registry: None,
             verified_catalog: None,
+            planning_bundle: None,
             installed_at_unix: 0,
             enabled,
             lifecycle_generation: Some(1),

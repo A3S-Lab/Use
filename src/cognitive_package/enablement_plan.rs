@@ -1,7 +1,12 @@
+use std::collections::BTreeMap;
+
 use a3s_use_core::{
-    PlanPackageChangeKind, PluginDesiredState, PluginHostPackageState, PluginOperationAction,
-    PluginOperationPlanEnvelope, UseError, UseResult, PLUGIN_OPERATION_PLAN_SCHEMA_V4,
+    LockedPluginPackage, PlanAuthority, PlanPackageChangeKind, PlanScope, PluginDesiredState,
+    PluginHostPackageState, PluginOperationAction, PluginOperationPlan, PluginOperationPlanBinding,
+    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPlanningBundle,
+    PluginWorkspaceGrantSnapshot, UseError, UseResult, PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
+use a3s_use_extension::ExtensionManifest;
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -11,11 +16,106 @@ use super::enablement::{
     CognitivePackageEnablementResult,
 };
 use super::enablement_store::operation_conflict;
-use super::plan::{enablement_operation, now_ms, package_state_revision};
-use super::{package_manager_error, CognitivePackageManager};
+use super::plan::{
+    enablement_draft, enablement_operation, now_ms, package_state_revision, PLAN_LIFETIME_MS,
+};
+use super::{
+    package_manager_error, CognitivePackageAuthorizationProvider, CognitivePackageManager,
+};
 
 pub const COGNITIVE_PACKAGE_ENABLEMENT_PLAN_RESULT_SCHEMA: &str =
     "a3s.use.cognitive-package-enablement-plan-result.v1";
+
+/// Provider-neutral evidence for one exact installed enablement transition.
+///
+/// The signed planning bundle and Grant snapshot are captured from Use-owned
+/// installed state. A trusted host binds Runtime providers and policy around
+/// this draft, persists those same inputs, and reconstructs them at apply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CognitivePackageEnablementDraft {
+    pub request: CognitivePackageEnablementRequest,
+    pub planned_at_ms: u64,
+    pub expires_at_ms: u64,
+    pub scope: PlanScope,
+    pub state: PluginHostPackageState,
+    pub draft: PluginOperationPlanDraft,
+    pub grant_snapshot: PluginWorkspaceGrantSnapshot,
+    pub planning_bundles: BTreeMap<String, PluginPlanningBundle>,
+    pub installed_generations: BTreeMap<String, u64>,
+    package: LockedPluginPackage,
+    manifest: ExtensionManifest,
+    receipt_digest: String,
+    registry_generation: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CognitivePackageEnablementPreparation {
+    Outcome(Box<CognitivePackageEnablementPlanResult>),
+    Draft(Box<CognitivePackageEnablementDraft>),
+}
+
+impl CognitivePackageEnablementDraft {
+    pub fn provisional_binding(&self, authority: PlanAuthority) -> PluginOperationPlanBinding {
+        PluginOperationPlanBinding {
+            operation_id: self.request.operation_id.clone(),
+            created_at_ms: self.planned_at_ms,
+            expires_at_ms: self.expires_at_ms,
+            scope: self.scope.clone(),
+            authority,
+        }
+    }
+
+    pub fn bind(
+        self,
+        plan: PluginOperationPlan,
+    ) -> UseResult<CognitivePackageEnablementPlanResult> {
+        plan.validate()?;
+        if plan.operation_id != self.request.operation_id
+            || plan.created_at_ms != self.planned_at_ms
+            || plan.expires_at_ms != self.expires_at_ms
+            || plan.scope != self.scope
+            || plan.action != self.draft.action
+            || plan.package_id != self.draft.package_id
+            || plan.component_id != self.draft.component_id
+            || plan.package_lock_digest != self.draft.package_lock_digest
+            || plan.prior_package_lock_digest.is_some()
+            || plan.packages != self.draft.packages
+            || plan.impact != self.draft.impact
+            || plan.state != self.draft.state
+        {
+            return Err(plan_result_error());
+        }
+        CognitivePackageEnablementPlanResult::planned(
+            self.request,
+            self.planned_at_ms,
+            self.state,
+            PluginOperationPlanEnvelope::new(plan)?,
+        )
+    }
+
+    fn bind_standalone(
+        self,
+        authorization: &dyn CognitivePackageAuthorizationProvider,
+    ) -> UseResult<CognitivePackageEnablementPlanResult> {
+        let generated = enablement_operation(
+            &self.request,
+            &self.package,
+            &self.manifest,
+            self.receipt_digest,
+            self.registry_generation,
+            &self.scope,
+            self.planned_at_ms,
+            &self.grant_snapshot,
+            authorization,
+        )?;
+        CognitivePackageEnablementPlanResult::planned(
+            self.request,
+            self.planned_at_ms,
+            self.state,
+            generated.envelope,
+        )
+    }
+}
 
 /// Exact outcome of planning one desired cognitive-package enablement state.
 ///
@@ -238,6 +338,21 @@ impl CognitivePackageManager {
         &self,
         request: &CognitivePackageEnablementRequest,
     ) -> UseResult<CognitivePackageEnablementPlanResult> {
+        match self.prepare_enablement(request).await? {
+            CognitivePackageEnablementPreparation::Outcome(result) => Ok(*result),
+            CognitivePackageEnablementPreparation::Draft(draft) => {
+                (*draft).bind_standalone(self.authorization.as_ref())
+            }
+        }
+    }
+
+    /// Capture an exact provider-neutral enablement draft from installed
+    /// Use-owned evidence without opening a Runtime provider or mutating package
+    /// lifecycle state.
+    pub async fn prepare_enablement(
+        &self,
+        request: &CognitivePackageEnablementRequest,
+    ) -> UseResult<CognitivePackageEnablementPreparation> {
         request.validate()?;
         let store = self.enablement_store();
         let _operation_guard = store
@@ -262,7 +377,9 @@ impl CognitivePackageManager {
                 planned_at_ms,
                 plan,
                 result,
-            );
+            )
+            .map(Box::new)
+            .map(CognitivePackageEnablementPreparation::Outcome);
         }
 
         let mut current = store.get_state(&self.scope, &request.package_id).await?;
@@ -282,7 +399,9 @@ impl CognitivePackageManager {
                     planned_at_ms,
                     completed.envelope,
                     completed.result,
-                );
+                )
+                .map(Box::new)
+                .map(CognitivePackageEnablementPreparation::Outcome);
             }
         }
 
@@ -302,13 +421,16 @@ impl CognitivePackageManager {
                 planned_at_ms,
                 plan,
                 result,
-            );
+            )
+            .map(Box::new)
+            .map(CognitivePackageEnablementPreparation::Outcome);
         }
 
         let (extension, locked_package) = self
             .required_enablement_extension(&request.package_id)
             .await?;
-        self.lifecycle.validate_manifest(&extension.manifest)?;
+        self.lifecycle
+            .validate_manifest_for_planning(&extension.manifest)?;
         let reconciled = reconcile_state(
             &self.scope,
             &request.package_id,
@@ -345,30 +467,59 @@ impl CognitivePackageManager {
                 request.clone(),
                 planned_at_ms,
                 state,
-            );
+            )
+            .map(Box::new)
+            .map(CognitivePackageEnablementPreparation::Outcome);
         }
 
         let grant_snapshot = self
             .grant_store()
             .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
             .await?;
-        let generated = enablement_operation(
+        let receipt_digest = extension.receipt.descriptor_digest()?;
+        let draft = enablement_draft(
             request,
             &locked_package,
-            &extension.manifest,
-            extension.receipt.descriptor_digest()?,
+            receipt_digest.clone(),
             snapshot.generation,
-            &self.scope,
-            planned_at_ms,
-            &grant_snapshot,
-            self.authorization.as_ref(),
         )?;
-        CognitivePackageEnablementPlanResult::planned(
-            request.clone(),
-            planned_at_ms,
-            state,
-            generated.envelope,
-        )
+        let expires_at_ms = planned_at_ms.checked_add(PLAN_LIFETIME_MS).ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_clock_invalid",
+                "The package-plan expiration time overflowed.",
+            )
+        })?;
+        let lifecycle_generation = extension.receipt.lifecycle_generation.ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_enablement_state_invalid",
+                "The installed cognitive package omitted its lifecycle generation.",
+            )
+        })?;
+        let installed_generations =
+            BTreeMap::from([(request.package_id.to_string(), lifecycle_generation)]);
+        let mut planning_bundles = BTreeMap::new();
+        if request.enabled {
+            if let Some(bundle) = extension.plan_ready_planning_bundle()? {
+                planning_bundles.insert(request.package_id.to_string(), bundle.clone());
+            }
+        }
+        Ok(CognitivePackageEnablementPreparation::Draft(Box::new(
+            CognitivePackageEnablementDraft {
+                request: request.clone(),
+                planned_at_ms,
+                expires_at_ms,
+                scope: self.scope.clone(),
+                state,
+                draft,
+                grant_snapshot,
+                planning_bundles,
+                installed_generations,
+                package: locked_package,
+                manifest: extension.manifest,
+                receipt_digest,
+                registry_generation: snapshot.generation,
+            },
+        )))
     }
 }
 

@@ -187,11 +187,12 @@ Apply accepts only the stored operation identity and reviewed plan digest:
 14. persist an append-only terminal result.
 
 Before step 4, the host re-derives canonical Grant proposals from the immutable
-plan plus the same durable Grant snapshot, reloads the signed planning bundle,
-reconnects the explicit provider assignment, and requires complete provider
-evidence—including Grant-bound semantics—to equal the reviewed plan. A3S Use
-exposes these reconstruction contracts; wiring them into every product apply
-entry point remains required.
+plan plus the same durable Grant snapshot, reloads the retained signed planning
+bundle, reconnects the explicit provider assignment, and requires complete
+provider evidence—including Grant-bound semantics—to equal the reviewed plan.
+The shared A3S CLI, TUI, Web, and managed-host enablement paths use these
+contracts; other embedding products must provide the same durable evidence
+boundary.
 
 Runtime, Gateway, package storage, grants, and capability publication do not
 share a database transaction. The lifecycle is therefore a durable,
@@ -264,11 +265,17 @@ Implemented:
 - exact Add/Replace/Retain/Enable provider-generation derivation and apply-time
   Grant/provider-evidence reconstruction contracts;
 - CLI component-plan transport of the verified planning bundle without package
-  archive download;
+  archive download, plus durable reviewed enablement evidence and exact
+  reconstruction across process restart;
+- installed-receipt retention of the exact signed planning bundle for offline
+  re-enable planning without Registry refetch;
 - a package-lifecycle Tool/MCP adapter that revalidates immutable files, uses
   explicit selected clients, health-gates Tool Services, requires Gateway plus
   standard initialize evidence for HTTP MCP, persists bindings, and performs
   idempotent receipt-owned stop/removal;
+- receipt-owned retirement that requires no candidate provider selection,
+  reconnects the recorded provider for Service drain/removal, and replaces a
+  stopped same-generation binding when new authorization semantics require it;
 - exact typed consumption of Runtime-published loopback Service endpoints and
   a Gateway lifecycle port that must drain before Runtime stop, then remove
   the route before Runtime removal; and
@@ -277,12 +284,9 @@ Implemented:
 
 Remaining:
 
-- host broker integration of the implemented two-pass final selection and
-  apply-time reconstruction into the shared Plugin Manager and CLI;
-- workspace-aware grant-change and package-journal coordination;
-- parent-saga coordination of the implemented exact Runtime N/N+1 store and
-  prior-generation retirement after capability cutover;
 - production provider injection for every CLI/Web/Cloud host;
+- real-provider retained-generation upgrade/uninstall and crash-recovery E2E
+  across the supported platform matrix;
 - secret, filesystem, egress, and child-process enforcement adapters;
 - production Gateway route implementation/injection and MCP initialization
   orchestration;

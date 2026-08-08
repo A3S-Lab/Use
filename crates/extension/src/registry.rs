@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use a3s_use_core::{
     PlanPackageRole, PlannedPackageState, PlannedPackageTransition, PluginCatalogRecord,
-    PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult, VerifiedPluginCatalogRecord,
+    PluginPlanningBundle, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
+    VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -63,6 +64,8 @@ pub struct ExtensionReceipt {
     pub registry: Option<ResolvedRemotePackage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verified_catalog: Option<VerifiedPluginCatalogRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planning_bundle: Option<PluginPlanningBundle>,
     pub installed_at_unix: u64,
     pub enabled: bool,
     pub lifecycle_generation: Option<u64>,
@@ -130,6 +133,26 @@ impl InstalledExtension {
             })?,
         )?;
         Ok(catalog)
+    }
+
+    /// Return the signed executable-planning target retained at installation.
+    ///
+    /// Static packages legitimately return `None`. A package whose catalog
+    /// declares executable planning must retain the exact validated bundle so
+    /// enablement can be reviewed offline without consulting a mutable
+    /// Registry again.
+    pub fn plan_ready_planning_bundle(&self) -> UseResult<Option<&PluginPlanningBundle>> {
+        let catalog = self.plan_ready_catalog()?;
+        match (&catalog.record.planning, &self.receipt.planning_bundle) {
+            (None, None) => Ok(None),
+            (Some(_), Some(bundle)) => {
+                bundle.validate_catalog_binding(catalog)?;
+                Ok(Some(bundle))
+            }
+            _ => Err(plan_evidence_error(
+                "The installed extension receipt does not retain its exact signed planning bundle.",
+            )),
+        }
     }
 
     /// Resolve the exact installed package state using active surfaces
@@ -634,9 +657,10 @@ impl ExtensionRegistry {
             receipt.trust,
             receipt.registry.as_ref(),
             receipt.verified_catalog.as_ref(),
+            receipt.planning_bundle.as_ref(),
         ) {
-            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None) => {}
-            (ExtensionTrust::RegistryTuf, Some(registry), Some(catalog)) => {
+            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None, None) => {}
+            (ExtensionTrust::RegistryTuf, Some(registry), Some(catalog), planning_bundle) => {
                 registry.validate_provenance()?;
                 if registry.package_id != receipt.package_id || registry.version != receipt.version
                 {
@@ -656,6 +680,16 @@ impl ExtensionRegistry {
                             receipt.package_id
                         ),
                     ));
+                }
+                if catalog.record.planning.is_some() != planning_bundle.is_some() {
+                    return Err(UseError::new(
+                        "use.extension.receipt_invalid",
+                        format!(
+                            "Extension receipt for '{}' does not retain its signed planning target.",
+                            receipt.package_id
+                        ),
+                    )
+                    .with_suggestion("Reinstall the cognitive package from its trusted Registry."));
                 }
             }
             _ => {
@@ -727,6 +761,27 @@ impl ExtensionRegistry {
                 &manifest_bytes,
                 &package_digest,
             )?;
+            match receipt.planning_bundle.as_ref() {
+                Some(bundle) => {
+                    bundle.validate_catalog_binding(catalog)?;
+                    crate::surface_files::validate_planning_bundle_package_binding(
+                        bundle,
+                        &manifest,
+                        &receipt.package_root,
+                    )
+                    .await?;
+                }
+                None if catalog.record.planning.is_none() => {}
+                None => {
+                    return Err(UseError::new(
+                        "use.extension.receipt_invalid",
+                        format!(
+                            "Extension receipt for '{}' omitted executable planning evidence.",
+                            receipt.package_id
+                        ),
+                    ))
+                }
+            }
         }
         Ok(InstalledExtension { receipt, manifest })
     }

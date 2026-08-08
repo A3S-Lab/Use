@@ -374,12 +374,11 @@ impl CognitivePackageManager {
             pending
         };
         self.authorization.verify_plan(&pending.envelope)?;
-        for manifest in pending
-            .manifests
-            .values()
-            .chain(pending.prior_manifests.values())
-        {
+        for manifest in pending.manifests.values() {
             self.lifecycle.validate_manifest(manifest)?;
+        }
+        for manifest in pending.prior_manifests.values() {
+            self.lifecycle.validate_manifest_for_retirement(manifest)?;
         }
 
         let mut candidate_units = Vec::with_capacity(pending.generations.len());
