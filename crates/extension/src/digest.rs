@@ -89,6 +89,26 @@ fn collect_files(
     entries: &mut usize,
     bytes: &mut u64,
 ) -> UseResult<()> {
+    let directory_metadata = std::fs::symlink_metadata(directory)
+        .map_err(|error| io_error("inspect extension package directory", directory, error))?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&directory_metadata) {
+        return Err(UseError::new(
+            "use.extension.package_symlink",
+            format!(
+                "Extension package directory '{}' is a link or reparse point.",
+                directory.display()
+            ),
+        ));
+    }
+    if !directory_metadata.is_dir() {
+        return Err(UseError::new(
+            "use.extension.package_entry_invalid",
+            format!(
+                "Extension package directory '{}' is not a directory.",
+                directory.display()
+            ),
+        ));
+    }
     let children = std::fs::read_dir(directory)
         .map_err(|error| io_error("read extension package directory", directory, error))?;
     for child in children {
@@ -101,11 +121,11 @@ fn collect_files(
         let path = child.path();
         let metadata = std::fs::symlink_metadata(&path)
             .map_err(|error| io_error("inspect extension package entry", &path, error))?;
-        if metadata.file_type().is_symlink() {
+        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) {
             return Err(UseError::new(
                 "use.extension.package_symlink",
                 format!(
-                    "Extension package entry '{}' is a symbolic link.",
+                    "Extension package entry '{}' is a link or reparse point.",
                     path.display()
                 ),
             ));

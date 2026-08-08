@@ -97,7 +97,7 @@ pub(super) async fn prepare_runtime_dir(path: &Path) -> UseResult<()> {
     let metadata = tokio::fs::symlink_metadata(path)
         .await
         .map_err(|error| service_path_io("inspect Browser MCP runtime directory", path, error))?;
-    if !metadata.file_type().is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(UseError::new(
             "use.mcp.runtime_dir_invalid",
             format!(
@@ -195,7 +195,10 @@ pub(super) async fn read_optional_receipt(path: &Path) -> UseResult<Option<Brows
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(service_path_io("inspect Browser MCP receipt", path, error)),
     };
-    if !metadata.file_type().is_file() || metadata.len() > 16 * 1024 {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+        || !metadata.is_file()
+        || metadata.len() > 16 * 1024
+    {
         return Err(UseError::new(
             "use.mcp.receipt_invalid",
             format!(

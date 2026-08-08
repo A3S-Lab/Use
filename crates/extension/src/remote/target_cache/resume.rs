@@ -335,7 +335,9 @@ fn validate_partial_metadata(
     metadata: &std::fs::Metadata,
     expected_length: u64,
 ) -> UseResult<()> {
-    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > expected_length
+    if a3s_use_core::metadata_is_link_or_reparse_point(metadata)
+        || !metadata.is_file()
+        || metadata.len() > expected_length
     {
         return Err(target_cache_error(
             "use.extension.registry_target_cache_invalid",

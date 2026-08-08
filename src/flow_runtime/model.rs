@@ -171,7 +171,7 @@ pub(crate) async fn digest_artifact(path: &Path) -> UseResult<String> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| artifact_io_error("inspect", path, error))?;
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
         || !metadata.is_file()
         || metadata.len() == 0
         || metadata.len() > MAX_FLOW_ARTIFACT_BYTES

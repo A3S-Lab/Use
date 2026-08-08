@@ -184,7 +184,7 @@ pub(super) async fn remove_exact_root(path: &Path) -> UseResult<bool> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(io_error("inspect lifecycle package", path, error)),
     };
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(UseError::new(
             "use.extension.ownership_invalid",
             format!(

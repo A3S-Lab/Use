@@ -6,6 +6,8 @@ use tough::{ExpirationEnforcement, RepositoryLoader};
 use url::Url;
 
 use super::digest::package_fingerprint;
+#[cfg(windows)]
+use super::package::copy_package;
 use super::package::{read_manifest, validate_surface_files};
 use super::remote::test_support::{package_directory_archive, TestRepository, TestServer, FUTURE};
 use super::source::prepare_package_source;
@@ -174,6 +176,40 @@ async fn write_okf_package() -> (tempfile::TempDir, ExtensionManifest) {
         directory,
         ExtensionManifest::parse_acl(PLUGIN_V3_OKF_MANIFEST).unwrap(),
     )
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn package_copy_rejects_directory_junctions_before_reading_external_content() {
+    let temporary = tempdir().unwrap();
+    let source = temporary.path().join("source");
+    let external = temporary.path().join("external");
+    let target = temporary.path().join("target");
+    let junction = source.join("linked");
+    fs::create_dir(&source).await.unwrap();
+    fs::create_dir(&external).await.unwrap();
+    fs::write(external.join("secret.txt"), b"must not be copied")
+        .await
+        .unwrap();
+
+    let output = tokio::process::Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(&junction)
+        .arg(&external)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "mklink /J failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let error = copy_package(&source, &target).await.unwrap_err();
+    assert_eq!(error.code, "use.extension.package_symlink");
+    assert!(!target.join("linked/secret.txt").exists());
 }
 
 #[tokio::test]

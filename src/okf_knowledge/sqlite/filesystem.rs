@@ -101,7 +101,7 @@ async fn validate_existing_directory(path: &Path) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| io_error("inspect Knowledge database directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(path_error(format!(
             "Knowledge database directory '{}' is not an owned directory.",
             path.display()
@@ -112,7 +112,12 @@ async fn validate_existing_directory(path: &Path) -> UseResult<()> {
 
 async fn validate_optional_regular_file(path: &Path) -> UseResult<()> {
     match fs::symlink_metadata(path).await {
-        Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_file() => Ok(()),
+        Ok(metadata)
+            if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                && metadata.is_file() =>
+        {
+            Ok(())
+        }
         Ok(_) => Err(path_error(format!(
             "Knowledge database file '{}' is not an owned regular file.",
             path.display()

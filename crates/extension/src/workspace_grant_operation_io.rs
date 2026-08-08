@@ -24,7 +24,7 @@ pub(super) async fn read_optional_operation(
             ));
         }
     };
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
         || !metadata.is_file()
         || metadata.len() == 0
         || metadata.len() > MAX_WORKSPACE_GRANT_OPERATION_BYTES

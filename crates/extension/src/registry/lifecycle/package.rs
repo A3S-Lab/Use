@@ -303,7 +303,7 @@ async fn validate_committed_root(
     let metadata = fs::symlink_metadata(root)
         .await
         .map_err(|error| io_error("inspect lifecycle package", root, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(UseError::new(
             "use.extension.ownership_invalid",
             "The lifecycle package root must be an owned directory.",

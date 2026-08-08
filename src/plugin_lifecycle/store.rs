@@ -232,7 +232,10 @@ async fn acquire_lock(state_root: &Path, directory: &Path) -> UseResult<StdFile>
     ensure_owned_directory(state_root, directory).await?;
     let lock_path = directory.join(".operation.lock");
     match fs::symlink_metadata(&lock_path).await {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+        Ok(metadata)
+            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                || !metadata.is_file() =>
+        {
             return Err(path_identity_error())
         }
         Ok(_) => {}
@@ -269,7 +272,7 @@ async fn read_optional_record(path: &Path) -> UseResult<Option<PluginLifecycleOp
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(path_error("inspect lifecycle record", path, error)),
     };
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
         || !metadata.is_file()
         || metadata.len() == 0
         || metadata.len() > MAX_OPERATION_BYTES
@@ -388,7 +391,9 @@ async fn validate_existing_directory_chain(root: &Path, directory: &Path) -> Use
             current.push(segment.as_os_str());
         }
         match fs::symlink_metadata(&current).await {
-            Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_dir() => {}
+            Ok(metadata)
+                if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    && metadata.is_dir() => {}
             Ok(_) => return Err(path_identity_error()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(error) => {
@@ -426,7 +431,7 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| path_error("inspect lifecycle directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(path_identity_error());
     }
     Ok(())

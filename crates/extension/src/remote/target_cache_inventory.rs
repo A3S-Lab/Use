@@ -338,7 +338,7 @@ async fn scan_cache(cache_directory: &Path) -> UseResult<CacheInventory> {
         let metadata = fs::symlink_metadata(&path)
             .await
             .map_err(|error| io_error("inspect verified target cache entry", &path, error))?;
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
+        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
             return Err(
                 cache_invalid("Every verified target cache entry must be a regular file.")
                     .with_detail("path", path.display().to_string()),

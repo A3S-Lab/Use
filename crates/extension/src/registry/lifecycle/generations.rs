@@ -482,7 +482,7 @@ impl ExtensionRegistry {
                 io_error("inspect retained lifecycle receipt", &entry.path(), error)
             })?;
             if name.starts_with(".receipt-") && name.ends_with(".tmp") {
-                if metadata.file_type().is_symlink()
+                if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
                     || !metadata.is_file()
                     || metadata.len() > MAX_RETAINED_RECEIPT_BYTES
                 {
@@ -595,7 +595,9 @@ async fn validate_existing_directory_chain(root: &Path, directory: &Path) -> Use
             current.push(segment.as_os_str());
         }
         match fs::symlink_metadata(&current).await {
-            Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_dir() => {}
+            Ok(metadata)
+                if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    && metadata.is_dir() => {}
             Ok(_) => return Err(path_identity_error()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => {
@@ -614,14 +616,14 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| io_error("inspect lifecycle receipt directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(path_identity_error());
     }
     Ok(())
 }
 
 fn validate_receipt_metadata(metadata: &std::fs::Metadata) -> UseResult<()> {
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(metadata)
         || !metadata.is_file()
         || metadata.len() == 0
         || metadata.len() > MAX_RETAINED_RECEIPT_BYTES

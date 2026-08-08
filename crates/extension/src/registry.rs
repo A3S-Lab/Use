@@ -395,20 +395,20 @@ impl ExtensionRegistry {
             .await
             .map_err(|error| io_error("read extension receipt directory", &root, error))?
         {
-            let metadata = publisher
-                .file_type()
+            let publisher_path = publisher.path();
+            let metadata = fs::symlink_metadata(&publisher_path)
                 .await
-                .map_err(|error| io_error("inspect receipt publisher", &publisher.path(), error))?;
-            if !metadata.is_dir() || metadata.is_symlink() {
+                .map_err(|error| io_error("inspect receipt publisher", &publisher_path, error))?;
+            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
                 continue;
             }
-            let mut entries = fs::read_dir(publisher.path())
+            let mut entries = fs::read_dir(&publisher_path)
                 .await
-                .map_err(|error| io_error("read publisher receipts", &publisher.path(), error))?;
+                .map_err(|error| io_error("read publisher receipts", &publisher_path, error))?;
             while let Some(entry) = entries
                 .next_entry()
                 .await
-                .map_err(|error| io_error("read publisher receipt", &publisher.path(), error))?
+                .map_err(|error| io_error("read publisher receipt", &publisher_path, error))?
             {
                 let path = entry.path();
                 if path.extension().and_then(|value| value.to_str()) == Some("json") {
@@ -429,7 +429,7 @@ impl ExtensionRegistry {
     pub async fn get(&self, package_id: &str) -> UseResult<Option<InstalledExtension>> {
         let package_id = normalize_package_id(package_id)?;
         let path = self.paths.receipt_path(&package_id);
-        match fs::metadata(&path).await {
+        match fs::symlink_metadata(&path).await {
             Ok(_) => self.load_receipt(&path).await.map(Some),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(io_error("inspect extension receipt", &path, error)),
@@ -606,6 +606,18 @@ impl ExtensionRegistry {
     }
 
     async fn load_receipt(&self, receipt_path: &Path) -> UseResult<InstalledExtension> {
+        let metadata = fs::symlink_metadata(receipt_path)
+            .await
+            .map_err(|error| io_error("inspect extension receipt", receipt_path, error))?;
+        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
+            return Err(UseError::new(
+                "use.extension.receipt_invalid",
+                format!(
+                    "Extension receipt '{}' is not an owned regular file.",
+                    receipt_path.display()
+                ),
+            ));
+        }
         let bytes = fs::read(receipt_path)
             .await
             .map_err(|error| io_error("read extension receipt", receipt_path, error))?;

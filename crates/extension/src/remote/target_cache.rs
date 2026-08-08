@@ -250,7 +250,7 @@ fn validate_regular_metadata(
     error_code: &'static str,
     message: &'static str,
 ) -> UseResult<()> {
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(metadata)
         || !metadata.is_file()
         || metadata.len() != expected_length
         || metadata.len() > MAX_REMOTE_ARCHIVE_BYTES
@@ -311,7 +311,7 @@ async fn inspect_real_directory(path: &Path, label: &str) -> UseResult<()> {
             io_error(&format!("inspect {label}"), path, error)
         }
     })?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(target_cache_error(
             "use.extension.registry_target_cache_invalid",
             format!("The {label} must be a real directory."),
@@ -323,7 +323,7 @@ async fn inspect_real_directory(path: &Path, label: &str) -> UseResult<()> {
 fn acquire_target_cache_lock(datastore: &Path, exclusive: bool) -> UseResult<TargetCacheLock> {
     let path = datastore.join(TARGET_CACHE_LOCK);
     if let Ok(metadata) = std::fs::symlink_metadata(&path) {
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
+        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
             return Err(target_cache_error(
                 "use.extension.registry_target_cache_invalid",
                 "The verified target cache lock must be a regular file.",

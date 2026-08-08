@@ -185,7 +185,7 @@ async fn require_real_directory(path: &Path, label: &str) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| snapshot_io_error("inspect workspace grant directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(invalid_layout(format!(
             "A workspace grant {label} entry is not a real directory."
         )));
@@ -197,7 +197,7 @@ async fn require_real_file(path: &Path) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| snapshot_io_error("inspect workspace grant record", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(invalid_layout(
             "A workspace grant generation entry is not a regular file.",
         ));

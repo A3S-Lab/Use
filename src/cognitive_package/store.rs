@@ -429,37 +429,38 @@ impl InstalledPackageGraphStore {
             .await
             .map_err(|error| path_error("read installed graph publisher", &self.root, error))?
         {
-            if !publisher
-                .file_type()
+            let publisher_path = publisher.path();
+            let publisher_metadata = fs::symlink_metadata(&publisher_path)
                 .await
-                .map_err(|error| path_error("inspect graph publisher", &publisher.path(), error))?
-                .is_dir()
+                .map_err(|error| path_error("inspect graph publisher", &publisher_path, error))?;
+            if a3s_use_core::metadata_is_link_or_reparse_point(&publisher_metadata)
+                || !publisher_metadata.is_dir()
             {
                 return Err(store_error(
                     "The installed graph store contains an invalid publisher entry.",
                 ));
             }
-            let mut packages = fs::read_dir(publisher.path()).await.map_err(|error| {
-                path_error("read installed graph packages", &publisher.path(), error)
+            let mut packages = fs::read_dir(&publisher_path).await.map_err(|error| {
+                path_error("read installed graph packages", &publisher_path, error)
             })?;
             while let Some(package) = packages.next_entry().await.map_err(|error| {
-                path_error("read installed graph package", &publisher.path(), error)
+                path_error("read installed graph package", &publisher_path, error)
             })? {
+                let package_path = package.path();
+                let package_metadata =
+                    fs::symlink_metadata(&package_path).await.map_err(|error| {
+                        path_error("inspect installed graph record", &package_path, error)
+                    })?;
                 if records.len() >= MAX_PLUGIN_PLAN_ITEMS
-                    || !package
-                        .file_type()
-                        .await
-                        .map_err(|error| {
-                            path_error("inspect installed graph record", &package.path(), error)
-                        })?
-                        .is_file()
-                    || package.path().extension().and_then(|value| value.to_str()) != Some("json")
+                    || a3s_use_core::metadata_is_link_or_reparse_point(&package_metadata)
+                    || !package_metadata.is_file()
+                    || package_path.extension().and_then(|value| value.to_str()) != Some("json")
                 {
                     return Err(store_error(
                         "The installed graph store contains an invalid or oversized record set.",
                     ));
                 }
-                let record = read_required::<InstalledPackageGraph>(&package.path()).await?;
+                let record = read_required::<InstalledPackageGraph>(&package_path).await?;
                 record.validate()?;
                 records.push(record);
             }
@@ -631,7 +632,7 @@ where
 {
     match fs::symlink_metadata(path).await {
         Ok(metadata)
-            if !metadata.file_type().is_symlink()
+            if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
                 && metadata.is_file()
                 && metadata.len() <= MAX_GRAPH_RECORD_BYTES => {}
         Ok(_) => return Err(store_error("A package graph record path is invalid.")),
@@ -648,7 +649,7 @@ where
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| path_error("inspect package graph record", path, error))?;
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
         || !metadata.is_file()
         || metadata.len() == 0
         || metadata.len() > MAX_GRAPH_RECORD_BYTES
@@ -735,7 +736,10 @@ async fn acquire_lock(state_root: &Path) -> UseResult<StdFile> {
     ensure_owned_directory(state_root, state_root).await?;
     let path = state_root.join(".package-graph.lock");
     match fs::symlink_metadata(&path).await {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+        Ok(metadata)
+            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                || !metadata.is_file() =>
+        {
             return Err(path_identity_error())
         }
         Ok(_) => {}
@@ -805,7 +809,9 @@ async fn validate_existing_directory_chain(state_root: &Path, directory: &Path) 
             current.push(segment.as_os_str());
         }
         match fs::symlink_metadata(&current).await {
-            Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_dir() => {}
+            Ok(metadata)
+                if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    && metadata.is_dir() => {}
             Ok(_) => return Err(path_identity_error()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(error) => {
@@ -824,7 +830,7 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| path_error("inspect package graph directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(path_identity_error());
     }
     Ok(())

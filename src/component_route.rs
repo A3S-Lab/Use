@@ -62,7 +62,7 @@ fn box_executable() -> UseResult<PathBuf> {
     }
     let metadata = std::fs::symlink_metadata(&path)
         .map_err(|error| invalid_box_path(&path, &error.to_string()))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(invalid_box_path(
             &path,
             "the configured path is not a regular file",

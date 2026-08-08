@@ -22,7 +22,10 @@ pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<St
     ensure_owned_directory(state_root, Some(root)).await?;
     let lock_path = root.join(".store.lock");
     match fs::symlink_metadata(&lock_path).await {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+        Ok(metadata)
+            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                || !metadata.is_file() =>
+        {
             return Err(store_error(
                 "use.plugin.grant_store.path_invalid",
                 "The workspace grant store lock is not an owned regular file.",
@@ -103,7 +106,9 @@ pub(super) async fn validate_existing_directory_chain(
             current.push(segment.as_os_str());
         }
         match fs::symlink_metadata(&current).await {
-            Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_dir() => {}
+            Ok(metadata)
+                if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    && metadata.is_dir() => {}
             Ok(_) => {
                 return Err(store_error(
                     "use.plugin.grant_store.path_invalid",
@@ -134,7 +139,7 @@ pub(super) async fn read_optional_record(path: &Path) -> UseResult<Option<Stored
             return Err(path_io_error("inspect workspace grant record", path, error));
         }
     };
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
         || !metadata.is_file()
         || metadata.len() == 0
         || metadata.len() > MAX_WORKSPACE_GRANT_RECORD_BYTES
@@ -218,7 +223,7 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| path_io_error("inspect workspace grant directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(store_error(
             "use.plugin.grant_store.path_invalid",
             format!(
