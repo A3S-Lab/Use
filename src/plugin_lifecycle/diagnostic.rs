@@ -93,11 +93,12 @@ impl PluginLifecycleDiagnostic {
                 ));
             }
         }
-        if latest.zip(previous).is_some_and(|(latest, previous)| {
-            latest.intent.operation_id == previous.intent.operation_id
-        }) {
+        if latest
+            .zip(previous)
+            .is_some_and(|(latest, previous)| latest.intent_digest == previous.intent_digest)
+        {
             return Err(diagnostic_error(
-                "The latest and previous lifecycle diagnostics cannot identify the same operation.",
+                "The latest and previous lifecycle diagnostics cannot identify the same intent.",
             ));
         }
 

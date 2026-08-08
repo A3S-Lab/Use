@@ -222,6 +222,10 @@ bounded error codes, timings, and rollback evidence. It deliberately omits
 checkpoint idempotency keys, credentials, tokens, secret values, and
 package-authored error text. This is checkpoint evidence for diagnosis, not a
 telemetry service or backup/restore mechanism.
+One reviewed graph operation can create consecutive candidate and retirement
+phase intents for the same package. Those records intentionally share an
+`operationId`; consumers distinguish the exact phase by `intentDigest`, action,
+generation, and artifact digests.
 
 ### Replaceable Registry sources
 

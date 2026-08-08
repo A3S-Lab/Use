@@ -453,6 +453,10 @@ The projection never contains checkpoint idempotency keys, provider
 credentials, endpoint tokens, secret values, arbitrary package-authored error
 text, or package content. It is read-only lifecycle evidence, not a telemetry
 backend and not recovery authority.
+One reviewed graph operation may create consecutive candidate and retirement
+phase intents for a package. They share the graph `operationId` by design and
+remain distinct through `intentDigest`, action, generation, and artifact
+digests. Duplicate latest/previous intent digests fail closed.
 
 Broader diagnostics still need non-secret evidence sufficient to identify:
 
