@@ -19,6 +19,14 @@ struct TargetEntry {
 }
 
 #[derive(Debug)]
+struct PartialEntry {
+    path: PathBuf,
+    digest: String,
+    bytes: u64,
+    modified_key: u128,
+}
+
+#[derive(Debug)]
 struct StaleEntry {
     path: PathBuf,
     bytes: u64,
@@ -27,8 +35,10 @@ struct StaleEntry {
 #[derive(Debug, Default)]
 struct CacheInventory {
     targets: Vec<TargetEntry>,
+    partials: Vec<PartialEntry>,
     stale: Vec<StaleEntry>,
     target_bytes: u64,
+    partial_bytes: u64,
     stale_bytes: u64,
 }
 
@@ -36,6 +46,8 @@ struct CacheInventory {
 pub(super) struct CacheStats {
     pub target_entries: u64,
     pub target_bytes: u64,
+    pub partial_entries: u64,
+    pub partial_bytes: u64,
     pub stale_entries: u64,
     pub stale_bytes: u64,
     pub available_bytes: u64,
@@ -45,6 +57,8 @@ pub(super) struct CacheStats {
 pub(super) struct RemovedCacheStats {
     pub target_entries: u64,
     pub target_bytes: u64,
+    pub partial_entries: u64,
+    pub partial_bytes: u64,
     pub stale_entries: u64,
     pub stale_bytes: u64,
 }
@@ -102,21 +116,39 @@ async fn enforce_policy(
     }
     let mut inventory = scan_cache(cache_directory).await?;
     let available = available_space(cache_directory).await?;
-    let incoming_is_present = incoming
+    let incoming_target_is_present = incoming
         .is_some_and(|(digest, _)| inventory.targets.iter().any(|entry| entry.digest == digest));
-    let incoming_bytes = incoming
-        .filter(|_| !incoming_is_present)
-        .map_or(0, |(_, bytes)| bytes);
-    let incoming_entries = u64::from(incoming.is_some() && !incoming_is_present);
-    let protected_digest = incoming.map(|(digest, _)| digest);
-
-    let protected_bytes = incoming.map_or(0, |(digest, expected_length)| {
+    let incoming_partial = incoming.and_then(|(digest, _)| {
         inventory
-            .targets
+            .partials
             .iter()
             .find(|entry| entry.digest == digest)
-            .map_or(expected_length, |entry| entry.bytes)
     });
+    if let (Some((_, expected_length)), Some(partial)) = (incoming, incoming_partial) {
+        if partial.bytes > expected_length {
+            return Err(
+                cache_invalid("The resumable target exceeds its signed length.")
+                    .with_detail("path", partial.path.display().to_string())
+                    .with_detail("partialBytes", partial.bytes.to_string())
+                    .with_detail("expectedBytes", expected_length.to_string()),
+            );
+        }
+    }
+    let incoming_bytes = match (incoming, incoming_target_is_present, incoming_partial) {
+        (None, _, _) | (_, true, _) => 0,
+        (Some((_, expected_length)), false, Some(partial)) => expected_length - partial.bytes,
+        (Some((_, expected_length)), false, None) => expected_length,
+    };
+    let incoming_entries =
+        u64::from(incoming.is_some() && !incoming_target_is_present && incoming_partial.is_none());
+    let protected_target_digest = incoming
+        .filter(|_| incoming_target_is_present)
+        .map(|(digest, _)| digest);
+    let protected_partial_digest = incoming
+        .filter(|_| !incoming_target_is_present && incoming_partial.is_some())
+        .map(|(digest, _)| digest);
+
+    let protected_bytes = incoming.map_or(0, |(_, expected_length)| expected_length);
     if protected_bytes > policy.max_bytes() {
         return Err(policy_exceeded(
             "The verified target cannot fit within the configured cache byte limit.",
@@ -125,12 +157,27 @@ async fn enforce_policy(
         ));
     }
 
-    let mut candidates = inventory
+    let mut partial_candidates = inventory
+        .partials
+        .iter()
+        .filter(|entry| protected_partial_digest != Some(entry.digest.as_str()))
+        .collect::<Vec<_>>();
+    partial_candidates.sort_by(|left, right| {
+        let left_redundant =
+            incoming_target_is_present && incoming.is_some_and(|(digest, _)| digest == left.digest);
+        let right_redundant = incoming_target_is_present
+            && incoming.is_some_and(|(digest, _)| digest == right.digest);
+        right_redundant
+            .cmp(&left_redundant)
+            .then_with(|| left.modified_key.cmp(&right.modified_key))
+            .then_with(|| left.digest.cmp(&right.digest))
+    });
+    let mut target_candidates = inventory
         .targets
         .iter()
-        .filter(|entry| protected_digest != Some(entry.digest.as_str()))
+        .filter(|entry| protected_target_digest != Some(entry.digest.as_str()))
         .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| {
+    target_candidates.sort_by(|left, right| {
         left.modified_key
             .cmp(&right.modified_key)
             .then_with(|| left.digest.cmp(&right.digest))
@@ -146,11 +193,16 @@ async fn enforce_policy(
     let maximum_reclaimable = inventory
         .stale_bytes
         .checked_add(
-            candidates
+            partial_candidates
                 .iter()
                 .try_fold(0_u64, |total, entry| total.checked_add(entry.bytes))
                 .ok_or_else(|| cache_invalid("The target cache byte inventory overflowed."))?,
         )
+        .and_then(|total| {
+            target_candidates
+                .iter()
+                .try_fold(total, |total, entry| total.checked_add(entry.bytes))
+        })
         .ok_or_else(|| cache_invalid("The reclaimable target cache bytes overflowed."))?;
     if available.saturating_add(maximum_reclaimable) < required_available {
         return Err(storage_error(
@@ -163,14 +215,38 @@ async fn enforce_policy(
 
     let mut retained_bytes = inventory
         .target_bytes
+        .checked_add(inventory.partial_bytes)
+        .ok_or_else(|| cache_invalid("The retained target cache bytes overflowed."))?
         .checked_add(incoming_bytes)
         .ok_or_else(|| cache_invalid("The retained target cache bytes overflowed."))?;
     let mut retained_entries = (inventory.targets.len() as u64)
+        .checked_add(inventory.partials.len() as u64)
+        .ok_or_else(|| cache_invalid("The retained target cache entries overflowed."))?
         .checked_add(incoming_entries)
         .ok_or_else(|| cache_invalid("The retained target cache entries overflowed."))?;
     let mut projected_available = available.saturating_add(inventory.stale_bytes);
+    let mut selected_partials = Vec::new();
     let mut selected_targets = Vec::new();
-    for entry in candidates {
+    for entry in partial_candidates {
+        let redundant = incoming_target_is_present
+            && incoming.is_some_and(|(digest, _)| digest == entry.digest);
+        if !redundant
+            && retained_bytes <= policy.max_bytes()
+            && retained_entries <= policy.max_entries()
+            && projected_available >= required_available
+        {
+            break;
+        }
+        retained_bytes = retained_bytes
+            .checked_sub(entry.bytes)
+            .ok_or_else(|| cache_invalid("The retained target cache bytes underflowed."))?;
+        retained_entries = retained_entries
+            .checked_sub(1)
+            .ok_or_else(|| cache_invalid("The retained target cache entries underflowed."))?;
+        projected_available = projected_available.saturating_add(entry.bytes);
+        selected_partials.push((entry.path.clone(), entry.bytes));
+    }
+    for entry in target_candidates {
         if retained_bytes <= policy.max_bytes()
             && retained_entries <= policy.max_entries()
             && projected_available >= required_available
@@ -205,6 +281,11 @@ async fn enforce_policy(
         removed.stale_entries += 1;
         removed.stale_bytes = removed.stale_bytes.saturating_add(entry.bytes);
     }
+    for (path, bytes) in selected_partials {
+        remove_cache_file(&path).await?;
+        removed.partial_entries += 1;
+        removed.partial_bytes = removed.partial_bytes.saturating_add(bytes);
+    }
     for path in selected_targets {
         let entry = inventory
             .targets
@@ -215,7 +296,7 @@ async fn enforce_policy(
         removed.target_entries += 1;
         removed.target_bytes = removed.target_bytes.saturating_add(entry.bytes);
     }
-    if removed.target_entries > 0 || removed.stale_entries > 0 {
+    if removed.target_entries > 0 || removed.partial_entries > 0 || removed.stale_entries > 0 {
         sync_parent_directory(cache_directory, "verified target cache pruning").await?;
     }
     if required_available > 0 {
@@ -281,6 +362,24 @@ async fn scan_cache(cache_directory: &Path) -> UseResult<CacheInventory> {
                 bytes: metadata.len(),
                 modified_key: modified_key(metadata.modified().ok()),
             });
+        } else if let Some(digest) = valid_partial_name(&name) {
+            if metadata.len() > MAX_REMOTE_ARCHIVE_BYTES {
+                return Err(cache_invalid(
+                    "A resumable target cache entry has an invalid bounded length.",
+                )
+                .with_detail("path", path.display().to_string())
+                .with_detail("length", metadata.len().to_string()));
+            }
+            inventory.partial_bytes = inventory
+                .partial_bytes
+                .checked_add(metadata.len())
+                .ok_or_else(|| cache_invalid("The partial cache byte inventory overflowed."))?;
+            inventory.partials.push(PartialEntry {
+                path,
+                digest: digest.to_owned(),
+                bytes: metadata.len(),
+                modified_key: modified_key(metadata.modified().ok()),
+            });
         } else if valid_temporary_name(&name) {
             inventory.stale_bytes = inventory
                 .stale_bytes
@@ -304,6 +403,8 @@ fn stats(inventory: &CacheInventory, available_bytes: u64) -> CacheStats {
     CacheStats {
         target_entries: inventory.targets.len() as u64,
         target_bytes: inventory.target_bytes,
+        partial_entries: inventory.partials.len() as u64,
+        partial_bytes: inventory.partial_bytes,
         stale_entries: inventory.stale.len() as u64,
         stale_bytes: inventory.stale_bytes,
         available_bytes,
@@ -363,6 +464,11 @@ fn valid_temporary_name(name: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || byte == b'-')
 }
 
+fn valid_partial_name(name: &str) -> Option<&str> {
+    let digest = name.strip_prefix(".target-")?.strip_suffix(".part")?;
+    valid_digest_name(digest).then_some(digest)
+}
+
 fn modified_key(modified: Option<SystemTime>) -> u128 {
     modified
         .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
@@ -395,87 +501,4 @@ fn cache_invalid(message: impl Into<String>) -> UseError {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::fs::{File, FileTimes};
-    use std::io::Write;
-    use std::time::Duration;
-
-    use super::*;
-
-    #[test]
-    fn cache_entry_names_are_exact_and_portable() {
-        assert!(valid_digest_name(&"a".repeat(64)));
-        assert!(!valid_digest_name(&"A".repeat(64)));
-        assert!(!valid_digest_name(&"a".repeat(63)));
-        assert!(valid_temporary_name(".target-123-456.tmp"));
-        assert!(!valid_temporary_name(".target-../456.tmp"));
-        assert!(!valid_temporary_name("unowned.tmp"));
-    }
-
-    #[tokio::test]
-    async fn staging_capacity_overflow_fails_before_disk_inspection() {
-        let policy = VerifiedTargetCachePolicy::new(1, 1, 1).unwrap();
-        let error = ensure_staging_capacity(Path::new("."), u64::MAX, policy)
-            .await
-            .unwrap_err();
-        assert_eq!(
-            error.code,
-            "use.extension.registry_target_cache_policy_exceeded"
-        );
-    }
-
-    #[tokio::test]
-    async fn prune_removes_stale_files_then_the_oldest_verified_target() {
-        let temporary = tempfile::tempdir().unwrap();
-        let old_path = temporary.path().join("a".repeat(64));
-        let new_path = temporary.path().join("b".repeat(64));
-        let stale_path = temporary.path().join(".target-123-456.tmp");
-        for (path, body, modified) in [
-            (
-                &old_path,
-                b"old".as_slice(),
-                UNIX_EPOCH + Duration::from_secs(1),
-            ),
-            (
-                &new_path,
-                b"new".as_slice(),
-                UNIX_EPOCH + Duration::from_secs(2),
-            ),
-            (
-                &stale_path,
-                b"stale".as_slice(),
-                UNIX_EPOCH + Duration::from_secs(3),
-            ),
-        ] {
-            let mut file = File::create(path).unwrap();
-            file.write_all(body).unwrap();
-            file.sync_all().unwrap();
-            file.set_times(FileTimes::new().set_modified(modified))
-                .unwrap();
-        }
-        let policy = VerifiedTargetCachePolicy::new(3, 1, 0).unwrap();
-
-        let removed = prune_cache(temporary.path(), policy).await.unwrap();
-
-        assert_eq!(removed.target_entries, 1);
-        assert_eq!(removed.target_bytes, 3);
-        assert_eq!(removed.stale_entries, 1);
-        assert_eq!(removed.stale_bytes, 5);
-        assert!(!old_path.exists());
-        assert!(new_path.is_file());
-        assert!(!stale_path.exists());
-        let usage = inspect_cache(temporary.path()).await.unwrap();
-        assert_eq!(usage.target_entries, 1);
-        assert_eq!(usage.target_bytes, 3);
-    }
-
-    #[tokio::test]
-    async fn inventory_rejects_unowned_entries() {
-        let temporary = tempfile::tempdir().unwrap();
-        std::fs::write(temporary.path().join("unowned"), b"x").unwrap();
-        assert_eq!(
-            inspect_cache(temporary.path()).await.unwrap_err().code,
-            "use.extension.registry_target_cache_invalid"
-        );
-    }
-}
+mod tests;

@@ -48,8 +48,14 @@ async fn usage(args: &[String]) -> UseResult<CommandOutput> {
     let usage = inspect_verified_target_cache(&registry).await?;
     Ok(CommandOutput::success(
         format!(
-            "Registry '{}' verified target cache contains {} entries and {} bytes.",
-            usage.registry_name, usage.target_entries, usage.target_bytes
+            "Registry '{}' verified target cache contains {} verified entries ({} bytes), {} resumable partials ({} bytes), and {} stale writes ({} bytes).",
+            usage.registry_name,
+            usage.target_entries,
+            usage.target_bytes,
+            usage.partial_entries,
+            usage.partial_bytes,
+            usage.stale_entries,
+            usage.stale_bytes
         ),
         serde_json::json!({ "registryCache": usage }),
     ))
@@ -66,8 +72,11 @@ async fn prune(args: &[String]) -> UseResult<CommandOutput> {
     let result = prune_verified_target_cache(&registry).await?;
     Ok(CommandOutput::success(
         format!(
-            "Pruned {} verified targets and {} stale cache files from Registry '{}'.",
-            result.removed_target_entries, result.removed_stale_entries, result.after.registry_name
+            "Pruned {} verified targets, {} resumable partials, and {} stale cache files from Registry '{}'.",
+            result.removed_target_entries,
+            result.removed_partial_entries,
+            result.removed_stale_entries,
+            result.after.registry_name
         ),
         serde_json::json!({ "registryCache": result }),
     ))

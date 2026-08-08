@@ -26,6 +26,7 @@ mod cache_policy;
 mod catalog;
 mod download;
 mod package_graph;
+mod resumable_http;
 mod target;
 mod target_cache;
 mod target_cache_inventory;
@@ -470,8 +471,7 @@ async fn prepare_remote_package_with_access(
         target_name,
         resolved,
         verified_catalog,
-        registry.datastore().to_path_buf(),
-        registry.target_cache_policy(),
+        registry.clone(),
         access,
     ))
 }
@@ -484,8 +484,9 @@ pub async fn inspect_verified_target_cache(
     target_cache::inspect_registry_target_cache(registry).await
 }
 
-/// Remove stale writes and the oldest verified targets until the configured
-/// per-Registry byte, entry, and free-space bounds are satisfied.
+/// Remove stale writes, resumable partials, and the oldest verified targets
+/// until the configured per-Registry byte, entry, and free-space bounds are
+/// satisfied.
 pub async fn prune_verified_target_cache(
     registry: &TrustedRegistry,
 ) -> UseResult<VerifiedTargetCachePruneResult> {
@@ -931,6 +932,10 @@ pub(crate) mod test_support;
 #[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "remote_resume_tests.rs"]
+mod resume_tests;
 
 #[cfg(test)]
 #[path = "remote_catalog_tests.rs"]

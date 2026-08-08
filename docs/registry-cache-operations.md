@@ -45,20 +45,31 @@ Registry until durable Registry source configuration is completed.
 
 Before a target request, A3S Use rejects a signed target that cannot fit the
 configured byte bound and checks the temporary download filesystem for the
-target plus the free-space reserve. After TUF verifies the download, cache
-commit rechecks the cache filesystem, which may be a different volume.
+target plus the free-space reserve. The Registry cache separately reserves the
+remaining bytes after any admitted partial plus the same reserve because the
+cache and temporary staging directory may be different volumes.
+
+Interrupted downloads are retained as
+`.target-<sha256>.part`. The partial must be a bounded regular file and its
+length becomes the next HTTP Range offset. A `206` response must describe the
+exact offset, final byte, total signed length, and remaining content length. A
+complete `200` response is accepted when a server ignores Range, but the old
+partial is truncated first. No partial is staged or exposed as an offline
+target. The complete bytes are re-read, checked against the signed length and
+SHA-256, synchronized, and atomically promoted to `<sha256>`.
 
 Under the exclusive target-cache lock, commit removes:
 
 1. bounded stale `.target-<pid>-<time>.tmp` writes;
-2. the oldest verified targets, ordered by modification time and then digest;
-3. only as many entries as required to satisfy byte, entry, and disk-space
+2. the oldest inactive `.target-<sha256>.part` downloads;
+3. the oldest verified targets, ordered by modification time and then digest;
+4. only as many entries as required to satisfy byte, entry, and disk-space
    bounds.
 
-The incoming target is protected during its commit. Every deletion is followed
-by directory synchronization where the platform supports it. A race that
-consumes the admitted free space still fails the write rather than weakening a
-bound.
+The incoming target or partial is protected throughout download, verification,
+promotion, and staging. Every deletion is followed by directory synchronization
+where the platform supports it. A race that consumes the admitted free space
+still fails the write rather than weakening a bound.
 
 ## Inspect usage
 
@@ -70,10 +81,10 @@ a3s-use registry cache usage \
   --json
 ```
 
-The command performs no network request. JSON reports target/stale entry counts
-and bytes, available filesystem bytes, and the effective policy. If a verified
-catalog-cache stamp exists, its Registry name, URL, and trust-root digest must
-match the command.
+The command performs no network request. Schema v2 JSON reports verified-target,
+resumable-partial, and stale-write entry counts and bytes, available filesystem
+bytes, and the effective policy. If a verified catalog-cache stamp exists, its
+Registry name, URL, and trust-root digest must match the command.
 
 ## Prune
 
@@ -91,14 +102,16 @@ a3s-use registry cache prune \
   --json
 ```
 
-Prune is zero-network and reports before/after usage plus removed target and
-stale-write bytes. Without `--yes`, it makes no change. Missing, malformed,
-linked, non-regular, unowned, or source-mismatched cache state fails closed.
+Prune is zero-network and reports before/after usage plus removed target,
+partial, and stale-write bytes. Without `--yes`, it makes no change. Missing,
+malformed, linked, non-regular, unowned, or source-mismatched cache state fails
+closed.
 
 ## Failure response
 
 | Error | Operator action |
 | --- | --- |
+| `use.extension.registry_download_failed` | Retry the same exact operation; a valid retained partial resumes automatically. Investigate proxy, redirect, Range, or Registry availability errors if it repeats. |
 | `use.extension.registry_target_cache_policy_exceeded` | Increase the explicit byte/entry policy or select a smaller signed target. |
 | `use.extension.registry_target_cache_storage_insufficient` | Free space on the reported staging/cache volume or reduce other retained cache data. |
 | `use.extension.registry_target_cache_invalid` | Quarantine the Registry datastore and investigate unexpected or tampered entries. |

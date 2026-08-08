@@ -40,16 +40,23 @@ fn registry_cache_usage_and_confirmed_prune_are_bounded_and_zero_network() {
     assert!(installed.status.success(), "{installed:?}");
     let cache_directory = home.join("state/remote-registries/fixture/verified-targets/sha256");
     std::fs::write(cache_directory.join(".target-999-999.tmp"), b"stale").unwrap();
+    std::fs::write(
+        cache_directory.join(format!(".target-{}.part", "d".repeat(64))),
+        b"partial",
+    )
+    .unwrap();
 
     server.clear_requests();
     let usage = cache_command(&server, &repository, &home, "usage", &[]);
     assert!(usage.status.success(), "{usage:?}");
     let usage = json(&usage);
     let cache = &usage["data"]["registryCache"];
-    assert_eq!(cache["schemaVersion"], 1);
+    assert_eq!(cache["schemaVersion"], 2);
     assert_eq!(cache["registryName"], "fixture");
     assert_eq!(cache["targetEntries"], 1);
     assert_eq!(cache["targetBytes"], target_bytes);
+    assert_eq!(cache["partialEntries"], 1);
+    assert_eq!(cache["partialBytes"], 7);
     assert_eq!(cache["staleEntries"], 1);
     assert_eq!(cache["staleBytes"], 5);
     assert!(cache["availableBytes"].as_u64().unwrap() > 0);
@@ -88,7 +95,7 @@ fn registry_cache_usage_and_confirmed_prune_are_bounded_and_zero_network() {
     );
     assert!(!unconfirmed.status.success(), "{unconfirmed:?}");
     assert_eq!(json(&unconfirmed)["error"]["code"], "use.cli.invalid_usage");
-    assert_eq!(std::fs::read_dir(&cache_directory).unwrap().count(), 2);
+    assert_eq!(std::fs::read_dir(&cache_directory).unwrap().count(), 3);
 
     let pruned = cache_command(
         &server,
@@ -108,10 +115,14 @@ fn registry_cache_usage_and_confirmed_prune_are_bounded_and_zero_network() {
     let cache = &pruned["data"]["registryCache"];
     assert_eq!(cache["removedTargetEntries"], 1);
     assert_eq!(cache["removedTargetBytes"], target_bytes);
+    assert_eq!(cache["removedPartialEntries"], 1);
+    assert_eq!(cache["removedPartialBytes"], 7);
     assert_eq!(cache["removedStaleEntries"], 1);
     assert_eq!(cache["removedStaleBytes"], 5);
     assert_eq!(cache["after"]["targetEntries"], 0);
     assert_eq!(cache["after"]["targetBytes"], 0);
+    assert_eq!(cache["after"]["partialEntries"], 0);
+    assert_eq!(cache["after"]["partialBytes"], 0);
     assert_eq!(cache["after"]["staleEntries"], 0);
     assert!(server.requests().is_empty());
 }
