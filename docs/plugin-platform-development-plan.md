@@ -46,7 +46,8 @@ Completed in the Use repository:
   the digest-bound manifest after download;
 - bounded SemVer resolver, package lock, prior/candidate upgrade binding;
 - operation plan v4, confirmation, policy and host/provider evidence;
-- manager toolset v3 with plan/apply enablement;
+- manager toolset v4 with install-time Registry selection and plan/apply
+  enablement;
 - immutable package generations and dependency graph records;
 - dependency-forward install, one cutover, reverse uninstall and upgrade GC;
 - durable Registry cutover replay and exact lifecycle journals;

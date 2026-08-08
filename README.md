@@ -649,7 +649,7 @@ Only the following cognitive-package protocol line is accepted:
 | Installed receipt | schema version `3` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v4` (protocol `4`) |
-| Manager MCP toolset | `a3s.use.plugin-manager-tools.v3` |
+| Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
 | Enablement state / operation | `v2` / `v2` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
@@ -665,6 +665,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, and durable replaceable Registry sources | Implemented in the engine and standalone CLI |
+| Manager MCP install planning with canonical `registryName` source selection | Implemented in toolset v4; upgrade remains pinned to installed provenance |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |

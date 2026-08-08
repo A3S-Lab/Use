@@ -34,7 +34,7 @@ publishes one capability generation, and retires unused generations in reverse.
 1. **The package is the lifecycle unit.** A surface cannot be installed,
    upgraded, enabled, disabled, or removed independently of its owning package.
 2. **There is one current cognitive-package format.** Manifest v3, catalog v3,
-   receipt v3, plan v4, host protocol v4, manager toolset v3, pending graph v2,
+   receipt v3, plan v4, host protocol v4, manager toolset v4, pending graph v2,
    and enablement state/operation v2 are the only accepted baseline.
 3. **No pre-release compatibility debt.** Superseded schemas, receipts,
    metadata, APIs, and disk state are rejected. The user must clean the
@@ -69,7 +69,7 @@ publishes one capability generation, and retires unused generations in reverse.
 | Package lock | `a3s.use.plugin-package-lock.v1` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v4`, protocol 4 |
-| Manager MCP toolset | `a3s.use.plugin-manager-tools.v3` |
+| Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
 | Enablement state | `a3s.use.cognitive-package-enablement-state.v2` |
 | Enablement operation | `a3s.use.cognitive-package-enablement-operation.v2` |
@@ -146,7 +146,8 @@ rejection. They are not supported decode paths.
 - [x] Workspace Grant proposal/change/resolution/ceiling binding.
 - [x] Candidate Grant persistence before prepare, cutover checkpointing,
   drain-before-revoke, and joint pre-cutover rollback.
-- [x] Manager MCP toolset v3 with read-only planning and one apply tool.
+- [x] Manager MCP toolset v4 with explicit install-time Registry selection,
+  read-only planning, and one apply tool.
 
 ### Validation and documentation
 

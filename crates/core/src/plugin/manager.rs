@@ -5,13 +5,14 @@ use crate::UseResult;
 
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract,
-    PLUGIN_MANAGER_TOOLSET_SCHEMA_V3,
+    PLUGIN_MANAGER_TOOLSET_SCHEMA_V4,
 };
 
 const MANAGER_ERROR: &str = "use.plugin.manager_toolset_invalid";
 const PACKAGE_ID_PATTERN: &str = "^[a-z][a-z0-9-]{0,62}/[a-z][a-z0-9-]{0,62}$";
 const MACHINE_ID_PATTERN: &str = "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,255}$";
 const DIGEST_PATTERN: &str = "^sha256:[0-9a-f]{64}$";
+const REGISTRY_NAME_PATTERN: &str = "^[a-z][a-z0-9-]{0,62}$";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -39,13 +40,13 @@ pub struct PluginManagerToolAnnotations {
 }
 
 impl PluginManagerToolset {
-    pub fn v3() -> Self {
+    pub fn v4() -> Self {
         Self::contract()
     }
 
     fn contract() -> Self {
         Self {
-            schema: PLUGIN_MANAGER_TOOLSET_SCHEMA_V3.to_owned(),
+            schema: PLUGIN_MANAGER_TOOLSET_SCHEMA_V4.to_owned(),
             tools: vec![
                 tool(
                     "plugin_search",
@@ -74,13 +75,13 @@ impl PluginManagerToolset {
                 tool(
                     "plugin_plan_install",
                     "Resolve an install and return a digest-bound plan without applying it.",
-                    plan_schema(),
+                    install_plan_schema(),
                     annotations(true, false, false, true),
                 ),
                 tool(
                     "plugin_plan_upgrade",
                     "Resolve an upgrade and return a digest-bound plan without applying it.",
-                    plan_schema(),
+                    upgrade_plan_schema(),
                     annotations(true, false, false, true),
                 ),
                 tool(
@@ -121,7 +122,7 @@ impl PluginManagerToolset {
     }
 
     pub fn validate(&self) -> UseResult<()> {
-        if self != &Self::v3() {
+        if self != &Self::v4() {
             return Err(manager_error(
                 "The plugin manager MCP tool inventory differs from the current frozen contract.",
             ));
@@ -227,7 +228,22 @@ fn package_scope_schema() -> Value {
     )
 }
 
-fn plan_schema() -> Value {
+fn install_plan_schema() -> Value {
+    object_schema(
+        vec![
+            ("packageId", package_id_schema()),
+            ("registryName", registry_name_schema()),
+            ("versionRequirement", bounded_string(64)),
+            ("channel", channel_schema()),
+            ("surfaces", selected_surfaces_schema()),
+            ("scopeKind", scope_kind_schema()),
+            ("scopeId", machine_id_schema()),
+        ],
+        &["packageId", "scopeKind", "scopeId"],
+    )
+}
+
+fn upgrade_plan_schema() -> Value {
     object_schema(
         vec![
             ("packageId", package_id_schema()),
@@ -281,6 +297,10 @@ fn package_id_schema() -> Value {
 
 fn machine_id_schema() -> Value {
     json!({"type":"string","pattern":MACHINE_ID_PATTERN})
+}
+
+fn registry_name_schema() -> Value {
+    json!({"type":"string","pattern":REGISTRY_NAME_PATTERN})
 }
 
 fn surface_kind_schema() -> Value {
