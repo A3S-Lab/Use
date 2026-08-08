@@ -321,6 +321,9 @@ codes, timings, and rollback evidence. It omits checkpoint idempotency keys,
 credentials, tokens, secret values, package-authored error text, and package
 content. Consumers must not treat the projection as authority to recreate a
 missing journal.
+Candidate and retirement phase intents may share the reviewed graph
+`operationId`. `intentDigest` is the exact phase identity; latest and previous
+records with the same intent digest are invalid.
 
 ## Canonicalization and limits
 

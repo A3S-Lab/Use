@@ -37,6 +37,14 @@ fn intent(operation_id: &str) -> PluginLifecycleIntent {
 }
 
 fn intent_in_scope(operation_id: &str, scope: PlanScope) -> PluginLifecycleIntent {
+    intent_in_scope_with_action(operation_id, scope, PluginLifecycleAction::Install)
+}
+
+fn intent_in_scope_with_action(
+    operation_id: &str,
+    scope: PlanScope,
+    action: PluginLifecycleAction,
+) -> PluginLifecycleIntent {
     let manifest = ExtensionManifest::parse_acl(OPTIONAL_SKILL_PACKAGE).unwrap();
     PluginLifecycleIntent::from_manifest(
         PluginLifecycleIntentSpec {
@@ -47,7 +55,7 @@ fn intent_in_scope(operation_id: &str, scope: PlanScope) -> PluginLifecycleInten
             package_digest: format!("sha256:{}", "2".repeat(64)),
             manifest_digest: format!("sha256:{}", "3".repeat(64)),
             generation: 9,
-            action: PluginLifecycleAction::Install,
+            action,
         },
         &manifest,
     )
@@ -262,6 +270,69 @@ async fn lifecycle_diagnostics_distinguish_latest_and_previous_operations() {
     assert_eq!(previous.operation_id, first.operation_id);
     assert_eq!(previous.status, PluginLifecycleOperationStatus::Completed);
     assert_eq!(previous.completed_checkpoints, previous.total_checkpoints);
+}
+
+#[tokio::test]
+async fn lifecycle_diagnostics_distinguish_phase_intents_with_one_operation_id() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let operation_id = "install:acme-guide:shared-operation";
+    let first = intent_in_scope_with_action(
+        operation_id,
+        workspace_scope(),
+        PluginLifecycleAction::Install,
+    );
+    let mut record = store.begin(&first).await.unwrap();
+    let mut completed_at_ms = 10;
+    while let Some(checkpoint) = record.next_checkpoint().cloned() {
+        record = store
+            .record_checkpoint(
+                &first,
+                &checkpoint.idempotency_key,
+                PluginLifecycleCheckpointOutcome::Applied,
+                evidence('a'),
+                None,
+                completed_at_ms,
+            )
+            .await
+            .unwrap();
+        completed_at_ms += 10;
+    }
+    store.complete(&first, completed_at_ms).await.unwrap();
+
+    let second = intent_in_scope_with_action(
+        operation_id,
+        workspace_scope(),
+        PluginLifecycleAction::Upgrade,
+    );
+    store.begin(&second).await.unwrap();
+    let diagnostic = store
+        .diagnose(&second.scope, &second.package_id)
+        .await
+        .unwrap();
+
+    let latest = diagnostic.latest.unwrap();
+    let previous = diagnostic.previous.unwrap();
+    assert_eq!(latest.operation_id, previous.operation_id);
+    assert_eq!(latest.action, PluginLifecycleAction::Upgrade);
+    assert_eq!(previous.action, PluginLifecycleAction::Install);
+    assert_ne!(latest.intent_digest, previous.intent_digest);
+}
+
+#[tokio::test]
+async fn lifecycle_diagnostics_reject_duplicate_intent_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
+    let intent = intent("install:acme-guide:duplicate-diagnostic");
+    store.begin(&intent).await.unwrap();
+    let directory = operation_directory(&store, &intent.scope);
+    std::fs::copy(directory.join("active.json"), directory.join("last.json")).unwrap();
+
+    let error = store
+        .diagnose(&intent.scope, &intent.package_id)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.lifecycle_diagnostic_invalid");
 }
 
 #[tokio::test]

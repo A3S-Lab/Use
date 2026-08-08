@@ -67,7 +67,8 @@ Completed in the Use repository:
   exact-scope storage usage diagnostics;
 - versioned, package-scoped latest/previous lifecycle checkpoint diagnostics
   that exclude idempotency keys, credentials, tokens, secret values, and
-  package-authored error text;
+  package-authored error text, while distinguishing same-operation candidate
+  and retirement phases by exact intent digest;
 - CLI diagnostics, package graph commands, Knowledge search/usage, and watchers;
 - current-schema fixtures, digest goldens, remote Registry tests, recovery
   tests, and GitHub Pages site.
