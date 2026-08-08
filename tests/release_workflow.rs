@@ -5,7 +5,8 @@ use std::process::{Command, Output};
 
 #[test]
 fn release_publishes_only_use_owned_crates_in_dependency_order() {
-    let workflow = include_str!("../.github/workflows/release.yml");
+    let workflow = include_str!("../.github/workflows/release.yml").replace("\r\n", "\n");
+    let workflow = workflow.as_str();
     let core = position(workflow, "publish_once a3s-use-core");
     let core_visible = position(workflow, "wait_until_visible a3s-use-core");
     let extension = position(workflow, "publish_once a3s-use-extension");
@@ -153,7 +154,7 @@ fn assert_normalized_tar_gz(path: &Path) {
         assert_eq!(header.gid().unwrap(), 0);
         assert_eq!(
             header.mode().unwrap(),
-            if name == "bin/a3s-use" || header.entry_type().is_dir() {
+            if name == "bin/a3s-use.exe" || header.entry_type().is_dir() {
                 0o755
             } else {
                 0o644
@@ -187,7 +188,7 @@ fn assert_normalized_zip(path: &Path) {
         );
         assert_eq!(
             entry.unix_mode().unwrap() & 0o777,
-            if name == "bin/a3s-use" || entry.is_dir() {
+            if name == "bin/a3s-use.exe" || entry.is_dir() {
                 0o755
             } else {
                 0o644
@@ -267,8 +268,78 @@ fn release_packager_rejects_an_output_inside_the_source_tree() {
 }
 
 #[test]
+fn release_rebuild_verifier_accepts_exact_binaries_and_rejects_drift() {
+    let temp = tempfile::tempdir().unwrap();
+    let stage = temp.path().join("primary stage");
+    let rebuilt = temp.path().join("independent rebuild");
+    let subjects = [
+        ("a3s-use", b"use binary\n".as_slice()),
+        ("a3s-use-browser-driver", b"browser driver\n".as_slice()),
+        (
+            "extensions/a3s/science/bin/a3s-use-science",
+            b"extension binary\n".as_slice(),
+        ),
+    ];
+    for (archive_path, contents) in subjects {
+        let primary = stage.join(archive_path);
+        let rebuild = rebuilt.join(archive_path.replace('/', "-"));
+        fs::create_dir_all(primary.parent().unwrap()).unwrap();
+        fs::create_dir_all(rebuild.parent().unwrap()).unwrap();
+        fs::write(primary, contents).unwrap();
+        fs::write(rebuild, contents).unwrap();
+    }
+
+    for format in ["tar.gz", "zip"] {
+        let archive = temp.path().join(format!("primary.{format}"));
+        assert_packager_success(&stage, &archive, format);
+        let first_evidence = temp.path().join(format!("first-{format}.json"));
+        let second_evidence = temp.path().join(format!("second-{format}.json"));
+
+        let first = run_rebuild_verifier(&archive, &rebuilt, &first_evidence);
+        assert!(
+            first.status.success(),
+            "rebuild verifier rejected exact {format} binaries: {}",
+            String::from_utf8_lossy(&first.stderr)
+        );
+        let value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&first_evidence).unwrap()).unwrap();
+        assert_eq!(value["schema"], "a3s.use.release-rebuild.v1");
+        assert_eq!(value["platform"], "test-x86_64");
+        assert_eq!(
+            value["sourceRevision"],
+            "0123456789abcdef0123456789abcdef01234567"
+        );
+        assert_eq!(value["subjects"].as_array().unwrap().len(), 3);
+
+        let second = run_rebuild_verifier(&archive, &rebuilt, &second_evidence);
+        assert!(second.status.success());
+        assert_eq!(
+            fs::read(&first_evidence).unwrap(),
+            fs::read(&second_evidence).unwrap(),
+            "rebuild evidence is not deterministic"
+        );
+
+        let drifted = rebuilt.join("a3s-use");
+        fs::write(&drifted, b"drifted rebuild\n").unwrap();
+        let rejected_evidence = temp.path().join(format!("rejected-{format}.json"));
+        let rejected = run_rebuild_verifier(&archive, &rebuilt, &rejected_evidence);
+        assert!(!rejected.status.success(), "rebuild drift was accepted");
+        assert!(String::from_utf8_lossy(&rejected.stderr).contains("does not match"));
+        assert!(!rejected_evidence.exists());
+        fs::write(drifted, b"use binary\n").unwrap();
+
+        let archive_before = fs::read(&archive).unwrap();
+        let overwrite = run_rebuild_verifier(&archive, &rebuilt, &archive);
+        assert!(!overwrite.status.success(), "verifier overwrote its input");
+        assert!(String::from_utf8_lossy(&overwrite.stderr).contains("input file"));
+        assert_eq!(fs::read(&archive).unwrap(), archive_before);
+    }
+}
+
+#[test]
 fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     let workflow = include_str!("../.github/workflows/release.yml");
+    let ci = include_str!("../.github/workflows/ci.yml");
 
     assert!(workflow.contains("scripts/package-release.py"));
     assert!(workflow.contains("SOURCE_DATE_EPOCH"));
@@ -281,9 +352,25 @@ fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
         workflow
             .matches("ref: ${{ needs.validate.outputs.source_revision }}")
             .count(),
-        3,
+        4,
         "every post-validation source checkout must use the frozen commit"
     );
+    assert!(workflow.contains("reproducibility:"));
+    assert!(workflow.contains("needs: [validate, binaries]"));
+    assert!(workflow.contains("scripts/verify-release-rebuild.py"));
+    assert!(workflow.contains(".reproducibility.json"));
+    assert!(workflow.contains("needs: [validate, binaries, reproducibility, publish-crates]"));
+    assert!(workflow.contains("test \"${#release_files[@]}\" -eq 17"));
+    let rebuild_job = &workflow
+        [position(workflow, "\n  reproducibility:")..position(workflow, "\n  publish-crates:")];
+    assert!(
+        !rebuild_job.contains("rust-cache"),
+        "the independent rebuild must not reuse compiled artifacts"
+    );
+    assert!(rebuild_job.contains("without a build cache"));
+    assert!(rebuild_job.contains("test ! -e target"));
+    assert!(rebuild_job.contains("test ! -e external/browser/target"));
+    assert!(ci.contains("cargo test -p a3s-use --test release_workflow --locked"));
     assert!(!workflow.contains("tar czf"));
     assert!(!workflow.contains("Compress-Archive"));
     assert!(workflow.contains(".spdx.json"));
@@ -317,7 +404,7 @@ fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
 fn write_release_fixture(root: &Path, reverse: bool) {
     let mut files = vec![
         ("README.md", b"release fixture\n".as_slice()),
-        ("bin/a3s-use", b"fixture executable\n".as_slice()),
+        ("bin/a3s-use.exe", b"fixture executable\n".as_slice()),
         ("skills/core/SKILL.md", b"# Core\n".as_slice()),
     ];
     if reverse {
@@ -328,7 +415,7 @@ fn write_release_fixture(root: &Path, reverse: bool) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, contents).unwrap();
         #[cfg(unix)]
-        if relative == "bin/a3s-use" {
+        if relative == "bin/a3s-use.exe" {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
         }
@@ -355,6 +442,35 @@ fn run_packager(source: &Path, output_path: &Path, format: &str) -> Output {
         .args(["--epoch", "1700000000"])
         .output()
         .unwrap()
+}
+
+fn run_rebuild_verifier(archive: &Path, rebuilt: &Path, output_path: &Path) -> Output {
+    let mut command = Command::new(python_command());
+    command
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verify-release-rebuild.py"))
+        .arg("--archive")
+        .arg(archive)
+        .args(["--platform", "test-x86_64"])
+        .args([
+            "--source-revision",
+            "0123456789abcdef0123456789abcdef01234567",
+        ])
+        .arg("--output")
+        .arg(output_path);
+    for (archive_path, rebuilt_name) in [
+        ("a3s-use", "a3s-use"),
+        ("a3s-use-browser-driver", "a3s-use-browser-driver"),
+        (
+            "extensions/a3s/science/bin/a3s-use-science",
+            "extensions-a3s-science-bin-a3s-use-science",
+        ),
+    ] {
+        command
+            .arg("--binary")
+            .arg(archive_path)
+            .arg(rebuilt.join(rebuilt_name));
+    }
+    command.output().unwrap()
 }
 
 fn python_command() -> &'static str {

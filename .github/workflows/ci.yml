@@ -63,6 +63,9 @@ jobs:
       - name: Run verified release installer tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --test release_installers --locked -- --nocapture
+      - name: Run release supply-chain tests
+        if: runner.os == 'Windows'
+        run: cargo test -p a3s-use --test release_workflow --locked -- --nocapture
       - name: Run facade documentation tests
         if: runner.os == 'Windows'
         run: cargo test -p a3s-use --doc --locked
