@@ -42,27 +42,16 @@ async fn upgrade(args: &[String]) -> UseResult<CommandOutput> {
             format!("Unknown cognitive package '{id}'."),
         )
     })?;
-    let registry_name = option_argument(args, "--registry-name")?
-        .ok_or_else(|| usage_error("remote cognitive-package upgrade requires --registry-name"))?;
-    let registry_url = option_argument(args, "--registry-url")?
-        .ok_or_else(|| usage_error("remote cognitive-package upgrade requires --registry-url"))?;
-    let trust_root = option_argument(args, "--trust-root")?
-        .ok_or_else(|| usage_error("remote cognitive-package upgrade requires --trust-root"))?;
-    let trusted_root = resolve_trusted_root(option_argument(args, "--trusted-root")?)?;
+    let registry_name = option_argument(args, "--registry-name")?;
     let version = option_argument(args, "--version")?;
     let channel = option_argument(args, "--channel")?.unwrap_or("stable");
     let expected_lock = option_argument(args, "--package-lock-digest")?;
-    let cache_policy = registry_cache::cache_policy(args)?;
     let result = upgrade_remote_extension(
         package_id,
         registry_name,
-        registry_url,
-        trust_root,
-        trusted_root.as_deref(),
         version,
         channel,
         expected_lock,
-        cache_policy,
         offline,
     )
     .await?;
@@ -82,6 +71,7 @@ async fn upgrade(args: &[String]) -> UseResult<CommandOutput> {
             "component": external_component_value(&result.extension, id.starts_with("use/")),
             "changed": result.changed,
             "registryAccess": result.registry_access,
+            "registrySourceRevision": result.registry_source_revision,
             "packageGraph": result.package_graph
         }),
     ))
@@ -266,27 +256,16 @@ async fn install(args: &[String]) -> UseResult<CommandOutput> {
             "--force is not valid for cognitive packages; apply a newly resolved package-lock plan",
         ));
     }
-    let registry_name = option_argument(args, "--registry-name")?
-        .ok_or_else(|| usage_error("cognitive-package install requires --registry-name"))?;
-    let registry_url = option_argument(args, "--registry-url")?
-        .ok_or_else(|| usage_error("cognitive-package install requires --registry-url"))?;
-    let trust_root = option_argument(args, "--trust-root")?
-        .ok_or_else(|| usage_error("cognitive-package install requires --trust-root"))?;
-    let trusted_root = resolve_trusted_root(option_argument(args, "--trusted-root")?)?;
+    let registry_name = option_argument(args, "--registry-name")?;
     let version = option_argument(args, "--version")?;
     let channel = option_argument(args, "--channel")?.unwrap_or("stable");
     let expected_package_lock = option_argument(args, "--package-lock-digest")?;
-    let cache_policy = registry_cache::cache_policy(args)?;
     let result = install_remote_extension(
         package_id,
         registry_name,
-        registry_url,
-        trust_root,
-        trusted_root.as_deref(),
         version,
         channel,
         expected_package_lock,
-        cache_policy,
         offline,
     )
     .await?;
@@ -303,6 +282,7 @@ async fn install(args: &[String]) -> UseResult<CommandOutput> {
             "component": external_component_value(&result.extension, id.starts_with("use/")),
             "changed": result.changed,
             "registryAccess": result.registry_access,
+            "registrySourceRevision": result.registry_source_revision,
             "packageGraph": result.package_graph
         }),
     ))
@@ -390,24 +370,4 @@ async fn uninstall(id: &str) -> UseResult<CommandOutput> {
         "use.component_unknown",
         format!("Unknown delegated component '{id}'."),
     ))
-}
-
-fn resolve_trusted_root(value: Option<&str>) -> UseResult<Option<std::path::PathBuf>> {
-    value
-        .map(|path| {
-            let path = std::path::PathBuf::from(path);
-            if path.is_absolute() {
-                Ok(path)
-            } else {
-                std::env::current_dir()
-                    .map(|directory| directory.join(path))
-                    .map_err(|error| {
-                        UseError::new(
-                            "use.extension.registry_path_invalid",
-                            format!("Failed to resolve the trusted root path: {error}"),
-                        )
-                    })
-            }
-        })
-        .transpose()
 }

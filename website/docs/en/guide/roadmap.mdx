@@ -38,6 +38,9 @@ host target, and provider capability checks remain mandatory correctness rules.
 - The bounded resolver freezes one Registry/TUF package lock, prepares
   dependencies forward, publishes one graph snapshot, and retires unused
   packages in reverse.
+- The standalone CLI persists a bounded enabled Registry set in canonical ACL,
+  requires reviewed revisions for authority changes, isolates TUF/cache state
+  by source identity, and restores exact prior evidence without receipt rewrites.
 - Plan v4 separates review from mutation and binds operation identity,
   confirmation, scope, package transitions, impact, Grants, providers, and
   current-state evidence.
@@ -96,6 +99,9 @@ host target, and provider capability checks remain mandatory correctness rules.
 
 - Operate a documented Registry with signing, root rotation, expiry, mirror
   replacement, offline recovery, and incident procedures.
+- Durable Registry add/list/replace/default/enable/disable/remove and exact-
+  identity evidence restoration are implemented; operating and exercising a
+  real production Registry remains open.
 - Deterministic archive serialization, cross-platform installers, per-platform
   SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and a verified keyless
   Sigstore checksum bundle now come from one workflow with pinned Actions and

@@ -187,16 +187,13 @@ fn flow_registry_command(
     action: &str,
     version: &str,
 ) -> Output {
+    configure_registry(server, repository, home, &[]);
     Command::new(binary())
         .args([
             action,
             "acme/flow-suite",
             "--registry-name",
             "fixture",
-            "--registry-url",
-            server.base_url(),
-            "--trust-root",
-            &repository.root_sha256,
             "--version",
             version,
             "--json",

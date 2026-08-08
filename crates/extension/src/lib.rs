@@ -17,6 +17,7 @@ mod plugin_manifest;
 mod plugin_manifest_tests;
 mod registry;
 mod registry_io;
+mod registry_sources;
 mod release_bundle;
 mod remote;
 mod route_lock;
@@ -44,6 +45,11 @@ pub use registry::{
     ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot, ExtensionRouteBinding,
     ExtensionRouteLease, ExtensionTrust, InstalledExtension, UninstallResult,
     EXTENSION_REGISTRY_CUTOVER_SCHEMA, MAX_PENDING_REGISTRY_CUTOVERS,
+};
+pub use registry_sources::{
+    RegistrySource, RegistrySourceInput, RegistrySourceMutation, RegistrySourceSnapshot,
+    RegistrySourceStore, ResolvedRegistrySources, MAX_CONFIGURED_REGISTRY_SOURCES,
+    REGISTRY_SOURCE_CONFIG_SCHEMA_VERSION,
 };
 pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
@@ -87,6 +93,7 @@ const RESERVED_ROUTES: &[&str] = &[
     "ocr",
     "capabilities",
     "component",
+    "registry",
     "extension",
     "doctor",
     "mcp",

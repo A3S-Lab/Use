@@ -18,9 +18,52 @@ installation state, a trust root, a receipt, or recovery authority. Removing a
 cache entry cannot change a currently installed package or published capability,
 but it can make a future offline install or upgrade unavailable.
 
+## Durable source configuration
+
+The standalone CLI stores at most 64 named sources in canonical
+`<state-root>/registries.acl`. Each entry binds:
+
+- stable lowercase source name;
+- canonical HTTPS base URL (loopback HTTP is test-only);
+- pinned bootstrap TUF root SHA-256;
+- enabled state;
+- whether an exact trusted-root file was imported; and
+- the durable verified-target cache policy.
+
+The first enabled source becomes the default. `install` and `upgrade` select
+that default unless `--registry-name` chooses another enabled source. All other
+enabled sources are passed to bounded dependency resolution; the same package
+identity in more than one enabled source is rejected as ambiguous.
+
+```bash
+a3s-use registry source add packages \
+  --url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --cache-max-bytes 4294967296 \
+  --cache-max-entries 4096 \
+  --cache-min-free-bytes 268435456 \
+  --json
+```
+
+An optional `--trusted-root /absolute/path/root.json` is accepted only when it
+is a bounded regular JSON file whose complete bytes match the pinned digest.
+Use copies it into a managed content-addressed path and revalidates it whenever
+the source is resolved.
+
+`registry source list --json` returns the canonical configuration revision.
+`replace`, `default`, `enable`, `disable`, and `remove` require that exact
+reviewed revision plus `--yes`. A stale revision fails without mutation.
+
+Source identity is the digest of the canonical name, URL, and bootstrap-root
+digest. Each identity receives a distinct TUF/cache datastore. Replacing a
+source never lets prior metadata cross into the new identity. Disabling,
+removing, or replacing a source preserves its old datastore; restoring the
+exact identity reuses the old verified evidence. Installed receipts and locks
+are immutable and are never rewritten by source administration.
+
 ## Default policy
 
-The standalone CLI and `TrustedRegistry::new` use these per-Registry defaults:
+New standalone sources and `TrustedRegistry::new` use these per-Registry defaults:
 
 | Bound | Default |
 | --- | ---: |
@@ -28,8 +71,9 @@ The standalone CLI and `TrustedRegistry::new` use these per-Registry defaults:
 | Retained target entries | 4,096 |
 | Free-space reserve | 256 MiB |
 
-Embedding hosts may supply a validated `VerifiedTargetCachePolicy`.
-`install`, `upgrade`, and `registry cache` accept matching standalone overrides:
+Embedding hosts may supply a validated `VerifiedTargetCachePolicy`. Standalone
+source `add` and `replace` persist the matching policy options. Confirmed cache
+prune may supply a stricter transient policy without rewriting the source:
 
 ```text
 --cache-max-bytes <unsigned-decimal-bytes>
@@ -37,9 +81,8 @@ Embedding hosts may supply a validated `VerifiedTargetCachePolicy`.
 --cache-min-free-bytes <unsigned-decimal-bytes>
 ```
 
-CLI overrides apply to that invocation. A host that requires a persistent
-non-default policy must supply the same typed policy whenever it constructs the
-Registry until durable Registry source configuration is completed.
+Prune overrides apply only to that invocation. Install and upgrade always use
+the policy in the reviewed source revision.
 
 ## Admission and retention
 
@@ -76,8 +119,6 @@ still fails the write rather than weakening a bound.
 ```bash
 a3s-use registry cache usage \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --json
 ```
 
@@ -93,8 +134,6 @@ Preview the current usage first, then run a confirmed prune:
 ```bash
 a3s-use registry cache prune \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --cache-max-bytes 2147483648 \
   --cache-max-entries 2048 \
   --cache-min-free-bytes 536870912 \
@@ -115,7 +154,11 @@ closed.
 | `use.extension.registry_target_cache_policy_exceeded` | Increase the explicit byte/entry policy or select a smaller signed target. |
 | `use.extension.registry_target_cache_storage_insufficient` | Free space on the reported staging/cache volume or reduce other retained cache data. |
 | `use.extension.registry_target_cache_invalid` | Quarantine the Registry datastore and investigate unexpected or tampered entries. |
-| `use.extension.catalog_cache_invalid` | Restore the exact Registry source identity or intentionally replace/reset that Registry state. |
+| `use.extension.catalog_cache_invalid` | Quarantine the affected identity datastore. Restore a verified backup of that exact source identity, or replace the source and repopulate its isolated new datastore. |
+| `use.extension.registry_sources_busy` | Retry after the process changing Registry source configuration releases the source lock. |
+| `use.extension.registry_sources_revision_mismatch` | List sources again, review the new revision, and retry the confirmed mutation. |
+| `use.extension.registry_source_disabled` | Enable the reviewed source or choose another enabled source explicitly. |
+| `use.extension.registry_sources_invalid` | Quarantine the source ACL and managed root files; restore only a canonical verified backup or recreate the source explicitly. |
 | `use.extension.registry_busy` | Retry after the active cache or metadata operation completes. |
 
 Do not repair a target by renaming arbitrary bytes to their expected digest.

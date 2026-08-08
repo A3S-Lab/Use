@@ -35,7 +35,7 @@ The target architecture separates package management, workload scheduling, and h
 
 | Component              | Owns                                                                                                                         | Does not own                                               |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Umbrella host          | Named replaceable Registry config, trust roots, enabled state, ACL policy, confirmation, secrets, and Runtime providers      | Package storage or a second lifecycle manager              |
+| Umbrella host          | Revision-addressed ACL Registry sources, trust roots, enabled/default state, policy, confirmation, secrets, and providers    | Package storage or a second lifecycle manager              |
 | Shared Plugin Manager  | Catalog, policy, plan/apply, operation replay, and parent saga                                                               | Package archive format or provider scheduling internals    |
 | A3S Use                | Package verification, immutable generations, receipts, grants, binding evidence, route leases, and capability reconciliation | Generic scheduling, UI rendering, or an agent RPC protocol |
 | A3S Runtime            | Task/Service workloads and provider capability                                                                               | Package parsing, trust roots, or user authorization        |
@@ -58,7 +58,13 @@ Do not add another manager, grant store, Runtime selector, capability registry, 
 
 ## Package dependency boundary
 
-A schema-v3 package declares only package IDs and SemVer ranges. The host owns the enabled named Registry set. Resolution is bounded and deterministic, rejects cross-Registry ambiguity, and emits one canonical lock containing exact versions, content digests, host compatibility, Registry URLs/trust roots, and TUF role versions.
+A schema-v3 package declares only package IDs and SemVer ranges. The host owns
+the enabled named Registry set. The standalone host persists it as canonical
+ACL, compare-and-swaps authority changes against a reviewed revision, and
+isolates TUF/cache state by exact source identity. Resolution is bounded and
+deterministic, rejects cross-Registry ambiguity, and emits one canonical lock
+containing exact versions, content digests, host compatibility, Registry
+URLs/trust roots, and TUF role versions.
 
 The operation plan binds that lock. Apply revalidates the entire closure before payload download, then prepares dependencies before dependents. Existing dependencies are retained only when their exact locked generation is already visible. All changed packages publish through one immutable snapshot cutover; uninstall runs in reverse and refuses to remove a package with installed dependents.
 

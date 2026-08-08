@@ -838,7 +838,7 @@ async fn write_bootstrap_root(path: &Path, bytes: &[u8]) -> UseResult<()> {
     sync_parent_directory(parent, "TUF metadata").await
 }
 
-fn normalize_registry_url(value: &str) -> UseResult<Url> {
+pub(crate) fn normalize_registry_url(value: &str) -> UseResult<Url> {
     let mut url = Url::parse(value).map_err(|error| {
         UseError::new(
             "use.extension.registry_url_invalid",
@@ -900,7 +900,7 @@ pub(crate) fn validate_registry_name(name: &str) -> UseResult<()> {
     }
 }
 
-fn normalize_sha256(value: &str, label: &str) -> UseResult<String> {
+pub(crate) fn normalize_sha256(value: &str, label: &str) -> UseResult<String> {
     let value = value.strip_prefix("sha256:").unwrap_or(value);
     if value.len() == 64
         && value

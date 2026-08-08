@@ -118,21 +118,22 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
 ## 试用开发版 CLI
 
-standalone CLI 可以从显式、由宿主选择的 Registry 解析一个签名包及其完整
-SemVer 依赖闭包：
+standalone CLI 会先持久化由宿主选择的 Registry 信任边界，再从同一组 enabled
+source 解析签名包及其完整 SemVer 依赖闭包：
 
 ```bash
+a3s-use registry source add packages \
+  --url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --json
+
 a3s-use install acme/research \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --version 2.0.0 \
   --json
 
 a3s-use upgrade acme/research \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --json
 
 a3s-use uninstall acme/research --json
@@ -140,7 +141,10 @@ a3s-use uninstall acme/research --json
 
 应用单独审查过的解析结果时增加
 `--package-lock-digest sha256:<64-hex-digits>`。lock 漂移会在下载 archive
-前失败。以上 Registry 值仅用于说明；项目当前没有宣传公共生产 Registry。
+前失败。source replace/default/enable/disable/remove 需要
+`registry source list --json` 返回的精确 revision 与 `--yes`；identity-bound
+TUF/cache state 和 installed provenance 会被保留。以上 Registry 值仅用于说明；
+项目当前没有宣传公共生产 Registry。
 
 对已经精确 promoted 的 OKF projection 执行带引用搜索：
 

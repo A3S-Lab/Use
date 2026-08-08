@@ -14,21 +14,17 @@ use std::time::Duration;
 mod component;
 mod knowledge;
 #[cfg(feature = "extensions")]
-mod registry_cache;
+mod registry;
 #[cfg(not(feature = "extensions"))]
-mod registry_cache {
+mod registry {
     use a3s_use_core::{UseError, UseResult};
 
     use super::CommandOutput;
 
-    pub(super) fn cache_policy(_args: &[String]) -> UseResult<()> {
-        Ok(())
-    }
-
     pub(super) async fn run(_args: &[String]) -> UseResult<CommandOutput> {
         Err(UseError::new(
             "use.extension.disabled",
-            "Registry cache operations require the 'extensions' feature.",
+            "Registry source and cache operations require the 'extensions' feature.",
         ))
     }
 }
@@ -79,7 +75,7 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "uninstall" => package_command_alias("uninstall", &args[1..]).await,
         "component" => component::run(&args[1..]).await,
         "knowledge" => knowledge::run(&args[1..]).await,
-        "registry" => registry_cache::run(&args[1..]).await,
+        "registry" => registry::run(&args[1..]).await,
         "browser" => browser(&args[1..]).await,
         "ocr" => ocr(&args[1..]).await,
         "box" => {
@@ -120,8 +116,8 @@ fn help() -> CommandOutput {
             "  a3s-use capability snapshot [--json]\n",
             "  a3s-use capability watch [--after-generation <n>] [--after-revision <sha256>] [--timeout-ms <ms>] [--json]\n",
             "  a3s-use doctor [browser|box|ocr] [--json]\n",
-            "  a3s-use install <publisher/name> [registry options] [--offline] [--json]\n",
-            "  a3s-use upgrade <publisher/name> [registry options] [--offline] [--json]\n",
+            "  a3s-use install <publisher/name> [--registry-name <name>] [--offline] [--json]\n",
+            "  a3s-use upgrade <publisher/name> [--registry-name <name>] [--offline] [--json]\n",
             "  a3s-use uninstall <publisher/name> [--json]\n",
             "  a3s-use component list|status|install|upgrade|uninstall [args] [--json]\n",
             "  a3s-use knowledge search <query> [--limit <n>] [--json]\n",
@@ -130,8 +126,12 @@ fn help() -> CommandOutput {
             "  a3s-use knowledge backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
             "  a3s-use knowledge verify-backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
             "  a3s-use knowledge repair-search-index --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use registry cache usage [registry and cache options] [--json]\n",
-            "  a3s-use registry cache prune [registry and cache options] --yes [--json]\n",
+            "  a3s-use registry source list [--json]\n",
+            "  a3s-use registry source add <name> --url <https-url> --trust-root <sha256> [source options] [--json]\n",
+            "  a3s-use registry source replace <name> --url <https-url> --trust-root <sha256> --expected-revision <sha256> --yes [source options] [--json]\n",
+            "  a3s-use registry source default|enable|disable|remove <name> --expected-revision <sha256> --yes [--json]\n",
+            "  a3s-use registry cache usage [--registry-name <name>] [--json]\n",
+            "  a3s-use registry cache prune [--registry-name <name>] [cache options] --yes [--json]\n",
             "  a3s-use browser doctor [--json]\n",
             "  a3s-use browser render <url> [--output <path>] [--screenshot <path>] [--json]\n",
             "  a3s-use browser open|list|navigate|snapshot|click|type|press|select|scroll|screenshot|close [args] [--json]\n",
@@ -668,16 +668,7 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--json" | "--force" | "--offline" => index += 1,
-            "--registry-name"
-            | "--registry-url"
-            | "--trust-root"
-            | "--trusted-root"
-            | "--version"
-            | "--channel"
-            | "--package-lock-digest"
-            | "--cache-max-bytes"
-            | "--cache-max-entries"
-            | "--cache-min-free-bytes" => {
+            "--registry-name" | "--version" | "--channel" | "--package-lock-digest" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));
                 }
@@ -698,16 +689,7 @@ fn validate_component_upgrade_options(args: &[String]) -> UseResult<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--json" | "--offline" => index += 1,
-            "--registry-name"
-            | "--registry-url"
-            | "--trust-root"
-            | "--trusted-root"
-            | "--version"
-            | "--channel"
-            | "--package-lock-digest"
-            | "--cache-max-bytes"
-            | "--cache-max-entries"
-            | "--cache-min-free-bytes" => {
+            "--registry-name" | "--version" | "--channel" | "--package-lock-digest" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));
                 }

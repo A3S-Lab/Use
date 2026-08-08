@@ -59,6 +59,7 @@ fn registry_install(
     package_lock_digest: Option<&str>,
     extra: &[&str],
 ) -> Output {
+    configure_registry(server, repository, home, &[]);
     let mut command = Command::new(binary());
     command.args([
         "component",
@@ -66,10 +67,6 @@ fn registry_install(
         "a3s/science",
         "--registry-name",
         "fixture",
-        "--registry-url",
-        server.base_url(),
-        "--trust-root",
-        &repository.root_sha256,
     ]);
     if let Some(package_lock_digest) = package_lock_digest {
         command.args(["--package-lock-digest", package_lock_digest]);
@@ -89,16 +86,13 @@ fn cognitive_registry_install(
     package_id: &str,
     extra: &[&str],
 ) -> Output {
+    configure_registry(server, repository, home, &[]);
     Command::new(binary())
         .args([
             "install",
             package_id,
             "--registry-name",
             "fixture",
-            "--registry-url",
-            server.base_url(),
-            "--trust-root",
-            &repository.root_sha256,
             "--version",
             "1.0.0",
         ])
@@ -125,21 +119,85 @@ fn cognitive_registry_upgrade(
     version: &str,
     extra: &[&str],
 ) -> Output {
+    configure_registry(server, repository, home, &[]);
     Command::new(binary())
         .args([
             "upgrade",
             package_id,
             "--registry-name",
             "fixture",
-            "--registry-url",
-            server.base_url(),
-            "--trust-root",
-            &repository.root_sha256,
             "--version",
             version,
         ])
         .args(extra)
         .arg("--json")
+        .env("A3S_USE_HOME", home)
+        .output()
+        .unwrap()
+}
+
+fn configure_registry(
+    server: &TestServer,
+    repository: &TestRepository,
+    home: &std::path::Path,
+    policy: &[&str],
+) {
+    if home.join("state/registries.acl").exists() {
+        return;
+    }
+    let configured = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "add",
+            "fixture",
+            "--url",
+            server.base_url(),
+            "--trust-root",
+            &repository.root_sha256,
+        ])
+        .args(policy)
+        .arg("--json")
+        .env("A3S_USE_HOME", home)
+        .output()
+        .unwrap();
+    assert!(configured.status.success(), "{configured:?}");
+}
+
+fn registry_source_snapshot(home: &std::path::Path) -> serde_json::Value {
+    let listed = Command::new(binary())
+        .args(["registry", "source", "list", "--json"])
+        .env("A3S_USE_HOME", home)
+        .output()
+        .unwrap();
+    assert!(listed.status.success(), "{listed:?}");
+    json(&listed)["data"]["registrySources"].clone()
+}
+
+fn replace_registry(
+    server: &TestServer,
+    repository: &TestRepository,
+    home: &std::path::Path,
+) -> Output {
+    let revision = registry_source_snapshot(home)["revision"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "replace",
+            "fixture",
+            "--url",
+            server.base_url(),
+            "--trust-root",
+            &repository.root_sha256,
+            "--expected-revision",
+            &revision,
+            "--yes",
+            "--json",
+        ])
         .env("A3S_USE_HOME", home)
         .output()
         .unwrap()

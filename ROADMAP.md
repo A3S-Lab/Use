@@ -90,6 +90,10 @@ rejection. They are not supported decode paths.
   ceiling.
 - [x] Complete current TUF metadata validation and cache verified archives and
   signed planning targets by SHA-256.
+- [x] Persist up to 64 named Registry sources in canonical ACL with one enabled
+  default, revision-bound confirmed authority changes, managed digest-bound
+  root import, and source-identity-isolated TUF/cache datastores. Install and
+  upgrade consume that same enabled set for cross-Registry dependencies.
 - [x] Support explicit zero-network install and upgrade from only unexpired,
   revalidated cached metadata and targets; reject missing or tampered evidence
   without implicit online-to-cache fallback.
@@ -238,6 +242,9 @@ Status: in progress
 
 - [ ] Publish and operate at least one documented Registry with root rotation,
   expiry, mirror replacement, offline recovery, and incident procedures.
+- [x] Provide durable Registry source add/list/replace/default/enable/disable/
+  remove operations; preserve immutable receipts and identity-bound evidence
+  across replacement and exact-provenance restoration.
 - [x] Persist verified archives and planning targets in a content-addressed
   cache and support explicit fail-closed offline install/upgrade.
 - [x] Enforce typed per-Registry byte/entry limits, minimum free-space

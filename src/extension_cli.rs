@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use a3s_use_core::{UseError, UseResult};
@@ -29,6 +29,7 @@ pub(crate) struct ExtensionInstallView {
     pub extension: ExtensionView,
     pub package_graph: Option<serde_json::Value>,
     pub registry_access: &'static str,
+    pub registry_source_revision: String,
 }
 
 #[derive(Debug, Clone)]
@@ -276,28 +277,17 @@ pub(crate) async fn installed_extension(_package_id: &str) -> UseResult<Option<E
 }
 
 #[cfg(feature = "extensions")]
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn install_remote_extension(
     package_id: &str,
-    registry_name: &str,
-    registry_url: &str,
-    trust_root: &str,
-    trusted_root_path: Option<&Path>,
+    registry_name: Option<&str>,
     version: Option<&str>,
     channel: &str,
     expected_package_lock_digest: Option<&str>,
-    cache_policy: a3s_use_extension::VerifiedTargetCachePolicy,
     offline: bool,
 ) -> UseResult<ExtensionInstallView> {
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
-    let registry = a3s_use_extension::TrustedRegistry::new(
-        registry_name,
-        registry_url,
-        trust_root,
-        trusted_root_path.map(Path::to_path_buf),
-        paths.tuf_datastore(registry_name)?,
-    )?
-    .with_target_cache_policy(cache_policy);
+    let registries = a3s_use_extension::RegistrySourceStore::from_env()?
+        .resolve(registry_name)
+        .await?;
     let release_channel = match channel {
         "stable" => a3s_use_core::PluginReleaseChannel::Stable,
         "beta" => a3s_use_core::PluginReleaseChannel::Beta,
@@ -313,8 +303,8 @@ pub(crate) async fn install_remote_extension(
     let result = if offline {
         manager
             .install_cached(
-                &registry,
-                &[],
+                registries.root(),
+                registries.dependencies(),
                 package_id,
                 version,
                 release_channel,
@@ -324,8 +314,8 @@ pub(crate) async fn install_remote_extension(
     } else {
         manager
             .install_remote(
-                &registry,
-                &[],
+                registries.root(),
+                registries.dependencies(),
                 package_id,
                 version,
                 release_channel,
@@ -345,32 +335,22 @@ pub(crate) async fn install_remote_extension(
         extension,
         package_graph: Some(package_graph),
         registry_access: if offline { "cached" } else { "refreshed" },
+        registry_source_revision: registries.source_revision().to_owned(),
     })
 }
 
 #[cfg(feature = "extensions")]
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn upgrade_remote_extension(
     package_id: &str,
-    registry_name: &str,
-    registry_url: &str,
-    trust_root: &str,
-    trusted_root_path: Option<&Path>,
+    registry_name: Option<&str>,
     version: Option<&str>,
     channel: &str,
     expected_package_lock_digest: Option<&str>,
-    cache_policy: a3s_use_extension::VerifiedTargetCachePolicy,
     offline: bool,
 ) -> UseResult<ExtensionInstallView> {
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
-    let registry = a3s_use_extension::TrustedRegistry::new(
-        registry_name,
-        registry_url,
-        trust_root,
-        trusted_root_path.map(Path::to_path_buf),
-        paths.tuf_datastore(registry_name)?,
-    )?
-    .with_target_cache_policy(cache_policy);
+    let registries = a3s_use_extension::RegistrySourceStore::from_env()?
+        .resolve(registry_name)
+        .await?;
     let release_channel = match channel {
         "stable" => a3s_use_core::PluginReleaseChannel::Stable,
         "beta" => a3s_use_core::PluginReleaseChannel::Beta,
@@ -386,8 +366,8 @@ pub(crate) async fn upgrade_remote_extension(
     let result = if offline {
         manager
             .upgrade_cached(
-                &registry,
-                &[],
+                registries.root(),
+                registries.dependencies(),
                 package_id,
                 version,
                 release_channel,
@@ -397,8 +377,8 @@ pub(crate) async fn upgrade_remote_extension(
     } else {
         manager
             .upgrade_remote(
-                &registry,
-                &[],
+                registries.root(),
+                registries.dependencies(),
                 package_id,
                 version,
                 release_channel,
@@ -418,38 +398,29 @@ pub(crate) async fn upgrade_remote_extension(
         extension,
         package_graph: Some(package_graph),
         registry_access: if offline { "cached" } else { "refreshed" },
+        registry_source_revision: registries.source_revision().to_owned(),
     })
 }
 
 #[cfg(not(feature = "extensions"))]
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn install_remote_extension(
     _package_id: &str,
-    _registry_name: &str,
-    _registry_url: &str,
-    _trust_root: &str,
-    _trusted_root_path: Option<&Path>,
+    _registry_name: Option<&str>,
     _version: Option<&str>,
     _channel: &str,
     _expected_package_lock_digest: Option<&str>,
-    _cache_policy: (),
     _offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())
 }
 
 #[cfg(not(feature = "extensions"))]
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn upgrade_remote_extension(
     _package_id: &str,
-    _registry_name: &str,
-    _registry_url: &str,
-    _trust_root: &str,
-    _trusted_root_path: Option<&Path>,
+    _registry_name: Option<&str>,
     _version: Option<&str>,
     _channel: &str,
     _expected_package_lock_digest: Option<&str>,
-    _cache_policy: (),
     _offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())

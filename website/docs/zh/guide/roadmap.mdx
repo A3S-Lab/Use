@@ -36,6 +36,9 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
   表面、包依赖、权限上限与精确 provenance。
 - 有界 resolver 会冻结一个 Registry/TUF package lock，前向准备依赖，一次
   发布图快照，再反向退休不再需要的包。
+- standalone CLI 会把有界 enabled Registry set 持久化为 canonical ACL，
+  authority change 必须绑定 reviewed revision；TUF/cache state 按 source
+  identity 隔离，恢复完全相同的 identity 时不会改写 receipt。
 - Plan v4 分离审查和 mutation，并绑定 operation identity、confirmation、
   scope、package transition、impact、Grant、provider 与当前状态证据。
 - Lifecycle journal 已提供精确崩溃重放、cutover-aware publication、精确
@@ -83,6 +86,8 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
 
 - 运营一个有文档的 Registry，覆盖签名、root rotation、expiry、mirror
   replacement、offline recovery 与 incident procedure。
+- Registry add/list/replace/default/enable/disable/remove 与 exact-identity
+  evidence restore 已实现；真实生产 Registry 的运营和演练仍未完成。
 - 同一套固定 Action 与发布工具版本的 workflow 已生成确定性归档、跨平台
   安装脚本、逐平台 SPDX SBOM、GitHub OIDC provenance/SBOM attestation，
   以及经过本地复核的 keyless Sigstore checksum bundle。

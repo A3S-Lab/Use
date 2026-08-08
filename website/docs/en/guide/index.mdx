@@ -22,7 +22,7 @@ release promise.
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Package format      | Manifest v3 with six named surface kinds and required package README                                                          |
 | Dependencies        | Bounded SemVer resolver, exact Registry/TUF lock, forward prepare, one cutover, reverse retirement                            |
-| Trust               | Replaceable host-owned Registries and complete catalog-v3 provenance                                                          |
+| Trust               | Durable ACL Registry sources, revision-reviewed replacement, isolated TUF state, and complete catalog-v3 provenance           |
 | Lifecycle           | Install, upgrade, uninstall, enable, and disable through immutable plan-v4 review/apply                                       |
 | Local surface hosts | Tool Task, stdio MCP, Skill/UI projection, SQLite/FTS5 OKF with scoped audit/backup/FTS repair, injected `a3s-flow` preflight |
 | Managed hosts       | Runtime Service, HTTP MCP/Gateway, managed Knowledge/UI composition still in development                                      |
@@ -128,30 +128,34 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
 ## Exercise the development CLI
 
-The standalone CLI can resolve a signed package and its complete SemVer
-dependency closure from an explicit host-selected Registry:
+The standalone CLI first persists the host-selected Registry trust boundary,
+then resolves a signed package and its complete SemVer dependency closure from
+the same enabled source set:
 
 ```bash
+a3s-use registry source add packages \
+  --url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --json
+
 a3s-use install acme/research \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --version 2.0.0 \
   --json
 
 a3s-use upgrade acme/research \
   --registry-name packages \
-  --registry-url https://packages.example.org/a3s/ \
-  --trust-root sha256:<64-hex-digits> \
   --json
 
 a3s-use uninstall acme/research --json
 ```
 
 Add `--package-lock-digest sha256:<64-hex-digits>` when applying a separately
-reviewed resolution. Lock drift fails before archive download. These Registry
-values are illustrative; the project does not advertise a public production
-Registry.
+reviewed resolution. Lock drift fails before archive download. Source
+replacement/default/enable/disable/removal requires the exact revision from
+`registry source list --json` and `--yes`; identity-bound TUF/cache state and
+installed provenance are retained. These Registry values are illustrative;
+the project does not advertise a public production Registry.
 
 Search an exact promoted OKF projection with citations:
 

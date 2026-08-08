@@ -1,5 +1,264 @@
 use super::*;
 
+#[test]
+fn registry_source_cli_requires_reviewed_revisions_for_authority_changes() {
+    let temporary = tempfile::tempdir().unwrap();
+    let home = temporary.path().join("home");
+
+    let empty = Command::new(binary())
+        .args(["registry", "source", "list", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(empty.status.success(), "{empty:?}");
+    let empty = json(&empty);
+    assert!(empty["data"]["registrySources"]["sources"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
+    let primary = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "add",
+            "primary",
+            "--url",
+            "https://primary.example/a3s",
+            "--trust-root",
+            &"a".repeat(64),
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(primary.status.success(), "{primary:?}");
+    let primary = json(&primary);
+    let primary_revision = primary["data"]["registrySources"]["snapshot"]["revision"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        primary["data"]["registrySources"]["snapshot"]["defaultRegistry"],
+        "primary"
+    );
+
+    let mirror = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "add",
+            "mirror",
+            "--url",
+            "https://mirror.example/a3s/",
+            "--trust-root",
+            &"b".repeat(64),
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(mirror.status.success(), "{mirror:?}");
+    let mirror = json(&mirror);
+    let current_revision = mirror["data"]["registrySources"]["snapshot"]["revision"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let stale = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "default",
+            "mirror",
+            "--expected-revision",
+            &primary_revision,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(!stale.status.success(), "{stale:?}");
+    assert_eq!(
+        json(&stale)["error"]["code"],
+        "use.extension.registry_sources_revision_mismatch"
+    );
+
+    let selected = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "default",
+            "mirror",
+            "--expected-revision",
+            &current_revision,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(selected.status.success(), "{selected:?}");
+    let selected = json(&selected);
+    let selected_revision = selected["data"]["registrySources"]["snapshot"]["revision"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let unconfirmed = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "replace",
+            "primary",
+            "--url",
+            "https://replacement.example/a3s/",
+            "--trust-root",
+            &"c".repeat(64),
+            "--expected-revision",
+            &selected_revision,
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(!unconfirmed.status.success(), "{unconfirmed:?}");
+    assert_eq!(json(&unconfirmed)["error"]["code"], "use.cli.invalid_usage");
+
+    let default_removal = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "remove",
+            "mirror",
+            "--expected-revision",
+            &selected_revision,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(!default_removal.status.success(), "{default_removal:?}");
+    assert_eq!(
+        json(&default_removal)["error"]["code"],
+        "use.extension.registry_source_default_conflict"
+    );
+
+    let primary_default = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "default",
+            "primary",
+            "--expected-revision",
+            &selected_revision,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(primary_default.status.success(), "{primary_default:?}");
+    let primary_default = json(&primary_default);
+    let primary_default_revision = primary_default["data"]["registrySources"]["snapshot"]
+        ["revision"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let disabled = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "disable",
+            "mirror",
+            "--expected-revision",
+            &primary_default_revision,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(disabled.status.success(), "{disabled:?}");
+    let disabled = json(&disabled);
+    let disabled_revision = disabled["data"]["registrySources"]["snapshot"]["revision"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let rejected = Command::new(binary())
+        .args([
+            "install",
+            "acme/example",
+            "--registry-name",
+            "mirror",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(!rejected.status.success(), "{rejected:?}");
+    assert_eq!(
+        json(&rejected)["error"]["code"],
+        "use.extension.registry_source_disabled"
+    );
+
+    let enabled = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "enable",
+            "mirror",
+            "--expected-revision",
+            &disabled_revision,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(enabled.status.success(), "{enabled:?}");
+
+    assert!(home.join("state/registries.acl").is_file());
+    let acl = std::fs::read_to_string(home.join("state/registries.acl")).unwrap();
+    assert!(acl.starts_with("registries {\n"));
+    assert!(acl.contains("registry \"primary\""));
+    assert!(acl.contains("registry \"mirror\""));
+}
+
+#[test]
+fn registry_source_cli_fails_closed_when_another_process_owns_the_source_lock() {
+    let temporary = tempfile::tempdir().unwrap();
+    let home = temporary.path().join("home");
+    let _lock = exclusive_lock(&home.join("state/.registries.lock"));
+
+    let blocked = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "add",
+            "packages",
+            "--url",
+            "https://registry.example/a3s/",
+            "--trust-root",
+            &"a".repeat(64),
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+
+    assert!(!blocked.status.success(), "{blocked:?}");
+    assert_eq!(
+        json(&blocked)["error"]["code"],
+        "use.extension.registry_sources_busy"
+    );
+    assert!(!home.join("state/registries.acl").exists());
+}
+
 #[tokio::test]
 async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance() {
     let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 1, FUTURE);

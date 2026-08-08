@@ -32,15 +32,15 @@ v3、catalog v3、receipt v3、plan v4、host protocol v4 和 manager tools v3�
 
 ## 所有权
 
-| 组件                   | 拥有内容                                                                                              | 不拥有内容                                    |
-| ---------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Umbrella host          | 具名可替换 Registry 配置、trust root、启停状态、ACL policy、用户确认、secret 与 Runtime provider      | 包存储与第二套 lifecycle manager              |
-| Shared Plugin Manager  | catalog、policy、plan/apply、operation replay 与父级 saga                                             | package archive 格式或 provider 内部调度      |
-| A3S Use                | 包验证、不可变 generation、receipt、grant、binding evidence、route lease 与 capability reconciliation | 通用 scheduler、UI renderer 或 agent RPC 协议 |
-| A3S Runtime            | Task/Service workload 与 provider capability                                                          | 包解析、信任根与用户授权                      |
-| A3S Flow               | 工作流编译、持久执行、重放、存储与 observation                                                        | 包解析或并行的 `flow.json` 生命周期           |
-| A3S Code/Web/Knowledge | Skill session registry、sandboxed UI、OKF registry/index 与用户体验                                   | 包安装事务与 Runtime provider 注册            |
-| Package process        | 自己的 CLI、HTTP 和 MCP vocabulary                                                                    | 宿主 policy 或 ambient authority              |
+| 组件                   | 拥有内容                                                                                                   | 不拥有内容                                    |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Umbrella host          | revision-addressed ACL Registry source、trust root、enabled/default 状态、policy、确认、secret 与 provider | 包存储与第二套 lifecycle manager              |
+| Shared Plugin Manager  | catalog、policy、plan/apply、operation replay 与父级 saga                                                  | package archive 格式或 provider 内部调度      |
+| A3S Use                | 包验证、不可变 generation、receipt、grant、binding evidence、route lease 与 capability reconciliation      | 通用 scheduler、UI renderer 或 agent RPC 协议 |
+| A3S Runtime            | Task/Service workload 与 provider capability                                                               | 包解析、信任根与用户授权                      |
+| A3S Flow               | 工作流编译、持久执行、重放、存储与 observation                                                             | 包解析或并行的 `flow.json` 生命周期           |
+| A3S Code/Web/Knowledge | Skill session registry、sandboxed UI、OKF registry/index 与用户体验                                        | 包安装事务与 Runtime provider 注册            |
+| Package process        | 自己的 CLI、HTTP 和 MCP vocabulary                                                                         | 宿主 policy 或 ambient authority              |
 
 ## 单一事实来源
 
@@ -57,7 +57,12 @@ v3、catalog v3、receipt v3、plan v4、host protocol v4 和 manager tools v3�
 
 ## 包依赖边界
 
-Schema-v3 package 只声明 package ID 与 SemVer range；已启用的具名 Registry 集合归宿主持有。解析过程有界且确定，遇到跨 Registry 歧义会拒绝，并生成一个 canonical lock，绑定精确版本、内容摘要、宿主兼容性、Registry URL/trust root 与 TUF role version。
+Schema-v3 package 只声明 package ID 与 SemVer range；enabled 具名 Registry set
+归宿主持有。standalone host 把它持久化为 canonical ACL，authority change 必须
+针对 reviewed revision 做 compare-and-swap，并按精确 source identity 隔离
+TUF/cache state。解析过程有界且确定，遇到跨 Registry 歧义会拒绝，并生成
+canonical lock，绑定精确版本、内容摘要、宿主兼容性、Registry URL/trust root
+与 TUF role version。
 
 Operation plan 绑定该 lock。Apply 在下载 payload 前重验完整闭包，然后先准备依赖、后准备依赖者。只有已在当前 snapshot 可见的精确 locked generation 才能作为 retained dependency 复用。所有变更包通过一个 immutable snapshot 一次切换；卸载按反向顺序执行，并拒绝移除仍有已安装依赖者的包。
 
