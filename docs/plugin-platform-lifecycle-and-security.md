@@ -339,8 +339,24 @@ tampered evidence fails closed.
 There is no implicit cache fallback after a network or metadata-refresh
 failure, and explicit offline mode performs no network request. Registry
 replacement changes future source selection, not historical receipt evidence.
-Cache capacity, retention, and garbage collection remain operational release
-work rather than part of this integrity boundary.
+
+Each `TrustedRegistry` carries a typed verified-target cache policy. The
+standalone default permits 4 GiB and 4,096 entries while retaining 256 MiB of
+free space. Target length must fit before any target request. The downloader
+also checks its temporary staging filesystem; cache commit rechecks the cache
+filesystem after the verified download because they may be different volumes.
+
+Under the exclusive target-cache lock, admission and confirmed pruning remove
+bounded stale atomic-write files, then verified targets in oldest-modified-time
+and digest order. Directory synchronization follows deletion. Inventory rejects
+unknown names, links, non-regular entries, zero/oversized verified targets, and
+more than 100,000 scanned entries. Source-bound usage and pruning construct no
+network transport and validate a retained catalog-cache identity when present.
+
+GC changes only future cache availability. It never removes installed package
+generations, receipts, Grants, bindings, capability state, or journals. A later
+explicit offline operation fails closed if GC removed one of its exact targets.
+Bounded download resume remains supply-chain release work.
 
 ## Crash recovery
 

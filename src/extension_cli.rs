@@ -286,6 +286,7 @@ pub(crate) async fn install_remote_extension(
     version: Option<&str>,
     channel: &str,
     expected_package_lock_digest: Option<&str>,
+    cache_policy: a3s_use_extension::VerifiedTargetCachePolicy,
     offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     let paths = a3s_use_extension::ExtensionPaths::from_env()?;
@@ -294,8 +295,9 @@ pub(crate) async fn install_remote_extension(
         registry_url,
         trust_root,
         trusted_root_path.map(Path::to_path_buf),
-        paths.tuf_datastore(registry_name),
-    )?;
+        paths.tuf_datastore(registry_name)?,
+    )?
+    .with_target_cache_policy(cache_policy);
     let release_channel = match channel {
         "stable" => a3s_use_core::PluginReleaseChannel::Stable,
         "beta" => a3s_use_core::PluginReleaseChannel::Beta,
@@ -357,6 +359,7 @@ pub(crate) async fn upgrade_remote_extension(
     version: Option<&str>,
     channel: &str,
     expected_package_lock_digest: Option<&str>,
+    cache_policy: a3s_use_extension::VerifiedTargetCachePolicy,
     offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     let paths = a3s_use_extension::ExtensionPaths::from_env()?;
@@ -365,8 +368,9 @@ pub(crate) async fn upgrade_remote_extension(
         registry_url,
         trust_root,
         trusted_root_path.map(Path::to_path_buf),
-        paths.tuf_datastore(registry_name),
-    )?;
+        paths.tuf_datastore(registry_name)?,
+    )?
+    .with_target_cache_policy(cache_policy);
     let release_channel = match channel {
         "stable" => a3s_use_core::PluginReleaseChannel::Stable,
         "beta" => a3s_use_core::PluginReleaseChannel::Beta,
@@ -428,6 +432,7 @@ pub(crate) async fn install_remote_extension(
     _version: Option<&str>,
     _channel: &str,
     _expected_package_lock_digest: Option<&str>,
+    _cache_policy: (),
     _offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())
@@ -444,6 +449,7 @@ pub(crate) async fn upgrade_remote_extension(
     _version: Option<&str>,
     _channel: &str,
     _expected_package_lock_digest: Option<&str>,
+    _cache_policy: (),
     _offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     Err(extensions_disabled())

@@ -111,10 +111,12 @@ impl ExtensionPaths {
             .join(format!("{generation:020}.lock"))
     }
 
-    pub fn tuf_datastore(&self, registry_name: &str) -> PathBuf {
-        self.state_root
+    pub fn tuf_datastore(&self, registry_name: &str) -> UseResult<PathBuf> {
+        super::remote::validate_registry_name(registry_name)?;
+        Ok(self
+            .state_root
             .join("remote-registries")
-            .join(registry_name)
+            .join(registry_name))
     }
 }
 
@@ -198,8 +200,12 @@ mod tests {
             PathBuf::from("/state/use/registry.json")
         );
         assert_eq!(
-            paths.tuf_datastore("a3s"),
+            paths.tuf_datastore("a3s").unwrap(),
             PathBuf::from("/state/use/remote-registries/a3s")
+        );
+        assert_eq!(
+            paths.tuf_datastore("../escape").unwrap_err().code,
+            "use.extension.registry_name_invalid"
         );
     }
 }

@@ -240,8 +240,10 @@ Status: in progress
   expiry, mirror replacement, offline recovery, and incident procedures.
 - [x] Persist verified archives and planning targets in a content-addressed
   cache and support explicit fail-closed offline install/upgrade.
-- [ ] Define cache size limits, retention, garbage collection, disk-space
-  admission, and bounded download resume.
+- [x] Enforce typed per-Registry byte/entry limits, minimum free-space
+  admission, oldest-first retention, stale-write cleanup, zero-network usage,
+  and confirmed garbage collection.
+- [ ] Add bounded, integrity-preserving download resume.
 - [ ] Produce reproducible multi-platform archives, SBOMs, provenance,
   signatures, checksums, and installation scripts from one release workflow.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair

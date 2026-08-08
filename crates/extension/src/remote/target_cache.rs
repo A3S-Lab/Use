@@ -10,7 +10,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
 
-use super::{normalize_sha256, MAX_REMOTE_ARCHIVE_BYTES};
+use super::target_cache_inventory::{
+    admit_target_write, ensure_staging_capacity, inspect_cache, prune_cache,
+};
+use super::{
+    normalize_sha256, TrustedRegistry, VerifiedTargetCachePolicy, VerifiedTargetCachePruneResult,
+    VerifiedTargetCacheUsage, MAX_REMOTE_ARCHIVE_BYTES, VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
+};
 
 const VERIFIED_TARGETS_DIRECTORY: &str = "verified-targets";
 const SHA256_DIRECTORY: &str = "sha256";
@@ -29,6 +35,7 @@ pub(super) async fn persist_verified_target(
     source: &Path,
     expected_length: u64,
     expected_sha256: &str,
+    policy: VerifiedTargetCachePolicy,
 ) -> UseResult<()> {
     let expected_sha256 = validated_evidence(expected_length, expected_sha256)?;
     let _lock = acquire_target_cache_lock(datastore, true)?;
@@ -51,11 +58,14 @@ pub(super) async fn persist_verified_target(
                 "use.extension.registry_target_cache_invalid",
             )
             .await?;
+            admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
             return Ok(());
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(io_error("inspect verified target cache", &target, error)),
     }
+
+    admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
 
     let temporary = cache_directory.join(format!(".target-{}.tmp", unique_suffix()));
     let mut options = fs::OpenOptions::new();
@@ -96,6 +106,7 @@ pub(super) async fn stage_cached_target(
     file_name: &str,
     expected_length: u64,
     expected_sha256: &str,
+    policy: VerifiedTargetCachePolicy,
 ) -> UseResult<(TempDir, PathBuf)> {
     let expected_sha256 = validated_evidence(expected_length, expected_sha256)?;
     validate_staging_file_name(file_name)?;
@@ -137,6 +148,7 @@ pub(super) async fn stage_cached_target(
                 format!("Failed to create cached target staging: {error}"),
             )
         })?;
+    ensure_staging_capacity(temporary.path(), expected_length, policy).await?;
     let target = temporary.path().join(file_name);
     let mut options = fs::OpenOptions::new();
     options.create_new(true).write(true);
@@ -158,6 +170,55 @@ pub(super) async fn stage_cached_target(
         .map_err(|error| io_error("sync cached target staging file", &target, error))?;
     drop(output);
     Ok((temporary, target))
+}
+
+pub(super) async fn inspect_registry_target_cache(
+    registry: &TrustedRegistry,
+) -> UseResult<VerifiedTargetCacheUsage> {
+    super::catalog::validate_target_cache_registry_identity(registry).await?;
+    ensure_datastore_directory(registry.datastore()).await?;
+    let _lock = acquire_target_cache_lock(registry.datastore(), false)?;
+    let cache_directory = ensure_cache_directory(registry.datastore()).await?;
+    let stats = inspect_cache(&cache_directory).await?;
+    Ok(usage(registry, stats))
+}
+
+pub(super) async fn prune_registry_target_cache(
+    registry: &TrustedRegistry,
+) -> UseResult<VerifiedTargetCachePruneResult> {
+    super::catalog::validate_target_cache_registry_identity(registry).await?;
+    ensure_datastore_directory(registry.datastore()).await?;
+    let _lock = acquire_target_cache_lock(registry.datastore(), true)?;
+    let cache_directory = ensure_cache_directory(registry.datastore()).await?;
+    let before = usage(registry, inspect_cache(&cache_directory).await?);
+    let removed = prune_cache(&cache_directory, registry.target_cache_policy()).await?;
+    let after = usage(registry, inspect_cache(&cache_directory).await?);
+    Ok(VerifiedTargetCachePruneResult {
+        schema_version: VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
+        before,
+        after,
+        removed_target_entries: removed.target_entries,
+        removed_target_bytes: removed.target_bytes,
+        removed_stale_entries: removed.stale_entries,
+        removed_stale_bytes: removed.stale_bytes,
+    })
+}
+
+fn usage(
+    registry: &TrustedRegistry,
+    stats: super::target_cache_inventory::CacheStats,
+) -> VerifiedTargetCacheUsage {
+    VerifiedTargetCacheUsage {
+        schema_version: VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
+        registry_name: registry.name().to_owned(),
+        registry_url: registry.base_url().to_string(),
+        target_entries: stats.target_entries,
+        target_bytes: stats.target_bytes,
+        stale_entries: stats.stale_entries,
+        stale_bytes: stats.stale_bytes,
+        available_bytes: stats.available_bytes,
+        policy: registry.target_cache_policy(),
+    }
 }
 
 async fn verify_file(
@@ -272,6 +333,13 @@ async fn ensure_cache_directory(datastore: &Path) -> UseResult<PathBuf> {
     let sha256 = targets.join(SHA256_DIRECTORY);
     ensure_real_directory(&sha256, "SHA-256 target cache").await?;
     Ok(sha256)
+}
+
+async fn ensure_datastore_directory(datastore: &Path) -> UseResult<()> {
+    fs::create_dir_all(datastore)
+        .await
+        .map_err(|error| io_error("create Registry datastore", datastore, error))?;
+    inspect_real_directory(datastore, "Registry datastore").await
 }
 
 async fn existing_cache_directory(datastore: &Path) -> UseResult<PathBuf> {

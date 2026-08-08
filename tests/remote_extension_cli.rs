@@ -49,6 +49,8 @@ mod graph_upgrade;
 mod recovery;
 #[path = "remote_extension_cli/registry.rs"]
 mod registry;
+#[path = "remote_extension_cli/registry_cache.rs"]
+mod registry_cache;
 
 fn registry_install(
     server: &TestServer,

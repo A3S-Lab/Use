@@ -8,7 +8,11 @@ use tough::{Prefix, Repository, TargetName};
 use crate::package::io_error;
 
 use super::target_cache::{persist_verified_target, stage_cached_target};
-use super::{hex_lower, RemoteRegistryAccess, ResolvedRemotePackage, REGISTRY_METADATA_KEY};
+use super::target_cache_inventory::ensure_staging_capacity;
+use super::{
+    hex_lower, RemoteRegistryAccess, ResolvedRemotePackage, VerifiedTargetCachePolicy,
+    REGISTRY_METADATA_KEY,
+};
 
 /// Verified repository state retained until its exact target is downloaded.
 pub struct PreparedRemotePackage {
@@ -17,6 +21,7 @@ pub struct PreparedRemotePackage {
     resolved: ResolvedRemotePackage,
     verified_catalog: VerifiedPluginCatalogRecord,
     datastore: PathBuf,
+    target_cache_policy: VerifiedTargetCachePolicy,
     access: RemoteRegistryAccess,
 }
 
@@ -36,6 +41,7 @@ impl PreparedRemotePackage {
         resolved: ResolvedRemotePackage,
         verified_catalog: VerifiedPluginCatalogRecord,
         datastore: PathBuf,
+        target_cache_policy: VerifiedTargetCachePolicy,
         access: RemoteRegistryAccess,
     ) -> Self {
         Self {
@@ -44,6 +50,7 @@ impl PreparedRemotePackage {
             resolved,
             verified_catalog,
             datastore,
+            target_cache_policy,
             access,
         }
     }
@@ -103,13 +110,20 @@ impl PreparedRemotePackage {
                     &self.datastore,
                     expected.length,
                     digest,
+                    self.target_cache_policy,
                     true,
                 )
                 .await?
             }
             RemoteRegistryAccess::Cached => {
-                stage_cached_target(&self.datastore, "planning-v1.json", expected.length, digest)
-                    .await?
+                stage_cached_target(
+                    &self.datastore,
+                    "planning-v1.json",
+                    expected.length,
+                    digest,
+                    self.target_cache_policy,
+                )
+                .await?
             }
         };
         let bytes = fs::read(&path)
@@ -136,6 +150,7 @@ impl PreparedRemotePackage {
                     &self.datastore,
                     self.resolved.length,
                     &self.resolved.sha256,
+                    self.target_cache_policy,
                     false,
                 )
                 .await?
@@ -146,6 +161,7 @@ impl PreparedRemotePackage {
                     &self.resolved.archive_name,
                     self.resolved.length,
                     &self.resolved.sha256,
+                    self.target_cache_policy,
                 )
                 .await?
             }
@@ -167,6 +183,7 @@ async fn download_and_cache_target(
     datastore: &Path,
     expected_length: u64,
     expected_sha256: &str,
+    target_cache_policy: VerifiedTargetCachePolicy,
     planning: bool,
 ) -> UseResult<(TempDir, PathBuf)> {
     let temporary = tokio::task::spawn_blocking(tempfile::tempdir)
@@ -183,6 +200,7 @@ async fn download_and_cache_target(
                 format!("Failed to create target staging: {error}"),
             )
         })?;
+    ensure_staging_capacity(temporary.path(), expected_length, target_cache_policy).await?;
     repository
         .save_target(target_name, temporary.path(), Prefix::None)
         .await
@@ -196,7 +214,14 @@ async fn download_and_cache_target(
             )
         })?;
     let path = temporary.path().join(target_name.resolved());
-    persist_verified_target(datastore, &path, expected_length, expected_sha256).await?;
+    persist_verified_target(
+        datastore,
+        &path,
+        expected_length,
+        expected_sha256,
+        target_cache_policy,
+    )
+    .await?;
     Ok((temporary, path))
 }
 
