@@ -36,6 +36,9 @@ Completed in the Use repository:
 - catalog v3, complete TUF metadata, verified provenance, and exact receipts;
 - content-addressed verified archive/planning-target caching plus explicit
   zero-network install and upgrade with full cached-evidence revalidation;
+- typed per-Registry cache byte/entry/free-space bounds, oldest-first
+  retention, stale-write cleanup, usage evidence, and confirmed zero-network
+  garbage collection;
 - separately signed package-native Tool/stdio MCP planning targets rebound to
   the digest-bound manifest after download;
 - bounded SemVer resolver, package lock, prior/candidate upgrade binding;
@@ -227,11 +230,14 @@ Status: in progress
 - [x] Persist verified archives and signed planning targets by SHA-256 and
   support explicit fail-closed offline install/upgrade without network
   fallback.
+- [x] Enforce bounded cache bytes/entries and disk-space admission; expose
+  source-bound zero-network usage and confirmed oldest-first garbage
+  collection with stale-write cleanup.
 - Publish complete catalog-v3 records and planning targets only.
 - Define source replacement and exact-provenance restoration workflows.
 - Produce reproducible archives, checksums, signatures, SBOMs, and provenance.
 - Verify release archives in clean Linux/macOS/Windows environments.
-- Add bounded download resume, disk-space/quota, and cache retention tests.
+- Add bounded, integrity-preserving download resume.
 
 Acceptance: an operator can bootstrap trust, install, rotate/replace sources,
 recover offline, audit provenance, and remove the product using published
@@ -243,7 +249,9 @@ Priority: P0 release gate
 Status: pending
 
 - Define retention and garbage collection for packages, prior generations,
-  TUF cache, Grants, Flow history, OKF indexes, UI storage, and journals.
+  TUF metadata, Grants, Flow history, OKF indexes, UI storage, and journals.
+- [x] Define verified target-payload cache byte/entry/free-space bounds,
+  deterministic retention, stale-write cleanup, usage, and confirmed GC.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
   non-overwriting verified database backup, and derived FTS repair as bounded
   storage controls, not as completion of cross-product restore, authority

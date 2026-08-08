@@ -19,9 +19,17 @@ mod query;
 
 use cache::{
     load_cached_repository, record_catalog_refresh as persist_catalog_refresh, unix_time_seconds,
-    verify_stamp_metadata, CatalogCacheStamp,
+    validate_cached_registry_identity_if_present, verify_stamp_metadata, CatalogCacheStamp,
 };
 use query::{inspect_catalog, search_catalog};
+
+pub(super) async fn validate_target_cache_registry_identity(
+    registry: &TrustedRegistry,
+) -> UseResult<()> {
+    validate_cached_registry_identity_if_present(registry)
+        .await
+        .map(drop)
+}
 
 const MAX_CATALOG_QUERY_BYTES: usize = 256;
 const MAX_CATALOG_CURSOR_BYTES: usize = 512;

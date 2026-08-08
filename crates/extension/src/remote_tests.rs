@@ -193,6 +193,54 @@ async fn cached_target_tampering_and_missing_content_fail_closed_without_network
 }
 
 #[tokio::test]
+async fn verified_target_cache_enforces_entry_retention_during_commit() {
+    let (repository, _, _, _) = planning_test_repository(false);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let datastore = temp.path().join("tuf");
+    let policy =
+        VerifiedTargetCachePolicy::new(DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES, 1, 0).unwrap();
+    let trusted =
+        trusted_registry(&server, &repository, datastore.clone()).with_target_cache_policy(policy);
+    refresh_remote_registry(&trusted).await.unwrap();
+    let prepared = prepare_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    let archive_digest = prepared.resolved().sha256.clone();
+    let planning_digest = prepared
+        .verified_catalog()
+        .record
+        .planning
+        .as_ref()
+        .unwrap()
+        .sha256
+        .trim_start_matches("sha256:")
+        .to_owned();
+
+    let downloaded = prepared.download().await.unwrap();
+
+    assert!(downloaded.planning_bundle().is_some());
+    let usage = inspect_verified_target_cache(&trusted).await.unwrap();
+    assert_eq!(usage.target_entries, 1);
+    assert!(datastore
+        .join("verified-targets/sha256")
+        .join(&archive_digest)
+        .is_file());
+    assert!(!datastore
+        .join("verified-targets/sha256")
+        .join(&planning_digest)
+        .exists());
+
+    server.clear_requests();
+    let cached = prepare_cached_remote_package(&trusted, "a3s/science", None, "stable", None)
+        .await
+        .unwrap();
+    let error = cached.download().await.unwrap_err();
+    assert_eq!(error.code, "use.extension.registry_target_cache_missing");
+    assert!(server.requests().is_empty());
+}
+
+#[tokio::test]
 async fn catalog_v3_static_package_has_no_planning_target_download() {
     let archive = extension_archive(PACKAGE_VERSION);
     let target = host_target().unwrap();

@@ -118,6 +118,8 @@ a3s-use knowledge audit [--scope-kind <user|workspace>] [--scope-id <id>] [--jso
 a3s-use knowledge backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use knowledge verify-backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use knowledge repair-search-index --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
+a3s-use registry cache usage [registry and cache options] [--json]
+a3s-use registry cache prune [registry and cache options] --yes [--json]
 a3s-use capability snapshot|watch [options] [--json]
 ```
 
@@ -202,6 +204,47 @@ identity, target length, and SHA-256; and returns `registryAccess: "cached"` in
 JSON. Normal online operations return `registryAccess: "refreshed"`. Missing,
 expired, or tampered cache evidence is an error. An online command never falls
 back to cached targets after a network or refresh failure.
+
+### Verified target cache operations
+
+Each Registry has an independent default cache limit of 4 GiB and 4,096
+verified targets, with a 256 MiB free-space reserve. The same typed policy is
+enforced before downloading and while committing a verified target. Stale
+atomic-write files are removed first, followed by the oldest verified targets
+until the byte, entry, and disk-space bounds are satisfied.
+
+Inspect cache usage without making a Registry request:
+
+```bash
+a3s-use registry cache usage \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --json
+```
+
+Pruning can remove targets required for a later offline reinstall or upgrade,
+so the standalone CLI requires explicit confirmation:
+
+```bash
+a3s-use registry cache prune \
+  --registry-name packages \
+  --registry-url https://packages.example.org/a3s/ \
+  --trust-root sha256:<64-hex-digits> \
+  --cache-max-bytes 2147483648 \
+  --cache-max-entries 2048 \
+  --cache-min-free-bytes 536870912 \
+  --yes \
+  --json
+```
+
+The three cache-policy options are also accepted by `install` and `upgrade`.
+Standalone overrides apply to that command; embedding hosts set the typed
+`VerifiedTargetCachePolicy` on `TrustedRegistry`. Cache usage and pruning are
+zero-network operations and validate any retained catalog-cache source identity
+before inspecting or deleting targets. GC never changes installed package
+roots, receipts, capability generations, or lifecycle journals. See
+[Registry cache operations](docs/registry-cache-operations.md).
 
 ## Cognitive-package format
 
@@ -401,6 +444,10 @@ Current Registry rules:
 - Explicit cached resolution revalidates the last trusted, unexpired TUF
   metadata and exact Registry name, URL, and trust root. It never refreshes the
   network and never weakens source or package-lock provenance.
+- A typed per-Registry policy bounds retained bytes and entries and reserves
+  staging/cache disk space before target requests and commits. Automatic and
+  confirmed GC remove stale writes, then the oldest verified targets, under
+  the same cache lock and synchronize the directory after deletion.
 - Watchers read immutable publications without waiting behind writers. If a
   one-time crash reconciliation briefly owns the Registry lock, lifecycle
   writers wait asynchronously for at most two seconds; genuinely concurrent
@@ -513,7 +560,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, replaceable source input | Implemented in the engine |
-| Verified target cache and explicit offline install/upgrade | Implemented and zero-network tested; cache quota, retention, and GC remain open |
+| Verified target cache, explicit offline install/upgrade, bounded retention, usage, and confirmed GC | Implemented and zero-network tested; bounded download resume remains open |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
@@ -599,6 +646,7 @@ the default human-authored configuration format.
 - [Development plan](docs/plugin-platform-development-plan.md)
 - [Release descriptors](docs/release-descriptors.md)
 - [OKF Knowledge operations](docs/okf-knowledge-operations.md)
+- [Registry cache operations](docs/registry-cache-operations.md)
 - [Documentation website](https://a3s-lab.github.io/Use/)
 
 ## License

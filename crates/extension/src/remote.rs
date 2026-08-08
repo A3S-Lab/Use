@@ -22,12 +22,19 @@ use url::Url;
 
 use super::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
 
+mod cache_policy;
 mod catalog;
 mod download;
 mod package_graph;
 mod target;
 mod target_cache;
+mod target_cache_inventory;
 
+pub use cache_policy::{
+    VerifiedTargetCachePolicy, VerifiedTargetCachePruneResult, VerifiedTargetCacheUsage,
+    DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES, DEFAULT_VERIFIED_TARGET_CACHE_MAX_ENTRIES,
+    DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES, VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
+};
 pub use catalog::{
     inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, search_cached_plugins,
     search_remote_plugins, PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection,
@@ -62,6 +69,7 @@ pub struct TrustedRegistry {
     root_sha256: String,
     trusted_root_path: Option<PathBuf>,
     datastore: PathBuf,
+    target_cache_policy: VerifiedTargetCachePolicy,
 }
 
 impl TrustedRegistry {
@@ -97,6 +105,7 @@ impl TrustedRegistry {
             root_sha256,
             trusted_root_path,
             datastore,
+            target_cache_policy: VerifiedTargetCachePolicy::default(),
         })
     }
 
@@ -114,6 +123,15 @@ impl TrustedRegistry {
 
     pub fn datastore(&self) -> &Path {
         &self.datastore
+    }
+
+    pub const fn target_cache_policy(&self) -> VerifiedTargetCachePolicy {
+        self.target_cache_policy
+    }
+
+    pub fn with_target_cache_policy(mut self, policy: VerifiedTargetCachePolicy) -> Self {
+        self.target_cache_policy = policy;
+        self
     }
 
     fn metadata_url(&self) -> UseResult<Url> {
@@ -453,8 +471,25 @@ async fn prepare_remote_package_with_access(
         resolved,
         verified_catalog,
         registry.datastore().to_path_buf(),
+        registry.target_cache_policy(),
         access,
     ))
+}
+
+/// Inspect one Registry's verified target cache without refreshing metadata or
+/// constructing a network transport.
+pub async fn inspect_verified_target_cache(
+    registry: &TrustedRegistry,
+) -> UseResult<VerifiedTargetCacheUsage> {
+    target_cache::inspect_registry_target_cache(registry).await
+}
+
+/// Remove stale writes and the oldest verified targets until the configured
+/// per-Registry byte, entry, and free-space bounds are satisfied.
+pub async fn prune_verified_target_cache(
+    registry: &TrustedRegistry,
+) -> UseResult<VerifiedTargetCachePruneResult> {
+    target_cache::prune_registry_target_cache(registry).await
 }
 
 fn verified_catalog_record(
@@ -846,7 +881,7 @@ fn validate_download_url(url: &Url) -> UseResult<()> {
     }
 }
 
-fn validate_registry_name(name: &str) -> UseResult<()> {
+pub(crate) fn validate_registry_name(name: &str) -> UseResult<()> {
     let mut characters = name.chars();
     if characters
         .next()

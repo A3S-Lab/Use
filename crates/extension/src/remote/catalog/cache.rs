@@ -261,6 +261,55 @@ pub(super) async fn load_cached_repository(
     Ok((repository, stamp))
 }
 
+pub(super) async fn validate_cached_registry_identity_if_present(
+    registry: &TrustedRegistry,
+) -> UseResult<bool> {
+    let cache_directory = registry.datastore().join(CATALOG_CACHE_DIRECTORY);
+    let cache_metadata = match fs::symlink_metadata(&cache_directory).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(io_error(
+                "inspect verified catalog snapshot",
+                &cache_directory,
+                error,
+            ))
+        }
+    };
+    if cache_metadata.file_type().is_symlink() || !cache_metadata.is_dir() {
+        return Err(catalog_cache_error(
+            "use.extension.catalog_cache_invalid",
+            "The verified catalog snapshot path must be a real directory.",
+        ));
+    }
+    let _lock = acquire_metadata_lock(registry.datastore())?;
+    let stamp_path = cache_directory.join(CATALOG_CACHE_NAME);
+    let stamp_metadata = match fs::symlink_metadata(&stamp_path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(io_error("inspect catalog cache stamp", &stamp_path, error)),
+    };
+    if stamp_metadata.file_type().is_symlink()
+        || !stamp_metadata.is_file()
+        || stamp_metadata.len() == 0
+        || stamp_metadata.len() > MAX_CATALOG_CACHE_BYTES
+    {
+        return Err(catalog_cache_error(
+            "use.extension.catalog_cache_invalid",
+            "The verified catalog cache stamp must be a bounded regular file.",
+        ));
+    }
+    let bytes = read_metadata_file(&stamp_path, MAX_CATALOG_CACHE_BYTES).await?;
+    let stamp: CatalogCacheStamp = serde_json::from_slice(&bytes).map_err(|error| {
+        catalog_cache_error(
+            "use.extension.catalog_cache_invalid",
+            format!("Failed to decode the verified catalog cache stamp: {error}"),
+        )
+    })?;
+    stamp.validate(registry)?;
+    Ok(true)
+}
+
 async fn read_and_verify_stamped_role(
     datastore: &Path,
     name: &str,
