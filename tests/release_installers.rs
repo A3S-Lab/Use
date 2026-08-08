@@ -192,11 +192,22 @@ fn windows_installer_verifies_and_atomically_activates_the_release() {
     );
     let shim = fs::read_to_string(bin_dir.join("a3s-use.cmd")).unwrap();
     assert!(shim.contains("A3S_USE_MANAGED_SHIM=1"));
-    assert!(shim.contains(release_root.join("a3s-use.exe").to_str().unwrap()));
-    assert!(shim.contains("A3S_USE_OCR_HOME"));
-    assert!(shim.contains("A3S_USE_OCR_SKILLS_DIR"));
-    assert!(shim.contains("A3S_USE_BROWSER_SKILLS_DIR"));
-    assert!(shim.contains(release_root.join("ocr-models").to_str().unwrap()));
+    assert_windows_shim_target(&shim, &release_root.join("a3s-use.exe"));
+    assert_windows_shim_environment_path(
+        &shim,
+        "A3S_USE_OCR_HOME",
+        &release_root.join("ocr-models"),
+    );
+    assert_windows_shim_environment_path(
+        &shim,
+        "A3S_USE_OCR_SKILLS_DIR",
+        &release_root.join("ocr-skills"),
+    );
+    assert_windows_shim_environment_path(
+        &shim,
+        "A3S_USE_BROWSER_SKILLS_DIR",
+        &release_root.join("skill-data"),
+    );
 
     let retry_server = release_server(&archive_name, archive.clone(), &digest);
     assert_success(&run_windows_installer(
@@ -307,6 +318,40 @@ fn run_windows_installer(server: &TestServer, install_root: &Path, bin_dir: &Pat
         .arg("-NoPathUpdate")
         .output()
         .unwrap()
+}
+
+#[cfg(windows)]
+fn assert_windows_shim_target(shim: &str, expected: &Path) {
+    let line = shim
+        .lines()
+        .find(|line| line.starts_with('"') && line.ends_with("\" %*"))
+        .expect("managed shim must invoke the installed executable");
+    let actual = line
+        .strip_suffix(" %*")
+        .and_then(|value| value.strip_prefix('"'))
+        .and_then(|value| value.strip_suffix('"'))
+        .expect("managed shim executable must be quoted");
+    assert_same_windows_path(actual, expected);
+}
+
+#[cfg(windows)]
+fn assert_windows_shim_environment_path(shim: &str, variable: &str, expected: &Path) {
+    let prefix = format!("if not defined {variable} set \"{variable}=");
+    let actual = shim
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap_or_else(|| panic!("managed shim must initialize {variable}"));
+    assert_same_windows_path(actual, expected);
+}
+
+#[cfg(windows)]
+fn assert_same_windows_path(actual: &str, expected: &Path) {
+    let actual = fs::canonicalize(actual)
+        .unwrap_or_else(|error| panic!("shim path {actual:?} cannot be resolved: {error}"));
+    let expected = fs::canonicalize(expected)
+        .unwrap_or_else(|error| panic!("expected path {expected:?} cannot be resolved: {error}"));
+    assert_eq!(actual, expected);
 }
 
 fn assert_success(output: &Output) {
