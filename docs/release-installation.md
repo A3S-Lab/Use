@@ -15,7 +15,9 @@ gate is complete.
 | Windows x86_64 | `a3s-use-<version>-windows-x86_64.zip` |
 
 `install.sh` supports Linux and macOS. `install.ps1` requires Windows x86_64
-and PowerShell 7. Unsupported systems fail before a release request.
+and PowerShell 7. Both installers require a trusted Cosign executable on
+`PATH`, or an explicit path supplied by the operator. Unsupported systems fail
+before a release request.
 
 ## Trust and failure model
 
@@ -24,28 +26,36 @@ The installer:
 1. resolves an explicit semantic version or the latest GitHub Release;
 2. accepts HTTPS downloads only, including every redirect;
 3. permits plain HTTP only for an explicit loopback test server;
-4. downloads `checksums.txt` and exactly one platform archive;
-5. requires one well-formed SHA-256 entry for that archive;
-6. verifies the complete archive before extraction;
-7. rejects absolute paths, parent traversal, links, and special files;
-8. requires the Browser driver, Browser Skills, OCR Skills, OCR model files,
+4. downloads `checksums.txt` and its Sigstore bundle;
+5. requires Cosign to authenticate the manifest against the exact tag workflow
+   identity and `https://token.actions.githubusercontent.com` issuer;
+6. downloads exactly one platform archive only after signature verification;
+7. requires one well-formed SHA-256 entry and verifies the complete archive;
+8. rejects absolute paths, parent traversal, links, and special files;
+9. requires the Browser driver, Browser Skills, OCR Skills, OCR model files,
    and dashboard shipped by the release contract;
-9. stages under the destination filesystem and atomically promotes one
+10. retains the verified checksum manifest and Sigstore bundle in the staged
+    version directory;
+11. stages under the destination filesystem and atomically promotes one
    versioned directory;
-10. refuses an existing version unless its marker and complete file tree match
+12. refuses an existing version unless its marker and complete file tree match
    the newly verified archive; and
-11. atomically replaces only an A3S-managed command entry.
+13. atomically replaces only an A3S-managed command entry.
 
-Checksum failure, unsafe archive metadata, incomplete content, tampered
-installed files, link or reparse-point state, concurrent installation, and an
-unmanaged command conflict all fail closed. Temporary downloads and staging
-directories are removed. The installer never activates partially extracted
-content.
+Missing Cosign, signature or identity failure, checksum failure, unsafe archive
+metadata, incomplete content, tampered installed files, link or reparse-point
+state, concurrent installation, and an unmanaged command conflict all fail
+closed. Temporary downloads and staging directories are removed. The
+installer never activates partially extracted content.
 
-The installer itself consumes the checksum and archive through the same GitHub
-Release HTTPS trust boundary. This detects corruption, truncation, platform
-mismatch, and a different archive under an expected checksum, but it does not
-independently authenticate `checksums.txt`.
+The manifest, bundle, and archive may share the GitHub Release HTTPS transport,
+but the manifest is authenticated independently through Sigstore's Fulcio and
+Rekor evidence. The accepted certificate identity is exactly
+`https://github.com/A3S-Lab/Use/.github/workflows/release.yml@refs/tags/v<version>`;
+a branch workflow, another repository, another issuer, a missing bundle, or an
+invalid transparency-log proof is rejected. The installer script itself is a
+separate bootstrap trust boundary and should be downloaded for review or
+distributed through a trusted system package.
 
 Each tagged Release also publishes:
 
@@ -60,13 +70,14 @@ Each tagged Release also publishes:
 Every Action and release tool version is immutable in the workflow. The
 archive packager is byte-reproducible for an identical staged tree and is
 tested against source-path, creation-order, and timestamp drift. Native binary
-rebuild comparison across independent clean environments, installer-enforced
-signature verification, and the other product gates remain incomplete.
+rebuild comparison across independent clean environments, evidence retention
+outside GitHub Release, and the other product gates remain incomplete.
 
-## Independent release verification
+## Additional independent verification
 
-Install Cosign and GitHub CLI, choose the exact release, and download its
-evidence before running an installer:
+The installer already performs the Cosign verification below. GitHub CLI can
+add an independent attestation check, or the same commands can be used before
+running a reviewed installer:
 
 ```bash
 version=0.3.0
@@ -100,6 +111,7 @@ above; a different workflow ref or OIDC issuer is not equivalent evidence.
 sh install.sh [--version <version>] \
   [--install-root <absolute-path>] \
   [--bin-dir <absolute-path>] \
+  [--cosign <trusted-executable>] \
   [--base-url <https-url>]
 ```
 
@@ -117,7 +129,8 @@ explicit environment override. The installer does not edit shell profiles. If
 `$HOME/.local/bin` is not already on `PATH`, it prints the required directory.
 
 Environment equivalents are `A3S_USE_VERSION`,
-`A3S_USE_RELEASE_BASE_URL`, `A3S_USE_INSTALL_ROOT`, and `A3S_USE_BIN_DIR`.
+`A3S_USE_RELEASE_BASE_URL`, `A3S_USE_INSTALL_ROOT`, `A3S_USE_BIN_DIR`, and
+`A3S_USE_COSIGN`.
 
 ## Windows usage
 
@@ -125,6 +138,7 @@ Environment equivalents are `A3S_USE_VERSION`,
 ./install.ps1 [-Version <version>] `
   [-InstallRoot <absolute-path>] `
   [-BinDir <absolute-path>] `
+  [-CosignPath <trusted-executable>] `
   [-BaseUrl <https-url>] `
   [-NoPathUpdate]
 ```
@@ -147,8 +161,9 @@ rejected.
 Running the installer with a newer version creates a new immutable release
 directory, then changes only the managed command entry. Prior versions remain
 available for operator-controlled rollback. Running it again with the same
-version redownloads and verifies the archive, compares every installed file,
-and republishes the same command only when the trees agree exactly.
+version redownloads and authenticates the signed manifest, verifies the
+archive, compares every installed file including retained evidence, and
+republishes the same command only when the trees agree exactly.
 
 Automatic retention, a signed rollback command, and whole-product state
 backup/restore are separate operational release gates. Removing old version

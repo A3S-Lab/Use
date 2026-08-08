@@ -254,9 +254,12 @@ Status: in progress
   SBOM per platform, GitHub OIDC provenance/SBOM attestations, and a locally
   reverified keyless Sigstore bundle for complete checksum evidence from one
   workflow with pinned Actions and release tools.
+- [x] Make both platform installers require Cosign, authenticate the checksum
+  manifest against the exact tag workflow identity and GitHub OIDC issuer
+  before archive download, fail closed on invalid evidence, and retain the
+  verified manifest and bundle with the installed version.
 - [ ] Reproduce native binaries and final archive digests in independent clean
-  build environments, make installers enforce an explicit independent
-  signature policy, and retain verification evidence outside the Release
+  build environments and retain verification evidence outside the Release
   asset trust boundary.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair
   procedures for packages, cutover evidence, Grants, Flow history, UI state,

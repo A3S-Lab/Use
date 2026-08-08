@@ -245,8 +245,11 @@ Status: in progress
 - [x] Deterministically serialize archives and publish per-platform SPDX SBOMs,
   GitHub OIDC provenance/SBOM attestations, and a keyless Sigstore checksum
   bundle from a workflow with pinned Actions and release tools.
+- [x] Require both platform installers to authenticate the checksum manifest
+  with Cosign against the exact tag workflow identity before archive download,
+  fail closed, and retain the verified evidence with the installed version.
 - Reproduce native binaries and final archive digests in independent clean
-  environments and make installer signature policy explicit and enforceable.
+  environments and retain evidence outside the Release asset trust boundary.
 - Verify release archives in clean Linux/macOS/Windows environments.
 
 Acceptance: an operator can bootstrap trust, install, rotate/replace sources,

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 const VERSION: &str = "9.8.7";
+const SIGSTORE_BUNDLE: &[u8] = b"{\"fixture\":true}\n";
 
 #[test]
 fn release_workflow_publishes_both_verified_installers() {
@@ -34,6 +35,12 @@ fn release_workflow_publishes_both_verified_installers() {
     assert!(workflow.contains("$env:A3S_USE_OCR_HOME = \"$root/ocr-models\""));
     assert!(unix.contains("checksums.txt"));
     assert!(windows.contains("checksums.txt"));
+    for installer in [unix, windows] {
+        assert!(installer.contains("checksums.txt.sigstore.json"));
+        assert!(installer.contains("verify-blob"));
+        assert!(installer.contains("https://token.actions.githubusercontent.com"));
+        assert!(installer.contains(".github/workflows/release.yml@refs/tags/"));
+    }
     assert!(ci.contains("cargo test -p a3s-use --test release_installers --locked"));
     assert!(!unix.to_ascii_lowercase().contains("science"));
     assert!(!windows.to_ascii_lowercase().contains("science"));
@@ -65,6 +72,14 @@ fn unix_installer_verifies_and_atomically_activates_the_release() {
     assert_eq!(
         fs::read_to_string(release_root.join(".a3s-use-archive.sha256")).unwrap(),
         format!("{digest}\n")
+    );
+    assert_eq!(
+        fs::read(release_root.join(".a3s-use-checksums.sigstore.json")).unwrap(),
+        SIGSTORE_BUNDLE
+    );
+    assert_eq!(
+        fs::read_to_string(release_root.join(".a3s-use-checksums.txt")).unwrap(),
+        format!("{digest}  {archive_name}\n")
     );
     assert!(fs::symlink_metadata(&shim)
         .unwrap()
@@ -124,6 +139,50 @@ fn unix_installer_rejects_a_checksum_mismatch_without_activation() {
     assert!(!output.status.success(), "installer unexpectedly succeeded");
     assert!(!install_root.join("releases").join(VERSION).exists());
     assert!(!bin_dir.join("a3s-use").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_installer_rejects_invalid_sigstore_evidence_without_activation() {
+    let Some(archive_name) = unix_archive_name() else {
+        return;
+    };
+    let archive = unix_fixture_archive();
+    let digest = sha256_hex(&archive);
+    let server = release_server(&archive_name, archive, &digest);
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("use");
+    let bin_dir = temp.path().join("bin");
+    let cosign = write_fake_cosign(temp.path(), false);
+
+    let output = run_unix_installer_with_cosign(&server, &install_root, &bin_dir, &cosign);
+    assert!(
+        !output.status.success(),
+        "installer accepted invalid evidence"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Sigstore"));
+    assert!(!install_root.join("releases").join(VERSION).exists());
+    assert!(!bin_dir.join("a3s-use").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_installer_requires_a_cosign_verifier() {
+    let Some(archive_name) = unix_archive_name() else {
+        return;
+    };
+    let archive = unix_fixture_archive();
+    let digest = sha256_hex(&archive);
+    let server = release_server(&archive_name, archive, &digest);
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("use");
+    let bin_dir = temp.path().join("bin");
+    let missing_cosign = temp.path().join("missing-cosign");
+
+    let output = run_unix_installer_with_cosign(&server, &install_root, &bin_dir, &missing_cosign);
+    assert!(!output.status.success(), "installer ran without Cosign");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Cosign is required"));
+    assert!(!install_root.join("releases").join(VERSION).exists());
 }
 
 #[cfg(unix)]
@@ -190,6 +249,14 @@ fn windows_installer_verifies_and_atomically_activates_the_release() {
         fs::read_to_string(release_root.join(".a3s-use-archive.sha256")).unwrap(),
         format!("{digest}\r\n")
     );
+    assert_eq!(
+        fs::read(release_root.join(".a3s-use-checksums.sigstore.json")).unwrap(),
+        SIGSTORE_BUNDLE
+    );
+    assert_eq!(
+        fs::read_to_string(release_root.join(".a3s-use-checksums.txt")).unwrap(),
+        format!("{digest}  {archive_name}\n")
+    );
     let shim = fs::read_to_string(bin_dir.join("a3s-use.cmd")).unwrap();
     assert!(shim.contains("A3S_USE_MANAGED_SHIM=1"));
     assert_windows_shim_target(&shim, &release_root.join("a3s-use.exe"));
@@ -248,6 +315,47 @@ fn windows_installer_rejects_a_checksum_mismatch_without_activation() {
 
 #[cfg(windows)]
 #[test]
+fn windows_installer_rejects_invalid_sigstore_evidence_without_activation() {
+    let archive_name = format!("a3s-use-{VERSION}-windows-x86_64.zip");
+    let archive = windows_fixture_archive();
+    let digest = sha256_hex(&archive);
+    let server = release_server(&archive_name, archive, &digest);
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("use");
+    let bin_dir = temp.path().join("bin");
+    let cosign = write_fake_cosign(temp.path(), false);
+
+    let output = run_windows_installer_with_cosign(&server, &install_root, &bin_dir, &cosign);
+    assert!(
+        !output.status.success(),
+        "installer accepted invalid evidence"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Sigstore"));
+    assert!(!install_root.join("releases").join(VERSION).exists());
+    assert!(!bin_dir.join("a3s-use.cmd").exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_installer_requires_a_cosign_verifier() {
+    let archive_name = format!("a3s-use-{VERSION}-windows-x86_64.zip");
+    let archive = windows_fixture_archive();
+    let digest = sha256_hex(&archive);
+    let server = release_server(&archive_name, archive, &digest);
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("use");
+    let bin_dir = temp.path().join("bin");
+    let missing_cosign = temp.path().join("missing-cosign.exe");
+
+    let output =
+        run_windows_installer_with_cosign(&server, &install_root, &bin_dir, &missing_cosign);
+    assert!(!output.status.success(), "installer ran without Cosign");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Cosign is required"));
+    assert!(!install_root.join("releases").join(VERSION).exists());
+}
+
+#[cfg(windows)]
+#[test]
 fn windows_installer_refuses_to_replace_an_unmanaged_command() {
     let archive_name = format!("a3s-use-{VERSION}-windows-x86_64.zip");
     let archive = windows_fixture_archive();
@@ -293,6 +401,17 @@ fn windows_installer_rejects_parent_traversal_before_extraction() {
 
 #[cfg(unix)]
 fn run_unix_installer(server: &TestServer, install_root: &Path, bin_dir: &Path) -> Output {
+    let cosign = write_fake_cosign(install_root.parent().unwrap(), true);
+    run_unix_installer_with_cosign(server, install_root, bin_dir, &cosign)
+}
+
+#[cfg(unix)]
+fn run_unix_installer_with_cosign(
+    server: &TestServer,
+    install_root: &Path,
+    bin_dir: &Path,
+    cosign: &Path,
+) -> Output {
     Command::new("sh")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"))
         .arg("--version")
@@ -303,12 +422,25 @@ fn run_unix_installer(server: &TestServer, install_root: &Path, bin_dir: &Path) 
         .arg(install_root)
         .arg("--bin-dir")
         .arg(bin_dir)
+        .arg("--cosign")
+        .arg(cosign)
         .output()
         .unwrap()
 }
 
 #[cfg(windows)]
 fn run_windows_installer(server: &TestServer, install_root: &Path, bin_dir: &Path) -> Output {
+    let cosign = write_fake_cosign(install_root.parent().unwrap(), true);
+    run_windows_installer_with_cosign(server, install_root, bin_dir, &cosign)
+}
+
+#[cfg(windows)]
+fn run_windows_installer_with_cosign(
+    server: &TestServer,
+    install_root: &Path,
+    bin_dir: &Path,
+    cosign: &Path,
+) -> Output {
     Command::new("pwsh")
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("install.ps1"))
@@ -320,9 +452,63 @@ fn run_windows_installer(server: &TestServer, install_root: &Path, bin_dir: &Pat
         .arg(install_root)
         .arg("-BinDir")
         .arg(bin_dir)
+        .arg("-CosignPath")
+        .arg(cosign)
         .arg("-NoPathUpdate")
         .output()
         .unwrap()
+}
+
+#[cfg(unix)]
+fn write_fake_cosign(root: &Path, accepts_evidence: bool) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = root.join(if accepts_evidence {
+        "cosign-success"
+    } else {
+        "cosign-failure"
+    });
+    let status = if accepts_evidence { 0 } else { 1 };
+    let script = format!(
+        "#!/bin/sh\n\
+         [ \"$#\" -eq 8 ] || exit 64\n\
+         [ \"$1\" = verify-blob ] || exit 64\n\
+         [ \"$2\" = --bundle ] || exit 64\n\
+         [ -s \"$3\" ] || exit 64\n\
+         [ \"$4\" = --certificate-identity ] || exit 64\n\
+         [ \"$5\" = \"https://github.com/A3S-Lab/Use/.github/workflows/release.yml@refs/tags/v{VERSION}\" ] || exit 64\n\
+         [ \"$6\" = --certificate-oidc-issuer ] || exit 64\n\
+         [ \"$7\" = \"https://token.actions.githubusercontent.com\" ] || exit 64\n\
+         [ -s \"$8\" ] || exit 64\n\
+         exit {status}\n"
+    );
+    fs::write(&path, script).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[cfg(windows)]
+fn write_fake_cosign(root: &Path, accepts_evidence: bool) -> PathBuf {
+    let path = root.join(if accepts_evidence {
+        "cosign-success.cmd"
+    } else {
+        "cosign-failure.cmd"
+    });
+    let status = if accepts_evidence { 0 } else { 1 };
+    let script = format!(
+        "@echo off\r\n\
+         if not \"%~1\"==\"verify-blob\" exit /b 64\r\n\
+         if not \"%~2\"==\"--bundle\" exit /b 64\r\n\
+         if not exist \"%~3\" exit /b 64\r\n\
+         if not \"%~4\"==\"--certificate-identity\" exit /b 64\r\n\
+         if not \"%~5\"==\"https://github.com/A3S-Lab/Use/.github/workflows/release.yml@refs/tags/v{VERSION}\" exit /b 64\r\n\
+         if not \"%~6\"==\"--certificate-oidc-issuer\" exit /b 64\r\n\
+         if not \"%~7\"==\"https://token.actions.githubusercontent.com\" exit /b 64\r\n\
+         if not exist \"%~8\" exit /b 64\r\n\
+         exit /b {status}\r\n"
+    );
+    fs::write(&path, script).unwrap();
+    path
 }
 
 #[cfg(windows)]
@@ -503,6 +689,10 @@ fn release_server(archive_name: &str, archive: Vec<u8>, digest: &str) -> TestSer
     files.insert(
         format!("{prefix}/checksums.txt"),
         format!("{digest}  {archive_name}\n").into_bytes(),
+    );
+    files.insert(
+        format!("{prefix}/checksums.txt.sigstore.json"),
+        SIGSTORE_BUNDLE.to_vec(),
     );
     files.insert(format!("{prefix}/{archive_name}"), archive);
     TestServer::start(files)

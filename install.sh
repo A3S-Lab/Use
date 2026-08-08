@@ -7,6 +7,7 @@ version="${A3S_USE_VERSION:-}"
 base_url="${A3S_USE_RELEASE_BASE_URL:-https://github.com/${repository}/releases/download}"
 install_root="${A3S_USE_INSTALL_ROOT:-}"
 bin_dir="${A3S_USE_BIN_DIR:-}"
+cosign_command="${A3S_USE_COSIGN:-cosign}"
 download_root=""
 stage_root=""
 install_lock=""
@@ -22,6 +23,7 @@ Options:
   --base-url <url>          Release download root (default: GitHub Releases)
   --install-root <path>     Versioned installation root
   --bin-dir <path>          Directory for the managed a3s-use symlink
+  --cosign <command>        Cosign executable (default: cosign from PATH)
   -h, --help                Show this help
 
 Environment equivalents:
@@ -29,6 +31,7 @@ Environment equivalents:
   A3S_USE_RELEASE_BASE_URL
   A3S_USE_INSTALL_ROOT
   A3S_USE_BIN_DIR
+  A3S_USE_COSIGN
 EOF
 }
 
@@ -75,6 +78,11 @@ while [ "$#" -gt 0 ]; do
       bin_dir=$2
       shift 2
       ;;
+    --cosign)
+      [ "$#" -ge 2 ] || fail "--cosign requires a value"
+      cosign_command=$2
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -85,9 +93,21 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-for command_name in curl tar awk diff find mktemp; do
+for command_name in curl tar awk diff find mktemp cp; do
   command -v "${command_name}" >/dev/null 2>&1 || fail "${command_name} is required"
 done
+
+case "${cosign_command}" in
+  /*)
+    cosign_path=${cosign_command}
+    ;;
+  *)
+    cosign_path=$(command -v "${cosign_command}" 2>/dev/null) || \
+      fail "Cosign is required to verify release signatures; install cosign or pass --cosign"
+    ;;
+esac
+[ -f "${cosign_path}" ] && [ -x "${cosign_path}" ] || \
+  fail "Cosign is required to verify release signatures; install cosign or pass --cosign"
 
 if [ -z "${install_root}" ] || [ -z "${bin_dir}" ]; then
   [ -n "${HOME:-}" ] || fail "HOME or explicit installation paths are required"
@@ -176,9 +196,19 @@ esac
 archive_name="a3s-use-${version}-${platform}.tar.gz"
 archive_path="${download_root}/${archive_name}"
 checksums_path="${download_root}/checksums.txt"
+signature_bundle_path="${download_root}/checksums.txt.sigstore.json"
 release_url="${base_url}/${tag}"
 
 download_file "${checksums_path}" "${release_url}/checksums.txt"
+download_file "${signature_bundle_path}" "${release_url}/checksums.txt.sigstore.json"
+certificate_identity="https://github.com/${repository}/.github/workflows/release.yml@refs/tags/${tag}"
+if ! "${cosign_path}" verify-blob \
+  --bundle "${signature_bundle_path}" \
+  --certificate-identity "${certificate_identity}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "${checksums_path}" >/dev/null 2>&1; then
+  fail "Sigstore verification failed for checksums.txt"
+fi
 download_file "${archive_path}" "${release_url}/${archive_name}"
 
 expected_matches=$(awk -v name="${archive_name}" \
@@ -303,6 +333,12 @@ exec "${release_root}/a3s-use" "$@"
 EOF
 chmod 0755 "${stage_root}/a3s-use-launcher"
 printf '%s\n' "${expected_sha256}" > "${stage_root}/.a3s-use-archive.sha256"
+cp "${checksums_path}" "${stage_root}/.a3s-use-checksums.txt"
+cp "${signature_bundle_path}" "${stage_root}/.a3s-use-checksums.sigstore.json"
+chmod 0644 \
+  "${stage_root}/.a3s-use-archive.sha256" \
+  "${stage_root}/.a3s-use-checksums.txt" \
+  "${stage_root}/.a3s-use-checksums.sigstore.json"
 
 if [ -L "${release_root}" ]; then
   fail "the existing release path cannot be a symbolic link: ${release_root}"
@@ -336,6 +372,7 @@ ln -s "${release_root}/a3s-use-launcher" "${temporary_shim}"
 mv -f "${temporary_shim}" "${shim}"
 
 printf 'Installed A3S Use %s for %s\n' "${version}" "${platform}"
+printf 'Verified checksum signature: %s\n' "${certificate_identity}"
 printf 'Verified archive: sha256:%s\n' "${expected_sha256}"
 printf 'Command: %s\n' "${shim}"
 case ":${PATH:-}:" in

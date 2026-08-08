@@ -71,10 +71,11 @@ in the next section to verify the exact implementation on current `main`.
 
 The standalone Use release installer is separate from the root `a3s` CLI
 installer above. Download it before execution so you can inspect the script.
-It selects the host archive, retrieves the release checksum over HTTPS, and
-publishes the command only after SHA-256 and extraction checks pass. The
-managed command also binds the packaged OCR models, OCR Skills, and Browser
-Skills without replacing explicit environment overrides.
+It requires Cosign, authenticates the release checksum against the exact tag
+workflow identity and GitHub OIDC issuer, and publishes the command only after
+signature, SHA-256, and extraction checks pass. The managed command also binds
+the packaged OCR models, OCR Skills, and Browser Skills without replacing
+explicit environment overrides.
 
 Linux or macOS:
 
@@ -92,12 +93,16 @@ Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1
 & $installer
 ```
 
+Install `cosign` on `PATH`, or select a trusted executable with `--cosign` on
+Unix and `-CosignPath` on Windows.
+
 This is still a development-preview distribution path. Tagged releases add
 deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC
 provenance/SBOM attestations, and a keyless Sigstore checksum bundle. The
-default installer still consumes its checksum through the GitHub Release HTTPS
-boundary; verify the independent evidence described in
-[Trust & Security](./trust-security) when that boundary is insufficient.
+installer fails closed unless Cosign verifies that bundle before downloading
+the platform archive, then retains the verified manifest and bundle with the
+installed version. See [Trust & Security](./trust-security) for the remaining
+bootstrap boundary and optional GitHub attestation verification.
 
 ## Build from source
 
@@ -167,7 +172,7 @@ Use does not substitute a permissive runner or source-only binding.
 
 The preview installer and signed release evidence exist, but a supported
 product installer still requires independent clean rebuild comparison for the
-native binaries, an explicit installer-enforced signature policy, the complete
+native binaries, evidence retention outside GitHub Release, the complete
 cross-platform recovery matrix, and the remaining product operations. The
 preview component carried by the CLI does not replace those gates.
 

@@ -21,7 +21,7 @@ A3S Use 的核心安全原则是：**包内容可以描述需求，但不能给�
 
 带 tag 的 preview release 会对每个平台的 staged tree 做确定性序列化，并为每个归档发布一份 SPDX JSON SBOM。GitHub OIDC 会为归档创建 build-provenance 与 SBOM attestation；`checksums.txt.sigstore.json` 是 checksum manifest 的 keyless Sigstore bundle，release job 会先按精确 tag workflow identity 复核该 bundle，再发布资产。所有 Action 以及 Rust、Python、Syft、Cosign 版本均已固定。
 
-默认 installer 仍从同一个 GitHub Release HTTPS 边界获取 `checksums.txt` 与归档。需要独立证据的运维方应在执行 installer 前验证 Sigstore bundle、选定 checksum 与 GitHub attestation。确定性归档序列化并不证明原生二进制可在独立干净 builder 上复现；该对比与 installer 强制验签策略仍是 release gate。
+installer 要求 Cosign，并在下载平台归档前按精确 A3S Use tag workflow identity 与 GitHub OIDC issuer 验证 `checksums.txt`。证据缺失或无效时会 fail closed，已验证 manifest 与 bundle 会随安装版本保留。installer 脚本自身仍是独立的 bootstrap 信任边界，应先审查或通过可信系统包分发；GitHub attestation 验证仍是额外的运维检查。确定性归档序列化并不证明原生二进制可在独立干净 builder 上复现；该对比与 Release 之外的证据保留仍是 release gate。
 
 ## 可替换的 Registry 来源
 
