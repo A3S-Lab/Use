@@ -5,7 +5,8 @@ use std::process::{Command, Output};
 
 #[test]
 fn release_publishes_only_use_owned_crates_in_dependency_order() {
-    let workflow = include_str!("../.github/workflows/release.yml");
+    let workflow = include_str!("../.github/workflows/release.yml").replace("\r\n", "\n");
+    let workflow = workflow.as_str();
     let core = position(workflow, "publish_once a3s-use-core");
     let core_visible = position(workflow, "wait_until_visible a3s-use-core");
     let extension = position(workflow, "publish_once a3s-use-extension");
