@@ -90,10 +90,13 @@ host target, and provider capability checks remain mandatory correctness rules.
   OKF cutover scenarios through real `a3s-use` processes. It also replays
   removed-dependency cleanup after killing an upgrade post-cutover, without
   inflating the capability generation.
+- The complete current non-Science workspace suite now runs on Windows x86_64.
+  A deterministic directory-junction regression proves package and durable
+  state trust boundaries reject Windows reparse points before traversal.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Cover interrupted download, archive extraction, cutover, drain, process
-  crash, reboot, antivirus contention, and Windows reparse points.
+  crash, reboot, antivirus contention, and reparse-point replacement races.
 
 ### 5. Supply chain and operations — in progress
 

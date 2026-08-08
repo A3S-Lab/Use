@@ -63,7 +63,7 @@ pub async fn inspect_release_bundle(package_root: &Path) -> UseResult<ReleaseBun
     let metadata = fs::symlink_metadata(package_root)
         .await
         .map_err(|error| io_error("inspect release bundle", package_root, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(UseError::new(
             "use.extension.release_bundle_invalid",
             format!(

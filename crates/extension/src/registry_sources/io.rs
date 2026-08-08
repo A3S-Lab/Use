@@ -29,7 +29,7 @@ impl RegistrySourcesLock {
             .map_err(|error| io_error("create Registry source state directory", parent, error))?;
         validate_directory_sync(parent)?;
         if let Ok(metadata) = std::fs::symlink_metadata(&path) {
-            if metadata.file_type().is_symlink() || !metadata.is_file() {
+            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
                 return Err(source_io_error(
                     "Registry source lock must be a regular owned file.",
                 ));
@@ -77,7 +77,7 @@ pub(super) async fn load(paths: &ExtensionPaths) -> UseResult<RegistrySourcesDoc
             ))
         }
     };
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(source_io_error(
             "Registry source configuration must be a regular owned file.",
         ));
@@ -169,9 +169,9 @@ pub(super) async fn import_trusted_root(
     let metadata = fs::symlink_metadata(source)
         .await
         .map_err(|error| io_error("inspect imported Registry trusted root", source, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(source_io_error(
-            "An imported Registry trusted root must be a regular file, not a link.",
+            "An imported Registry trusted root must be a regular file, not a link or reparse point.",
         ));
     }
     if metadata.len() == 0 || metadata.len() > MAX_IMPORTED_TRUSTED_ROOT_BYTES {
@@ -256,9 +256,9 @@ pub(super) async fn validate_managed_trusted_root(path: &Path, root_sha256: &str
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| io_error("inspect managed Registry trusted root", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(source_io_error(
-            "A managed Registry trusted root must be a regular file, not a link.",
+            "A managed Registry trusted root must be a regular file, not a link or reparse point.",
         ));
     }
     if metadata.len() == 0 || metadata.len() > MAX_IMPORTED_TRUSTED_ROOT_BYTES {
@@ -290,7 +290,7 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| io_error("inspect Registry source state directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         Err(source_io_error(
             "Registry source state must use a real owned directory.",
         ))
@@ -302,7 +302,7 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
 fn validate_directory_sync(path: &Path) -> UseResult<()> {
     let metadata = std::fs::symlink_metadata(path)
         .map_err(|error| io_error("inspect Registry source state directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         Err(source_io_error(
             "Registry source state must use a real owned directory.",
         ))

@@ -166,7 +166,9 @@ pub(super) async fn load_cached_repository(
                 )
             }
         })?;
-    if datastore_metadata.file_type().is_symlink() || !datastore_metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&datastore_metadata)
+        || !datastore_metadata.is_dir()
+    {
         return Err(catalog_cache_error(
             "use.extension.catalog_cache_invalid",
             "The cached TUF metadata path must be a real directory.",
@@ -186,7 +188,8 @@ pub(super) async fn load_cached_repository(
                 io_error("inspect verified catalog snapshot", &cache_directory, error)
             }
         })?;
-    if cache_metadata.file_type().is_symlink() || !cache_metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&cache_metadata) || !cache_metadata.is_dir()
+    {
         return Err(catalog_cache_error(
             "use.extension.catalog_cache_invalid",
             "The verified catalog snapshot path must be a real directory.",
@@ -276,7 +279,8 @@ pub(super) async fn validate_cached_registry_identity_if_present(
             ))
         }
     };
-    if cache_metadata.file_type().is_symlink() || !cache_metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&cache_metadata) || !cache_metadata.is_dir()
+    {
         return Err(catalog_cache_error(
             "use.extension.catalog_cache_invalid",
             "The verified catalog snapshot path must be a real directory.",
@@ -289,7 +293,7 @@ pub(super) async fn validate_cached_registry_identity_if_present(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(io_error("inspect catalog cache stamp", &stamp_path, error)),
     };
-    if stamp_metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(&stamp_metadata)
         || !stamp_metadata.is_file()
         || stamp_metadata.len() == 0
         || stamp_metadata.len() > MAX_CATALOG_CACHE_BYTES
@@ -338,7 +342,7 @@ async fn ensure_cache_directory(datastore: &Path) -> UseResult<std::path::PathBu
     let metadata = fs::symlink_metadata(&path)
         .await
         .map_err(|error| io_error("inspect verified catalog snapshot directory", &path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(catalog_cache_error(
             "use.extension.catalog_cache_invalid",
             "The verified catalog snapshot path must be a real directory.",
@@ -446,7 +450,7 @@ async fn read_metadata_file(path: &Path, max_bytes: u64) -> UseResult<Vec<u8>> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| io_error("inspect cached TUF metadata", path, error))?;
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
         || !metadata.is_file()
         || metadata.len() == 0
         || metadata.len() > max_bytes

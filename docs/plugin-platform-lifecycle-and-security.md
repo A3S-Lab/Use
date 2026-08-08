@@ -306,6 +306,12 @@ The package and state stores enforce:
 - exclusive operation/Registry locks; and
 - atomic file replacement with directory synchronization where available.
 
+One shared host-metadata predicate rejects both ordinary symbolic links and the
+Windows `FILE_ATTRIBUTE_REPARSE_POINT` class. Windows CI creates a real
+directory junction and proves package copying fails before external content is
+read or copied; the same predicate protects Registry/cache, Grant, lifecycle,
+Runtime, Flow, and Knowledge state checks.
+
 Temporary files are created inside validated owned directories. Tests must not
 leave roots, locks, sockets, or provider processes behind.
 

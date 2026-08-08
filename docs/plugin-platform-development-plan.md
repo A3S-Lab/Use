@@ -216,8 +216,9 @@ Status: pending
 
 ### Windows
 
-- Expand beyond compile/Core/facade/CLI coverage.
-- Test Registry/package/Grant state, reparse points, file locks, antivirus
+- [x] Run the complete current non-Science workspace suite and reject real
+  directory junctions across package and durable state trust boundaries.
+- Expand filesystem coverage to replacement races, file locks, antivirus
   contention, process groups, named resources, and reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
 

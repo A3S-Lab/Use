@@ -367,7 +367,7 @@ pub async fn load_okf_bundle_files(
     let metadata = fs::symlink_metadata(package_root)
         .await
         .map_err(|error| io_error("inspect OKF package root", package_root, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(okf_package_error(format!(
             "OKF package root '{}' must be a real directory.",
             package_root.display()
@@ -531,7 +531,7 @@ async fn canonical_package_root(package_root: &Path, label: &str) -> UseResult<P
             error,
         )
     })?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(UseError::new(
             "use.extension.surface_invalid",
             format!(
@@ -645,7 +645,7 @@ async fn validate_okf_bundle(
     let metadata = fs::symlink_metadata(&root)
         .await
         .map_err(|error| io_error("inspect OKF bundle root", &root, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(okf_package_error(format!(
             "OKF bundle root '{}' must be a real package directory.",
             root.display()
@@ -683,9 +683,9 @@ async fn validate_okf_bundle(
             let metadata = fs::symlink_metadata(&path)
                 .await
                 .map_err(|error| io_error("inspect OKF bundle entry", &path, error))?;
-            if metadata.file_type().is_symlink() {
+            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) {
                 return Err(okf_package_error(format!(
-                    "OKF bundle entry '{}' cannot be a symbolic link.",
+                    "OKF bundle entry '{}' cannot be a link or reparse point.",
                     path.display()
                 )));
             }

@@ -38,12 +38,27 @@ impl PreparedPackageSource {
 }
 
 pub(crate) async fn prepare_package_source(source: &Path) -> UseResult<PreparedPackageSource> {
+    let source_metadata = fs::symlink_metadata(source)
+        .await
+        .map_err(|error| io_error("inspect extension package", source, error))?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&source_metadata) {
+        return Err(UseError::new(
+            "use.extension.package_symlink",
+            "The local extension source cannot be a link or reparse point.",
+        ));
+    }
     let source = fs::canonicalize(source)
         .await
         .map_err(|error| io_error("resolve extension package", source, error))?;
-    let metadata = fs::metadata(&source)
+    let metadata = fs::symlink_metadata(&source)
         .await
         .map_err(|error| io_error("inspect extension package", &source, error))?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) {
+        return Err(UseError::new(
+            "use.extension.package_symlink",
+            "The resolved extension source cannot be a link or reparse point.",
+        ));
+    }
     if metadata.is_dir() {
         return Ok(PreparedPackageSource {
             root: source,

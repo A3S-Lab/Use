@@ -169,7 +169,10 @@ impl RuntimeBindingStore {
         ensure_owned_directory(&self.state_root, Some(&self.root)).await?;
         let lock_path = self.root.join(".store.lock");
         match fs::symlink_metadata(&lock_path).await {
-            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Ok(metadata)
+                if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    || !metadata.is_file() =>
+            {
                 return Err(store_error(
                     "use.plugin.runtime.binding_path_invalid",
                     "The Runtime binding store lock is not an owned regular file.",
@@ -280,7 +283,7 @@ async fn generations(directory: &Path) -> UseResult<std::collections::BTreeSet<u
             let metadata = fs::symlink_metadata(entry.path()).await.map_err(|error| {
                 path_error("inspect temporary Runtime binding", &entry.path(), error)
             })?;
-            if metadata.file_type().is_symlink()
+            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
                 || !metadata.is_file()
                 || metadata.len() > MAX_BINDING_RECEIPT_BYTES
             {
@@ -294,7 +297,7 @@ async fn generations(directory: &Path) -> UseResult<std::collections::BTreeSet<u
         let metadata = fs::symlink_metadata(entry.path())
             .await
             .map_err(|error| path_error("inspect Runtime binding receipt", &entry.path(), error))?;
-        if metadata.file_type().is_symlink()
+        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
             || !metadata.is_file()
             || metadata.len() == 0
             || metadata.len() > MAX_BINDING_RECEIPT_BYTES
@@ -375,7 +378,7 @@ async fn validate_directory(path: &Path) -> UseResult<()> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| path_error("inspect Runtime binding directory", path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err(store_error(
             "use.plugin.runtime.binding_path_invalid",
             format!(
@@ -401,7 +404,9 @@ async fn validate_existing_directory_chain(root: &Path, parent: Option<&Path>) -
             current.push(segment.as_os_str());
         }
         match fs::symlink_metadata(&current).await {
-            Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_dir() => {}
+            Ok(metadata)
+                if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    && metadata.is_dir() => {}
             Ok(_) => {
                 return Err(store_error(
                     "use.plugin.runtime.binding_path_invalid",
@@ -430,7 +435,7 @@ async fn read_optional_receipt(path: &Path) -> UseResult<Option<RuntimeBindingRe
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(path_error("inspect Runtime binding receipt", path, error)),
     };
-    if metadata.file_type().is_symlink()
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
         || !metadata.is_file()
         || metadata.len() == 0
         || metadata.len() > MAX_BINDING_RECEIPT_BYTES

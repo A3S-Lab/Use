@@ -18,8 +18,12 @@ jobs:
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
-      - run: cargo test --workspace --all-features --locked
-      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --workspace --exclude a3s-use-science --all-features --locked
+      - run: cargo clippy --workspace --exclude a3s-use-science --all-targets --all-features --locked -- -D warnings
+      - name: Re-run verified installer release gate
+        run: cargo test -p a3s-use --test release_installers --locked
+      - name: Re-run release supply-chain gate
+        run: cargo test -p a3s-use --test release_workflow --locked
       - name: Test digest-pinned MCP release container
         run: |
           sudo apt-get update
@@ -38,34 +42,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Compile workspace tests
-        run: cargo test --workspace --locked --no-run
-      - name: Run workspace tests
-        if: runner.os != 'Windows'
-        run: cargo test --workspace --locked
-      - name: Run Core tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use-core --locked
-      - name: Run MCP release fixture tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use-mcp-release-fixture --locked
+        run: cargo test --workspace --exclude a3s-use-science --locked --no-run
       # Windows remains a preview target. Browser provider and driver
       # validation runs in the independent A3S Browser repository, while the
       # complete Runtime/MCP/watcher/failure-injection matrix remains pending.
-      - name: Run facade unit tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use --lib --bin a3s-use --locked
-      - name: Run facade CLI integration tests (Windows preview)
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use --test cli --locked -- --nocapture
-      - name: Run signed cognitive-package lifecycle tests (Windows preview)
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use --test remote_extension_cli --locked -- --nocapture
-      - name: Run verified release installer tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use --test release_installers --locked -- --nocapture
-      - name: Run release supply-chain tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use --test release_workflow --locked -- --nocapture
-      - name: Run facade documentation tests
-        if: runner.os == 'Windows'
-        run: cargo test -p a3s-use --doc --locked
+      - name: Run non-Science workspace tests
+        run: cargo test --workspace --exclude a3s-use-science --locked

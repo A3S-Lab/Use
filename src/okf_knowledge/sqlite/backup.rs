@@ -337,15 +337,17 @@ fn validate_new_destination(destination: &Path) -> UseResult<()> {
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let parent_metadata = fs::metadata(parent).map_err(|error| {
+    let parent_metadata = fs::symlink_metadata(parent).map_err(|error| {
         backup_io(format!(
             "Failed to inspect Knowledge backup directory '{}': {error}",
             parent.display()
         ))
     })?;
-    if !parent_metadata.is_dir() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&parent_metadata)
+        || !parent_metadata.is_dir()
+    {
         return Err(backup_invalid(
-            "The Knowledge backup destination parent is not a directory.",
+            "The Knowledge backup destination parent is not an owned directory.",
         ));
     }
     match fs::symlink_metadata(destination) {
@@ -365,7 +367,7 @@ fn validate_regular_backup_file(path: &Path) -> UseResult<()> {
             path.display()
         ))
     })?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(backup_invalid(
             "The Knowledge backup path is not a regular file.",
         ));

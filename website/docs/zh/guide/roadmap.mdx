@@ -77,10 +77,13 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
   依赖图 install/upgrade/uninstall、Grant、standalone Flow preflight/生命周期
   和 OKF cutover 场景；还会在 upgrade 完成 cutover 后杀死进程，再重放已移除
   依赖的清理，且 capability generation 不会膨胀。
+- Windows x86_64 现已运行当前完整的非 Science workspace 测试；确定性的真实
+  directory junction 回归测试证明 package 与持久状态信任边界会在遍历前拒绝
+  Windows reparse point。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
 - 覆盖下载中断、归档提取、cutover、drain、进程崩溃、重启、杀毒软件争用
-  和 Windows reparse point。
+  和 reparse-point replacement race。
 
 ### 5. 供应链与运维 — 进行中
 

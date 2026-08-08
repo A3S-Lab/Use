@@ -111,7 +111,7 @@ pub(super) async fn validate_surface_file(
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| io_error(&format!("inspect {label}"), path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(UseError::new(
             "use.extension.surface_invalid",
             format!(
@@ -154,6 +154,27 @@ pub(crate) async fn copy_package(source: &Path, target: &Path) -> UseResult<()> 
     let mut files = 0_usize;
     let mut bytes = 0_u64;
     while let Some((source_dir, target_dir)) = pending.pop() {
+        let source_metadata = fs::symlink_metadata(&source_dir)
+            .await
+            .map_err(|error| io_error("inspect extension package directory", &source_dir, error))?;
+        if a3s_use_core::metadata_is_link_or_reparse_point(&source_metadata) {
+            return Err(UseError::new(
+                "use.extension.package_symlink",
+                format!(
+                    "Extension package directory '{}' is a link or reparse point.",
+                    source_dir.display()
+                ),
+            ));
+        }
+        if !source_metadata.is_dir() {
+            return Err(UseError::new(
+                "use.extension.package_entry_invalid",
+                format!(
+                    "Extension package directory '{}' is not a directory.",
+                    source_dir.display()
+                ),
+            ));
+        }
         fs::create_dir_all(&target_dir)
             .await
             .map_err(|error| io_error("create staged package directory", &target_dir, error))?;
@@ -170,11 +191,11 @@ pub(crate) async fn copy_package(source: &Path, target: &Path) -> UseResult<()> 
             let metadata = fs::symlink_metadata(&source_path).await.map_err(|error| {
                 io_error("inspect extension package entry", &source_path, error)
             })?;
-            if metadata.file_type().is_symlink() {
+            if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) {
                 return Err(UseError::new(
                     "use.extension.package_symlink",
                     format!(
-                        "Extension package entry '{}' is a symbolic link.",
+                        "Extension package entry '{}' is a link or reparse point.",
                         source_path.display()
                     ),
                 ));

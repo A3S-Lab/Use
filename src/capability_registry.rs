@@ -449,7 +449,7 @@ async fn skill_surface(path: PathBuf) -> UseResult<SkillSurface> {
     let metadata = tokio::fs::symlink_metadata(&path)
         .await
         .map_err(|error| skill_io_error("inspect", &path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(UseError::new(
             "use.capability.skill_invalid",
             format!(
@@ -485,7 +485,7 @@ async fn activity_asset(path: PathBuf, media_type: &str) -> UseResult<ManagedAss
     let metadata = tokio::fs::symlink_metadata(&path)
         .await
         .map_err(|error| activity_io_error("inspect", &path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(UseError::new(
             "use.capability.activity_asset_invalid",
             format!(
@@ -526,7 +526,7 @@ async fn flow_asset(path: PathBuf) -> UseResult<ManagedAsset> {
     let metadata = tokio::fs::symlink_metadata(&path)
         .await
         .map_err(|error| flow_io_error("inspect", &path, error))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
         return Err(UseError::new(
             "use.capability.flow_source_invalid",
             format!(

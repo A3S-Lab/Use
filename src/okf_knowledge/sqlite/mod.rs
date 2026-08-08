@@ -194,7 +194,12 @@ impl SqliteOkfKnowledgeAdapter {
 
 async fn require_database(path: &Path) -> UseResult<()> {
     match tokio::fs::symlink_metadata(path).await {
-        Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_file() => Ok(()),
+        Ok(metadata)
+            if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                && metadata.is_file() =>
+        {
+            Ok(())
+        }
         Ok(_) => Err(UseError::new(
             "use.okf.knowledge_database_path_invalid",
             "The Knowledge database path is not an owned regular file.",

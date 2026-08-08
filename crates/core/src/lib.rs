@@ -5,10 +5,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+mod filesystem;
 pub mod okf;
 pub mod plugin;
 pub mod release;
 
+pub use filesystem::metadata_is_link_or_reparse_point;
 pub use okf::{
     inspect_okf_bundle, inspect_okf_bundle_files, OkfBundleContract, OkfBundleDiagnostic,
     OkfBundleFile, OkfBundleInspection, OkfBundleLimits, OkfCapabilityProjection,

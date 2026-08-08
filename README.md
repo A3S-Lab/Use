@@ -87,11 +87,14 @@ The implementation and fixtures exercise the product model directly:
 - Contract fixtures under [`crates/core/fixtures/plugins`](crates/core/fixtures/plugins/)
   freeze canonical JSON and SHA-256 digests for the current schemas.
 
-CI runs formatting, workspace tests, Clippy, release-container conformance,
-and platform jobs. The Windows preview gate also runs signed Registry,
-dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF scenarios
-through the real CLI, including killed-process cleanup replay after graph
-cutover; the remaining platform matrix is still narrower than the release gate.
+CI runs formatting, all non-Science workspace tests, Clippy,
+release-container conformance, and platform jobs. The Windows preview gate now
+executes the complete current non-Science workspace suite, including a real
+directory-junction regression for the shared reparse-point guard. Signed
+Registry, dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF
+scenarios also run through the real CLI, including killed-process cleanup
+replay after graph cutover. The remaining real-process and recovery matrix is
+still narrower than the release gate.
 See [Platform support](#platform-support).
 
 ## Install or build
@@ -695,12 +698,13 @@ release claim.
 
 | Target | Current gate | Product status |
 | --- | --- | --- |
-| Linux x86_64 / arm64 | Full workspace CI plus release-container conformance | Development preview |
-| macOS arm64 / x86_64 | Workspace build and tests | Development preview |
-| Windows x86_64 | Workspace compile plus signed Registry/graph/Grant/Flow/OKF CLI lifecycles and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
+| Linux x86_64 / arm64 | Full non-Science workspace CI plus release-container conformance | Development preview |
+| macOS arm64 / x86_64 | Current non-Science workspace build and tests | Development preview |
+| Windows x86_64 | Current non-Science workspace tests, junction rejection, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
-All filesystem state uses platform-aware paths and avoids symlink/reparse-point
-traversal. Platform compilation is not the same as production qualification.
+Trusted package and state paths use platform-aware metadata checks that reject
+Unix symbolic links and Windows reparse points before traversal. Platform test
+coverage is not the same as production qualification.
 
 ## Repository layout
 
@@ -723,8 +727,8 @@ Run checks from this repository, not from the A3S monorepo root:
 
 ```bash
 cargo fmt --all -- --check
-cargo test --workspace --all-targets
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --exclude a3s-use-science --all-targets
+cargo clippy --workspace --exclude a3s-use-science --all-targets --all-features -- -D warnings
 cargo check -p a3s-use --no-default-features
 cargo check -p a3s-use --no-default-features --features extensions
 ```

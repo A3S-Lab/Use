@@ -84,7 +84,8 @@ rejection. They are not supported decode paths.
 
 - [x] ACL manifest v3 with named Tool, MCP, OKF, Flow, Skill, and UI surfaces.
 - [x] Required bounded UTF-8 `README.md`, package path validation, archive
-  bounds, symlink/reparse-point rejection, and content fingerprinting.
+  bounds, shared Unix symlink/Windows reparse-point rejection, and content
+  fingerprinting.
 - [x] Canonical catalog-v3 record with complete surface inventory, package and
   manifest digests, planning target, provider requirements, and permission
   ceiling.
@@ -228,10 +229,14 @@ Status: pending
   Grant, standalone Flow preflight/lifecycle, and OKF cutover scenarios through
   real `a3s-use` processes on Windows x86_64, including killed-process replay
   of removed-dependency cleanup without capability-generation inflation.
+- [x] Run the complete current non-Science workspace suite on Windows x86_64
+  and reject directory junctions across package, Registry/cache, Grant,
+  lifecycle, Runtime, Flow, and Knowledge trust boundaries.
 - [ ] Expand the remaining Windows gate to the complete filesystem, Runtime,
   MCP, watcher, failure-injection, and crash-recovery matrix.
 - [ ] Test interrupted download, archive extraction, cutover, drain, removal,
-  process crash, reboot, antivirus contention, and Windows reparse points.
+  process crash, reboot, antivirus contention, and reparse-point replacement
+  races.
 - [ ] Verify release archives install and run without repository-local paths.
 
 Exit gate: every supported target passes the same signed six-surface package
