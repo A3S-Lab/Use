@@ -94,10 +94,11 @@ See [Platform support](#platform-support).
 ## Install or build
 
 Tagged archives remain development previews. The installers select the current
-OS and architecture, download `checksums.txt` and the exact archive over HTTPS,
-verify SHA-256 before extraction, reject unsafe archive entries, and atomically
-publish a user-scoped command. Download the installer first so it can be
-reviewed before execution.
+OS and architecture, require Cosign, authenticate `checksums.txt` against the
+exact A3S Use tag workflow identity and GitHub OIDC issuer, verify the selected
+archive SHA-256 before extraction, reject unsafe archive entries, and
+atomically publish a user-scoped command. Download the installer first so it
+can be reviewed before execution.
 
 Linux or macOS:
 
@@ -115,6 +116,9 @@ Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1
 & $installer
 ```
 
+`cosign` must be installed on `PATH`; an explicit trusted executable can be
+selected with `--cosign <path>` on Unix or `-CosignPath <path>` on Windows.
+
 Pass `--version <version>` on Unix or `-Version <version>` on Windows to pin a
 tag. Unix installs under `$XDG_DATA_HOME/a3s-use` (or
 `$HOME/.local/share/a3s-use`) and links from `$HOME/.local/bin`. Windows uses
@@ -123,9 +127,11 @@ tag. Unix installs under `$XDG_DATA_HOME/a3s-use` (or
 `-NoPathUpdate` is set. The managed launcher binds the packaged OCR models,
 OCR Skills, and Browser Skills while preserving explicit environment
 overrides. Reinstalling the same version revalidates the complete installed
-tree. A checksum mismatch, tampered existing release, unsafe path, link/reparse
-point, concurrent installer, or unmanaged command conflict fails without
-changing the active command. See
+tree. Missing Cosign, invalid Sigstore evidence, a checksum mismatch, tampered
+existing release, unsafe path, link/reparse point, concurrent installer, or
+unmanaged command conflict fails without changing the active command. The
+verified checksum manifest and Sigstore bundle are retained in the immutable
+version directory. See
 [Verified release installation](docs/release-installation.md) for the trust
 boundary and custom-path options.
 
@@ -134,13 +140,13 @@ JSON SBOM per platform, GitHub OIDC build-provenance and SBOM attestations, and
 a keyless Sigstore bundle for `checksums.txt`. The Release workflow pins every
 Action plus the Rust, Python, Syft, and Cosign versions, derives archive
 timestamps from the tag commit, and verifies its checksum signature before
-publication. The default installers still consume the checksum through the
-GitHub Release HTTPS boundary; operators can independently verify the Sigstore
-bundle and GitHub attestation first by following
-[Verified release installation](docs/release-installation.md#independent-release-verification).
-Independent clean rebuilds of the native binaries and installer-enforced
-signature policy remain release gates, so this does not change the preview
-status above.
+publication. The installers now fail closed unless Cosign authenticates that
+same bundle against the exact tag identity before the archive is downloaded.
+Operators can additionally verify the GitHub attestation by following
+[Verified release installation](docs/release-installation.md#additional-independent-verification).
+Independent clean rebuild comparison for native binaries, evidence retention
+outside GitHub Release, and the remaining product gates are still open, so
+this does not change the preview status above.
 
 ### Build and verify
 
@@ -634,9 +640,9 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Scope-local OKF integrity audit, verified database backup, and derived FTS repair | Implemented and real-process tested; restore and whole-product recovery remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
 | A3S Code CLI/TUI/Web integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, Web marketplace lifecycle, and TUI `/packages` review are tested; release qualification remains |
-| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, a verified keyless Sigstore checksum bundle, pinned Actions, and pinned release tools are implemented; independent native-binary rebuild comparison and installer-enforced signature policy remain open |
+| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, pinned Actions, and pinned release tools are implemented; independent native-binary rebuild comparison and off-Release evidence retention remain open |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
-| Public Registry operations, independent native-binary rebuilds, installer signature enforcement, retention, support runbooks | Release blocker |
+| Public Registry operations, independent native-binary rebuilds, off-Release evidence retention, support runbooks | Release blocker |
 
 **Production-ready: no.** The code has a substantial tested foundation, but
 the unfinished rows above remain required release gates. [ROADMAP.md](ROADMAP.md)

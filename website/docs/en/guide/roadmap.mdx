@@ -100,9 +100,12 @@ host target, and provider capability checks remain mandatory correctness rules.
   SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and a verified keyless
   Sigstore checksum bundle now come from one workflow with pinned Actions and
   release tools.
+- Both platform installers now require Cosign, verify the checksum manifest
+  against the exact tag workflow identity before archive download, fail closed
+  on invalid evidence, and retain the verified evidence with each version.
 - Reproduce the native binaries and final archive digests in independent clean
-  environments, retain verification evidence outside the Release asset trust
-  boundary, and make installer signature enforcement explicit.
+  environments and retain verification evidence outside the Release asset
+  trust boundary.
 - Exercise coordinated restore, binding/authority recovery, backup rotation,
   whole-product storage policy, telemetry, security response, and support
   runbooks. The implemented OKF scope audit/backup/FTS repair covers only the

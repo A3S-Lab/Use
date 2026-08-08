@@ -21,7 +21,7 @@ Search runs over verified, size-bounded catalog metadata without downloading pac
 
 Tagged preview releases deterministically serialize each staged platform tree and publish an SPDX JSON SBOM beside every archive. GitHub OIDC creates both build-provenance and SBOM attestations for the archive. `checksums.txt.sigstore.json` is a keyless Sigstore bundle for the checksum manifest, and the release job verifies the bundle against the exact tag workflow identity before publishing it. Every Action and the Rust, Python, Syft, and Cosign versions are pinned.
 
-The default installer still obtains `checksums.txt` and the archive from the same GitHub Release HTTPS boundary. An operator who needs independent evidence must verify the Sigstore bundle, selected checksum, and GitHub attestation before executing the installer. Deterministic archive serialization is not proof that native binaries reproduce across independent clean builders; that comparison and installer-enforced signature policy remain release gates.
+The installers require Cosign and authenticate `checksums.txt` against the exact A3S Use tag workflow identity and GitHub OIDC issuer before downloading a platform archive. Invalid or missing evidence fails closed, and the verified manifest and bundle are retained with the installed version. The installer script remains a separate bootstrap trust boundary and should be reviewed or distributed through a trusted system package. GitHub attestation verification remains an additional operator check. Deterministic archive serialization is not proof that native binaries reproduce across independent clean builders; that comparison and off-Release evidence retention remain release gates.
 
 ## Replaceable registry sources
 

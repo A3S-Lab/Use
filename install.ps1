@@ -4,6 +4,7 @@ param(
     [string]$BaseUrl = $env:A3S_USE_RELEASE_BASE_URL,
     [string]$InstallRoot = $env:A3S_USE_INSTALL_ROOT,
     [string]$BinDir = $env:A3S_USE_BIN_DIR,
+    [string]$CosignPath = $env:A3S_USE_COSIGN,
     [switch]$NoPathUpdate
 )
 
@@ -146,6 +147,18 @@ if ([string]::IsNullOrWhiteSpace($BinDir)) {
     }
     $BinDir = Join-Path $env:LOCALAPPDATA 'A3S\bin'
 }
+if ([string]::IsNullOrWhiteSpace($CosignPath)) {
+    $CosignPath = 'cosign'
+}
+
+$CosignCommand = Get-Command -Name $CosignPath `
+    -CommandType Application `
+    -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if ($null -eq $CosignCommand) {
+    Fail 'Cosign is required to verify release signatures; install cosign or pass -CosignPath'
+}
+$CosignExecutable = $CosignCommand.Definition
 
 Assert-AbsolutePath $InstallRoot '-InstallRoot'
 Assert-AbsolutePath $BinDir '-BinDir'
@@ -203,8 +216,19 @@ $BackupShim = $null
 New-Item -ItemType Directory -Path $DownloadRoot | Out-Null
 try {
     $ChecksumsPath = Join-Path $DownloadRoot 'checksums.txt'
+    $SignatureBundlePath = Join-Path $DownloadRoot 'checksums.txt.sigstore.json'
     $ArchivePath = Join-Path $DownloadRoot $ArchiveName
     Get-ReleaseFile ([uri]"$ReleaseUri/checksums.txt") $ChecksumsPath
+    Get-ReleaseFile ([uri]"$ReleaseUri/checksums.txt.sigstore.json") $SignatureBundlePath
+    $CertificateIdentity = "https://github.com/$Repository/.github/workflows/release.yml@refs/tags/$Tag"
+    & $CosignExecutable verify-blob `
+        --bundle $SignatureBundlePath `
+        --certificate-identity $CertificateIdentity `
+        --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' `
+        $ChecksumsPath *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Fail 'Sigstore verification failed for checksums.txt'
+    }
     Get-ReleaseFile ([uri]"$ReleaseUri/$ArchiveName") $ArchivePath
 
     $ExpectedMatches = @(
@@ -328,6 +352,8 @@ try {
         }
     }
     Set-Content -LiteralPath (Join-Path $StageRoot '.a3s-use-archive.sha256') -Value $ExpectedSha256 -Encoding ascii
+    Copy-Item -LiteralPath $ChecksumsPath -Destination (Join-Path $StageRoot '.a3s-use-checksums.txt')
+    Copy-Item -LiteralPath $SignatureBundlePath -Destination (Join-Path $StageRoot '.a3s-use-checksums.sigstore.json')
 
     if (Test-Path -LiteralPath $ReleaseRoot) {
         $ReleaseRootItem = Get-Item -LiteralPath $ReleaseRoot -Force
@@ -395,6 +421,7 @@ if not defined A3S_USE_BROWSER_SKILLS_DIR set "A3S_USE_BROWSER_SKILLS_DIR=$Brows
     }
 
     Write-Output "Installed A3S Use $Version for $Platform"
+    Write-Output "Verified checksum signature: $CertificateIdentity"
     Write-Output "Verified archive: sha256:$ExpectedSha256"
     Write-Output "Command: $ShimPath"
     if ($NoPathUpdate) {

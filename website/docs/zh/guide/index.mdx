@@ -64,9 +64,10 @@ a3s use doctor --json
 ## 安装 standalone Use 预览版
 
 standalone Use release installer 与上面的根 `a3s` CLI installer 相互独立。
-先下载脚本以便审查；它会选择当前 host 归档，通过 HTTPS 获取 release
-checksum，并在 SHA-256 与提取检查通过后发布命令。受管命令还会绑定归档内的
-OCR model、OCR Skill 与 Browser Skill，同时保留显式环境变量覆盖。
+先下载脚本以便审查；它要求 Cosign 按精确 tag workflow identity 与 GitHub
+OIDC issuer 验证 release checksum，并只在签名、SHA-256 与提取检查通过后
+发布命令。受管命令还会绑定归档内的 OCR model、OCR Skill 与 Browser Skill，
+同时保留显式环境变量覆盖。
 
 Linux 或 macOS：
 
@@ -84,11 +85,14 @@ Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1
 & $installer
 ```
 
+需要先把 `cosign` 安装到 `PATH`，也可在 Unix 通过 `--cosign`、Windows
+通过 `-CosignPath` 指定可信可执行文件。
+
 这仍是 development-preview 分发路径。带 tag 的 release 已提供确定性归档
 序列化、逐平台 SPDX SBOM、GitHub OIDC provenance/SBOM attestation 与
-keyless Sigstore checksum bundle。默认 installer 仍通过 GitHub Release
-HTTPS 边界消费 checksum；当该边界不足时，应先按[信任与安全](./trust-security)
-验证独立证据。
+keyless Sigstore checksum bundle。installer 会在下载平台归档前 fail closed
+地验证该 bundle，并把已验证 manifest 与 bundle 保留在安装版本目录中。
+剩余 bootstrap 边界与可选 GitHub attestation 验证见[信任与安全](./trust-security)。
 
 ## 从源码构建
 
@@ -149,9 +153,8 @@ runner 或 source-only binding。
 ## standalone installer 仍缺少什么
 
 预览 installer 与签名 release 证据已经存在；受支持的产品 installer 仍需在
-独立干净环境中复核原生二进制、强制执行明确的 installer signature policy、
-通过完整跨平台恢复矩阵，并完成剩余产品运维。CLI 携带的预览组件不能替代
-这些门禁。
+独立干净环境中复核原生二进制、把证据保留在 GitHub Release 之外、通过完整
+跨平台恢复矩阵，并完成剩余产品运维。CLI 携带的预览组件不能替代这些门禁。
 
 ## 下一步
 

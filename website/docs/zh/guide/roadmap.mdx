@@ -86,8 +86,11 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
 - 同一套固定 Action 与发布工具版本的 workflow 已生成确定性归档、跨平台
   安装脚本、逐平台 SPDX SBOM、GitHub OIDC provenance/SBOM attestation，
   以及经过本地复核的 keyless Sigstore checksum bundle。
+- 两套平台 installer 均已要求 Cosign，在下载归档前按精确 tag workflow
+  identity 验证 checksum manifest，证据无效时 fail closed，并随版本保留
+  已验证的 manifest 与 bundle。
 - 仍需在独立干净环境中复现原生二进制与最终归档 digest，把验证证据保留在
-  Release asset 信任边界之外，并明确强制 installer signature policy。
+  Release asset 信任边界之外。
 - 演练存储配额/修复、备份、telemetry、安全响应与支持 runbook。
 
 ## Production-ready 定义
