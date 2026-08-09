@@ -40,7 +40,7 @@ async fn registry_tuf_receipts_require_verified_catalog_evidence() {
 }
 
 #[tokio::test]
-async fn lifecycle_commit_keeps_all_six_surfaces_installed_disabled_until_atomic_publish() {
+async fn lifecycle_snapshot_cannot_steal_the_reviewed_atomic_cutover() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");
     compatible_cognitive_package(&source).await;
@@ -54,6 +54,7 @@ async fn lifecycle_commit_keeps_all_six_surfaces_installed_disabled_until_atomic
     .unwrap();
     let identity = lifecycle_identity(&candidate, 7);
     let registry = registry(temp.path());
+    let before = registry.snapshot().await.unwrap();
 
     let committed = registry
         .commit_lifecycle_package(&identity, &candidate)
@@ -72,10 +73,11 @@ async fn lifecycle_commit_keeps_all_six_surfaces_installed_disabled_until_atomic
         registry.lifecycle_package_root(&identity)
     );
 
-    let installed_disabled = registry.snapshot().await.unwrap();
-    assert_eq!(installed_disabled.routes.len(), 1);
-    assert_eq!(installed_disabled.routes[0].lifecycle_generation, Some(7));
-    assert!(!installed_disabled.routes[0].enabled);
+    // This is the deterministic watcher race: a capability observer runs
+    // after package staging but before the lifecycle coordinator publishes
+    // the reviewed cutover. Staging must not consume a Registry generation.
+    let staged_observation = registry.snapshot().await.unwrap();
+    assert_eq!(staged_observation, before);
     assert!(registry
         .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
         .await
@@ -92,10 +94,13 @@ async fn lifecycle_commit_keeps_all_six_surfaces_installed_disabled_until_atomic
         committed.extension.receipt.descriptor_digest().unwrap()
     );
 
-    let published = registry
-        .publish_lifecycle_package_for_host_version(&identity, "0.3.0")
+    let cutover_key = format!("sha256:{}", "7".repeat(64));
+    let publication = registry
+        .publish_lifecycle_package_with_durable_cutover(&identity, &cutover_key)
         .await
         .unwrap();
+    assert_eq!(publication.registry_generation, before.generation + 1);
+    let published = &publication.packages[0];
     assert!(published.changed);
     assert!(published.extension.receipt.enabled);
     assert_eq!(published.extension.receipt.lifecycle_generation, Some(7));
@@ -106,12 +111,17 @@ async fn lifecycle_commit_keeps_all_six_surfaces_installed_disabled_until_atomic
         .is_some());
 
     let replay = registry
-        .publish_lifecycle_package_for_host_version(&identity, "0.3.0")
+        .publish_lifecycle_package_with_durable_cutover(&identity, &cutover_key)
         .await
         .unwrap();
-    assert!(!replay.changed);
+    assert_eq!(replay.registry_generation, publication.registry_generation);
+    assert!(!replay.packages[0].changed);
     assert_eq!(
-        replay.extension.receipt.descriptor_digest().unwrap(),
+        replay.packages[0]
+            .extension
+            .receipt
+            .descriptor_digest()
+            .unwrap(),
         published.extension.receipt.descriptor_digest().unwrap()
     );
 }
@@ -880,7 +890,7 @@ fn verified_catalog_flow_inventory_and_dependencies_match_the_admitted_manifest(
 }
 
 #[tokio::test]
-async fn lifecycle_generation_binding_fails_closed_and_snapshot_repairs_tampered_projection() {
+async fn lifecycle_generation_binding_fails_closed_without_observer_republication() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");
     compatible_cognitive_package(&source).await;
@@ -898,8 +908,8 @@ async fn lifecycle_generation_binding_fails_closed_and_snapshot_repairs_tampered
         .commit_lifecycle_package(&identity, &candidate)
         .await
         .unwrap();
+    registry.publish_lifecycle_package(&identity).await.unwrap();
 
-    registry.snapshot().await.unwrap();
     let snapshot_path = registry.paths().registry_snapshot_path();
     let mut snapshot: serde_json::Value =
         serde_json::from_slice(&fs::read(&snapshot_path).await.unwrap()).unwrap();
@@ -910,8 +920,13 @@ async fn lifecycle_generation_binding_fails_closed_and_snapshot_repairs_tampered
     )
     .await
     .unwrap();
-    let repaired = registry.snapshot().await.unwrap();
-    assert_eq!(repaired.routes[0].lifecycle_generation, Some(13));
+    let observed = registry.snapshot().await.unwrap();
+    assert_eq!(observed.routes[0].lifecycle_generation, Some(99));
+    assert!(registry
+        .acquire_lifecycle_route_for_host_version("cognitive", "0.3.0")
+        .await
+        .unwrap()
+        .is_none());
 
     let receipt_path = registry.paths().receipt_path("acme/cognitive");
     let mut receipt: serde_json::Value =
@@ -928,7 +943,7 @@ async fn lifecycle_generation_binding_fails_closed_and_snapshot_repairs_tampered
 }
 
 #[tokio::test]
-async fn lifecycle_commit_repairs_crashes_after_root_or_receipt_commit() {
+async fn lifecycle_commit_replay_defers_receipt_cutover_to_the_journal() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");
     compatible_cognitive_package(&source).await;
@@ -957,23 +972,22 @@ async fn lifecycle_commit_repairs_crashes_after_root_or_receipt_commit() {
     assert_eq!(committed.extension.receipt.package_root, target);
 
     // Model a second crash after receipt replacement but before snapshot
-    // publication. Replaying the same checkpoint repairs only the projection.
-    registry.snapshot().await.unwrap();
-    let snapshot_path = registry.paths().registry_snapshot_path();
-    let mut snapshot: serde_json::Value =
-        serde_json::from_slice(&fs::read(&snapshot_path).await.unwrap()).unwrap();
-    snapshot["routes"] = serde_json::json!([]);
-    fs::write(
-        &snapshot_path,
-        serde_json::to_vec_pretty(&snapshot).unwrap(),
-    )
-    .await
-    .unwrap();
+    // publication. Replaying the package checkpoint restores staged state,
+    // while only the lifecycle journal may publish the reviewed cutover.
+    assert!(registry.snapshot().await.unwrap().routes.is_empty());
     let replay = registry
         .commit_lifecycle_package(&identity, &candidate)
         .await
         .unwrap();
     assert!(!replay.changed);
+    assert!(registry.snapshot().await.unwrap().routes.is_empty());
+
+    let cutover_key = format!("sha256:{}", "f".repeat(64));
+    let publication = registry
+        .publish_lifecycle_package_with_durable_cutover(&identity, &cutover_key)
+        .await
+        .unwrap();
+    assert_eq!(publication.registry_generation, 1);
     assert_eq!(registry.snapshot().await.unwrap().routes.len(), 1);
 }
 

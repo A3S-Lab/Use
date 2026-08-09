@@ -337,10 +337,11 @@ impl ExtensionRegistry {
         }
         // Receipt writes belonging to a schema-v3 graph publication are not a
         // multi-file transaction. The immutable snapshot is therefore the
-        // visibility commit point. Never infer a new active generation from
-        // partially written receipts after a crash; the durable lifecycle
-        // journal must replay the exact reviewed batch instead.
-        if active_lifecycle_bindings(&published.routes) != active_lifecycle_bindings(&routes) {
+        // visibility commit point for both staged and active lifecycle state.
+        // Never let an observer publish an installed-disabled candidate or
+        // infer another lifecycle generation from partially written receipts;
+        // the durable lifecycle journal must replay the exact reviewed batch.
+        if lifecycle_bindings(&published.routes) != lifecycle_bindings(&routes) {
             return Ok(published);
         }
         self.publish_snapshot_locked(&installed).await
@@ -836,15 +837,15 @@ fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding
         .collect()
 }
 
-fn active_lifecycle_bindings(
+fn lifecycle_bindings(
     routes: &[ExtensionRouteBinding],
-) -> BTreeMap<&str, (u64, &str, &str, &str, &str)> {
+) -> BTreeMap<&str, (u64, &str, &str, &str, &str, bool)> {
     routes
         .iter()
         .filter_map(|binding| {
             let generation = binding.lifecycle_generation?;
             let package_sha256 = binding.package_sha256.as_deref()?;
-            binding.enabled.then_some((
+            Some((
                 binding.package_id.as_str(),
                 (
                     generation,
@@ -852,6 +853,7 @@ fn active_lifecycle_bindings(
                     package_sha256,
                     binding.version.as_str(),
                     binding.route.as_str(),
+                    binding.enabled,
                 ),
             ))
         })

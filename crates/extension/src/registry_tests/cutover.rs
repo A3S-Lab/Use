@@ -92,8 +92,18 @@ async fn lifecycle_cutover_replays_original_evidence_after_unrelated_registry_mu
 #[tokio::test]
 async fn lifecycle_cutover_capacity_fails_before_receipt_or_generation_mutation() {
     let temp = tempfile::tempdir().unwrap();
+    let seed_source = temp.path().join("seed");
     let source = temp.path().join("capacity");
+    cognitive_package_with_dependencies(&seed_source, "acme/seed", "seed", &[]).await;
     cognitive_package_with_dependencies(&source, "acme/capacity", "capacity", &[]).await;
+    let seed = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/seed",
+        &seed_source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
     let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
         "acme/capacity",
         &source,
@@ -102,8 +112,17 @@ async fn lifecycle_cutover_capacity_fails_before_receipt_or_generation_mutation(
     )
     .await
     .unwrap();
+    let seed_identity = lifecycle_identity(&seed, 71);
     let identity = lifecycle_identity(&candidate, 72);
     let registry = registry(temp.path());
+    registry
+        .commit_lifecycle_package(&seed_identity, &seed)
+        .await
+        .unwrap();
+    registry
+        .publish_lifecycle_package(&seed_identity)
+        .await
+        .unwrap();
     registry
         .commit_lifecycle_package(&identity, &candidate)
         .await
