@@ -203,6 +203,7 @@ impl CognitivePackageManager {
                     manifest_digest: identity.manifest_digest().to_string(),
                     generation,
                     action: PluginLifecycleAction::Uninstall,
+                    retained_ui_state_surfaces: Vec::new(),
                 },
                 manifest,
             )?;

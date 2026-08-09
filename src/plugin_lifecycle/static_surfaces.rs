@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use a3s_use_core::{PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult};
 use a3s_use_extension::{
@@ -8,7 +9,8 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
 use super::{
-    PluginLifecycleEvidence, PluginLifecycleIntent, PluginSkillLifecycleHost, PluginUiLifecycleHost,
+    PluginLifecycleEvidence, PluginLifecycleIntent, PluginSkillLifecycleHost,
+    PluginUiLifecycleHost, PluginUiLifecycleHostFactory,
 };
 
 /// Immutable-file adapter for Skill and UI package contributions.
@@ -20,6 +22,16 @@ use super::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StaticPluginSurfaceLifecycleHost {
     package_root: PathBuf,
+}
+
+/// Default UI composition for standalone A3S Use hosts.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StaticPluginSurfaceLifecycleHostFactory;
+
+impl PluginUiLifecycleHostFactory for StaticPluginSurfaceLifecycleHostFactory {
+    fn create(&self, package_root: PathBuf) -> Arc<dyn PluginUiLifecycleHost> {
+        Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root))
+    }
 }
 
 impl StaticPluginSurfaceLifecycleHost {

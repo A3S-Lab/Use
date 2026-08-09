@@ -1741,6 +1741,7 @@ extension "acme/workflow" {
                 manifest_digest: format!("sha256:{}", extension.receipt.manifest_sha256),
                 generation: 12,
                 action: PluginLifecycleAction::Install,
+                retained_ui_state_surfaces: Vec::new(),
             },
             &extension.manifest,
         )

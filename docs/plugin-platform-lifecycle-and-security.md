@@ -292,6 +292,15 @@ origin, CSP, navigation, and backend-binding policy from the embedding host.
 Neither UI nor Skill receives ambient filesystem, network, process, or secret
 authority.
 
+The embedding host also owns UI state. Code admits state operations only for
+the exact current Activity document and while holding the matching published
+package-generation lease. State is bounded and isolated by scope, lifecycle
+package ID, and surface ID; it survives restart and lifecycle transitions only
+when lifecycle intent v3 explicitly retains that surface. True uninstall and
+surface removal clear the namespace even when its stored snapshot is corrupt.
+This state-retention rule is not failed-N+1 fallback; candidate readiness and
+rollback must still keep N selected until N+1 is proven ready.
+
 ## Filesystem and archive safety
 
 The package and state stores enforce:

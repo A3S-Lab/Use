@@ -216,6 +216,7 @@ async fn failed_upgrade_preparation_rolls_back_ambiguous_surfaces_and_blocks_pla
             manifest_digest: next_state.release.manifest_sha256.clone(),
             generation: 2,
             action: PluginLifecycleAction::Upgrade,
+            retained_ui_state_surfaces: Vec::new(),
         },
         &next_manifest,
     )
@@ -230,6 +231,7 @@ async fn failed_upgrade_preparation_rolls_back_ambiguous_surfaces_and_blocks_pla
             manifest_digest: prior_state.release.manifest_sha256.clone(),
             generation: 1,
             action: PluginLifecycleAction::Uninstall,
+            retained_ui_state_surfaces: Vec::new(),
         },
         &prior_manifest,
     )

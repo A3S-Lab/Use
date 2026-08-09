@@ -713,6 +713,7 @@ fn install_graph_fixture(retain_base: bool) -> InstallGraphFixture {
                     manifest_digest: state.release.manifest_sha256.clone(),
                     generation: index as u64 + 1,
                     action: PluginLifecycleAction::Install,
+                    retained_ui_state_surfaces: Vec::new(),
                 },
                 &manifest,
             )
@@ -857,6 +858,7 @@ fn upgrade_graph_fixture() -> UpgradeGraphFixture {
                     manifest_digest: state.release.manifest_sha256.clone(),
                     generation: index as u64 + 11,
                     action: PluginLifecycleAction::Upgrade,
+                    retained_ui_state_surfaces: Vec::new(),
                 },
                 &manifest,
             )
@@ -894,6 +896,7 @@ fn upgrade_graph_fixture() -> UpgradeGraphFixture {
                     manifest_digest: state.release.manifest_sha256.clone(),
                     generation: 2_u64.saturating_sub(index as u64),
                     action: PluginLifecycleAction::Uninstall,
+                    retained_ui_state_surfaces: Vec::new(),
                 },
                 &manifest,
             )

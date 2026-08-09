@@ -396,6 +396,7 @@ impl CognitivePackageManager {
                 manifest_digest: artifact.manifest_digest.clone(),
                 generation: artifact.generation,
                 action,
+                retained_ui_state_surfaces: Vec::new(),
             },
             &extension.manifest,
         )?;

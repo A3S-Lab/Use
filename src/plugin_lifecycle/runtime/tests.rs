@@ -342,6 +342,7 @@ async fn runtime_reenable_replaces_a_stopped_binding_with_new_authorization_sema
             manifest_digest: prior_intent.manifest_digest.clone(),
             generation: prior_intent.generation,
             action: PluginLifecycleAction::Enable,
+            retained_ui_state_surfaces: Vec::new(),
         },
         &manifest,
     )
@@ -916,6 +917,7 @@ fn intent_generation(
             manifest_digest: format!("sha256:{:x}", Sha256::digest(MANIFEST.as_bytes())),
             generation,
             action,
+            retained_ui_state_surfaces: Vec::new(),
         },
         manifest,
     )

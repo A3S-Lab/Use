@@ -182,6 +182,7 @@ fn grant_enablement_fixture() -> GrantEnablementFixture {
             manifest_digest: state.release.manifest_sha256.clone(),
             generation: 1,
             action: PluginLifecycleAction::Enable,
+            retained_ui_state_surfaces: Vec::new(),
         },
         &manifest,
     )
