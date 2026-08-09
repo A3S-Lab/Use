@@ -332,7 +332,12 @@ Status: pending
   persistence at every canonical install, upgrade, enable, disable, and
   uninstall checkpoint, followed by exact-key recovery with one durable
   effect;
+- test-binary subprocess exit after a grant-bearing install, upgrade, or
+  uninstall atomic graph publish/hide effect but before package publication
+  receipts and Grant cutover evidence, followed by exact-key recovery with one
+  graph effect and completed package/Grant journals;
 - no-op terminal result replay without another host call;
+- completed graph replay without another atomic publish or hide;
 - latest/previous checkpoint diagnostics remain bounded and omit idempotency
   keys and secret-bearing fields;
 - a rolling-back operation rejects a conflicting new intent.
