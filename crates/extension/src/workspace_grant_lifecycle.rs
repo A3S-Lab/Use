@@ -15,6 +15,9 @@ use super::workspace_grant_operation::{
 };
 use super::workspace_grant_operation_io::{read_optional_operation, write_operation};
 
+#[cfg(test)]
+use crate::workspace_grant_lifecycle_fault_matrix as fault_matrix;
+
 impl WorkspaceGrantStore {
     /// Records a durable immutable intent before any candidate grant is written.
     pub async fn begin_change_set(
@@ -98,6 +101,8 @@ impl WorkspaceGrantStore {
         };
         let journal = WorkspaceGrantOperationJournal::new(intent)?;
         write_operation(&path, &journal).await?;
+        #[cfg(test)]
+        fault_matrix::crash_after_checkpoint(fault_matrix::INTENT_RECORDED);
         Ok(journal)
     }
 
@@ -114,6 +119,8 @@ impl WorkspaceGrantStore {
             WorkspaceGrantLifecyclePhase::IntentRecorded => {
                 journal.phase = WorkspaceGrantLifecyclePhase::Preparing;
                 write_operation(&path, &journal).await?;
+                #[cfg(test)]
+                fault_matrix::crash_after_checkpoint(fault_matrix::PREPARING);
             }
             WorkspaceGrantLifecyclePhase::Preparing | WorkspaceGrantLifecyclePhase::Prepared => {}
             WorkspaceGrantLifecyclePhase::CutoverCommitted
@@ -126,9 +133,15 @@ impl WorkspaceGrantStore {
         for candidate in &journal.intent.candidates {
             self.put_locked(&candidate.receipt, &candidate.ceiling, now_ms)
                 .await?;
+            #[cfg(test)]
+            fault_matrix::crash_after_checkpoint(&fault_matrix::candidate_prepared(
+                &candidate.receipt.grant.package_id,
+            ));
         }
         journal.phase = WorkspaceGrantLifecyclePhase::Prepared;
         write_operation(&path, &journal).await?;
+        #[cfg(test)]
+        fault_matrix::crash_after_checkpoint(fault_matrix::PREPARED);
         Ok(journal)
     }
 
@@ -157,6 +170,8 @@ impl WorkspaceGrantStore {
                 journal.cutover = Some(cutover);
                 journal.phase = WorkspaceGrantLifecyclePhase::CutoverCommitted;
                 write_operation(&path, &journal).await?;
+                #[cfg(test)]
+                fault_matrix::crash_after_checkpoint(fault_matrix::CUTOVER_COMMITTED);
                 Ok(journal)
             }
             WorkspaceGrantLifecyclePhase::CutoverCommitted
@@ -189,6 +204,8 @@ impl WorkspaceGrantStore {
             WorkspaceGrantLifecyclePhase::CutoverCommitted => {
                 journal.phase = WorkspaceGrantLifecyclePhase::Retiring;
                 write_operation(&path, &journal).await?;
+                #[cfg(test)]
+                fault_matrix::crash_after_checkpoint(fault_matrix::RETIRING);
             }
             WorkspaceGrantLifecyclePhase::Retiring => {}
             WorkspaceGrantLifecyclePhase::Completed => return Ok(journal),
@@ -232,9 +249,15 @@ impl WorkspaceGrantStore {
             )?;
             self.revoke_locked(&retirement.prior_receipt, &revocation)
                 .await?;
+            #[cfg(test)]
+            fault_matrix::crash_after_checkpoint(&fault_matrix::grant_retired(
+                &retirement.evidence.package_id,
+            ));
         }
         journal.phase = WorkspaceGrantLifecyclePhase::Completed;
         write_operation(&path, &journal).await?;
+        #[cfg(test)]
+        fault_matrix::crash_after_checkpoint(fault_matrix::COMPLETED);
         Ok(journal)
     }
 
@@ -273,6 +296,8 @@ impl WorkspaceGrantStore {
                 journal.phase = WorkspaceGrantLifecyclePhase::RollingBack;
                 journal.rollback = Some(rollback.clone());
                 write_operation(&path, &journal).await?;
+                #[cfg(test)]
+                fault_matrix::crash_after_checkpoint(fault_matrix::ROLLING_BACK);
             }
             WorkspaceGrantLifecyclePhase::RollingBack => {
                 if journal.rollback.as_ref() != Some(&rollback) {
@@ -297,9 +322,15 @@ impl WorkspaceGrantStore {
 
         for candidate in journal.intent.candidates.iter().rev() {
             self.restore_candidate_record(candidate).await?;
+            #[cfg(test)]
+            fault_matrix::crash_after_checkpoint(&fault_matrix::candidate_restored(
+                &candidate.receipt.grant.package_id,
+            ));
         }
         journal.phase = WorkspaceGrantLifecyclePhase::RolledBack;
         write_operation(&path, &journal).await?;
+        #[cfg(test)]
+        fault_matrix::crash_after_checkpoint(fault_matrix::ROLLED_BACK);
         Ok(journal)
     }
 

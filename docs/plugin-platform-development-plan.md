@@ -336,6 +336,10 @@ Status: pending
   uninstall atomic graph publish/hide effect but before package publication
   receipts and Grant cutover evidence, followed by exact-key recovery with one
   graph effect and completed package/Grant journals;
+- test-binary subprocess exit after all 14 Grant Store durable phase,
+  candidate-receipt, prior-revocation, and candidate-restoration checkpoints
+  in the canonical two-candidate/two-retirement lifecycle, followed by exact
+  state convergence;
 - no-op terminal result replay without another host call;
 - completed graph replay without another atomic publish or hide;
 - latest/previous checkpoint diagnostics remain bounded and omit idempotency

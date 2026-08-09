@@ -170,6 +170,10 @@ rejection. They are not supported decode paths.
   uninstall graph publish/hide effect but before package publication receipts
   and Grant cutover evidence, with exact-key recovery, one graph effect,
   completed package/Grant journals, and no publication on terminal replay.
+- [x] Test-binary subprocess exit after all 14 Grant Store durable checkpoints
+  in the canonical two-candidate/two-retirement lifecycle across forward
+  prepare, cutover/retirement, and pre-cutover rollback, with exact
+  candidate/prior convergence and terminal journal replay.
 - [x] Signed standalone CLI Flow/OKF/Skill/UI install, process-restart
   observation, exact upgrade, uninstall, failed-preflight non-publication, and
   repaired exact replay coverage on Unix and Windows x86_64. The OKF fixture
