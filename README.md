@@ -102,8 +102,12 @@ upgrade, and uninstall graph cutovers: it exits after the atomic publish or
 hide effect but before package publication receipts and Grant cutover evidence,
 then proves exact-key recovery, one graph effect, completed package and Grant
 journals, and terminal replay without another publish or hide. These harnesses
-do not replace the still-open Grant Store internal-checkpoint, real CLI,
-provider, and cross-platform failure-injection gates.
+do not replace the still-open real CLI, provider, and cross-platform
+failure-injection gates. The Grant Store itself also runs a test-binary
+subprocess matrix across all 14 durable checkpoints in its canonical
+two-candidate/two-retirement lifecycle: forward prepare,
+cutover/retirement, and pre-cutover rollback each include every candidate
+receipt, prior revocation, and candidate restoration.
 See [Platform support](#platform-support).
 
 ## Install or build
@@ -703,7 +707,8 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Install, upgrade, uninstall graph ordering | Implemented |
 | Durable atomic Registry cutover and exact replay | Implemented |
 | Package-host side-effect/receipt ambiguity recovery | Every canonical install, upgrade, enable, disable, and uninstall checkpoint passes subprocess-exit, exact-key recovery, single-effect, and terminal-replay tests; real-process graph and Grant failure injection remains open |
-| Grant-bearing graph cutover effect/receipt ambiguity recovery | Install, upgrade, and uninstall atomic publish/hide boundaries pass subprocess-exit, exact-key recovery, single-effect, completed-journal, and no-republication tests; Grant Store internal checkpoints and real-process failure injection remain open |
+| Grant-bearing graph cutover effect/receipt ambiguity recovery | Install, upgrade, and uninstall atomic publish/hide boundaries pass subprocess-exit, exact-key recovery, single-effect, completed-journal, and no-republication tests; real-process failure injection remains open |
+| Grant Store journal/receipt crash recovery | All 14 durable checkpoints in the canonical two-candidate/two-retirement lifecycle pass subprocess-exit convergence and exact terminal replay across prepare, cutover/retirement, and pre-cutover rollback; real CLI and cross-platform product qualification remain open |
 | Secret-free lifecycle checkpoint diagnostics | Implemented for latest/previous package operations through `extension inspect --json`; broader operational telemetry remains open |
 | Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |

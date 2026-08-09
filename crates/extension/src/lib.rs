@@ -7,6 +7,9 @@ use a3s_use_core::{
 };
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+extern crate self as a3s_use_extension;
+
 mod digest;
 mod package;
 #[cfg(test)]
@@ -26,6 +29,8 @@ mod surface_files;
 mod workspace_grant;
 mod workspace_grant_io;
 mod workspace_grant_lifecycle;
+#[cfg(test)]
+mod workspace_grant_lifecycle_fault_matrix;
 mod workspace_grant_operation;
 mod workspace_grant_operation_io;
 mod workspace_grant_snapshot;

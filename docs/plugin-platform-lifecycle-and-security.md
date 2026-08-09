@@ -405,9 +405,16 @@ matrix for install, upgrade, and uninstall. Each child exits after syncing the
 atomic graph publish or hide effect but before package publication receipts and
 Grant cutover evidence. Restart recovery reuses the same cutover key, retains
 one graph effect, completes package and Grant journals, retires only the exact
-prior grants, and does not publish or hide again on terminal replay. Grant
-Store internal phase checkpoints plus real CLI, provider, and cross-platform
-failure injection remain separate release gates.
+prior grants, and does not publish or hide again on terminal replay.
+
+The Grant Store has an additional test-binary subprocess matrix over all 14
+durable checkpoints in the canonical two-candidate/two-retirement lifecycle.
+It exits after each phase journal, candidate receipt, prior revocation, and
+candidate restoration write across preparation, cutover/retirement, and
+pre-cutover rollback. Restart converges to the exact completed or rolled-back
+journal, preserves or revokes only the bound receipts, and terminal replay is
+identical. Real CLI, provider, and cross-platform failure injection remain
+separate release gates.
 
 `replayed = false` means an interrupted operation resumed work. `replayed =
 true` is reserved for returning a previously completed terminal result.
@@ -499,6 +506,8 @@ Required gates include:
   checkpoint in a test-binary subprocess;
 - grant-bearing graph publish/hide effect interruption before package and
   Grant cutover receipts in a test-binary subprocess;
+- Grant Store interruption after every durable phase, candidate, revocation,
+  and restoration write in a test-binary subprocess;
 - real-process interruption at every graph/Grant/cutover/drain/removal
   checkpoint;
 - mixed-generation and stale-route prevention;
