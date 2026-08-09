@@ -804,6 +804,7 @@ fn package_unit(
             manifest_digest: state.release.manifest_sha256.clone(),
             generation,
             action,
+            retained_ui_state_surfaces: Vec::new(),
         },
         &manifest,
     )

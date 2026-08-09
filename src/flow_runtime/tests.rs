@@ -368,6 +368,7 @@ fn intent(manifest: &ExtensionManifest, generation: u64) -> PluginLifecycleInten
             manifest_digest: format!("sha256:{:x}", Sha256::digest(MANIFEST.as_bytes())),
             generation,
             action: PluginLifecycleAction::Install,
+            retained_ui_state_surfaces: Vec::new(),
         },
         manifest,
     )

@@ -24,6 +24,7 @@ pub use coordinator::{
     PluginLifecycleCoordinator, PluginLifecycleEvidence, PluginLifecycleHosts,
     PluginMcpLifecycleHost, PluginOkfLifecycleHost, PluginPackageLifecycleHost,
     PluginSkillLifecycleHost, PluginToolLifecycleHost, PluginUiLifecycleHost,
+    PluginUiLifecycleHostFactory,
 };
 pub use diagnostic::{
     PluginLifecycleCheckpointDiagnostic, PluginLifecycleCheckpointDiagnosticStatus,
@@ -54,7 +55,9 @@ pub use registry_hosts::{
 pub use runtime::{
     PluginMcpServiceReadiness, PluginRuntimeServiceReadinessHost, RuntimePluginSurfaceLifecycleHost,
 };
-pub use static_surfaces::StaticPluginSurfaceLifecycleHost;
+pub use static_surfaces::{
+    StaticPluginSurfaceLifecycleHost, StaticPluginSurfaceLifecycleHostFactory,
+};
 pub use store::PluginLifecycleJournalStore;
 
 #[cfg(test)]

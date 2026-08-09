@@ -675,6 +675,7 @@ mod tests {
                 manifest_digest: candidate.manifest_digest().to_string(),
                 generation: 2,
                 action: PluginLifecycleAction::Upgrade,
+                retained_ui_state_surfaces: Vec::new(),
             },
             candidate.manifest(),
         )

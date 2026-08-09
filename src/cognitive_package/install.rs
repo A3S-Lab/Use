@@ -249,6 +249,7 @@ impl CognitivePackageManager {
                     manifest_digest: prepared.package.manifest_digest().to_string(),
                     generation,
                     action: PluginLifecycleAction::Install,
+                    retained_ui_state_surfaces: Vec::new(),
                 },
                 &prepared.manifest,
             )?;
@@ -458,6 +459,7 @@ impl CognitivePackageManager {
                     manifest_digest: identity.manifest_digest().to_string(),
                     generation,
                     action: PluginLifecycleAction::Install,
+                    retained_ui_state_surfaces: Vec::new(),
                 },
                 manifest,
             )?;

@@ -5,7 +5,7 @@ use a3s_use_extension::SurfaceActivation;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub const PLUGIN_LIFECYCLE_INTENT_SCHEMA: &str = "a3s.use.plugin-lifecycle-intent.v2";
+pub const PLUGIN_LIFECYCLE_INTENT_SCHEMA: &str = "a3s.use.plugin-lifecycle-intent.v3";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -119,6 +119,13 @@ pub struct PluginLifecycleIntentSpec {
     pub manifest_digest: String,
     pub generation: u64,
     pub action: PluginLifecycleAction,
+    /// UI surface state retained across one exact replacement cutover.
+    ///
+    /// The list is empty for install, enablement, disablement, and true
+    /// uninstall operations. Upgrade planning computes the sorted intersection
+    /// of the prior and candidate UI surface inventories and binds the same
+    /// list into both replacement lifecycle units.
+    pub retained_ui_state_surfaces: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,6 +140,8 @@ pub struct PluginLifecycleIntent {
     pub manifest_digest: String,
     pub generation: u64,
     pub action: PluginLifecycleAction,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retained_ui_state_surfaces: Vec<String>,
     pub surfaces: Vec<PluginLifecycleSurface>,
     pub checkpoints: Vec<PluginLifecycleCheckpoint>,
 }
@@ -152,6 +161,29 @@ impl PluginLifecycleIntent {
         {
             return Err(lifecycle_error(
                 "The cognitive-package lifecycle identity or surface bound is invalid.",
+            ));
+        }
+        let ui_surfaces = self
+            .surfaces
+            .iter()
+            .filter(|surface| surface.surface.kind == PluginSurfaceKind::Ui)
+            .map(|surface| surface.surface.id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        if self
+            .retained_ui_state_surfaces
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+            || self
+                .retained_ui_state_surfaces
+                .iter()
+                .any(|surface_id| !ui_surfaces.contains(surface_id.as_str()))
+            || (!matches!(
+                self.action,
+                PluginLifecycleAction::Upgrade | PluginLifecycleAction::Uninstall
+            ) && !self.retained_ui_state_surfaces.is_empty())
+        {
+            return Err(lifecycle_error(
+                "Retained UI state surfaces do not match the canonical replacement inventory.",
             ));
         }
         super::schedule::validate_surfaces(&self.surfaces)?;

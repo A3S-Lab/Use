@@ -501,6 +501,7 @@ async fn optional_surface_failure_publishes_degraded_package_evidence() {
             manifest_digest: format!("sha256:{}", "3".repeat(64)),
             generation: 8,
             action: PluginLifecycleAction::Install,
+            retained_ui_state_surfaces: Vec::new(),
         },
         &manifest,
     )

@@ -96,6 +96,7 @@ pub(super) fn intent(action: PluginLifecycleAction) -> PluginLifecycleIntent {
             manifest_digest: format!("sha256:{}", "3".repeat(64)),
             generation: 7,
             action,
+            retained_ui_state_surfaces: Vec::new(),
         },
         &manifest,
     )

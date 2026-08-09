@@ -31,6 +31,7 @@ impl PluginLifecycleIntent {
             manifest_digest: spec.manifest_digest,
             generation: spec.generation,
             action: spec.action,
+            retained_ui_state_surfaces: spec.retained_ui_state_surfaces,
             surfaces,
             checkpoints,
         };

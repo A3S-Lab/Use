@@ -20,8 +20,9 @@ use crate::plugin_lifecycle::{
     ExtensionCapabilityLifecycleHost, ExtensionPackageLifecycleHost, OkfKnowledgeLifecycleHost,
     PluginFlowLifecycleHost, PluginLifecycleCoordinator, PluginLifecycleEvidence,
     PluginLifecycleHosts, PluginLifecycleIntent, PluginMcpServiceReadiness,
-    PluginRuntimeServiceReadinessHost, RuntimePluginSurfaceLifecycleHost,
-    StaticPluginSurfaceLifecycleHost,
+    PluginRuntimeServiceReadinessHost, PluginUiLifecycleHostFactory,
+    RuntimePluginSurfaceLifecycleHost, StaticPluginSurfaceLifecycleHost,
+    StaticPluginSurfaceLifecycleHostFactory,
 };
 use crate::plugin_runtime::{
     RuntimeBindingStore, RuntimeEndpointRef, RuntimeProviderSelection, RuntimeSurfacePlan,
@@ -53,6 +54,7 @@ pub struct ManagedCognitivePackageLifecycleFactory {
     selection: RuntimeProviderSelection,
     runtime_registry: Arc<RuntimeClientRegistry>,
     readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<PathBuf>,
 }
 
@@ -119,8 +121,20 @@ impl ManagedCognitivePackageLifecycleFactory {
             selection,
             runtime_registry,
             readiness,
+            ui_factory: Arc::new(StaticPluginSurfaceLifecycleHostFactory),
             flow_compiler_binary: None,
         }
+    }
+
+    /// Replace the default static UI host with one trusted embedding-host
+    /// composition. The injected host remains responsible for validating the
+    /// immutable package assets before adding product-owned behavior.
+    pub fn with_ui_lifecycle_factory(
+        mut self,
+        ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
+    ) -> Self {
+        self.ui_factory = ui_factory;
+        self
     }
 
     pub fn with_flow_compiler(mut self, compiler_binary: impl Into<PathBuf>) -> UseResult<Self> {
@@ -217,6 +231,7 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
             self.selection.clone(),
             self.runtime_registry.clone(),
             self.readiness.clone(),
+            self.ui_factory.clone(),
             self.flow_compiler_binary.as_deref(),
         ))
     }
@@ -232,6 +247,7 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
             self.selection.clone(),
             self.runtime_registry.clone(),
             self.readiness.clone(),
+            self.ui_factory.clone(),
             self.flow_compiler_binary.as_deref(),
         ))
     }
@@ -247,6 +263,7 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
             self.selection.clone(),
             self.runtime_registry.clone(),
             self.readiness.clone(),
+            self.ui_factory.clone(),
             self.flow_compiler_binary.as_deref(),
         ))
     }
@@ -435,6 +452,7 @@ pub(super) fn install_coordinator(
             registry: Arc::new(RuntimeClientRegistry::new()),
             readiness: Arc::new(UnavailableRuntimeServiceReadinessHost),
         },
+        Arc::new(StaticPluginSurfaceLifecycleHostFactory),
         flow_compiler_binary,
     )
 }
@@ -458,6 +476,7 @@ pub(super) fn uninstall_coordinator(
             registry: Arc::new(RuntimeClientRegistry::new()),
             readiness: Arc::new(UnavailableRuntimeServiceReadinessHost),
         },
+        Arc::new(StaticPluginSurfaceLifecycleHostFactory),
         flow_compiler_binary,
     )
 }
@@ -484,6 +503,7 @@ pub(super) fn published_install_coordinator(
             registry: Arc::new(RuntimeClientRegistry::new()),
             readiness: Arc::new(UnavailableRuntimeServiceReadinessHost),
         },
+        Arc::new(StaticPluginSurfaceLifecycleHostFactory),
         flow_compiler_binary,
     )
 }
@@ -495,6 +515,7 @@ fn managed_install_coordinator(
     selection: RuntimeProviderSelection,
     runtime_registry: Arc<RuntimeClientRegistry>,
     readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     let paths = registry.paths().clone();
@@ -512,6 +533,7 @@ fn managed_install_coordinator(
             registry: runtime_registry,
             readiness,
         },
+        ui_factory,
         flow_compiler_binary,
     )
 }
@@ -522,6 +544,7 @@ fn managed_uninstall_coordinator(
     selection: RuntimeProviderSelection,
     runtime_registry: Arc<RuntimeClientRegistry>,
     readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     let paths = registry.paths().clone();
@@ -538,6 +561,7 @@ fn managed_uninstall_coordinator(
             registry: runtime_registry,
             readiness,
         },
+        ui_factory,
         flow_compiler_binary,
     )
 }
@@ -548,6 +572,7 @@ fn managed_published_install_coordinator(
     selection: RuntimeProviderSelection,
     runtime_registry: Arc<RuntimeClientRegistry>,
     readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     managed_uninstall_coordinator(
@@ -556,6 +581,7 @@ fn managed_published_install_coordinator(
         selection,
         runtime_registry,
         readiness,
+        ui_factory,
         flow_compiler_binary,
     )
 }
@@ -566,6 +592,7 @@ fn coordinator(
     package_root: impl Into<std::path::PathBuf>,
     paths: &a3s_use_extension::ExtensionPaths,
     runtime: RuntimeLifecycleComposition,
+    ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     let package_root = package_root.into();
@@ -578,6 +605,7 @@ fn coordinator(
         runtime.readiness,
     ));
     let static_surfaces = Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root.clone()));
+    let ui = ui_factory.create(package_root.clone());
     let okf = Arc::new(OkfKnowledgeLifecycleHost::new(
         package_root.clone(),
         OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(
@@ -602,7 +630,7 @@ fn coordinator(
         okf,
         flow,
         static_surfaces.clone(),
-        static_surfaces,
+        ui,
     );
     PluginLifecycleCoordinator::new(
         crate::plugin_lifecycle::PluginLifecycleJournalStore::from_extension_paths(paths),
@@ -714,9 +742,23 @@ fn provider_error(code: &'static str, message: impl Into<String>) -> UseError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use super::*;
 
     struct InjectedLifecycleFactory;
+
+    struct RecordingUiFactory(Arc<AtomicBool>);
+
+    impl PluginUiLifecycleHostFactory for RecordingUiFactory {
+        fn create(
+            &self,
+            package_root: PathBuf,
+        ) -> Arc<dyn crate::plugin_lifecycle::PluginUiLifecycleHost> {
+            self.0.store(true, Ordering::SeqCst);
+            Arc::new(StaticPluginSurfaceLifecycleHost::new(package_root))
+        }
+    }
 
     impl CognitivePackageLifecycleFactory for InjectedLifecycleFactory {
         fn name(&self) -> &'static str {
@@ -811,6 +853,28 @@ mod tests {
         );
 
         factory.validate_manifest_for_retirement(&manifest).unwrap();
+    }
+
+    #[test]
+    fn managed_factory_uses_the_embedding_hosts_ui_composition() {
+        let temp = tempfile::tempdir().unwrap();
+        let created = Arc::new(AtomicBool::new(false));
+        let factory = ManagedCognitivePackageLifecycleFactory::new(
+            RuntimeProviderSelection::default(),
+            Arc::new(RuntimeClientRegistry::new()),
+            Arc::new(UnavailableRuntimeServiceReadinessHost),
+        )
+        .with_ui_lifecycle_factory(Arc::new(RecordingUiFactory(created.clone())));
+        let registry = ExtensionRegistry::new(a3s_use_extension::ExtensionPaths::new(
+            temp.path().join("data"),
+            temp.path().join("state"),
+        ));
+
+        factory
+            .published_install_coordinator(registry, temp.path().join("package"))
+            .unwrap();
+
+        assert!(created.load(Ordering::SeqCst));
     }
 
     #[test]

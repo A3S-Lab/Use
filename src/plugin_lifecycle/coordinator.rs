@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use a3s_use_core::{PluginSurfaceKind, UseError, UseResult};
@@ -261,6 +262,15 @@ pub trait PluginUiLifecycleHost: Send + Sync {
         surface: &PluginUiSurface,
         idempotency_key: &str,
     ) -> UseResult<PluginLifecycleEvidence>;
+}
+
+/// Embedding-host composition boundary for package-root-specific UI hosts.
+///
+/// Static asset validation needs the immutable package root, while products
+/// such as A3S Code also inject host-owned durable state and cleanup policy.
+/// The factory is selected by trusted host code and is never package input.
+pub trait PluginUiLifecycleHostFactory: Send + Sync {
+    fn create(&self, package_root: PathBuf) -> Arc<dyn PluginUiLifecycleHost>;
 }
 
 #[derive(Clone)]
@@ -937,6 +947,7 @@ pub(super) fn validate_manifest_binding(
             manifest_digest: intent.manifest_digest.clone(),
             generation: intent.generation,
             action: intent.action,
+            retained_ui_state_surfaces: intent.retained_ui_state_surfaces.clone(),
         },
         manifest,
     )?;

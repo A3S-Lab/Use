@@ -406,6 +406,27 @@ impl CognitivePackageManager {
                 prepared.package.manifest_digest(),
                 generation,
             )?;
+            let retained_ui_state_surfaces = match disposition {
+                UpgradeDisposition::Replace => {
+                    let prior_manifest = pending
+                        .prior_manifests
+                        .get(package.package_id())
+                        .ok_or_else(|| {
+                            package_manager_error(
+                                "use.plugin.package_graph_invalid",
+                                "A replacement package omitted its prior UI inventory.",
+                            )
+                        })?;
+                    common_ui_surface_ids(prior_manifest, &prepared.manifest)
+                }
+                UpgradeDisposition::Add => Vec::new(),
+                UpgradeDisposition::Remove | UpgradeDisposition::Retain => {
+                    return Err(package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A non-candidate package attempted to retain candidate UI state.",
+                    ))
+                }
+            };
             let intent = PluginLifecycleIntent::from_manifest(
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
@@ -431,6 +452,7 @@ impl CognitivePackageManager {
                             ))
                         }
                     },
+                    retained_ui_state_surfaces,
                 },
                 &prepared.manifest,
             )?;
@@ -495,6 +517,19 @@ impl CognitivePackageManager {
                 before.release.manifest_sha256.clone(),
                 generation,
             )?;
+            let retained_ui_state_surfaces =
+                if dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Replace) {
+                    let candidate_manifest =
+                        pending.manifests.get(package.package_id()).ok_or_else(|| {
+                            package_manager_error(
+                                "use.plugin.package_graph_invalid",
+                                "A replacement package omitted its candidate UI inventory.",
+                            )
+                        })?;
+                    common_ui_surface_ids(manifest, candidate_manifest)
+                } else {
+                    Vec::new()
+                };
             let intent = PluginLifecycleIntent::from_manifest(
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
@@ -505,6 +540,7 @@ impl CognitivePackageManager {
                     manifest_digest: identity.manifest_digest().to_string(),
                     generation,
                     action: PluginLifecycleAction::Uninstall,
+                    retained_ui_state_surfaces,
                 },
                 manifest,
             )?;
@@ -760,6 +796,22 @@ impl CognitivePackageManager {
             ))
         }
     }
+}
+
+fn common_ui_surface_ids(prior: &ExtensionManifest, candidate: &ExtensionManifest) -> Vec<String> {
+    let prior = prior
+        .ui
+        .iter()
+        .map(|surface| surface.id.as_str())
+        .collect::<BTreeSet<_>>();
+    candidate
+        .ui
+        .iter()
+        .filter(|surface| prior.contains(surface.id.as_str()))
+        .map(|surface| surface.id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn validate_removed_generation(

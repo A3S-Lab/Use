@@ -80,3 +80,23 @@ fn lifecycle_intent_rejects_checkpoint_drift() {
     let error = intent.validate().unwrap_err();
     assert_eq!(error.code, "use.plugin.lifecycle_invalid");
 }
+
+#[test]
+fn replacement_retirement_binds_only_known_sorted_ui_state_surfaces() {
+    let mut retirement = intent(PluginLifecycleAction::Uninstall);
+    retirement.retained_ui_state_surfaces = vec!["review".to_string()];
+    retirement.validate().unwrap();
+
+    retirement.retained_ui_state_surfaces = vec!["missing".to_string()];
+    assert_eq!(
+        retirement.validate().unwrap_err().code,
+        "use.plugin.lifecycle_invalid"
+    );
+
+    let mut install = intent(PluginLifecycleAction::Install);
+    install.retained_ui_state_surfaces = vec!["review".to_string()];
+    assert_eq!(
+        install.validate().unwrap_err().code,
+        "use.plugin.lifecycle_invalid"
+    );
+}

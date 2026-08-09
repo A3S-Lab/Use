@@ -56,6 +56,7 @@ fn intent_in_scope_with_action(
             manifest_digest: format!("sha256:{}", "3".repeat(64)),
             generation: 9,
             action,
+            retained_ui_state_surfaces: Vec::new(),
         },
         &manifest,
     )

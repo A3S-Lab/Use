@@ -110,6 +110,11 @@ pub(super) fn validate_upgrade_graph<'a>(
                 "A replacement candidate generation must be newer than its exact prior generation.",
             ));
         }
+        if candidate.intent.retained_ui_state_surfaces != prior.intent.retained_ui_state_surfaces {
+            return Err(graph_error(
+                "A replacement candidate and retirement disagree on retained UI state surfaces.",
+            ));
+        }
     }
     Ok(candidate_lock)
 }
