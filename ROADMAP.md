@@ -202,8 +202,12 @@ Status: in progress
   collection, and physical compaction in the standalone Knowledge backend.
 - [x] Complete managed Code/Web Knowledge Workspace/session carriers and prove
   leased prior-generation query semantics through those hosts.
+- [x] Publish enabled Code Web Activity documents at exact Registry generation
+  and revision URLs with opaque-origin CSP/security headers, restart stability,
+  stale-generation `410 Gone`, and no managed-path disclosure.
 - [ ] Complete UI sandbox origin, CSP, backend bindings, navigation policy,
-  and generation drain across desktop and Web hosts.
+  browser-side iframe/message composition, and active-generation drain across
+  desktop and Web hosts.
 - [ ] Prove that every required surface remains unpublished when its owner or
   evidence is missing.
 

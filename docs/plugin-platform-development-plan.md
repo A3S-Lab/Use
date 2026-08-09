@@ -141,9 +141,15 @@ Acceptance:
 
 ### A4 Sandboxed UI
 
-- Define per-package origin, CSP, navigation, storage, and backend bindings.
-- Bind UI to exact Skill/Tool/MCP/Flow readiness and Grant evidence.
-- Add generation-aware hot replacement and drain.
+- [x] Publish enabled Code Web Activity documents at exact Registry generation
+  and revision URLs. Inline only verified assets, enforce opaque-origin CSP and
+  restrictive security headers, preserve the identity across restart, reject
+  stale generations with `410 Gone`, and disclose no managed paths.
+- [ ] Complete browser-owned iframe adoption, per-package storage,
+  self-navigation interception, and bounded message brokering.
+- [ ] Bind UI to exact Skill/Tool/MCP/Flow readiness and Grant evidence.
+- [ ] Add active-document generation-aware hot replacement and drain across
+  Web and native hosts.
 
 Acceptance:
 
