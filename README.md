@@ -93,8 +93,12 @@ executes the complete current non-Science workspace suite, including a real
 directory-junction regression for the shared reparse-point guard. Signed
 Registry, dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF
 scenarios also run through the real CLI, including killed-process cleanup
-replay after graph cutover. The remaining real-process and recovery matrix is
-still narrower than the release gate.
+replay after graph cutover. A test-binary subprocess matrix also exits after
+each durable host effect but before its receipt for every canonical install,
+upgrade, enable, disable, and uninstall checkpoint; recovery reuses the exact
+idempotency key without duplicating an effect, and terminal replay makes no
+host call. This package-host harness does not replace the still-open real CLI
+graph, Grant, provider, and cross-platform failure-injection gates.
 See [Platform support](#platform-support).
 
 ## Install or build
@@ -693,6 +697,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
 | Durable atomic Registry cutover and exact replay | Implemented |
+| Package-host side-effect/receipt ambiguity recovery | Every canonical install, upgrade, enable, disable, and uninstall checkpoint passes subprocess-exit, exact-key recovery, single-effect, and terminal-replay tests; real-process graph and Grant failure injection remains open |
 | Secret-free lifecycle checkpoint diagnostics | Implemented for latest/previous package operations through `extension inspect --json`; broader operational telemetry remains open |
 | Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |

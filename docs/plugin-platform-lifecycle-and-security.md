@@ -393,6 +393,14 @@ Recovery loads the exact stored request, plan, confirmation, authorization,
 locks, lifecycle intents, Grant operation, and cutover record. It resumes the
 first incomplete checkpoint with the same idempotency key.
 
+The package-host ambiguity window is covered by a test-binary subprocess
+matrix for every canonical install, upgrade, enable, disable, and uninstall
+checkpoint. Each child exits after syncing the host effect but before the
+checkpoint receipt; restart recovery retries the same key, retains exactly one
+durable effect, completes the journal, and makes no host call on terminal
+replay. Real CLI graph, Grant, provider, and cross-platform failure injection
+remain separate release gates.
+
 `replayed = false` means an interrupted operation resumed work. `replayed =
 true` is reserved for returning a previously completed terminal result.
 
@@ -479,7 +487,10 @@ Required gates include:
 - dependency cycle, ambiguity, and search-bound failures;
 - plan, confirmation, policy, scope, Grant, provider, and generation drift;
 - path/link/archive attacks on Unix and Windows;
-- interruption at every package/Grant/cutover/drain/removal checkpoint;
+- package-host effect/receipt interruption at every canonical lifecycle
+  checkpoint in a test-binary subprocess;
+- real-process interruption at every graph/Grant/cutover/drain/removal
+  checkpoint;
 - mixed-generation and stale-route prevention;
 - exact completed-result replay; and
 - complete real-process lifecycle on each supported platform.
