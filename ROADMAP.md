@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-08
+Last updated: 2026-08-09
 
 ## Product status
 
@@ -205,9 +205,12 @@ Status: in progress
 - [x] Publish enabled Code Web Activity documents at exact Registry generation
   and revision URLs with opaque-origin CSP/security headers, restart stability,
   stale-generation `410 Gone`, and no managed-path disclosure.
-- [ ] Complete UI sandbox origin, CSP, backend bindings, navigation policy,
-  browser-side iframe/message composition, and active-generation drain across
-  desktop and Web hosts.
+- [x] Complete Code Web iframe adoption, dedicated v2 `MessagePort` brokering,
+  ambient-message rejection, self-navigation termination, exact-document
+  context binding, and active-generation frame/port replacement and drain.
+- [ ] Complete reviewed UI backend bindings, persistent package state,
+  failed-N+1 fallback, and equivalent sandbox/generation composition in native
+  hosts.
 - [ ] Prove that every required surface remains unpublished when its owner or
   evidence is missing.
 

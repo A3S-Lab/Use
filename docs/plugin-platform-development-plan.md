@@ -145,11 +145,15 @@ Acceptance:
   and revision URLs. Inline only verified assets, enforce opaque-origin CSP and
   restrictive security headers, preserve the identity across restart, reject
   stale generations with `410 Gone`, and disclose no managed paths.
-- [ ] Complete browser-owned iframe adoption, per-package storage,
-  self-navigation interception, and bounded message brokering.
+- [x] Complete browser-owned exact-URL iframe adoption, dedicated v2
+  `MessagePort` brokering, ambient-message rejection, self-navigation
+  termination, and exact-document context binding.
+- [ ] Add per-package persistent UI state and failed-N+1 fallback to the
+  selected prior document.
 - [ ] Bind UI to exact Skill/Tool/MCP/Flow readiness and Grant evidence.
-- [ ] Add active-document generation-aware hot replacement and drain across
-  Web and native hosts.
+- [x] Add active-document generation-aware hot replacement and port/frame
+  drain in Code Web.
+- [ ] Add equivalent generation-aware composition and drain in native hosts.
 
 Acceptance:
 
