@@ -398,8 +398,16 @@ matrix for every canonical install, upgrade, enable, disable, and uninstall
 checkpoint. Each child exits after syncing the host effect but before the
 checkpoint receipt; restart recovery retries the same key, retains exactly one
 durable effect, completes the journal, and makes no host call on terminal
-replay. Real CLI graph, Grant, provider, and cross-platform failure injection
-remain separate release gates.
+replay.
+
+The grant-bearing graph ambiguity window has a separate test-binary subprocess
+matrix for install, upgrade, and uninstall. Each child exits after syncing the
+atomic graph publish or hide effect but before package publication receipts and
+Grant cutover evidence. Restart recovery reuses the same cutover key, retains
+one graph effect, completes package and Grant journals, retires only the exact
+prior grants, and does not publish or hide again on terminal replay. Grant
+Store internal phase checkpoints plus real CLI, provider, and cross-platform
+failure injection remain separate release gates.
 
 `replayed = false` means an interrupted operation resumed work. `replayed =
 true` is reserved for returning a previously completed terminal result.
@@ -489,6 +497,8 @@ Required gates include:
 - path/link/archive attacks on Unix and Windows;
 - package-host effect/receipt interruption at every canonical lifecycle
   checkpoint in a test-binary subprocess;
+- grant-bearing graph publish/hide effect interruption before package and
+  Grant cutover receipts in a test-binary subprocess;
 - real-process interruption at every graph/Grant/cutover/drain/removal
   checkpoint;
 - mixed-generation and stale-route prevention;

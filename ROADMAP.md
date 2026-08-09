@@ -166,6 +166,10 @@ rejection. They are not supported decode paths.
   receipt persistence at every canonical install, upgrade, enable, disable,
   and uninstall checkpoint, with exact-key recovery, one durable effect, and
   no host call on terminal replay.
+- [x] Test-binary subprocess exit after a grant-bearing install, upgrade, or
+  uninstall graph publish/hide effect but before package publication receipts
+  and Grant cutover evidence, with exact-key recovery, one graph effect,
+  completed package/Grant journals, and no publication on terminal replay.
 - [x] Signed standalone CLI Flow/OKF/Skill/UI install, process-restart
   observation, exact upgrade, uninstall, failed-preflight non-publication, and
   repaired exact replay coverage on Unix and Windows x86_64. The OKF fixture

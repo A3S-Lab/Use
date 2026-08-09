@@ -21,8 +21,10 @@ const PERMISSION_CEILING: &[u8] =
 pub(super) const SCOPE_ID: &str = "workspace-01";
 pub(super) const TRANSITIONED_AT_MS: u64 = 1_200;
 
+mod fault_matrix;
+
 struct GrantInstallFixture {
-    _temp: tempfile::TempDir,
+    _temp: Option<tempfile::TempDir>,
     grant_root: PathBuf,
     envelope: PluginOperationPlanEnvelope,
     units: Vec<PluginPackageLifecycleUnit>,
@@ -44,7 +46,7 @@ impl GrantInstallFixture {
 }
 
 struct GrantUpgradeFixture {
-    _temp: tempfile::TempDir,
+    _temp: Option<tempfile::TempDir>,
     grant_root: PathBuf,
     envelope: PluginOperationPlanEnvelope,
     prior_lock: a3s_use_core::PluginPackageLock,
@@ -75,7 +77,7 @@ impl GrantUpgradeFixture {
 }
 
 struct GrantUninstallFixture {
-    _temp: tempfile::TempDir,
+    _temp: Option<tempfile::TempDir>,
     grant_root: PathBuf,
     envelope: PluginOperationPlanEnvelope,
     units: Vec<PluginPackageLifecycleUnit>,
@@ -412,6 +414,16 @@ async fn uninstall_hides_graph_once_drains_then_retires_grant_before_package_rem
 }
 
 fn grant_install_fixture() -> GrantInstallFixture {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().to_path_buf();
+    grant_install_fixture_at(root, Some(temp), Arc::new(RecordingHost::default()))
+}
+
+fn grant_install_fixture_at(
+    root: PathBuf,
+    temp: Option<tempfile::TempDir>,
+    host: Arc<RecordingHost>,
+) -> GrantInstallFixture {
     let catalog = tool_catalog("1.0.0", 'a');
     let lock = package_lock(catalog.clone());
     let transition = catalog
@@ -459,13 +471,11 @@ fn grant_install_fixture() -> GrantInstallFixture {
     resolved.validate().unwrap();
     let ceilings = vec![candidate_ceiling(&resolved.grants[0].grant, &ceiling)];
 
-    let temp = tempfile::tempdir().unwrap();
-    let grant_root = temp.path().join("grant-state");
-    let host = Arc::new(RecordingHost::default());
+    let grant_root = root.join("grant-state");
     host.cutover_generation_before.store(1, Ordering::Relaxed);
     let manifest = tool_manifest("1.0.0");
     let units = vec![package_unit(
-        temp.path(),
+        &root,
         host.clone(),
         &envelope,
         manifest,
@@ -484,6 +494,17 @@ fn grant_install_fixture() -> GrantInstallFixture {
 }
 
 async fn grant_upgrade_fixture() -> GrantUpgradeFixture {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().to_path_buf();
+    grant_upgrade_fixture_at(root, Some(temp), Arc::new(RecordingHost::default()), true).await
+}
+
+async fn grant_upgrade_fixture_at(
+    root: PathBuf,
+    temp: Option<tempfile::TempDir>,
+    host: Arc<RecordingHost>,
+    initialize_prior: bool,
+) -> GrantUpgradeFixture {
     let prior_catalog = tool_catalog("1.0.0", 'a');
     let candidate_catalog = tool_catalog("1.1.0", 'b');
     let prior_lock = package_lock(prior_catalog.clone());
@@ -540,16 +561,16 @@ async fn grant_upgrade_fixture() -> GrantUpgradeFixture {
     resolved.validate().unwrap();
     let ceilings = vec![candidate_ceiling(&resolved.grants[0].grant, &ceiling)];
 
-    let temp = tempfile::tempdir().unwrap();
-    let grant_root = temp.path().join("grant-state");
-    WorkspaceGrantStore::new(&grant_root)
-        .put(&prior, &ceiling, TRANSITIONED_AT_MS)
-        .await
-        .unwrap();
-    let host = Arc::new(RecordingHost::default());
+    let grant_root = root.join("grant-state");
+    if initialize_prior {
+        WorkspaceGrantStore::new(&grant_root)
+            .put(&prior, &ceiling, TRANSITIONED_AT_MS)
+            .await
+            .unwrap();
+    }
     host.cutover_generation_before.store(2, Ordering::Relaxed);
     let candidates = vec![package_unit(
-        temp.path(),
+        &root,
         host.clone(),
         &envelope,
         tool_manifest("1.1.0"),
@@ -557,7 +578,7 @@ async fn grant_upgrade_fixture() -> GrantUpgradeFixture {
         PluginLifecycleAction::Upgrade,
     )];
     let retirements = vec![package_unit(
-        temp.path(),
+        &root,
         host.clone(),
         &envelope,
         tool_manifest("1.0.0"),
@@ -581,6 +602,17 @@ async fn grant_upgrade_fixture() -> GrantUpgradeFixture {
 }
 
 async fn grant_uninstall_fixture() -> GrantUninstallFixture {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().to_path_buf();
+    grant_uninstall_fixture_at(root, Some(temp), Arc::new(RecordingHost::default()), true).await
+}
+
+async fn grant_uninstall_fixture_at(
+    root: PathBuf,
+    temp: Option<tempfile::TempDir>,
+    host: Arc<RecordingHost>,
+    initialize_prior: bool,
+) -> GrantUninstallFixture {
     let catalog = tool_catalog("1.0.0", 'a');
     let lock = package_lock(catalog.clone());
     let transition = catalog
@@ -629,16 +661,16 @@ async fn grant_uninstall_fixture() -> GrantUninstallFixture {
     };
     resolved.validate().unwrap();
 
-    let temp = tempfile::tempdir().unwrap();
-    let grant_root = temp.path().join("grant-state");
-    WorkspaceGrantStore::new(&grant_root)
-        .put(&prior, &ceiling, TRANSITIONED_AT_MS)
-        .await
-        .unwrap();
-    let host = Arc::new(RecordingHost::default());
+    let grant_root = root.join("grant-state");
+    if initialize_prior {
+        WorkspaceGrantStore::new(&grant_root)
+            .put(&prior, &ceiling, TRANSITIONED_AT_MS)
+            .await
+            .unwrap();
+    }
     host.cutover_generation_before.store(3, Ordering::Relaxed);
     let units = vec![package_unit(
-        temp.path(),
+        &root,
         host.clone(),
         &envelope,
         tool_manifest("1.0.0"),
