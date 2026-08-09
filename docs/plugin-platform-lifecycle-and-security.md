@@ -413,8 +413,19 @@ It exits after each phase journal, candidate receipt, prior revocation, and
 candidate restoration write across preparation, cutover/retirement, and
 pre-cutover rollback. Restart converges to the exact completed or rolled-back
 journal, preserves or revokes only the bound receipts, and terminal replay is
-identical. Real CLI, provider, and cross-platform failure injection remain
-separate release gates.
+identical. Remaining real CLI, provider, and cross-platform failure injection
+stay separate release gates.
+
+The standalone CLI binary additionally has a deterministic real-process
+uninstall case. The parent holds the package journal lock while the child
+durably hides the Registry graph. This proves the child can be killed before
+its package hide receipt. On restart, the same pending plan and cutover request
+are replayed; a held prior-generation route lease proves recovery stops at
+accepted-call drain before it removes the retained generation. Releasing the
+lease completes the journal and physical removal without advancing the
+Registry generation again.
+A paired negative case deletes selected state with no matching durable cutover
+and verifies that Registry, graph, and pending-plan evidence remain unchanged.
 
 `replayed = false` means an interrupted operation resumed work. `replayed =
 true` is reserved for returning a previously completed terminal result.
@@ -422,7 +433,8 @@ true` is reserved for returning a previously completed terminal result.
 Recovery rejects:
 
 - changed plan/lock/catalog/receipt/provider/policy evidence;
-- missing required package or Grant journal;
+- missing required Grant journal;
+- missing package state without exact durable Registry cutover evidence;
 - conflicting operation ownership;
 - cutover key reused for another request;
 - unknown schema or unknown fields; and
@@ -508,6 +520,8 @@ Required gates include:
   Grant cutover receipts in a test-binary subprocess;
 - Grant Store interruption after every durable phase, candidate, revocation,
   and restoration write in a test-binary subprocess;
+- real CLI uninstall interruption after durable Registry hide but before its
+  package receipt, followed by restart drain and exact removal;
 - real-process interruption at every graph/Grant/cutover/drain/removal
   checkpoint;
 - mixed-generation and stale-route prevention;

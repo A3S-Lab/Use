@@ -206,9 +206,15 @@ impl CognitivePackageManager {
                 },
                 manifest,
             )?;
-            match installed.remove(package.package_id()).flatten() {
-                Some(extension) => validate_installed_unit(&extension, manifest, &identity)?,
-                None => self.validate_missing_replay(&intent).await?,
+            // A process can die after the Registry atomically hides and retains
+            // this exact generation but before the package lifecycle journal
+            // records its hide receipt. Do not use that later receipt as proof
+            // that the earlier cutover happened. The graph capability host
+            // below replays the exact lock, lifecycle identities, and
+            // idempotency key; its durable cutover request digest fails closed
+            // when the selected/retained state disappeared for another reason.
+            if let Some(extension) = installed.remove(package.package_id()).flatten() {
+                validate_installed_unit(&extension, manifest, &identity)?;
             }
             units.push(PluginPackageLifecycleUnit::new(
                 self.lifecycle
@@ -288,27 +294,6 @@ impl CognitivePackageManager {
             installed.insert(package.package_id().to_string(), extension);
         }
         Ok(installed)
-    }
-
-    async fn validate_missing_replay(&self, intent: &PluginLifecycleIntent) -> UseResult<()> {
-        let journal = crate::plugin_lifecycle::PluginLifecycleJournalStore::from_extension_paths(
-            self.registry.paths(),
-        );
-        let matches = journal
-            .load_active(&intent.scope, &intent.package_id)
-            .await?
-            .is_some_and(|record| record.intent == *intent);
-        if matches {
-            Ok(())
-        } else {
-            Err(package_manager_error(
-                "use.plugin.package_graph_reconcile_required",
-                format!(
-                    "Missing package '{}' has no exact pending uninstall journal to replay.",
-                    intent.package_id
-                ),
-            ))
-        }
     }
 
     async fn uninstall_dispositions(

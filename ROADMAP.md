@@ -174,6 +174,11 @@ rejection. They are not supported decode paths.
   in the canonical two-candidate/two-retirement lifecycle across forward
   prepare, cutover/retirement, and pre-cutover rollback, with exact
   candidate/prior convergence and terminal journal replay.
+- [x] Real `a3s-use` process exit after an uninstall Registry hide cutover and
+  before its package hide receipt, followed by exact-plan restart, an observed
+  accepted-call drain, physical removal, and no capability-generation
+  inflation. Missing generation state without the exact durable cutover is
+  rejected without changing graph, pending-plan, or Registry evidence.
 - [x] Signed standalone CLI Flow/OKF/Skill/UI install, process-restart
   observation, exact upgrade, uninstall, failed-preflight non-publication, and
   repaired exact replay coverage on Unix and Windows x86_64. The OKF fixture
@@ -253,9 +258,12 @@ Status: pending
   lifecycle, Runtime, Flow, and Knowledge trust boundaries.
 - [ ] Expand the remaining Windows gate to the complete filesystem, Runtime,
   MCP, watcher, failure-injection, and crash-recovery matrix.
-- [ ] Test interrupted download, archive extraction, cutover, drain, removal,
-  process crash, reboot, antivirus contention, and reparse-point replacement
-  races.
+- [x] Test real-process uninstall interruption between durable Registry cutover
+  and its package receipt, then hold the prior generation lease through restart
+  to prove drain-before-removal and exact generation replay.
+- [ ] Test the remaining interrupted download, archive extraction, graph/Grant
+  cutover, drain, removal, process crash, reboot, antivirus contention, and
+  reparse-point replacement races.
 - [ ] Verify release archives install and run without repository-local paths.
 
 Exit gate: every supported target passes the same signed six-surface package
