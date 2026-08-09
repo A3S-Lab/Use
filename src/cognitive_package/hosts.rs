@@ -147,6 +147,14 @@ impl ManagedCognitivePackageLifecycleFactory {
     pub fn selection(&self) -> &RuntimeProviderSelection {
         &self.selection
     }
+
+    fn runtime_composition(&self) -> RuntimeLifecycleComposition {
+        RuntimeLifecycleComposition {
+            selection: self.selection.clone(),
+            registry: self.runtime_registry.clone(),
+            readiness: self.readiness.clone(),
+        }
+    }
 }
 
 impl CognitivePackageLifecycleFactory for StandaloneCognitivePackageLifecycleFactory {
@@ -228,9 +236,7 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
             registry,
             candidate,
             package_root,
-            self.selection.clone(),
-            self.runtime_registry.clone(),
-            self.readiness.clone(),
+            self.runtime_composition(),
             self.ui_factory.clone(),
             self.flow_compiler_binary.as_deref(),
         ))
@@ -244,9 +250,7 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
         Ok(managed_published_install_coordinator(
             registry,
             package_root,
-            self.selection.clone(),
-            self.runtime_registry.clone(),
-            self.readiness.clone(),
+            self.runtime_composition(),
             self.ui_factory.clone(),
             self.flow_compiler_binary.as_deref(),
         ))
@@ -260,9 +264,7 @@ impl CognitivePackageLifecycleFactory for ManagedCognitivePackageLifecycleFactor
         Ok(managed_uninstall_coordinator(
             registry,
             package_root,
-            self.selection.clone(),
-            self.runtime_registry.clone(),
-            self.readiness.clone(),
+            self.runtime_composition(),
             self.ui_factory.clone(),
             self.flow_compiler_binary.as_deref(),
         ))
@@ -512,9 +514,7 @@ fn managed_install_coordinator(
     registry: ExtensionRegistry,
     candidate: ExtensionLifecyclePackage,
     package_root: impl Into<std::path::PathBuf>,
-    selection: RuntimeProviderSelection,
-    runtime_registry: Arc<RuntimeClientRegistry>,
-    readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    runtime: RuntimeLifecycleComposition,
     ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
@@ -528,11 +528,7 @@ fn managed_install_coordinator(
         package,
         package_root,
         &paths,
-        RuntimeLifecycleComposition {
-            selection,
-            registry: runtime_registry,
-            readiness,
-        },
+        runtime,
         ui_factory,
         flow_compiler_binary,
     )
@@ -541,9 +537,7 @@ fn managed_install_coordinator(
 fn managed_uninstall_coordinator(
     registry: ExtensionRegistry,
     package_root: impl Into<std::path::PathBuf>,
-    selection: RuntimeProviderSelection,
-    runtime_registry: Arc<RuntimeClientRegistry>,
-    readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    runtime: RuntimeLifecycleComposition,
     ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
@@ -556,11 +550,7 @@ fn managed_uninstall_coordinator(
         package,
         package_root,
         &paths,
-        RuntimeLifecycleComposition {
-            selection,
-            registry: runtime_registry,
-            readiness,
-        },
+        runtime,
         ui_factory,
         flow_compiler_binary,
     )
@@ -569,18 +559,14 @@ fn managed_uninstall_coordinator(
 fn managed_published_install_coordinator(
     registry: ExtensionRegistry,
     package_root: impl Into<std::path::PathBuf>,
-    selection: RuntimeProviderSelection,
-    runtime_registry: Arc<RuntimeClientRegistry>,
-    readiness: Arc<dyn PluginRuntimeServiceReadinessHost>,
+    runtime: RuntimeLifecycleComposition,
     ui_factory: Arc<dyn PluginUiLifecycleHostFactory>,
     flow_compiler_binary: Option<&Path>,
 ) -> PluginLifecycleCoordinator {
     managed_uninstall_coordinator(
         registry,
         package_root,
-        selection,
-        runtime_registry,
-        readiness,
+        runtime,
         ui_factory,
         flow_compiler_binary,
     )
