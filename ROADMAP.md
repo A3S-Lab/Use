@@ -162,6 +162,10 @@ rejection. They are not supported decode paths.
 - [x] Canonical fixtures and digest goldens for the current contract line.
 - [x] Unit, integration, remote Registry, crash-replay, grant, Flow, OKF, and
   CLI tests in the Use workspace.
+- [x] Test-binary subprocess exit after a durable host effect and before
+  receipt persistence at every canonical install, upgrade, enable, disable,
+  and uninstall checkpoint, with exact-key recovery, one durable effect, and
+  no host call on terminal replay.
 - [x] Signed standalone CLI Flow/OKF/Skill/UI install, process-restart
   observation, exact upgrade, uninstall, failed-preflight non-publication, and
   repaired exact replay coverage on Unix and Windows x86_64. The OKF fixture

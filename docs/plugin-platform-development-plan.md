@@ -328,7 +328,11 @@ Status: pending
 - failed Flow compiler preflight leaves no published binding or active named
   capability, and a repaired retry resumes the exact durable candidate
   generation;
-- no-op terminal result replay.
+- test-binary subprocess exit after a durable host effect but before receipt
+  persistence at every canonical install, upgrade, enable, disable, and
+  uninstall checkpoint, followed by exact-key recovery with one durable
+  effect;
+- no-op terminal result replay without another host call;
 - latest/previous checkpoint diagnostics remain bounded and omit idempotency
   keys and secret-bearing fields;
 - a rolling-back operation rejects a conflicting new intent.

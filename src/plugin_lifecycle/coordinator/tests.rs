@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::{io, path::Path, path::PathBuf};
 
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use super::*;
@@ -14,6 +16,8 @@ use crate::plugin_lifecycle::{
 struct RecordingHosts {
     calls: Mutex<Vec<String>>,
     fail_once: Mutex<Option<String>>,
+    durable_root: Option<PathBuf>,
+    crash_after_effect: Option<String>,
 }
 
 impl RecordingHosts {
@@ -21,6 +25,17 @@ impl RecordingHosts {
         Self {
             calls: Mutex::new(Vec::new()),
             fail_once: Mutex::new(Some(label.to_string())),
+            durable_root: None,
+            crash_after_effect: None,
+        }
+    }
+
+    fn with_durable_checkpoint_crash(root: PathBuf, crash_after_effect: Option<String>) -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            fail_once: Mutex::new(None),
+            durable_root: Some(root),
+            crash_after_effect,
         }
     }
 
@@ -34,12 +49,83 @@ impl RecordingHosts {
                 "Injected lifecycle host failure.",
             ));
         }
+        self.record_durable_effect(&label, key).await?;
         PluginLifecycleEvidence::new(format!("sha256:{:x}", Sha256::digest(key.as_bytes())))
+    }
+
+    async fn record_durable_effect(&self, label: &str, key: &str) -> UseResult<()> {
+        let Some(root) = self.durable_root.as_ref() else {
+            return Ok(());
+        };
+        let effects = root.join("effects");
+        tokio::fs::create_dir_all(&effects)
+            .await
+            .map_err(|error| durable_host_io("create durable effect directory", error))?;
+
+        let attempt = format!("{key}\t{label}\n");
+        let mut attempts = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(root.join("attempts.log"))
+            .await
+            .map_err(|error| durable_host_io("open durable attempt log", error))?;
+        attempts
+            .write_all(attempt.as_bytes())
+            .await
+            .map_err(|error| durable_host_io("append durable attempt log", error))?;
+        attempts
+            .sync_all()
+            .await
+            .map_err(|error| durable_host_io("sync durable attempt log", error))?;
+        drop(attempts);
+
+        let identity = format!("{:x}", Sha256::digest(key.as_bytes()));
+        let path = effects.join(format!("{identity}.effect"));
+        let effect = format!("{key}\n{label}\n");
+        match tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+            .await
+        {
+            Ok(mut file) => {
+                file.write_all(effect.as_bytes())
+                    .await
+                    .map_err(|error| durable_host_io("write durable effect", error))?;
+                file.sync_all()
+                    .await
+                    .map_err(|error| durable_host_io("sync durable effect", error))?;
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                let existing = tokio::fs::read(&path)
+                    .await
+                    .map_err(|error| durable_host_io("read replayed durable effect", error))?;
+                if existing != effect.as_bytes() {
+                    return Err(UseError::new(
+                        "use.plugin.test_durable_effect_conflict",
+                        "A replay reused a lifecycle idempotency key with different host evidence.",
+                    ));
+                }
+            }
+            Err(error) => return Err(durable_host_io("create durable effect", error)),
+        }
+
+        if self.crash_after_effect.as_deref() == Some(key) {
+            std::process::exit(fault_matrix::CHECKPOINT_CRASH_EXIT_CODE);
+        }
+        Ok(())
     }
 
     async fn calls(&self) -> Vec<String> {
         self.calls.lock().await.clone()
     }
+}
+
+fn durable_host_io(action: &str, error: io::Error) -> UseError {
+    UseError::new(
+        "use.plugin.test_durable_host_io",
+        format!("Failed to {action}: {error}"),
+    )
 }
 
 #[async_trait]
@@ -297,6 +383,10 @@ impl PluginUiLifecycleHost for RecordingHosts {
 }
 
 fn coordinator(temp: &tempfile::TempDir, host: Arc<RecordingHosts>) -> PluginLifecycleCoordinator {
+    coordinator_at(&temp.path().join("state"), host)
+}
+
+fn coordinator_at(state: &Path, host: Arc<RecordingHosts>) -> PluginLifecycleCoordinator {
     let hosts = PluginLifecycleHosts::new(
         host.clone(),
         host.clone(),
@@ -307,10 +397,7 @@ fn coordinator(temp: &tempfile::TempDir, host: Arc<RecordingHosts>) -> PluginLif
         host.clone(),
         host,
     );
-    PluginLifecycleCoordinator::new(
-        PluginLifecycleJournalStore::new(temp.path().join("state")),
-        hosts,
-    )
+    PluginLifecycleCoordinator::new(PluginLifecycleJournalStore::new(state), hosts)
 }
 
 fn clock() -> impl Fn() -> u64 {
@@ -457,3 +544,5 @@ async fn uninstall_hides_then_drains_and_removes_every_surface_before_package() 
         ]
     );
 }
+
+mod fault_matrix;
