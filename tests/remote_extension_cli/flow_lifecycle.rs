@@ -82,22 +82,13 @@ fn missing_flow_compiler_fails_preflight_without_publishing_capabilities() {
     let staged_generation = staged_receipt["lifecycleGeneration"].as_u64().unwrap();
     assert!(staged_generation > 0);
     assert!(flow_bindings(&home).is_empty());
-    let staged_capability = flow_capability(&home).expect("installed-disabled capability record");
-    assert_eq!(staged_capability["enabled"], false);
-    assert_eq!(staged_capability["readiness"], "unknown");
-    assert_eq!(staged_capability["lifecycleGeneration"], staged_generation);
-    assert_eq!(
-        staged_capability["reconciliation"]["desired"],
-        "installed-disabled"
-    );
-    assert_eq!(
-        staged_capability["reconciliation"]["capabilityReady"],
-        false
-    );
-    assert!(staged_capability["flows"].is_null());
-    assert!(staged_capability["skills"].is_null());
-    assert!(staged_capability["knowledge"].is_null());
-    assert!(staged_capability["activityBar"].is_null());
+    let staged_registry = capability_registry(&home);
+    assert_eq!(staged_registry["generation"], 0);
+    assert!(staged_registry["capabilities"]
+        .as_array()
+        .is_some_and(|capabilities| capabilities
+            .iter()
+            .all(|capability| capability["route"] != "flow-suite")));
 
     write_fake_flow_compiler(&missing);
     let retried = flow_registry_command(&server, &repository, &home, &missing, "install", "1.0.0");
@@ -106,6 +97,7 @@ fn missing_flow_compiler_fails_preflight_without_publishing_capabilities() {
     assert_eq!(published_receipt["enabled"], true);
     assert_eq!(published_receipt["lifecycleGeneration"], staged_generation);
     assert_eq!(flow_bindings(&home).len(), 1);
+    assert_eq!(capability_registry(&home)["generation"], 1);
 }
 
 fn fake_flow_compiler(root: &Path) -> PathBuf {
@@ -237,18 +229,22 @@ fn flow_bindings(home: &Path) -> Vec<serde_json::Value> {
 }
 
 fn flow_capability(home: &Path) -> Option<serde_json::Value> {
+    capability_registry(home)["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["route"] == "flow-suite")
+        .cloned()
+}
+
+fn capability_registry(home: &Path) -> serde_json::Value {
     let snapshot = Command::new(binary())
         .args(["capability", "snapshot", "--json"])
         .env("A3S_USE_HOME", home)
         .output()
         .unwrap();
     assert!(snapshot.status.success(), "{snapshot:?}");
-    json(&snapshot)["data"]["registry"]["capabilities"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|capability| capability["route"] == "flow-suite")
-        .cloned()
+    json(&snapshot)["data"]["registry"].clone()
 }
 
 fn assert_flow_capability(home: &Path, version: &str, generation: u64) {

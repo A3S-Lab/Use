@@ -504,11 +504,12 @@ A3S_FLOW_NATIVE_TS_COMPILER=/opt/a3s/bin/a3s-flow-native-compiler \
 
 `CognitivePackageManager::new` remains provider-free and deterministic;
 `CognitivePackageManager::from_env` is the explicit standalone composition.
-A missing or failing compiler leaves the candidate installed-disabled. The
-capability snapshot retains only a non-active diagnostic record with
-`capabilityReady = false` and no Flow, Skill, OKF, or UI projection. A repaired
-retry resumes the same admitted plan and exact generation instead of guessing
-or republishing partial state.
+A missing or failing compiler leaves an installed-disabled candidate receipt,
+but the immutable capability snapshot remains at its exact prior generation
+and does not project staged package state. Lifecycle diagnostics retain the
+bounded failure evidence. A repaired retry resumes the same admitted plan and
+exact package generation, then publishes one reviewed capability cutover
+instead of guessing or exposing partial state.
 
 ## Replaceable Registries and exact locks
 
