@@ -174,6 +174,16 @@ Skill and UI are integrity-bound static projections. Skill points to
 declared dependencies are ready. Static content cannot acquire ambient Runtime,
 network, filesystem, or secret authority.
 
+UI state belongs to the embedding host rather than the package origin. The
+current Code host keys its bounded durable store by `PlanScope`, lifecycle
+package ID, and UI surface ID. A state request is admitted only while an exact
+published lifecycle-generation lease is held. Lifecycle intent v3 carries the
+sorted set of `retained_ui_state_surfaces`: disable, rollback, replacement
+retirement, and an upgrade that keeps a surface preserve that namespace; a
+true uninstall or removed surface clears it. This retention contract does not
+implement N+1 readiness fallback—the candidate selection, cutover, and rollback
+decision remains a separate host responsibility.
+
 ## Replaceable Registry architecture
 
 The host owns a bounded set of named Registry configurations. The standalone
