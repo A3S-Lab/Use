@@ -340,6 +340,10 @@ Status: pending
   candidate-receipt, prior-revocation, and candidate-restoration checkpoints
   in the canonical two-candidate/two-retirement lifecycle, followed by exact
   state convergence;
+- real CLI exit after the durable uninstall Registry hide and before the
+  package hide receipt, followed by exact-plan restart, observed blocking at
+  accepted-call drain, physical generation removal, and no second Registry
+  generation; absence without the exact cutover remains fail-closed;
 - no-op terminal result replay without another host call;
 - completed graph replay without another atomic publish or hide;
 - latest/previous checkpoint diagnostics remain bounded and omit idempotency

@@ -92,20 +92,25 @@ release-container conformance, and platform jobs. The Windows preview gate now
 executes the complete current non-Science workspace suite, including a real
 directory-junction regression for the shared reparse-point guard. Signed
 Registry, dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF
-scenarios also run through the real CLI, including killed-process cleanup
-replay after graph cutover. A test-binary subprocess matrix also exits after
-each durable host effect but before its receipt for every canonical install,
-upgrade, enable, disable, and uninstall checkpoint; recovery reuses the exact
-idempotency key without duplicating an effect, and terminal replay makes no
-host call. A second test-binary subprocess matrix covers grant-bearing install,
-upgrade, and uninstall graph cutovers: it exits after the atomic publish or
-hide effect but before package publication receipts and Grant cutover evidence,
+scenarios also run through the real CLI. Its killed-process coverage now
+includes removed-dependency cleanup after upgrade cutover and an uninstall
+killed after the durable Registry hide but before the package hide receipt.
+The latter restarts from the same plan, blocks on the accepted-call generation
+lease, then drains and removes the generation without another Registry
+generation; missing package state without the exact cutover still fails closed.
+A test-binary subprocess matrix also exits after each durable host effect but
+before its receipt for every canonical install, upgrade, enable, disable, and
+uninstall checkpoint; recovery reuses the exact idempotency key without
+duplicating an effect, and terminal replay makes no host call. A second
+test-binary subprocess matrix covers grant-bearing install, upgrade, and
+uninstall graph cutovers: it exits after the atomic publish or hide effect
+but before package publication receipts and Grant cutover evidence,
 then proves exact-key recovery, one graph effect, completed package and Grant
-journals, and terminal replay without another publish or hide. These harnesses
-do not replace the still-open real CLI, provider, and cross-platform
-failure-injection gates. The Grant Store itself also runs a test-binary
-subprocess matrix across all 14 durable checkpoints in its canonical
-two-candidate/two-retirement lifecycle: forward prepare,
+journals, and terminal replay without another publish or hide. These
+real-process paths and harnesses do not replace the still-open provider and
+complete cross-platform failure-injection gates. The Grant Store itself also
+operates a test-binary subprocess matrix across all 14 durable checkpoints in
+its canonical two-candidate/two-retirement lifecycle: forward prepare,
 cutover/retirement, and pre-cutover rollback each include every candidate
 receipt, prior revocation, and candidate restoration.
 See [Platform support](#platform-support).
@@ -706,7 +711,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
 | Durable atomic Registry cutover and exact replay | Implemented |
-| Package-host side-effect/receipt ambiguity recovery | Every canonical install, upgrade, enable, disable, and uninstall checkpoint passes subprocess-exit, exact-key recovery, single-effect, and terminal-replay tests; real-process graph and Grant failure injection remains open |
+| Package-host side-effect/receipt ambiguity recovery | Every canonical install, upgrade, enable, disable, and uninstall checkpoint passes subprocess-exit, exact-key recovery, single-effect, and terminal-replay tests. A real CLI uninstall also passes durable-hide-before-receipt kill, exact-plan restart, accepted-call drain, removal, and no-generation-inflation checks; the remaining real-process and Grant checkpoints stay open |
 | Grant-bearing graph cutover effect/receipt ambiguity recovery | Install, upgrade, and uninstall atomic publish/hide boundaries pass subprocess-exit, exact-key recovery, single-effect, completed-journal, and no-republication tests; real-process failure injection remains open |
 | Grant Store journal/receipt crash recovery | All 14 durable checkpoints in the canonical two-candidate/two-retirement lifecycle pass subprocess-exit convergence and exact terminal replay across prepare, cutover/retirement, and pre-cutover rollback; real CLI and cross-platform product qualification remain open |
 | Secret-free lifecycle checkpoint diagnostics | Implemented for latest/previous package operations through `extension inspect --json`; broader operational telemetry remains open |
