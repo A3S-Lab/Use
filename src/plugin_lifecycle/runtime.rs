@@ -748,9 +748,8 @@ fn validate_selected_receipt(
         && receipt.semantics_profile_digest() == provider.semantics_profile_digest;
     let exact = match receipt {
         RuntimeBindingReceipt::Task(task) => {
-            task.descriptor_digest == plan.descriptor_digest()
-                && task.artifact_digest == plan.spec().artifact.digest
-                && task.artifact_media_type == plan.spec().artifact.media_type
+            crate::plugin_runtime::RuntimePreparedTaskBinding::from_plan(plan, provider)
+                .is_ok_and(|expected| expected == *task)
         }
         RuntimeBindingReceipt::Service(service) => {
             service.descriptor_digest == plan.descriptor_digest()

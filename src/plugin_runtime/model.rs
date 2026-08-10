@@ -10,7 +10,7 @@ use a3s_use_core::{
 use serde::{Deserialize, Serialize};
 
 pub const RUNTIME_SERVICE_BINDING_SCHEMA: &str = "a3s.use.runtime-service-binding.v3";
-pub const RUNTIME_TASK_BINDING_SCHEMA: &str = "a3s.use.runtime-task-binding.v3";
+pub const RUNTIME_TASK_BINDING_SCHEMA: &str = "a3s.use.runtime-task-binding.v4";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeSurfaceContext {
@@ -234,15 +234,15 @@ pub struct RuntimePreparedTaskBinding {
     pub surface: PlanQualifiedSurfaceRef,
     pub package_digest: String,
     pub scope: PlanScope,
+    pub grant_digest: String,
     pub descriptor_digest: String,
     pub provider_id: String,
     pub provider_build_id: String,
     pub capability_digest: String,
     pub enforcement: PlanEnforcementProfile,
-    pub artifact_digest: String,
-    pub artifact_media_type: String,
-    pub generation: u64,
     pub semantics_profile_digest: String,
+    pub template_spec: Box<RuntimeUnitSpec>,
+    pub contract: RuntimeSurfaceContract,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

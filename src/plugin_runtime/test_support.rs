@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
 
 use a3s_runtime::contract::{
     ArtifactRef, HealthCheckKind, IsolationLevel, MountKind, NetworkMode, ResourceControl,
@@ -176,6 +177,8 @@ pub(crate) struct FakeRuntime {
     logs: Vec<RuntimeLogChunk>,
     observation: Mutex<Option<RuntimeObservation>>,
     removed_generation: AtomicU64,
+    apply_started: Option<Arc<Notify>>,
+    apply_release: Option<Arc<Notify>>,
 }
 
 impl FakeRuntime {
@@ -190,6 +193,8 @@ impl FakeRuntime {
             logs: Vec::new(),
             observation: Mutex::new(None),
             removed_generation: AtomicU64::new(0),
+            apply_started: None,
+            apply_release: None,
         }
     }
 
@@ -200,6 +205,12 @@ impl FakeRuntime {
 
     pub(super) fn with_apply_failure(mut self) -> Self {
         self.fail_apply = true;
+        self
+    }
+
+    pub(super) fn with_apply_gate(mut self, started: Arc<Notify>, release: Arc<Notify>) -> Self {
+        self.apply_started = Some(started);
+        self.apply_release = Some(release);
         self
     }
 
@@ -237,6 +248,12 @@ impl RuntimeClient for FakeRuntime {
 
     async fn apply(&self, request: &RuntimeApplyRequest) -> RuntimeResult<RuntimeObservation> {
         self.apply_count.fetch_add(1, Ordering::SeqCst);
+        if let Some(started) = &self.apply_started {
+            started.notify_one();
+        }
+        if let Some(release) = &self.apply_release {
+            release.notified().await;
+        }
         if self.fail_apply {
             return Err(RuntimeError::Protocol(
                 "injected test apply failure".to_string(),

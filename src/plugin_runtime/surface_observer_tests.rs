@@ -44,21 +44,15 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
     install_task_binding(&store, &mut providers).await;
     let service_runtime = install_tool_service_binding(&store, &mut providers).await;
     install_mcp_service_binding(&store, &mut providers).await;
-    let task = a3s_use_core::PlanQualifiedSurfaceRef {
-        package_id: "acme/research".to_string(),
-        surface: surface(PluginSurfaceKind::Tool, "convert"),
-    };
-    let mut candidate = store
-        .get_generation(&workspace_scope(), &task, 7)
-        .await
-        .unwrap()
-        .unwrap();
-    let RuntimeBindingReceipt::Task(candidate) = &mut candidate else {
-        panic!("convert should have a Runtime Task binding");
-    };
-    candidate.generation = 8;
+    let candidate_plan = task_plan(8);
+    let candidate_capabilities = named_capabilities(&candidate_plan, "task-runtime");
+    let candidate = RuntimePreparedTaskBinding::from_plan(
+        &candidate_plan,
+        &evidence(&candidate_plan, &candidate_capabilities),
+    )
+    .unwrap();
     store
-        .put(&RuntimeBindingReceipt::Task(candidate.clone()))
+        .put(&RuntimeBindingReceipt::Task(candidate))
         .await
         .unwrap();
     let manifest = release_task_manifest();
@@ -223,19 +217,7 @@ fn workspace_scope() -> PlanScope {
 }
 
 async fn install_task_binding(store: &RuntimeBindingStore, providers: &mut RuntimeClientRegistry) {
-    let descriptor = task_descriptor();
-    let mut surface = task_surface();
-    surface.command = "acme-research-convert".to_string();
-    let plan = plan_tool_task_release(
-        context(PluginSurfaceKind::Tool, "convert"),
-        &surface,
-        &descriptor,
-        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
-        RuntimeTaskInvocation::new("invoke-01", Vec::new()).unwrap(),
-        policy(),
-        NetworkMode::None,
-    )
-    .unwrap();
+    let plan = task_plan(7);
     let capabilities = named_capabilities(&plan, "task-runtime");
     let provider = evidence(&plan, &capabilities);
     let runtime = Arc::new(FakeRuntime::new(capabilities, true));
@@ -248,6 +230,32 @@ async fn install_task_binding(store: &RuntimeBindingStore, providers: &mut Runti
         .await
         .unwrap();
     register(providers, "task-runtime", runtime);
+}
+
+fn task_plan(generation: u64) -> RuntimeSurfacePlan {
+    let descriptor = task_descriptor();
+    let mut surface = task_surface();
+    surface.command = "acme-research-convert".to_string();
+    let base = context(PluginSurfaceKind::Tool, "convert");
+    let context = RuntimeSurfaceContext::new(
+        base.package_id(),
+        base.package_digest(),
+        base.scope().clone(),
+        base.grant_digest(),
+        base.surface().clone(),
+        generation,
+    )
+    .unwrap();
+    plan_tool_task_release(
+        context,
+        &surface,
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        RuntimeTaskInvocation::new("invoke-01", Vec::new()).unwrap(),
+        policy(),
+        NetworkMode::None,
+    )
+    .unwrap()
 }
 
 async fn install_tool_service_binding(

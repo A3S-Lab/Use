@@ -94,7 +94,12 @@ Status: in progress
 - [x] Wire two-pass planning and exact apply-time reconstruction into the
   shared CLI install and reviewed enable/disable paths, with durable planning
   bundles, Grant snapshots, and provider generations across restart.
-- Implement exact-generation health, invocation, drain, and removal.
+- [x] Implement restart-safe exact-generation Runtime Task invocation from a
+  self-contained argument-free binding template, with receipt-owned provider
+  reconnection, stale-generation rejection, and an accepted-call Registry
+  lease held through capture and cleanup.
+- Complete Runtime Service health observation and production provider
+  composition without weakening exact-generation drain and removal.
 - [x] Consume only Runtime-published generation-bound loopback Service
   endpoints and enforce Gateway drain/remove ordering in the shared lifecycle
   adapter.

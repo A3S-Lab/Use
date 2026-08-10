@@ -73,30 +73,7 @@ impl PluginRuntimeClient {
         }
         super::task::validate_task_capture_contract(plan.contract())?;
         self.verify_plan(plan, provider).await?;
-        let semantics_profile_digest =
-            plan.spec()
-                .semantics_profile_digest
-                .clone()
-                .ok_or_else(|| {
-                    runtime_contract_error(
-                        "Runtime Task plan omitted its semantics-profile digest.",
-                    )
-                })?;
-        Ok(RuntimePreparedTaskBinding {
-            schema: super::model::RUNTIME_TASK_BINDING_SCHEMA.to_string(),
-            surface: plan.surface(),
-            package_digest: plan.context().package_digest().to_string(),
-            scope: plan.context().scope().clone(),
-            descriptor_digest: plan.descriptor_digest().to_string(),
-            provider_id: provider.provider_id.clone(),
-            provider_build_id: provider.provider_build_id.clone(),
-            capability_digest: provider.capability_digest.clone(),
-            enforcement: provider.enforcement,
-            artifact_digest: plan.spec().artifact.digest.clone(),
-            artifact_media_type: plan.spec().artifact.media_type.clone(),
-            generation: plan.spec().generation,
-            semantics_profile_digest,
-        })
+        RuntimePreparedTaskBinding::from_plan(plan, provider)
     }
 
     pub async fn apply_service(

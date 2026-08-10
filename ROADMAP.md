@@ -151,6 +151,9 @@ rejection. They are not supported decode paths.
   rebuilding the derived search index from validated documents.
 - [x] Real `a3s-flow` Native TypeScript preflight and exact-generation binding
   in injected hosts and the explicitly configured standalone CLI lifecycle.
+- [x] Self-contained release-backed Runtime Task binding and exact-generation
+  dispatch with receipt-owned provider reconnection, restart reconstruction,
+  stale-generation rejection, bounded output cleanup, and Registry lease drain.
 - [x] Workspace Grant proposal/change/resolution/ceiling binding.
 - [x] Candidate Grant persistence before prepare, cutover checkpointing,
   drain-before-revoke, and joint pre-cutover rollback.
@@ -196,6 +199,8 @@ Status: in progress
 
 - [ ] Compose production Runtime Service providers in A3S Code and managed
   hosts with exact plan-time and apply-time evidence.
+- [ ] Project the reviewed Runtime Task binding into Code CLI/TUI/Web and agent
+  tool discovery, then route invocation through the leased Use dispatcher.
 - [ ] Compose HTTP/streamable MCP through Gateway with health, drain, and
   exact-generation retirement.
 - [x] Complete bounded storage quota, projection retention, tombstone garbage

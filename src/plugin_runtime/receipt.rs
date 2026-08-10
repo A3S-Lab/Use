@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::model::{
     runtime_input_error, valid_machine_id, valid_sha256, valid_surface_segment,
     RuntimePreparedTaskBinding, RuntimeServiceBindingReceipt, RuntimeServiceReadinessEvidence,
-    RuntimeSurfaceContract, RUNTIME_SERVICE_BINDING_SCHEMA, RUNTIME_TASK_BINDING_SCHEMA,
+    RuntimeSurfaceContract, RUNTIME_SERVICE_BINDING_SCHEMA,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,7 +51,7 @@ impl RuntimeBindingReceipt {
 
     pub fn generation(&self) -> u64 {
         match self {
-            Self::Task(receipt) => receipt.generation,
+            Self::Task(receipt) => receipt.generation(),
             Self::Service(receipt) => receipt.generation,
         }
     }
@@ -100,24 +100,7 @@ impl RuntimeBindingReceipt {
 }
 
 fn validate_task(receipt: &RuntimePreparedTaskBinding) -> UseResult<()> {
-    if receipt.schema != RUNTIME_TASK_BINDING_SCHEMA
-        || receipt.surface.surface.kind != PluginSurfaceKind::Tool
-        || !valid_binding_identity(&receipt.surface, &receipt.scope)
-        || receipt.generation == 0
-        || !valid_sha256(&receipt.package_digest)
-        || !valid_sha256(&receipt.descriptor_digest)
-        || !valid_sha256(&receipt.capability_digest)
-        || !valid_sha256(&receipt.artifact_digest)
-        || !valid_sha256(&receipt.semantics_profile_digest)
-        || ProviderId::parse(receipt.provider_id.as_str()).is_err()
-        || !valid_machine_id(&receipt.provider_build_id)
-        || !valid_media_type(&receipt.artifact_media_type)
-    {
-        return Err(runtime_input_error(
-            "The prepared Runtime Task binding receipt is invalid.",
-        ));
-    }
-    Ok(())
+    receipt.validate()
 }
 
 fn validate_service(receipt: &RuntimeServiceBindingReceipt) -> UseResult<()> {
@@ -215,13 +198,6 @@ fn valid_binding_identity(surface: &PlanQualifiedSurfaceRef, scope: &PlanScope) 
             .all(|segment| valid_surface_segment(segment))
         && valid_surface_segment(&surface.surface.id)
         && valid_machine_id(&scope.id)
-}
-
-fn valid_media_type(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 255
-        && value.is_ascii()
-        && !value.bytes().any(|byte| byte.is_ascii_control())
 }
 
 fn valid_runtime_unit_id(value: &str) -> bool {

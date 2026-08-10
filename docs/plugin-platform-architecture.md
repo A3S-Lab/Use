@@ -352,6 +352,13 @@ Runtime bindings, Flow bindings, Knowledge projections, static projections,
 and route leases retain package generation identity. An N+1 candidate cannot
 overwrite N before snapshot cutover.
 
+A release-backed Runtime Task receipt is a durable invocation template, not an
+operation-history pointer. It retains the reviewed argument-free unit spec,
+Grant and descriptor digests, provider evidence, capture bounds, and lifecycle
+generation. Dispatch reconstructs only the invocation-specific unit ID and
+argv, revalidates the receipt-owned provider, and holds the exact published
+package-generation lease until output capture and Runtime cleanup finish.
+
 Capability snapshots contain complete `PlanScope`, package/surface identity,
 generation, desired/observed state, readiness, dependencies, and evidence
 digests. Watchers resume by generation plus revision and can hot-refresh
