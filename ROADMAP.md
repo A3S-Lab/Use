@@ -154,6 +154,8 @@ rejection. They are not supported decode paths.
 - [x] Self-contained release-backed Runtime Task binding and exact-generation
   dispatch with receipt-owned provider reconnection, restart reconstruction,
   stale-generation rejection, bounded output cleanup, and Registry lease drain.
+- [x] Capability snapshot v2 projection for exact scope/package/generation
+  matched release-backed Runtime Tool Task bindings.
 - [x] Workspace Grant proposal/change/resolution/ceiling binding.
 - [x] Candidate Grant persistence before prepare, cutover checkpointing,
   drain-before-revoke, and joint pre-cutover rollback.
@@ -199,7 +201,7 @@ Status: in progress
 
 - [ ] Compose production Runtime Service providers in A3S Code and managed
   hosts with exact plan-time and apply-time evidence.
-- [ ] Project the reviewed Runtime Task binding into Code CLI/TUI/Web and agent
+- [ ] Consume the reviewed Runtime Task projection in Code CLI/TUI/Web agent
   tool discovery, then route invocation through the leased Use dispatcher.
 - [ ] Compose HTTP/streamable MCP through Gateway with health, drain, and
   exact-generation retirement.

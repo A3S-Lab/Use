@@ -98,6 +98,8 @@ Status: in progress
   self-contained argument-free binding template, with receipt-owned provider
   reconnection, stale-generation rejection, and an accepted-call Registry
   lease held through capture and cleanup.
+- [x] Publish exact scope/package/generation-matched Runtime Tool Tasks through
+  capability snapshot schema v2; omit missing or mismatched bindings.
 - Complete Runtime Service health observation and production provider
   composition without weakening exact-generation drain and removal.
 - [x] Consume only Runtime-published generation-bound loopback Service

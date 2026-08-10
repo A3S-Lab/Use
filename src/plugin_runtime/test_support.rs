@@ -46,7 +46,7 @@ pub(super) fn context(kind: PluginSurfaceKind, id: &str) -> RuntimeSurfaceContex
     .unwrap()
 }
 
-pub(super) fn policy() -> RuntimeWorkloadPolicy {
+pub(crate) fn policy() -> RuntimeWorkloadPolicy {
     RuntimeWorkloadPolicy {
         isolation: IsolationLevel::Container,
         resources: RuntimeResourcePolicy {
@@ -65,7 +65,7 @@ pub(super) fn policy() -> RuntimeWorkloadPolicy {
     }
 }
 
-pub(super) fn artifact(digest: &str, media_type: &str) -> ArtifactRef {
+pub(crate) fn artifact(digest: &str, media_type: &str) -> ArtifactRef {
     ArtifactRef {
         uri: format!("oci://registry.example/acme/research@{digest}"),
         digest: digest.to_string(),
@@ -73,7 +73,7 @@ pub(super) fn artifact(digest: &str, media_type: &str) -> ArtifactRef {
     }
 }
 
-pub(super) fn task_descriptor() -> ToolReleaseDescriptor {
+pub(crate) fn task_descriptor() -> ToolReleaseDescriptor {
     ToolReleaseDescriptor::from_json(include_bytes!(
         "../../crates/core/fixtures/releases/tool-task-release-v1.json"
     ))
@@ -125,7 +125,7 @@ pub(super) fn mcp_surface() -> PluginMcpSurface {
     }
 }
 
-pub(super) fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
+pub(crate) fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
     RuntimeCapabilities {
         schema: RuntimeCapabilities::SCHEMA.to_string(),
         provider_id: ProviderId::parse("test-runtime").unwrap(),
@@ -153,7 +153,7 @@ pub(super) fn capabilities(plan: &RuntimeSurfacePlan) -> RuntimeCapabilities {
     }
 }
 
-pub(super) fn evidence(
+pub(crate) fn evidence(
     plan: &RuntimeSurfacePlan,
     capabilities: &RuntimeCapabilities,
 ) -> PlannedProviderEvidence {

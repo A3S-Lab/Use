@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{
-    InstalledPluginPlanEvidence, OkfCapabilityProjection, PluginSurfaceRef, Readiness, UseError,
-    UseResult,
+    InstalledPluginPlanEvidence, OkfCapabilityProjection, PlanScope, PluginSurfaceRef, Readiness,
+    UseError, UseResult,
 };
 #[cfg(feature = "extensions")]
 use a3s_use_core::{
@@ -18,6 +18,12 @@ use a3s_use_core::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
+
+#[cfg(feature = "extensions")]
+#[path = "capability_registry/runtime_tasks.rs"]
+mod runtime_tasks;
+#[cfg(feature = "extensions")]
+use runtime_tasks::runtime_task_evidence_from_store;
 
 #[cfg(feature = "extensions")]
 use crate::surface_reconciler::{
@@ -32,9 +38,10 @@ use crate::{
         OkfKnowledgeBinding, OkfKnowledgeBindingStore, OkfKnowledgeClient,
         SqliteOkfKnowledgeAdapter,
     },
+    plugin_runtime::RuntimeBindingStore,
 };
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 #[cfg(feature = "extensions")]
 const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
 const WATCH_INTERVAL: Duration = Duration::from_millis(100);
@@ -124,6 +131,28 @@ struct FlowSurface {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ProjectedLifecycleIdentity {
+    package_id: String,
+    package_digest: String,
+    manifest_digest: String,
+    generation: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolTaskProjection {
+    tool_name: String,
+    surface_id: String,
+    command: String,
+    json_output: bool,
+    timeout_ms: u64,
+    scope: PlanScope,
+    lifecycle_identity: ProjectedLifecycleIdentity,
+    provider_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ManagedAsset {
     path: PathBuf,
     sha256: String,
@@ -201,6 +230,8 @@ pub(crate) struct CapabilityBinding {
     knowledge: Vec<OkfCapabilityProjection>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     activity_bar: Vec<ActivityBarContribution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tool_tasks: Vec<ToolTaskProjection>,
 }
 
 pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
@@ -212,6 +243,7 @@ pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
     ];
     capabilities.extend(extensions);
     capabilities.sort_by(|left, right| left.id.cmp(&right.id));
+    validate_unique_tool_task_names(&capabilities)?;
 
     let revision = revision(&capabilities)?;
     Ok(CapabilityRegistrySnapshot {
@@ -220,6 +252,22 @@ pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
         revision,
         capabilities,
     })
+}
+
+fn validate_unique_tool_task_names(capabilities: &[CapabilityBinding]) -> UseResult<()> {
+    let mut names = std::collections::BTreeSet::new();
+    for task in capabilities
+        .iter()
+        .flat_map(|capability| capability.tool_tasks.iter())
+    {
+        if !names.insert(task.tool_name.as_str()) {
+            return Err(UseError::new(
+                "use.capability.runtime_task_name_conflict",
+                "Two Runtime Tool Tasks resolve to the same host tool identity.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "extensions")]
@@ -312,6 +360,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             flows: Vec::new(),
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
+            tool_tasks: Vec::new(),
         })
     }
     #[cfg(not(feature = "browser"))]
@@ -336,6 +385,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             flows: Vec::new(),
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
+            tool_tasks: Vec::new(),
         })
     }
 }
@@ -381,6 +431,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             flows: Vec::new(),
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
+            tool_tasks: Vec::new(),
         })
     }
     #[cfg(not(feature = "ocr"))]
@@ -405,6 +456,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             flows: Vec::new(),
             knowledge: Vec::new(),
             activity_bar: Vec::new(),
+            tool_tasks: Vec::new(),
         })
     }
 }
@@ -431,6 +483,7 @@ fn box_capability() -> CapabilityBinding {
         flows: Vec::new(),
         knowledge: Vec::new(),
         activity_bar: Vec::new(),
+        tool_tasks: Vec::new(),
     }
 }
 
@@ -671,8 +724,18 @@ async fn project_extension(
         &scope,
     )
     .await?;
+    let runtime_task_evidence = runtime_task_evidence_from_store(
+        extension,
+        &RuntimeBindingStore::from_extension_paths(&paths),
+        &scope,
+    )
+    .await?;
     let mut host_observations = flow_observations;
-    for (surface, state) in knowledge_evidence.failures {
+    for (surface, state) in runtime_task_evidence
+        .observations
+        .into_iter()
+        .chain(knowledge_evidence.failures)
+    {
         if host_observations.insert(surface, state).is_some() {
             return Err(UseError::new(
                 "use.capability.host_observation_invalid",
@@ -686,6 +749,7 @@ async fn project_extension(
         env!("CARGO_PKG_VERSION"),
         &host_observations,
         &knowledge_evidence.bindings,
+        &runtime_task_evidence.projections,
     )
     .await
 }
@@ -703,6 +767,7 @@ async fn project_extension_for_host(
         host_version,
         &SurfaceObservations::new(),
         &[],
+        &[],
     )
     .await
 }
@@ -712,13 +777,14 @@ async fn project_extension_for_host_with_flow_observations(
     extension: &a3s_use_extension::InstalledExtension,
     surfaces: Vec<String>,
     host_version: &str,
-    flow_observations: &SurfaceObservations,
+    host_observations: &SurfaceObservations,
     knowledge_bindings: &[OkfKnowledgeBinding],
+    runtime_tasks: &[ToolTaskProjection],
 ) -> UseResult<CapabilityBinding> {
     let receipt = &extension.receipt;
     let compatible = extension.supports_use_version(host_version);
     let observations =
-        surface_observations(extension, receipt.enabled && compatible, flow_observations).await?;
+        surface_observations(extension, receipt.enabled && compatible, host_observations).await?;
     let knowledge_observations = knowledge_bindings
         .iter()
         .map(|binding| (binding.receipt.clone(), binding.observation.clone()))
@@ -765,6 +831,15 @@ async fn project_extension_for_host_with_flow_observations(
     let mut activity_bar = Vec::new();
     let mut flows = Vec::new();
     let mut knowledge = Vec::new();
+    let mut tool_tasks = Vec::new();
+    if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
+        tool_tasks.extend(
+            runtime_tasks
+                .iter()
+                .filter(|task| snapshot.publishes(PluginSurfaceKind::Tool, &task.surface_id))
+                .cloned(),
+        );
+    }
     if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
         for surface in &extension.manifest.flows {
             if !snapshot.publishes(PluginSurfaceKind::Flow, &surface.id) {
@@ -851,6 +926,7 @@ async fn project_extension_for_host_with_flow_observations(
         flows,
         knowledge,
         activity_bar,
+        tool_tasks,
     })
 }
 
@@ -858,14 +934,23 @@ async fn project_extension_for_host_with_flow_observations(
 async fn surface_observations(
     extension: &a3s_use_extension::InstalledExtension,
     inspect_enabled_surfaces: bool,
-    flow_observations: &SurfaceObservations,
+    host_observations: &SurfaceObservations,
 ) -> UseResult<SurfaceObservations> {
-    if flow_observations.keys().any(|surface| match surface.kind {
+    if host_observations.keys().any(|surface| match surface.kind {
         PluginSurfaceKind::Flow => !extension
             .manifest
             .flows
             .iter()
             .any(|flow| flow.id == surface.id),
+        PluginSurfaceKind::Tool => !extension.manifest.tools.iter().any(|tool| {
+            tool.id == surface.id
+                && matches!(
+                    &tool.workload,
+                    a3s_use_extension::ToolWorkload::Task(task)
+                        if matches!(&task.source, a3s_use_extension::ToolTaskSource::Release { .. })
+                            && !task.interactive
+                )
+        }),
         PluginSurfaceKind::Okf => !extension
             .manifest
             .okf
@@ -882,7 +967,7 @@ async fn surface_observations(
         return Ok(SurfaceObservations::new());
     }
 
-    let mut observations = flow_observations.clone();
+    let mut observations = host_observations.clone();
     for surface in &extension.manifest.flows {
         if a3s_use_extension::inspect_flow_surface_file(surface, &extension.receipt.package_root)
             .await
@@ -1284,6 +1369,7 @@ extension "acme/workflow" {
     #[tokio::test]
     async fn built_ins_are_projected_without_extension_identity() {
         let snapshot = snapshot().await.unwrap();
+        assert_eq!(snapshot.schema_version, 2);
         let browser = snapshot
             .capabilities
             .iter()
@@ -1463,6 +1549,7 @@ extension "acme/workflow" {
             "0.3.0",
             &SurfaceObservations::new(),
             &evidence.bindings,
+            &[],
         )
         .await
         .unwrap();
@@ -1662,6 +1749,7 @@ extension "acme/workflow" {
             "0.3.0",
             &flow_observations,
             &[],
+            &[],
         )
         .await
         .unwrap();
@@ -1836,6 +1924,7 @@ extension "acme/workflow" {
                 .collect(),
             "0.3.0",
             &flow_observations,
+            &[],
             &[],
         )
         .await

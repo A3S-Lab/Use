@@ -107,6 +107,13 @@ paths, frontmatter, and links. A Knowledge host owns stage, promote, observe,
 search, drain, and receipt-owned removal. Staged content is not live evidence.
 Only an exact promoted binding may enter the capability snapshot.
 
+Capability snapshot schema v2 applies the same rule to Runtime Tool Tasks. A
+`toolTasks` entry is emitted only for a published, non-interactive,
+release-backed Task whose v4 binding matches the exact scope, package digest,
+surface, and lifecycle generation. The entry is invocation metadata, not a
+provider fallback: hosts must still possess the named reviewed provider and
+dispatch through the receipt-owned exact-generation lease.
+
 The standalone SQLite/FTS5 backend creates the one current database schema for
 new state and rejects every unknown `user_version`. It does not migrate or
 rewrite pre-release databases.

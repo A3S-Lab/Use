@@ -359,10 +359,15 @@ generation. Dispatch reconstructs only the invocation-specific unit ID and
 argv, revalidates the receipt-owned provider, and holds the exact published
 package-generation lease until output capture and Runtime cleanup finish.
 
-Capability snapshots contain complete `PlanScope`, package/surface identity,
-generation, desired/observed state, readiness, dependencies, and evidence
-digests. Watchers resume by generation plus revision and can hot-refresh
-resident hosts without polling package directories.
+Capability snapshot schema v2 contains complete `PlanScope`, package/surface
+identity, generation, desired/observed state, readiness, dependencies, and
+evidence digests. A release-backed Tool Task enters `toolTasks` only when its
+v4 binding matches the published package digest, scope, surface, and lifecycle
+generation. The projection carries a stable host tool name, original command,
+bounded argv contract metadata, exact lifecycle identity, and reviewed provider
+ID; missing or mismatched bindings remain unpublished. Watchers resume by
+generation plus revision and can hot-refresh resident hosts without polling
+package directories.
 
 The steady-state watch path reads immutable publications without acquiring the
 Registry writer lock. A watcher may take that lock once to repair a verified
