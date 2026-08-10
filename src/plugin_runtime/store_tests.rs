@@ -7,6 +7,9 @@ use a3s_use_core::{
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
+use super::test_support::{
+    artifact, capabilities, evidence, policy, task_descriptor, task_surface,
+};
 use super::*;
 
 const PACKAGE_DIGEST: &str =
@@ -15,8 +18,6 @@ const DESCRIPTOR_DIGEST: &str =
     "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const CAPABILITY_DIGEST: &str =
     "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
-const ARTIFACT_DIGEST: &str =
-    "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 const SPEC_DIGEST: &str = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const SEMANTICS_DIGEST: &str =
     "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
@@ -32,21 +33,37 @@ fn surface(kind: PluginSurfaceKind, id: &str) -> PlanQualifiedSurfaceRef {
 }
 
 fn task_receipt(generation: u64) -> RuntimeBindingReceipt {
-    RuntimeBindingReceipt::Task(RuntimePreparedTaskBinding {
-        schema: RUNTIME_TASK_BINDING_SCHEMA.to_string(),
-        surface: surface(PluginSurfaceKind::Tool, "convert"),
-        package_digest: PACKAGE_DIGEST.to_string(),
-        scope: workspace_scope(),
-        descriptor_digest: DESCRIPTOR_DIGEST.to_string(),
-        provider_id: "test-runtime".to_string(),
-        provider_build_id: "build-1".to_string(),
-        capability_digest: CAPABILITY_DIGEST.to_string(),
-        enforcement: PlanEnforcementProfile::Container,
-        artifact_digest: ARTIFACT_DIGEST.to_string(),
-        artifact_media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
+    task_receipt_for_scope(generation, workspace_scope())
+}
+
+fn task_receipt_for_scope(generation: u64, scope: PlanScope) -> RuntimeBindingReceipt {
+    let descriptor = task_descriptor();
+    let context = RuntimeSurfaceContext::new(
+        "acme/research",
+        PACKAGE_DIGEST,
+        scope,
+        DESCRIPTOR_DIGEST,
+        PluginSurfaceRef {
+            kind: PluginSurfaceKind::Tool,
+            id: "convert".to_string(),
+        },
         generation,
-        semantics_profile_digest: SEMANTICS_DIGEST.to_string(),
-    })
+    )
+    .unwrap();
+    let plan = plan_tool_task_release(
+        context,
+        &task_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        RuntimeTaskInvocation::new("store-template", Vec::new()).unwrap(),
+        policy(),
+        a3s_runtime::contract::NetworkMode::None,
+    )
+    .unwrap();
+    let capabilities = capabilities(&plan);
+    RuntimeBindingReceipt::Task(
+        RuntimePreparedTaskBinding::from_plan(&plan, &evidence(&plan, &capabilities)).unwrap(),
+    )
 }
 
 fn service_receipt(observation_revision: u64) -> RuntimeBindingReceipt {
@@ -102,11 +119,13 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
     let temporary = TempDir::new().unwrap();
     let store = RuntimeBindingStore::new(temporary.path());
     let workspace = task_receipt(7);
-    let mut user = workspace.clone();
-    let RuntimeBindingReceipt::Task(user_receipt) = &mut user else {
-        panic!("fixture should be a Task binding");
-    };
-    user_receipt.scope.kind = PlanScopeKind::User;
+    let user = task_receipt_for_scope(
+        7,
+        PlanScope {
+            kind: PlanScopeKind::User,
+            id: "workspace-01".to_string(),
+        },
+    );
 
     assert!(store.put(&workspace).await.unwrap());
     assert!(store.put(&user).await.unwrap());

@@ -94,7 +94,7 @@ pub fn plan_tool_task_release(
         max_stdout_bytes,
         max_stderr_bytes,
     };
-    let unit_id = unit_id(&context, "task", Some(invocation.invocation_id()))?;
+    let unit_id = runtime_unit_id(&context, "task", Some(invocation.invocation_id()))?;
     let resources = runtime_resources(&policy, Some(timeout_ms));
     let spec = RuntimeUnitSpec {
         schema: RuntimeUnitSpec::SCHEMA.to_string(),
@@ -257,7 +257,7 @@ fn service_spec(
     let resources = runtime_resources(&policy, None);
     Ok(RuntimeUnitSpec {
         schema: RuntimeUnitSpec::SCHEMA.to_string(),
-        unit_id: unit_id(context, "service", None)?,
+        unit_id: runtime_unit_id(context, "service", None)?,
         generation: context.generation,
         class: RuntimeUnitClass::Service,
         artifact,
@@ -317,29 +317,12 @@ fn finish_plan(
     contract: RuntimeSurfaceContract,
 ) -> UseResult<RuntimeSurfacePlan> {
     spec.validate().map_err(runtime_contract_error)?;
-    let mut semantics_spec = spec.clone();
-    if matches!(contract, RuntimeSurfaceContract::ToolTask { .. }) {
-        semantics_spec.unit_id = "use:task-template".to_string();
-        semantics_spec.process.args.clear();
-    }
-    let profile = RuntimeSemanticsProfile {
-        schema: SEMANTICS_PROFILE_SCHEMA,
-        package_id: &context.package_id,
-        package_digest: &context.package_digest,
-        scope: &context.scope,
-        grant_digest: &context.grant_digest,
-        surface_kind: context.surface.kind,
-        surface_id: &context.surface.id,
-        descriptor_digest: &descriptor_digest,
-        runtime_spec: &semantics_spec,
-        contract: &contract,
-    };
-    let bytes = serde_json::to_vec(&profile).map_err(|error| {
-        runtime_contract_error(format!(
-            "Failed to encode the Runtime semantics profile: {error}"
-        ))
-    })?;
-    spec.semantics_profile_digest = Some(format!("sha256:{:x}", Sha256::digest(bytes)));
+    spec.semantics_profile_digest = Some(runtime_semantics_profile_digest(
+        &context,
+        &descriptor_digest,
+        &spec,
+        &contract,
+    )?);
     spec.validate().map_err(runtime_contract_error)?;
     Ok(RuntimeSurfacePlan {
         context,
@@ -380,7 +363,7 @@ fn require_surface_kind(
     Ok(())
 }
 
-fn unit_id(
+pub(super) fn runtime_unit_id(
     context: &RuntimeSurfaceContext,
     class: &str,
     instance: Option<&str>,
@@ -414,6 +397,38 @@ fn unit_id(
         ))
     })?;
     Ok(format!("use:{class}:{:x}", Sha256::digest(bytes)))
+}
+
+pub(super) fn runtime_semantics_profile_digest(
+    context: &RuntimeSurfaceContext,
+    descriptor_digest: &str,
+    spec: &RuntimeUnitSpec,
+    contract: &RuntimeSurfaceContract,
+) -> UseResult<String> {
+    let mut semantics_spec = spec.clone();
+    semantics_spec.semantics_profile_digest = None;
+    if matches!(contract, RuntimeSurfaceContract::ToolTask { .. }) {
+        semantics_spec.unit_id = "use:task-template".to_string();
+        semantics_spec.process.args.clear();
+    }
+    let profile = RuntimeSemanticsProfile {
+        schema: SEMANTICS_PROFILE_SCHEMA,
+        package_id: &context.package_id,
+        package_digest: &context.package_digest,
+        scope: &context.scope,
+        grant_digest: &context.grant_digest,
+        surface_kind: context.surface.kind,
+        surface_id: &context.surface.id,
+        descriptor_digest,
+        runtime_spec: &semantics_spec,
+        contract,
+    };
+    let bytes = serde_json::to_vec(&profile).map_err(|error| {
+        runtime_contract_error(format!(
+            "Failed to encode the Runtime semantics profile: {error}"
+        ))
+    })?;
+    Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
 }
 
 #[derive(Serialize)]

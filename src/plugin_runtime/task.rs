@@ -10,7 +10,6 @@ use super::client::{runtime_error, PluginRuntimeClient};
 use super::model::{
     runtime_contract_error, RuntimePreparedTaskBinding, RuntimeSurfaceContract, RuntimeSurfacePlan,
 };
-use super::receipt::RuntimeBindingReceipt;
 
 const MAX_IN_MEMORY_TASK_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
 const LOG_QUERY_CHUNKS: u32 = 64;
@@ -314,21 +313,17 @@ fn validate_task_binding(
     plan: &RuntimeSurfacePlan,
     binding: &RuntimePreparedTaskBinding,
 ) -> UseResult<()> {
-    RuntimeBindingReceipt::Task(binding.clone()).validate()?;
-    if !matches!(plan.contract(), RuntimeSurfaceContract::ToolTask { .. })
-        || binding.surface != plan.surface()
-        || binding.package_digest != plan.context().package_digest()
-        || binding.scope != *plan.context().scope()
-        || binding.descriptor_digest != plan.descriptor_digest()
-        || binding.artifact_digest != plan.spec().artifact.digest
-        || binding.artifact_media_type != plan.spec().artifact.media_type
-        || binding.generation != plan.spec().generation
-        || binding.semantics_profile_digest
-            != plan
-                .spec()
-                .semantics_profile_digest
-                .as_deref()
-                .unwrap_or_default()
+    binding.validate()?;
+    let provider = PlannedProviderEvidence {
+        surface: binding.surface.clone(),
+        provider_id: binding.provider_id.clone(),
+        provider_build_id: binding.provider_build_id.clone(),
+        capability_digest: binding.capability_digest.clone(),
+        semantics_profile_digest: binding.semantics_profile_digest.clone(),
+        enforcement: binding.enforcement,
+    };
+    if !RuntimePreparedTaskBinding::from_plan(plan, &provider)
+        .is_ok_and(|expected| expected == *binding)
     {
         return Err(UseError::new(
             "use.plugin.runtime.binding_mismatch",

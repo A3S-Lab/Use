@@ -566,6 +566,13 @@ Current Registry rules:
   prior-generation upgrade cleanup reopen the provider recorded by the exact
   Runtime binding receipt; provider ID, build, and normalized capabilities are
   rechecked before a Service is drained and removed.
+- Release-backed Runtime Task bindings use the current self-contained receipt:
+  an argument-free reviewed Runtime template, Grant/descriptor/provider
+  evidence, capture contract, and exact lifecycle generation survive process
+  restart without depending on a short-lived operation record. Each invocation
+  derives only its unique unit ID and bounded argv, reopens the receipt-owned
+  provider, and holds the exact published-generation lease through output
+  capture and cleanup. Hidden or replaced generations reject new calls.
 - The catalog record, archive, expanded package, and manifest all have exact
   digest/size evidence.
 - Archive admission rebinds every planning launcher to the exact digest-bound
@@ -722,7 +729,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Exact published-generation dispatch lease | Implemented in the Use Registry and the Code TUI/Web Knowledge query carrier; accepted queries hold exact package-generation leases through backend search and final Registry revision verification |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
 | Code Web Activity composition | Enabled catalog entries publish an exact generation/revision URL; the host serves only verified HTML/CSS/JS with opaque-origin CSP and restrictive security headers, preserves the URL across restart, rejects stale generations with `410 Gone`, and exposes no managed paths. The production Web build adopts only that URL, transfers a dedicated v3 `MessagePort`, ignores ambient messages, terminates self-navigation, identity-binds context review, serializes bounded host-state requests, and drains/replaces the old frame on Registry changes. Durable state is isolated by scope/package/surface, guarded by exact published-generation leases, retained only for explicitly retained surfaces, and removed on true uninstall. A process-local candidate broker publishes only path-free identity and exact bytes before cutover; the hidden script-only iframe receives readiness-mode identity without state/context/backend authority. Failure preserves N and removes N+1 receipt/generation residue; a rolled-back plan cannot republish, while a fresh plan can retry the same lifecycle generation and cut over once. Backend bindings, equivalent readiness in CLI/TUI/native hosts, and native hosting remain open |
-| Managed Runtime receipt lifecycle | Typed generation-bound endpoints, receipt-owned provider reconnection, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are contract-tested; production provider/Gateway injection remains open |
+| Managed Runtime receipt lifecycle | Self-contained release-backed Task templates support restart-safe exact-generation dispatch, receipt-owned provider reconnection, stale-generation rejection, and accepted-call drain. Typed Service endpoints, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are also contract-tested; Code invocation projection and production provider/Gateway injection remain open |
 | Scope-bounded OKF quota, retention, tombstone GC, SQLite compaction, and usage diagnostics | Implemented in the standalone Knowledge backend |
 | Scope-local OKF integrity audit, verified database backup, and derived FTS repair | Implemented and real-process tested; restore and whole-product recovery remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |

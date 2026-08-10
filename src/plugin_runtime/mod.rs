@@ -14,6 +14,8 @@ mod receipt;
 mod store;
 mod surface_observer;
 mod task;
+mod task_binding;
+mod task_dispatch;
 
 pub use a3s_runtime as runtime;
 
@@ -39,11 +41,14 @@ pub use surface_observer::{
     RuntimeSurfaceObserver, RUNTIME_SURFACE_OBSERVATION_SCHEMA_VERSION,
 };
 pub use task::RuntimeTaskExecution;
+pub use task_dispatch::{RuntimeTaskDispatchRequest, RuntimeTaskDispatcher};
 
 #[cfg(test)]
 mod store_tests;
 #[cfg(test)]
 mod surface_observer_tests;
+#[cfg(test)]
+mod task_dispatch_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

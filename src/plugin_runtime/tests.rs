@@ -188,7 +188,7 @@ async fn explicit_provider_evidence_is_rechecked_without_fallback() {
     let client = PluginRuntimeClient::new(runtime);
     let binding = client.prepare_task(&plan, &provider).await.unwrap();
     assert_eq!(binding.provider_id, "test-runtime");
-    assert_eq!(binding.artifact_digest, plan.spec().artifact.digest);
+    assert_eq!(binding.template_spec.artifact, plan.spec().artifact);
 
     let mut changed = capabilities;
     changed.provider_build = "build-2".to_string();
@@ -307,7 +307,7 @@ async fn explicit_provider_assignments_resolve_sorted_evidence_without_fallback(
 }
 
 #[tokio::test]
-async fn task_binding_invokes_native_argv_and_captures_separate_output_streams() {
+async fn durable_task_binding_rebuilds_invocation_and_captures_separate_output_streams() {
     let descriptor = task_descriptor();
     let plan = plan_tool_task_release(
         context(PluginSurfaceKind::Tool, "convert"),
@@ -328,8 +328,26 @@ async fn task_binding_invokes_native_argv_and_captures_separate_output_streams()
     ]));
     let client = PluginRuntimeClient::new(runtime.clone());
     let binding = client.prepare_task(&plan, &provider).await.unwrap();
+    let encoded = serde_json::to_vec(&binding).unwrap();
+    assert!(!String::from_utf8_lossy(&encoded).contains("paper.pdf"));
+    assert!(!String::from_utf8_lossy(&encoded).contains("invoke-01"));
+    let binding: RuntimePreparedTaskBinding = serde_json::from_slice(&encoded).unwrap();
+    let invocation_plan = binding
+        .invocation_plan(
+            RuntimeTaskInvocation::new(
+                "invoke-after-restart",
+                vec!["--input".into(), "restarted.pdf".into()],
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let result = client
-        .invoke_task(&plan, &binding, "invoke-request-01", Some(9_999_999))
+        .invoke_task(
+            &invocation_plan,
+            &binding,
+            "invoke-request-01",
+            Some(9_999_999),
+        )
         .await
         .unwrap();
 
@@ -340,8 +358,50 @@ async fn task_binding_invokes_native_argv_and_captures_separate_output_streams()
     assert_eq!(result.stderr, "diagnostic\n");
     assert!(!result.truncated);
     assert_eq!(
-        plan.spec().process.args,
-        vec!["--input".to_string(), "paper.pdf".to_string()]
+        invocation_plan.spec().process.args,
+        vec!["--input".to_string(), "restarted.pdf".to_string()]
+    );
+    assert_ne!(plan.spec().unit_id, invocation_plan.spec().unit_id);
+    assert_eq!(
+        plan.spec().semantics_profile_digest,
+        invocation_plan.spec().semantics_profile_digest
+    );
+}
+
+#[tokio::test]
+async fn task_binding_rejects_obsolete_or_tampered_durable_templates() {
+    let descriptor = task_descriptor();
+    let plan = plan_tool_task_release(
+        context(PluginSurfaceKind::Tool, "convert"),
+        &task_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        RuntimeTaskInvocation::new("invoke-01", Vec::new()).unwrap(),
+        policy(),
+        NetworkMode::None,
+    )
+    .unwrap();
+    let capabilities = capabilities(&plan);
+    let provider = evidence(&plan, &capabilities);
+    let client = PluginRuntimeClient::new(Arc::new(FakeRuntime::new(capabilities, true)));
+    let binding = client.prepare_task(&plan, &provider).await.unwrap();
+
+    let mut obsolete = binding.clone();
+    obsolete.schema = "a3s.use.runtime-task-binding.v3".to_string();
+    assert_eq!(
+        obsolete.validate().unwrap_err().code,
+        "use.plugin.runtime.input_invalid"
+    );
+
+    let mut tampered = binding;
+    tampered
+        .template_spec
+        .process
+        .command
+        .push("--unreviewed".to_string());
+    assert_eq!(
+        tampered.validate().unwrap_err().code,
+        "use.plugin.runtime.input_invalid"
     );
 }
 
