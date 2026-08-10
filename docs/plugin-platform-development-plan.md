@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Development Plan
 
 Status: active
-Last updated: 2026-08-09
+Last updated: 2026-08-10
 
 ## Objective
 
@@ -151,12 +151,16 @@ Acceptance:
 - [x] Add Code-owned persistent UI state keyed by scope/package/surface, exact
   published-generation request leases, restart recovery, retained-surface
   upgrade/rollback preservation, and true-uninstall cleanup.
-- [ ] Add failed-N+1 readiness/cutover/rollback to keep the selected prior
-  document available when a candidate cannot become ready.
+- [x] Add Code Web failed-N+1 pre-cutover readiness with path-free candidate
+  delivery, an authority-free script-only sandbox, rollback that keeps N
+  selected and callable, stale-plan non-replay, fresh-plan retry at the same
+  N+1 lifecycle generation, and one successful Registry cutover.
 - [ ] Bind UI to exact Skill/Tool/MCP/Flow readiness and Grant evidence.
 - [x] Add active-document generation-aware hot replacement and port/frame
   drain in Code Web.
-- [ ] Add equivalent generation-aware composition and drain in native hosts.
+- [ ] Add equivalent generation-aware readiness, composition, and drain in
+  CLI, TUI, and native hosts; they remain static-integrity-only until an
+  equivalent renderer is injected.
 
 Acceptance:
 

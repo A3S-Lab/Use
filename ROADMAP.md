@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-09
+Last updated: 2026-08-10
 
 ## Product status
 
@@ -212,9 +212,13 @@ Status: in progress
 - [x] Add bounded Code-owned durable UI state keyed by scope/package/surface,
   exact published-generation request leases, restart recovery, retained-surface
   upgrade/rollback preservation, and true-uninstall cleanup.
-- [ ] Complete reviewed UI backend bindings, failed-N+1
-  readiness/cutover/rollback, and equivalent sandbox/generation composition in
-  native hosts.
+- [x] Complete Code Web failed-N+1 pre-cutover browser readiness, authority-free
+  candidate delivery, failure rollback with N still callable, stale-plan
+  non-replay, fresh-plan retry at the same N+1 lifecycle generation, and one
+  successful Registry cutover.
+- [ ] Complete reviewed UI backend bindings and equivalent sandbox/generation
+  composition in CLI, TUI, and native hosts. Those hosts remain
+  static-integrity-only until they inject an equivalent renderer.
 - [ ] Prove that every required surface remains unpublished when its owner or
   evidence is missing.
 
