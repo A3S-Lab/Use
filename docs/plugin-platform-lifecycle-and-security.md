@@ -1,7 +1,7 @@
 # A3S Use Plugin Lifecycle and Security
 
 Status: development preview
-Last updated: 2026-08-07
+Last updated: 2026-08-10
 
 ## Purpose
 
@@ -298,8 +298,17 @@ package-generation lease. State is bounded and isolated by scope, lifecycle
 package ID, and surface ID; it survives restart and lifecycle transitions only
 when lifecycle intent v3 explicitly retains that surface. True uninstall and
 surface removal clear the namespace even when its stored snapshot is corrupt.
-This state-retention rule is not failed-N+1 fallback; candidate readiness and
-rollback must still keep N selected until N+1 is proven ready.
+State retention and failed-N+1 selection remain separate contracts. Code Web
+now composes the latter with a process-local candidate broker: it publishes
+only path-free exact identity and bytes, loads N+1 in a hidden script-only
+sandbox, transfers only readiness-mode `host.init` over a dedicated port, and
+exposes no state, context, Tool, MCP, Flow, or backend authority. Only
+`activity.ready` passes. Load, navigation, protocol, and timeout failure keep N
+selected and callable, roll N+1 back without receipt or generation residue,
+and make the failed reviewed plan non-replayable. A fresh plan may retry the
+same N+1 lifecycle generation before one successful cutover. CLI, TUI, and
+native hosts remain static-integrity-only until they inject an equivalent
+renderer.
 
 ## Filesystem and archive safety
 
