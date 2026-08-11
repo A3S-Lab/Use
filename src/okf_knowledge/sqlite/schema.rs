@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
 
-pub(super) const DATABASE_SCHEMA_VERSION: i64 = 1;
+pub(super) const DATABASE_SCHEMA_VERSION: i64 = 2;
 
 pub(super) fn open(path: &Path, create: bool) -> rusqlite::Result<Connection> {
     let mut flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_FULL_MUTEX;
@@ -64,6 +64,7 @@ CREATE TABLE knowledge_documents (
     title           TEXT    NOT NULL,
     search_text     TEXT    NOT NULL,
     source_digest   TEXT    NOT NULL,
+    content         BLOB    NOT NULL,
     UNIQUE (package_id, surface_id, generation, concept_id),
     FOREIGN KEY (package_id, surface_id, generation)
         REFERENCES knowledge_projections (package_id, surface_id, generation)

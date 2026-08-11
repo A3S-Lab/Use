@@ -7,7 +7,10 @@ use a3s_use_core::{
 };
 use async_trait::async_trait;
 
-use super::{OkfKnowledgeBinding, OkfKnowledgeSearchRequest, OkfKnowledgeSearchResponse};
+use super::{
+    OkfKnowledgeBinding, OkfKnowledgeReadRequest, OkfKnowledgeReadResponse,
+    OkfKnowledgeSearchRequest, OkfKnowledgeSearchResponse,
+};
 
 /// Immutable identity reviewed before one OKF candidate is staged.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +118,14 @@ pub trait OkfKnowledgeAdapter: Send + Sync {
         &self,
         request: &OkfKnowledgeSearchRequest,
     ) -> UseResult<OkfKnowledgeSearchResponse>;
+
+    async fn read(&self, request: &OkfKnowledgeReadRequest) -> UseResult<OkfKnowledgeReadResponse> {
+        let _ = request;
+        Err(UseError::new(
+            "use.okf.knowledge_read_unavailable",
+            "This injected Knowledge adapter does not provide cited document reads.",
+        ))
+    }
 }
 
 /// Evidence-checking client around an injected Knowledge adapter.
@@ -179,6 +190,16 @@ impl OkfKnowledgeClient {
     ) -> UseResult<OkfKnowledgeSearchResponse> {
         request.validate()?;
         let response = self.adapter.search(request).await?;
+        response.validate_for(request)?;
+        Ok(response)
+    }
+
+    pub async fn read(
+        &self,
+        request: &OkfKnowledgeReadRequest,
+    ) -> UseResult<OkfKnowledgeReadResponse> {
+        request.validate()?;
+        let response = self.adapter.read(request).await?;
         response.validate_for(request)?;
         Ok(response)
     }

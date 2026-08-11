@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use a3s_use_core::{
-    OkfKnowledgeObservation, OkfKnowledgeObservedState, OkfProjectionReceipt, UseResult,
+    OkfKnowledgeObservation, OkfKnowledgeObservedState, OkfProjectionReceipt, UseError, UseResult,
 };
 use async_trait::async_trait;
 
@@ -38,6 +38,16 @@ impl OkfKnowledgeAdapter for FakeKnowledgeAdapter {
         request: &OkfKnowledgeSearchRequest,
     ) -> UseResult<OkfKnowledgeSearchResponse> {
         OkfKnowledgeSearchResponse::new(request, Vec::new())
+    }
+
+    async fn read(
+        &self,
+        _request: &OkfKnowledgeReadRequest,
+    ) -> UseResult<OkfKnowledgeReadResponse> {
+        Err(UseError::new(
+            "use.test.knowledge_read_not_configured",
+            "The adapter test double does not provide document reads.",
+        ))
     }
 }
 

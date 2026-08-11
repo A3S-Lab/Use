@@ -20,6 +20,7 @@ pub(super) struct IndexedDocument {
     pub title: String,
     pub search_text: String,
     pub source_digest: String,
+    pub content: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,13 +98,30 @@ pub(super) fn prepare(
             title,
             search_text,
             source_digest: format!("sha256:{:x}", Sha256::digest(content)),
+            content: content.to_vec(),
         });
     }
     documents.sort_by(|left, right| left.path.cmp(&right.path));
 
+    let digest = descriptor_digest(&spec.bundle.content_digest, &documents)?;
+    let build_id = format!("fts5-{}", &digest[7..23]);
+    Ok(PreparedIndex {
+        digest,
+        build_id,
+        documents,
+    })
+}
+
+/// Rebuild the immutable descriptor retained by a projection. Audit uses the
+/// same implementation as staging so changes to source digests or derived
+/// search fields cannot be hidden behind a structurally healthy FTS table.
+pub(super) fn descriptor_digest(
+    bundle_digest: &str,
+    documents: &[IndexedDocument],
+) -> UseResult<String> {
     let descriptor = IndexDescriptor {
         schema: INDEX_DESCRIPTOR_SCHEMA,
-        bundle_digest: &spec.bundle.content_digest,
+        bundle_digest,
         documents: documents
             .iter()
             .map(|document| IndexDocumentDescriptor {
@@ -124,13 +142,7 @@ pub(super) fn prepare(
             "Failed to encode the canonical OKF search index: {error}"
         ))
     })?;
-    let digest = format!("sha256:{:x}", Sha256::digest(&bytes));
-    let build_id = format!("fts5-{}", &digest[7..23]);
-    Ok(PreparedIndex {
-        digest,
-        build_id,
-        documents,
-    })
+    Ok(format!("sha256:{:x}", Sha256::digest(&bytes)))
 }
 
 fn strip_frontmatter(markdown: &str) -> &str {

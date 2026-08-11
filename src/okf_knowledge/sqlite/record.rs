@@ -115,8 +115,8 @@ pub(super) fn stage(
             .prepare(
                 "INSERT INTO knowledge_documents (
                     package_id, surface_id, generation, concept_id, path,
-                    type_name, title, search_text, source_digest
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    type_name, title, search_text, source_digest, content
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )
             .map_err(|error| database_io("prepare Knowledge document insertion", error))?;
         for document in &index.documents {
@@ -131,6 +131,7 @@ pub(super) fn stage(
                     document.title,
                     document.search_text,
                     document.source_digest,
+                    document.content,
                 ])
                 .map_err(|error| database_io("insert Knowledge search document", error))?;
         }

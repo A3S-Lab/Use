@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
 use super::{
-    OkfKnowledgeAdapter, OkfKnowledgeBinding, OkfKnowledgeSearchRequest,
-    OkfKnowledgeSearchResponse, OkfKnowledgeStageRequest,
+    OkfKnowledgeAdapter, OkfKnowledgeBinding, OkfKnowledgeReadRequest, OkfKnowledgeReadResponse,
+    OkfKnowledgeSearchRequest, OkfKnowledgeSearchResponse, OkfKnowledgeStageRequest,
 };
 
 mod audit;
@@ -17,6 +17,7 @@ mod filesystem;
 mod index;
 mod policy;
 mod projection;
+mod read;
 mod record;
 mod schema;
 mod search;
@@ -306,6 +307,21 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
         })
         .await
         .map_err(|error| blocking_error("query the OKF Knowledge index", error))?
+    }
+
+    async fn read(&self, request: &OkfKnowledgeReadRequest) -> UseResult<OkfKnowledgeReadResponse> {
+        request.validate()?;
+        let request = request.clone();
+        let guard = self
+            .database_guard(&request.scope, LockMode::Shared)
+            .await?;
+        tokio::task::spawn_blocking(move || {
+            let connection = schema::open(&guard.path, false)
+                .map_err(|error| sqlite_error("open cited-read Knowledge database", error))?;
+            read::read(&connection, &request)
+        })
+        .await
+        .map_err(|error| blocking_error("read the cited OKF Knowledge document", error))?
     }
 }
 
