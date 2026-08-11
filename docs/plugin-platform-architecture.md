@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Architecture
 
 Status: development preview
-Last updated: 2026-08-07
+Last updated: 2026-08-11
 
 ## Executive decision
 
@@ -66,6 +66,14 @@ protocol baseline and no pre-release compatibility branches.
 | A3S Flow | Workflow compilation, execution, replay, observation | A parallel package format or lifecycle |
 | Knowledge host | OKF validation, indexing, promotion, cited retrieval, retention | Process execution |
 | Code/Web/OS | Product scope, sessions, rendering, placement, user experience | A second plan/apply implementation |
+
+The concrete managed-host port is `CognitivePackageHostManager`. It composes
+the same `CognitivePackageManager`, persisted Registry source set, lifecycle
+factory, and authorization provider used by the host. Its additional durable
+state is a narrow protocol index for request replay; it never owns package
+admission, Grants, lifecycle checkpoints, enablement state, or capability
+publication. Expired requests resume only when those existing Use-owned stores
+prove exact prior admission or completion.
 
 ## Domain model
 

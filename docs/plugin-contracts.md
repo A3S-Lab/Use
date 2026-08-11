@@ -1,7 +1,7 @@
 # A3S Use Plugin Contract Reference
 
 Status: development preview
-Last updated: 2026-08-09
+Last updated: 2026-08-11
 
 ## Scope
 
@@ -279,6 +279,23 @@ plugin_plan_disable
 
 There is no `plugin_enable` or `plugin_disable` mutation tool. Enablement uses
 plan then `plugin_apply_plan` like every other mutation.
+
+`CognitivePackageHostManager` is the production adapter for this port. It is
+bound to one exact `PluginManagedScope` fence and advertises one immutable
+capability digest per manager build. Its private durable records map a Host
+request ID to the exact Use-produced plan, map the operation ID back to that
+request, and retain the terminal Host projection for idempotent replay. Those
+records do not replace the package graph store, enablement operation store,
+Grant store, lifecycle journal, Registry receipt, or capability snapshot.
+
+Plan lifetime is an admission boundary, not a recovery deadline. An apply for
+a merely planned operation must still be inside the original plan window. If
+that window has elapsed, the adapter permits only exact replay after loading
+one of the existing Use-owned proofs: an admitted pending graph, matching
+completed lifecycle journal, active/completed enablement operation, or the
+already persisted Host terminal result. The confirmation is revalidated in
+the original plan window. Missing or mismatched evidence fails closed and
+never extends the plan lifetime.
 
 ## Workspace Grants
 

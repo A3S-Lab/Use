@@ -25,12 +25,12 @@ static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum StoredPluginHostPlan {
     Graph {
-        request: PluginHostPlanRequest,
-        result: PluginHostPlanResult,
+        request: Box<PluginHostPlanRequest>,
+        result: Box<PluginHostPlanResult>,
     },
     Enablement {
-        request: PluginHostEnablementPlanRequest,
-        result: PluginHostEnablementPlanResult,
+        request: Box<PluginHostEnablementPlanRequest>,
+        result: Box<PluginHostEnablementPlanResult>,
     },
 }
 
@@ -40,7 +40,10 @@ impl StoredPluginHostPlan {
         mut result: PluginHostPlanResult,
     ) -> UseResult<Self> {
         result.replayed = false;
-        let plan = Self::Graph { request, result };
+        let plan = Self::Graph {
+            request: Box::new(request),
+            result: Box::new(result),
+        };
         plan.validate()?;
         Ok(plan)
     }
@@ -50,7 +53,10 @@ impl StoredPluginHostPlan {
         mut result: PluginHostEnablementPlanResult,
     ) -> UseResult<Self> {
         result.replayed = false;
-        let plan = Self::Enablement { request, result };
+        let plan = Self::Enablement {
+            request: Box::new(request),
+            result: Box::new(result),
+        };
         plan.validate()?;
         Ok(plan)
     }
@@ -103,7 +109,7 @@ impl StoredPluginHostPlan {
 
     pub fn graph_parts(&self) -> Option<(&PluginHostPlanRequest, &PluginHostPlanResult)> {
         match self {
-            Self::Graph { request, result } => Some((request, result)),
+            Self::Graph { request, result } => Some((request.as_ref(), result.as_ref())),
             Self::Enablement { .. } => None,
         }
     }
@@ -115,7 +121,7 @@ impl StoredPluginHostPlan {
         &PluginHostEnablementPlanResult,
     )> {
         match self {
-            Self::Enablement { request, result } => Some((request, result)),
+            Self::Enablement { request, result } => Some((request.as_ref(), result.as_ref())),
             Self::Graph { .. } => None,
         }
     }

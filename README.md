@@ -65,6 +65,11 @@ The implementation and fixtures exercise the product model directly:
   trusted roots, and isolates TUF metadata and caches by source identity.
 - [`CognitivePackageManager`](src/cognitive_package/) binds signed catalog
   evidence, exact locks, reviewed plans, authorization, and crash replay.
+- [`CognitivePackageHostManager`](src/cognitive_package/host_manager.rs)
+  implements the typed host-protocol-v4 port for one exact managed-scope
+  fence. It durably binds request IDs to Use-owned plans and terminal results,
+  while delegating Registry resolution, admission, lifecycle, Grants, and
+  observation to the same `CognitivePackageManager` used by other hosts.
 - [`bind_cognitive_package_provider_plan`](src/cognitive_package/provider_plan.rs)
   executes the authorization-safe two-pass provider protocol: unbound draft,
   assigned-provider preflight, host authority, canonical Grant semantics, and
@@ -659,6 +664,13 @@ a different intent cannot replace either one before it reaches a terminal
 record. Inspection reads the latest and previous records under the same
 package-scoped journal lock.
 
+The production managed-host adapter stores only protocol request/operation
+bindings and terminal projections. It does not create a second package,
+authorization, or recovery state machine. An expired plan remains unusable
+unless exact Use-owned evidence proves that it was already admitted or
+completed inside its original review window; a merely planned operation must
+be planned and reviewed again.
+
 Workspace Grants are composed into the same graph saga. Candidate grants are
 persisted before package preparation, the exact Registry cutover is recorded,
 accepted calls drain before prior grants are revoked, and a pre-cutover failure
@@ -735,6 +747,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Secret-free lifecycle checkpoint diagnostics | Implemented for latest/previous package operations through `extension inspect --json`; broader operational telemetry remains open |
 | Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
+| Typed managed Host Manager | `CognitivePackageHostManager` implements host protocol v4 with exact capability/fence validation, persisted plan/apply replay, selected-surface evidence, Registry provenance revalidation, graph and enablement delegation, and fail-closed expired-plan recovery from Use-owned admission/completion evidence. Injection into each external managed host remains open |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
 | Mixed native/managed provider planning | Implemented in Use and the shared A3S host path: unbound drafts, assigned-provider preflight, host policy, canonical Grant-bound final selection, durable planning bundles/Grant snapshots/provider generations, exact apply-time reconstruction, restart replay, and provider-drift rejection are tested |
 | Exact published-generation Knowledge lease | Implemented in the Use Registry and SQLite Knowledge host. Acquisition binds the complete capability projection to the installed package, manifest, OKF bundle, lifecycle generation, and route lock; one lease retains that generation across cited search/read, rejects new calls after hide, participates in drain, and fails closed on package or retained-content drift. A3S Code consumption remains an external integration task |

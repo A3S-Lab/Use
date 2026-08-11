@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-10
+Last updated: 2026-08-11
 
 ## Product status
 
@@ -164,6 +164,11 @@ rejection. They are not supported decode paths.
   drain-before-revoke, and joint pre-cutover rollback.
 - [x] Manager MCP toolset v4 with explicit install-time Registry selection,
   read-only planning, and one apply tool.
+- [x] Production `CognitivePackageHostManager` for one exact managed-scope
+  fence, with durable request/operation binding, selected-surface planning,
+  digest-only graph and enablement apply, restart replay, provenance
+  revalidation, and expired-plan recovery only after Use-owned durable
+  admission or completion evidence.
 
 ### Validation and documentation
 

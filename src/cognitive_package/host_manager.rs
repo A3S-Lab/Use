@@ -27,6 +27,7 @@ use super::host_store::{
     StoredPluginHostRequest,
 };
 use super::plan::now_ms;
+use super::store::PackageGraphOperationPhase;
 use super::{
     CognitivePackageAuthorizationProvider, CognitivePackageEnablementRequest,
     CognitivePackageLifecycleFactory, CognitivePackageManager,
@@ -310,12 +311,7 @@ impl CognitivePackageHostManager {
         stored_request: &PluginHostEnablementPlanRequest,
         envelope: &PluginOperationPlanEnvelope,
     ) -> UseResult<AppliedOutcome> {
-        let cognitive_request = CognitivePackageEnablementRequest::new(
-            envelope.plan.operation_id.clone(),
-            stored_request.package_id.to_string(),
-            stored_request.expected_package_generation,
-            stored_request.enabled,
-        )?;
+        let cognitive_request = cognitive_enablement_request(stored_request, envelope)?;
         let result = self
             .manager
             .apply_enablement(
@@ -361,6 +357,99 @@ impl CognitivePackageHostManager {
             }
         }
         Ok(None)
+    }
+
+    fn verify_live_apply(
+        &self,
+        request: &PluginHostApplyRequest,
+        plan: &StoredPluginHostPlan,
+        current_time_ms: u64,
+    ) -> UseResult<()> {
+        match plan {
+            StoredPluginHostPlan::Graph { result, .. } => {
+                request.verify_apply_for_plan(result, &self.capabilities, current_time_ms)
+            }
+            StoredPluginHostPlan::Enablement { result, .. } => request
+                .verify_apply_for_enablement_plan(result, &self.capabilities, current_time_ms),
+        }
+    }
+
+    fn verify_admitted_replay(
+        &self,
+        request: &PluginHostApplyRequest,
+        plan: &StoredPluginHostPlan,
+    ) -> UseResult<()> {
+        match plan {
+            StoredPluginHostPlan::Graph { result, .. } => {
+                request.verify_admitted_replay_for_plan(result, &self.capabilities)
+            }
+            StoredPluginHostPlan::Enablement { result, .. } => {
+                request.verify_admitted_replay_for_enablement_plan(result, &self.capabilities)
+            }
+        }
+    }
+
+    async fn has_durable_admission(&self, plan: &StoredPluginHostPlan) -> UseResult<bool> {
+        match plan {
+            StoredPluginHostPlan::Graph { result, .. } => {
+                if self.graph_completion(&result.plan).await?.is_some() {
+                    return Ok(true);
+                }
+                let pending = self
+                    .manager
+                    .pending_store()
+                    .get(result.plan.plan.action, result.package_id.as_str())
+                    .await?;
+                let Some(pending) = pending else {
+                    return Ok(false);
+                };
+                if pending.envelope != result.plan {
+                    return Err(host_error(
+                        "use.plugin.host_admission_mismatch",
+                        "Use-owned package graph admission evidence does not match the stored Host plan.",
+                    ));
+                }
+                Ok(pending.phase() == PackageGraphOperationPhase::Admitted)
+            }
+            StoredPluginHostPlan::Enablement { request, result } => {
+                let Some(envelope) = result.plan.as_ref() else {
+                    return Ok(false);
+                };
+                let cognitive_request = cognitive_enablement_request(request, envelope)?;
+                let store = self.manager.enablement_store();
+                if let Some(operation) = store
+                    .get_operation(&self.manager.scope, &cognitive_request.operation_id)
+                    .await?
+                {
+                    if operation.request != cognitive_request || operation.envelope != *envelope {
+                        return Err(host_error(
+                            "use.plugin.host_admission_mismatch",
+                            "Use-owned enablement completion evidence does not match the stored Host plan.",
+                        ));
+                    }
+                    return Ok(true);
+                }
+                let Some(state) = store
+                    .get_state(&self.manager.scope, &cognitive_request.package_id)
+                    .await?
+                else {
+                    return Ok(false);
+                };
+                let Some(active) = state.active else {
+                    return Ok(false);
+                };
+                if active.request.operation_id != cognitive_request.operation_id {
+                    return Ok(false);
+                }
+                if active.request != cognitive_request || active.envelope != *envelope {
+                    return Err(host_error(
+                        "use.plugin.host_admission_mismatch",
+                        "Use-owned enablement admission evidence does not match the stored Host plan.",
+                    ));
+                }
+                Ok(true)
+            }
+        }
     }
 
     fn verify_fence(&self, scope: &PluginManagedScope) -> UseResult<()> {
@@ -441,24 +530,31 @@ impl PluginHostManager for CognitivePackageHostManager {
                 )
             })?;
 
-        match &stored.plan {
-            StoredPluginHostPlan::Graph { result, .. } => {
-                request.verify_apply_for_plan(result, &self.capabilities, now_ms()?)?;
-            }
-            StoredPluginHostPlan::Enablement { result, .. } => {
-                request.verify_apply_for_enablement_plan(result, &self.capabilities, now_ms()?)?;
-            }
-        }
-        if let Some(outcome) = &stored.outcome {
-            return apply_result(&request, outcome, true, &self.capabilities);
-        }
-
         let envelope = stored.plan.envelope().ok_or_else(|| {
             host_error(
                 "use.plugin.host_enablement_no_change",
                 "A no-change Host plan has no operation to apply.",
             )
         })?;
+        if let Err(error) = self.verify_live_apply(&request, &stored.plan, now_ms()?) {
+            if error.code != "use.plugin.plan_expired" {
+                return Err(error);
+            }
+            let durably_admitted = if stored.outcome.is_some() {
+                true
+            } else {
+                self.has_durable_admission(&stored.plan).await?
+            };
+            if !durably_admitted {
+                return Err(error);
+            }
+            self.verify_admitted_replay(&request, &stored.plan)?;
+        }
+        if let Some(outcome) = &stored.outcome {
+            validate_state_for_plan(&outcome.state, envelope)?;
+            return apply_result(&request, outcome, true, &self.capabilities);
+        }
+
         let applied = match &stored.plan {
             StoredPluginHostPlan::Graph {
                 request: stored_request,
@@ -655,6 +751,18 @@ fn require_request_lock(request: &PluginHostPlanRequest) -> UseResult<&PluginPac
             "The cognitive-package Host adapter requires the exact resolved package lock for every graph operation.",
         )
     })
+}
+
+fn cognitive_enablement_request(
+    request: &PluginHostEnablementPlanRequest,
+    envelope: &PluginOperationPlanEnvelope,
+) -> UseResult<CognitivePackageEnablementRequest> {
+    CognitivePackageEnablementRequest::new(
+        envelope.plan.operation_id.clone(),
+        request.package_id.to_string(),
+        request.expected_package_generation,
+        request.enabled,
+    )
 }
 
 fn verify_registry_provenance(

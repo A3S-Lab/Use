@@ -1,7 +1,7 @@
 # A3S Use Architecture
 
 Status: development preview; not production-ready
-Last updated: 2026-08-07
+Last updated: 2026-08-11
 
 ## Product boundary
 
@@ -44,6 +44,12 @@ Immutable package store · receipts · journals · capability snapshots
 The installed package store is authoritative. Host projections and deployed
 units are receipt-owned derived state; packages do not scatter authoritative
 files across host directories.
+
+The managed-host entry point is `CognitivePackageHostManager`, an adapter over
+`CognitivePackageManager`, not another manager. Its protocol store contains
+only request-to-plan, operation-to-request, and terminal-result bindings. All
+admission, recovery, package state, and capability publication evidence stays
+in the existing Use-owned stores shown below it.
 
 ## One current contract line
 

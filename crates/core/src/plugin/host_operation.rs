@@ -157,6 +157,24 @@ impl PluginHostApplyRequest {
         )
     }
 
+    /// Verify an exact replay after the manager has independently proven that
+    /// this plan already crossed its durable admission boundary.
+    ///
+    /// This deliberately evaluates the immutable confirmation inside the
+    /// original plan window instead of extending that window to the current
+    /// time. Callers must not use it for a merely planned operation.
+    pub fn verify_admitted_replay_for_plan(
+        &self,
+        plan: &PluginHostPlanResult,
+        capabilities: &PluginHostCapabilities,
+    ) -> UseResult<()> {
+        let validation_time = self
+            .confirmation
+            .as_ref()
+            .map_or(plan.plan.plan.created_at_ms, |value| value.confirmed_at_ms);
+        self.verify_apply_for_plan(plan, capabilities, validation_time)
+    }
+
     pub fn validate_for_enablement_plan(
         &self,
         plan: &PluginHostEnablementPlanResult,
@@ -174,6 +192,17 @@ impl PluginHostApplyRequest {
     ) -> UseResult<()> {
         plan.validate_for_capabilities(capabilities)?;
         self.verify_apply_for_plan(&plan.reviewed_plan()?, capabilities, now_ms)
+    }
+
+    /// Verify an enablement replay only after exact durable admission or
+    /// completion evidence has been loaded from the package manager.
+    pub fn verify_admitted_replay_for_enablement_plan(
+        &self,
+        plan: &PluginHostEnablementPlanResult,
+        capabilities: &PluginHostCapabilities,
+    ) -> UseResult<()> {
+        plan.validate_for_capabilities(capabilities)?;
+        self.verify_admitted_replay_for_plan(&plan.reviewed_plan()?, capabilities)
     }
 
     pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {

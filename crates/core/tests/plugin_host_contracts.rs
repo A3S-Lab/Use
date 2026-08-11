@@ -556,6 +556,26 @@ fn apply_binds_only_the_stored_plan_and_exact_confirmation() {
     );
     request.validate_for_capabilities(&capabilities()).unwrap();
     request.validate_for_plan(&plan, &capabilities()).unwrap();
+    assert_eq!(
+        request
+            .verify_apply_for_plan(&plan, &capabilities(), plan.plan.plan.expires_at_ms,)
+            .unwrap_err()
+            .code,
+        "use.plugin.plan_expired"
+    );
+    request
+        .verify_admitted_replay_for_plan(&plan, &capabilities())
+        .unwrap();
+
+    let mut late_confirmation = request.clone();
+    late_confirmation
+        .confirmation
+        .as_mut()
+        .unwrap()
+        .confirmed_at_ms = plan.plan.plan.expires_at_ms;
+    assert!(late_confirmation
+        .verify_admitted_replay_for_plan(&plan, &capabilities())
+        .is_err());
 
     let result = PluginHostApplyResult {
         schema: PLUGIN_HOST_APPLY_RESULT_SCHEMA.to_owned(),
