@@ -209,11 +209,12 @@ RegistryConfig
 └── reviewed configuration revision
 ```
 
-Managed hosts admit supplied bootstrap-root bytes through
-`TrustedRegistry::pin_trusted_root`. That API shares the engine's public
-one-MiB bound, exact configured digest, regular-file defense, metadata lock,
-and immutable cache, and returns the exact bootstrap digest, decoded root
-version, and byte size. It does not certify a Registry by itself. The ordinary
+Managed hosts derive exact digest/version/size evidence without state or
+network I/O through `inspect_bootstrap_root`, then admit those same bytes
+through `TrustedRegistry::pin_trusted_root`. Both APIs share the engine's
+public one-MiB bound and decoder. Pinning additionally enforces the exact
+configured digest, regular-file defense, metadata lock, and immutable cache.
+Neither operation certifies a Registry by itself. The ordinary
 refresh must still verify the complete TUF chain, expiry, rollback state, and
 catalog metadata before a result becomes trusted evidence. The bootstrap
 version identifies the caller-pinned object; catalog provenance separately

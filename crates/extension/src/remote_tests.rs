@@ -52,8 +52,10 @@ async fn caller_pinned_root_is_idempotent_and_never_downloaded() {
     let datastore = temp.path().join("tuf");
     let trusted = trusted_registry(&server, &repository, datastore.clone());
 
+    let inspected = inspect_bootstrap_root(&root).unwrap();
     let admitted = trusted.pin_trusted_root(&root).await.unwrap();
     let replayed = trusted.pin_trusted_root(&root).await.unwrap();
+    assert_eq!(admitted, inspected);
     assert_eq!(admitted, replayed);
     assert_eq!(admitted.root_sha256, repository.root_sha256);
     assert_eq!(admitted.root_version, 1);
@@ -80,6 +82,28 @@ async fn caller_pinned_root_is_idempotent_and_never_downloaded() {
         .requests()
         .iter()
         .all(|request| request != "/metadata/root.json"));
+}
+
+#[test]
+fn bootstrap_root_inspection_derives_exact_evidence_without_registry_state() {
+    let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 7, FUTURE);
+    let root = repository
+        .routes
+        .get("/metadata/root.json")
+        .expect("root route");
+
+    let inspected = inspect_bootstrap_root(root).expect("bootstrap root evidence");
+
+    assert_eq!(inspected.root_sha256, repository.root_sha256);
+    assert_eq!(inspected.root_version, 1);
+    assert_eq!(inspected.size_bytes, root.len() as u64);
+    for invalid in [Vec::new(), b"{\"signed\":{}}".to_vec()] {
+        let error = inspect_bootstrap_root(&invalid).expect_err("invalid bootstrap root");
+        assert_eq!(error.code, "use.extension.registry_root_invalid");
+    }
+    let oversized = vec![0_u8; MAX_BOOTSTRAP_ROOT_BYTES as usize + 1];
+    let error = inspect_bootstrap_root(&oversized).expect_err("oversized bootstrap root");
+    assert_eq!(error.code, "use.extension.registry_root_invalid");
 }
 
 #[tokio::test]

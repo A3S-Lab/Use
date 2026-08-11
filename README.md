@@ -554,12 +554,13 @@ sources is rejected as ambiguous.
 
 Current Registry rules:
 
-- Managed hosts can pin caller-supplied bootstrap-root bytes through
-  `TrustedRegistry::pin_trusted_root`. It returns the exact normalized digest,
-  bootstrap-root version, and byte size decoded from that trust anchor. The
-  single public one-MiB bound, configured digest, regular-file checks, and
-  immutable replay are enforced before the ordinary refresh performs the
-  complete TUF chain, expiration, and rollback verification.
+- Managed hosts first derive exact digest/version/size evidence from supplied
+  bytes through the state-free `inspect_bootstrap_root`, then pin those same
+  bytes through `TrustedRegistry::pin_trusted_root`. Both APIs share the single
+  public one-MiB bound and decoder; pinning additionally enforces the configured
+  digest, regular-file checks, metadata lock, and immutable replay before the
+  ordinary refresh performs the complete TUF chain, expiration, and rollback
+  verification.
 - TUF target `custom.a3s` metadata contains one complete catalog-v3 record.
 - Every executable catalog carries one separately signed `planning-v1.json`
   target. It distinguishes package-local Tool/stdio MCP launchers from

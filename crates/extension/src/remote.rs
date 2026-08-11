@@ -89,6 +89,18 @@ pub struct PinnedBootstrapRoot {
     pub size_bytes: u64,
 }
 
+/// Inspect caller-supplied bootstrap-root bytes without creating Registry
+/// state or performing network I/O.
+///
+/// The result identifies only the out-of-band trust anchor. It does not verify
+/// signatures, expiry, rollback state, or any later TUF metadata. A
+/// `TrustedRegistry` refresh remains required before catalog evidence is
+/// trusted.
+pub fn inspect_bootstrap_root(bytes: &[u8]) -> UseResult<PinnedBootstrapRoot> {
+    let (root_sha256, size_bytes) = bootstrap_root_identity(bytes)?;
+    decode_bootstrap_root(bytes, root_sha256, size_bytes)
+}
+
 impl TrustedRegistry {
     pub fn new(
         name: impl Into<String>,
@@ -787,20 +799,34 @@ async fn load_trusted_root(registry: &TrustedRegistry) -> UseResult<Vec<u8>> {
 }
 
 fn verify_root_bytes(registry: &TrustedRegistry, bytes: &[u8]) -> UseResult<()> {
-    if bytes.is_empty() || bytes.len() as u64 > MAX_BOOTSTRAP_ROOT_BYTES {
-        return Err(UseError::new(
-            "use.extension.registry_root_invalid",
-            "The trusted TUF root must contain at most one MiB.",
-        ));
-    }
-    verify_root_digest(registry, bytes)
+    let (actual, _) = bootstrap_root_identity(bytes)?;
+    verify_root_digest(registry, &actual)
 }
 
 fn pinned_bootstrap_root(
     registry: &TrustedRegistry,
     bytes: &[u8],
 ) -> UseResult<PinnedBootstrapRoot> {
-    verify_root_bytes(registry, bytes)?;
+    let (root_sha256, size_bytes) = bootstrap_root_identity(bytes)?;
+    verify_root_digest(registry, &root_sha256)?;
+    decode_bootstrap_root(bytes, root_sha256, size_bytes)
+}
+
+fn bootstrap_root_identity(bytes: &[u8]) -> UseResult<(String, u64)> {
+    if bytes.is_empty() || bytes.len() as u64 > MAX_BOOTSTRAP_ROOT_BYTES {
+        return Err(UseError::new(
+            "use.extension.registry_root_invalid",
+            "The trusted TUF root must contain at most one MiB.",
+        ));
+    }
+    Ok((format!("{:x}", Sha256::digest(bytes)), bytes.len() as u64))
+}
+
+fn decode_bootstrap_root(
+    bytes: &[u8],
+    root_sha256: String,
+    size_bytes: u64,
+) -> UseResult<PinnedBootstrapRoot> {
     let root = serde_json::from_slice::<Signed<Root>>(bytes).map_err(|error| {
         UseError::new(
             "use.extension.registry_root_invalid",
@@ -808,9 +834,9 @@ fn pinned_bootstrap_root(
         )
     })?;
     Ok(PinnedBootstrapRoot {
-        root_sha256: registry.root_sha256.clone(),
+        root_sha256,
         root_version: root.signed.version.get(),
-        size_bytes: bytes.len() as u64,
+        size_bytes,
     })
 }
 
@@ -903,8 +929,7 @@ async fn download_bootstrap_root(registry: &TrustedRegistry, url: &Url) -> UseRe
     Ok(bytes)
 }
 
-fn verify_root_digest(registry: &TrustedRegistry, bytes: &[u8]) -> UseResult<()> {
-    let actual = format!("{:x}", Sha256::digest(bytes));
+fn verify_root_digest(registry: &TrustedRegistry, actual: &str) -> UseResult<()> {
     if actual == registry.root_sha256 {
         return Ok(());
     }
@@ -916,7 +941,7 @@ fn verify_root_digest(registry: &TrustedRegistry, bytes: &[u8]) -> UseResult<()>
         ),
     )
     .with_detail("expected", registry.root_sha256.clone())
-    .with_detail("actual", actual))
+    .with_detail("actual", actual.to_owned()))
 }
 
 async fn write_bootstrap_root(path: &Path, bytes: &[u8]) -> UseResult<()> {
