@@ -80,6 +80,7 @@ impl PluginRuntimeServiceReadinessHost for DurableReadiness {
         _observation: &RuntimeObservation,
         runtime_endpoint: &RuntimeServiceEndpoint,
         idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
     ) -> UseResult<RuntimeEndpointRef> {
         if runtime_endpoint.port_name != "http" {
             return Err(gateway_error("Tool Runtime endpoint changed."));
@@ -105,6 +106,7 @@ impl PluginRuntimeServiceReadinessHost for DurableReadiness {
         observation: &RuntimeObservation,
         runtime_endpoint: &RuntimeServiceEndpoint,
         idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
     ) -> UseResult<PluginMcpServiceReadiness> {
         if runtime_endpoint.port_name != "mcp" {
             return Err(gateway_error("MCP Runtime endpoint changed."));
@@ -143,6 +145,7 @@ impl PluginRuntimeServiceReadinessHost for DurableReadiness {
         intent: &PluginLifecycleIntent,
         receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
     ) -> UseResult<()> {
         let effect = read_optional_json::<GatewayEffect>(&self.root.join("route.json"))
             .await
@@ -156,6 +159,7 @@ impl PluginRuntimeServiceReadinessHost for DurableReadiness {
         intent: &PluginLifecycleIntent,
         receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
     ) -> UseResult<()> {
         let path = self.root.join("route.json");
         let effect = read_optional_json::<GatewayEffect>(&path)

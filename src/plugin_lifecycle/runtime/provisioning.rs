@@ -49,6 +49,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                     &observation,
                     &runtime_endpoint,
                     &provisioning.lifecycle_idempotency_key,
+                    self.deadline_at_ms,
                 )
                 .await?;
             provisioning
@@ -107,6 +108,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                     &observation,
                     &runtime_endpoint,
                     &provisioning.lifecycle_idempotency_key,
+                    self.deadline_at_ms,
                 )
                 .await?;
             provisioning.record_gateway_readiness(

@@ -636,6 +636,7 @@ impl PluginRuntimeServiceReadinessHost for UnavailableRuntimeServiceReadinessHos
         _observation: &RuntimeObservation,
         _runtime_endpoint: &RuntimeServiceEndpoint,
         _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
     ) -> UseResult<RuntimeEndpointRef> {
         Err(provider_error(
             "use.plugin.runtime_provider_required",
@@ -651,6 +652,7 @@ impl PluginRuntimeServiceReadinessHost for UnavailableRuntimeServiceReadinessHos
         _observation: &RuntimeObservation,
         _runtime_endpoint: &RuntimeServiceEndpoint,
         _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
     ) -> UseResult<PluginMcpServiceReadiness> {
         Err(provider_error(
             "use.plugin.runtime_provider_required",
@@ -663,6 +665,7 @@ impl PluginRuntimeServiceReadinessHost for UnavailableRuntimeServiceReadinessHos
         _intent: &PluginLifecycleIntent,
         _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
     ) -> UseResult<()> {
         Err(provider_error(
             "use.plugin.runtime_provider_required",
@@ -675,6 +678,7 @@ impl PluginRuntimeServiceReadinessHost for UnavailableRuntimeServiceReadinessHos
         _intent: &PluginLifecycleIntent,
         _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         _idempotency_key: &str,
+        _deadline_at_ms: Option<u64>,
     ) -> UseResult<()> {
         Err(provider_error(
             "use.plugin.runtime_provider_required",

@@ -143,7 +143,9 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
         registry,
         store.clone(),
         readiness.clone(),
-    );
+    )
+    .with_deadline_at_ms(Some(9_876_543))
+    .unwrap();
     let tool_key = key(&intent, PluginSurfaceKind::Tool, &tool.id);
     let mcp_key = key(&intent, PluginSurfaceKind::Mcp, &mcp.id);
 
@@ -200,6 +202,10 @@ async fn tool_and_streamable_http_mcp_use_receipt_backed_runtime_lifecycle() {
     assert_eq!(mcp_runtime.remove_count.load(Ordering::SeqCst), 1);
     assert_eq!(readiness.drains.load(Ordering::SeqCst), 3);
     assert_eq!(readiness.removals.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        *readiness.deadlines.lock().unwrap(),
+        vec![Some(9_876_543); 7]
+    );
     assert!(store
         .get(&intent.scope, &tool_plan.surface())
         .await
@@ -549,6 +555,7 @@ struct RecordingReadiness {
     fail_tool_binds: AtomicUsize,
     fail_mcp_binds: AtomicUsize,
     fail_drain: bool,
+    deadlines: Mutex<Vec<Option<u64>>>,
 }
 
 #[async_trait]
@@ -561,7 +568,9 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
         _observation: &RuntimeObservation,
         runtime_endpoint: &RuntimeServiceEndpoint,
         _idempotency_key: &str,
+        deadline_at_ms: Option<u64>,
     ) -> UseResult<RuntimeEndpointRef> {
+        self.deadlines.lock().unwrap().push(deadline_at_ms);
         assert_eq!(runtime_endpoint.port_name, "http");
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self
@@ -587,7 +596,9 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
         observation: &RuntimeObservation,
         runtime_endpoint: &RuntimeServiceEndpoint,
         _idempotency_key: &str,
+        deadline_at_ms: Option<u64>,
     ) -> UseResult<PluginMcpServiceReadiness> {
+        self.deadlines.lock().unwrap().push(deadline_at_ms);
         assert_eq!(runtime_endpoint.port_name, "mcp");
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self
@@ -622,7 +633,9 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
         _intent: &PluginLifecycleIntent,
         _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         _idempotency_key: &str,
+        deadline_at_ms: Option<u64>,
     ) -> UseResult<()> {
+        self.deadlines.lock().unwrap().push(deadline_at_ms);
         self.drains.fetch_add(1, Ordering::SeqCst);
         if self.fail_drain {
             return Err(UseError::new(
@@ -638,7 +651,9 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
         _intent: &PluginLifecycleIntent,
         _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         _idempotency_key: &str,
+        deadline_at_ms: Option<u64>,
     ) -> UseResult<()> {
+        self.deadlines.lock().unwrap().push(deadline_at_ms);
         self.removals.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }

@@ -53,7 +53,8 @@ pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
     /// Idempotently create or recover the exact Tool route for this lifecycle
     /// checkpoint. If an earlier call may have committed its Gateway effect
     /// before returning an error, replaying the same key must return that same
-    /// binding identity.
+    /// binding identity. `deadline_at_ms` is the same absolute lifecycle
+    /// deadline passed to Runtime and must bound route health verification.
     async fn bind_tool_service(
         &self,
         intent: &PluginLifecycleIntent,
@@ -62,11 +63,13 @@ pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
         observation: &RuntimeObservation,
         runtime_endpoint: &RuntimeServiceEndpoint,
         idempotency_key: &str,
+        deadline_at_ms: Option<u64>,
     ) -> UseResult<RuntimeEndpointRef>;
 
     /// Idempotently create or recover the exact MCP route and initialize
     /// evidence for this lifecycle checkpoint. Ambiguous failures must
-    /// converge when the same key is replayed.
+    /// converge when the same key is replayed. `deadline_at_ms` also bounds
+    /// Streamable HTTP initialize negotiation.
     async fn bind_mcp_service(
         &self,
         intent: &PluginLifecycleIntent,
@@ -75,29 +78,34 @@ pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
         observation: &RuntimeObservation,
         runtime_endpoint: &RuntimeServiceEndpoint,
         idempotency_key: &str,
+        deadline_at_ms: Option<u64>,
     ) -> UseResult<PluginMcpServiceReadiness>;
 
     /// Hide one exact Gateway binding and wait for calls admitted through it.
     ///
     /// Implementations must be idempotent for the supplied operation key. The
     /// Runtime Service remains available until this completes, so a route can
-    /// never outlive its upstream generation during normal retirement.
+    /// never outlive its upstream generation during normal retirement. The
+    /// supplied absolute deadline must bound admission closure and draining.
     async fn drain_service(
         &self,
         intent: &PluginLifecycleIntent,
         receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         idempotency_key: &str,
+        deadline_at_ms: Option<u64>,
     ) -> UseResult<()>;
 
     /// Remove one already-drained, receipt-owned Gateway binding.
     ///
     /// This must not remove a route with a different endpoint identity or
-    /// generation. Retrying an already completed removal returns success.
+    /// generation. Retrying an already completed removal returns success, and
+    /// the supplied absolute deadline bounds the removal acknowledgement.
     async fn remove_service(
         &self,
         intent: &PluginLifecycleIntent,
         receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         idempotency_key: &str,
+        deadline_at_ms: Option<u64>,
     ) -> UseResult<()>;
 }
 
@@ -375,7 +383,7 @@ impl RuntimePluginSurfaceLifecycleHost {
         if let RuntimeBindingReceipt::Service(service) = &receipt {
             let client = self.client_for_receipt(&receipt).await?;
             self.readiness
-                .drain_service(intent, service, idempotency_key)
+                .drain_service(intent, service, idempotency_key, self.deadline_at_ms)
                 .await?;
             client
                 .stop_service(
@@ -429,7 +437,7 @@ impl RuntimePluginSurfaceLifecycleHost {
             RuntimeBindingReceipt::Service(service) => {
                 let client = self.client_for_receipt(receipt).await?;
                 self.readiness
-                    .drain_service(intent, service, idempotency_key)
+                    .drain_service(intent, service, idempotency_key, self.deadline_at_ms)
                     .await?;
                 client
                     .stop_service(
@@ -439,7 +447,7 @@ impl RuntimePluginSurfaceLifecycleHost {
                     )
                     .await?;
                 self.readiness
-                    .remove_service(intent, service, idempotency_key)
+                    .remove_service(intent, service, idempotency_key, self.deadline_at_ms)
                     .await?;
                 client
                     .remove_service(
