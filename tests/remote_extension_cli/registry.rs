@@ -419,20 +419,13 @@ fn registry_install_rejects_unsigned_and_local_source_combinations() {
 fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowledge() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
-    let package_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("crates/extension/fixtures/packages/plugin-v3-okf/package");
-    let archive = package_directory_archive(&package_root);
-    let mut catalog: serde_json::Value = serde_json::from_slice(OKF_CATALOG_V3).unwrap();
-    catalog["target"] = serde_json::json!(&target);
-    catalog["archive"]["targetName"] = serde_json::json!(format!(
-        "extensions/acme/knowledge/1.0.0/stable/{target}/acme-knowledge-1.0.0-{target}.tar.gz"
-    ));
-    let target_name = catalog["archive"]["targetName"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let repository =
-        TestRepository::with_target_metadata(archive, target_name, catalog, 17, FUTURE);
+    let package = cognitive_okf_target(
+        temp.path(),
+        "1.0.0",
+        "Package activation keeps exact-generation evidence ready.",
+        &target,
+    );
+    let repository = TestRepository::with_targets(vec![package], 17, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
 
