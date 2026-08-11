@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use tough::{ExpirationEnforcement, HttpTransportBuilder, Limits, Repository};
+use tough::{ExpirationEnforcement, Limits, Repository};
 use tough::{RepositoryLoader, TargetName};
 use url::Url;
 
@@ -25,6 +25,7 @@ use super::package::{activate_temporary_file, io_error, sync_parent_directory, u
 mod cache_policy;
 mod catalog;
 mod download;
+mod network;
 mod package_graph;
 mod resumable_http;
 mod target;
@@ -44,6 +45,7 @@ pub use catalog::{
     MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };
 pub use download::{DownloadedRemotePackage, PreparedRemotePackage};
+pub use network::RegistryNetworkPolicy;
 pub use package_graph::{
     download_locked_cached_remote_packages, download_locked_remote_packages,
     download_selected_locked_cached_remote_packages, download_selected_locked_remote_packages,
@@ -71,6 +73,7 @@ pub struct TrustedRegistry {
     trusted_root_path: Option<PathBuf>,
     datastore: PathBuf,
     target_cache_policy: VerifiedTargetCachePolicy,
+    network_policy: RegistryNetworkPolicy,
 }
 
 impl TrustedRegistry {
@@ -107,6 +110,7 @@ impl TrustedRegistry {
             trusted_root_path,
             datastore,
             target_cache_policy: VerifiedTargetCachePolicy::default(),
+            network_policy: RegistryNetworkPolicy::default(),
         })
     }
 
@@ -144,6 +148,15 @@ impl TrustedRegistry {
 
     pub fn with_target_cache_policy(mut self, policy: VerifiedTargetCachePolicy) -> Self {
         self.target_cache_policy = policy;
+        self
+    }
+
+    pub const fn network_policy(&self) -> RegistryNetworkPolicy {
+        self.network_policy
+    }
+
+    pub fn with_network_policy(mut self, policy: RegistryNetworkPolicy) -> Self {
+        self.network_policy = policy;
         self
     }
 
@@ -598,11 +611,7 @@ async fn load_repository(registry: &TrustedRegistry) -> UseResult<Repository> {
     let root = load_trusted_root(registry).await?;
     let metadata_url = registry.metadata_url()?;
     let targets_url = registry.targets_url()?;
-    let transport = HttpTransportBuilder::new()
-        .timeout(Duration::from_secs(300))
-        .connect_timeout(Duration::from_secs(15))
-        .tries(3)
-        .build();
+    let transport = network::RegistryTransport::new(registry.network_policy());
     let repository = RepositoryLoader::new(&root, metadata_url, targets_url)
         .transport(transport)
         .datastore(&registry.datastore)
@@ -715,7 +724,7 @@ async fn load_trusted_root(registry: &TrustedRegistry) -> UseResult<Vec<u8>> {
                     format!("Failed to resolve the bootstrap root URL: {error}"),
                 )
             })?;
-            let bytes = download_bootstrap_root(&root_url).await?;
+            let bytes = download_bootstrap_root(registry, &root_url).await?;
             verify_root_digest(registry, &bytes)?;
             write_bootstrap_root(&cache, &bytes).await?;
             bytes
@@ -732,20 +741,26 @@ async fn load_trusted_root(registry: &TrustedRegistry) -> UseResult<Vec<u8>> {
     Ok(bytes)
 }
 
-async fn download_bootstrap_root(url: &Url) -> UseResult<Vec<u8>> {
+async fn download_bootstrap_root(registry: &TrustedRegistry, url: &Url) -> UseResult<Vec<u8>> {
     validate_download_url(url)?;
-    let client = reqwest::Client::builder()
-        .user_agent("a3s-use-extension/0.1")
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|error| {
-            UseError::new(
-                "use.extension.registry_download_failed",
-                format!("Failed to build the registry client: {error}"),
-            )
-        })?;
+    let client = match registry.network_policy() {
+        RegistryNetworkPolicy::Standard => reqwest::Client::builder()
+            .user_agent("a3s-use-extension/0.3")
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+            .map_err(|error| {
+                UseError::new(
+                    "use.extension.registry_download_failed",
+                    format!("Failed to build the registry client: {error}"),
+                )
+            })?,
+        RegistryNetworkPolicy::PublicInternet => {
+            network::public_internet_client(url, Duration::from_secs(15), Duration::from_secs(30))
+                .await?
+        }
+    };
     let mut response = client.get(url.clone()).send().await.map_err(|error| {
         UseError::new(
             "use.extension.registry_download_failed",

@@ -7,7 +7,7 @@ use tough::TargetName;
 use url::Url;
 
 use super::target_cache::ResumableTarget;
-use super::validate_download_url;
+use super::{network, validate_download_url, RegistryNetworkPolicy};
 
 const MAX_DOWNLOAD_ATTEMPTS: usize = 3;
 const MAX_REDIRECTS: usize = 5;
@@ -48,23 +48,29 @@ pub(super) fn target_url(
 pub(super) async fn download(
     target: &mut ResumableTarget,
     url: &Url,
+    network_policy: RegistryNetworkPolicy,
     error_code: &'static str,
 ) -> UseResult<()> {
     if target.is_ready() {
         return Ok(());
     }
-    let client = reqwest::Client::builder()
-        .user_agent("a3s-use-extension/0.3")
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(300))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|error| {
-            download_error(
-                error_code,
-                format!("Failed to build the Registry target client: {error}"),
-            )
-        })?;
+    let standard_client = match network_policy {
+        RegistryNetworkPolicy::Standard => Some(
+            reqwest::Client::builder()
+                .user_agent("a3s-use-extension/0.3")
+                .connect_timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(300))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|error| {
+                    download_error(
+                        error_code,
+                        format!("Failed to build the Registry target client: {error}"),
+                    )
+                })?,
+        ),
+        RegistryNetworkPolicy::PublicInternet => None,
+    };
 
     let mut last_stream_error = None;
     for attempt in 0..MAX_DOWNLOAD_ATTEMPTS {
@@ -72,7 +78,15 @@ pub(super) async fn download(
             return target.commit(error_code).await;
         }
         let requested_offset = target.offset();
-        let mut response = match send_request(&client, url, requested_offset, error_code).await {
+        let mut response = match send_request(
+            standard_client.as_ref(),
+            network_policy,
+            url,
+            requested_offset,
+            error_code,
+        )
+        .await
+        {
             Ok(response) => response,
             Err(error) if attempt + 1 < MAX_DOWNLOAD_ATTEMPTS => {
                 last_stream_error = Some(error.message);
@@ -154,7 +168,8 @@ pub(super) async fn download(
 }
 
 async fn send_request(
-    client: &reqwest::Client,
+    standard_client: Option<&reqwest::Client>,
+    network_policy: RegistryNetworkPolicy,
     initial_url: &Url,
     offset: u64,
     error_code: &'static str,
@@ -165,6 +180,18 @@ async fn send_request(
     let mut url = initial_url.clone();
     for redirects in 0..=MAX_REDIRECTS {
         validate_redirect_url(&url, require_https, error_code)?;
+        let client = match network_policy {
+            RegistryNetworkPolicy::Standard => standard_client.cloned().ok_or_else(|| {
+                download_error(error_code, "The standard Registry client is unavailable.")
+            })?,
+            RegistryNetworkPolicy::PublicInternet => network::public_internet_client(
+                &url,
+                Duration::from_secs(15),
+                Duration::from_secs(300),
+            )
+            .await
+            .map_err(|error| download_error(error_code, error.message))?,
+        };
         let mut request = client.get(url.clone()).header(ACCEPT_ENCODING, "identity");
         if offset > 0 {
             request = request.header(RANGE, format!("bytes={offset}-"));

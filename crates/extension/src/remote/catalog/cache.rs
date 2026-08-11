@@ -12,8 +12,8 @@ use url::Url;
 use crate::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
 
 use super::super::{
-    acquire_metadata_lock, validate_download_url, TrustedRegistry, MAX_BOOTSTRAP_ROOT_BYTES,
-    MAX_ROOT_UPDATES,
+    acquire_metadata_lock, network, validate_download_url, RegistryNetworkPolicy, TrustedRegistry,
+    MAX_BOOTSTRAP_ROOT_BYTES, MAX_ROOT_UPDATES,
 };
 use super::{catalog_cache_error, VerifiedRegistryMetadata};
 
@@ -57,6 +57,7 @@ pub(super) async fn record_catalog_refresh(
     .await?;
     let metadata_url = registry.metadata_url()?;
     let timestamp = download_metadata_role(
+        registry,
         &metadata_url.join("timestamp.json").map_err(|error| {
             catalog_cache_error(
                 "use.extension.registry_url_invalid",
@@ -76,6 +77,7 @@ pub(super) async fn record_catalog_refresh(
         "snapshot.json".to_owned()
     };
     let snapshot = download_metadata_role(
+        registry,
         &metadata_url.join(&snapshot_name).map_err(|error| {
             catalog_cache_error(
                 "use.extension.registry_url_invalid",
@@ -92,6 +94,7 @@ pub(super) async fn record_catalog_refresh(
         "targets.json".to_owned()
     };
     let targets = download_metadata_role(
+        registry,
         &metadata_url.join(&targets_name).map_err(|error| {
             catalog_cache_error(
                 "use.extension.registry_url_invalid",
@@ -360,20 +363,31 @@ async fn ensure_cache_directory(datastore: &Path) -> UseResult<std::path::PathBu
     Ok(path)
 }
 
-async fn download_metadata_role(url: &Url, max_bytes: u64, role: &str) -> UseResult<Vec<u8>> {
+async fn download_metadata_role(
+    registry: &TrustedRegistry,
+    url: &Url,
+    max_bytes: u64,
+    role: &str,
+) -> UseResult<Vec<u8>> {
     validate_download_url(url)?;
-    let client = reqwest::Client::builder()
-        .user_agent("a3s-use-extension/0.2")
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|error| {
-            catalog_cache_error(
-                "use.extension.registry_download_failed",
-                format!("Failed to build the catalog metadata client: {error}"),
-            )
-        })?;
+    let client = match registry.network_policy() {
+        RegistryNetworkPolicy::Standard => reqwest::Client::builder()
+            .user_agent("a3s-use-extension/0.3")
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+            .map_err(|error| {
+                catalog_cache_error(
+                    "use.extension.registry_download_failed",
+                    format!("Failed to build the catalog metadata client: {error}"),
+                )
+            })?,
+        RegistryNetworkPolicy::PublicInternet => {
+            network::public_internet_client(url, Duration::from_secs(15), Duration::from_secs(30))
+                .await?
+        }
+    };
     let mut response = client.get(url.clone()).send().await.map_err(|error| {
         catalog_cache_error(
             "use.extension.registry_download_failed",

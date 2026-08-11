@@ -63,6 +63,12 @@ The implementation and fixtures exercise the product model directly:
 - [`RegistrySourceStore`](crates/extension/src/registry_sources/mod.rs) persists
   canonical revision-addressed ACL source configuration, imports digest-bound
   trusted roots, and isolates TUF metadata and caches by source identity.
+- [`RegistryNetworkPolicy`](crates/extension/src/remote/network.rs) lets an
+  embedding host select the strict public-Internet boundary for untrusted
+  Registry endpoints. That mode requires HTTPS, pins checked DNS answers,
+  rejects non-public address space and proxies, disables automatic redirects,
+  rechecks bounded target redirects at every hop, and applies to TUF metadata,
+  bootstrap roots, planning targets, and package targets alike.
 - [`CognitivePackageManager`](src/cognitive_package/) binds signed catalog
   evidence, exact locks, reviewed plans, authorization, and crash replay.
 - [`CognitivePackageHostManager`](src/cognitive_package/host_manager.rs)
@@ -734,7 +740,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Area | Status |
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
-| Signed catalog-v3, TUF verification, and durable replaceable Registry sources | Implemented in the engine and standalone CLI |
+| Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Manager MCP install planning with canonical `registryName` source selection | Implemented in toolset v4; upgrade remains pinned to installed provenance |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |

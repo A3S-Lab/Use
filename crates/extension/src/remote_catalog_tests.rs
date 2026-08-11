@@ -98,6 +98,35 @@ async fn complete_signed_fixture_is_searchable_and_inspectable_without_archive_d
 }
 
 #[tokio::test]
+async fn public_catalog_policy_rejects_loopback_before_metadata_transport() {
+    let routes = HashMap::from([(
+        "/metadata/timestamp.json".to_owned(),
+        canonical_fixture(FIXTURE_TIMESTAMP).to_vec(),
+    )]);
+    let server = TestServer::start(routes);
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root.json");
+    std::fs::write(&root, canonical_fixture(FIXTURE_ROOT)).unwrap();
+    let trusted = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        FIXTURE_ROOT_SHA256,
+        Some(root),
+        temp.path().join("tuf"),
+    )
+    .unwrap()
+    .with_network_policy(RegistryNetworkPolicy::PublicInternet);
+    let host = PluginCatalogHost::new("linux-x86_64", "0.3.0").unwrap();
+
+    let error = search_remote_plugins(&trusted, &host, &catalog_search("", 20))
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.extension.registry_untrusted");
+    assert!(server.requests().is_empty());
+}
+
+#[tokio::test]
 async fn package_graph_resolution_and_download_replay_the_exact_verified_lock() {
     let package_root =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/plugin-v3-okf/package");

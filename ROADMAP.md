@@ -95,6 +95,11 @@ rejection. They are not supported decode paths.
   ceiling.
 - [x] Complete current TUF metadata validation and cache verified archives and
   signed planning targets by SHA-256.
+- [x] Provide one strict public-Internet Registry transport policy for managed
+  hosts: HTTPS only, per-request DNS validation and address pinning, no ambient
+  proxy or automatic redirects, per-hop validation of bounded target redirects,
+  and fail-closed denial of non-public address space across metadata,
+  bootstrap-root, planning-target, and package-target downloads.
 - [x] Persist up to 64 named Registry sources in canonical ACL with one enabled
   default, revision-bound confirmed authority changes, managed digest-bound
   root import, and source-identity-isolated TUF/cache datastores. Install and

@@ -11,8 +11,10 @@ description = "ACL manifest and native surface contracts for A3S Use extensions"
 [dependencies]
 a3s-acl = "=0.2.2"
 a3s-use-core = { version = "0.2.2", path = "../core" }
+async-trait.workspace = true
 fs2.workspace = true
 flate2.workspace = true
+futures-util.workspace = true
 olpc-cjson = "0.1"
 reqwest.workspace = true
 serde.workspace = true

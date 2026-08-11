@@ -112,6 +112,39 @@ async fn source_mutations_are_revision_bound_and_preserve_isolated_datastores() 
 }
 
 #[tokio::test]
+async fn host_network_policy_is_applied_to_every_resolved_source() {
+    let temporary = tempfile::tempdir().unwrap();
+    let store = store(temporary.path()).with_network_policy(RegistryNetworkPolicy::PublicInternet);
+    store
+        .add(input(
+            "primary",
+            "https://registry.example/",
+            &"a".repeat(64),
+        ))
+        .await
+        .unwrap();
+    store
+        .add(input(
+            "dependency",
+            "https://dependency.example/",
+            &"b".repeat(64),
+        ))
+        .await
+        .unwrap();
+
+    let resolved = store.resolve(Some("primary")).await.unwrap();
+
+    assert_eq!(
+        resolved.root().network_policy(),
+        RegistryNetworkPolicy::PublicInternet
+    );
+    assert!(resolved
+        .dependencies()
+        .iter()
+        .all(|registry| { registry.network_policy() == RegistryNetworkPolicy::PublicInternet }));
+}
+
+#[tokio::test]
 async fn disabling_the_only_source_removes_selection_without_deleting_trust_state() {
     let temporary = tempfile::tempdir().unwrap();
     let store = store(temporary.path());

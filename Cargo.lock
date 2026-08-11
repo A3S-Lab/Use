@@ -121,8 +121,10 @@ version = "0.3.0"
 dependencies = [
  "a3s-acl",
  "a3s-use-core",
+ "async-trait",
  "flate2",
  "fs2",
+ "futures-util",
  "olpc-cjson",
  "reqwest 0.12.28",
  "ring",

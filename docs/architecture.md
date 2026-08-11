@@ -12,7 +12,8 @@ Windows, but it does not replace an operating-system package manager.
 Use owns:
 
 - package identity, SemVer resolution, exact locks, and dependency order;
-- replaceable Registry input and end-to-end TUF provenance;
+- replaceable Registry input, a host-selected network boundary, and end-to-end
+  TUF provenance;
 - immutable package generations, receipts, plans, and operation journals;
 - reviewed authorization and Workspace Grant transitions; and
 - one atomic capability-Registry cutover per package graph mutation.

@@ -5,7 +5,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::remote::{normalize_registry_url, normalize_sha256};
-use crate::{ExtensionPaths, TrustedRegistry, VerifiedTargetCachePolicy};
+use crate::{ExtensionPaths, RegistryNetworkPolicy, TrustedRegistry, VerifiedTargetCachePolicy};
 
 mod acl;
 mod io;
@@ -95,6 +95,7 @@ impl ResolvedRegistrySources {
 #[derive(Debug, Clone)]
 pub struct RegistrySourceStore {
     paths: ExtensionPaths,
+    network_policy: RegistryNetworkPolicy,
 }
 
 impl RegistrySourceStore {
@@ -103,7 +104,15 @@ impl RegistrySourceStore {
     }
 
     pub fn new(paths: ExtensionPaths) -> Self {
-        Self { paths }
+        Self {
+            paths,
+            network_policy: RegistryNetworkPolicy::default(),
+        }
+    }
+
+    pub fn with_network_policy(mut self, policy: RegistryNetworkPolicy) -> Self {
+        self.network_policy = policy;
+        self
     }
 
     pub async fn snapshot(&self) -> UseResult<RegistrySourceSnapshot> {
@@ -372,7 +381,8 @@ impl RegistrySourceStore {
             self.paths
                 .registry_source_datastore(&source.name, &source.source_identity)?,
         )?
-        .with_target_cache_policy(source.cache_policy))
+        .with_target_cache_policy(source.cache_policy)
+        .with_network_policy(self.network_policy))
     }
 }
 

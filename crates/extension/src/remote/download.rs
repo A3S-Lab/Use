@@ -12,8 +12,8 @@ use super::resumable_http;
 use super::target_cache::{stage_cached_target, ResumableTarget};
 use super::target_cache_inventory::ensure_staging_capacity;
 use super::{
-    hex_lower, RemoteRegistryAccess, ResolvedRemotePackage, VerifiedTargetCachePolicy,
-    REGISTRY_METADATA_KEY,
+    hex_lower, RegistryNetworkPolicy, RemoteRegistryAccess, ResolvedRemotePackage,
+    VerifiedTargetCachePolicy, REGISTRY_METADATA_KEY,
 };
 
 /// Verified repository state retained until its exact target is downloaded.
@@ -108,6 +108,7 @@ impl PreparedRemotePackage {
                     &target_name,
                     self.registry.datastore(),
                     &self.registry.targets_url()?,
+                    self.registry.network_policy(),
                     self.repository.root().signed.consistent_snapshot,
                     expected.length,
                     digest,
@@ -150,6 +151,7 @@ impl PreparedRemotePackage {
                     &self.target_name,
                     self.registry.datastore(),
                     &self.registry.targets_url()?,
+                    self.registry.network_policy(),
                     self.repository.root().signed.consistent_snapshot,
                     self.resolved.length,
                     &self.resolved.sha256,
@@ -185,6 +187,7 @@ async fn download_and_cache_target(
     target_name: &TargetName,
     datastore: &Path,
     targets_url: &Url,
+    network_policy: RegistryNetworkPolicy,
     consistent_snapshot: bool,
     expected_length: u64,
     expected_sha256: &str,
@@ -248,7 +251,7 @@ async fn download_and_cache_target(
         } else {
             "use.extension.registry_download_failed"
         };
-        resumable_http::download(&mut target, &url, error_code).await?;
+        resumable_http::download(&mut target, &url, network_policy, error_code).await?;
     }
     let file_name = target_name
         .resolved()
