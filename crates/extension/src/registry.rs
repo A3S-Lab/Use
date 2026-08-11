@@ -267,6 +267,14 @@ impl ExtensionRouteLease {
     pub fn extension(&self) -> &InstalledExtension {
         &self.extension
     }
+
+    /// Revalidate the immutable package bytes while retaining the existing
+    /// route lease. Lifecycle cutover may publish a newer generation while a
+    /// caller is draining this lease, but package or manifest drift must
+    /// still fail closed before a host returns cited content.
+    pub async fn verify_integrity(&self) -> UseResult<()> {
+        verify_package_integrity(&self.extension).await
+    }
 }
 
 impl Drop for ExtensionRouteLease {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use a3s_use_core::{
     OkfKnowledgeObservation, OkfKnowledgeObservedState, OkfProjectionReceipt,
-    OkfSelectedGeneration, UseResult, OKF_KNOWLEDGE_OBSERVATION_SCHEMA,
+    OkfSelectedGeneration, UseError, UseResult, OKF_KNOWLEDGE_OBSERVATION_SCHEMA,
     OKF_PROJECTION_RECEIPT_SCHEMA,
 };
 use a3s_use_extension::ExtensionManifest;
@@ -13,8 +13,8 @@ use tokio::sync::Mutex;
 
 use crate::okf_knowledge::{
     OkfKnowledgeAdapter, OkfKnowledgeBinding, OkfKnowledgeBindingStore, OkfKnowledgeClient,
-    OkfKnowledgeSearchRequest, OkfKnowledgeSearchResponse, OkfKnowledgeStageRequest,
-    SqliteOkfKnowledgeAdapter,
+    OkfKnowledgeReadRequest, OkfKnowledgeReadResponse, OkfKnowledgeSearchRequest,
+    OkfKnowledgeSearchResponse, OkfKnowledgeStageRequest, SqliteOkfKnowledgeAdapter,
 };
 use crate::plugin_lifecycle::{
     PluginLifecycleAction, PluginLifecycleIntent, PluginLifecycleIntentSpec,
@@ -90,6 +90,16 @@ impl OkfKnowledgeAdapter for FakeKnowledgeAdapter {
         request: &OkfKnowledgeSearchRequest,
     ) -> UseResult<OkfKnowledgeSearchResponse> {
         OkfKnowledgeSearchResponse::new(request, Vec::new())
+    }
+
+    async fn read(
+        &self,
+        _request: &OkfKnowledgeReadRequest,
+    ) -> UseResult<OkfKnowledgeReadResponse> {
+        Err(UseError::new(
+            "use.test.knowledge_read_not_configured",
+            "The lifecycle test double does not provide document reads.",
+        ))
     }
 }
 

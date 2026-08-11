@@ -534,11 +534,15 @@ async fn gateway_drain_failure_preserves_runtime_and_binding_for_replay() {
         .is_some());
 }
 
+mod provisioning;
+
 #[derive(Default)]
 struct RecordingReadiness {
     calls: AtomicUsize,
     drains: AtomicUsize,
     removals: AtomicUsize,
+    fail_tool_binds: AtomicUsize,
+    fail_mcp_binds: AtomicUsize,
     fail_drain: bool,
 }
 
@@ -555,6 +559,18 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
     ) -> UseResult<RuntimeEndpointRef> {
         assert_eq!(runtime_endpoint.port_name, "http");
         self.calls.fetch_add(1, Ordering::SeqCst);
+        if self
+            .fail_tool_binds
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Err(UseError::new(
+                "use.plugin.gateway_bind_failed",
+                "The test Gateway interrupted its Tool route bind.",
+            ));
+        }
         RuntimeEndpointRef::parse(endpoint_id(intent, &surface.id))
     }
 
@@ -569,6 +585,18 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
     ) -> UseResult<PluginMcpServiceReadiness> {
         assert_eq!(runtime_endpoint.port_name, "mcp");
         self.calls.fetch_add(1, Ordering::SeqCst);
+        if self
+            .fail_mcp_binds
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Err(UseError::new(
+                "use.plugin.gateway_bind_failed",
+                "The test Gateway interrupted its MCP route bind.",
+            ));
+        }
         let RuntimeSurfaceContract::McpService {
             protocol_version, ..
         } = plan.contract()
@@ -637,6 +665,7 @@ impl RuntimeProviderFactory for StaticRuntimeFactory {
 struct FakeRuntime {
     capabilities: RuntimeCapabilities,
     observation: Mutex<Option<RuntimeObservation>>,
+    apply_receipts: Mutex<BTreeMap<String, (String, RuntimeObservation)>>,
     apply_count: AtomicUsize,
     stop_count: AtomicUsize,
     remove_count: AtomicUsize,
@@ -647,6 +676,7 @@ impl FakeRuntime {
         Self {
             capabilities,
             observation: Mutex::new(None),
+            apply_receipts: Mutex::new(BTreeMap::new()),
             apply_count: AtomicUsize::new(0),
             stop_count: AtomicUsize::new(0),
             remove_count: AtomicUsize::new(0),
@@ -661,8 +691,22 @@ impl RuntimeClient for FakeRuntime {
     }
 
     async fn apply(&self, request: &RuntimeApplyRequest) -> RuntimeResult<RuntimeObservation> {
-        self.apply_count.fetch_add(1, Ordering::SeqCst);
         let spec_digest = request.spec.digest().map_err(RuntimeError::Protocol)?;
+        if let Some((retained_digest, observation)) = self
+            .apply_receipts
+            .lock()
+            .unwrap()
+            .get(&request.request_id)
+            .cloned()
+        {
+            if retained_digest != spec_digest {
+                return Err(RuntimeError::Protocol(
+                    "test Runtime apply request identity was reused for another spec".to_string(),
+                ));
+            }
+            return Ok(observation);
+        }
+        self.apply_count.fetch_add(1, Ordering::SeqCst);
         let port = request.spec.network.ports.first().ok_or_else(|| {
             RuntimeError::Protocol("test Runtime Service omitted its declared port".to_string())
         })?;
@@ -692,7 +736,7 @@ impl RuntimeClient for FakeRuntime {
             usage: None,
             evidence: Some(RuntimeEvidence {
                 provider_build: self.capabilities.provider_build.clone(),
-                spec_digest,
+                spec_digest: spec_digest.clone(),
                 semantics_profile_digest: request.spec.semantics_profile_digest.clone(),
                 claims,
             }),
@@ -700,6 +744,10 @@ impl RuntimeClient for FakeRuntime {
             failure: None,
         };
         *self.observation.lock().unwrap() = Some(observation.clone());
+        self.apply_receipts.lock().unwrap().insert(
+            request.request_id.clone(),
+            (spec_digest, observation.clone()),
+        );
         Ok(observation)
     }
 

@@ -13,8 +13,10 @@ use tokio::io::AsyncWriteExt;
 
 use super::receipt::RuntimeBindingReceipt;
 
+mod provisioning;
+
 const MAX_BINDING_RECEIPT_BYTES: u64 = 256 * 1024;
-const MAX_BINDING_DIRECTORY_ENTRIES: usize = 64;
+const MAX_BINDING_DIRECTORY_ENTRIES: usize = 96;
 pub const MAX_RUNTIME_BINDING_GENERATIONS: usize = 32;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -46,8 +48,27 @@ impl RuntimeBindingStore {
         let _lock = self.acquire_lock().await?;
         let directory = self.surface_directory(receipt.scope(), receipt.surface())?;
         ensure_owned_directory(&self.root, Some(&directory)).await?;
-        let retained = generations(&directory).await?;
+        let retained = binding_inventory(&directory).await?;
         let path = binding_path(&directory, receipt.generation());
+        if let Some(provisioning) = provisioning::read_optional_provisioning(
+            &provisioning::provisioning_path(&directory, receipt.generation()),
+        )
+        .await?
+        {
+            let exact_commit = matches!(
+                receipt,
+                RuntimeBindingReceipt::Service(service)
+                    if provisioning.phase
+                        == super::RuntimeServiceProvisioningPhase::GatewayReady
+                        && provisioning.binding_receipt().is_ok_and(|expected| expected == *service)
+            );
+            if !exact_commit {
+                return Err(store_error(
+                    "use.plugin.runtime.provisioning_conflict",
+                    "A pending Runtime Service provisioning generation conflicts with the final binding.",
+                ));
+            }
+        }
         if let Some(current) = read_optional_receipt(&path).await? {
             validate_ownership(
                 &current,
@@ -59,7 +80,9 @@ impl RuntimeBindingStore {
                 return Ok(false);
             }
             validate_same_generation_replacement(&current, receipt)?;
-        } else if retained.len() >= MAX_RUNTIME_BINDING_GENERATIONS {
+        } else if !retained.contains(receipt.generation())
+            && retained.len() >= MAX_RUNTIME_BINDING_GENERATIONS
+        {
             return Err(generation_limit_error());
         }
         write_receipt(&path, receipt).await?;
@@ -78,7 +101,12 @@ impl RuntimeBindingStore {
         if !validate_existing_directory_chain(&self.state_root, Some(&directory)).await? {
             return Ok(None);
         }
-        let Some(generation) = generations(&directory).await?.into_iter().next_back() else {
+        let Some(generation) = binding_inventory(&directory)
+            .await?
+            .bindings
+            .into_iter()
+            .next_back()
+        else {
             return Ok(None);
         };
         self.get_generation(scope, surface, generation).await
@@ -124,6 +152,30 @@ impl RuntimeBindingStore {
                 "use.plugin.runtime.binding_ownership_changed",
                 "The Runtime binding changed before removal and was preserved.",
             ));
+        }
+        let pending_path = provisioning::provisioning_path(&directory, expected.generation());
+        if let Some(provisioning) = provisioning::read_optional_provisioning(&pending_path).await? {
+            let exact_commit = matches!(
+                expected,
+                RuntimeBindingReceipt::Service(service)
+                    if provisioning.phase
+                        == super::RuntimeServiceProvisioningPhase::GatewayReady
+                        && provisioning.binding_receipt().is_ok_and(|candidate| candidate == *service)
+            );
+            if !exact_commit {
+                return Err(store_error(
+                    "use.plugin.runtime.provisioning_conflict",
+                    "A pending Runtime Service provisioning generation conflicts with binding removal.",
+                ));
+            }
+            fs::remove_file(&pending_path).await.map_err(|error| {
+                path_error(
+                    "remove committed Runtime provisioning receipt",
+                    &pending_path,
+                    error,
+                )
+            })?;
+            sync_parent(pending_path.parent()).await?;
         }
         fs::remove_file(&path)
             .await
@@ -259,11 +311,27 @@ fn binding_path(directory: &Path, generation: u64) -> PathBuf {
     directory.join(format!("{generation:020}.json"))
 }
 
-async fn generations(directory: &Path) -> UseResult<std::collections::BTreeSet<u64>> {
+#[derive(Default)]
+struct BindingInventory {
+    bindings: std::collections::BTreeSet<u64>,
+    provisioning: std::collections::BTreeSet<u64>,
+}
+
+impl BindingInventory {
+    fn len(&self) -> usize {
+        self.bindings.union(&self.provisioning).count()
+    }
+
+    fn contains(&self, generation: u64) -> bool {
+        self.bindings.contains(&generation) || self.provisioning.contains(&generation)
+    }
+}
+
+async fn binding_inventory(directory: &Path) -> UseResult<BindingInventory> {
     let mut entries = fs::read_dir(directory)
         .await
         .map_err(|error| path_error("read Runtime binding directory", directory, error))?;
-    let mut values = std::collections::BTreeSet::new();
+    let mut inventory = BindingInventory::default();
     let mut entries_seen = 0_usize;
     while let Some(entry) = entries
         .next_entry()
@@ -279,7 +347,9 @@ async fn generations(directory: &Path) -> UseResult<std::collections::BTreeSet<u
         }
         let name = entry.file_name();
         let name = name.to_str().ok_or_else(invalid_path_identity)?;
-        if name.starts_with(".binding-") && name.ends_with(".tmp") {
+        if (name.starts_with(".binding-") || name.starts_with(".provisioning-"))
+            && name.ends_with(".tmp")
+        {
             let metadata = fs::symlink_metadata(entry.path()).await.map_err(|error| {
                 path_error("inspect temporary Runtime binding", &entry.path(), error)
             })?;
@@ -291,7 +361,11 @@ async fn generations(directory: &Path) -> UseResult<std::collections::BTreeSet<u
             }
             continue;
         }
-        let Some(stem) = name.strip_suffix(".json") else {
+        let (stem, provisioning) = if let Some(stem) = name.strip_suffix(".provisioning.json") {
+            (stem, true)
+        } else if let Some(stem) = name.strip_suffix(".json") {
+            (stem, false)
+        } else {
             return Err(invalid_path_identity());
         };
         let metadata = fs::symlink_metadata(entry.path())
@@ -308,17 +382,27 @@ async fn generations(directory: &Path) -> UseResult<std::collections::BTreeSet<u
             return Err(invalid_path_identity());
         }
         let generation = stem.parse::<u64>().map_err(|_| invalid_path_identity())?;
-        if generation == 0 || format!("{generation:020}.json") != name {
+        let expected_name = if provisioning {
+            format!("{generation:020}.provisioning.json")
+        } else {
+            format!("{generation:020}.json")
+        };
+        if generation == 0 || expected_name != name {
             return Err(invalid_path_identity());
         }
-        if !values.insert(generation) {
+        let generations = if provisioning {
+            &mut inventory.provisioning
+        } else {
+            &mut inventory.bindings
+        };
+        if !generations.insert(generation) {
             return Err(invalid_path_identity());
         }
     }
-    if values.len() > MAX_RUNTIME_BINDING_GENERATIONS {
+    if inventory.len() > MAX_RUNTIME_BINDING_GENERATIONS {
         return Err(generation_limit_error());
     }
-    Ok(values)
+    Ok(inventory)
 }
 
 fn same_service_generation(

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub const OKF_KNOWLEDGE_SEARCH_REQUEST_SCHEMA: &str = "a3s.use.okf-knowledge-search-request.v1";
 pub const OKF_KNOWLEDGE_SEARCH_RESPONSE_SCHEMA: &str = "a3s.use.okf-knowledge-search-response.v1";
+pub const OKF_KNOWLEDGE_CITATION_SCHEMA: &str = "a3s.use.okf-knowledge-citation.v1";
 
 const MAX_QUERY_BYTES: usize = 4 * 1024;
 const MAX_QUERY_PROJECTIONS: usize = 256;
@@ -33,6 +34,7 @@ pub struct OkfKnowledgeSearchRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OkfKnowledgeCitation {
+    pub schema: String,
     pub surface: PlanQualifiedSurfaceRef,
     pub generation: u64,
     pub package_digest: String,
@@ -42,6 +44,51 @@ pub struct OkfKnowledgeCitation {
     pub concept_id: String,
     pub path: String,
     pub source_digest: String,
+}
+
+impl OkfKnowledgeCitation {
+    pub(crate) fn new(
+        projection: &OkfCapabilityProjection,
+        concept_id: String,
+        path: String,
+        source_digest: String,
+    ) -> Self {
+        Self {
+            schema: OKF_KNOWLEDGE_CITATION_SCHEMA.to_owned(),
+            surface: projection.surface.clone(),
+            generation: projection.generation,
+            package_digest: projection.package_digest.clone(),
+            bundle_digest: projection.bundle.content_digest.clone(),
+            projection_receipt_digest: projection.projection_receipt_digest.clone(),
+            index_digest: projection.index_digest.clone(),
+            concept_id,
+            path,
+            source_digest,
+        }
+    }
+
+    pub(crate) fn validate_for_projection(
+        &self,
+        projection: &OkfCapabilityProjection,
+    ) -> UseResult<()> {
+        projection.validate()?;
+        if self.schema != OKF_KNOWLEDGE_CITATION_SCHEMA
+            || self.surface != projection.surface
+            || self.generation != projection.generation
+            || self.package_digest != projection.package_digest
+            || self.bundle_digest != projection.bundle.content_digest
+            || self.projection_receipt_digest != projection.projection_receipt_digest
+            || self.index_digest != projection.index_digest
+            || !valid_sha256(&self.source_digest)
+            || !valid_concept_id(&self.concept_id)
+            || !valid_relative_path(&self.path)
+        {
+            return Err(response_error(
+                "The OKF Knowledge citation does not bind the exact capability projection.",
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,32 +246,19 @@ fn validate_hit(hit: &OkfKnowledgeSearchHit, request: &OkfKnowledgeSearchRequest
         || PluginPackageId::parse(citation.surface.package_id.clone()).is_err()
         || citation.surface.surface.kind != PluginSurfaceKind::Okf
         || citation.generation == 0
-        || !valid_sha256(&citation.package_digest)
-        || !valid_sha256(&citation.bundle_digest)
-        || !valid_sha256(&citation.projection_receipt_digest)
-        || !valid_sha256(&citation.index_digest)
-        || !valid_concept_id(&citation.concept_id)
-        || !valid_relative_path(&citation.path)
-        || !valid_sha256(&citation.source_digest)
     {
         return Err(response_error(
             "An OKF Knowledge search hit contains invalid cited evidence.",
         ));
     }
-    let matches_projection = request.projections.iter().any(|projection| {
-        projection.surface == citation.surface
-            && projection.generation == citation.generation
-            && projection.package_digest == citation.package_digest
-            && projection.bundle.content_digest == citation.bundle_digest
-            && projection.projection_receipt_digest == citation.projection_receipt_digest
-            && projection.index_digest == citation.index_digest
-    });
-    if !matches_projection {
+    let Some(projection) = request.projections.iter().find(|projection| {
+        projection.surface == citation.surface && projection.generation == citation.generation
+    }) else {
         return Err(response_error(
             "An OKF Knowledge search citation is outside the reviewed capability/session projection.",
         ));
-    }
-    Ok(())
+    };
+    citation.validate_for_projection(projection)
 }
 
 fn valid_machine_id(value: &str) -> bool {

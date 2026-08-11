@@ -12,8 +12,9 @@ One complete User or Workspace scope owns one Knowledge database. Every
 operation binds both scope kind and scope ID. Equal textual IDs in different
 scope kinds never share a database, lock, backup, audit, or repair operation.
 
-The Knowledge database contains package-owned OKF projections and their cited
-search documents. It does not own:
+The Knowledge database contains package-owned OKF projections, their cited
+search fields, and the original bounded Markdown bytes needed for an exact
+read. It does not own:
 
 - Registry trust roots, TUF metadata, or installed package receipts;
 - immutable package roots or lifecycle journals;
@@ -59,11 +60,35 @@ the scope's shared lock and verifies:
 2. bounded SQLite integrity output;
 3. foreign-key integrity;
 4. every retained receipt, row identity, digest, and complete scope;
-5. storage accounting and hard row bounds; and
-6. FTS5 integrity against the authoritative document table.
+5. every retained document's non-empty UTF-8 bytes, immutable byte bound, and
+   source SHA-256;
+6. the complete derived search descriptor against the retained projection;
+7. storage accounting and hard row bounds; and
+8. FTS5 integrity against the authoritative document table.
 
 Audit fails closed. It does not migrate an unknown preview database or infer a
 replacement receipt.
+
+## Exact-generation search and read
+
+Embedding hosts acquire `OkfKnowledgeLease` from
+`OkfKnowledgeLeaseProvider` using one complete `OkfCapabilityProjection`. The
+provider accepts the request only when the exact package, manifest, lifecycle
+generation, and OKF bundle are still published by the Registry. The retained
+route lease participates in lifecycle drain.
+
+Search returns `a3s.use.okf-knowledge-citation.v1` citations. A subsequent
+`a3s.use.okf-knowledge-read-request.v1` must present the unchanged projection,
+citation, scope, path, concept, generation, and caller-selected byte ceiling.
+The SQLite host rechecks the promoted projection, retained source digest,
+actual Markdown SHA-256, UTF-8 validity, and byte count before returning
+`a3s.use.okf-knowledge-read-response.v1`.
+
+A cutover or hide rejects new leases for the prior generation. Work already
+holding that generation may finish search/read while retirement waits for its
+route lock. Installed package drift and retained database content drift fail
+closed. These typed APIs do not expose an Ontology review graph, source tree,
+or an unbounded package filesystem reader.
 
 ## Create a backup
 
@@ -122,7 +147,8 @@ a3s-use knowledge repair-search-index --yes \
 ```
 
 Repair first validates SQLite integrity, foreign keys, retained receipts,
-scope identity, projection rows, and storage accounting. It then rebuilds FTS
+scope identity, projection rows, original document bytes and source digests,
+the immutable search descriptor, and storage accounting. It then rebuilds FTS
 from the already-validated `knowledge_documents` table and reruns the complete
 audit. It does not change projection receipts, lifecycle state, selected
 generations, package roots, bindings, or Grants.

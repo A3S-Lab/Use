@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use a3s_use_core::{OkfCapabilityProjection, OkfKnowledgeObservedState, UseError, UseResult};
 use rusqlite::{params, Connection};
+use sha2::{Digest, Sha256};
 
 use super::projection::{load_projection_for_search, ProjectionState, StoredProjection};
 use crate::okf_knowledge::query::compare_hits;
@@ -22,6 +23,7 @@ struct SearchDocument {
     title: String,
     search_text: String,
     source_digest: String,
+    content: Vec<u8>,
 }
 
 pub(super) fn search(
@@ -51,22 +53,23 @@ pub(super) fn search(
             let Some(score) = score_document(&request.query, &terms, &document) else {
                 continue;
             };
+            let actual_digest = format!("sha256:{:x}", Sha256::digest(&document.content));
+            if actual_digest != document.source_digest {
+                return Err(search_error(
+                    "An OKF Knowledge document changed after its indexed source digest was recorded.",
+                ));
+            }
             hits.push(OkfKnowledgeSearchHit {
                 score,
                 title: document.title,
                 type_name: document.type_name,
                 snippet: snippet(&document.search_text),
-                citation: OkfKnowledgeCitation {
-                    surface: projection.surface.clone(),
-                    generation: projection.generation,
-                    package_digest: projection.package_digest.clone(),
-                    bundle_digest: projection.bundle.content_digest.clone(),
-                    projection_receipt_digest: projection.projection_receipt_digest.clone(),
-                    index_digest: projection.index_digest.clone(),
-                    concept_id: document.concept_id,
-                    path: document.path,
-                    source_digest: document.source_digest,
-                },
+                citation: OkfKnowledgeCitation::new(
+                    projection,
+                    document.concept_id,
+                    document.path,
+                    document.source_digest,
+                ),
             });
         }
     }
@@ -83,7 +86,7 @@ pub(super) fn search(
     OkfKnowledgeSearchResponse::new(request, hits)
 }
 
-fn validate_active_projection(
+pub(super) fn validate_active_projection(
     connection: &Connection,
     projection: &OkfCapabilityProjection,
 ) -> UseResult<()> {
@@ -155,7 +158,7 @@ fn fts_documents(
     let mut statement = connection
         .prepare(
             "SELECT d.concept_id, d.path, d.type_name, d.title,
-                    d.search_text, d.source_digest
+                    d.search_text, d.source_digest, d.content
              FROM knowledge_documents_fts f
              JOIN knowledge_documents d ON d.row_id = f.rowid
              WHERE knowledge_documents_fts MATCH ?1
@@ -188,7 +191,7 @@ fn all_documents(
 ) -> UseResult<Vec<SearchDocument>> {
     let mut statement = connection
         .prepare(
-            "SELECT concept_id, path, type_name, title, search_text, source_digest
+            "SELECT concept_id, path, type_name, title, search_text, source_digest, content
              FROM knowledge_documents
              WHERE package_id = ?1 AND surface_id = ?2 AND generation = ?3
              ORDER BY path",
@@ -215,6 +218,7 @@ fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchDocument> 
         title: row.get(3)?,
         search_text: row.get(4)?,
         source_digest: row.get(5)?,
+        content: row.get(6)?,
     })
 }
 

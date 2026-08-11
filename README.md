@@ -77,11 +77,11 @@ The implementation and fixtures exercise the product model directly:
   snapshot v2 publishes only matching release-backed Tasks with complete
   scope and lifecycle identity.
 - [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) stages,
-  promotes, searches, and removes scope-isolated OKF projections with exact
-  package-generation citations, bounded receipt-accounted storage, global
-  tombstone pruning, physical SQLite compaction after removal, integrity
-  auditing, non-overwriting verified backups, and authority-preserving FTS
-  repair.
+  promotes, searches, reads, and removes scope-isolated OKF projections with
+  exact package-generation citations, retained source Markdown, bounded
+  receipt-accounted storage, global tombstone pruning, physical SQLite
+  compaction after removal, source/index integrity auditing, non-overwriting
+  verified backups, and authority-preserving FTS repair.
 - [`A3sFlowLifecycleHost`](src/flow_runtime/lifecycle.rs) delegates Flow
   preflight to the real `a3s-flow` Native TypeScript runtime and records an
   exact-generation binding.
@@ -704,6 +704,12 @@ Only the following cognitive-package protocol line is accepted:
 | Lifecycle diagnostic | `a3s.use.plugin-lifecycle-diagnostic.v1` |
 | Enablement state / operation | `v2` / `v2` |
 | Capability snapshot | schema version `2` |
+| Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
+| Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
+| Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
+| OKF Knowledge search | `a3s.use.okf-knowledge-search-request.v1` / `a3s.use.okf-knowledge-search-response.v1` |
+| OKF Knowledge citation | `a3s.use.okf-knowledge-citation.v1` |
+| OKF Knowledge read | `a3s.use.okf-knowledge-read-request.v1` / `a3s.use.okf-knowledge-read-response.v1` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
 SemVer dependency constraints, `requires_use`, OS/target checks, and
@@ -731,10 +737,10 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
 | Mixed native/managed provider planning | Implemented in Use and the shared A3S host path: unbound drafts, assigned-provider preflight, host policy, canonical Grant-bound final selection, durable planning bundles/Grant snapshots/provider generations, exact apply-time reconstruction, restart replay, and provider-drift rejection are tested |
-| Exact published-generation dispatch lease | Implemented in the Use Registry and the Code TUI/Web Knowledge query carrier; accepted queries hold exact package-generation leases through backend search and final Registry revision verification |
+| Exact published-generation Knowledge lease | Implemented in the Use Registry and SQLite Knowledge host. Acquisition binds the complete capability projection to the installed package, manifest, OKF bundle, lifecycle generation, and route lock; one lease retains that generation across cited search/read, rejects new calls after hide, participates in drain, and fails closed on package or retained-content drift. A3S Code consumption remains an external integration task |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
 | Code Web Activity composition | Enabled catalog entries publish an exact generation/revision URL; the host serves only verified HTML/CSS/JS with opaque-origin CSP and restrictive security headers, preserves the URL across restart, rejects stale generations with `410 Gone`, and exposes no managed paths. The production Web build adopts only that URL, transfers a dedicated v3 `MessagePort`, ignores ambient messages, terminates self-navigation, identity-binds context review, serializes bounded host-state requests, and drains/replaces the old frame on Registry changes. Durable state is isolated by scope/package/surface, guarded by exact published-generation leases, retained only for explicitly retained surfaces, and removed on true uninstall. A process-local candidate broker publishes only path-free identity and exact bytes before cutover; the hidden script-only iframe receives readiness-mode identity without state/context/backend authority. Failure preserves N and removes N+1 receipt/generation residue; a rolled-back plan cannot republish, while a fresh plan can retry the same lifecycle generation and cut over once. Backend bindings, equivalent readiness in CLI/TUI/native hosts, and native hosting remain open |
-| Managed Runtime receipt lifecycle | Self-contained release-backed Task templates support restart-safe exact-generation dispatch, receipt-owned provider reconnection, stale-generation rejection, and accepted-call drain. Capability snapshot v2 publishes only exact scope/package/generation-matched Task bindings with stable host tool identities. Typed Service endpoints, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are also contract-tested; Code consumption of the Task projection and production provider/Gateway injection remain open |
+| Managed Runtime receipt lifecycle | Self-contained release-backed Task templates support restart-safe exact-generation dispatch, receipt-owned provider reconnection, stale-generation rejection, and accepted-call drain. Capability snapshot v2 publishes only exact scope/package/generation-matched Task bindings with stable host tool identities. Service preparation now syncs a v1 provisioning receipt before Runtime apply, advances it through exact Runtime and Gateway evidence, and commits the v3 binding before deleting pending recovery authority. Tool and HTTP MCP bind failures, pre-apply rollback, candidate cleanup, and the final-binding/pending-receipt crash window replay without a second Runtime effect or residue. Typed endpoints, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are contract-tested; real-process provider failure injection, Code Task consumption, and production provider/Gateway injection remain open |
 | Scope-bounded OKF quota, retention, tombstone GC, SQLite compaction, and usage diagnostics | Implemented in the standalone Knowledge backend |
 | Scope-local OKF integrity audit, verified database backup, and derived FTS repair | Implemented and real-process tested; restore and whole-product recovery remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |

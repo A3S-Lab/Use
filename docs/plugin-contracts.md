@@ -45,7 +45,13 @@ current set.
 | Enablement state/operation | `a3s.use.cognitive-package-enablement-state/operation.v2` |
 | Workspace Grant | `a3s.use.plugin-workspace-grant.v1` |
 | Registry cutover | `a3s.use.registry-cutover.v1` |
+| Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
+| Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
+| Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
 | OKF Knowledge binding | `a3s.use.okf-knowledge-binding.v2` |
+| OKF Knowledge search | `a3s.use.okf-knowledge-search-request.v1` / `a3s.use.okf-knowledge-search-response.v1` |
+| OKF Knowledge citation | `a3s.use.okf-knowledge-citation.v1` |
+| OKF Knowledge read | `a3s.use.okf-knowledge-read-request.v1` / `a3s.use.okf-knowledge-read-response.v1` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
 The host capability inventory is exact: catalog v3, plan v4, and manager
@@ -104,8 +110,11 @@ inspector. There is no 0.1 fallback.
 
 Use verifies package ownership, byte/count bounds, content digest, concept
 paths, frontmatter, and links. A Knowledge host owns stage, promote, observe,
-search, drain, and receipt-owned removal. Staged content is not live evidence.
-Only an exact promoted binding may enter the capability snapshot.
+cited search, bounded exact-document read, drain, and receipt-owned removal.
+Search and read accept only an explicit promoted capability projection; the
+host-side lease pins its lifecycle generation and installed package integrity
+for the complete retrieval. Staged content is not live evidence. Only an exact
+promoted binding may enter the capability snapshot.
 
 Capability snapshot schema v2 applies the same rule to Runtime Tool Tasks. A
 `toolTasks` entry is emitted only for a published, non-interactive,
@@ -320,6 +329,17 @@ replaced. Loading rejects:
 - a missing exact journal required for recovery.
 
 Deletion of recovery evidence is corruption, not permission to infer state.
+
+Persistent Tool and Streamable HTTP MCP Services add one generation-scoped
+provisioning record before the Runtime apply request. The record advances only
+`requested` → `runtime-applied` → `gateway-ready` and binds the lifecycle key,
+apply request, scope, package generation, Grant/descriptor/spec digests,
+provider evidence, Runtime observation, and opaque Gateway endpoint. The final
+v3 binding is synced before provisioning is deleted. If both records survive a
+crash they must be identical in binding evidence; conflicting or missing
+ownership fails closed. Candidate rollback inspects a `requested` unit before
+dropping a pre-apply marker, while later phases replay the original bind key,
+drain, and receipt-owned removal.
 
 The lifecycle diagnostic is a read-only JSON projection, not a mutable disk
 record or recovery input. It reports latest/previous operation identity,

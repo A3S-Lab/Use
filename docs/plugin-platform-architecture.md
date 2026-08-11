@@ -335,6 +335,7 @@ Recovery is exact replay, not reconstruction. Durable state includes:
 - prior/candidate package locks;
 - authorization, Grant snapshot/change/resolution, and ceilings;
 - package and surface intents/checkpoints;
+- Runtime Service provisioning and final binding receipts;
 - Registry cutover request/evidence; and
 - terminal operation result.
 
@@ -358,6 +359,15 @@ Grant and descriptor digests, provider evidence, capture bounds, and lifecycle
 generation. Dispatch reconstructs only the invocation-specific unit ID and
 argv, revalidates the receipt-owned provider, and holds the exact published
 package-generation lease until output capture and Runtime cleanup finish.
+
+A persistent Tool or Streamable HTTP MCP Service writes exact provisioning
+authority before calling Runtime. Its monotonic phases retain the original
+lifecycle/apply key, reviewed provider and spec evidence, healthy Runtime
+observation, and finally the opaque Gateway binding plus MCP initialize
+evidence where applicable. A final Service binding is made durable before that
+authority is removed. Restart therefore replays the same Runtime/Gateway
+effect, reconciles the safe both-files window, or completes candidate cleanup;
+it never infers a unit or route from package files.
 
 Capability snapshot schema v2 contains complete `PlanScope`, package/surface
 identity, generation, desired/observed state, readiness, dependencies, and
@@ -386,7 +396,7 @@ Use owns separate roots for:
 - lifecycle intents and journals;
 - Registry snapshots and pending cutovers;
 - Workspace Grants and operations;
-- Runtime/Flow/OKF/static bindings; and
+- Runtime provisioning, Runtime/Flow/OKF/static bindings; and
 - capability projections and enablement state.
 
 Every path is derived from normalized identity, bounded, and checked against

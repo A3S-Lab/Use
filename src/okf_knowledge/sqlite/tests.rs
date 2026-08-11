@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use super::*;
-use crate::okf_knowledge::{OkfKnowledgeClient, OkfKnowledgeStageSpec};
+use crate::okf_knowledge::{OkfKnowledgeClient, OkfKnowledgeReadRequest, OkfKnowledgeStageSpec};
 
 const PACKAGE_DIGEST: &str =
     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -42,6 +42,20 @@ async fn stages_promotes_and_queries_cited_concepts_after_restart() {
         first.hits[0].citation.source_digest,
         format!("sha256:{:x}", Sha256::digest(&files[0].content))
     );
+    let read = client
+        .read(
+            &OkfKnowledgeReadRequest::new(
+                promoted.receipt.scope.clone(),
+                request.projections[0].clone(),
+                first.hits[0].citation.clone(),
+                files[0].content.len(),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read.content.as_bytes(), files[0].content.as_slice());
+    assert_eq!(read.byte_count, files[0].content.len());
 
     let restarted =
         OkfKnowledgeClient::new(Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path())));
@@ -54,6 +68,111 @@ async fn stages_promotes_and_queries_cited_concepts_after_restart() {
             .observation,
         promoted.observation
     );
+}
+
+#[tokio::test]
+async fn cited_read_enforces_bounds_and_rejects_database_tampering() {
+    let temporary = TempDir::new().unwrap();
+    let workspace_scope = scope(PlanScopeKind::Workspace);
+    let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
+    let client = OkfKnowledgeClient::new(adapter.clone());
+    let files = knowledge_files("bounded source throughput", "bounded source latency");
+    let promoted = stage_and_promote(
+        &client,
+        stage_spec(1, workspace_scope.clone(), "acme/research", &files),
+        files.clone(),
+    )
+    .await;
+    let exact_projection = projection(&promoted);
+    let search = client
+        .search(
+            &OkfKnowledgeSearchRequest::new(
+                workspace_scope.clone(),
+                "bounded source throughput",
+                5,
+                vec![exact_projection.clone()],
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let citation = search.hits[0].citation.clone();
+    let requested_bytes = files[0].content.len();
+
+    let bounded = OkfKnowledgeReadRequest::new(
+        workspace_scope.clone(),
+        exact_projection.clone(),
+        citation.clone(),
+        requested_bytes - 1,
+    )
+    .unwrap();
+    let error = client.read(&bounded).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_read_failed");
+
+    let exact = OkfKnowledgeReadRequest::new(
+        workspace_scope.clone(),
+        exact_projection,
+        citation,
+        requested_bytes,
+    )
+    .unwrap();
+    assert_eq!(
+        client.read(&exact).await.unwrap().content.as_bytes(),
+        files[0].content.as_slice()
+    );
+
+    let path = adapter
+        .scope_directory(&workspace_scope)
+        .unwrap()
+        .join("knowledge.sqlite3");
+    let connection = super::schema::open(&path, false).unwrap();
+    let substituted_digest = format!("sha256:{}", "c".repeat(64));
+    connection
+        .execute(
+            "UPDATE knowledge_documents SET source_digest = ?1
+             WHERE package_id = 'acme/research' AND surface_id = 'domain-knowledge'
+               AND generation = 1 AND path = 'throughput.md'",
+            rusqlite::params![substituted_digest],
+        )
+        .unwrap();
+    drop(connection);
+    let error = adapter.audit(&workspace_scope).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_database_invalid");
+
+    let original_digest = format!("sha256:{:x}", Sha256::digest(&files[0].content));
+    let tampered_content = b"---\ntype: Metric\n---\n\n# Forged knowledge\n".to_vec();
+    let tampered_digest = format!("sha256:{:x}", Sha256::digest(&tampered_content));
+    let connection = super::schema::open(&path, false).unwrap();
+    connection
+        .execute(
+            "UPDATE knowledge_documents SET source_digest = ?1, content = ?2
+             WHERE package_id = 'acme/research' AND surface_id = 'domain-knowledge'
+               AND generation = 1 AND path = 'throughput.md'",
+            rusqlite::params![tampered_digest, tampered_content],
+        )
+        .unwrap();
+    drop(connection);
+    let error = adapter.audit(&workspace_scope).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_database_invalid");
+    let error = adapter
+        .repair_search_index(&workspace_scope)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_database_invalid");
+    let error = client.read(&exact).await.unwrap_err();
+    assert_eq!(error.code, "use.okf.knowledge_read_failed");
+
+    let connection = super::schema::open(&path, false).unwrap();
+    connection
+        .execute(
+            "UPDATE knowledge_documents SET source_digest = ?1, content = ?2
+             WHERE package_id = 'acme/research' AND surface_id = 'domain-knowledge'
+               AND generation = 1 AND path = 'throughput.md'",
+            rusqlite::params![original_digest, files[0].content],
+        )
+        .unwrap();
+    drop(connection);
+    adapter.audit(&workspace_scope).await.unwrap();
 }
 
 #[tokio::test]
@@ -712,7 +831,10 @@ fn database_accepts_only_the_current_schema_without_migration() {
     let temporary = TempDir::new().unwrap();
     let path = temporary.path().join("knowledge.sqlite3");
     let connection = rusqlite::Connection::open(&path).unwrap();
-    connection.pragma_update(None, "user_version", 2).unwrap();
+    let unsupported_version = super::schema::DATABASE_SCHEMA_VERSION + 1;
+    connection
+        .pragma_update(None, "user_version", unsupported_version)
+        .unwrap();
     drop(connection);
 
     assert!(super::schema::open(&path, false).is_err());
@@ -721,7 +843,7 @@ fn database_accepts_only_the_current_schema_without_migration() {
         .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
         .unwrap();
     assert_eq!(
-        version, 2,
+        version, unsupported_version,
         "opening must not rewrite or migrate the database"
     );
 }

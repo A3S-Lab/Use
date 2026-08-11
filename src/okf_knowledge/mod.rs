@@ -1,19 +1,26 @@
 //! Injected A3S Knowledge port and durable exact-generation OKF evidence.
 
 mod adapter;
+mod lease;
 mod model;
 mod query;
+mod read;
 mod sqlite;
 mod store;
 
 pub use adapter::{
     OkfKnowledgeAdapter, OkfKnowledgeClient, OkfKnowledgeStageRequest, OkfKnowledgeStageSpec,
 };
+pub use lease::{OkfKnowledgeLease, OkfKnowledgeLeaseProvider};
 pub use model::{OkfKnowledgeBinding, OKF_KNOWLEDGE_BINDING_SCHEMA};
 pub use query::{
     OkfKnowledgeCitation, OkfKnowledgeSearchHit, OkfKnowledgeSearchRequest,
-    OkfKnowledgeSearchResponse, OKF_KNOWLEDGE_SEARCH_REQUEST_SCHEMA,
+    OkfKnowledgeSearchResponse, OKF_KNOWLEDGE_CITATION_SCHEMA, OKF_KNOWLEDGE_SEARCH_REQUEST_SCHEMA,
     OKF_KNOWLEDGE_SEARCH_RESPONSE_SCHEMA,
+};
+pub use read::{
+    OkfKnowledgeReadRequest, OkfKnowledgeReadResponse, OKF_KNOWLEDGE_READ_REQUEST_SCHEMA,
+    OKF_KNOWLEDGE_READ_RESPONSE_SCHEMA,
 };
 pub use sqlite::{
     OkfKnowledgeBackupManifest, OkfKnowledgeIntegrityReport, OkfKnowledgeSearchIndexRepair,

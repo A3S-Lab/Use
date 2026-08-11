@@ -16,12 +16,16 @@ use sha2::{Digest, Sha256};
 use crate::plugin_runtime::{
     PluginRuntimeClient, RuntimeBindingObservedState, RuntimeBindingReceipt, RuntimeBindingStore,
     RuntimeEndpointRef, RuntimeMcpInitializeEvidence, RuntimeProviderSelection,
-    RuntimeSurfaceContract, RuntimeSurfacePlan, SelectedRuntimeSurface,
+    RuntimeServiceProvisioningPhase, RuntimeServiceProvisioningReceipt,
+    RuntimeServiceReadinessEvidence, RuntimeSurfaceContract, RuntimeSurfacePlan,
+    SelectedRuntimeSurface,
 };
 
 use super::{
     PluginLifecycleEvidence, PluginLifecycleIntent, PluginMcpLifecycleHost, PluginToolLifecycleHost,
 };
+
+mod provisioning;
 
 /// Readiness evidence produced after a Streamable HTTP MCP service has passed
 /// standard MCP initialize negotiation through its private Gateway endpoint.
@@ -46,6 +50,10 @@ impl PluginMcpServiceReadiness {
 /// launcher and is not modeled as a Runtime Service.
 #[async_trait]
 pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
+    /// Idempotently create or recover the exact Tool route for this lifecycle
+    /// checkpoint. If an earlier call may have committed its Gateway effect
+    /// before returning an error, replaying the same key must return that same
+    /// binding identity.
     async fn bind_tool_service(
         &self,
         intent: &PluginLifecycleIntent,
@@ -56,6 +64,9 @@ pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
         idempotency_key: &str,
     ) -> UseResult<RuntimeEndpointRef>;
 
+    /// Idempotently create or recover the exact MCP route and initialize
+    /// evidence for this lifecycle checkpoint. Ambiguous failures must
+    /// converge when the same key is replayed.
     async fn bind_mcp_service(
         &self,
         intent: &PluginLifecycleIntent,
@@ -219,32 +230,14 @@ impl RuntimePluginSurfaceLifecycleHost {
                     .await?,
             ),
             ToolWorkload::Service(_) => {
-                let activation = selected
-                    .client()
-                    .apply_service(
-                        selected.plan(),
-                        selected.provider(),
-                        request_id("apply-tool", idempotency_key),
-                        self.deadline_at_ms,
-                    )
-                    .await?;
-                let runtime_endpoint = service_endpoint(selected.plan(), activation.observation())?;
-                let endpoint = self
-                    .readiness
-                    .bind_tool_service(
-                        intent,
-                        surface,
-                        selected.plan(),
-                        activation.observation(),
-                        &runtime_endpoint,
-                        idempotency_key,
-                    )
-                    .await?;
-                RuntimeBindingReceipt::Service(activation.into_tool_service_receipt(endpoint)?)
+                self.provision_tool_service(intent, surface, selected, idempotency_key)
+                    .await?
             }
         };
         validate_selected_receipt(intent, selected, &receipt)?;
-        self.store.put(&receipt).await?;
+        if matches!(&receipt, RuntimeBindingReceipt::Task(_)) {
+            self.store.put(&receipt).await?;
+        }
         binding_evidence(
             "tool-runtime-prepared",
             intent,
@@ -285,32 +278,10 @@ impl RuntimePluginSurfaceLifecycleHost {
             return Ok(evidence);
         }
 
-        let activation = selected
-            .client()
-            .apply_service(
-                selected.plan(),
-                selected.provider(),
-                request_id("apply-mcp", idempotency_key),
-                self.deadline_at_ms,
-            )
+        let receipt = self
+            .provision_mcp_service(intent, surface, selected, idempotency_key)
             .await?;
-        let runtime_endpoint = service_endpoint(selected.plan(), activation.observation())?;
-        let readiness = self
-            .readiness
-            .bind_mcp_service(
-                intent,
-                surface,
-                selected.plan(),
-                activation.observation(),
-                &runtime_endpoint,
-                idempotency_key,
-            )
-            .await?;
-        let receipt = RuntimeBindingReceipt::Service(
-            activation.into_mcp_service_receipt(readiness.endpoint, readiness.initialize)?,
-        );
         validate_selected_receipt(intent, selected, &receipt)?;
-        self.store.put(&receipt).await?;
         binding_evidence(
             "mcp-runtime-prepared",
             intent,
@@ -337,6 +308,8 @@ impl RuntimePluginSurfaceLifecycleHost {
         else {
             return Ok(None);
         };
+        self.reconcile_committed_provisioning(intent, selected, idempotency_key, &receipt)
+            .await?;
         if let Err(error) = validate_selected_receipt(intent, selected, &receipt) {
             if receipt.package_digest() != intent.package_digest
                 || receipt.generation() != intent.generation
@@ -599,6 +572,10 @@ impl PluginToolLifecycleHost for RuntimePluginSurfaceLifecycleHost {
                 )
             }
             _ => {
+                if matches!(&surface.workload, ToolWorkload::Service(_)) {
+                    self.recover_pending_tool_for_removal(intent, surface)
+                        .await?;
+                }
                 self.remove_runtime(
                     intent,
                     PluginSurfaceKind::Tool,
@@ -670,6 +647,8 @@ impl PluginMcpLifecycleHost for RuntimePluginSurfaceLifecycleHost {
                 )
             }
             PluginMcpLaunch::StreamableHttp { .. } => {
+                self.recover_pending_mcp_for_removal(intent, surface)
+                    .await?;
                 self.remove_runtime(
                     intent,
                     PluginSurfaceKind::Mcp,
