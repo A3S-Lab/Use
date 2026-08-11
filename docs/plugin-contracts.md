@@ -46,6 +46,9 @@ current set.
 | Workspace Grant | `a3s.use.plugin-workspace-grant.v1` |
 | Registry cutover | `a3s.use.registry-cutover.v1` |
 | OKF Knowledge binding | `a3s.use.okf-knowledge-binding.v2` |
+| OKF Knowledge search | `a3s.use.okf-knowledge-search-request.v1` / `a3s.use.okf-knowledge-search-response.v1` |
+| OKF Knowledge citation | `a3s.use.okf-knowledge-citation.v1` |
+| OKF Knowledge read | `a3s.use.okf-knowledge-read-request.v1` / `a3s.use.okf-knowledge-read-response.v1` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
 The host capability inventory is exact: catalog v3, plan v4, and manager
@@ -104,8 +107,11 @@ inspector. There is no 0.1 fallback.
 
 Use verifies package ownership, byte/count bounds, content digest, concept
 paths, frontmatter, and links. A Knowledge host owns stage, promote, observe,
-search, drain, and receipt-owned removal. Staged content is not live evidence.
-Only an exact promoted binding may enter the capability snapshot.
+cited search, bounded exact-document read, drain, and receipt-owned removal.
+Search and read accept only an explicit promoted capability projection; the
+host-side lease pins its lifecycle generation and installed package integrity
+for the complete retrieval. Staged content is not live evidence. Only an exact
+promoted binding may enter the capability snapshot.
 
 Capability snapshot schema v2 applies the same rule to Runtime Tool Tasks. A
 `toolTasks` entry is emitted only for a published, non-interactive,
