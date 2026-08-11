@@ -263,6 +263,53 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     )
     .await;
 
+    let upgrade_lock = resolve_remote_package_lock(
+        &registry,
+        &[],
+        "acme/worker",
+        Some("2.0.0"),
+        PluginReleaseChannel::Stable,
+        PluginPackageLockHost::new(host_target(), env!("CARGO_PKG_VERSION")).unwrap(),
+    )
+    .await
+    .unwrap();
+    let upgrade_lock_digest = upgrade_lock.descriptor_digest().unwrap();
+    let prepared_upgrade = manager
+        .prepare_upgrade_remote(
+            &registry,
+            &[],
+            "acme/worker",
+            Some("2.0.0"),
+            PluginReleaseChannel::Stable,
+            &upgrade_lock_digest,
+        )
+        .await
+        .unwrap();
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        manager
+            .installed_package_lock("acme/worker")
+            .await
+            .unwrap()
+            .unwrap()
+            .descriptor_digest()
+            .unwrap(),
+        installed.package_lock_digest
+    );
+    assert_eq!(
+        manager
+            .prepare_upgrade_remote(
+                &registry,
+                &[],
+                "acme/worker",
+                Some("2.0.0"),
+                PluginReleaseChannel::Stable,
+                &upgrade_lock_digest,
+            )
+            .await
+            .unwrap(),
+        prepared_upgrade
+    );
     let upgraded = manager
         .upgrade_remote(
             &registry,
@@ -270,13 +317,14 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
             "acme/worker",
             Some("2.0.0"),
             PluginReleaseChannel::Stable,
-            None,
+            Some(&upgrade_lock_digest),
         )
         .await
         .unwrap();
     assert!(upgraded.changed);
     assert_eq!(authorization_count.load(Ordering::SeqCst), 2);
     let upgrade_plan = upgraded.plan.as_ref().unwrap();
+    assert_eq!(upgrade_plan, &prepared_upgrade);
     assert_eq!(upgrade_plan.plan.scope, managed_scope);
     let transition = &upgrade_plan.plan.packages[0];
     let prior = transition.before.as_ref().unwrap();
@@ -290,8 +338,39 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     )
     .await;
 
+    let uninstall_lock_digest = upgraded.package_lock_digest.clone();
+    let prepared_uninstall = manager
+        .prepare_uninstall("acme/worker", &uninstall_lock_digest)
+        .await
+        .unwrap();
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        manager
+            .installed_package_lock("acme/worker")
+            .await
+            .unwrap()
+            .unwrap()
+            .descriptor_digest()
+            .unwrap(),
+        uninstall_lock_digest
+    );
+    assert_granted(
+        &home,
+        MANAGED_SCOPE_ID,
+        &candidate.release.package_sha256,
+        &candidate.permissions,
+    )
+    .await;
+    assert_eq!(
+        manager
+            .prepare_uninstall("acme/worker", &uninstall_lock_digest)
+            .await
+            .unwrap(),
+        prepared_uninstall
+    );
     let uninstalled = manager.uninstall("acme/worker").await.unwrap();
     assert!(uninstalled.changed);
+    assert_eq!(uninstalled.plan, prepared_uninstall);
     assert_eq!(uninstalled.plan.plan.scope, managed_scope);
     assert_eq!(authorization_count.load(Ordering::SeqCst), 3);
     assert_revoked(&home, MANAGED_SCOPE_ID, &candidate.release.package_sha256).await;
@@ -653,30 +732,65 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         kind: PlanScopeKind::Workspace,
         id: MANAGED_SCOPE_ID.to_string(),
     };
+    let source_extension_registry = ExtensionRegistry::new(ExtensionPaths::new(
+        source_home.join("data"),
+        source_home.join("state"),
+    ));
+    let authorization_count = Arc::new(AtomicUsize::new(0));
     let source_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
-        ExtensionRegistry::new(ExtensionPaths::new(
-            source_home.join("data"),
-            source_home.join("state"),
-        )),
+        source_extension_registry.clone(),
         reviewed_scope.clone(),
         Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(ConfirmAllPlans {
-            authorization_count: Arc::new(AtomicUsize::new(0)),
+            authorization_count: authorization_count.clone(),
         }),
     )
     .unwrap();
-    let source_result = source_manager
-        .install_remote(
+    let package_lock = resolve_remote_package_lock(
+        &source_registry,
+        &[],
+        "acme/worker",
+        Some("1.0.0"),
+        PluginReleaseChannel::Stable,
+        PluginPackageLockHost::new(host_target(), env!("CARGO_PKG_VERSION")).unwrap(),
+    )
+    .await
+    .unwrap();
+    let expected_lock_digest = package_lock.descriptor_digest().unwrap();
+    let reviewed = source_manager
+        .prepare_install_remote(
             &source_registry,
             &[],
             "acme/worker",
             Some("1.0.0"),
             PluginReleaseChannel::Stable,
-            None,
+            &expected_lock_digest,
         )
         .await
         .unwrap();
-    let reviewed = source_result.plan.unwrap();
+    let replayed_plan = source_manager
+        .prepare_install_remote(
+            &source_registry,
+            &[],
+            "acme/worker",
+            Some("1.0.0"),
+            PluginReleaseChannel::Stable,
+            &expected_lock_digest,
+        )
+        .await
+        .unwrap();
+    assert_eq!(replayed_plan, reviewed);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 0);
+    assert!(source_manager
+        .installed_package_lock("acme/worker")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(source_extension_registry
+        .get("acme/worker")
+        .await
+        .unwrap()
+        .is_none());
     assert!(reviewed.package_lock.is_some());
     assert_eq!(reviewed.plan.scope, reviewed_scope);
     assert_eq!(reviewed.plan.workspace_impacts.len(), 1);
@@ -687,12 +801,15 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         confirmed_by: PlanActor::User,
         confirmed_at_ms: reviewed.plan.created_at_ms + 1,
     };
-    let expected_lock_digest = reviewed
-        .package_lock
-        .as_ref()
-        .unwrap()
-        .descriptor_digest()
-        .unwrap();
+    assert_eq!(
+        reviewed
+            .package_lock
+            .as_ref()
+            .unwrap()
+            .descriptor_digest()
+            .unwrap(),
+        expected_lock_digest
+    );
 
     let target_home = temporary.path().join("target-home");
     let target_registry = TrustedRegistry::new(

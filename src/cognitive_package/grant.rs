@@ -589,6 +589,28 @@ pub fn reconstruct_cognitive_package_grants(
     plan: &PluginOperationPlan,
     snapshot: &PluginWorkspaceGrantSnapshot,
 ) -> UseResult<CognitivePackageGrantPlan> {
+    let planned = reconstruct_planned_workspace_grants(plan, snapshot)?;
+    let mut proposals = BTreeMap::new();
+    if let Some(planned) = planned {
+        for change in planned.change_set.changes {
+            let Some(proposal) = change.after else {
+                continue;
+            };
+            let package_id = proposal.package_id.clone();
+            if proposals.insert(package_id, proposal).is_some() {
+                return Err(authorization_error(
+                    "The canonical Grant plan contains a duplicate candidate package.",
+                ));
+            }
+        }
+    }
+    Ok(CognitivePackageGrantPlan { proposals })
+}
+
+pub(super) fn reconstruct_planned_workspace_grants(
+    plan: &PluginOperationPlan,
+    snapshot: &PluginWorkspaceGrantSnapshot,
+) -> UseResult<Option<PlannedWorkspaceGrantOperation>> {
     plan.validate()?;
     let mut draft = PluginOperationPlanDraft {
         schema: a3s_use_core::PLUGIN_OPERATION_PLAN_DRAFT_SCHEMA_V3.to_owned(),
@@ -609,7 +631,14 @@ pub fn reconstruct_cognitive_package_grants(
         scope: plan.scope.clone(),
         authority: plan.authority.clone(),
     };
-    let grants = bind_cognitive_package_grants(&mut draft, &binding, snapshot)?;
+    let (enabled_before, enabled_after) = grant_enablement(draft.action);
+    let grants = plan_workspace_grants(
+        &mut draft,
+        &binding,
+        snapshot,
+        enabled_before,
+        enabled_after,
+    )?;
     let mut reconstructed = draft.bind(binding)?;
     reconstructed.prior_package_lock_digest = plan.prior_package_lock_digest.clone();
     reconstructed.validate()?;

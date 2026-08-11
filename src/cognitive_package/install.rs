@@ -11,7 +11,6 @@ use crate::plugin_lifecycle::{
     PluginLifecycleIntentSpec, PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
 };
 
-use super::grant::authorize_planned_operation;
 use super::plan::{
     install_generations, install_operation, install_plan_packages, now_ms,
     operation_provider_evidence, package_state_revision,
@@ -181,18 +180,10 @@ impl CognitivePackageManager {
                     &grant_snapshot,
                     self.authorization.as_ref(),
                 )?;
-                let admitted_at_ms = now_ms()?;
-                let authorization = authorize_planned_operation(
-                    self.authorization.as_ref(),
-                    &generated.envelope,
-                    generated.grants.as_ref(),
-                    admitted_at_ms,
-                )
-                .await?;
-                let generated = PendingPackageGraphOperation::new(
+                let planned_at_ms = generated.envelope.plan.created_at_ms;
+                let generated = PendingPackageGraphOperation::planned(
                     generated.envelope,
-                    admitted_at_ms,
-                    authorization,
+                    planned_at_ms,
                     generated.generations,
                     changed_manifests,
                 )?;
@@ -200,6 +191,9 @@ impl CognitivePackageManager {
                 generated
             }
         };
+        let pending = self
+            .admit_planned_graph_operation(&pending_store, pending)
+            .await?;
         self.authorization.verify_plan(&pending.envelope)?;
         let apply_time = now_ms()?;
 

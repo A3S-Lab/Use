@@ -13,6 +13,7 @@ mod hosts;
 mod install;
 mod native_provider;
 mod plan;
+mod prepare_graph;
 mod provider_plan;
 mod registry_access;
 mod reviewed_authorization;
@@ -33,7 +34,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::plugin_lifecycle::PluginLifecycleCoordinator;
-use store::{InstalledPackageGraphStore, PendingPackageGraphStore};
+use store::{
+    InstalledPackageGraphStore, PackageGraphOperationPhase, PendingPackageGraphOperation,
+    PendingPackageGraphStore,
+};
 
 pub use enablement::{
     CognitivePackageEnablementRequest, CognitivePackageEnablementResult,
@@ -377,6 +381,41 @@ impl CognitivePackageManager {
 
     fn grant_store(&self) -> a3s_use_extension::WorkspaceGrantStore {
         a3s_use_extension::WorkspaceGrantStore::from_extension_paths(self.registry.paths())
+    }
+
+    async fn admit_planned_graph_operation(
+        &self,
+        store: &PendingPackageGraphStore,
+        pending: PendingPackageGraphOperation,
+    ) -> UseResult<PendingPackageGraphOperation> {
+        match pending.phase() {
+            PackageGraphOperationPhase::Admitted => {
+                self.authorization.verify_plan(&pending.envelope)?;
+                Ok(pending)
+            }
+            PackageGraphOperationPhase::Planned => {
+                let grant_snapshot = self
+                    .grant_store()
+                    .snapshot_scope(&self.scope.id, pending.envelope.plan.state.state_revision)
+                    .await?;
+                let grants = grant::reconstruct_planned_workspace_grants(
+                    &pending.envelope.plan,
+                    &grant_snapshot,
+                )?;
+                let admitted_at_ms = plan::now_ms()?;
+                let authorization = grant::authorize_planned_operation(
+                    self.authorization.as_ref(),
+                    &pending.envelope,
+                    grants.as_ref(),
+                    admitted_at_ms,
+                )
+                .await?;
+                store
+                    .admit(&pending, admitted_at_ms, authorization)
+                    .await
+                    .map(|(admitted, _)| admitted)
+            }
+        }
     }
 
     fn enablement_store(&self) -> enablement_store::CognitivePackageEnablementStore {

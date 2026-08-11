@@ -12,7 +12,6 @@ use crate::plugin_lifecycle::{
     PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
 };
 
-use super::grant::authorize_planned_operation;
 use super::install::verify_expected_lock;
 use super::plan::{now_ms, package_state_revision, upgrade_operation};
 use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
@@ -339,24 +338,16 @@ impl CognitivePackageManager {
                 &grant_snapshot,
                 self.authorization.as_ref(),
             )?;
-            let admitted_at_ms = now_ms()?;
-            let authorization = authorize_planned_operation(
-                self.authorization.as_ref(),
-                &generated.envelope,
-                generated.grants.as_ref(),
-                admitted_at_ms,
-            )
-            .await?;
+            let planned_at_ms = generated.envelope.plan.created_at_ms;
             let changed_manifests = manifests
                 .into_iter()
                 .filter(|(package_id, _)| {
                     dispositions.get(package_id) != Some(&UpgradeDisposition::Retain)
                 })
                 .collect();
-            let pending = PendingPackageGraphOperation::new_upgrade(
+            let pending = PendingPackageGraphOperation::planned_upgrade(
                 generated.envelope,
-                admitted_at_ms,
-                authorization,
+                planned_at_ms,
                 generated.generations,
                 changed_manifests,
                 prior_lock.clone(),
@@ -366,6 +357,9 @@ impl CognitivePackageManager {
             pending_store.put(&pending).await?;
             pending
         };
+        let pending = self
+            .admit_planned_graph_operation(&pending_store, pending)
+            .await?;
         self.authorization.verify_plan(&pending.envelope)?;
         for manifest in pending.manifests.values() {
             self.lifecycle.validate_manifest(manifest)?;

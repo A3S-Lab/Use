@@ -99,17 +99,6 @@ const fn is_zero(value: &u64) -> bool {
 }
 
 impl PendingPackageGraphOperation {
-    pub fn new(
-        envelope: PluginOperationPlanEnvelope,
-        admitted_at_ms: u64,
-        authorization: PackageGraphAuthorization,
-        generations: BTreeMap<String, u64>,
-        manifests: BTreeMap<String, ExtensionManifest>,
-    ) -> UseResult<Self> {
-        Self::planned(envelope, admitted_at_ms, generations, manifests)?
-            .admit(admitted_at_ms, authorization)
-    }
-
     pub fn planned(
         envelope: PluginOperationPlanEnvelope,
         planned_at_ms: u64,
@@ -134,29 +123,6 @@ impl PendingPackageGraphOperation {
         };
         operation.validate()?;
         Ok(operation)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_upgrade(
-        envelope: PluginOperationPlanEnvelope,
-        admitted_at_ms: u64,
-        authorization: PackageGraphAuthorization,
-        generations: BTreeMap<String, u64>,
-        manifests: BTreeMap<String, ExtensionManifest>,
-        prior_package_lock: PluginPackageLock,
-        prior_generations: BTreeMap<String, u64>,
-        prior_manifests: BTreeMap<String, ExtensionManifest>,
-    ) -> UseResult<Self> {
-        Self::planned_upgrade(
-            envelope,
-            admitted_at_ms,
-            generations,
-            manifests,
-            prior_package_lock,
-            prior_generations,
-            prior_manifests,
-        )?
-        .admit(admitted_at_ms, authorization)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -223,16 +189,21 @@ impl PendingPackageGraphOperation {
                     && self.authorization == PackageGraphAuthorization::default()
             }
             PackageGraphOperationPhase::Admitted => {
-                (legacy_admitted
+                legacy_admitted
                     || (self.schema == PENDING_GRAPH_SCHEMA_V3
                         && self.planned_at_ms > 0
-                        && self.admitted_at_ms >= self.planned_at_ms))
-                    && self
-                        .authorization
-                        .validate_against(&self.envelope, self.admitted_at_ms)
-                        .is_ok()
+                        && self.admitted_at_ms >= self.planned_at_ms)
             }
         };
+        if !phase_valid {
+            return Err(store_error(
+                "A pending cognitive-package graph operation has an invalid phase.",
+            ));
+        }
+        if self.phase == PackageGraphOperationPhase::Admitted {
+            self.authorization
+                .validate_against(&self.envelope, self.admitted_at_ms)?;
+        }
         let changed = self
             .envelope
             .plan
@@ -353,8 +324,7 @@ impl PendingPackageGraphOperation {
             .is_ok_and(|digests| digests == self.manifest_digests);
         let prior_manifest_digests_valid = manifest_record_digests(&self.prior_manifests)
             .is_ok_and(|digests| digests == self.prior_manifest_digests);
-        if !phase_valid
-            || changed != generations
+        if changed != generations
             || changed != manifests
             || !upgrade_evidence_valid
             || !candidate_manifests_valid
@@ -1098,13 +1068,14 @@ mod tests {
             &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
         )
         .unwrap();
-        PendingPackageGraphOperation::new(
+        PendingPackageGraphOperation::planned(
             generated.envelope,
             10,
-            PackageGraphAuthorization::default(),
             generated.generations,
             manifests,
         )
+        .unwrap()
+        .admit(10, PackageGraphAuthorization::default())
         .unwrap()
     }
 
@@ -1126,13 +1097,14 @@ mod tests {
             &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
         )
         .unwrap();
-        PendingPackageGraphOperation::new(
+        PendingPackageGraphOperation::planned(
             generated.envelope,
             10,
-            PackageGraphAuthorization::default(),
             generated.generations,
             manifests,
         )
+        .unwrap()
+        .admit(10, PackageGraphAuthorization::default())
         .unwrap()
     }
 
@@ -1163,16 +1135,17 @@ mod tests {
             &crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
         )
         .unwrap();
-        PendingPackageGraphOperation::new_upgrade(
+        PendingPackageGraphOperation::planned_upgrade(
             generated.envelope,
             10,
-            PackageGraphAuthorization::default(),
             generated.generations,
             manifests,
             prior.clone(),
             prior_generations,
             prior_manifests,
         )
+        .unwrap()
+        .admit(10, PackageGraphAuthorization::default())
         .unwrap()
     }
 

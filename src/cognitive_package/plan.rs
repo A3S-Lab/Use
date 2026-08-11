@@ -25,7 +25,6 @@ pub(super) const PLAN_LIFETIME_MS: u64 = 60 * 60 * 1000;
 pub(super) struct PlannedGraphOperation {
     pub envelope: PluginOperationPlanEnvelope,
     pub generations: BTreeMap<String, u64>,
-    pub grants: Option<PlannedWorkspaceGrantOperation>,
 }
 
 pub(super) struct PlannedEnablementOperation {
@@ -215,14 +214,13 @@ pub(super) fn install_operation(
         &draft,
         authorization,
     )?;
-    let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, false, true)?;
+    plan_workspace_grants(&mut draft, &binding, grant_snapshot, false, true)?;
     let plan = draft.bind(binding)?;
     let envelope = PluginOperationPlanEnvelope::new_with_package_lock(plan, lock.clone())?;
     let generations = install_generations(lock, dispositions, state_revision)?;
     Ok(PlannedGraphOperation {
         envelope,
         generations,
-        grants,
     })
 }
 
@@ -379,12 +377,11 @@ pub(super) fn uninstall_operation(
         &draft,
         authorization,
     )?;
-    let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, true, false)?;
+    plan_workspace_grants(&mut draft, &binding, grant_snapshot, true, false)?;
     let plan = draft.bind(binding)?;
     Ok(PlannedGraphOperation {
         envelope: PluginOperationPlanEnvelope::new_with_package_lock(plan, lock.clone())?,
         generations,
-        grants,
     })
 }
 
@@ -608,7 +605,7 @@ pub(super) fn upgrade_operation(
         &draft,
         authorization,
     )?;
-    let grants = plan_workspace_grants(&mut draft, &binding, grant_snapshot, true, true)?;
+    plan_workspace_grants(&mut draft, &binding, grant_snapshot, true, true)?;
     let plan = draft.bind(binding)?;
     let envelope = PluginOperationPlanEnvelope::new_with_upgrade_package_locks(
         plan,
@@ -664,7 +661,6 @@ pub(super) fn upgrade_operation(
     Ok(PlannedGraphOperation {
         envelope,
         generations,
-        grants,
     })
 }
 
