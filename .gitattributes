@@ -11,3 +11,4 @@ crates/extension/fixtures/packages/plugin-v3-okf/** text eol=lf
 crates/extension/fixtures/registry/plugin-v3/** text eol=lf
 crates/mcp-release-fixture/Containerfile text eol=lf
 scripts/*.sh text eol=lf
+tests/fixtures/agentic-ontology/r0-cross-project-v1/** text eol=lf
