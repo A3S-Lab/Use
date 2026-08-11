@@ -8,10 +8,10 @@ use crate::plugin_lifecycle::{
     PluginLifecycleIntentSpec, PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
 };
 
-use super::plan::{now_ms, package_state_revision, uninstall_operation};
+use super::plan::{now_ms, package_state_revision, state_surface_refs, uninstall_operation};
 use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
 use super::{
-    all_catalog_surfaces, installed_matches_lock, package_manager_error, CognitivePackageManager,
+    installed_matches_lock, package_manager_error, CognitivePackageManager,
     CognitivePackageUninstallResult, UninstallDisposition,
 };
 
@@ -121,6 +121,12 @@ impl CognitivePackageManager {
             for manifest in manifests.values() {
                 self.lifecycle.validate_manifest_for_retirement(manifest)?;
             }
+            let surface_selections = exact
+                .iter()
+                .map(|(package_id, extension)| {
+                    Ok((package_id.clone(), extension.selected_surfaces()?))
+                })
+                .collect::<UseResult<BTreeMap<_, _>>>()?;
             let snapshot = self.registry.snapshot().await?;
             let grant_snapshot = self
                 .grant_store()
@@ -129,6 +135,7 @@ impl CognitivePackageManager {
             let generated = uninstall_operation(
                 &lock,
                 &dispositions,
+                &surface_selections,
                 generations,
                 root.receipt.descriptor_digest()?,
                 snapshot.generation,
@@ -177,9 +184,19 @@ impl CognitivePackageManager {
                         "A removed package has no pending lifecycle generation.",
                     )
                 })?;
-            let state = package
-                .catalog
-                .selected_state(&all_catalog_surfaces(package))?;
+            let state = pending
+                .envelope
+                .plan
+                .packages
+                .iter()
+                .find(|transition| transition.package_id == package.package_id())
+                .and_then(|transition| transition.before.as_ref())
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A removed package omitted its selected prior state.",
+                    )
+                })?;
             let identity = ExtensionLifecycleIdentity::new(
                 package.package_id(),
                 state.release.package_sha256.clone(),
@@ -187,7 +204,8 @@ impl CognitivePackageManager {
                 generation,
             )?;
             let package_root = self.registry.lifecycle_package_root(&identity);
-            let intent = PluginLifecycleIntent::from_manifest(
+            let selected_surfaces = state_surface_refs(state);
+            let intent = PluginLifecycleIntent::from_manifest_selection(
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
@@ -200,6 +218,7 @@ impl CognitivePackageManager {
                     retained_ui_state_surfaces: Vec::new(),
                 },
                 manifest,
+                &selected_surfaces,
             )?;
             // A process can die after the Registry atomically hides and retains
             // this exact generation but before the package lifecycle journal

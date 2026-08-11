@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{PlanScope, PluginOperationAction, PluginReleaseChannel, UseResult};
+use a3s_use_core::{
+    PlanScope, PluginOperationAction, PluginReleaseChannel, PluginSurfaceRef, UseResult,
+};
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest, InstalledExtension,
     TrustedRegistry,
@@ -13,7 +15,7 @@ use crate::plugin_lifecycle::{
 
 use super::plan::{
     install_generations, install_operation, install_plan_packages, now_ms,
-    operation_provider_evidence, package_state_revision,
+    operation_provider_evidence, package_state_revision, state_surface_refs,
 };
 use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
 use super::store::PendingPackageGraphOperation;
@@ -38,6 +40,7 @@ impl CognitivePackageManager {
         channel: PluginReleaseChannel,
         expected_package_lock_digest: Option<&str>,
         access: RegistryAccess,
+        requested_root_surfaces: Option<&[PluginSurfaceRef]>,
     ) -> UseResult<CognitivePackageInstallResult> {
         let lock = resolve_package_lock(
             access,
@@ -51,6 +54,8 @@ impl CognitivePackageManager {
         let lock_digest = lock.descriptor_digest()?;
         verify_expected_lock(&lock_digest, expected_package_lock_digest)?;
         let (dispositions, installed) = self.install_dispositions(&lock).await?;
+        let surface_selections =
+            install_surface_selections(&lock, &dispositions, &installed, requested_root_surfaces)?;
 
         if dispositions.get(&lock.root_package_id) == Some(&InstallDisposition::Retain) {
             if dispositions
@@ -157,6 +162,7 @@ impl CognitivePackageManager {
                     &pending,
                     &lock,
                     &dispositions,
+                    &surface_selections,
                     &manifests,
                     &changed_manifests,
                     &self.scope,
@@ -173,6 +179,7 @@ impl CognitivePackageManager {
                 let generated = install_operation(
                     &lock,
                     &dispositions,
+                    &surface_selections,
                     &manifests,
                     snapshot.generation,
                     &self.scope,
@@ -233,7 +240,21 @@ impl CognitivePackageManager {
                 generation,
             )?;
             let package_root = self.registry.lifecycle_package_root(&identity);
-            let intent = PluginLifecycleIntent::from_manifest(
+            let transition = pending
+                .envelope
+                .plan
+                .packages
+                .iter()
+                .find(|transition| transition.package_id == package_id)
+                .and_then(|transition| transition.after.as_ref())
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A prepared package omitted its selected candidate state.",
+                    )
+                })?;
+            let selected_surfaces = state_surface_refs(transition);
+            let intent = PluginLifecycleIntent::from_manifest_selection(
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
@@ -246,6 +267,7 @@ impl CognitivePackageManager {
                     retained_ui_state_surfaces: Vec::new(),
                 },
                 &prepared.manifest,
+                &selected_surfaces,
             )?;
             let coordinator = self.lifecycle.install_coordinator(
                 self.registry.clone(),
@@ -434,16 +456,27 @@ impl CognitivePackageManager {
                     ),
                 ));
             }
-            let state = package
-                .catalog
-                .selected_state(&super::all_catalog_surfaces(package))?;
+            let state = pending
+                .envelope
+                .plan
+                .packages
+                .iter()
+                .find(|transition| transition.package_id == package.package_id())
+                .and_then(|transition| transition.after.as_ref())
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A pending published package omitted its selected state.",
+                    )
+                })?;
             let identity = ExtensionLifecycleIdentity::new(
                 package.package_id(),
                 state.release.package_sha256.clone(),
                 state.release.manifest_sha256.clone(),
                 generation,
             )?;
-            let intent = PluginLifecycleIntent::from_manifest(
+            let selected_surfaces = state_surface_refs(state);
+            let intent = PluginLifecycleIntent::from_manifest_selection(
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
@@ -456,6 +489,7 @@ impl CognitivePackageManager {
                     retained_ui_state_surfaces: Vec::new(),
                 },
                 manifest,
+                &selected_surfaces,
             )?;
             let package_root = self.registry.lifecycle_package_root(&identity);
             units.push(PluginPackageLifecycleUnit::new(
@@ -525,13 +559,14 @@ fn validate_replay(
     pending: &PendingPackageGraphOperation,
     lock: &a3s_use_core::PluginPackageLock,
     dispositions: &BTreeMap<String, InstallDisposition>,
+    surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
     admitted_manifests: &BTreeMap<String, ExtensionManifest>,
     changed_manifests: &BTreeMap<String, ExtensionManifest>,
     scope: &PlanScope,
     authorization: &dyn super::CognitivePackageAuthorizationProvider,
 ) -> UseResult<()> {
     pending.validate()?;
-    let expected_packages = install_plan_packages(lock, dispositions)?;
+    let expected_packages = install_plan_packages(lock, dispositions, surface_selections)?;
     let expected_providers =
         operation_provider_evidence(&lock.packages, admitted_manifests, authorization)?;
     let state_revision = package_state_revision(pending.envelope.plan.state.capability_generation)?;
@@ -552,6 +587,53 @@ fn validate_replay(
         ));
     }
     Ok(())
+}
+
+fn install_surface_selections(
+    lock: &a3s_use_core::PluginPackageLock,
+    dispositions: &BTreeMap<String, InstallDisposition>,
+    installed: &BTreeMap<String, InstalledExtension>,
+    requested_root_surfaces: Option<&[PluginSurfaceRef]>,
+) -> UseResult<BTreeMap<String, Vec<PluginSurfaceRef>>> {
+    lock.packages
+        .iter()
+        .map(|package| {
+            let selected = match dispositions.get(package.package_id()) {
+                Some(InstallDisposition::Retain) => installed
+                    .get(package.package_id())
+                    .ok_or_else(|| {
+                        package_manager_error(
+                            "use.plugin.package_graph_invalid",
+                            "A retained package is missing its installed surface evidence.",
+                        )
+                    })?
+                    .selected_surfaces()?,
+                Some(InstallDisposition::Add) => {
+                    let requested = requested_root_surfaces
+                        .filter(|_| package.package_id() == lock.root_package_id)
+                        .unwrap_or(&[]);
+                    if requested_root_surfaces.is_none() {
+                        super::all_catalog_surfaces(package)
+                    } else {
+                        package
+                            .catalog
+                            .record
+                            .resolve_surfaces(requested)?
+                            .into_iter()
+                            .map(|surface| surface.reference())
+                            .collect()
+                    }
+                }
+                None => {
+                    return Err(package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A resolved package has no install disposition.",
+                    ))
+                }
+            };
+            Ok((package.package_id().to_string(), selected))
+        })
+        .collect()
 }
 
 pub(super) fn verify_expected_lock(actual: &str, expected: Option<&str>) -> UseResult<()> {

@@ -3,10 +3,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
     LockedPluginPackage, PlanPackageChangeKind, PlanPackageRole, PlanQualifiedSurfaceRef,
-    PlanScope, PlannedOperationImpact, PlannedPackageTransition, PlannedProviderEvidence,
-    PlannedStateEvidence, PluginOperationAction, PluginOperationPlanBinding,
-    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageLock, PluginSurfaceKind,
-    PluginWorkspaceGrantSnapshot, UseResult,
+    PlanScope, PlannedOperationImpact, PlannedPackageState, PlannedPackageTransition,
+    PlannedProviderEvidence, PlannedStateEvidence, PluginOperationAction,
+    PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
+    PluginPackageLock, PluginSurfaceKind, PluginSurfaceRef, PluginWorkspaceGrantSnapshot,
+    UseResult,
 };
 use a3s_use_extension::{ExtensionManifest, PluginMcpLaunch, ToolTaskSource, ToolWorkload};
 use sha2::{Digest, Sha256};
@@ -22,6 +23,30 @@ use super::{
 
 pub(super) const PLAN_LIFETIME_MS: u64 = 60 * 60 * 1000;
 
+pub(super) fn state_surface_refs(state: &PlannedPackageState) -> Vec<PluginSurfaceRef> {
+    state
+        .release
+        .surfaces
+        .iter()
+        .map(a3s_use_core::CatalogSurface::reference)
+        .collect()
+}
+
+#[cfg(test)]
+pub(super) fn all_surface_selections(
+    lock: &PluginPackageLock,
+) -> BTreeMap<String, Vec<PluginSurfaceRef>> {
+    lock.packages
+        .iter()
+        .map(|package| {
+            (
+                package.package_id().to_string(),
+                all_catalog_surfaces(package),
+            )
+        })
+        .collect()
+}
+
 pub(super) struct PlannedGraphOperation {
     pub envelope: PluginOperationPlanEnvelope,
     pub generations: BTreeMap<String, u64>,
@@ -36,6 +61,7 @@ pub(super) struct PlannedEnablementOperation {
 pub(super) fn enablement_operation(
     request: &CognitivePackageEnablementRequest,
     package: &LockedPluginPackage,
+    selected_surfaces: &[PluginSurfaceRef],
     manifest: &ExtensionManifest,
     receipt_digest: String,
     registry_generation: u64,
@@ -50,7 +76,13 @@ pub(super) fn enablement_operation(
             "The admitted manifest and enablement request identities disagree.",
         ));
     }
-    let mut draft = enablement_draft(request, package, receipt_digest, registry_generation)?;
+    let mut draft = enablement_draft(
+        request,
+        package,
+        selected_surfaces,
+        receipt_digest,
+        registry_generation,
+    )?;
     let manifests = BTreeMap::from([(package.package_id().to_string(), manifest.clone())]);
     if request.enabled {
         draft.providers =
@@ -97,6 +129,7 @@ pub(super) fn enablement_operation(
 pub(super) fn enablement_draft(
     request: &CognitivePackageEnablementRequest,
     package: &LockedPluginPackage,
+    selected_surfaces: &[PluginSurfaceRef],
     receipt_digest: String,
     registry_generation: u64,
 ) -> UseResult<PluginOperationPlanDraft> {
@@ -107,9 +140,7 @@ pub(super) fn enablement_draft(
             "The installed package and enablement request identities disagree.",
         ));
     }
-    let state = package
-        .catalog
-        .selected_state(&all_catalog_surfaces(package))?;
+    let state = package.catalog.selected_state(selected_surfaces)?;
     let transition = PlannedPackageTransition::resolved(
         package.package_id(),
         PlanPackageRole::Root,
@@ -155,6 +186,7 @@ pub(super) fn enablement_draft(
 pub(super) fn install_operation(
     lock: &PluginPackageLock,
     dispositions: &BTreeMap<String, InstallDisposition>,
+    surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
     manifests: &BTreeMap<String, ExtensionManifest>,
     registry_generation: u64,
     scope: &PlanScope,
@@ -162,7 +194,7 @@ pub(super) fn install_operation(
     grant_snapshot: &PluginWorkspaceGrantSnapshot,
     authorization: &dyn CognitivePackageAuthorizationProvider,
 ) -> UseResult<PlannedGraphOperation> {
-    let packages = install_plan_packages(lock, dispositions)?;
+    let packages = install_plan_packages(lock, dispositions, surface_selections)?;
     if dispositions.get(&lock.root_package_id) != Some(&InstallDisposition::Add) {
         return Err(package_manager_error(
             "use.plugin.package_graph_invalid",
@@ -227,11 +259,19 @@ pub(super) fn install_operation(
 pub(super) fn install_plan_packages(
     lock: &PluginPackageLock,
     dispositions: &BTreeMap<String, InstallDisposition>,
+    surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
 ) -> UseResult<Vec<PlannedPackageTransition>> {
     let mut packages = Vec::with_capacity(lock.packages.len());
     for package in &lock.packages {
         let role = package_role(lock, package.package_id());
-        let surfaces = all_catalog_surfaces(package);
+        let surfaces = surface_selections
+            .get(package.package_id())
+            .ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "A resolved package has no selected surface set.",
+                )
+            })?;
         let disposition = dispositions.get(package.package_id()).ok_or_else(|| {
             package_manager_error(
                 "use.plugin.package_graph_invalid",
@@ -289,6 +329,7 @@ pub(super) fn install_generations(
 pub(super) fn uninstall_operation(
     lock: &PluginPackageLock,
     dispositions: &BTreeMap<String, UninstallDisposition>,
+    surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
     generations: BTreeMap<String, u64>,
     root_receipt_digest: String,
     registry_generation: u64,
@@ -300,7 +341,14 @@ pub(super) fn uninstall_operation(
     let mut packages = Vec::with_capacity(lock.packages.len());
     for package in &lock.packages {
         let role = package_role(lock, package.package_id());
-        let surfaces = all_catalog_surfaces(package);
+        let surfaces = surface_selections
+            .get(package.package_id())
+            .ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "An installed package has no selected surface evidence.",
+                )
+            })?;
         let state = package.catalog.selected_state(&surfaces)?;
         let transition = match dispositions.get(package.package_id()) {
             Some(UninstallDisposition::Remove) => PlannedPackageTransition::resolved(
@@ -390,6 +438,8 @@ pub(super) fn upgrade_operation(
     candidate_lock: &PluginPackageLock,
     prior_lock: &PluginPackageLock,
     dispositions: &BTreeMap<String, UpgradeDisposition>,
+    prior_surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
+    candidate_surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
     manifests: &BTreeMap<String, ExtensionManifest>,
     prior_generations: &BTreeMap<String, u64>,
     root_receipt_digest: String,
@@ -437,7 +487,14 @@ pub(super) fn upgrade_operation(
                         "An added package is absent from the candidate lock.",
                     )
                 })?;
-                let surfaces = all_catalog_surfaces(candidate);
+                let surfaces = candidate_surface_selections
+                    .get(package_id)
+                    .ok_or_else(|| {
+                        package_manager_error(
+                            "use.plugin.package_graph_invalid",
+                            "An added package has no selected candidate surfaces.",
+                        )
+                    })?;
                 candidate.catalog.install_transition(role, &surfaces)?
             }
             UpgradeDisposition::Replace => {
@@ -453,11 +510,24 @@ pub(super) fn upgrade_operation(
                         "A replacement candidate has no exact prior lock node.",
                     )
                 })?;
-                let surfaces = all_catalog_surfaces(candidate);
+                let surfaces = candidate_surface_selections
+                    .get(package_id)
+                    .ok_or_else(|| {
+                        package_manager_error(
+                            "use.plugin.package_graph_invalid",
+                            "A replacement package has no selected candidate surfaces.",
+                        )
+                    })?;
+                let prior_surfaces = prior_surface_selections.get(package_id).ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A replacement package has no selected prior surfaces.",
+                    )
+                })?;
                 candidate.catalog.replace_transition(
                     &prior.catalog,
                     role,
-                    &all_catalog_surfaces(prior),
+                    prior_surfaces,
                     &surfaces,
                 )?
             }
@@ -474,9 +544,13 @@ pub(super) fn upgrade_operation(
                         "A removed package is still present in the candidate lock.",
                     ));
                 }
-                prior
-                    .catalog
-                    .remove_transition(role, &all_catalog_surfaces(prior))?
+                let prior_surfaces = prior_surface_selections.get(package_id).ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A removed package has no selected prior surfaces.",
+                    )
+                })?;
+                prior.catalog.remove_transition(role, prior_surfaces)?
             }
             UpgradeDisposition::Retain => {
                 let retained = prior.or(candidate).ok_or_else(|| {
@@ -485,13 +559,26 @@ pub(super) fn upgrade_operation(
                         "A retained package is absent from both exact dependency locks.",
                     )
                 })?;
-                let before = retained
-                    .catalog
-                    .selected_state(&all_catalog_surfaces(retained))?;
+                let prior_surfaces = prior_surface_selections
+                    .get(package_id)
+                    .or_else(|| candidate_surface_selections.get(package_id))
+                    .ok_or_else(|| {
+                        package_manager_error(
+                            "use.plugin.package_graph_invalid",
+                            "A retained package has no selected surface evidence.",
+                        )
+                    })?;
+                let before = retained.catalog.selected_state(prior_surfaces)?;
                 if let (Some(prior), Some(candidate)) = (prior, candidate) {
-                    let after = candidate
-                        .catalog
-                        .selected_state(&all_catalog_surfaces(candidate))?;
+                    let candidate_surfaces = candidate_surface_selections
+                        .get(package_id)
+                        .ok_or_else(|| {
+                            package_manager_error(
+                                "use.plugin.package_graph_invalid",
+                                "A retained candidate has no selected surface evidence.",
+                            )
+                        })?;
+                    let after = candidate.catalog.selected_state(candidate_surfaces)?;
                     if before != after || prior.catalog != candidate.catalog {
                         return Err(package_manager_error(
                             "use.plugin.package_graph_invalid",
@@ -908,9 +995,65 @@ mod tests {
     use crate::cognitive_package::ReviewedCognitivePackageAuthorizationProvider;
 
     #[test]
+    fn install_plan_omits_an_unselected_independent_optional_surface() {
+        let mut record = PluginCatalogRecord::from_json(include_bytes!(
+            "../../crates/core/fixtures/plugins/catalog-record-v3.json"
+        ))
+        .unwrap();
+        let optional = record
+            .surfaces
+            .iter_mut()
+            .find(|surface| surface.kind == PluginSurfaceKind::Ui)
+            .unwrap();
+        optional.optional = true;
+        let omitted = optional.reference();
+        let provenance = VerifiedCatalogProvenance {
+            registry_name: "official".to_string(),
+            registry_url: "https://packages.example.test/a3s/".to_string(),
+            root_sha256: test_digest('f'),
+            root_version: 1,
+            timestamp_version: 4,
+            snapshot_version: 3,
+            targets_version: 2,
+            catalog_record_digest: record.descriptor_digest().unwrap(),
+        };
+        let verified = VerifiedPluginCatalogRecord::new(record, provenance).unwrap();
+        let lock = PluginPackageResolver::new(
+            PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap(),
+        )
+        .resolve(verified, Vec::new())
+        .unwrap();
+        let root = lock.package(&lock.root_package_id).unwrap();
+        let selected = root
+            .catalog
+            .record
+            .resolve_surfaces(&[])
+            .unwrap()
+            .into_iter()
+            .map(|surface| surface.reference())
+            .collect::<Vec<_>>();
+        assert!(!selected.contains(&omitted));
+        let dispositions =
+            BTreeMap::from([(lock.root_package_id.clone(), InstallDisposition::Add)]);
+        let selections = BTreeMap::from([(lock.root_package_id.clone(), selected.clone())]);
+
+        let transitions = install_plan_packages(&lock, &dispositions, &selections).unwrap();
+
+        let planned = &transitions[0].after.as_ref().unwrap().release.surfaces;
+        assert_eq!(
+            planned
+                .iter()
+                .map(a3s_use_core::CatalogSurface::reference)
+                .collect::<Vec<_>>(),
+            selected
+        );
+    }
+
+    #[test]
     fn reviewed_host_provider_evidence_preserves_managed_surfaces_and_locks_native_launchers() {
         let (lock, manifests, dispositions) = managed_package_graph();
-        let transitions = install_plan_packages(&lock, &dispositions).unwrap();
+        let surface_selections = all_surface_selections(&lock);
+        let transitions = install_plan_packages(&lock, &dispositions, &surface_selections).unwrap();
         let providers = reviewed_providers(&transitions, &manifests);
         let reviewed = reviewed_authorization(&lock, transitions, providers.clone());
 
@@ -936,7 +1079,8 @@ mod tests {
     #[test]
     fn reviewed_host_cannot_replace_a_package_native_launcher() {
         let (lock, manifests, dispositions) = managed_package_graph();
-        let transitions = install_plan_packages(&lock, &dispositions).unwrap();
+        let surface_selections = all_surface_selections(&lock);
+        let transitions = install_plan_packages(&lock, &dispositions, &surface_selections).unwrap();
         let mut providers = reviewed_providers(&transitions, &manifests);
         let native = providers
             .iter_mut()

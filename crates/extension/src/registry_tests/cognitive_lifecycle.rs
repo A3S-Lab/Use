@@ -127,6 +127,66 @@ async fn lifecycle_snapshot_cannot_steal_the_reviewed_atomic_cutover() {
 }
 
 #[tokio::test]
+async fn lifecycle_receipt_persists_the_exact_selected_surface_closure() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("selected-surfaces");
+    compatible_cognitive_package(&source).await;
+    let manifest_path = source.join(MANIFEST_NAME);
+    let manifest = fs::read_to_string(&manifest_path).await.unwrap();
+    let manifest = manifest.replace("    optional  = false", "    optional  = true");
+    fs::write(&manifest_path, manifest).await.unwrap();
+
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 8);
+    let mut selected_surfaces = candidate
+        .manifest()
+        .plugin_surfaces()
+        .unwrap()
+        .into_iter()
+        .map(|surface| surface.surface)
+        .filter(|surface| surface.kind != PluginSurfaceKind::Ui)
+        .collect::<Vec<_>>();
+    selected_surfaces.sort();
+
+    let registry = registry(temp.path());
+    let committed = registry
+        .commit_lifecycle_package_selection(&identity, &candidate, &selected_surfaces)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        committed.extension.receipt.selected_surfaces,
+        selected_surfaces
+    );
+    assert_eq!(
+        committed.extension.selected_surfaces().unwrap(),
+        selected_surfaces
+    );
+    assert_eq!(
+        committed.extension.surfaces(),
+        ["tool", "mcp", "okf", "flow", "skill"]
+    );
+
+    let replay = registry
+        .commit_lifecycle_package_selection(&identity, &candidate, &selected_surfaces)
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+    let error = registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.lifecycle_state_invalid");
+}
+
+#[tokio::test]
 async fn lifecycle_graph_publication_is_one_cutover_and_recovers_partial_receipts() {
     let temp = tempfile::tempdir().unwrap();
     let base_source = temp.path().join("base");

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{PluginOperationAction, PluginReleaseChannel, UseResult};
+use a3s_use_core::{PluginOperationAction, PluginReleaseChannel, PluginSurfaceRef, UseResult};
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest,
     ExtensionRegistrySnapshot, InstalledExtension, TrustedRegistry,
@@ -13,7 +13,7 @@ use crate::plugin_lifecycle::{
 };
 
 use super::install::verify_expected_lock;
-use super::plan::{now_ms, package_state_revision, upgrade_operation};
+use super::plan::{now_ms, package_state_revision, state_surface_refs, upgrade_operation};
 use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
 use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
 use super::upgrade_validation::validate_pending_upgrade;
@@ -38,6 +38,7 @@ impl CognitivePackageManager {
         channel: PluginReleaseChannel,
         expected_package_lock_digest: Option<&str>,
         access: RegistryAccess,
+        requested_root_surfaces: Option<&[PluginSurfaceRef]>,
     ) -> UseResult<CognitivePackageUpgradeResult> {
         let candidate_lock = resolve_package_lock(
             access,
@@ -92,13 +93,40 @@ impl CognitivePackageManager {
         let installed_graphs = graph_store.list().await?;
         let installed_extensions = self.registry.list().await?;
         let snapshot = self.registry.snapshot().await?;
-        let dispositions = upgrade_dispositions(
+        let mut dispositions = upgrade_dispositions(
             &prior_lock,
             &candidate_lock,
             &installed_graphs,
             &installed_extensions,
             &snapshot,
         )?;
+        if let Some(requested) = requested_root_surfaces {
+            let root = candidate_lock.package(package_id).ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "The upgrade candidate lock omitted its root package.",
+                )
+            })?;
+            let mut expected = root
+                .catalog
+                .record
+                .resolve_surfaces(requested)?
+                .into_iter()
+                .map(|surface| surface.reference())
+                .collect::<Vec<_>>();
+            expected.sort();
+            let current = self.registry.get(package_id).await?.ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_graph_missing",
+                    "The installed upgrade root disappeared before surface selection.",
+                )
+            })?;
+            if dispositions.get(package_id) == Some(&UpgradeDisposition::Retain)
+                && current.selected_surfaces()? != expected
+            {
+                dispositions.insert(package_id.to_string(), UpgradeDisposition::Replace);
+            }
+        }
         if existing_pending.is_none()
             && dispositions
                 .values()
@@ -320,6 +348,14 @@ impl CognitivePackageManager {
                     "The prior upgrade root disappeared before planning.",
                 )
             })?;
+            let (prior_surface_selections, candidate_surface_selections) =
+                upgrade_surface_selections(
+                    &prior_lock,
+                    &candidate_lock,
+                    &dispositions,
+                    &installed,
+                    requested_root_surfaces,
+                )?;
             let snapshot = self.registry.snapshot().await?;
             let grant_snapshot = self
                 .grant_store()
@@ -329,6 +365,8 @@ impl CognitivePackageManager {
                 &candidate_lock,
                 &prior_lock,
                 &dispositions,
+                &prior_surface_selections,
+                &candidate_surface_selections,
                 &manifests,
                 &prior_generations,
                 root.receipt.descriptor_digest()?,
@@ -421,7 +459,21 @@ impl CognitivePackageManager {
                     ))
                 }
             };
-            let intent = PluginLifecycleIntent::from_manifest(
+            let after = pending
+                .envelope
+                .plan
+                .packages
+                .iter()
+                .find(|transition| transition.package_id == package.package_id())
+                .and_then(|transition| transition.after.as_ref())
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A changed upgrade package omitted its selected candidate state.",
+                    )
+                })?;
+            let selected_surfaces = state_surface_refs(after);
+            let intent = PluginLifecycleIntent::from_manifest_selection(
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
@@ -449,6 +501,7 @@ impl CognitivePackageManager {
                     retained_ui_state_surfaces,
                 },
                 &prepared.manifest,
+                &selected_surfaces,
             )?;
             candidate_units.push(PluginPackageLifecycleUnit::new(
                 self.lifecycle.install_coordinator(
@@ -524,7 +577,8 @@ impl CognitivePackageManager {
                 } else {
                     Vec::new()
                 };
-            let intent = PluginLifecycleIntent::from_manifest(
+            let selected_surfaces = state_surface_refs(before);
+            let intent = PluginLifecycleIntent::from_manifest_selection(
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
@@ -537,6 +591,7 @@ impl CognitivePackageManager {
                     retained_ui_state_surfaces,
                 },
                 manifest,
+                &selected_surfaces,
             )?;
             if dispositions.get(package.package_id()) == Some(&UpgradeDisposition::Remove) {
                 match self.registry.get_lifecycle_generation(&identity).await? {
@@ -790,6 +845,76 @@ impl CognitivePackageManager {
             ))
         }
     }
+}
+
+fn upgrade_surface_selections(
+    prior_lock: &a3s_use_core::PluginPackageLock,
+    candidate_lock: &a3s_use_core::PluginPackageLock,
+    dispositions: &BTreeMap<String, UpgradeDisposition>,
+    installed: &BTreeMap<String, InstalledExtension>,
+    requested_root_surfaces: Option<&[PluginSurfaceRef]>,
+) -> UseResult<(
+    BTreeMap<String, Vec<PluginSurfaceRef>>,
+    BTreeMap<String, Vec<PluginSurfaceRef>>,
+)> {
+    let mut prior = BTreeMap::new();
+    for package in &prior_lock.packages {
+        let extension = installed.get(package.package_id()).ok_or_else(|| {
+            package_manager_error(
+                "use.plugin.package_graph_invalid",
+                "A prior package is missing its installed surface evidence.",
+            )
+        })?;
+        prior.insert(
+            package.package_id().to_string(),
+            extension.selected_surfaces()?,
+        );
+    }
+
+    let mut candidate = BTreeMap::new();
+    for package in &candidate_lock.packages {
+        let selected = match dispositions.get(package.package_id()) {
+            Some(UpgradeDisposition::Retain) => installed
+                .get(package.package_id())
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A retained candidate is missing its installed surface evidence.",
+                    )
+                })?
+                .selected_surfaces()?,
+            Some(UpgradeDisposition::Add | UpgradeDisposition::Replace) => {
+                let requested = requested_root_surfaces
+                    .filter(|_| package.package_id() == candidate_lock.root_package_id)
+                    .unwrap_or(&[]);
+                if requested_root_surfaces.is_none() {
+                    super::all_catalog_surfaces(package)
+                } else {
+                    package
+                        .catalog
+                        .record
+                        .resolve_surfaces(requested)?
+                        .into_iter()
+                        .map(|surface| surface.reference())
+                        .collect()
+                }
+            }
+            Some(UpgradeDisposition::Remove) => {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "A removed package appeared in the candidate dependency lock.",
+                ))
+            }
+            None => {
+                return Err(package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "A candidate package has no upgrade disposition.",
+                ))
+            }
+        };
+        candidate.insert(package.package_id().to_string(), selected);
+    }
+    Ok((prior, candidate))
 }
 
 fn common_ui_surface_ids(prior: &ExtensionManifest, candidate: &ExtensionManifest) -> Vec<String> {

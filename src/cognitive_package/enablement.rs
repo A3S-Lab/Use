@@ -3,7 +3,7 @@ use std::sync::Arc;
 use a3s_use_core::{
     LockedPluginPackage, PlanScope, PluginDesiredState, PluginHostPackageState,
     PluginObservedState, PluginOperationConfirmation, PluginOperationPlan,
-    PluginOperationPlanEnvelope, PluginPackageId, PluginSurfaceRef, UseError, UseResult,
+    PluginOperationPlanEnvelope, PluginPackageId, UseError, UseResult,
 };
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionRegistrySnapshot, InstalledExtension,
@@ -24,7 +24,7 @@ use super::enablement_store::{
 };
 use super::grant::authorize_planned_operation;
 use super::plan::now_ms;
-use super::plan::{enablement_operation, package_state_revision};
+use super::plan::{enablement_operation, package_state_revision, state_surface_refs};
 use super::reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
 use super::{package_manager_error, CognitivePackageManager};
 
@@ -365,6 +365,7 @@ impl CognitivePackageManager {
         let generated = enablement_operation(
             request,
             &locked_package,
+            &extension.selected_surfaces()?,
             &extension.manifest,
             extension.receipt.descriptor_digest()?,
             snapshot.generation,
@@ -386,7 +387,21 @@ impl CognitivePackageManager {
         } else {
             PluginLifecycleAction::Disable
         };
-        let intent = PluginLifecycleIntent::from_manifest(
+        let selected_state = generated
+            .envelope
+            .plan
+            .packages
+            .iter()
+            .find(|transition| transition.package_id == request.package_id.as_str())
+            .and_then(|transition| transition.after.as_ref())
+            .ok_or_else(|| {
+                enablement_error(
+                    "use.plugin.package_enablement_plan_invalid",
+                    "The enablement plan omitted its selected package state.",
+                )
+            })?;
+        let selected_surfaces = state_surface_refs(selected_state);
+        let intent = PluginLifecycleIntent::from_manifest_selection(
             PluginLifecycleIntentSpec {
                 operation_id: request.operation_id.clone(),
                 plan_digest: generated.envelope.plan_digest.clone(),
@@ -399,6 +414,7 @@ impl CognitivePackageManager {
                 retained_ui_state_surfaces: Vec::new(),
             },
             &extension.manifest,
+            &selected_surfaces,
         )?;
         let mut pending = reconciled;
         pending.active = Some(PendingCognitivePackageEnablement {
@@ -850,15 +866,8 @@ pub(super) fn project_installed_state(
             "The package receipt and capability snapshot projection disagree.",
         ));
     }
-    let catalog = extension.plan_ready_catalog()?;
-    let mut selected_surfaces = catalog
-        .record
-        .surfaces
-        .iter()
-        .map(a3s_use_core::CatalogSurface::reference)
-        .collect::<Vec<PluginSurfaceRef>>();
-    selected_surfaces.sort();
-    selected_surfaces.dedup();
+    extension.plan_ready_catalog()?;
+    let selected_surfaces = extension.selected_surfaces()?;
     let desired = if extension.receipt.enabled {
         PluginDesiredState::Enabled
     } else {

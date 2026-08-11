@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use a3s_use_core::{PluginPackageLock, UseError, UseResult};
+use a3s_use_core::{PluginPackageLock, PluginSurfaceRef, UseError, UseResult};
 use tokio::fs;
 
 mod cutover;
@@ -48,7 +48,38 @@ impl ExtensionRegistry {
         identity: &ExtensionLifecycleIdentity,
         candidate: &ExtensionLifecyclePackage,
     ) -> UseResult<ExtensionLifecycleResult> {
+        let mut selected_surfaces = candidate
+            .manifest
+            .plugin_surfaces()?
+            .into_iter()
+            .map(|surface| surface.surface)
+            .collect::<Vec<_>>();
+        selected_surfaces.sort();
+        self.commit_lifecycle_package_selection(identity, candidate, &selected_surfaces)
+            .await
+    }
+
+    /// Commit one exact immutable generation with the surface selection bound
+    /// by its reviewed lifecycle intent.
+    pub async fn commit_lifecycle_package_selection(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+        candidate: &ExtensionLifecyclePackage,
+        selected_surfaces: &[PluginSurfaceRef],
+    ) -> UseResult<ExtensionLifecycleResult> {
         candidate.validate_identity(identity)?;
+        let mut selected_surfaces = selected_surfaces.to_vec();
+        selected_surfaces.sort();
+        if selected_surfaces.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(lifecycle_state_error(
+                "The lifecycle package surface selection contains duplicates.",
+            ));
+        }
+        super::validate_surface_selection(
+            &candidate.manifest,
+            candidate.verified_catalog.as_ref(),
+            &selected_surfaces,
+        )?;
         let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
         let mut retained_created = None;
         let mut retained_candidate = None;
@@ -60,6 +91,11 @@ impl ExtensionRegistry {
                     if current.receipt.enabled {
                         return Err(lifecycle_state_error(
                             "The exact lifecycle generation is already published while package commit is being replayed.",
+                        ));
+                    }
+                    if current.selected_surfaces()? != selected_surfaces {
+                        return Err(lifecycle_state_error(
+                            "The replayed lifecycle package selection changed after commit.",
                         ));
                     }
                     verify_package_integrity(&current).await?;
@@ -192,6 +228,7 @@ impl ExtensionRegistry {
             registry: candidate.registry.clone(),
             verified_catalog: candidate.verified_catalog.clone(),
             planning_bundle: candidate.planning_bundle.clone(),
+            selected_surfaces,
             installed_at_unix: unix_timestamp(),
             enabled: false,
             lifecycle_generation: Some(identity.generation),

@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use a3s_use_core::{
     PlanAuthority, PluginOperationAction, PluginOperationPlan, PluginOperationPlanBinding,
-    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginReleaseChannel,
+    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginReleaseChannel, PluginSurfaceRef,
     PluginWorkspaceGrantChangeSet, UseError, UseResult,
 };
 use a3s_use_extension::TrustedRegistry;
@@ -104,29 +104,96 @@ impl CognitivePackageManager {
         channel: PluginReleaseChannel,
         expected_package_lock_digest: &str,
     ) -> UseResult<PluginOperationPlanEnvelope> {
-        if let Some(plan) = self
-            .existing_exact_graph_plan(
-                PluginOperationAction::Install,
-                package_id,
-                expected_package_lock_digest,
-            )
-            .await?
-        {
-            return Ok(plan);
+        self.prepare_install_remote_with_selection(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            None,
+        )
+        .await
+    }
+
+    /// Resolve and durably store a managed-host install plan for the exact
+    /// mandatory closure plus the explicitly selected root surfaces.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn prepare_install_remote_selected(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        selected_surfaces: &[PluginSurfaceRef],
+        expected_package_lock_digest: &str,
+    ) -> UseResult<PluginOperationPlanEnvelope> {
+        self.prepare_install_remote_with_selection(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            Some(selected_surfaces),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn prepare_install_remote_with_selection(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        expected_package_lock_digest: &str,
+        selected_surfaces: Option<&[PluginSurfaceRef]>,
+    ) -> UseResult<PluginOperationPlanEnvelope> {
+        if selected_surfaces.is_none() {
+            if let Some(plan) = self
+                .existing_exact_graph_plan(
+                    PluginOperationAction::Install,
+                    package_id,
+                    expected_package_lock_digest,
+                )
+                .await?
+            {
+                return Ok(plan);
+            }
         }
         let planning = PlanningOnlyAuthorizationProvider::new(self.authorization.clone());
         let manager = self.with_planning_authorization(planning.clone())?;
-        match manager
-            .install_remote(
-                root_registry,
-                dependency_registries,
-                package_id,
-                requested_version,
-                channel,
-                Some(expected_package_lock_digest),
-            )
-            .await
-        {
+        let result = match selected_surfaces {
+            Some(selected_surfaces) => {
+                manager
+                    .install_remote_selected(
+                        root_registry,
+                        dependency_registries,
+                        package_id,
+                        requested_version,
+                        channel,
+                        selected_surfaces,
+                        Some(expected_package_lock_digest),
+                    )
+                    .await
+            }
+            None => {
+                manager
+                    .install_remote(
+                        root_registry,
+                        dependency_registries,
+                        package_id,
+                        requested_version,
+                        channel,
+                        Some(expected_package_lock_digest),
+                    )
+                    .await
+            }
+        };
+        match result {
             Err(error) if error.code == PLAN_CAPTURED => planning.captured(),
             Err(error) => Err(error),
             Ok(_) => Err(plan_error(
@@ -147,29 +214,96 @@ impl CognitivePackageManager {
         channel: PluginReleaseChannel,
         expected_package_lock_digest: &str,
     ) -> UseResult<PluginOperationPlanEnvelope> {
-        if let Some(plan) = self
-            .existing_exact_graph_plan(
-                PluginOperationAction::Upgrade,
-                package_id,
-                expected_package_lock_digest,
-            )
-            .await?
-        {
-            return Ok(plan);
+        self.prepare_upgrade_remote_with_selection(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            None,
+        )
+        .await
+    }
+
+    /// Resolve and durably store a managed-host upgrade plan with an exact
+    /// root surface selection.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn prepare_upgrade_remote_selected(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        selected_surfaces: &[PluginSurfaceRef],
+        expected_package_lock_digest: &str,
+    ) -> UseResult<PluginOperationPlanEnvelope> {
+        self.prepare_upgrade_remote_with_selection(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            Some(selected_surfaces),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn prepare_upgrade_remote_with_selection(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        expected_package_lock_digest: &str,
+        selected_surfaces: Option<&[PluginSurfaceRef]>,
+    ) -> UseResult<PluginOperationPlanEnvelope> {
+        if selected_surfaces.is_none() {
+            if let Some(plan) = self
+                .existing_exact_graph_plan(
+                    PluginOperationAction::Upgrade,
+                    package_id,
+                    expected_package_lock_digest,
+                )
+                .await?
+            {
+                return Ok(plan);
+            }
         }
         let planning = PlanningOnlyAuthorizationProvider::new(self.authorization.clone());
         let manager = self.with_planning_authorization(planning.clone())?;
-        match manager
-            .upgrade_remote(
-                root_registry,
-                dependency_registries,
-                package_id,
-                requested_version,
-                channel,
-                Some(expected_package_lock_digest),
-            )
-            .await
-        {
+        let result = match selected_surfaces {
+            Some(selected_surfaces) => {
+                manager
+                    .upgrade_remote_selected(
+                        root_registry,
+                        dependency_registries,
+                        package_id,
+                        requested_version,
+                        channel,
+                        selected_surfaces,
+                        Some(expected_package_lock_digest),
+                    )
+                    .await
+            }
+            None => {
+                manager
+                    .upgrade_remote(
+                        root_registry,
+                        dependency_registries,
+                        package_id,
+                        requested_version,
+                        channel,
+                        Some(expected_package_lock_digest),
+                    )
+                    .await
+            }
+        };
+        match result {
             Err(error) if error.code == PLAN_CAPTURED => planning.captured(),
             Err(error) => Err(error),
             Ok(_) => Err(plan_error(

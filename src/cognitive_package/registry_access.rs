@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use a3s_use_core::{PluginPackageLock, PluginPackageLockHost, PluginReleaseChannel, UseResult};
+use a3s_use_core::{
+    PluginPackageLock, PluginPackageLockHost, PluginReleaseChannel, PluginSurfaceRef, UseResult,
+};
 use a3s_use_extension::{
     download_selected_locked_cached_remote_packages, download_selected_locked_remote_packages,
     resolve_cached_remote_package_lock, resolve_remote_package_lock, DownloadedRemotePackage,
@@ -40,6 +42,34 @@ impl CognitivePackageManager {
             channel,
             expected_package_lock_digest,
             RegistryAccess::Refreshed,
+            None,
+        )
+        .await
+    }
+
+    /// Install the exact mandatory closure plus the explicitly selected root
+    /// surfaces. This is the managed-host path; ordinary CLI installs retain
+    /// their complete-surface behavior through [`Self::install_remote`].
+    #[allow(clippy::too_many_arguments)]
+    pub async fn install_remote_selected(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        selected_surfaces: &[PluginSurfaceRef],
+        expected_package_lock_digest: Option<&str>,
+    ) -> UseResult<CognitivePackageInstallResult> {
+        self.install_remote_with_access(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            RegistryAccess::Refreshed,
+            Some(selected_surfaces),
         )
         .await
     }
@@ -64,6 +94,7 @@ impl CognitivePackageManager {
             channel,
             expected_package_lock_digest,
             RegistryAccess::Cached,
+            None,
         )
         .await
     }
@@ -89,6 +120,33 @@ impl CognitivePackageManager {
             channel,
             expected_package_lock_digest,
             RegistryAccess::Refreshed,
+            None,
+        )
+        .await
+    }
+
+    /// Upgrade one exact graph while selecting only the mandatory closure and
+    /// explicitly requested root surfaces for changed generations.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upgrade_remote_selected(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        selected_surfaces: &[PluginSurfaceRef],
+        expected_package_lock_digest: Option<&str>,
+    ) -> UseResult<CognitivePackageUpgradeResult> {
+        self.upgrade_remote_with_access(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            RegistryAccess::Refreshed,
+            Some(selected_surfaces),
         )
         .await
     }
@@ -113,6 +171,7 @@ impl CognitivePackageManager {
             channel,
             expected_package_lock_digest,
             RegistryAccess::Cached,
+            None,
         )
         .await
     }

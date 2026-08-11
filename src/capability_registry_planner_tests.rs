@@ -115,6 +115,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
         registry: Some(registry),
         verified_catalog: Some(verified),
         planning_bundle: None,
+        selected_surfaces: Vec::new(),
         installed_at_unix: 7,
         enabled: true,
         lifecycle_generation: None,

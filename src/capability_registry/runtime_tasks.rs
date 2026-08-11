@@ -199,6 +199,7 @@ extension "acme/research" {
             registry: None,
             verified_catalog: None,
             planning_bundle: None,
+            selected_surfaces: Vec::new(),
             installed_at_unix: 1,
             enabled: true,
             lifecycle_generation: Some(7),

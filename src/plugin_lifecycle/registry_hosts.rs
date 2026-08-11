@@ -77,9 +77,14 @@ impl PluginPackageLifecycleHost for ExtensionPackageLifecycleHost {
             )
         })?;
         let identity = lifecycle_identity(intent)?;
+        let selected_surfaces = intent
+            .surfaces
+            .iter()
+            .map(|surface| surface.surface.clone())
+            .collect::<Vec<_>>();
         let result = self
             .registry
-            .commit_lifecycle_package(&identity, candidate)
+            .commit_lifecycle_package_selection(&identity, candidate, &selected_surfaces)
             .await?;
         result_evidence("package-committed", intent, idempotency_key, &result)
     }

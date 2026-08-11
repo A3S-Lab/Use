@@ -14,12 +14,27 @@ impl PluginLifecycleIntent {
         spec: PluginLifecycleIntentSpec,
         manifest: &ExtensionManifest,
     ) -> UseResult<Self> {
+        let selected = manifest
+            .plugin_surfaces()?
+            .into_iter()
+            .map(|surface| surface.surface)
+            .collect::<Vec<_>>();
+        Self::from_manifest_selection(spec, manifest, &selected)
+    }
+
+    /// Build the lifecycle schedule for the exact surface set bound by the
+    /// immutable operation plan.
+    pub fn from_manifest_selection(
+        spec: PluginLifecycleIntentSpec,
+        manifest: &ExtensionManifest,
+        selected_surfaces: &[PluginSurfaceRef],
+    ) -> UseResult<Self> {
         if spec.package_id != manifest.package_id {
             return Err(lifecycle_error(
                 "The lifecycle package identity does not match the admitted manifest.",
             ));
         }
-        let surfaces = lifecycle_surfaces(manifest.plugin_surfaces()?)?;
+        let surfaces = lifecycle_surfaces(manifest.plugin_surfaces()?, selected_surfaces)?;
         let checkpoints = checkpoints(&spec.operation_id, spec.generation, spec.action, &surfaces)?;
         let intent = Self {
             schema: PLUGIN_LIFECYCLE_INTENT_SCHEMA.to_string(),
@@ -42,6 +57,7 @@ impl PluginLifecycleIntent {
 
 fn lifecycle_surfaces(
     manifest_surfaces: Vec<ManifestPluginSurface>,
+    selected_surfaces: &[PluginSurfaceRef],
 ) -> UseResult<Vec<PluginLifecycleSurface>> {
     if manifest_surfaces.is_empty() || manifest_surfaces.len() > 256 {
         return Err(lifecycle_error(
@@ -57,6 +73,36 @@ fn lifecycle_surfaces(
             "A cognitive package surface appears more than once.",
         ));
     }
+
+    let selected = selected_surfaces.iter().cloned().collect::<BTreeSet<_>>();
+    if selected.is_empty()
+        || selected.len() != selected_surfaces.len()
+        || selected.iter().any(|surface| !by_ref.contains_key(surface))
+        || by_ref
+            .values()
+            .any(|surface| !surface.optional && !selected.contains(&surface.surface))
+        || selected.iter().any(|reference| {
+            by_ref.get(reference).is_some_and(|surface| {
+                surface
+                    .dependencies
+                    .iter()
+                    .any(|dependency| !selected.contains(dependency))
+            })
+        })
+    {
+        return Err(lifecycle_error(
+            "The selected lifecycle surfaces do not form the manifest's required dependency closure.",
+        ));
+    }
+
+    let manifest_surfaces = manifest_surfaces
+        .into_iter()
+        .filter(|surface| selected.contains(&surface.surface))
+        .collect::<Vec<_>>();
+    let by_ref = manifest_surfaces
+        .iter()
+        .map(|surface| (surface.surface.clone(), surface))
+        .collect::<BTreeMap<_, _>>();
 
     let levels = dependency_levels(&by_ref)?;
     let required = required_closure(&by_ref);

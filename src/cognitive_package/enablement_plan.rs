@@ -42,6 +42,7 @@ pub struct CognitivePackageEnablementDraft {
     pub grant_snapshot: PluginWorkspaceGrantSnapshot,
     pub planning_bundles: BTreeMap<String, PluginPlanningBundle>,
     pub installed_generations: BTreeMap<String, u64>,
+    selected_surfaces: Vec<a3s_use_core::PluginSurfaceRef>,
     package: LockedPluginPackage,
     manifest: ExtensionManifest,
     receipt_digest: String,
@@ -100,6 +101,7 @@ impl CognitivePackageEnablementDraft {
         let generated = enablement_operation(
             &self.request,
             &self.package,
+            &self.selected_surfaces,
             &self.manifest,
             self.receipt_digest,
             self.registry_generation,
@@ -480,6 +482,7 @@ impl CognitivePackageManager {
         let draft = enablement_draft(
             request,
             &locked_package,
+            &extension.selected_surfaces()?,
             receipt_digest.clone(),
             snapshot.generation,
         )?;
@@ -514,6 +517,7 @@ impl CognitivePackageManager {
                 grant_snapshot,
                 planning_bundles,
                 installed_generations,
+                selected_surfaces: extension.selected_surfaces()?,
                 package: locked_package,
                 manifest: extension.manifest,
                 receipt_digest,

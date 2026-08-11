@@ -1060,6 +1060,7 @@ mod tests {
         let generated = crate::cognitive_package::plan::install_operation(
             lock,
             &dispositions,
+            &crate::cognitive_package::plan::all_surface_selections(lock),
             &manifests,
             1,
             &scope(),
@@ -1088,6 +1089,7 @@ mod tests {
         let generated = crate::cognitive_package::plan::uninstall_operation(
             lock,
             &dispositions,
+            &crate::cognitive_package::plan::all_surface_selections(lock),
             generations,
             digest('9'),
             1,
@@ -1125,6 +1127,8 @@ mod tests {
             candidate,
             prior,
             &dispositions,
+            &crate::cognitive_package::plan::all_surface_selections(prior),
+            &crate::cognitive_package::plan::all_surface_selections(candidate),
             &manifests,
             &prior_generations,
             digest('9'),

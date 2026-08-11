@@ -66,6 +66,10 @@ pub struct ExtensionReceipt {
     pub verified_catalog: Option<VerifiedPluginCatalogRecord>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planning_bundle: Option<PluginPlanningBundle>,
+    /// Exact resolved surface set selected by the immutable lifecycle plan.
+    /// Empty retains the pre-selection behavior of legacy v3 receipts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_surfaces: Vec<PluginSurfaceRef>,
     pub installed_at_unix: u64,
     pub enabled: bool,
     pub lifecycle_generation: Option<u64>,
@@ -97,7 +101,49 @@ pub struct InstalledExtension {
 
 impl InstalledExtension {
     pub fn surfaces(&self) -> Vec<&'static str> {
-        self.manifest.surface_kinds()
+        if self.receipt.selected_surfaces.is_empty() {
+            return self.manifest.surface_kinds();
+        }
+        let selected = self
+            .receipt
+            .selected_surfaces
+            .iter()
+            .map(|surface| surface.kind)
+            .collect::<std::collections::BTreeSet<_>>();
+        [
+            (PluginSurfaceKind::Tool, "tool"),
+            (PluginSurfaceKind::Mcp, "mcp"),
+            (PluginSurfaceKind::Okf, "okf"),
+            (PluginSurfaceKind::Flow, "flow"),
+            (PluginSurfaceKind::Skill, "skill"),
+            (PluginSurfaceKind::Ui, "ui"),
+        ]
+        .into_iter()
+        .filter_map(|(kind, name)| selected.contains(&kind).then_some(name))
+        .collect()
+    }
+
+    /// Return the exact selected surface set. Legacy receipts project the
+    /// complete manifest inventory to preserve their original semantics.
+    pub fn selected_surfaces(&self) -> UseResult<Vec<PluginSurfaceRef>> {
+        let selected = if self.receipt.selected_surfaces.is_empty() {
+            let mut selected = self
+                .manifest
+                .plugin_surfaces()?
+                .into_iter()
+                .map(|surface| surface.surface)
+                .collect::<Vec<_>>();
+            selected.sort();
+            selected
+        } else {
+            self.receipt.selected_surfaces.clone()
+        };
+        validate_surface_selection(
+            &self.manifest,
+            self.receipt.verified_catalog.as_ref(),
+            &selected,
+        )?;
+        Ok(selected)
     }
 
     pub fn enabled(&self) -> bool {
@@ -749,6 +795,21 @@ impl ExtensionRegistry {
                 ),
             ));
         }
+        let mut selected_surfaces = if receipt.selected_surfaces.is_empty() {
+            manifest
+                .plugin_surfaces()?
+                .into_iter()
+                .map(|surface| surface.surface)
+                .collect::<Vec<_>>()
+        } else {
+            receipt.selected_surfaces.clone()
+        };
+        selected_surfaces.sort();
+        validate_surface_selection(
+            &manifest,
+            receipt.verified_catalog.as_ref(),
+            &selected_surfaces,
+        )?;
         if receipt.package_root
             != self
                 .paths
@@ -843,6 +904,61 @@ fn route_bindings(installed: &[InstalledExtension]) -> Vec<ExtensionRouteBinding
                 .collect(),
         })
         .collect()
+}
+
+pub(super) fn validate_surface_selection(
+    manifest: &ExtensionManifest,
+    catalog: Option<&VerifiedPluginCatalogRecord>,
+    selected_surfaces: &[PluginSurfaceRef],
+) -> UseResult<()> {
+    let selected = selected_surfaces
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    let manifest_surfaces = manifest.plugin_surfaces()?;
+    let available = manifest_surfaces
+        .iter()
+        .map(|surface| (surface.surface.clone(), surface))
+        .collect::<BTreeMap<_, _>>();
+    if selected.is_empty()
+        || selected.len() != selected_surfaces.len()
+        || selected_surfaces.windows(2).any(|pair| pair[0] >= pair[1])
+        || selected
+            .iter()
+            .any(|surface| !available.contains_key(surface))
+        || available
+            .values()
+            .any(|surface| !surface.optional && !selected.contains(&surface.surface))
+        || selected.iter().any(|reference| {
+            available.get(reference).is_some_and(|surface| {
+                surface
+                    .dependencies
+                    .iter()
+                    .any(|dependency| !selected.contains(dependency))
+            })
+        })
+    {
+        return Err(UseError::new(
+            "use.extension.receipt_invalid",
+            "The extension receipt surface selection is not the manifest's required dependency closure.",
+        ));
+    }
+    if let Some(catalog) = catalog {
+        let mut expected = catalog
+            .record
+            .resolve_surfaces(selected_surfaces)?
+            .into_iter()
+            .map(|surface| surface.reference())
+            .collect::<Vec<_>>();
+        expected.sort();
+        if expected != selected_surfaces {
+            return Err(UseError::new(
+                "use.extension.receipt_invalid",
+                "The extension receipt surface selection does not match its signed catalog.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn lifecycle_bindings(

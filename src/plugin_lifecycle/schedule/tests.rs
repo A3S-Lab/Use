@@ -1,5 +1,5 @@
 use super::*;
-use crate::plugin_lifecycle::test_support::intent;
+use crate::plugin_lifecycle::test_support::{intent, ALL_SURFACES};
 use a3s_use_core::{PluginSurfaceKind, PluginSurfaceRef};
 
 fn surface(kind: PluginSurfaceKind, id: &str) -> PluginSurfaceRef {
@@ -99,4 +99,52 @@ fn replacement_retirement_binds_only_known_sorted_ui_state_surfaces() {
         install.validate().unwrap_err().code,
         "use.plugin.lifecycle_invalid"
     );
+}
+
+#[test]
+fn lifecycle_selection_excludes_one_independent_optional_surface() {
+    let manifest = ExtensionManifest::parse_acl(&ALL_SURFACES.replace(
+        "\n  mcp \"catalog\" {",
+        r#"
+  tool "optional-export" {
+    workload   = "task"
+    interface  = "cli"
+    executable = "bin/export"
+    command    = "export"
+    optional   = true
+  }
+
+  mcp "catalog" {"#,
+    ))
+    .unwrap();
+    let selected = manifest
+        .plugin_surfaces()
+        .unwrap()
+        .into_iter()
+        .map(|surface| surface.surface)
+        .filter(|surface| surface.id != "optional-export")
+        .collect::<Vec<_>>();
+    let base = intent(PluginLifecycleAction::Install);
+    let selected = PluginLifecycleIntent::from_manifest_selection(
+        PluginLifecycleIntentSpec {
+            operation_id: base.operation_id,
+            plan_digest: base.plan_digest,
+            scope: base.scope,
+            package_id: base.package_id,
+            package_digest: base.package_digest,
+            manifest_digest: base.manifest_digest,
+            generation: base.generation,
+            action: base.action,
+            retained_ui_state_surfaces: Vec::new(),
+        },
+        &manifest,
+        &selected,
+    )
+    .unwrap();
+
+    assert_eq!(selected.surfaces.len(), 6);
+    assert!(selected
+        .surfaces
+        .iter()
+        .all(|surface| surface.surface.id != "optional-export"));
 }

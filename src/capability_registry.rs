@@ -1377,6 +1377,7 @@ extension "acme/workflow" {
             registry: None,
             verified_catalog: None,
             planning_bundle: None,
+            selected_surfaces: Vec::new(),
             installed_at_unix: 0,
             enabled,
             lifecycle_generation: Some(1),
