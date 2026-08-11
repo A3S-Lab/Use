@@ -19,7 +19,8 @@ use super::grant::PackageGraphAuthorization;
 use super::package_manager_error;
 
 const INSTALLED_GRAPH_SCHEMA: &str = "a3s.use.installed-package-graph.v1";
-const PENDING_GRAPH_SCHEMA: &str = "a3s.use.pending-package-graph-operation.v2";
+const PENDING_GRAPH_SCHEMA_V2: &str = "a3s.use.pending-package-graph-operation.v2";
+const PENDING_GRAPH_SCHEMA_V3: &str = "a3s.use.pending-package-graph-operation.v3";
 const MAX_GRAPH_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +63,10 @@ impl InstalledPackageGraph {
 pub(super) struct PendingPackageGraphOperation {
     pub schema: String,
     pub envelope: PluginOperationPlanEnvelope,
+    #[serde(default = "default_admitted_phase")]
+    pub phase: PackageGraphOperationPhase,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub planned_at_ms: u64,
     pub admitted_at_ms: u64,
     #[serde(default)]
     pub authorization: PackageGraphAuthorization,
@@ -78,6 +83,21 @@ pub(super) struct PendingPackageGraphOperation {
     pub prior_manifest_digests: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum PackageGraphOperationPhase {
+    Planned,
+    Admitted,
+}
+
+const fn default_admitted_phase() -> PackageGraphOperationPhase {
+    PackageGraphOperationPhase::Admitted
+}
+
+const fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
 impl PendingPackageGraphOperation {
     pub fn new(
         envelope: PluginOperationPlanEnvelope,
@@ -86,12 +106,24 @@ impl PendingPackageGraphOperation {
         generations: BTreeMap<String, u64>,
         manifests: BTreeMap<String, ExtensionManifest>,
     ) -> UseResult<Self> {
+        Self::planned(envelope, admitted_at_ms, generations, manifests)?
+            .admit(admitted_at_ms, authorization)
+    }
+
+    pub fn planned(
+        envelope: PluginOperationPlanEnvelope,
+        planned_at_ms: u64,
+        generations: BTreeMap<String, u64>,
+        manifests: BTreeMap<String, ExtensionManifest>,
+    ) -> UseResult<Self> {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA.to_string(),
+            schema: PENDING_GRAPH_SCHEMA_V3.to_string(),
             envelope,
-            admitted_at_ms,
-            authorization,
+            phase: PackageGraphOperationPhase::Planned,
+            planned_at_ms,
+            admitted_at_ms: 0,
+            authorization: PackageGraphAuthorization::default(),
             generations,
             manifests,
             manifest_digests,
@@ -115,13 +147,37 @@ impl PendingPackageGraphOperation {
         prior_generations: BTreeMap<String, u64>,
         prior_manifests: BTreeMap<String, ExtensionManifest>,
     ) -> UseResult<Self> {
+        Self::planned_upgrade(
+            envelope,
+            admitted_at_ms,
+            generations,
+            manifests,
+            prior_package_lock,
+            prior_generations,
+            prior_manifests,
+        )?
+        .admit(admitted_at_ms, authorization)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn planned_upgrade(
+        envelope: PluginOperationPlanEnvelope,
+        planned_at_ms: u64,
+        generations: BTreeMap<String, u64>,
+        manifests: BTreeMap<String, ExtensionManifest>,
+        prior_package_lock: PluginPackageLock,
+        prior_generations: BTreeMap<String, u64>,
+        prior_manifests: BTreeMap<String, ExtensionManifest>,
+    ) -> UseResult<Self> {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let prior_manifest_digests = manifest_record_digests(&prior_manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA.to_string(),
+            schema: PENDING_GRAPH_SCHEMA_V3.to_string(),
             envelope,
-            admitted_at_ms,
-            authorization,
+            phase: PackageGraphOperationPhase::Planned,
+            planned_at_ms,
+            admitted_at_ms: 0,
+            authorization: PackageGraphAuthorization::default(),
             generations,
             manifests,
             manifest_digests,
@@ -134,10 +190,49 @@ impl PendingPackageGraphOperation {
         Ok(operation)
     }
 
+    pub fn admit(
+        &self,
+        admitted_at_ms: u64,
+        authorization: PackageGraphAuthorization,
+    ) -> UseResult<Self> {
+        self.validate()?;
+        if self.phase != PackageGraphOperationPhase::Planned || admitted_at_ms < self.planned_at_ms
+        {
+            return Err(store_error(
+                "Only an exact planned package graph operation can be admitted.",
+            ));
+        }
+        let mut admitted = self.clone();
+        admitted.phase = PackageGraphOperationPhase::Admitted;
+        admitted.admitted_at_ms = admitted_at_ms;
+        admitted.authorization = authorization;
+        admitted.validate()?;
+        Ok(admitted)
+    }
+
     pub fn validate(&self) -> UseResult<()> {
         self.envelope.validate()?;
-        self.authorization
-            .validate_against(&self.envelope, self.admitted_at_ms)?;
+        let legacy_admitted = self.schema == PENDING_GRAPH_SCHEMA_V2
+            && self.phase == PackageGraphOperationPhase::Admitted
+            && self.planned_at_ms == 0;
+        let phase_valid = match self.phase {
+            PackageGraphOperationPhase::Planned => {
+                self.schema == PENDING_GRAPH_SCHEMA_V3
+                    && self.planned_at_ms > 0
+                    && self.admitted_at_ms == 0
+                    && self.authorization == PackageGraphAuthorization::default()
+            }
+            PackageGraphOperationPhase::Admitted => {
+                (legacy_admitted
+                    || (self.schema == PENDING_GRAPH_SCHEMA_V3
+                        && self.planned_at_ms > 0
+                        && self.admitted_at_ms >= self.planned_at_ms))
+                    && self
+                        .authorization
+                        .validate_against(&self.envelope, self.admitted_at_ms)
+                        .is_ok()
+            }
+        };
         let changed = self
             .envelope
             .plan
@@ -258,7 +353,7 @@ impl PendingPackageGraphOperation {
             .is_ok_and(|digests| digests == self.manifest_digests);
         let prior_manifest_digests_valid = manifest_record_digests(&self.prior_manifests)
             .is_ok_and(|digests| digests == self.prior_manifest_digests);
-        if self.schema != PENDING_GRAPH_SCHEMA
+        if !phase_valid
             || changed != generations
             || changed != manifests
             || !upgrade_evidence_valid
@@ -277,6 +372,10 @@ impl PendingPackageGraphOperation {
             ));
         }
         Ok(())
+    }
+
+    pub fn phase(&self) -> PackageGraphOperationPhase {
+        self.phase
     }
 
     pub fn action(&self) -> PluginOperationAction {
@@ -571,6 +670,49 @@ impl PendingPackageGraphStore {
         let path = pending_record_path(&self.root, value.action(), value.root_package_id())?;
         write_new(&self.state_root, &path, value).await?;
         Ok(true)
+    }
+
+    /// Atomically advance one exact reviewed plan to durable authorization.
+    ///
+    /// This is the only planned-to-admitted transition for package graphs.
+    /// A replay of the exact admitted value is idempotent; changed plan,
+    /// manifest, generation, or authorization identity fails closed.
+    pub async fn admit(
+        &self,
+        expected: &PendingPackageGraphOperation,
+        admitted_at_ms: u64,
+        authorization: PackageGraphAuthorization,
+    ) -> UseResult<(PendingPackageGraphOperation, bool)> {
+        if expected.phase() != PackageGraphOperationPhase::Planned {
+            return Err(store_error(
+                "Only a planned package graph operation can enter admission.",
+            ));
+        }
+        let admitted = expected.admit(admitted_at_ms, authorization)?;
+        let _guard = acquire_lock(&self.state_root).await?;
+        let path = pending_record_path(&self.root, expected.action(), expected.root_package_id())?;
+        let parent = path.parent().ok_or_else(path_identity_error)?;
+        if !validate_existing_directory_chain(&self.state_root, parent).await? {
+            return Err(store_error(
+                "The reviewed package graph plan disappeared before admission.",
+            ));
+        }
+        let current = read_optional::<PendingPackageGraphOperation>(&path)
+            .await?
+            .ok_or_else(|| {
+                store_error("The reviewed package graph plan disappeared before admission.")
+            })?;
+        current.validate()?;
+        if current == admitted {
+            return Ok((admitted, false));
+        }
+        if current != *expected {
+            return Err(store_error(
+                "The reviewed package graph plan changed before admission.",
+            ));
+        }
+        write_new(&self.state_root, &path, &admitted).await?;
+        Ok((admitted, true))
     }
 
     pub async fn remove(&self, expected: &PendingPackageGraphOperation) -> UseResult<bool> {

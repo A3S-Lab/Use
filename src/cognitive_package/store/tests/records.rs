@@ -94,6 +94,66 @@ async fn pending_store_serializes_all_actions_for_one_root() {
         .is_none());
 }
 
+#[tokio::test]
+async fn pending_store_advances_one_exact_reviewed_plan_to_admission() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = PendingPackageGraphStore::new(&state_root);
+    let lock = package_lock("1.0.0", '1');
+    let admitted_fixture = install_pending(&lock);
+    let planned = PendingPackageGraphOperation::planned(
+        admitted_fixture.envelope.clone(),
+        9,
+        admitted_fixture.generations.clone(),
+        admitted_fixture.manifests.clone(),
+    )
+    .unwrap();
+
+    assert_eq!(planned.phase(), PackageGraphOperationPhase::Planned);
+    assert!(store.put(&planned).await.unwrap());
+    let (admitted, changed) = store
+        .admit(&planned, 10, PackageGraphAuthorization::default())
+        .await
+        .unwrap();
+    assert!(changed);
+    assert_eq!(admitted.phase(), PackageGraphOperationPhase::Admitted);
+    assert_eq!(
+        store
+            .get(PluginOperationAction::Install, &lock.root_package_id)
+            .await
+            .unwrap(),
+        Some(admitted.clone())
+    );
+    let (replayed, changed) = store
+        .admit(&planned, 10, PackageGraphAuthorization::default())
+        .await
+        .unwrap();
+    assert!(!changed);
+    assert_eq!(replayed, admitted);
+
+    let error = store
+        .admit(&planned, 11, PackageGraphAuthorization::default())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
+}
+
+#[test]
+fn admitted_v2_package_graph_record_remains_restart_compatible() {
+    let lock = package_lock("1.0.0", '1');
+    let admitted = install_pending(&lock);
+    let mut legacy = serde_json::to_value(&admitted).unwrap();
+    legacy["schema"] = serde_json::json!(PENDING_GRAPH_SCHEMA_V2);
+    legacy.as_object_mut().unwrap().remove("phase");
+    legacy.as_object_mut().unwrap().remove("plannedAtMs");
+
+    let decoded: PendingPackageGraphOperation = serde_json::from_value(legacy).unwrap();
+    decoded.validate().unwrap();
+    assert_eq!(decoded.phase(), PackageGraphOperationPhase::Admitted);
+    assert_eq!(decoded.planned_at_ms, 0);
+    assert_eq!(decoded.envelope, admitted.envelope);
+}
+
 #[test]
 fn package_graph_plans_derive_okf_impact_for_every_action() {
     let prior = package_lock("1.0.0", '1');
