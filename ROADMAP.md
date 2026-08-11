@@ -206,6 +206,9 @@ Status: in progress
   monotonically through Runtime-applied and Gateway-ready evidence, reconcile
   the final-binding commit window, and remove interrupted candidates without
   creating duplicate Runtime effects.
+- [x] Exit real test subprocesses at all six nested Service provisioning
+  windows for Tool and HTTP MCP, then prove exact-key recovery, one Runtime
+  and Gateway effect, terminal replay, and drain/remove without residue.
 - [ ] Compose production Runtime Service providers in A3S Code and managed
   hosts with exact plan-time and apply-time evidence.
 - [ ] Consume the reviewed Runtime Task projection in Code CLI/TUI/Web agent
@@ -285,6 +288,9 @@ Status: pending
 - [x] Run the complete current non-Science workspace suite on Windows x86_64
   and reject directory junctions across package, Registry/cache, Grant,
   lifecycle, Runtime, Flow, and Knowledge trust boundaries.
+- [x] Run the Runtime Service provisioning subprocess-exit matrix for Tool and
+  HTTP MCP on the configured platform CI jobs. Real managed-provider and CLI
+  process-kill qualification remains open.
 - [ ] Expand the remaining Windows gate to the complete filesystem, Runtime,
   MCP, watcher, failure-injection, and crash-recovery matrix.
 - [x] Test real-process uninstall interruption between durable Registry cutover

@@ -104,6 +104,10 @@ Status: in progress
   exact plan/provider/request identity across Tool and HTTP MCP Gateway bind
   failures, commit the final binding without an unowned gap, and make
   candidate rollback converge without duplicate Runtime effects or residue.
+- [x] Exercise Tool and HTTP MCP in real test subprocesses across requested,
+  Runtime-effect, runtime-applied, Gateway-effect, gateway-ready, and
+  final-binding commit windows; require one effect, exact replay, and complete
+  route/unit/binding cleanup.
 - Complete production Runtime Service provider
   composition without weakening exact-generation drain and removal.
 - [x] Consume only Runtime-published generation-bound loopback Service
