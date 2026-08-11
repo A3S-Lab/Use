@@ -442,9 +442,14 @@ provisioning is deleted. Restart reuses the original lifecycle and apply keys;
 a pre-apply marker is removed only after an exact Runtime inspect proves the
 unit absent, while later phases are completed and receipt-owned cleanup drains
 Gateway before Runtime removal. Unit tests cover Tool and HTTP MCP bind
-interruption, pre-apply and post-apply candidate rollback, and the safe
-final-binding-plus-provisioning commit window. Real-process managed-provider
-and cross-platform kill injection remain release gates.
+interruption plus pre-apply and post-apply candidate rollback. A test-binary
+subprocess matrix exits at requested sync, ambiguous Runtime effect,
+runtime-applied sync, ambiguous Gateway effect, gateway-ready sync, and the
+final-binding-plus-provisioning window for both Service kinds. Recovery keeps
+one Runtime and Gateway effect, terminal replay is side-effect free, and
+receipt-owned removal leaves no route, unit, binding, or provisioning residue.
+Real managed-provider and CLI process-kill qualification across the supported
+platform matrix remains a release gate.
 
 The standalone CLI binary additionally has a deterministic real-process
 uninstall case. The parent holds the package journal lock while the child

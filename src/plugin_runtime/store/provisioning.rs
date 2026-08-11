@@ -58,6 +58,10 @@ impl RuntimeBindingStore {
             }
         }
         write_provisioning(&path, receipt).await?;
+        #[cfg(test)]
+        crate::plugin_runtime::provisioning_fault_matrix::crash_after_provisioning_phase(
+            receipt.phase,
+        );
         Ok(true)
     }
 
@@ -178,6 +182,10 @@ impl RuntimeBindingStore {
 
         if current_binding.is_none() {
             write_receipt(&binding_path, binding).await?;
+            #[cfg(test)]
+            crate::plugin_runtime::provisioning_fault_matrix::crash_after_checkpoint(
+                crate::plugin_runtime::provisioning_fault_matrix::BINDING_SYNCED,
+            );
         }
         fs::remove_file(&pending_path).await.map_err(|error| {
             path_error(

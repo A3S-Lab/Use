@@ -11,6 +11,8 @@ mod model;
 mod planner;
 mod provider_selector;
 mod provisioning;
+#[cfg(test)]
+pub(crate) mod provisioning_fault_matrix;
 mod receipt;
 mod store;
 mod surface_observer;

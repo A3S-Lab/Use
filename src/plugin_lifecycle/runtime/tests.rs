@@ -535,6 +535,11 @@ async fn gateway_drain_failure_preserves_runtime_and_binding_for_replay() {
 }
 
 mod provisioning;
+mod provisioning_fault_gateway;
+mod provisioning_fault_io;
+mod provisioning_fault_matrix;
+mod provisioning_fault_runtime;
+mod provisioning_fault_support;
 
 #[derive(Default)]
 struct RecordingReadiness {
