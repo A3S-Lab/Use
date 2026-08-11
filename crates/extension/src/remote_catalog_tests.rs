@@ -26,6 +26,32 @@ const FIXTURE_TIMESTAMP: &[u8] =
 const FIXTURE_ROOT_SHA256: &str =
     include_str!("../fixtures/registry/plugin-v3/root.sha256").trim_ascii_end();
 
+#[test]
+fn catalog_input_schemas_publish_the_same_closed_bounds_as_runtime_contracts() {
+    let host = plugin_catalog_host_input_schema();
+    assert_eq!(host["additionalProperties"], false);
+    assert_eq!(
+        host["required"],
+        serde_json::json!(["target", "useVersion"])
+    );
+
+    let search = plugin_catalog_search_input_schema();
+    assert_eq!(search["additionalProperties"], false);
+    assert_eq!(search["required"], serde_json::json!(["query", "limit"]));
+    assert_eq!(
+        search["properties"]["limit"]["maximum"],
+        MAX_PLUGIN_CATALOG_PAGE_SIZE
+    );
+
+    let inspection = plugin_catalog_inspection_input_schema();
+    assert_eq!(inspection["additionalProperties"], false);
+    assert_eq!(inspection["required"], serde_json::json!(["packageId"]));
+    assert_eq!(
+        inspection["properties"]["channel"]["enum"],
+        serde_json::json!(["beta", "nightly", "stable"])
+    );
+}
+
 #[tokio::test]
 async fn complete_signed_fixture_is_searchable_and_inspectable_without_archive_download() {
     let routes = HashMap::from([

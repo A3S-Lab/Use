@@ -39,9 +39,11 @@ pub use cache_policy::{
     DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES, VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
 };
 pub use catalog::{
-    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages, search_cached_plugins,
-    search_remote_plugins, PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection,
-    PluginCatalogPage, PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource,
+    inspect_cached_plugin, inspect_remote_plugin, list_remote_packages,
+    plugin_catalog_host_input_schema, plugin_catalog_inspection_input_schema,
+    plugin_catalog_search_input_schema, search_cached_plugins, search_remote_plugins,
+    PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection, PluginCatalogPage,
+    PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource,
     VerifiedRegistryCatalog, VerifiedRegistryMetadata, MAX_PLUGIN_CATALOG_PAGE_BYTES,
     MAX_PLUGIN_CATALOG_PAGE_SIZE,
 };

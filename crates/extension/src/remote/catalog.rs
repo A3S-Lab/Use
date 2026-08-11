@@ -5,6 +5,7 @@ use a3s_use_core::{
 };
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tough::{Repository, TargetName};
 
 use super::{
@@ -37,6 +38,107 @@ const MAX_CATALOG_FILTER_BYTES: usize = 64;
 
 pub const MAX_PLUGIN_CATALOG_PAGE_SIZE: u16 = 50;
 pub const MAX_PLUGIN_CATALOG_PAGE_BYTES: usize = 1024 * 1024;
+
+/// Canonical JSON Schema fragment for [`PluginCatalogHost`] inputs.
+///
+/// Presentation adapters should compose this fragment rather than restating
+/// A3S Use's host compatibility contract.
+pub fn plugin_catalog_host_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "useVersion"],
+        "properties": {
+            "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_CATALOG_FILTER_BYTES,
+                "x-a3s-max-utf8-bytes": MAX_CATALOG_FILTER_BYTES,
+                "pattern": "^[a-z][a-z0-9_-]*$",
+                "not": { "const": "any" }
+            },
+            "useVersion": {
+                "type": "string",
+                "minLength": 1,
+                "x-a3s-canonical-semver": true
+            }
+        }
+    })
+}
+
+/// Canonical JSON Schema fragment for [`PluginCatalogSearch`] inputs.
+pub fn plugin_catalog_search_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["query", "limit"],
+        "properties": {
+            "query": {
+                "type": "string",
+                "x-a3s-max-utf8-bytes": MAX_CATALOG_QUERY_BYTES
+            },
+            "kind": {
+                "type": "string",
+                "enum": ["flow", "mcp", "okf", "skill", "tool", "ui"]
+            },
+            "channel": {
+                "type": "string",
+                "enum": ["beta", "nightly", "stable"]
+            },
+            "publisher": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "category": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_CATALOG_FILTER_BYTES,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "availability": {
+                "type": "string",
+                "enum": ["available", "deprecated", "withdrawn"]
+            },
+            "cursor": {
+                "type": "string",
+                "minLength": 1,
+                "x-a3s-max-utf8-bytes": MAX_CATALOG_CURSOR_BYTES
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": MAX_PLUGIN_CATALOG_PAGE_SIZE
+            }
+        }
+    })
+}
+
+/// Canonical JSON Schema fragment for package inspection selectors.
+pub fn plugin_catalog_inspection_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["packageId"],
+        "properties": {
+            "packageId": {
+                "type": "string",
+                "minLength": 3,
+                "x-a3s-use-package-id": true
+            },
+            "version": {
+                "type": "string",
+                "minLength": 1,
+                "x-a3s-canonical-semver": true
+            },
+            "channel": {
+                "type": "string",
+                "enum": ["beta", "nightly", "stable"]
+            }
+        }
+    })
+}
 
 /// Signed metadata versions observed after a complete TUF refresh.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -102,6 +102,11 @@ source. The resolver uses only enabled sources, applies SemVer,
 `requires_use`, host target, and provider requirements, then freezes the
 selected catalog-v3 records in one exact package lock.
 
+The Extension crate also publishes the closed JSON Schema fragments for the
+canonical catalog host, bounded search, and inspection-selector inputs. REST,
+MCP, and other presentation adapters compose those fragments instead of
+copying A3S Use's field, enum, cursor, or page-limit contract.
+
 Every remote receipt retains the verified catalog record and its complete TUF
 provenance. Replacing a Registry never rewrites historical provenance. Missing
 or partial catalog evidence is invalid and cannot be reconstructed from an
