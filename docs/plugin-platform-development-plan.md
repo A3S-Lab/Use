@@ -100,6 +100,8 @@ Status: in progress
   lease held through capture and cleanup.
 - [x] Publish exact scope/package/generation-matched Runtime Tool Tasks through
   capability snapshot schema v2; omit missing or mismatched bindings.
+- [x] Require explicit owner evidence for every required Tool, MCP, Flow, OKF,
+  Skill, and UI surface before atomically publishing the capability generation.
 - [x] Persist `a3s.use.runtime-service-provisioning.v1` before apply, retain
   exact plan/provider/request identity across Tool and HTTP MCP Gateway bind
   failures, commit the final binding without an unowned gap, and make

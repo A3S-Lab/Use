@@ -65,6 +65,7 @@ pub(crate) enum SurfaceStateReason {
     PackageNotEnabled,
     RuntimeObservationMissing,
     McpObservationMissing,
+    SkillObservationMissing,
     UiObservationMissing,
     DependencyPending,
     DependencyFailed,
@@ -394,7 +395,10 @@ fn observed_surface_state(
 
 fn default_observation(node: &SurfaceNode) -> (SurfaceObservedState, Option<SurfaceStateReason>) {
     match node.owner {
-        SurfaceOwner::SkillHost => (SurfaceObservedState::Prepared, None),
+        SurfaceOwner::SkillHost => (
+            SurfaceObservedState::Pending,
+            Some(SurfaceStateReason::SkillObservationMissing),
+        ),
         SurfaceOwner::FlowHost => (
             SurfaceObservedState::Pending,
             Some(SurfaceStateReason::FlowObservationMissing),

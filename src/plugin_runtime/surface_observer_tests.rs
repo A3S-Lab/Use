@@ -97,6 +97,14 @@ async fn scoped_runtime_observations_feed_the_named_surface_reconciler() {
             surface(PluginSurfaceKind::Ui, "status"),
             SurfaceObservedState::Prepared,
         ),
+        (
+            surface(PluginSurfaceKind::Skill, "review"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            surface(PluginSurfaceKind::Skill, "quick-look"),
+            SurfaceObservedState::Prepared,
+        ),
     ]);
     let reconciled = reconcile_with_runtime(
         &manifest,

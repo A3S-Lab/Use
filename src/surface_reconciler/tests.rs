@@ -104,6 +104,10 @@ fn a3s_flow_sits_between_base_capabilities_and_skill_ui_consumers() {
             SurfaceObservedState::Prepared,
         ),
         (
+            reference(PluginSurfaceKind::Skill, "reason"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
             reference(PluginSurfaceKind::Ui, "reason"),
             SurfaceObservedState::Prepared,
         ),
@@ -148,6 +152,14 @@ fn required_readiness_publishes_atomically_and_optional_gaps_are_degraded() {
         ),
         (
             reference(PluginSurfaceKind::Ui, "review"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Skill, "review"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Skill, "quick-look"),
             SurfaceObservedState::Prepared,
         ),
         (
@@ -229,6 +241,57 @@ fn required_failure_blocks_dependents_and_the_capability_generation() {
         state(&snapshot, PluginSurfaceKind::Ui, "review").reason,
         Some(SurfaceStateReason::DependencyFailed)
     );
+}
+
+#[test]
+fn every_required_surface_needs_owner_evidence_before_atomic_publication() {
+    let manifest = ExtensionManifest::parse_acl(COGNITIVE_MANIFEST).unwrap();
+    let complete = SurfaceObservations::from([
+        (
+            reference(PluginSurfaceKind::Tool, "echo"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Mcp, "context"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Okf, "domain"),
+            SurfaceObservedState::Healthy,
+        ),
+        (
+            reference(PluginSurfaceKind::Flow, "reason"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Skill, "reason"),
+            SurfaceObservedState::Prepared,
+        ),
+        (
+            reference(PluginSurfaceKind::Ui, "reason"),
+            SurfaceObservedState::Prepared,
+        ),
+    ]);
+
+    let ready = reconcile(&manifest, PluginDesiredState::Enabled, true, &complete).unwrap();
+    assert!(ready.capability_ready);
+    assert!(ready.surfaces.iter().all(|surface| surface.published));
+
+    for missing in complete.keys() {
+        let mut incomplete = complete.clone();
+        incomplete.remove(missing);
+        let snapshot =
+            reconcile(&manifest, PluginDesiredState::Enabled, true, &incomplete).unwrap();
+
+        assert!(
+            !snapshot.capability_ready,
+            "missing owner evidence for {missing:?}"
+        );
+        assert!(
+            snapshot.surfaces.iter().all(|surface| !surface.published),
+            "a surface published without complete required owner evidence for {missing:?}"
+        );
+    }
 }
 
 #[test]
@@ -321,11 +384,15 @@ fn okf_requires_a_promoted_knowledge_observation_before_atomic_publication() {
 
     let receipt = knowledge_receipt(&manifest);
     let observation = promoted_observation(&receipt);
+    let skill_observations = SurfaceObservations::from([(
+        reference(PluginSurfaceKind::Skill, "research"),
+        SurfaceObservedState::Prepared,
+    )]);
     let ready = reconcile_with_runtime_and_knowledge(
         &manifest,
         PluginDesiredState::Enabled,
         true,
-        &SurfaceObservations::new(),
+        &skill_observations,
         None,
         &[(receipt, observation)],
     )

@@ -236,7 +236,7 @@ Status: in progress
 - [ ] Complete reviewed UI backend bindings and equivalent sandbox/generation
   composition in CLI, TUI, and native hosts. Those hosts remain
   static-integrity-only until they inject an equivalent renderer.
-- [ ] Prove that every required surface remains unpublished when its owner or
+- [x] Prove that every required surface remains unpublished when its owner or
   evidence is missing.
 
 Exit gate: a six-surface signed package completes install, enable, upgrade,

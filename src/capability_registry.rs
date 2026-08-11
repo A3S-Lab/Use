@@ -982,6 +982,24 @@ async fn surface_observations(
             );
         }
     }
+    for surface in &extension.manifest.skills {
+        let observed = match a3s_use_extension::inspect_skill_surface_file(
+            surface,
+            &extension.receipt.package_root,
+        )
+        .await
+        {
+            Ok(_) => SurfaceObservedState::Prepared,
+            Err(_) => SurfaceObservedState::Failed,
+        };
+        observations.insert(
+            PluginSurfaceRef {
+                kind: PluginSurfaceKind::Skill,
+                id: surface.id.clone(),
+            },
+            observed,
+        );
+    }
     for surface in &extension.manifest.ui {
         let observed = match a3s_use_extension::inspect_ui_surface_files(
             surface,
@@ -2050,6 +2068,16 @@ extension "acme/workflow" {
         tokio::fs::write(ui.join("index.js"), b"window.reviewReady = true;")
             .await
             .unwrap();
+        for skill in ["review", "quick-look"] {
+            let directory = temp.path().join("skills").join(skill);
+            tokio::fs::create_dir_all(&directory).await.unwrap();
+            tokio::fs::write(
+                directory.join("SKILL.md"),
+                format!("# {skill}\n\nVerified test skill.\n"),
+            )
+            .await
+            .unwrap();
+        }
         let extension = installed_extension(manifest, temp.path().to_path_buf(), true);
         let surfaces = extension
             .surfaces()
