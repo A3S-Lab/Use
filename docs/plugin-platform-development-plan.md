@@ -100,7 +100,11 @@ Status: in progress
   lease held through capture and cleanup.
 - [x] Publish exact scope/package/generation-matched Runtime Tool Tasks through
   capability snapshot schema v2; omit missing or mismatched bindings.
-- Complete Runtime Service health observation and production provider
+- [x] Persist `a3s.use.runtime-service-provisioning.v1` before apply, retain
+  exact plan/provider/request identity across Tool and HTTP MCP Gateway bind
+  failures, commit the final binding without an unowned gap, and make
+  candidate rollback converge without duplicate Runtime effects or residue.
+- Complete production Runtime Service provider
   composition without weakening exact-generation drain and removal.
 - [x] Consume only Runtime-published generation-bound loopback Service
   endpoints and enforce Gateway drain/remove ordering in the shared lifecycle

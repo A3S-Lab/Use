@@ -1,14 +1,21 @@
+use std::collections::BTreeMap;
 use std::fs;
 
+use a3s_runtime::contract::{
+    RuntimeEvidence, RuntimeHealthObservation, RuntimeHealthState, RuntimeObservation,
+    RuntimeServiceEndpoint, RuntimeUnitState,
+};
+
 use a3s_use_core::{
-    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PluginSurfaceKind,
-    PluginSurfaceRef,
+    PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind,
+    PlannedProviderEvidence, PluginSurfaceKind, PluginSurfaceRef,
 };
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use super::test_support::{
-    artifact, capabilities, evidence, policy, task_descriptor, task_surface,
+    artifact, capabilities, evidence, policy, service_descriptor, service_surface, task_descriptor,
+    task_surface,
 };
 use super::*;
 
@@ -95,6 +102,83 @@ fn service_receipt(observation_revision: u64) -> RuntimeBindingReceipt {
     })
 }
 
+fn service_plan(generation: u64) -> (RuntimeSurfacePlan, PlannedProviderEvidence) {
+    let descriptor = service_descriptor();
+    let context = RuntimeSurfaceContext::new(
+        "acme/research",
+        PACKAGE_DIGEST,
+        workspace_scope(),
+        DESCRIPTOR_DIGEST,
+        PluginSurfaceRef {
+            kind: PluginSurfaceKind::Tool,
+            id: "index".to_string(),
+        },
+        generation,
+    )
+    .unwrap();
+    let plan = plan_tool_service_release(
+        context,
+        &service_surface(),
+        &descriptor,
+        artifact(&descriptor.artifact.digest, &descriptor.artifact.media_type),
+        policy(),
+    )
+    .unwrap();
+    let provider = evidence(&plan, &capabilities(&plan));
+    (plan, provider)
+}
+
+fn provisioning_receipt(generation: u64) -> RuntimeServiceProvisioningReceipt {
+    let (plan, provider) = service_plan(generation);
+    RuntimeServiceProvisioningReceipt::from_plan(
+        &plan,
+        &provider,
+        format!("sha256:{}", "9".repeat(64)),
+        format!("use:apply-tool:{}", "8".repeat(64)),
+    )
+    .unwrap()
+}
+
+fn running_observation(
+    plan: &RuntimeSurfacePlan,
+    provider: &PlannedProviderEvidence,
+) -> RuntimeObservation {
+    let spec_digest = plan.spec().digest().unwrap();
+    let mut claims = BTreeMap::new();
+    RuntimeServiceEndpoint::node_local_tcp("http", 31_337)
+        .unwrap()
+        .insert_claim(&mut claims)
+        .unwrap();
+    RuntimeObservation {
+        schema: RuntimeObservation::SCHEMA.to_string(),
+        unit_id: plan.spec().unit_id.clone(),
+        generation: plan.spec().generation,
+        spec_digest: spec_digest.clone(),
+        class: plan.spec().class,
+        state: RuntimeUnitState::Running,
+        provider_resource_id: Some("resource-01".to_string()),
+        provider_build: Some(provider.provider_build_id.clone()),
+        observed_at_ms: 1_000,
+        started_at_ms: Some(900),
+        finished_at_ms: None,
+        health: Some(RuntimeHealthObservation {
+            state: RuntimeHealthState::Healthy,
+            checked_at_ms: 1_000,
+            message: None,
+        }),
+        outputs: Vec::new(),
+        usage: None,
+        evidence: Some(RuntimeEvidence {
+            provider_build: provider.provider_build_id.clone(),
+            spec_digest,
+            semantics_profile_digest: Some(provider.semantics_profile_digest.clone()),
+            claims,
+        }),
+        provider_attestation: None,
+        failure: None,
+    }
+}
+
 #[tokio::test]
 async fn binding_store_round_trips_idempotently_and_removes_exact_ownership() {
     let temporary = TempDir::new().unwrap();
@@ -112,6 +196,64 @@ async fn binding_store_round_trips_idempotently_and_removes_exact_ownership() {
     );
     assert!(store.remove(&receipt).await.unwrap());
     assert!(!store.remove(&receipt).await.unwrap());
+}
+
+#[tokio::test]
+async fn provisioning_store_advances_and_commits_without_an_unowned_gap() {
+    let temporary = TempDir::new().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let (plan, provider) = service_plan(7);
+    let mut pending = provisioning_receipt(7);
+
+    assert!(store.put_provisioning(&pending).await.unwrap());
+    assert!(!store.put_provisioning(&pending).await.unwrap());
+    pending
+        .record_runtime_observation(&plan, &provider, running_observation(&plan, &provider))
+        .unwrap();
+    assert!(store.put_provisioning(&pending).await.unwrap());
+    pending
+        .record_gateway_readiness(
+            RuntimeEndpointRef::parse("gateway:workspace-01/index").unwrap(),
+            RuntimeServiceReadinessEvidence::HttpHealthy,
+        )
+        .unwrap();
+    assert!(store.put_provisioning(&pending).await.unwrap());
+    let binding = RuntimeBindingReceipt::Service(pending.binding_receipt().unwrap());
+
+    assert!(store.commit_provisioning(&pending, &binding).await.unwrap());
+    assert!(store
+        .get_provisioning(&workspace_scope(), &plan.surface(), 7)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        store
+            .get_generation(&workspace_scope(), &plan.surface(), 7)
+            .await
+            .unwrap(),
+        Some(binding.clone())
+    );
+    assert!(!store.commit_provisioning(&pending, &binding).await.unwrap());
+}
+
+#[tokio::test]
+async fn provisioning_store_rejects_conflicting_operation_identity() {
+    let temporary = TempDir::new().unwrap();
+    let store = RuntimeBindingStore::new(temporary.path());
+    let pending = provisioning_receipt(7);
+    store.put_provisioning(&pending).await.unwrap();
+    let mut conflict = pending.clone();
+    conflict.lifecycle_idempotency_key = format!("sha256:{}", "7".repeat(64));
+
+    let error = store.put_provisioning(&conflict).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.runtime.provisioning_conflict");
+    assert_eq!(
+        store
+            .get_provisioning(&workspace_scope(), &pending.surface, 7)
+            .await
+            .unwrap(),
+        Some(pending)
+    );
 }
 
 #[tokio::test]
@@ -380,6 +522,7 @@ fn binding_store_contract_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<RuntimeBindingStore>();
     assert_send_sync::<RuntimeBindingReceipt>();
+    assert_send_sync::<RuntimeServiceProvisioningReceipt>();
 }
 
 fn binding_path(

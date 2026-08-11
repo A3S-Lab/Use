@@ -74,6 +74,9 @@ publishes one capability generation, and retires unused generations in reverse.
 | Lifecycle diagnostic | `a3s.use.plugin-lifecycle-diagnostic.v1` |
 | Enablement state | `a3s.use.cognitive-package-enablement-state.v2` |
 | Enablement operation | `a3s.use.cognitive-package-enablement-operation.v2` |
+| Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
+| Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
+| Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
 
 Negative fixtures for superseded inputs remain only to prove fail-closed
@@ -199,6 +202,10 @@ rejection. They are not supported decode paths.
 
 Status: in progress
 
+- [x] Persist exact Service provisioning before Runtime apply, advance it
+  monotonically through Runtime-applied and Gateway-ready evidence, reconcile
+  the final-binding commit window, and remove interrupted candidates without
+  creating duplicate Runtime effects.
 - [ ] Compose production Runtime Service providers in A3S Code and managed
   hosts with exact plan-time and apply-time evidence.
 - [ ] Consume the reviewed Runtime Task projection in Code CLI/TUI/Web agent

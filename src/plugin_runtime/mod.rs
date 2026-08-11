@@ -10,6 +10,7 @@ mod lifecycle;
 mod model;
 mod planner;
 mod provider_selector;
+mod provisioning;
 mod receipt;
 mod store;
 mod surface_observer;
@@ -33,6 +34,10 @@ pub use planner::{plan_mcp_service_release, plan_tool_service_release, plan_tool
 pub use provider_selector::{
     RuntimeProviderAssignment, RuntimeProviderSelection, RuntimeProviderSelector,
     SelectedRuntimeSurface,
+};
+pub use provisioning::{
+    RuntimeServiceProvisioningPhase, RuntimeServiceProvisioningReceipt,
+    RUNTIME_SERVICE_PROVISIONING_SCHEMA,
 };
 pub use receipt::{RuntimeBindingReadiness, RuntimeBindingReceipt};
 pub use store::{RuntimeBindingStore, MAX_RUNTIME_BINDING_GENERATIONS};

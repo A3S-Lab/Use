@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use a3s_runtime::contract::{
-    IsolationLevel, RuntimeApplyRequest, RuntimeCapabilities, RuntimeFeature, RuntimeUnitClass,
+    IsolationLevel, RuntimeApplyRequest, RuntimeCapabilities, RuntimeFeature, RuntimeInspection,
+    RuntimeUnitClass,
 };
 use a3s_runtime::{RuntimeClient, RuntimeError};
 use a3s_use_core::{PlanEnforcementProfile, PlannedProviderEvidence, UseError, UseResult};
@@ -129,6 +130,53 @@ impl PluginRuntimeClient {
             provider: provider.clone(),
             observation,
         })
+    }
+
+    /// Inspect whether an exact pending Service request already has a Runtime
+    /// unit. This is used only to distinguish a crash after the durable
+    /// provisioning marker but before `apply` from an ambiguous apply effect.
+    pub async fn provisioning_service_exists(
+        &self,
+        plan: &RuntimeSurfacePlan,
+        provider: &PlannedProviderEvidence,
+    ) -> UseResult<bool> {
+        if plan.spec().class != RuntimeUnitClass::Service
+            || matches!(plan.contract(), RuntimeSurfaceContract::ToolTask { .. })
+        {
+            return Err(UseError::new(
+                "use.plugin.runtime.class_mismatch",
+                "Only a Runtime Service plan can have provisioning state.",
+            ));
+        }
+        self.verify_plan(plan, provider).await?;
+        let inspection = self
+            .client
+            .inspect(&plan.spec().unit_id)
+            .await
+            .map_err(|error| runtime_error("inspect pending Runtime Service", error))?;
+        inspection.validate().map_err(runtime_contract_error)?;
+        match inspection {
+            RuntimeInspection::NotFound { unit_id, .. } if unit_id == plan.spec().unit_id => {
+                Ok(false)
+            }
+            RuntimeInspection::Found { observation, .. } => {
+                observation
+                    .validate_against(plan.spec())
+                    .map_err(runtime_contract_error)?;
+                if observation.provider_build.as_deref()
+                    != Some(provider.provider_build_id.as_str())
+                {
+                    return Err(UseError::new(
+                        "use.plugin.runtime.observation_evidence_mismatch",
+                        "The pending Runtime Service was produced by another provider build.",
+                    ));
+                }
+                Ok(true)
+            }
+            RuntimeInspection::NotFound { .. } => Err(runtime_contract_error(
+                "Runtime inspection returned a different pending unit identity.",
+            )),
+        }
     }
 }
 

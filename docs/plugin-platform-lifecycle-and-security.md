@@ -434,6 +434,18 @@ journal, preserves or revokes only the bound receipts, and terminal replay is
 identical. Remaining real CLI, provider, and cross-platform failure injection
 stay separate release gates.
 
+Runtime Services close their nested effect/receipt window before the package
+surface checkpoint returns. A generation-scoped provisioning receipt is synced
+before apply, then advanced after exact healthy Runtime observation and after
+idempotent Gateway bind/MCP initialize. The final binding is synced before
+provisioning is deleted. Restart reuses the original lifecycle and apply keys;
+a pre-apply marker is removed only after an exact Runtime inspect proves the
+unit absent, while later phases are completed and receipt-owned cleanup drains
+Gateway before Runtime removal. Unit tests cover Tool and HTTP MCP bind
+interruption, pre-apply and post-apply candidate rollback, and the safe
+final-binding-plus-provisioning commit window. Real-process managed-provider
+and cross-platform kill injection remain release gates.
+
 The standalone CLI binary additionally has a deterministic real-process
 uninstall case. The parent holds the package journal lock while the child
 durably hides the Registry graph. This proves the child can be killed before

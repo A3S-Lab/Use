@@ -60,6 +60,9 @@ code accepts one preview baseline only:
 | Manager tools | `a3s.use.plugin-manager-tools.v4` |
 | Pending graph | `a3s.use.pending-package-graph-operation.v2` |
 | Enablement state/operation | v2 |
+| Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
+| Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
+| Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
 
 Superseded preview state fails closed with cleanup and reinstall guidance.
 SemVer, `requires_use`, operating-system/target selection, and provider
