@@ -122,6 +122,18 @@ impl TrustedRegistry {
         &self.root_sha256
     }
 
+    /// Returns whether this trust configuration is the exact source recorded
+    /// in verified catalog provenance.
+    pub fn matches_provenance(&self, provenance: &VerifiedCatalogProvenance) -> bool {
+        let provenance_root = provenance
+            .root_sha256
+            .strip_prefix("sha256:")
+            .unwrap_or(&provenance.root_sha256);
+        self.name == provenance.registry_name
+            && self.base_url.as_str() == provenance.registry_url
+            && self.root_sha256 == provenance_root
+    }
+
     pub fn datastore(&self) -> &Path {
         &self.datastore
     }

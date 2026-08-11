@@ -399,14 +399,7 @@ fn verify_registry_binding(
     locked: &VerifiedPluginCatalogRecord,
 ) -> UseResult<()> {
     let provenance = &locked.provenance;
-    let locked_root = provenance
-        .root_sha256
-        .strip_prefix("sha256:")
-        .unwrap_or(&provenance.root_sha256);
-    if registry.name() != provenance.registry_name
-        || registry.base_url().as_str() != provenance.registry_url
-        || registry.root_sha256() != locked_root
-    {
+    if !registry.matches_provenance(provenance) {
         return Err(package_graph_error(
             "use.plugin.package_registry_changed",
             format!(

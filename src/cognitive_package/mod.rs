@@ -9,6 +9,8 @@ mod enablement;
 mod enablement_plan;
 mod enablement_store;
 mod grant;
+mod host_manager;
+mod host_store;
 mod hosts;
 mod install;
 mod native_provider;
@@ -54,6 +56,7 @@ pub use grant::{
     CognitivePackageAuthorizationProvider, CognitivePackageGrantPlan,
     StandaloneCognitivePackageAuthorizationProvider,
 };
+pub use host_manager::CognitivePackageHostManager;
 pub use hosts::{
     ManagedCognitivePackageLifecycleFactory, StandaloneCognitivePackageLifecycleFactory,
     A3S_FLOW_NATIVE_TS_COMPILER_ENV,

@@ -6,17 +6,26 @@ use std::sync::Arc;
 use a3s_use::cognitive_package::{
     CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider,
     CognitivePackageEnablementPreparation, CognitivePackageEnablementRequest,
-    ReviewedCognitivePackageAuthorizationProvider, StandaloneCognitivePackageLifecycleFactory,
+    CognitivePackageHostManager, ReviewedCognitivePackageAuthorizationProvider,
+    StandaloneCognitivePackageLifecycleFactory,
 };
 use a3s_use_core::{
     CatalogPlanningTarget, ExecutablePlanningSurface, PlanActor, PlanAuthority, PlanPolicyDecision,
-    PlanScope, PlanScopeKind, PlanningSurfaceActivation, PluginOperationConfirmation,
-    PluginOperationPlan, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
-    PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle, PluginWorkspaceGrantChangeSet,
-    ToolWorkloadClass, UseResult, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
-    PLUGIN_PLANNING_BUNDLE_SCHEMA,
+    PlanScope, PlanScopeKind, PlanningSurfaceActivation, PluginDesiredState,
+    PluginHostApplyRequest, PluginHostEnablementPlanRequest, PluginHostEnablementPlanStatus,
+    PluginHostManager, PluginHostObservationRequest, PluginHostObservationStatus,
+    PluginHostPlanRequest, PluginManagedScope, PluginOperationAction, PluginOperationConfirmation,
+    PluginOperationPlan, PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageId,
+    PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle, PluginSurfaceRef,
+    PluginWorkspaceGrantChangeSet, ToolWorkloadClass, UseResult, PLUGIN_HOST_APPLY_REQUEST_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
-use a3s_use_extension::{StoredWorkspaceGrant, WorkspaceGrantLifecyclePhase, WorkspaceGrantStore};
+use a3s_use_extension::{
+    RegistrySourceInput, RegistrySourceStore, StoredWorkspaceGrant, VerifiedTargetCachePolicy,
+    WorkspaceGrantLifecyclePhase, WorkspaceGrantStore,
+};
 use async_trait::async_trait;
 
 const POLICY_DIGEST: &str =
@@ -61,6 +70,279 @@ impl CognitivePackageAuthorizationProvider for ConfirmAllPlans {
         self.authorization_count.fetch_add(1, Ordering::SeqCst);
         CognitivePackageAuthorizationEvidence::confirmed(envelope, changes, now_ms)
     }
+}
+
+#[tokio::test]
+async fn production_host_manager_persists_plan_apply_replay_and_exact_fence() {
+    let temporary = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let repository = TestRepository::with_targets(
+        cognitive_tool_targets_version(
+            temporary.path(),
+            "acme/worker",
+            "worker-host",
+            "1.0.0",
+            &target,
+        ),
+        61,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let home = temporary.path().join("host-home");
+    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
+    let sources = RegistrySourceStore::new(paths.clone());
+    sources
+        .add(RegistrySourceInput::new(
+            "fixture",
+            server.base_url(),
+            &repository.root_sha256,
+            None,
+            VerifiedTargetCachePolicy::default(),
+        ))
+        .await
+        .unwrap();
+    let resolved = sources.resolve(Some("fixture")).await.unwrap();
+    let lock = resolve_remote_package_lock(
+        resolved.root(),
+        resolved.dependencies(),
+        "acme/worker",
+        Some("1.0.0"),
+        PluginReleaseChannel::Stable,
+        PluginPackageLockHost::new(target, env!("CARGO_PKG_VERSION")).unwrap(),
+    )
+    .await
+    .unwrap();
+    let candidate = lock.package("acme/worker").unwrap().catalog.clone();
+    let managed_scope = PluginManagedScope {
+        schema: PLUGIN_MANAGED_SCOPE_SCHEMA.to_string(),
+        host_id: "host:node-01".to_string(),
+        scope_id: MANAGED_SCOPE_ID.to_string(),
+        authority_id: "cloud:control-plane".to_string(),
+        fence_generation: 7,
+        fence_digest: format!("sha256:{}", "f".repeat(64)),
+    };
+    let authorization_count = Arc::new(AtomicUsize::new(0));
+    let host = CognitivePackageHostManager::new(
+        managed_scope.clone(),
+        "use:test-build",
+        ExtensionRegistry::new(paths.clone()),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: authorization_count.clone(),
+        }),
+    )
+    .unwrap();
+    let capabilities = host.capabilities().await.unwrap();
+    let capabilities_digest = capabilities.descriptor_digest().unwrap();
+    let selected_surfaces = vec![PluginSurfaceRef {
+        kind: PluginSurfaceKind::Tool,
+        id: "convert".to_string(),
+    }];
+    let plan_request = PluginHostPlanRequest {
+        schema: PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_string(),
+        request_id: "plan:worker:0001".to_string(),
+        assignment_generation: 3,
+        capabilities_digest: capabilities_digest.clone(),
+        scope: managed_scope.clone(),
+        action: PluginOperationAction::Install,
+        package_id: PluginPackageId::parse("acme/worker".to_string()).unwrap(),
+        candidate: Some(candidate),
+        package_lock: Some(lock),
+        selected_surfaces: selected_surfaces.clone(),
+    };
+
+    let planned = host.plan(plan_request.clone()).await.unwrap();
+    assert!(!planned.replayed);
+    assert_eq!(
+        planned.plan.plan.packages[0]
+            .after
+            .as_ref()
+            .unwrap()
+            .release
+            .surfaces
+            .iter()
+            .map(a3s_use_core::CatalogSurface::reference)
+            .collect::<Vec<_>>(),
+        selected_surfaces
+    );
+    let replayed_plan = host.plan(plan_request.clone()).await.unwrap();
+    assert!(replayed_plan.replayed);
+    assert_eq!(replayed_plan.plan, planned.plan);
+    let mut conflicting_plan_request = plan_request.clone();
+    conflicting_plan_request.assignment_generation += 1;
+    let error = host.plan(conflicting_plan_request).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.host_store_conflict");
+
+    let confirmation = PluginOperationConfirmation {
+        schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_string(),
+        operation_id: planned.plan.plan.operation_id.clone(),
+        plan_digest: planned.plan.plan_digest.clone(),
+        confirmed_by: PlanActor::User,
+        confirmed_at_ms: planned.plan.plan.created_at_ms + 1,
+    };
+    let apply_request = PluginHostApplyRequest {
+        schema: PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_string(),
+        request_id: "apply:worker:0001".to_string(),
+        assignment_generation: plan_request.assignment_generation,
+        capabilities_digest: capabilities_digest.clone(),
+        scope: managed_scope.clone(),
+        package_id: plan_request.package_id.clone(),
+        operation_id: planned.plan.plan.operation_id.clone(),
+        plan_digest: planned.plan.plan_digest.clone(),
+        confirmation: Some(confirmation),
+    };
+    let mut unconfirmed_apply = apply_request.clone();
+    unconfirmed_apply.request_id = "apply:worker:unconfirmed".to_string();
+    unconfirmed_apply.confirmation = None;
+    let error = host.apply(unconfirmed_apply).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.plan_confirmation_mismatch");
+    let applied = host.apply(apply_request.clone()).await.unwrap();
+    assert!(!applied.replayed);
+    assert_eq!(applied.state.selected_surfaces, selected_surfaces);
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 0);
+
+    let restarted = CognitivePackageHostManager::new(
+        managed_scope.clone(),
+        "use:test-build",
+        ExtensionRegistry::new(paths.clone()),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: authorization_count.clone(),
+        }),
+    )
+    .unwrap();
+    let replayed_apply = restarted.apply(apply_request.clone()).await.unwrap();
+    assert!(replayed_apply.replayed);
+    assert_eq!(
+        replayed_apply.operation_result_digest,
+        applied.operation_result_digest
+    );
+
+    let observe_request = PluginHostObservationRequest {
+        schema: PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA.to_string(),
+        request_id: "observe:worker:0001".to_string(),
+        assignment_generation: plan_request.assignment_generation,
+        capabilities_digest,
+        scope: managed_scope,
+        package_id: plan_request.package_id,
+    };
+    let observed = restarted.observe(observe_request.clone()).await.unwrap();
+    let PluginHostObservationStatus::Available { state } = observed.status else {
+        panic!("the installed Host package must be observable");
+    };
+    assert_eq!(state.selected_surfaces, selected_surfaces);
+    assert_eq!(state.desired, PluginDesiredState::Enabled);
+
+    let disable_request = PluginHostEnablementPlanRequest {
+        schema: PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_string(),
+        request_id: "plan:worker:disable:0001".to_string(),
+        assignment_generation: plan_request.assignment_generation,
+        capabilities_digest: observe_request.capabilities_digest.clone(),
+        scope: observe_request.scope.clone(),
+        package_id: observe_request.package_id.clone(),
+        expected_package_generation: state.package_generation.unwrap(),
+        enabled: false,
+    };
+    let planned_disable = restarted
+        .plan_enablement(disable_request.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        planned_disable.status,
+        PluginHostEnablementPlanStatus::Planned
+    );
+    assert_eq!(planned_disable.state, state);
+    assert!(!planned_disable.replayed);
+    let replayed_disable_plan = restarted
+        .plan_enablement(disable_request.clone())
+        .await
+        .unwrap();
+    assert!(replayed_disable_plan.replayed);
+    assert_eq!(replayed_disable_plan.plan, planned_disable.plan);
+
+    let disable_plan = planned_disable.plan.as_ref().unwrap();
+    let disable_apply_request = PluginHostApplyRequest {
+        schema: PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_string(),
+        request_id: "apply:worker:disable:0001".to_string(),
+        assignment_generation: disable_request.assignment_generation,
+        capabilities_digest: disable_request.capabilities_digest.clone(),
+        scope: disable_request.scope.clone(),
+        package_id: disable_request.package_id.clone(),
+        operation_id: disable_plan.plan.operation_id.clone(),
+        plan_digest: disable_plan.plan_digest.clone(),
+        confirmation: Some(PluginOperationConfirmation {
+            schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_string(),
+            operation_id: disable_plan.plan.operation_id.clone(),
+            plan_digest: disable_plan.plan_digest.clone(),
+            confirmed_by: PlanActor::User,
+            confirmed_at_ms: disable_plan.plan.created_at_ms + 1,
+        }),
+    };
+    let disabled = restarted
+        .apply(disable_apply_request.clone())
+        .await
+        .unwrap();
+    assert!(!disabled.replayed);
+    assert_eq!(
+        disabled.state.desired,
+        PluginDesiredState::InstalledDisabled
+    );
+    assert!(
+        disabled.state.package_generation.unwrap() > disable_request.expected_package_generation
+    );
+
+    let recovered = CognitivePackageHostManager::new(
+        observe_request.scope.clone(),
+        "use:test-build",
+        ExtensionRegistry::new(paths),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: authorization_count.clone(),
+        }),
+    )
+    .unwrap();
+    let replayed_disable = recovered.apply(disable_apply_request).await.unwrap();
+    assert!(replayed_disable.replayed);
+    assert_eq!(
+        replayed_disable.operation_result_digest,
+        disabled.operation_result_digest
+    );
+
+    let no_change = recovered
+        .plan_enablement(PluginHostEnablementPlanRequest {
+            schema: PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_string(),
+            request_id: "plan:worker:disable:0002".to_string(),
+            assignment_generation: disable_request.assignment_generation,
+            capabilities_digest: disable_request.capabilities_digest,
+            scope: disable_request.scope,
+            package_id: disable_request.package_id,
+            expected_package_generation: disabled.state.package_generation.unwrap(),
+            enabled: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(no_change.status, PluginHostEnablementPlanStatus::NoChange);
+    assert!(no_change.plan.is_none());
+    assert_eq!(authorization_count.load(Ordering::SeqCst), 0);
+
+    let scope_digest = recovered.managed_scope().descriptor_digest().unwrap();
+    let request_path = home
+        .join("state/plugin-host-manager")
+        .join(scope_digest.strip_prefix("sha256:").unwrap())
+        .join("requests")
+        .join(format!("{:x}.json", Sha256::digest(b"plan:worker:0001")));
+    let mut stale = observe_request;
+    stale.request_id = "observe:worker:stale".to_string();
+    stale.scope.fence_generation -= 1;
+    let error = recovered.observe(stale).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.managed_scope_fence_mismatch");
+
+    let mut tampered: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&request_path).unwrap()).unwrap();
+    tampered["recordDigest"] = serde_json::json!(format!("sha256:{}", "0".repeat(64)));
+    std::fs::write(&request_path, serde_json::to_vec_pretty(&tampered).unwrap()).unwrap();
+    let error = recovered.apply(apply_request).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.host_store_invalid");
 }
 
 #[tokio::test]
