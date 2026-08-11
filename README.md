@@ -554,6 +554,11 @@ sources is rejected as ambiguous.
 
 Current Registry rules:
 
+- Managed hosts can pin caller-supplied bootstrap-root bytes through
+  `TrustedRegistry::pin_trusted_root`. The public one-MiB bound, configured
+  digest, regular-file checks, and immutable replay are enforced before the
+  ordinary refresh performs the complete TUF chain, expiration, and rollback
+  verification.
 - TUF target `custom.a3s` metadata contains one complete catalog-v3 record.
 - Every executable catalog carries one separately signed `planning-v1.json`
   target. It distinguishes package-local Tool/stdio MCP launchers from

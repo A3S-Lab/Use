@@ -38,6 +38,83 @@ async fn tuf_refresh_verifies_metadata_without_downloading_targets() {
 }
 
 #[tokio::test]
+async fn caller_pinned_root_is_idempotent_and_never_downloaded() {
+    let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 7, FUTURE);
+    let root = repository
+        .routes
+        .get("/metadata/root.json")
+        .expect("root route")
+        .clone();
+    let mut routes = repository.routes.clone();
+    routes.remove("/metadata/root.json");
+    let server = TestServer::start(routes);
+    let temp = tempfile::tempdir().unwrap();
+    let datastore = temp.path().join("tuf");
+    let trusted = trusted_registry(&server, &repository, datastore.clone());
+
+    trusted.pin_trusted_root(&root).await.unwrap();
+    trusted.pin_trusted_root(&root).await.unwrap();
+    let replacement = b"replacement root";
+    let replacement_registry = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        format!("{:x}", Sha256::digest(replacement)),
+        None,
+        datastore,
+    )
+    .unwrap();
+    let error = replacement_registry
+        .pin_trusted_root(replacement)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.registry_root_conflict");
+    let metadata = refresh_remote_registry(&trusted).await.unwrap();
+
+    assert_eq!(metadata.root_version, 1);
+    assert!(server
+        .requests()
+        .iter()
+        .all(|request| request != "/metadata/root.json"));
+}
+
+#[tokio::test]
+async fn caller_pinned_root_rejects_empty_oversized_and_mismatched_bytes() {
+    let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 7, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+
+    for bytes in [Vec::new(), b"different root".to_vec()] {
+        assert!(trusted.pin_trusted_root(&bytes).await.is_err());
+    }
+    let oversized = vec![0_u8; MAX_BOOTSTRAP_ROOT_BYTES as usize + 1];
+    let error = trusted.pin_trusted_root(&oversized).await.unwrap_err();
+
+    assert_eq!(error.code, "use.extension.registry_root_invalid");
+    let root = repository
+        .routes
+        .get("/metadata/root.json")
+        .expect("root route");
+    tokio::fs::create_dir_all(temp.path().join("tuf").join(ROOT_CACHE_NAME))
+        .await
+        .unwrap();
+    let error = trusted.pin_trusted_root(root).await.unwrap_err();
+    assert_eq!(error.code, "use.extension.registry_path_invalid");
+
+    let explicit = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        &repository.root_sha256,
+        Some(temp.path().join("explicit-root.json")),
+        temp.path().join("explicit-tuf"),
+    )
+    .unwrap();
+    let error = explicit.pin_trusted_root(root).await.unwrap_err();
+    assert_eq!(error.code, "use.extension.registry_path_invalid");
+    assert!(server.requests().is_empty());
+}
+
+#[tokio::test]
 async fn tuf_catalog_lists_signed_packages_without_downloading_targets() {
     let repository = TestRepository::new(extension_archive(PACKAGE_VERSION), 7, FUTURE);
     let server = TestServer::start(repository.routes.clone());

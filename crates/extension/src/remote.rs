@@ -59,7 +59,7 @@ use target::{
 const ROOT_NAME: &str = "root.json";
 const ROOT_CACHE_NAME: &str = "bootstrap-root.json";
 const REGISTRY_METADATA_KEY: &str = "a3s";
-const MAX_BOOTSTRAP_ROOT_BYTES: u64 = 1024 * 1024;
+pub const MAX_BOOTSTRAP_ROOT_BYTES: u64 = 1024 * 1024;
 const MAX_REMOTE_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_REGISTRY_PACKAGE_TARGETS: u64 = 10_000;
 const MAX_ROOT_UPDATES: u64 = 64;
@@ -158,6 +158,36 @@ impl TrustedRegistry {
     pub fn with_network_policy(mut self, policy: RegistryNetworkPolicy) -> Self {
         self.network_policy = policy;
         self
+    }
+
+    /// Pin caller-supplied bootstrap root bytes in this Registry's metadata
+    /// datastore. The bytes must match the configured SHA-256 exactly and are
+    /// immutable once admitted. A subsequent refresh still performs the full
+    /// TUF chain, expiration, and rollback verification.
+    pub async fn pin_trusted_root(&self, bytes: &[u8]) -> UseResult<()> {
+        if self.trusted_root_path.is_some() {
+            return Err(UseError::new(
+                "use.extension.registry_path_invalid",
+                "A Registry with an explicit trusted-root path cannot pin separate root bytes.",
+            ));
+        }
+        verify_root_bytes(self, bytes)?;
+        ensure_metadata_directory(&self.datastore).await?;
+        let _lock = acquire_metadata_lock(&self.datastore)?;
+        let cache = self.datastore.join(ROOT_CACHE_NAME);
+        match read_trusted_root_file(&cache).await? {
+            Some(existing) => {
+                if existing == bytes {
+                    Ok(())
+                } else {
+                    Err(UseError::new(
+                        "use.extension.registry_root_conflict",
+                        "The Registry metadata store already contains different bootstrap root bytes.",
+                    ))
+                }
+            }
+            None => write_bootstrap_root(&cache, bytes).await,
+        }
     }
 
     fn metadata_url(&self) -> UseResult<Url> {
@@ -714,9 +744,9 @@ async fn load_trusted_root(registry: &TrustedRegistry) -> UseResult<Vec<u8>> {
     let explicit = registry.trusted_root_path.as_deref();
     let cache = registry.datastore.join(ROOT_CACHE_NAME);
     let path = explicit.unwrap_or(&cache);
-    let bytes = match fs::read(path).await {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && explicit.is_none() => {
+    let bytes = match read_trusted_root_file(path).await? {
+        Some(bytes) => bytes,
+        None if explicit.is_none() => {
             let metadata_url = registry.metadata_url()?;
             let root_url = metadata_url.join(ROOT_NAME).map_err(|error| {
                 UseError::new(
@@ -725,20 +755,50 @@ async fn load_trusted_root(registry: &TrustedRegistry) -> UseResult<Vec<u8>> {
                 )
             })?;
             let bytes = download_bootstrap_root(registry, &root_url).await?;
-            verify_root_digest(registry, &bytes)?;
+            verify_root_bytes(registry, &bytes)?;
             write_bootstrap_root(&cache, &bytes).await?;
             bytes
         }
-        Err(error) => return Err(io_error("read trusted TUF root", path, error)),
+        None => {
+            return Err(UseError::new(
+                "use.extension.registry_path_invalid",
+                format!("The trusted TUF root '{}' does not exist.", path.display()),
+            ))
+        }
     };
-    if bytes.len() as u64 > MAX_BOOTSTRAP_ROOT_BYTES {
+    verify_root_bytes(registry, &bytes)?;
+    Ok(bytes)
+}
+
+fn verify_root_bytes(registry: &TrustedRegistry, bytes: &[u8]) -> UseResult<()> {
+    if bytes.is_empty() || bytes.len() as u64 > MAX_BOOTSTRAP_ROOT_BYTES {
         return Err(UseError::new(
             "use.extension.registry_root_invalid",
-            "The trusted TUF root exceeds the one MiB limit.",
+            "The trusted TUF root must contain at most one MiB.",
         ));
     }
-    verify_root_digest(registry, &bytes)?;
-    Ok(bytes)
+    verify_root_digest(registry, bytes)
+}
+
+async fn read_trusted_root_file(path: &Path) -> UseResult<Option<Vec<u8>>> {
+    let metadata = match fs::symlink_metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(io_error("inspect trusted TUF root", path, error)),
+    };
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
+        return Err(UseError::new(
+            "use.extension.registry_path_invalid",
+            format!(
+                "The trusted TUF root '{}' must be a regular file.",
+                path.display()
+            ),
+        ));
+    }
+    fs::read(path)
+        .await
+        .map(Some)
+        .map_err(|error| io_error("read trusted TUF root", path, error))
 }
 
 async fn download_bootstrap_root(registry: &TrustedRegistry, url: &Url) -> UseResult<Vec<u8>> {

@@ -209,6 +209,13 @@ RegistryConfig
 └── reviewed configuration revision
 ```
 
+Managed hosts admit supplied bootstrap-root bytes through
+`TrustedRegistry::pin_trusted_root`. That API shares the engine's public
+one-MiB bound, exact configured digest, regular-file defense, metadata lock,
+and immutable cache; it does not certify a Registry by itself. The ordinary
+refresh must still verify the complete TUF chain, expiry, rollback state, and
+catalog metadata before a result becomes trusted evidence.
+
 The first enabled standalone source becomes the default. A request selects one
 enabled root source and receives every other enabled source for dependency
 resolution. Packages cannot embed dependency source URLs. Replacement,

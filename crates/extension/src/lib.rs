@@ -72,8 +72,9 @@ pub use remote::{
     VerifiedRegistryCatalog, VerifiedRegistryMetadata, VerifiedTargetCachePolicy,
     VerifiedTargetCachePruneResult, VerifiedTargetCacheUsage,
     DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES, DEFAULT_VERIFIED_TARGET_CACHE_MAX_ENTRIES,
-    DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES, MAX_PLUGIN_CATALOG_PAGE_BYTES,
-    MAX_PLUGIN_CATALOG_PAGE_SIZE, VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
+    DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES, MAX_BOOTSTRAP_ROOT_BYTES,
+    MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
+    VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
 };
 pub use surface_files::{
     inspect_flow_surface_file, inspect_mcp_surface_files, inspect_skill_surface_file,
