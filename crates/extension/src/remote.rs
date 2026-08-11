@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use tough::schema::{Root, Signed};
 use tough::{ExpirationEnforcement, Limits, Repository};
 use tough::{RepositoryLoader, TargetName};
 use url::Url;
@@ -74,6 +75,18 @@ pub struct TrustedRegistry {
     datastore: PathBuf,
     target_cache_policy: VerifiedTargetCachePolicy,
     network_policy: RegistryNetworkPolicy,
+}
+
+/// Exact evidence decoded from caller-pinned bootstrap-root bytes.
+///
+/// This identifies the out-of-band trust anchor only. It is not a verified
+/// Registry snapshot; callers must still perform the ordinary TUF refresh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedBootstrapRoot {
+    pub root_sha256: String,
+    pub root_version: u64,
+    pub size_bytes: u64,
 }
 
 impl TrustedRegistry {
@@ -164,21 +177,21 @@ impl TrustedRegistry {
     /// datastore. The bytes must match the configured SHA-256 exactly and are
     /// immutable once admitted. A subsequent refresh still performs the full
     /// TUF chain, expiration, and rollback verification.
-    pub async fn pin_trusted_root(&self, bytes: &[u8]) -> UseResult<()> {
+    pub async fn pin_trusted_root(&self, bytes: &[u8]) -> UseResult<PinnedBootstrapRoot> {
         if self.trusted_root_path.is_some() {
             return Err(UseError::new(
                 "use.extension.registry_path_invalid",
                 "A Registry with an explicit trusted-root path cannot pin separate root bytes.",
             ));
         }
-        verify_root_bytes(self, bytes)?;
+        let evidence = pinned_bootstrap_root(self, bytes)?;
         ensure_metadata_directory(&self.datastore).await?;
         let _lock = acquire_metadata_lock(&self.datastore)?;
         let cache = self.datastore.join(ROOT_CACHE_NAME);
         match read_trusted_root_file(&cache).await? {
             Some(existing) => {
                 if existing == bytes {
-                    Ok(())
+                    Ok(evidence)
                 } else {
                     Err(UseError::new(
                         "use.extension.registry_root_conflict",
@@ -186,7 +199,10 @@ impl TrustedRegistry {
                     ))
                 }
             }
-            None => write_bootstrap_root(&cache, bytes).await,
+            None => {
+                write_bootstrap_root(&cache, bytes).await?;
+                Ok(evidence)
+            }
         }
     }
 
@@ -778,6 +794,24 @@ fn verify_root_bytes(registry: &TrustedRegistry, bytes: &[u8]) -> UseResult<()> 
         ));
     }
     verify_root_digest(registry, bytes)
+}
+
+fn pinned_bootstrap_root(
+    registry: &TrustedRegistry,
+    bytes: &[u8],
+) -> UseResult<PinnedBootstrapRoot> {
+    verify_root_bytes(registry, bytes)?;
+    let root = serde_json::from_slice::<Signed<Root>>(bytes).map_err(|error| {
+        UseError::new(
+            "use.extension.registry_root_invalid",
+            format!("The pinned bootstrap TUF root is invalid: {error}"),
+        )
+    })?;
+    Ok(PinnedBootstrapRoot {
+        root_sha256: registry.root_sha256.clone(),
+        root_version: root.signed.version.get(),
+        size_bytes: bytes.len() as u64,
+    })
 }
 
 async fn read_trusted_root_file(path: &Path) -> UseResult<Option<Vec<u8>>> {

@@ -52,19 +52,24 @@ async fn caller_pinned_root_is_idempotent_and_never_downloaded() {
     let datastore = temp.path().join("tuf");
     let trusted = trusted_registry(&server, &repository, datastore.clone());
 
-    trusted.pin_trusted_root(&root).await.unwrap();
-    trusted.pin_trusted_root(&root).await.unwrap();
-    let replacement = b"replacement root";
+    let admitted = trusted.pin_trusted_root(&root).await.unwrap();
+    let replayed = trusted.pin_trusted_root(&root).await.unwrap();
+    assert_eq!(admitted, replayed);
+    assert_eq!(admitted.root_sha256, repository.root_sha256);
+    assert_eq!(admitted.root_version, 1);
+    assert_eq!(admitted.size_bytes, root.len() as u64);
+    let mut replacement = b"\n".to_vec();
+    replacement.extend_from_slice(&root);
     let replacement_registry = TrustedRegistry::new(
         "fixture",
         server.base_url(),
-        format!("{:x}", Sha256::digest(replacement)),
+        format!("{:x}", Sha256::digest(&replacement)),
         None,
         datastore,
     )
     .unwrap();
     let error = replacement_registry
-        .pin_trusted_root(replacement)
+        .pin_trusted_root(&replacement)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.extension.registry_root_conflict");
@@ -91,6 +96,21 @@ async fn caller_pinned_root_rejects_empty_oversized_and_mismatched_bytes() {
     let error = trusted.pin_trusted_root(&oversized).await.unwrap_err();
 
     assert_eq!(error.code, "use.extension.registry_root_invalid");
+    let malformed = b"{\"signed\":{}}";
+    let malformed_registry = TrustedRegistry::new(
+        "fixture",
+        server.base_url(),
+        format!("{:x}", Sha256::digest(malformed)),
+        None,
+        temp.path().join("malformed-tuf"),
+    )
+    .unwrap();
+    let error = malformed_registry
+        .pin_trusted_root(malformed)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.registry_root_invalid");
+    assert!(!malformed_registry.datastore().exists());
     let root = repository
         .routes
         .get("/metadata/root.json")

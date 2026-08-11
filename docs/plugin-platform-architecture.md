@@ -212,9 +212,12 @@ RegistryConfig
 Managed hosts admit supplied bootstrap-root bytes through
 `TrustedRegistry::pin_trusted_root`. That API shares the engine's public
 one-MiB bound, exact configured digest, regular-file defense, metadata lock,
-and immutable cache; it does not certify a Registry by itself. The ordinary
+and immutable cache, and returns the exact bootstrap digest, decoded root
+version, and byte size. It does not certify a Registry by itself. The ordinary
 refresh must still verify the complete TUF chain, expiry, rollback state, and
-catalog metadata before a result becomes trusted evidence.
+catalog metadata before a result becomes trusted evidence. The bootstrap
+version identifies the caller-pinned object; catalog provenance separately
+reports the current root version reached by the verified TUF refresh.
 
 The first enabled standalone source becomes the default. A request selects one
 enabled root source and receives every other enabled source for dependency

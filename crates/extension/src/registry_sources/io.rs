@@ -10,12 +10,12 @@ use tokio::io::AsyncWriteExt;
 use crate::package::{
     activate_temporary_file, io_error, lock_is_contended, sync_parent_directory, unique_suffix,
 };
+use crate::remote::MAX_BOOTSTRAP_ROOT_BYTES;
 use crate::ExtensionPaths;
 
 use super::acl::{decode, RegistrySourcesDocument};
 
 const MAX_REGISTRY_SOURCES_ACL_BYTES: u64 = 256 * 1024;
-const MAX_IMPORTED_TRUSTED_ROOT_BYTES: u64 = 1024 * 1024;
 
 pub(super) struct RegistrySourcesLock(File);
 
@@ -174,9 +174,9 @@ pub(super) async fn import_trusted_root(
             "An imported Registry trusted root must be a regular file, not a link or reparse point.",
         ));
     }
-    if metadata.len() == 0 || metadata.len() > MAX_IMPORTED_TRUSTED_ROOT_BYTES {
+    if metadata.len() == 0 || metadata.len() > MAX_BOOTSTRAP_ROOT_BYTES {
         return Err(source_io_error(format!(
-            "An imported Registry trusted root must contain between 1 and {MAX_IMPORTED_TRUSTED_ROOT_BYTES} bytes."
+            "An imported Registry trusted root must contain between 1 and {MAX_BOOTSTRAP_ROOT_BYTES} bytes."
         )));
     }
     let bytes = fs::read(source)
@@ -261,7 +261,7 @@ pub(super) async fn validate_managed_trusted_root(path: &Path, root_sha256: &str
             "A managed Registry trusted root must be a regular file, not a link or reparse point.",
         ));
     }
-    if metadata.len() == 0 || metadata.len() > MAX_IMPORTED_TRUSTED_ROOT_BYTES {
+    if metadata.len() == 0 || metadata.len() > MAX_BOOTSTRAP_ROOT_BYTES {
         return Err(source_io_error(
             "A managed Registry trusted root is outside its one MiB bound.",
         ));

@@ -96,8 +96,10 @@ rejection. They are not supported decode paths.
 - [x] Complete current TUF metadata validation and cache verified archives and
   signed planning targets by SHA-256.
 - [x] Expose one bounded, digest-pinned, immutable bootstrap-root admission API
-  for managed hosts; the admitted bytes still require the ordinary complete
-  TUF refresh before catalog evidence is trusted.
+  for managed hosts, returning its exact digest/version/size evidence; the
+  admitted bytes still require the ordinary complete TUF refresh before
+  catalog evidence is trusted. Standalone root imports and managed admission
+  share that one public size bound.
 - [x] Provide one strict public-Internet Registry transport policy for managed
   hosts: HTTPS only, per-request DNS validation and address pinning, no ambient
   proxy or automatic redirects, per-hop validation of bounded target redirects,
