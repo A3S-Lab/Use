@@ -1,9 +1,13 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
 use a3s_use_core::{PlanQualifiedSurfaceRef, PluginSurfaceKind};
+#[cfg(unix)]
 use a3s_use_extension::ExtensionManifest;
+#[cfg(unix)]
 use sha2::{Digest, Sha256};
 
+#[cfg(unix)]
 use crate::plugin_lifecycle::{
     PluginFlowLifecycleHost, PluginLifecycleAction, PluginLifecycleIntent,
     PluginLifecycleIntentSpec,
@@ -11,6 +15,7 @@ use crate::plugin_lifecycle::{
 
 use super::{A3sFlowLifecycleHost, FlowRuntimeBindingStore};
 
+#[cfg(unix)]
 const MANIFEST: &str = r#"
 extension "acme/review" {
   schema_version = 3
@@ -324,6 +329,7 @@ async fn prepared_fixture(
     (temporary, package_root, manifest, store)
 }
 
+#[cfg(unix)]
 fn binding_record_path(
     store: &FlowRuntimeBindingStore,
     scope: &a3s_use_core::PlanScope,
@@ -340,6 +346,7 @@ fn binding_record_path(
         .join(format!("{generation:020}.json"))
 }
 
+#[cfg(unix)]
 fn user_scope() -> a3s_use_core::PlanScope {
     a3s_use_core::PlanScope {
         kind: a3s_use_core::PlanScopeKind::User,
@@ -347,6 +354,7 @@ fn user_scope() -> a3s_use_core::PlanScope {
     }
 }
 
+#[cfg(unix)]
 fn workspace_scope() -> a3s_use_core::PlanScope {
     a3s_use_core::PlanScope {
         kind: a3s_use_core::PlanScopeKind::Workspace,
@@ -354,6 +362,7 @@ fn workspace_scope() -> a3s_use_core::PlanScope {
     }
 }
 
+#[cfg(unix)]
 fn intent(manifest: &ExtensionManifest, generation: u64) -> PluginLifecycleIntent {
     PluginLifecycleIntent::from_manifest(
         PluginLifecycleIntentSpec {
@@ -375,6 +384,7 @@ fn intent(manifest: &ExtensionManifest, generation: u64) -> PluginLifecycleInten
     .unwrap()
 }
 
+#[cfg(unix)]
 fn checkpoint_key(intent: &PluginLifecycleIntent) -> &str {
     &intent
         .checkpoints
@@ -388,6 +398,7 @@ fn checkpoint_key(intent: &PluginLifecycleIntent) -> &str {
         .idempotency_key
 }
 
+#[cfg(unix)]
 fn qualified_surface() -> PlanQualifiedSurfaceRef {
     PlanQualifiedSurfaceRef {
         package_id: "acme/review".to_string(),

@@ -1,6 +1,7 @@
 #[cfg(all(feature = "extensions", unix))]
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(feature = "ocr")]
 use std::path::Path;
 use std::process::Command;
 
