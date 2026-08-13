@@ -5,6 +5,7 @@
 //! composition; Tool, MCP, Skill, UI, and OKF remain contributions inside one
 //! immutable package generation.
 
+mod embedded;
 mod enablement;
 mod enablement_plan;
 mod enablement_store;
@@ -41,6 +42,10 @@ use store::{
     PendingPackageGraphStore,
 };
 
+pub use embedded::{
+    CognitiveCapabilityEvidence, CognitiveCapabilityLease, CognitiveCatalogPageCursor,
+    CognitiveCatalogSearchResult, CognitiveRegistryAccess,
+};
 pub use enablement::{
     CognitivePackageEnablementRequest, CognitivePackageEnablementResult,
     COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA, COGNITIVE_PACKAGE_ENABLEMENT_RESULT_SCHEMA,

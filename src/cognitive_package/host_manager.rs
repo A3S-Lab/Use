@@ -21,6 +21,7 @@ use crate::plugin_lifecycle::{
     PluginLifecycleAction, PluginLifecycleJournalStore, PluginLifecycleOperationStatus,
 };
 
+use super::embedded::{acquire_capability_lease, inspect_catalog, resolve_lock, search_catalogs};
 use super::enablement_plan::CognitivePackageEnablementPlanStatus;
 use super::host_store::{
     digest_value, PluginHostProtocolStore, StoredPluginHostOutcome, StoredPluginHostPlan,
@@ -29,9 +30,10 @@ use super::host_store::{
 use super::plan::now_ms;
 use super::store::PackageGraphOperationPhase;
 use super::{
-    CognitivePackageAuthorizationProvider, CognitivePackageEnablementRequest,
-    CognitivePackageLifecycleFactory, CognitivePackageManager,
-    ReviewedCognitivePackageAuthorizationProvider, COGNITIVE_PACKAGE_HOST_VERSION,
+    CognitiveCapabilityLease, CognitiveCatalogSearchResult, CognitivePackageAuthorizationProvider,
+    CognitivePackageEnablementRequest, CognitivePackageLifecycleFactory, CognitivePackageManager,
+    CognitiveRegistryAccess, ReviewedCognitivePackageAuthorizationProvider,
+    COGNITIVE_PACKAGE_HOST_VERSION,
 };
 
 const HOST_OPERATION_OUTCOME_SCHEMA: &str = "a3s.use.plugin-host-operation-outcome.v1";
@@ -105,6 +107,49 @@ impl CognitivePackageHostManager {
 
     pub fn host_capabilities(&self) -> &PluginHostCapabilities {
         &self.capabilities
+    }
+
+    /// Search all enabled, trusted Registries through the manager's embedded
+    /// read-only boundary. No package mutation or model authority is involved.
+    pub async fn search_cognitive_packages(
+        &self,
+        access: CognitiveRegistryAccess,
+        selected_registry: Option<&str>,
+        search: &a3s_use_extension::PluginCatalogSearch,
+    ) -> UseResult<CognitiveCatalogSearchResult> {
+        search_catalogs(&self.registry_sources, access, selected_registry, search).await
+    }
+
+    /// Reinspect the exact selected release and reject Registry provenance or
+    /// snapshot drift before planning.
+    pub async fn inspect_cognitive_package(
+        &self,
+        access: CognitiveRegistryAccess,
+        candidate: &VerifiedPluginCatalogRecord,
+    ) -> UseResult<a3s_use_extension::PluginCatalogInspection> {
+        inspect_catalog(&self.registry_sources, access, candidate).await
+    }
+
+    /// Resolve an immutable complete dependency lock for one exact inspected
+    /// release. The selected root must remain byte-for-byte identical.
+    pub async fn resolve_cognitive_package_lock(
+        &self,
+        access: CognitiveRegistryAccess,
+        candidate: &VerifiedPluginCatalogRecord,
+    ) -> UseResult<PluginPackageLock> {
+        resolve_lock(&self.registry_sources, access, candidate).await
+    }
+
+    /// Acquire one exact manager-scoped OKF capability after successful apply.
+    /// `None` means the generation is no longer callable or is draining.
+    pub async fn acquire_cognitive_capability(
+        &self,
+        scope: &PluginManagedScope,
+        package_id: &str,
+        surface_id: &str,
+    ) -> UseResult<Option<CognitiveCapabilityLease>> {
+        self.verify_fence(scope)?;
+        acquire_capability_lease(&self.manager, &scope.plan_scope(), package_id, surface_id).await
     }
 
     async fn plan_graph(

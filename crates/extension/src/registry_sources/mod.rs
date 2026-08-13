@@ -90,6 +90,15 @@ impl ResolvedRegistrySources {
     pub fn dependencies(&self) -> &[TrustedRegistry] {
         &self.dependencies
     }
+
+    /// Return every enabled Registry in deterministic source-name order.
+    ///
+    /// The selected root remains first so callers that deduplicate a
+    /// multi-Registry catalog can give its exact records deterministic
+    /// precedence. The remaining sources preserve the canonical ACL order.
+    pub fn all(&self) -> impl Iterator<Item = &TrustedRegistry> {
+        std::iter::once(&self.root).chain(self.dependencies.iter())
+    }
 }
 
 #[derive(Debug, Clone)]

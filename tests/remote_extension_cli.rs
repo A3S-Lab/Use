@@ -111,6 +111,125 @@ fn cognitive_uninstall(home: &std::path::Path, package_id: &str) -> Output {
         .unwrap()
 }
 
+fn cognitive_okf_target(
+    fixture_root: &std::path::Path,
+    version: &str,
+    decision: &str,
+    target: &str,
+) -> TestTarget {
+    let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/extension/fixtures/packages/plugin-v3-okf/package");
+    let package_root = fixture_root.join("package");
+    copy_fixture_tree(&source, &package_root);
+
+    let decision_path = package_root.join("okf/domain-knowledge/concepts/package-lifecycle.md");
+    let original = std::fs::read_to_string(&decision_path).unwrap();
+    let body_start = original.find("# Decision").unwrap();
+    let frontmatter = &original[..body_start];
+    std::fs::write(
+        &decision_path,
+        format!("{frontmatter}# Decision\n\n{decision}\n"),
+    )
+    .unwrap();
+
+    let okf_root = package_root.join("okf/domain-knowledge");
+    let mut files = Vec::new();
+    collect_okf_files(&okf_root, &okf_root, &mut files);
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    let limits = a3s_use_core::OkfBundleLimits {
+        max_files: 256,
+        max_concepts: 64,
+        max_expanded_bytes: 67_108_864,
+        max_document_bytes: 1_048_576,
+        max_links_per_document: 2_048,
+    };
+    let inspection = a3s_use_core::inspect_okf_bundle_files(
+        a3s_use_core::OkfFormatVersion::V0_2,
+        limits,
+        &files,
+    )
+    .unwrap();
+
+    let manifest_path = package_root.join("a3s-use-extension.acl");
+    let manifest = std::fs::read_to_string(&manifest_path)
+        .unwrap()
+        .replace(
+            "version        = \"1.0.0\"",
+            &format!("version        = \"{version}\""),
+        )
+        .replace(
+            "sha256:bd85b0b63adb32bdf616384a619286af4c32401542655dd09e00450902ab478d",
+            &inspection.content_digest,
+        )
+        .replace(
+            "expanded_bytes         = 2053",
+            &format!("expanded_bytes         = {}", inspection.expanded_bytes),
+        );
+    std::fs::write(&manifest_path, &manifest).unwrap();
+    let parsed = a3s_use_extension::ExtensionManifest::parse_acl(&manifest).unwrap();
+
+    let archive = package_directory_archive(&package_root);
+    let fingerprint = package_fingerprint(&package_root);
+    let mut catalog = PluginCatalogRecord::from_json(OKF_CATALOG_V3).unwrap();
+    catalog.version = version.to_string();
+    catalog.target = target.to_string();
+    catalog.surfaces[0].okf_bundle = Some(parsed.okf[0].bundle.clone());
+    catalog.archive.target_name = format!(
+        "extensions/acme/knowledge/{version}/stable/{target}/acme-knowledge-{version}-{target}.tar.gz"
+    );
+    catalog.archive.length = archive.len() as u64;
+    catalog.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&archive));
+    catalog.package.expanded_bytes = fingerprint.2;
+    catalog.package.file_count = fingerprint.1;
+    catalog.package.sha256 = Some(format!("sha256:{}", fingerprint.0));
+    catalog.package.manifest_sha256 =
+        Some(format!("sha256:{:x}", Sha256::digest(manifest.as_bytes())));
+    catalog.validate().unwrap();
+
+    TestTarget {
+        target_name: catalog.archive.target_name.clone(),
+        custom: Some(serde_json::to_value(catalog).unwrap()),
+        archive,
+    }
+}
+
+fn copy_fixture_tree(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_fixture_tree(&source_path, &destination_path);
+        } else {
+            std::fs::copy(source_path, destination_path).unwrap();
+        }
+    }
+}
+
+fn collect_okf_files(
+    root: &std::path::Path,
+    directory: &std::path::Path,
+    files: &mut Vec<a3s_use_core::OkfBundleFile>,
+) {
+    for entry in std::fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            collect_okf_files(root, &path, files);
+        } else {
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            files.push(a3s_use_core::OkfBundleFile::new(
+                relative,
+                std::fs::read(path).unwrap(),
+            ));
+        }
+    }
+}
+
 fn cognitive_registry_upgrade(
     server: &TestServer,
     repository: &TestRepository,
