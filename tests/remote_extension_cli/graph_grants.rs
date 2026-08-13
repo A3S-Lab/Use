@@ -26,8 +26,12 @@ use a3s_use_core::{
     PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
 use a3s_use_extension::{
-    PluginCatalogSearch, RegistrySourceInput, RegistrySourceStore, StoredWorkspaceGrant,
-    VerifiedTargetCachePolicy, WorkspaceGrantLifecyclePhase, WorkspaceGrantStore,
+    CognitivePackageFormFactor, CognitivePackageMediaKind, CognitivePackagePresentationIndexV1,
+    CognitivePackagePresentationMediaV1, CognitivePackagePresentationRecordV1,
+    CognitivePackagePresentationV1, PluginCatalogSearch, RegistrySourceInput, RegistrySourceStore,
+    StoredWorkspaceGrant, VerifiedTargetCachePolicy, WorkspaceGrantLifecyclePhase,
+    WorkspaceGrantStore, COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA,
+    COGNITIVE_PACKAGE_PRESENTATION_SCHEMA,
 };
 use async_trait::async_trait;
 
@@ -40,6 +44,156 @@ const PERMISSIONS: &[u8] =
 #[derive(Debug)]
 struct ConfirmAllPlans {
     authorization_count: Arc<AtomicUsize>,
+}
+
+#[tokio::test]
+async fn host_manager_fetches_only_media_bound_to_verified_presentation() {
+    let temporary = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let package_target = cognitive_okf_target(
+        temporary.path(),
+        "1.0.0",
+        "Verified presentation media stays inside the Host trust boundary.",
+        &target,
+    );
+    let record: PluginCatalogRecord = serde_json::from_value(
+        package_target
+            .custom
+            .clone()
+            .expect("catalog custom metadata"),
+    )
+    .unwrap();
+    let media_name = "cognitive/media/acme-knowledge-cover.png";
+    let media = b"verified-host-media".to_vec();
+    let media_digest = format!("sha256:{:x}", Sha256::digest(&media));
+    let descriptor_name = "cognitive/descriptors/acme-knowledge-1.0.0-en.json";
+    let descriptor = CognitivePackagePresentationV1 {
+        schema: COGNITIVE_PACKAGE_PRESENTATION_SCHEMA.to_owned(),
+        package_id: record.package_id.clone(),
+        locale: "en".to_owned(),
+        short_title: "Knowledge Builder".to_owned(),
+        short_summary: "Verified cognition for one exact workspace task.".to_owned(),
+        form_factors: vec![CognitivePackageFormFactor::Desktop],
+        media: vec![CognitivePackagePresentationMediaV1 {
+            kind: CognitivePackageMediaKind::Image,
+            target_name: media_name.to_owned(),
+            sha256: media_digest,
+            media_type: "image/png".to_owned(),
+            width: 1280,
+            height: 720,
+            byte_length: media.len() as u64,
+            alt: "Knowledge Builder preview".to_owned(),
+        }],
+        accent: Some("#8a7cff".to_owned()),
+    };
+    let descriptor = serde_json::to_vec(&descriptor).unwrap();
+    let descriptor_digest = format!("sha256:{:x}", Sha256::digest(&descriptor));
+    let index = serde_json::to_vec(&CognitivePackagePresentationIndexV1 {
+        schema: COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA.to_owned(),
+        entries: vec![CognitivePackagePresentationRecordV1 {
+            package_id: record.package_id.clone(),
+            version: record.version.clone(),
+            channel: record.channel.as_str().to_owned(),
+            host_target: target,
+            catalog_record_digest: record.descriptor_digest().unwrap(),
+            descriptor_target_name: descriptor_name.to_owned(),
+            descriptor_sha256: descriptor_digest,
+            descriptor_byte_length: descriptor.len() as u64,
+        }],
+    })
+    .unwrap();
+    let repository = TestRepository::with_targets(
+        vec![
+            package_target,
+            TestTarget::with_signed_custom(
+                "cognitive/presentation-index-v1.json",
+                index,
+                serde_json::json!({
+                    "a3sCognitivePresentationIndex": {
+                        "schema": COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA
+                    }
+                }),
+            ),
+            TestTarget::raw(descriptor_name, descriptor),
+            TestTarget::raw(media_name, media.clone()),
+        ],
+        67,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let home = temporary.path().join("presentation-host-home");
+    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
+    RegistrySourceStore::new(paths.clone())
+        .add(RegistrySourceInput::new(
+            "fixture",
+            server.base_url(),
+            &repository.root_sha256,
+            None,
+            VerifiedTargetCachePolicy::default(),
+        ))
+        .await
+        .unwrap();
+    let scope = PluginManagedScope {
+        schema: PLUGIN_MANAGED_SCOPE_SCHEMA.to_string(),
+        host_id: "host:workbaby".to_string(),
+        scope_id: MANAGED_SCOPE_ID.to_string(),
+        authority_id: "workbaby:user".to_string(),
+        fence_generation: 11,
+        fence_digest: format!("sha256:{}", "b".repeat(64)),
+    };
+    let host = CognitivePackageHostManager::new(
+        scope,
+        "use:presentation-test",
+        ExtensionRegistry::new(paths),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    let searched = host
+        .search_cognitive_packages(
+            CognitiveRegistryAccess::Refreshed,
+            None,
+            &PluginCatalogSearch {
+                query: "knowledge".to_string(),
+                kind: Some(PluginSurfaceKind::Okf),
+                channel: Some(PluginReleaseChannel::Stable),
+                publisher: None,
+                category: None,
+                availability: None,
+                cursor: None,
+                limit: 20,
+            },
+        )
+        .await
+        .unwrap();
+    let presentation = host
+        .inspect_cognitive_package_presentation(
+            CognitiveRegistryAccess::Refreshed,
+            &searched.plugins[0],
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let verified = host
+        .fetch_cognitive_package_media(
+            CognitiveRegistryAccess::Refreshed,
+            &presentation,
+            media_name,
+        )
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(verified.path()).unwrap(), media);
+    let error = host
+        .fetch_cognitive_package_media(
+            CognitiveRegistryAccess::Refreshed,
+            &presentation,
+            "cognitive/media/not-declared.png",
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.extension.presentation_invalid");
 }
 
 #[tokio::test]

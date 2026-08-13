@@ -169,6 +169,43 @@ impl CognitivePackageHostManager {
         }
     }
 
+    /// Fetch one exact presentation media target through the same verified
+    /// Registry snapshot and bounded cache as its signed descriptor.
+    ///
+    /// The caller supplies no Registry URL, trust root, or arbitrary target
+    /// path. The presentation evidence selects the configured Registry and the
+    /// extension layer revalidates snapshot identity, media declaration,
+    /// length, type, and digest before returning a local read-only file.
+    pub async fn fetch_cognitive_package_media(
+        &self,
+        access: CognitiveRegistryAccess,
+        presentation: &a3s_use_extension::VerifiedCognitivePackagePresentation,
+        target_name: &str,
+    ) -> UseResult<a3s_use_extension::VerifiedCognitivePackageMedia> {
+        let sources = self
+            .registry_sources
+            .resolve(Some(&presentation.registry_name))
+            .await?;
+        match access {
+            CognitiveRegistryAccess::Refreshed => {
+                a3s_use_extension::fetch_cognitive_package_media(
+                    sources.root(),
+                    presentation,
+                    target_name,
+                )
+                .await
+            }
+            CognitiveRegistryAccess::Cached => {
+                a3s_use_extension::fetch_cached_cognitive_package_media(
+                    sources.root(),
+                    presentation,
+                    target_name,
+                )
+                .await
+            }
+        }
+    }
+
     /// Acquire one exact manager-scoped OKF capability after successful apply.
     /// `None` means the generation is no longer callable or is draining.
     pub async fn acquire_cognitive_capability(
