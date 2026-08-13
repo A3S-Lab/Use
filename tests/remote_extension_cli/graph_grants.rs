@@ -12,13 +12,16 @@ use a3s_use::cognitive_package::{
 use a3s_use_core::{
     CatalogPlanningTarget, ExecutablePlanningSurface, PlanActor, PlanAuthority, PlanPolicyDecision,
     PlanScope, PlanScopeKind, PlanningSurfaceActivation, PluginDesiredState,
-    PluginHostApplyRequest, PluginHostEnablementPlanRequest, PluginHostEnablementPlanStatus,
-    PluginHostManager, PluginHostObservationRequest, PluginHostObservationStatus,
-    PluginHostPlanRequest, PluginManagedScope, PluginOperationAction, PluginOperationConfirmation,
-    PluginOperationPlan, PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageId,
+    PluginHostApplyRequest, PluginHostCancelRequest, PluginHostCancellationStatus,
+    PluginHostEnablementPlanRequest, PluginHostEnablementPlanStatus, PluginHostManager,
+    PluginHostObservationRequest, PluginHostObservationStatus, PluginHostOperationCancellability,
+    PluginHostOperationObservationRequest, PluginHostOperationPhase, PluginHostPlanRequest,
+    PluginManagedScope, PluginOperationAction, PluginOperationConfirmation, PluginOperationPlan,
+    PluginOperationPlanDraft, PluginOperationPlanEnvelope, PluginPackageId,
     PluginPermissionCeiling, PluginPlanSource, PluginPlanningBundle, PluginSurfaceRef,
     PluginWorkspaceGrantChangeSet, ToolWorkloadClass, UseResult, PLUGIN_HOST_APPLY_REQUEST_SCHEMA,
-    PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_CANCEL_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
+    PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA,
     PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_MANAGED_SCOPE_SCHEMA,
     PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_PLANNING_BUNDLE_SCHEMA,
 };
@@ -227,6 +230,332 @@ async fn embedded_catalog_plan_apply_and_workspace_okf_lease_are_exact() {
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.extension.package_digest_mismatch");
+}
+
+#[tokio::test]
+async fn host_operation_observation_and_pre_admission_cancellation_are_exact() {
+    let temporary = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let repository = TestRepository::with_targets(
+        vec![cognitive_okf_target(
+            temporary.path(),
+            "1.0.0",
+            "Cancellation remains before exact package admission.",
+            &target,
+        )],
+        68,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let home = temporary.path().join("cancel-host-home");
+    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
+    RegistrySourceStore::new(paths.clone())
+        .add(RegistrySourceInput::new(
+            "fixture",
+            server.base_url(),
+            &repository.root_sha256,
+            None,
+            VerifiedTargetCachePolicy::default(),
+        ))
+        .await
+        .unwrap();
+    let scope = PluginManagedScope {
+        schema: PLUGIN_MANAGED_SCOPE_SCHEMA.to_owned(),
+        host_id: "host:workbaby".to_owned(),
+        scope_id: "workspace:cancel".to_owned(),
+        authority_id: "workbaby:user".to_owned(),
+        fence_generation: 1,
+        fence_digest: format!("sha256:{}", "9".repeat(64)),
+    };
+    let host = CognitivePackageHostManager::new(
+        scope.clone(),
+        "use:cancel-test",
+        ExtensionRegistry::new(paths),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    let candidate = host
+        .search_cognitive_packages(
+            CognitiveRegistryAccess::Refreshed,
+            None,
+            &PluginCatalogSearch {
+                query: "knowledge".to_owned(),
+                kind: Some(PluginSurfaceKind::Okf),
+                channel: Some(PluginReleaseChannel::Stable),
+                publisher: None,
+                category: None,
+                availability: None,
+                cursor: None,
+                limit: 20,
+            },
+        )
+        .await
+        .unwrap()
+        .plugins
+        .into_iter()
+        .next()
+        .unwrap();
+    let lock = host
+        .resolve_cognitive_package_lock(CognitiveRegistryAccess::Refreshed, &candidate)
+        .await
+        .unwrap();
+    let capabilities = host.capabilities().await.unwrap();
+    let capabilities_digest = capabilities.descriptor_digest().unwrap();
+    let plan_request = PluginHostPlanRequest {
+        schema: PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
+        request_id: "plan:cancel:0001".to_owned(),
+        assignment_generation: 1,
+        capabilities_digest: capabilities_digest.clone(),
+        scope: scope.clone(),
+        action: PluginOperationAction::Install,
+        package_id: PluginPackageId::parse("acme/knowledge").unwrap(),
+        candidate: Some(candidate),
+        package_lock: Some(lock),
+        selected_surfaces: vec![PluginSurfaceRef {
+            kind: PluginSurfaceKind::Okf,
+            id: "domain-knowledge".to_owned(),
+        }],
+    };
+    let planned = host.plan(plan_request.clone()).await.unwrap();
+    let observation = PluginHostOperationObservationRequest {
+        schema: PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA.to_owned(),
+        request_id: "observe:cancel:0001".to_owned(),
+        assignment_generation: plan_request.assignment_generation,
+        capabilities_digest: capabilities_digest.clone(),
+        scope: scope.clone(),
+        package_id: plan_request.package_id.clone(),
+        operation_id: planned.plan.plan.operation_id.clone(),
+        plan_digest: planned.plan.plan_digest.clone(),
+    };
+    let observed = host.observe_operation(observation.clone()).await.unwrap();
+    assert_eq!(
+        observed.status.phase,
+        PluginHostOperationPhase::AwaitingConfirmation
+    );
+    assert_eq!(
+        observed.status.cancellability,
+        PluginHostOperationCancellability::Cancellable
+    );
+
+    let cancellation = PluginHostCancelRequest {
+        schema: PLUGIN_HOST_CANCEL_REQUEST_SCHEMA.to_owned(),
+        request_id: "cancel:cancel:0001".to_owned(),
+        assignment_generation: plan_request.assignment_generation,
+        capabilities_digest,
+        scope: scope.clone(),
+        package_id: plan_request.package_id,
+        operation_id: planned.plan.plan.operation_id.clone(),
+        plan_digest: planned.plan.plan_digest.clone(),
+        requested_by: PlanActor::User,
+    };
+    let cancelled = host.cancel(cancellation.clone()).await.unwrap();
+    assert_eq!(cancelled.status, PluginHostCancellationStatus::Cancelled);
+    let scope_digest = scope.descriptor_digest().unwrap();
+    let cancellation_path = home
+        .join("state/plugin-host-manager")
+        .join(scope_digest.strip_prefix("sha256:").unwrap())
+        .join("cancellations")
+        .join(format!(
+            "{:x}.json",
+            Sha256::digest(planned.plan.plan.operation_id.as_bytes())
+        ));
+    std::fs::remove_file(&cancellation_path).unwrap();
+    drop(host);
+    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
+    let restarted = CognitivePackageHostManager::new(
+        scope.clone(),
+        "use:cancel-test",
+        ExtensionRegistry::new(paths),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    let replayed = restarted.cancel(cancellation).await.unwrap();
+    assert_eq!(
+        replayed.status,
+        PluginHostCancellationStatus::AlreadyCancelled
+    );
+    let observed = restarted.observe_operation(observation).await.unwrap();
+    assert_eq!(observed.status.phase, PluginHostOperationPhase::Cancelled);
+    assert_eq!(
+        observed.status.cancellability,
+        PluginHostOperationCancellability::NotApplicable
+    );
+
+    let apply = PluginHostApplyRequest {
+        schema: PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
+        request_id: "apply:cancel:0001".to_owned(),
+        assignment_generation: plan_request.assignment_generation,
+        capabilities_digest: planned.capabilities_digest,
+        scope: planned.scope,
+        package_id: planned.package_id,
+        operation_id: planned.plan.plan.operation_id.clone(),
+        plan_digest: planned.plan.plan_digest.clone(),
+        confirmation: Some(PluginOperationConfirmation {
+            schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_owned(),
+            operation_id: planned.plan.plan.operation_id,
+            plan_digest: planned.plan.plan_digest,
+            confirmed_by: PlanActor::User,
+            confirmed_at_ms: planned.plan.plan.created_at_ms + 1,
+        }),
+    };
+    let error = restarted.apply(apply).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.host_operation_cancelled");
+}
+
+#[tokio::test]
+async fn host_cancel_is_too_late_after_exact_durable_admission_and_watch_times_out() {
+    let temporary = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let repository = TestRepository::with_targets(
+        vec![cognitive_okf_target(
+            temporary.path(),
+            "1.0.0",
+            "Admission makes cancellation evidence exact.",
+            &target,
+        )],
+        69,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let home = temporary.path().join("too-late-host-home");
+    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
+    RegistrySourceStore::new(paths.clone())
+        .add(RegistrySourceInput::new(
+            "fixture",
+            server.base_url(),
+            &repository.root_sha256,
+            None,
+            VerifiedTargetCachePolicy::default(),
+        ))
+        .await
+        .unwrap();
+    let scope = PluginManagedScope {
+        schema: PLUGIN_MANAGED_SCOPE_SCHEMA.to_owned(),
+        host_id: "host:workbaby".to_owned(),
+        scope_id: "workspace:too-late".to_owned(),
+        authority_id: "workbaby:user".to_owned(),
+        fence_generation: 1,
+        fence_digest: format!("sha256:{}", "8".repeat(64)),
+    };
+    let host = CognitivePackageHostManager::new(
+        scope.clone(),
+        "use:too-late-test",
+        ExtensionRegistry::new(paths.clone()),
+        Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
+        Arc::new(ConfirmAllPlans {
+            authorization_count: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    let candidate = host
+        .search_cognitive_packages(
+            CognitiveRegistryAccess::Refreshed,
+            None,
+            &PluginCatalogSearch {
+                query: "knowledge".to_owned(),
+                kind: Some(PluginSurfaceKind::Okf),
+                channel: Some(PluginReleaseChannel::Stable),
+                publisher: None,
+                category: None,
+                availability: None,
+                cursor: None,
+                limit: 20,
+            },
+        )
+        .await
+        .unwrap()
+        .plugins
+        .into_iter()
+        .next()
+        .unwrap();
+    let lock = host
+        .resolve_cognitive_package_lock(CognitiveRegistryAccess::Refreshed, &candidate)
+        .await
+        .unwrap();
+    let capabilities = host.capabilities().await.unwrap();
+    let capabilities_digest = capabilities.descriptor_digest().unwrap();
+    let request = PluginHostPlanRequest {
+        schema: PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
+        request_id: "plan:too-late:0001".to_owned(),
+        assignment_generation: 1,
+        capabilities_digest: capabilities_digest.clone(),
+        scope: scope.clone(),
+        action: PluginOperationAction::Install,
+        package_id: PluginPackageId::parse("acme/knowledge").unwrap(),
+        candidate: Some(candidate),
+        package_lock: Some(lock),
+        selected_surfaces: vec![PluginSurfaceRef {
+            kind: PluginSurfaceKind::Okf,
+            id: "domain-knowledge".to_owned(),
+        }],
+    };
+    let planned = host.plan(request.clone()).await.unwrap();
+    let apply = PluginHostApplyRequest {
+        schema: PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
+        request_id: "apply:too-late:0001".to_owned(),
+        assignment_generation: request.assignment_generation,
+        capabilities_digest: capabilities_digest.clone(),
+        scope: scope.clone(),
+        package_id: request.package_id.clone(),
+        operation_id: planned.plan.plan.operation_id.clone(),
+        plan_digest: planned.plan.plan_digest.clone(),
+        confirmation: Some(PluginOperationConfirmation {
+            schema: PLUGIN_OPERATION_CONFIRMATION_SCHEMA.to_owned(),
+            operation_id: planned.plan.plan.operation_id.clone(),
+            plan_digest: planned.plan.plan_digest.clone(),
+            confirmed_by: PlanActor::User,
+            confirmed_at_ms: planned.plan.plan.created_at_ms + 1,
+        }),
+    };
+    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let interrupted = host.apply(apply).await.unwrap_err();
+    assert_eq!(interrupted.code, "use.extension.busy");
+
+    let cancellation = PluginHostCancelRequest {
+        schema: PLUGIN_HOST_CANCEL_REQUEST_SCHEMA.to_owned(),
+        request_id: "cancel:too-late:0001".to_owned(),
+        assignment_generation: request.assignment_generation,
+        capabilities_digest: capabilities_digest.clone(),
+        scope: scope.clone(),
+        package_id: request.package_id.clone(),
+        operation_id: planned.plan.plan.operation_id.clone(),
+        plan_digest: planned.plan.plan_digest.clone(),
+        requested_by: PlanActor::User,
+    };
+    let cancelled = host.cancel(cancellation).await.unwrap();
+    assert_eq!(cancelled.status, PluginHostCancellationStatus::TooLate);
+    FileExt::unlock(&registry_lock).unwrap();
+    drop(registry_lock);
+
+    let observation = PluginHostOperationObservationRequest {
+        schema: PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA.to_owned(),
+        request_id: "observe:too-late:0001".to_owned(),
+        assignment_generation: request.assignment_generation,
+        capabilities_digest,
+        scope,
+        package_id: request.package_id,
+        operation_id: planned.plan.plan.operation_id,
+        plan_digest: planned.plan.plan_digest,
+    };
+    let first = host.observe_operation(observation.clone()).await.unwrap();
+    let watched = host
+        .watch_operation(a3s_use_core::PluginHostOperationWatchRequest {
+            schema: a3s_use_core::PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA.to_owned(),
+            observation,
+            after_revision: Some(first.revision.clone()),
+            timeout_ms: 0,
+        })
+        .await
+        .unwrap();
+    assert!(!watched.changed);
+    assert!(watched.timed_out);
+    assert_eq!(watched.revision, first.revision);
 }
 
 #[async_trait]

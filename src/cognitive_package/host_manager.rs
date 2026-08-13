@@ -1,14 +1,19 @@
 use std::sync::Arc;
 
 use a3s_use_core::{
-    PlanPackageRole, PluginDesiredState, PluginHostApplyRequest, PluginHostApplyResult,
-    PluginHostCapabilities, PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
-    PluginHostEnablementPlanStatus, PluginHostManager, PluginHostObservationRequest,
-    PluginHostObservationResult, PluginHostObservationStatus, PluginHostPackageState,
+    PlanPackageRole, PlanPolicyDecision, PluginDesiredState, PluginHostApplyRequest,
+    PluginHostApplyResult, PluginHostCancelRequest, PluginHostCancelResult,
+    PluginHostCancellationStatus, PluginHostCapabilities, PluginHostEnablementPlanRequest,
+    PluginHostEnablementPlanResult, PluginHostEnablementPlanStatus, PluginHostManager,
+    PluginHostObservationRequest, PluginHostObservationResult, PluginHostObservationStatus,
+    PluginHostOperationCancellability, PluginHostOperationObservationRequest,
+    PluginHostOperationObservationResult, PluginHostOperationPhase, PluginHostOperationProgress,
+    PluginHostOperationStatus, PluginHostOperationWatchRequest, PluginHostPackageState,
     PluginHostPlanRequest, PluginHostPlanResult, PluginManagedScope, PluginObservedState,
     PluginOperationAction, PluginOperationPlanEnvelope, PluginPackageLock, PluginSurfaceRef,
     UseError, UseResult, VerifiedPluginCatalogRecord, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
-    PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
+    PLUGIN_HOST_CANCEL_RESULT_SCHEMA, PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA,
+    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA,
     PLUGIN_HOST_PLAN_RESULT_SCHEMA,
 };
 use a3s_use_extension::{
@@ -24,8 +29,8 @@ use crate::plugin_lifecycle::{
 use super::embedded::{acquire_capability_lease, inspect_catalog, resolve_lock, search_catalogs};
 use super::enablement_plan::CognitivePackageEnablementPlanStatus;
 use super::host_store::{
-    digest_value, PluginHostProtocolStore, StoredPluginHostOutcome, StoredPluginHostPlan,
-    StoredPluginHostRequest,
+    digest_value, PluginHostProtocolStore, StoredPluginHostCancellation, StoredPluginHostOutcome,
+    StoredPluginHostPlan, StoredPluginHostRequest,
 };
 use super::plan::now_ms;
 use super::store::PackageGraphOperationPhase;
@@ -80,7 +85,7 @@ impl CognitivePackageHostManager {
         authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
     ) -> UseResult<Self> {
         current_scope.validate()?;
-        let capabilities = PluginHostCapabilities::v4(
+        let capabilities = PluginHostCapabilities::v5(
             current_scope.host_id.clone(),
             COGNITIVE_PACKAGE_HOST_VERSION,
             manager_build_id,
@@ -138,6 +143,30 @@ impl CognitivePackageHostManager {
         candidate: &VerifiedPluginCatalogRecord,
     ) -> UseResult<PluginPackageLock> {
         resolve_lock(&self.registry_sources, access, candidate).await
+    }
+
+    /// Inspect presentation evidence signed by the same Registry snapshot as
+    /// an exact catalog candidate. Missing presentation data is not an error.
+    pub async fn inspect_cognitive_package_presentation(
+        &self,
+        access: CognitiveRegistryAccess,
+        candidate: &VerifiedPluginCatalogRecord,
+    ) -> UseResult<Option<a3s_use_extension::VerifiedCognitivePackagePresentation>> {
+        candidate.validate()?;
+        let sources = self.resolve_sources(candidate).await?;
+        match access {
+            CognitiveRegistryAccess::Refreshed => {
+                a3s_use_extension::inspect_cognitive_package_presentation(sources.root(), candidate)
+                    .await
+            }
+            CognitiveRegistryAccess::Cached => {
+                a3s_use_extension::inspect_cached_cognitive_package_presentation(
+                    sources.root(),
+                    candidate,
+                )
+                .await
+            }
+        }
     }
 
     /// Acquire one exact manager-scoped OKF capability after successful apply.
@@ -497,6 +526,248 @@ impl CognitivePackageHostManager {
         }
     }
 
+    async fn operation_status(
+        &self,
+        stored: &StoredPluginHostRequest,
+    ) -> UseResult<PluginHostOperationStatus> {
+        let envelope = stored.plan.envelope().ok_or_else(|| {
+            host_error(
+                "use.plugin.host_enablement_no_change",
+                "A no-change Host plan has no operation to observe.",
+            )
+        })?;
+        if let Some(cancellation) = self
+            .store
+            .get_cancellation(stored.plan.scope(), &envelope.plan.operation_id)
+            .await?
+        {
+            if cancellation.plan_digest != envelope.plan_digest {
+                return Err(host_error(
+                    "use.plugin.host_cancellation_mismatch",
+                    "The durable cancellation does not bind the observed plan.",
+                ));
+            }
+            return Ok(PluginHostOperationStatus {
+                phase: PluginHostOperationPhase::Cancelled,
+                cancellability: PluginHostOperationCancellability::NotApplicable,
+                progress: None,
+                error_code: None,
+                completed_at_ms: Some(cancellation.cancelled_at_ms),
+                operation_result_digest: None,
+                state: None,
+            });
+        }
+        if let StoredPluginHostPlan::Graph { result, .. } = &stored.plan {
+            let pending = self
+                .manager
+                .pending_store()
+                .get(result.plan.plan.action, result.package_id.as_str())
+                .await?;
+            if let Some(pending) = pending {
+                if pending.envelope != result.plan {
+                    return Err(host_error(
+                        "use.plugin.host_operation_observation_mismatch",
+                        "The Use-owned graph operation differs from the observed Host plan.",
+                    ));
+                }
+                if pending.phase() == PackageGraphOperationPhase::Cancelled {
+                    return Ok(PluginHostOperationStatus {
+                        phase: PluginHostOperationPhase::Cancelled,
+                        cancellability: PluginHostOperationCancellability::NotApplicable,
+                        progress: None,
+                        error_code: None,
+                        completed_at_ms: Some(pending.cancelled_at_ms),
+                        operation_result_digest: None,
+                        state: None,
+                    });
+                }
+            }
+        }
+        if let Some(outcome) = &stored.outcome {
+            return Ok(PluginHostOperationStatus {
+                phase: PluginHostOperationPhase::Completed,
+                cancellability: PluginHostOperationCancellability::NotApplicable,
+                progress: None,
+                error_code: None,
+                completed_at_ms: Some(outcome.completed_at_ms),
+                operation_result_digest: Some(outcome.operation_result_digest.clone()),
+                state: Some(outcome.state.clone()),
+            });
+        }
+        if envelope.plan.authority.decision == PlanPolicyDecision::Deny {
+            return Ok(PluginHostOperationStatus {
+                phase: PluginHostOperationPhase::Denied,
+                cancellability: PluginHostOperationCancellability::NotApplicable,
+                progress: None,
+                error_code: None,
+                completed_at_ms: Some(envelope.plan.created_at_ms),
+                operation_result_digest: None,
+                state: None,
+            });
+        }
+
+        let awaiting_confirmation = envelope.plan.authority.decision == PlanPolicyDecision::Ask;
+        let mut phase = if awaiting_confirmation {
+            PluginHostOperationPhase::AwaitingConfirmation
+        } else {
+            PluginHostOperationPhase::Planned
+        };
+        let mut cancellability = PluginHostOperationCancellability::Cancellable;
+        let mut progress = None;
+        if let StoredPluginHostPlan::Graph { result, .. } = &stored.plan {
+            let pending = self
+                .manager
+                .pending_store()
+                .get(result.plan.plan.action, result.package_id.as_str())
+                .await?;
+            if let Some(pending) = pending {
+                if pending.envelope != result.plan {
+                    return Err(host_error(
+                        "use.plugin.host_operation_observation_mismatch",
+                        "The Use-owned graph operation differs from the observed Host plan.",
+                    ));
+                }
+                if pending.phase() == PackageGraphOperationPhase::Admitted {
+                    phase = PluginHostOperationPhase::Preparing;
+                    cancellability = PluginHostOperationCancellability::TooLate;
+                }
+            }
+            let diagnostic =
+                PluginLifecycleJournalStore::from_extension_paths(self.manager.registry.paths())
+                    .diagnose(&self.manager.scope, result.package_id.as_str())
+                    .await?;
+            if let Some(operation) = diagnostic.latest.filter(|operation| {
+                operation.operation_id == result.plan.plan.operation_id
+                    && operation.plan_digest == result.plan.plan_digest
+            }) {
+                cancellability = PluginHostOperationCancellability::TooLate;
+                let current_surface = operation
+                    .checkpoints
+                    .iter()
+                    .find(|checkpoint| {
+                        checkpoint.status
+                            == crate::plugin_lifecycle::PluginLifecycleCheckpointDiagnosticStatus::Pending
+                    })
+                    .and_then(|checkpoint| checkpoint.surface.clone());
+                progress = Some(PluginHostOperationProgress {
+                    completed_steps: operation.completed_checkpoints,
+                    total_steps: operation.total_checkpoints,
+                    current_surface,
+                });
+                phase = match operation.status {
+                    PluginLifecycleOperationStatus::Applying => {
+                        if operation
+                            .checkpoints
+                            .iter()
+                            .find(|checkpoint| {
+                                checkpoint.status
+                                    == crate::plugin_lifecycle::PluginLifecycleCheckpointDiagnosticStatus::Pending
+                            })
+                            .is_some_and(|checkpoint| {
+                                matches!(
+                                    checkpoint.kind,
+                                    crate::plugin_lifecycle::PluginLifecycleCheckpointKind::CapabilityPublished
+                                        | crate::plugin_lifecycle::PluginLifecycleCheckpointKind::CapabilityHidden
+                                )
+                            })
+                        {
+                            PluginHostOperationPhase::Publishing
+                        } else {
+                            PluginHostOperationPhase::Preparing
+                        }
+                    }
+                    PluginLifecycleOperationStatus::RollingBack => {
+                        PluginHostOperationPhase::Finalizing
+                    }
+                    PluginLifecycleOperationStatus::Completed => {
+                        PluginHostOperationPhase::Finalizing
+                    }
+                    PluginLifecycleOperationStatus::RolledBack => {
+                        PluginHostOperationPhase::Failed
+                    }
+                };
+                if phase == PluginHostOperationPhase::Failed {
+                    let error_code = operation
+                        .checkpoints
+                        .iter()
+                        .find_map(|checkpoint| checkpoint.error_code.clone())
+                        .or_else(|| Some("use.plugin.lifecycle_rolled_back".to_owned()));
+                    return Ok(PluginHostOperationStatus {
+                        phase,
+                        cancellability: PluginHostOperationCancellability::NotApplicable,
+                        progress,
+                        error_code,
+                        completed_at_ms: operation.completed_at_ms,
+                        operation_result_digest: None,
+                        state: None,
+                    });
+                }
+            }
+        }
+
+        Ok(PluginHostOperationStatus {
+            phase,
+            cancellability,
+            progress,
+            error_code: None,
+            completed_at_ms: None,
+            operation_result_digest: None,
+            state: None,
+        })
+    }
+
+    async fn observe_operation_once(
+        &self,
+        request: &PluginHostOperationObservationRequest,
+    ) -> UseResult<PluginHostOperationObservationResult> {
+        request.validate_for_capabilities(&self.capabilities)?;
+        self.verify_fence(&request.scope)?;
+        let stored = self
+            .store
+            .get_by_operation(&request.scope, &request.operation_id)
+            .await?
+            .ok_or_else(|| {
+                host_error(
+                    "use.plugin.host_plan_missing",
+                    "The observed operation has no durable Host plan record.",
+                )
+            })?;
+        let envelope = stored.plan.envelope().ok_or_else(|| {
+            host_error(
+                "use.plugin.host_enablement_no_change",
+                "A no-change Host plan has no operation to observe.",
+            )
+        })?;
+        if stored.plan.scope() != &request.scope
+            || envelope.plan.package_id != request.package_id.as_str()
+            || envelope.plan.operation_id != request.operation_id
+            || envelope.plan_digest != request.plan_digest
+        {
+            return Err(host_error(
+                "use.plugin.host_operation_observation_mismatch",
+                "The operation observation does not bind the exact stored plan.",
+            ));
+        }
+        let status = self.operation_status(&stored).await?;
+        let result = PluginHostOperationObservationResult {
+            schema: PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA.to_owned(),
+            request_id: request.request_id.clone(),
+            assignment_generation: request.assignment_generation,
+            capabilities_digest: request.capabilities_digest.clone(),
+            scope: request.scope.clone(),
+            package_id: request.package_id.clone(),
+            operation_id: request.operation_id.clone(),
+            plan_digest: request.plan_digest.clone(),
+            observed_at_ms: now_ms()?,
+            revision: status.descriptor_digest()?,
+            changed: true,
+            timed_out: false,
+            status,
+        };
+        result.validate_for(request, &self.capabilities)?;
+        Ok(result)
+    }
+
     fn verify_fence(&self, scope: &PluginManagedScope) -> UseResult<()> {
         scope.verify_current_fence(&self.current_scope)
     }
@@ -581,6 +852,34 @@ impl PluginHostManager for CognitivePackageHostManager {
                 "A no-change Host plan has no operation to apply.",
             )
         })?;
+        if self
+            .store
+            .get_cancellation(&request.scope, &request.operation_id)
+            .await?
+            .is_some()
+        {
+            return Err(host_error(
+                "use.plugin.host_operation_cancelled",
+                "The reviewed operation was cancelled before durable admission.",
+            ));
+        }
+        if let StoredPluginHostPlan::Graph { result, .. } = &stored.plan {
+            if self
+                .manager
+                .pending_store()
+                .get(result.plan.plan.action, result.package_id.as_str())
+                .await?
+                .is_some_and(|pending| {
+                    pending.envelope == result.plan
+                        && pending.phase() == PackageGraphOperationPhase::Cancelled
+                })
+            {
+                return Err(host_error(
+                    "use.plugin.host_operation_cancelled",
+                    "The reviewed operation was cancelled before durable admission.",
+                ));
+            }
+        }
         if let Err(error) = self.verify_live_apply(&request, &stored.plan, now_ms()?) {
             if error.code != "use.plugin.plan_expired" {
                 return Err(error);
@@ -728,6 +1027,190 @@ impl PluginHostManager for CognitivePackageHostManager {
             package_id: request.package_id.clone(),
             observed_at_ms: now_ms()?,
             status: PluginHostObservationStatus::Available { state },
+        };
+        result.validate_for(&request, &self.capabilities)?;
+        Ok(result)
+    }
+
+    async fn observe_operation(
+        &self,
+        request: PluginHostOperationObservationRequest,
+    ) -> UseResult<PluginHostOperationObservationResult> {
+        self.observe_operation_once(&request).await
+    }
+
+    async fn watch_operation(
+        &self,
+        request: PluginHostOperationWatchRequest,
+    ) -> UseResult<PluginHostOperationObservationResult> {
+        request.validate_for_capabilities(&self.capabilities)?;
+        let deadline = tokio::time::Instant::now()
+            .checked_add(std::time::Duration::from_millis(request.timeout_ms))
+            .ok_or_else(|| {
+                host_error(
+                    "use.plugin.host_operation_watch_timeout_invalid",
+                    "The operation watch timeout is too large for this platform.",
+                )
+            })?;
+        loop {
+            let mut result = self.observe_operation_once(&request.observation).await?;
+            if request.after_revision.as_deref() != Some(result.revision.as_str()) {
+                result.changed = true;
+                result.timed_out = false;
+                return Ok(result);
+            }
+            let now = tokio::time::Instant::now();
+            if request.timeout_ms == 0 || now >= deadline {
+                result.changed = false;
+                result.timed_out = true;
+                result.validate_for(&request.observation, &self.capabilities)?;
+                return Ok(result);
+            }
+            tokio::time::sleep(
+                std::time::Duration::from_millis(50).min(deadline.saturating_duration_since(now)),
+            )
+            .await;
+        }
+    }
+
+    async fn cancel(&self, request: PluginHostCancelRequest) -> UseResult<PluginHostCancelResult> {
+        request.validate_for_capabilities(&self.capabilities)?;
+        self.verify_fence(&request.scope)?;
+        let _operation_lock = self
+            .store
+            .lock_operation(&request.scope, &request.operation_id)
+            .await?;
+        let stored = self
+            .store
+            .get_by_operation(&request.scope, &request.operation_id)
+            .await?
+            .ok_or_else(|| {
+                host_error(
+                    "use.plugin.host_plan_missing",
+                    "The cancelled operation has no durable Host plan record.",
+                )
+            })?;
+        let envelope = stored.plan.envelope().ok_or_else(|| {
+            host_error(
+                "use.plugin.host_enablement_no_change",
+                "A no-change Host plan has no operation to cancel.",
+            )
+        })?;
+        if envelope.plan.package_id != request.package_id.as_str()
+            || envelope.plan.operation_id != request.operation_id
+            || envelope.plan_digest != request.plan_digest
+        {
+            return Err(host_error(
+                "use.plugin.host_cancellation_mismatch",
+                "The cancellation request does not bind the exact stored plan.",
+            ));
+        }
+        let status = if let Some(cancellation) = self
+            .store
+            .get_cancellation(&request.scope, &request.operation_id)
+            .await?
+        {
+            if cancellation.plan_digest != request.plan_digest {
+                return Err(host_error(
+                    "use.plugin.host_cancellation_mismatch",
+                    "The durable cancellation does not bind the exact requested plan.",
+                ));
+            }
+            PluginHostCancellationStatus::AlreadyCancelled
+        } else if stored.outcome.is_some() {
+            PluginHostCancellationStatus::AlreadyCompleted
+        } else {
+            match &stored.plan {
+                StoredPluginHostPlan::Graph { result, .. } => {
+                    let pending = self
+                        .manager
+                        .pending_store()
+                        .get(result.plan.plan.action, result.package_id.as_str())
+                        .await?;
+                    match pending {
+                        Some(pending) if pending.envelope != result.plan => {
+                            return Err(host_error(
+                                "use.plugin.host_cancellation_mismatch",
+                                "The Use-owned operation differs from the cancelled Host plan.",
+                            ));
+                        }
+                        Some(pending) if pending.phase() == PackageGraphOperationPhase::Planned => {
+                            let cancelled_at_ms = now_ms()?;
+                            let (cancelled, _) = self
+                                .manager
+                                .pending_store()
+                                .cancel_planned(&pending, &request.request_id, cancelled_at_ms)
+                                .await?;
+                            let cancellation = StoredPluginHostCancellation::new(
+                                cancelled
+                                    .cancellation_request_id
+                                    .as_deref()
+                                    .ok_or_else(|| {
+                                        host_error(
+                                            "use.plugin.host_cancellation_mismatch",
+                                            "The Use-owned cancellation omitted its request identity.",
+                                        )
+                                    })?,
+                                &request.operation_id,
+                                &request.plan_digest,
+                                cancelled.cancelled_at_ms,
+                            )?;
+                            self.store
+                                .put_cancellation(&request.scope, &cancellation)
+                                .await?;
+                            PluginHostCancellationStatus::Cancelled
+                        }
+                        Some(pending)
+                            if pending.phase() == PackageGraphOperationPhase::Cancelled =>
+                        {
+                            let cancellation = StoredPluginHostCancellation::new(
+                                pending.cancellation_request_id.as_deref().ok_or_else(|| {
+                                    host_error(
+                                        "use.plugin.host_cancellation_mismatch",
+                                        "The Use-owned cancellation omitted its request identity.",
+                                    )
+                                })?,
+                                &request.operation_id,
+                                &request.plan_digest,
+                                pending.cancelled_at_ms,
+                            )?;
+                            self.store
+                                .put_cancellation(&request.scope, &cancellation)
+                                .await?;
+                            PluginHostCancellationStatus::AlreadyCancelled
+                        }
+                        Some(_) => PluginHostCancellationStatus::TooLate,
+                        None if self.has_durable_admission(&stored.plan).await? => {
+                            PluginHostCancellationStatus::TooLate
+                        }
+                        None => {
+                            return Err(host_error(
+                                "use.plugin.host_operation_evidence_missing",
+                                "The cancelled graph plan has no Use-owned operation evidence.",
+                            ));
+                        }
+                    }
+                }
+                StoredPluginHostPlan::Enablement { .. } => {
+                    if self.has_durable_admission(&stored.plan).await? {
+                        PluginHostCancellationStatus::TooLate
+                    } else {
+                        PluginHostCancellationStatus::PendingSafePoint
+                    }
+                }
+            }
+        };
+        let result = PluginHostCancelResult {
+            schema: PLUGIN_HOST_CANCEL_RESULT_SCHEMA.to_owned(),
+            request_id: request.request_id.clone(),
+            assignment_generation: request.assignment_generation,
+            capabilities_digest: request.capabilities_digest.clone(),
+            scope: request.scope.clone(),
+            package_id: request.package_id.clone(),
+            operation_id: request.operation_id.clone(),
+            plan_digest: request.plan_digest.clone(),
+            observed_at_ms: now_ms()?,
+            status,
         };
         result.validate_for(&request, &self.capabilities)?;
         Ok(result)

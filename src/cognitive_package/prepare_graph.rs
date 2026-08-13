@@ -375,6 +375,12 @@ impl CognitivePackageManager {
         let Some(pending) = self.pending_store().get(action, package_id).await? else {
             return Ok(None);
         };
+        if pending.phase() == super::store::PackageGraphOperationPhase::Cancelled {
+            return Err(package_manager_error(
+                "use.plugin.package_graph_cancelled",
+                "The exact cognitive-package operation was cancelled before admission.",
+            ));
+        }
         let lock_digest = pending
             .envelope
             .package_lock

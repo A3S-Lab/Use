@@ -555,6 +555,7 @@ fn validate_prepared_closure(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_replay(
     pending: &PendingPackageGraphOperation,
     lock: &a3s_use_core::PluginPackageLock,

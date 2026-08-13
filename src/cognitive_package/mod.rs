@@ -397,6 +397,10 @@ impl CognitivePackageManager {
         pending: PendingPackageGraphOperation,
     ) -> UseResult<PendingPackageGraphOperation> {
         match pending.phase() {
+            PackageGraphOperationPhase::Cancelled => Err(package_manager_error(
+                "use.plugin.package_graph_cancelled",
+                "The reviewed cognitive-package operation was cancelled before admission.",
+            )),
             PackageGraphOperationPhase::Admitted => {
                 self.authorization.verify_plan(&pending.envelope)?;
                 Ok(pending)

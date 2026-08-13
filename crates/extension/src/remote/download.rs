@@ -182,7 +182,7 @@ impl PreparedRemotePackage {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn download_and_cache_target(
+pub(super) async fn download_and_cache_target(
     repository: &Repository,
     target_name: &TargetName,
     datastore: &Path,

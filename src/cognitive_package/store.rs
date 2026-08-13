@@ -21,6 +21,7 @@ use super::package_manager_error;
 const INSTALLED_GRAPH_SCHEMA: &str = "a3s.use.installed-package-graph.v1";
 const PENDING_GRAPH_SCHEMA_V2: &str = "a3s.use.pending-package-graph-operation.v2";
 const PENDING_GRAPH_SCHEMA_V3: &str = "a3s.use.pending-package-graph-operation.v3";
+const PENDING_GRAPH_SCHEMA_V4: &str = "a3s.use.pending-package-graph-operation.v4";
 const MAX_GRAPH_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +69,10 @@ pub(super) struct PendingPackageGraphOperation {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub planned_at_ms: u64,
     pub admitted_at_ms: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cancelled_at_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancellation_request_id: Option<String>,
     #[serde(default)]
     pub authorization: PackageGraphAuthorization,
     pub generations: BTreeMap<String, u64>,
@@ -88,6 +93,7 @@ pub(super) struct PendingPackageGraphOperation {
 pub(super) enum PackageGraphOperationPhase {
     Planned,
     Admitted,
+    Cancelled,
 }
 
 const fn default_admitted_phase() -> PackageGraphOperationPhase {
@@ -107,11 +113,13 @@ impl PendingPackageGraphOperation {
     ) -> UseResult<Self> {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA_V3.to_string(),
+            schema: PENDING_GRAPH_SCHEMA_V4.to_string(),
             envelope,
             phase: PackageGraphOperationPhase::Planned,
             planned_at_ms,
             admitted_at_ms: 0,
+            cancelled_at_ms: 0,
+            cancellation_request_id: None,
             authorization: PackageGraphAuthorization::default(),
             generations,
             manifests,
@@ -138,11 +146,13 @@ impl PendingPackageGraphOperation {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let prior_manifest_digests = manifest_record_digests(&prior_manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA_V3.to_string(),
+            schema: PENDING_GRAPH_SCHEMA_V4.to_string(),
             envelope,
             phase: PackageGraphOperationPhase::Planned,
             planned_at_ms,
             admitted_at_ms: 0,
+            cancelled_at_ms: 0,
+            cancellation_request_id: None,
             authorization: PackageGraphAuthorization::default(),
             generations,
             manifests,
@@ -169,11 +179,32 @@ impl PendingPackageGraphOperation {
             ));
         }
         let mut admitted = self.clone();
+        admitted.schema = PENDING_GRAPH_SCHEMA_V4.to_string();
         admitted.phase = PackageGraphOperationPhase::Admitted;
         admitted.admitted_at_ms = admitted_at_ms;
         admitted.authorization = authorization;
         admitted.validate()?;
         Ok(admitted)
+    }
+
+    pub fn cancel(&self, cancellation_request_id: &str, cancelled_at_ms: u64) -> UseResult<Self> {
+        self.validate()?;
+        if self.phase != PackageGraphOperationPhase::Planned
+            || cancellation_request_id.is_empty()
+            || cancellation_request_id.len() > 256
+            || cancelled_at_ms < self.planned_at_ms
+        {
+            return Err(store_error(
+                "Only an exact planned package graph operation can be cancelled.",
+            ));
+        }
+        let mut cancelled = self.clone();
+        cancelled.schema = PENDING_GRAPH_SCHEMA_V4.to_string();
+        cancelled.phase = PackageGraphOperationPhase::Cancelled;
+        cancelled.cancelled_at_ms = cancelled_at_ms;
+        cancelled.cancellation_request_id = Some(cancellation_request_id.to_owned());
+        cancelled.validate()?;
+        Ok(cancelled)
     }
 
     pub fn validate(&self) -> UseResult<()> {
@@ -183,16 +214,35 @@ impl PendingPackageGraphOperation {
             && self.planned_at_ms == 0;
         let phase_valid = match self.phase {
             PackageGraphOperationPhase::Planned => {
-                self.schema == PENDING_GRAPH_SCHEMA_V3
-                    && self.planned_at_ms > 0
+                matches!(
+                    self.schema.as_str(),
+                    PENDING_GRAPH_SCHEMA_V3 | PENDING_GRAPH_SCHEMA_V4
+                ) && self.planned_at_ms > 0
                     && self.admitted_at_ms == 0
+                    && self.cancelled_at_ms == 0
+                    && self.cancellation_request_id.is_none()
                     && self.authorization == PackageGraphAuthorization::default()
             }
             PackageGraphOperationPhase::Admitted => {
                 legacy_admitted
-                    || (self.schema == PENDING_GRAPH_SCHEMA_V3
-                        && self.planned_at_ms > 0
-                        && self.admitted_at_ms >= self.planned_at_ms)
+                    || (matches!(
+                        self.schema.as_str(),
+                        PENDING_GRAPH_SCHEMA_V3 | PENDING_GRAPH_SCHEMA_V4
+                    ) && self.planned_at_ms > 0
+                        && self.admitted_at_ms >= self.planned_at_ms
+                        && self.cancelled_at_ms == 0
+                        && self.cancellation_request_id.is_none())
+            }
+            PackageGraphOperationPhase::Cancelled => {
+                self.schema == PENDING_GRAPH_SCHEMA_V4
+                    && self.planned_at_ms > 0
+                    && self.admitted_at_ms == 0
+                    && self.cancelled_at_ms >= self.planned_at_ms
+                    && self
+                        .cancellation_request_id
+                        .as_deref()
+                        .is_some_and(|request_id| !request_id.is_empty() && request_id.len() <= 256)
+                    && self.authorization == PackageGraphAuthorization::default()
             }
         };
         if !phase_valid {
@@ -706,6 +756,57 @@ impl PendingPackageGraphStore {
             .map_err(|error| path_error("remove pending package graph", &path, error))?;
         sync_parent(path.parent().ok_or_else(path_identity_error)?).await?;
         Ok(true)
+    }
+
+    /// Cancel an exact reviewed graph before it crosses durable admission.
+    ///
+    /// The package-graph store lock serializes this check with admission, so a
+    /// successful return proves that no lifecycle mutation can later start
+    /// from the cancelled plan. Admitted operations deliberately fail closed.
+    pub async fn cancel_planned(
+        &self,
+        expected: &PendingPackageGraphOperation,
+        cancellation_request_id: &str,
+        cancelled_at_ms: u64,
+    ) -> UseResult<(PendingPackageGraphOperation, bool)> {
+        expected.validate()?;
+        if expected.phase() != PackageGraphOperationPhase::Planned {
+            return Err(package_manager_error(
+                "use.plugin.package_graph_cancel_too_late",
+                "The cognitive-package operation already crossed durable admission.",
+            ));
+        }
+        let _guard = acquire_lock(&self.state_root).await?;
+        let cancelled = expected.cancel(cancellation_request_id, cancelled_at_ms)?;
+        let path = pending_record_path(&self.root, expected.action(), expected.root_package_id())?;
+        let parent = path.parent().ok_or_else(path_identity_error)?;
+        if !validate_existing_directory_chain(&self.state_root, parent).await? {
+            return Err(store_error(
+                "The reviewed package graph plan disappeared before cancellation.",
+            ));
+        }
+        let current = read_optional::<PendingPackageGraphOperation>(&path)
+            .await?
+            .ok_or_else(|| {
+                store_error("The reviewed package graph plan disappeared before cancellation.")
+            })?;
+        current.validate()?;
+        if current == cancelled {
+            return Ok((cancelled, false));
+        }
+        if current != *expected {
+            return Err(store_error(
+                "The reviewed package graph changed before cancellation.",
+            ));
+        }
+        if current.phase() != PackageGraphOperationPhase::Planned {
+            return Err(package_manager_error(
+                "use.plugin.package_graph_cancel_too_late",
+                "The cognitive-package operation crossed durable admission before cancellation.",
+            ));
+        }
+        write_new(&self.state_root, &path, &cancelled).await?;
+        Ok((cancelled, true))
     }
 }
 

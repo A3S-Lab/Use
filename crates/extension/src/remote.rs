@@ -28,6 +28,7 @@ mod catalog;
 mod download;
 mod network;
 mod package_graph;
+mod presentation;
 mod resumable_http;
 mod target;
 mod target_cache;
@@ -53,6 +54,16 @@ pub use package_graph::{
     download_locked_cached_remote_packages, download_locked_remote_packages,
     download_selected_locked_cached_remote_packages, download_selected_locked_remote_packages,
     resolve_cached_remote_package_lock, resolve_remote_package_lock,
+};
+pub use presentation::{
+    fetch_cached_cognitive_package_media, fetch_cognitive_package_media,
+    inspect_cached_cognitive_package_presentation, inspect_cognitive_package_presentation,
+    CognitivePackageFormFactor, CognitivePackageMediaKind, CognitivePackagePresentationIndexV1,
+    CognitivePackagePresentationMediaV1, CognitivePackagePresentationRecordV1,
+    CognitivePackagePresentationV1, VerifiedCognitivePackageMedia,
+    VerifiedCognitivePackagePresentation, COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA,
+    COGNITIVE_PACKAGE_PRESENTATION_SCHEMA, MAX_COGNITIVE_PACKAGE_MEDIA_BYTES,
+    MAX_COGNITIVE_PACKAGE_PRESENTATION_MEDIA,
 };
 use target::{
     decode_registry_target_metadata, resolved_remote_package, validate_target_metadata,
@@ -229,7 +240,7 @@ impl TrustedRegistry {
         })
     }
 
-    fn targets_url(&self) -> UseResult<Url> {
+    pub(super) fn targets_url(&self) -> UseResult<Url> {
         self.base_url.join("targets/").map_err(|error| {
             UseError::new(
                 "use.extension.registry_url_invalid",

@@ -279,9 +279,9 @@ pub(super) fn install_plan_packages(
             )
         })?;
         let transition = match disposition {
-            InstallDisposition::Add => package.catalog.install_transition(role, &surfaces)?,
+            InstallDisposition::Add => package.catalog.install_transition(role, surfaces)?,
             InstallDisposition::Retain => {
-                let state = package.catalog.selected_state(&surfaces)?;
+                let state = package.catalog.selected_state(surfaces)?;
                 PlannedPackageTransition::resolved(
                     package.package_id(),
                     role,
@@ -349,7 +349,7 @@ pub(super) fn uninstall_operation(
                     "An installed package has no selected surface evidence.",
                 )
             })?;
-        let state = package.catalog.selected_state(&surfaces)?;
+        let state = package.catalog.selected_state(surfaces)?;
         let transition = match dispositions.get(package.package_id()) {
             Some(UninstallDisposition::Remove) => PlannedPackageTransition::resolved(
                 package.package_id(),
@@ -495,7 +495,7 @@ pub(super) fn upgrade_operation(
                             "An added package has no selected candidate surfaces.",
                         )
                     })?;
-                candidate.catalog.install_transition(role, &surfaces)?
+                candidate.catalog.install_transition(role, surfaces)?
             }
             UpgradeDisposition::Replace => {
                 let candidate = candidate.ok_or_else(|| {
@@ -528,7 +528,7 @@ pub(super) fn upgrade_operation(
                     &prior.catalog,
                     role,
                     prior_surfaces,
-                    &surfaces,
+                    surfaces,
                 )?
             }
             UpgradeDisposition::Remove => {

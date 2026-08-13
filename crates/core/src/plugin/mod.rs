@@ -12,9 +12,11 @@ mod grant;
 mod grant_changes;
 mod grant_resolution;
 mod host;
+mod host_cancellation;
 mod host_enablement_plan;
 mod host_observation;
 mod host_operation;
+mod host_operation_observation;
 mod host_plan;
 mod identity;
 mod installed_plan;
@@ -47,7 +49,12 @@ pub use grant_resolution::{
 };
 pub use host::{
     PluginHostCapabilities, PluginHostManager, PluginManagedScope,
-    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_CAPABILITIES_SCHEMA_V5,
+    PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_HOST_PROTOCOL_LEVEL_V5, PLUGIN_MANAGED_SCOPE_SCHEMA,
+};
+pub use host_cancellation::{
+    PluginHostCancelRequest, PluginHostCancelResult, PluginHostCancellationStatus,
+    PLUGIN_HOST_CANCEL_REQUEST_SCHEMA, PLUGIN_HOST_CANCEL_RESULT_SCHEMA,
 };
 pub use host_enablement_plan::{
     PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
@@ -63,6 +70,13 @@ pub use host_observation::{
 pub use host_operation::{
     PluginHostApplyRequest, PluginHostApplyResult, PLUGIN_HOST_APPLY_REQUEST_SCHEMA,
     PLUGIN_HOST_APPLY_RESULT_SCHEMA,
+};
+pub use host_operation_observation::{
+    PluginHostOperationCancellability, PluginHostOperationObservationRequest,
+    PluginHostOperationObservationResult, PluginHostOperationPhase, PluginHostOperationProgress,
+    PluginHostOperationStatus, PluginHostOperationWatchRequest,
+    MAX_PLUGIN_HOST_OPERATION_WATCH_TIMEOUT_MS, PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA,
 };
 pub use host_plan::{
     PluginHostPlanRequest, PluginHostPlanResult, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,

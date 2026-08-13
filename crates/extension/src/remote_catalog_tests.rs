@@ -124,6 +124,185 @@ async fn complete_signed_fixture_is_searchable_and_inspectable_without_archive_d
 }
 
 #[tokio::test]
+async fn signed_presentation_descriptor_and_media_are_verified_and_cached() {
+    let target = host_target().unwrap();
+    let package_archive = b"cognitive-package".to_vec();
+    let mut record = PluginCatalogRecord::from_json(OKF_CATALOG_V3).unwrap();
+    record.target = target.clone();
+    record.requires_use = ">=0.3.0, <0.4.0".to_owned();
+    record.archive.target_name = format!(
+        "extensions/acme/knowledge/1.0.0/stable/{target}/acme-knowledge-1.0.0-{target}.tar.gz"
+    );
+    record.archive.length = package_archive.len() as u64;
+    record.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&package_archive));
+    record.validate().unwrap();
+
+    let media_name = "cognitive/media/acme-knowledge-cover.png";
+    let media = b"verified-image-fixture".to_vec();
+    let media_digest = format!("sha256:{:x}", Sha256::digest(&media));
+    let descriptor_name = "cognitive/descriptors/acme-knowledge-1.0.0-en.json";
+    let descriptor = CognitivePackagePresentationV1 {
+        schema: COGNITIVE_PACKAGE_PRESENTATION_SCHEMA.to_owned(),
+        package_id: record.package_id.clone(),
+        locale: "en".to_owned(),
+        short_title: "Knowledge Builder".to_owned(),
+        short_summary: "Verified domain knowledge for an exact workspace task.".to_owned(),
+        form_factors: vec![CognitivePackageFormFactor::Desktop],
+        media: vec![CognitivePackagePresentationMediaV1 {
+            kind: CognitivePackageMediaKind::Image,
+            target_name: media_name.to_owned(),
+            sha256: media_digest.clone(),
+            media_type: "image/png".to_owned(),
+            width: 1280,
+            height: 720,
+            byte_length: media.len() as u64,
+            alt: "Knowledge Builder preview".to_owned(),
+        }],
+        accent: Some("#8a7cff".to_owned()),
+    };
+    let descriptor = serde_json::to_vec(&descriptor).unwrap();
+    let descriptor_digest = format!("sha256:{:x}", Sha256::digest(&descriptor));
+    let index = CognitivePackagePresentationIndexV1 {
+        schema: COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA.to_owned(),
+        entries: vec![CognitivePackagePresentationRecordV1 {
+            package_id: record.package_id.clone(),
+            version: record.version.clone(),
+            channel: record.channel.as_str().to_owned(),
+            host_target: target.clone(),
+            catalog_record_digest: record.descriptor_digest().unwrap(),
+            descriptor_target_name: descriptor_name.to_owned(),
+            descriptor_sha256: descriptor_digest,
+            descriptor_byte_length: descriptor.len() as u64,
+        }],
+    };
+    let index = serde_json::to_vec(&index).unwrap();
+    let repository = TestRepository::with_targets(
+        vec![
+            TestTarget {
+                target_name: record.archive.target_name.clone(),
+                custom: Some(serde_json::to_value(record).unwrap()),
+                archive: package_archive,
+            },
+            TestTarget::with_signed_custom(
+                "cognitive/presentation-index-v1.json",
+                index,
+                serde_json::json!({
+                    "a3sCognitivePresentationIndex": {
+                        "schema": COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA
+                    }
+                }),
+            ),
+            TestTarget::raw(descriptor_name, descriptor),
+            TestTarget::raw(media_name, media.clone()),
+        ],
+        9,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+    let host = PluginCatalogHost::new(target, "0.3.0").unwrap();
+    let candidate = search_remote_plugins(&trusted, &host, &catalog_search("knowledge", 20))
+        .await
+        .unwrap()
+        .plugins
+        .into_iter()
+        .next()
+        .unwrap();
+
+    let presentation = inspect_cognitive_package_presentation(&trusted, &candidate)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        presentation.record.catalog_record_digest,
+        candidate.provenance.catalog_record_digest
+    );
+    assert_eq!(presentation.descriptor.short_title, "Knowledge Builder");
+    let downloaded = fetch_cognitive_package_media(&trusted, &presentation, media_name)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(downloaded.path()).unwrap(), media);
+    drop(downloaded);
+
+    server.clear_requests();
+    let cached_presentation = inspect_cached_cognitive_package_presentation(&trusted, &candidate)
+        .await
+        .unwrap()
+        .unwrap();
+    let cached_media =
+        fetch_cached_cognitive_package_media(&trusted, &cached_presentation, media_name)
+            .await
+            .unwrap();
+    assert_eq!(std::fs::read(cached_media.path()).unwrap(), media);
+    assert!(server.requests().is_empty());
+}
+
+#[tokio::test]
+async fn presentation_index_rejects_a_digest_not_bound_to_the_catalog_record() {
+    let target = host_target().unwrap();
+    let package_archive = b"cognitive-package".to_vec();
+    let mut record = PluginCatalogRecord::from_json(OKF_CATALOG_V3).unwrap();
+    record.target = target.clone();
+    record.requires_use = ">=0.3.0, <0.4.0".to_owned();
+    record.archive.target_name = format!(
+        "extensions/acme/knowledge/1.0.0/stable/{target}/acme-knowledge-1.0.0-{target}.tar.gz"
+    );
+    record.archive.length = package_archive.len() as u64;
+    record.archive.sha256 = format!("sha256:{:x}", Sha256::digest(&package_archive));
+    record.validate().unwrap();
+    let index = CognitivePackagePresentationIndexV1 {
+        schema: COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA.to_owned(),
+        entries: vec![CognitivePackagePresentationRecordV1 {
+            package_id: record.package_id.clone(),
+            version: record.version.clone(),
+            channel: record.channel.as_str().to_owned(),
+            host_target: target.clone(),
+            catalog_record_digest: format!("sha256:{}", "f".repeat(64)),
+            descriptor_target_name: "cognitive/descriptors/missing.json".to_owned(),
+            descriptor_sha256: format!("sha256:{}", "e".repeat(64)),
+            descriptor_byte_length: 1,
+        }],
+    };
+    let repository = TestRepository::with_targets(
+        vec![
+            TestTarget {
+                target_name: record.archive.target_name.clone(),
+                custom: Some(serde_json::to_value(record).unwrap()),
+                archive: package_archive,
+            },
+            TestTarget::with_signed_custom(
+                "cognitive/presentation-index-v1.json",
+                serde_json::to_vec(&index).unwrap(),
+                serde_json::json!({
+                    "a3sCognitivePresentationIndex": {
+                        "schema": COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA
+                    }
+                }),
+            ),
+        ],
+        10,
+        FUTURE,
+    );
+    let server = TestServer::start(repository.routes.clone());
+    let temp = tempfile::tempdir().unwrap();
+    let trusted = trusted_registry(&server, &repository, temp.path().join("tuf"));
+    let host = PluginCatalogHost::new(target, "0.3.0").unwrap();
+    let candidate = search_remote_plugins(&trusted, &host, &catalog_search("knowledge", 20))
+        .await
+        .unwrap()
+        .plugins
+        .into_iter()
+        .next()
+        .unwrap();
+
+    assert!(inspect_cognitive_package_presentation(&trusted, &candidate)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
 async fn public_catalog_policy_rejects_loopback_before_metadata_transport() {
     let routes = HashMap::from([(
         "/metadata/timestamp.json".to_owned(),

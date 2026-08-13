@@ -2,20 +2,26 @@ use a3s_use_core::{
     PlanActor, PlanAuthority, PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision,
     PlanScope, PlanScopeKind, PlannedOperationImpact, PlannedPackageTransition,
     PlannedStateEvidence, PlannedWorkspaceImpact, PluginCatalogRecord, PluginDesiredState,
-    PluginHostApplyRequest, PluginHostApplyResult, PluginHostCapabilities,
-    PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
-    PluginHostEnablementPlanStatus, PluginHostManager, PluginHostObservationRequest,
-    PluginHostObservationResult, PluginHostObservationStatus, PluginHostPackageState,
+    PluginHostApplyRequest, PluginHostApplyResult, PluginHostCancelRequest, PluginHostCancelResult,
+    PluginHostCancellationStatus, PluginHostCapabilities, PluginHostEnablementPlanRequest,
+    PluginHostEnablementPlanResult, PluginHostEnablementPlanStatus, PluginHostManager,
+    PluginHostObservationRequest, PluginHostObservationResult, PluginHostObservationStatus,
+    PluginHostOperationCancellability, PluginHostOperationObservationRequest,
+    PluginHostOperationObservationResult, PluginHostOperationPhase, PluginHostOperationProgress,
+    PluginHostOperationStatus, PluginHostOperationWatchRequest, PluginHostPackageState,
     PluginHostPlanRequest, PluginHostPlanResult, PluginHostUnavailableReason, PluginManagedScope,
     PluginObservedState, PluginOperationAction, PluginOperationConfirmation,
     PluginOperationPlanBinding, PluginOperationPlanDraft, PluginOperationPlanEnvelope,
     PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, VerifiedCatalogProvenance,
     VerifiedPluginCatalogRecord, PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
+    PLUGIN_HOST_CANCEL_REQUEST_SCHEMA, PLUGIN_HOST_CANCEL_RESULT_SCHEMA,
     PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
     PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
-    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_PLAN_REQUEST_SCHEMA,
-    PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_MANAGED_SCOPE_SCHEMA,
-    PLUGIN_OPERATION_CONFIRMATION_SCHEMA, PLUGIN_OPERATION_PLAN_SCHEMA_V4,
+    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA,
+    PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V4,
+    PLUGIN_MANAGED_SCOPE_SCHEMA, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
@@ -695,5 +701,103 @@ fn public_host_types_and_service_port_are_send_sync() {
     assert_send_sync::<PluginHostEnablementPlanResult>();
     assert_send_sync::<PluginHostObservationRequest>();
     assert_send_sync::<PluginHostObservationResult>();
+    assert_send_sync::<PluginHostOperationObservationRequest>();
+    assert_send_sync::<PluginHostOperationObservationResult>();
+    assert_send_sync::<PluginHostOperationWatchRequest>();
+    assert_send_sync::<PluginHostCancelRequest>();
+    assert_send_sync::<PluginHostCancelResult>();
     assert_manager_port::<dyn PluginHostManager>();
+}
+
+#[test]
+fn operation_observation_revision_binds_exact_progress_without_percentages() {
+    let capabilities = PluginHostCapabilities::v5(
+        "host:node-01",
+        env!("CARGO_PKG_VERSION"),
+        "use:0.3.0:linux-x86_64",
+    )
+    .unwrap();
+    let request = PluginHostOperationObservationRequest {
+        schema: PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA.to_owned(),
+        request_id: "observe:operation:0001".to_owned(),
+        assignment_generation: 4,
+        capabilities_digest: capabilities.descriptor_digest().unwrap(),
+        scope: scope(),
+        package_id: PluginPackageId::parse("acme/knowledge").unwrap(),
+        operation_id: "use-operation:0001".to_owned(),
+        plan_digest: DIGEST_A.to_owned(),
+    };
+    request.validate_for_capabilities(&capabilities).unwrap();
+    let status = PluginHostOperationStatus {
+        phase: PluginHostOperationPhase::Preparing,
+        cancellability: PluginHostOperationCancellability::TooLate,
+        progress: Some(PluginHostOperationProgress {
+            completed_steps: 2,
+            total_steps: 5,
+            current_surface: Some(PluginSurfaceRef {
+                kind: PluginSurfaceKind::Okf,
+                id: "domain-knowledge".to_owned(),
+            }),
+        }),
+        error_code: None,
+        completed_at_ms: None,
+        operation_result_digest: None,
+        state: None,
+    };
+    let result = PluginHostOperationObservationResult {
+        schema: PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA.to_owned(),
+        request_id: request.request_id.clone(),
+        assignment_generation: request.assignment_generation,
+        capabilities_digest: request.capabilities_digest.clone(),
+        scope: request.scope.clone(),
+        package_id: request.package_id.clone(),
+        operation_id: request.operation_id.clone(),
+        plan_digest: request.plan_digest.clone(),
+        observed_at_ms: 1_785_360_300_000,
+        revision: status.descriptor_digest().unwrap(),
+        changed: true,
+        timed_out: false,
+        status,
+    };
+    result.validate_for(&request, &capabilities).unwrap();
+    let encoded = serde_json::to_value(&result).unwrap();
+    assert!(encoded.get("percentage").is_none());
+
+    let watch = PluginHostOperationWatchRequest {
+        schema: PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA.to_owned(),
+        observation: request.clone(),
+        after_revision: Some(result.revision.clone()),
+        timeout_ms: 30_000,
+    };
+    watch.validate_for_capabilities(&capabilities).unwrap();
+
+    let cancellation = PluginHostCancelRequest {
+        schema: PLUGIN_HOST_CANCEL_REQUEST_SCHEMA.to_owned(),
+        request_id: "cancel:operation:0001".to_owned(),
+        assignment_generation: request.assignment_generation,
+        capabilities_digest: request.capabilities_digest.clone(),
+        scope: request.scope.clone(),
+        package_id: request.package_id.clone(),
+        operation_id: request.operation_id.clone(),
+        plan_digest: request.plan_digest.clone(),
+        requested_by: PlanActor::User,
+    };
+    let cancellation_result = PluginHostCancelResult {
+        schema: PLUGIN_HOST_CANCEL_RESULT_SCHEMA.to_owned(),
+        request_id: cancellation.request_id.clone(),
+        assignment_generation: cancellation.assignment_generation,
+        capabilities_digest: cancellation.capabilities_digest.clone(),
+        scope: cancellation.scope.clone(),
+        package_id: cancellation.package_id.clone(),
+        operation_id: cancellation.operation_id.clone(),
+        plan_digest: cancellation.plan_digest.clone(),
+        observed_at_ms: 1_785_360_300_001,
+        status: PluginHostCancellationStatus::TooLate,
+    };
+    cancellation_result
+        .validate_for(&cancellation, &capabilities)
+        .unwrap();
+    let mut agent_cancel = cancellation;
+    agent_cancel.requested_by = PlanActor::Agent;
+    assert!(agent_cancel.validate().is_err());
 }

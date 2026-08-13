@@ -847,6 +847,7 @@ impl CognitivePackageManager {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn upgrade_surface_selections(
     prior_lock: &a3s_use_core::PluginPackageLock,
     candidate_lock: &a3s_use_core::PluginPackageLock,

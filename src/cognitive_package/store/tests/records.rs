@@ -138,6 +138,55 @@ async fn pending_store_advances_one_exact_reviewed_plan_to_admission() {
     assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
 }
 
+#[tokio::test]
+async fn pending_store_persists_exact_cancellation_before_host_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = PendingPackageGraphStore::new(&state_root);
+    let lock = package_lock("1.0.0", '1');
+    let admitted_fixture = install_pending(&lock);
+    let planned = PendingPackageGraphOperation::planned(
+        admitted_fixture.envelope.clone(),
+        9,
+        admitted_fixture.generations.clone(),
+        admitted_fixture.manifests.clone(),
+    )
+    .unwrap();
+
+    assert!(store.put(&planned).await.unwrap());
+    let (cancelled, changed) = store
+        .cancel_planned(&planned, "cancel:test:0001", 10)
+        .await
+        .unwrap();
+    assert!(changed);
+    assert_eq!(cancelled.phase(), PackageGraphOperationPhase::Cancelled);
+    assert_eq!(cancelled.cancelled_at_ms, 10);
+    assert_eq!(
+        cancelled.cancellation_request_id.as_deref(),
+        Some("cancel:test:0001")
+    );
+
+    let restarted = PendingPackageGraphStore::new(&state_root);
+    assert_eq!(
+        restarted
+            .get(PluginOperationAction::Install, &lock.root_package_id)
+            .await
+            .unwrap(),
+        Some(cancelled.clone())
+    );
+    let (replayed, changed) = restarted
+        .cancel_planned(&planned, "cancel:test:0001", 10)
+        .await
+        .unwrap();
+    assert!(!changed);
+    assert_eq!(replayed, cancelled);
+    let error = restarted
+        .admit(&planned, 11, PackageGraphAuthorization::default())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
+}
+
 #[test]
 fn admitted_v2_package_graph_record_remains_restart_compatible() {
     let lock = package_lock("1.0.0", '1');

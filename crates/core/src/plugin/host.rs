@@ -7,19 +7,26 @@ use crate::{UseError, UseResult};
 use super::validation::{valid_machine_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanScope, PlanScopeKind,
-    PluginHostApplyRequest, PluginHostApplyResult, PluginHostEnablementPlanRequest,
-    PluginHostEnablementPlanResult, PluginHostObservationRequest, PluginHostObservationResult,
-    PluginHostPlanRequest, PluginHostPlanResult, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA_V3,
+    PluginHostApplyRequest, PluginHostApplyResult, PluginHostCancelRequest, PluginHostCancelResult,
+    PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult, PluginHostObservationRequest,
+    PluginHostObservationResult, PluginHostOperationObservationRequest,
+    PluginHostOperationObservationResult, PluginHostOperationWatchRequest, PluginHostPlanRequest,
+    PluginHostPlanResult, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA_V3,
     PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
+    PLUGIN_HOST_CANCEL_REQUEST_SCHEMA, PLUGIN_HOST_CANCEL_RESULT_SCHEMA,
     PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA,
     PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
+    PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA,
+    PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA,
     PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA,
     PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 pub const PLUGIN_MANAGED_SCOPE_SCHEMA: &str = "a3s.use.plugin-managed-scope.v1";
 pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V4: &str = "a3s.use.plugin-host-capabilities.v4";
+pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V5: &str = "a3s.use.plugin-host-capabilities.v5";
 pub const PLUGIN_HOST_PROTOCOL_LEVEL_V4: u32 = 4;
+pub const PLUGIN_HOST_PROTOCOL_LEVEL_V5: u32 = 5;
 
 const MANAGED_SCOPE_ERROR: &str = "use.plugin.managed_scope_invalid";
 const HOST_CAPABILITIES_ERROR: &str = "use.plugin.host_capabilities_invalid";
@@ -142,6 +149,34 @@ impl PluginHostCapabilities {
         Ok(capabilities)
     }
 
+    pub fn v5(
+        host_id: impl Into<String>,
+        manager_version: impl Into<String>,
+        manager_build_id: impl Into<String>,
+    ) -> UseResult<Self> {
+        let capabilities = Self {
+            schema: PLUGIN_HOST_CAPABILITIES_SCHEMA_V5.to_owned(),
+            protocol_level: PLUGIN_HOST_PROTOCOL_LEVEL_V5,
+            host_id: host_id.into(),
+            manager_version: manager_version.into(),
+            manager_build_id: manager_build_id.into(),
+            contract_schemas: current_contract_schemas_v5(),
+            catalog_schemas: vec![PLUGIN_CATALOG_SCHEMA_V3.to_owned()],
+            plan_schemas: vec![PLUGIN_OPERATION_PLAN_SCHEMA_V4.to_owned()],
+            surface_kinds: vec![
+                PluginSurfaceKind::Flow,
+                PluginSurfaceKind::Mcp,
+                PluginSurfaceKind::Okf,
+                PluginSurfaceKind::Skill,
+                PluginSurfaceKind::Tool,
+                PluginSurfaceKind::Ui,
+            ],
+            exclusive_managed_scope_mutation: true,
+        };
+        capabilities.validate()?;
+        Ok(capabilities)
+    }
+
     pub fn from_json(input: &[u8]) -> UseResult<Self> {
         parse_contract(
             input,
@@ -165,9 +200,22 @@ impl PluginHostCapabilities {
         if !valid_opaque_id(&self.host_id)
             || !canonical_version
             || !valid_opaque_id(&self.manager_build_id)
-            || self.schema != PLUGIN_HOST_CAPABILITIES_SCHEMA_V4
-            || self.protocol_level != PLUGIN_HOST_PROTOCOL_LEVEL_V4
-            || self.contract_schemas != current_contract_schemas()
+            || !matches!(
+                (self.schema.as_str(), self.protocol_level),
+                (
+                    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4,
+                    PLUGIN_HOST_PROTOCOL_LEVEL_V4
+                ) | (
+                    PLUGIN_HOST_CAPABILITIES_SCHEMA_V5,
+                    PLUGIN_HOST_PROTOCOL_LEVEL_V5
+                )
+            )
+            || self.contract_schemas
+                != if self.protocol_level == PLUGIN_HOST_PROTOCOL_LEVEL_V5 {
+                    current_contract_schemas_v5()
+                } else {
+                    current_contract_schemas()
+                }
             || self.catalog_schemas != [PLUGIN_CATALOG_SCHEMA_V3]
             || self.plan_schemas != [PLUGIN_OPERATION_PLAN_SCHEMA_V4]
             || self.surface_kinds != surface_kinds
@@ -223,6 +271,36 @@ pub trait PluginHostManager: Send + Sync {
         &self,
         request: PluginHostObservationRequest,
     ) -> UseResult<PluginHostObservationResult>;
+
+    /// Observe one exact reviewed operation without inspecting private host
+    /// files. Implementations must project only Use-owned durable evidence.
+    async fn observe_operation(
+        &self,
+        _request: PluginHostOperationObservationRequest,
+    ) -> UseResult<PluginHostOperationObservationResult> {
+        Err(UseError::new(
+            "use.plugin.host_operation_observation_unsupported",
+            "This Plugin Host Manager does not implement operation observation.",
+        ))
+    }
+
+    /// Long-poll an operation revision. The default implementation performs a
+    /// single typed observation and therefore never fabricates change.
+    async fn watch_operation(
+        &self,
+        request: PluginHostOperationWatchRequest,
+    ) -> UseResult<PluginHostOperationObservationResult> {
+        request.validate()?;
+        self.observe_operation(request.observation).await
+    }
+
+    /// Request explicit-user cancellation at the manager's typed safe point.
+    async fn cancel(&self, _request: PluginHostCancelRequest) -> UseResult<PluginHostCancelResult> {
+        Err(UseError::new(
+            "use.plugin.host_cancellation_unsupported",
+            "This Plugin Host Manager does not implement safe cancellation.",
+        ))
+    }
 }
 
 fn current_contract_schemas() -> Vec<String> {
@@ -234,6 +312,26 @@ fn current_contract_schemas() -> Vec<String> {
         PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned(),
         PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA.to_owned(),
         PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_PLAN_RESULT_SCHEMA.to_owned(),
+        PLUGIN_MANAGED_SCOPE_SCHEMA.to_owned(),
+    ]
+}
+
+fn current_contract_schemas_v5() -> Vec<String> {
+    vec![
+        PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_APPLY_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_CANCEL_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_CANCEL_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_CAPABILITIES_SCHEMA_V5.to_owned(),
+        PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA.to_owned(),
+        PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA.to_owned(),
+        PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA.to_owned(),
         PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
         PLUGIN_HOST_PLAN_RESULT_SCHEMA.to_owned(),
         PLUGIN_MANAGED_SCOPE_SCHEMA.to_owned(),

@@ -37,6 +37,33 @@ pub(crate) struct TestTarget {
     pub(crate) custom: Option<Value>,
 }
 
+impl TestTarget {
+    pub(crate) fn raw(target_name: impl Into<String>, archive: Vec<u8>) -> Self {
+        Self {
+            archive,
+            target_name: target_name.into(),
+            custom: None,
+        }
+    }
+
+    pub(crate) fn with_signed_custom(
+        target_name: impl Into<String>,
+        archive: Vec<u8>,
+        custom: Value,
+    ) -> Self {
+        let custom = custom
+            .as_object()
+            .cloned()
+            .map(Value::Object)
+            .expect("signed TUF target custom metadata must be an object");
+        Self {
+            archive,
+            target_name: target_name.into(),
+            custom: Some(json!({"__rawTufCustom": custom})),
+        }
+    }
+}
+
 impl TestRepository {
     pub(crate) fn new(archive: Vec<u8>, metadata_version: u64, expires: &str) -> Self {
         Self::with_package_version(archive, PACKAGE_VERSION, metadata_version, expires)
@@ -159,12 +186,14 @@ impl TestRepository {
         let mut target_routes = Vec::new();
         for target in targets {
             let target_sha256 = sha256(&target.archive);
-            let custom = target
-                .custom
-                .map(|metadata| json!({"a3s": metadata}))
-                .unwrap_or_else(
-                    || json!({"a3sPlanning": {"schema": "a3s.use.plugin-planning-target.v1"}}),
-                );
+            let custom = match target.custom {
+                Some(metadata) if metadata.get("__rawTufCustom").is_some() => metadata
+                    .get("__rawTufCustom")
+                    .cloned()
+                    .expect("raw TUF custom metadata marker must retain its value"),
+                Some(metadata) => json!({"a3s": metadata}),
+                None => json!({"a3sPlanning": {"schema": "a3s.use.plugin-planning-target.v1"}}),
+            };
             targets_map.insert(
                 target.target_name.clone(),
                 json!({

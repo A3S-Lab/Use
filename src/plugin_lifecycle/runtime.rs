@@ -48,6 +48,7 @@ impl PluginMcpServiceReadiness {
 ///
 /// Stdio MCP never crosses this port: it remains a per-connection executable
 /// launcher and is not modeled as a Runtime Service.
+#[allow(clippy::too_many_arguments)]
 #[async_trait]
 pub trait PluginRuntimeServiceReadinessHost: Send + Sync {
     /// Idempotently create or recover the exact Tool route for this lifecycle

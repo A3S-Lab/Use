@@ -18,6 +18,7 @@ use tokio::io::AsyncWriteExt;
 
 const HOST_REQUEST_RECORD_SCHEMA: &str = "a3s.use.plugin-host-request-record.v1";
 const HOST_OPERATION_INDEX_SCHEMA: &str = "a3s.use.plugin-host-operation-index.v1";
+const HOST_CANCELLATION_RECORD_SCHEMA: &str = "a3s.use.plugin-host-cancellation-record.v1";
 const MAX_HOST_RECORD_BYTES: u64 = 4 * 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -207,6 +208,49 @@ pub(super) struct StoredPluginHostRequest {
     pub plan: StoredPluginHostPlan,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<StoredPluginHostOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct StoredPluginHostCancellation {
+    pub schema: String,
+    pub request_id: String,
+    pub operation_id: String,
+    pub plan_digest: String,
+    pub cancelled_at_ms: u64,
+}
+
+impl StoredPluginHostCancellation {
+    pub fn new(
+        request_id: impl Into<String>,
+        operation_id: impl Into<String>,
+        plan_digest: impl Into<String>,
+        cancelled_at_ms: u64,
+    ) -> UseResult<Self> {
+        let record = Self {
+            schema: HOST_CANCELLATION_RECORD_SCHEMA.to_owned(),
+            request_id: request_id.into(),
+            operation_id: operation_id.into(),
+            plan_digest: plan_digest.into(),
+            cancelled_at_ms,
+        };
+        record.validate()?;
+        Ok(record)
+    }
+
+    fn validate(&self) -> UseResult<()> {
+        PluginOperationPlan::validate_operation_id(&self.operation_id)
+            .map_err(|_| store_invalid("A Host cancellation operation ID is invalid."))?;
+        if self.schema != HOST_CANCELLATION_RECORD_SCHEMA
+            || self.request_id.is_empty()
+            || self.request_id.len() > 256
+            || !valid_sha256(&self.plan_digest)
+            || self.cancelled_at_ms == 0
+        {
+            return Err(store_invalid("A Host cancellation record is invalid."));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize)]
@@ -483,6 +527,50 @@ impl PluginHostProtocolStore {
         Ok((completed, true))
     }
 
+    pub async fn get_cancellation(
+        &self,
+        scope: &PluginManagedScope,
+        operation_id: &str,
+    ) -> UseResult<Option<StoredPluginHostCancellation>> {
+        let path = self.cancellation_path(scope, operation_id)?;
+        let value: Option<StoredPluginHostCancellation> =
+            read_optional(&self.state_root, &path).await?;
+        if let Some(value) = &value {
+            value.validate()?;
+            if value.operation_id != operation_id {
+                return Err(store_invalid(
+                    "A Host cancellation record does not match its owned path.",
+                ));
+            }
+        }
+        Ok(value)
+    }
+
+    pub async fn put_cancellation(
+        &self,
+        scope: &PluginManagedScope,
+        cancellation: &StoredPluginHostCancellation,
+    ) -> UseResult<bool> {
+        cancellation.validate()?;
+        let _lock = self.lock_store(scope).await?;
+        let path = self.cancellation_path(scope, &cancellation.operation_id)?;
+        let current: Option<StoredPluginHostCancellation> =
+            read_optional(&self.state_root, &path).await?;
+        if let Some(current) = current {
+            if current == *cancellation
+                || current.operation_id == cancellation.operation_id
+                    && current.plan_digest == cancellation.plan_digest
+            {
+                return Ok(false);
+            }
+            return Err(store_conflict(
+                "The Host operation already owns a different cancellation record.",
+            ));
+        }
+        write_new(&self.state_root, &path, cancellation).await?;
+        Ok(true)
+    }
+
     async fn ensure_operation_index(&self, record: &StoredPluginHostRequest) -> UseResult<()> {
         let Some(index) = StoredPluginHostOperationIndex::from_request(record)? else {
             return Ok(());
@@ -545,6 +633,19 @@ impl PluginHostProtocolStore {
         Ok(self
             .scope_root(scope)?
             .join("operations")
+            .join(format!("{}.json", sha256_hex(operation_id.as_bytes()))))
+    }
+
+    fn cancellation_path(
+        &self,
+        scope: &PluginManagedScope,
+        operation_id: &str,
+    ) -> UseResult<PathBuf> {
+        PluginOperationPlan::validate_operation_id(operation_id)
+            .map_err(|_| store_invalid("A Host cancellation path identity is invalid."))?;
+        Ok(self
+            .scope_root(scope)?
+            .join("cancellations")
             .join(format!("{}.json", sha256_hex(operation_id.as_bytes()))))
     }
 }
