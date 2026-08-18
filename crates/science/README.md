@@ -59,38 +59,29 @@ Run the extension's stdio MCP server directly with:
 ./target/debug/a3s-use-science serve --mcp
 ```
 
-After packaging and installing the extension, the A3S host route is:
-
-```bash
-a3s use mcp serve a3s/science
-```
-
 The server exposes 13 source-specific `science_*` tools. It does not introduce
 an A3S-specific RPC envelope or combine unrelated source vocabularies into a
 generic execute action.
 
-## Package
+## Registry Distribution
 
-Create a local extension directory at a new path:
+Discover, inspect, and install the signed stable package from a trusted A3S
+registry:
 
 ```bash
-./crates/science/scripts/package.sh /tmp/a3s-use-science-package
-a3s install use/a3s/science \
-  --from /tmp/a3s-use-science-package \
-  --allow-unsigned
-a3s use science doctor --json
+a3s plugin search science
+a3s plugin inspect a3s/science
+a3s plugin install a3s/science --channel stable
 ```
 
-The script refuses to overwrite an existing output directory. The package may
-also be archived as `.tar.gz`, `.tgz`, or `.zip` and passed directly to
-`--from`. Local directories and archives require explicit `--allow-unsigned`
-trust. The package also contains a `contributes.activity_bar` workbench with an
-HTML entry and explicitly declared CSS/JavaScript assets. A3S Use hashes every
-asset into its capability snapshot, and A3S Web verifies and injects them inside
-the isolated plugin document. The contribution remains bound to the packaged
-`a3s-use-science` Skill. Official A3S Use archives ship the same complete
-package as an optional release bundle, allowing A3S Web Market to install it
-through a digest-reviewed umbrella plan even when no remote registry is
-configured. The receipt records `release-bundle`; the plugin remains removable
-and is not a built-in route. Signed remote distribution continues to use a
-configured TUF registry and records `registry-tuf` provenance.
+The registry package declares its CLI, MCP, Skill, and activity-bar surfaces.
+A3S Use verifies the signed registry metadata and every package asset before
+installation, records `registry-tuf` provenance, and exposes the declared MCP
+surface through the host. The activity bar runs in the isolated plugin
+document with explicitly declared CSS and JavaScript assets.
+
+Official A3S Use platform archives do not embed Science or other optional
+plugins. Registry publication and installation are therefore independent of a
+particular Use platform release. For local package development, run
+`./crates/science/scripts/package.sh` with a new output directory and publish
+the result through the trusted registry workflow.
