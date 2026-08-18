@@ -35,7 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.sha }}
+          fetch-depth: 0
       - name: Check out pinned OCR release content
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -71,8 +72,14 @@ jobs:
             test "${GITHUB_REF_NAME}" = "v${version}"
           else
             test "${{ inputs.release_tag }}" = "v${version}"
-            test "${GITHUB_REF_TYPE}" = "tag"
-            test "${GITHUB_REF_NAME}" = "${{ inputs.release_tag }}"
+            test "${GITHUB_REF_TYPE}" = "branch"
+            test "${GITHUB_REF_NAME}" = "main"
+            test "$(git rev-list -n 1 "refs/tags/${{ inputs.release_tag }}")" = "${source_revision}"
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "${source_revision}" refs/remotes/origin/main; then
+            echo "Release source ${source_revision} is not reachable from origin/main" >&2
+            exit 1
           fi
       - name: Wait for independently published Browser and OCR crates
         shell: bash
@@ -208,7 +215,7 @@ jobs:
           name: a3s-use-ocr-assets
           path: ${{ runner.temp }}/ocr-assets
       - name: Build Use binaries
-        run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use -p a3s-use-science
+        run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use
       - name: Build pinned Browser driver
         run: cargo build --manifest-path external/browser/Cargo.toml --release --locked --target "${{ matrix.target }}" -p a3s-use-browser-driver
       - name: Package Unix release
@@ -219,23 +226,15 @@ jobs:
           version="${{ needs.validate.outputs.version }}"
           archive="a3s-use-${version}-${{ matrix.name }}.tar.gz"
           stage="${RUNNER_TEMP}/a3s-use-${version}-${{ matrix.name }}"
-          science="${stage}/extensions/a3s/science"
-          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/ocr-skills" "${stage}/dashboard" \
-            "${science}/bin" "${science}/skills/a3s-use-science" "${science}/web"
+          install -d "${stage}/skills" "${stage}/skill-data" "${stage}/ocr-skills" "${stage}/dashboard"
           install -m 0755 "target/${{ matrix.target }}/release/a3s-use" "${stage}/a3s-use"
           install -m 0755 "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver" "${stage}/a3s-use-browser-driver"
-          install -m 0755 "target/${{ matrix.target }}/release/a3s-use-science" "${science}/bin/a3s-use-science"
           install -d "${stage}/ocr-models"
           cp -R "${RUNNER_TEMP}/ocr-assets/ocr-models/." "${stage}/ocr-models/"
           cp -R external/browser/crates/browser-driver/skills/. "${stage}/skills/"
           cp -R external/browser/crates/browser-driver/skill-data/. "${stage}/skill-data/"
           cp -R "${RUNNER_TEMP}/ocr-assets/ocr-skills/." "${stage}/ocr-skills/"
           cp -R external/browser/crates/browser-driver/dashboard/out/. "${stage}/dashboard/"
-          install -m 0644 crates/science/package/a3s-use-extension.acl "${science}/"
-          install -m 0644 crates/science/package/skills/a3s-use-science/SKILL.md "${science}/skills/a3s-use-science/"
-          install -m 0644 crates/science/package/web/activity.html crates/science/package/web/activity.css crates/science/package/web/activity.js "${science}/web/"
-          install -m 0644 LICENSE "${science}/LICENSE"
-          install -m 0644 crates/science/DATA_SOURCES.md crates/science/UPSTREAM.md "${science}/"
           install -m 0644 LICENSE README.md THIRD_PARTY_NOTICES.md "${stage}/"
           install -m 0644 external/browser/crates/browser-driver/LICENSE-APACHE-2.0 "${stage}/LICENSE-APACHE-2.0"
           install -m 0644 external/browser/crates/browser-driver/UPSTREAM.md "${stage}/UPSTREAM.md"
@@ -258,19 +257,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/a3s-use.exe" "$stage/a3s-use.exe"
           Copy-Item "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver.exe" "$stage/a3s-use-browser-driver.exe"
-          $science = Join-Path $stage "extensions/a3s/science"
-          New-Item -ItemType Directory -Force -Path "$science/bin", "$science/skills/a3s-use-science", "$science/web" | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/a3s-use-science.exe" "$science/bin/a3s-use-science"
           Copy-Item -Recurse -Force "$env:RUNNER_TEMP/ocr-assets/ocr-models" "$stage/ocr-models"
           Copy-Item -Recurse "external/browser/crates/browser-driver/skills" "$stage/skills"
           Copy-Item -Recurse "external/browser/crates/browser-driver/skill-data" "$stage/skill-data"
           Copy-Item -Recurse "$env:RUNNER_TEMP/ocr-assets/ocr-skills" "$stage/ocr-skills"
           Copy-Item -Recurse "external/browser/crates/browser-driver/dashboard/out" "$stage/dashboard"
-          Copy-Item "crates/science/package/a3s-use-extension.acl" $science
-          Copy-Item "crates/science/package/skills/a3s-use-science/SKILL.md" "$science/skills/a3s-use-science/SKILL.md"
-          Copy-Item "crates/science/package/web/activity.html", "crates/science/package/web/activity.css", "crates/science/package/web/activity.js" "$science/web"
-          Copy-Item LICENSE "$science/LICENSE"
-          Copy-Item "crates/science/DATA_SOURCES.md", "crates/science/UPSTREAM.md" $science
           Copy-Item LICENSE,README.md,THIRD_PARTY_NOTICES.md $stage
           Copy-Item external/browser/crates/browser-driver/LICENSE-APACHE-2.0 "$stage/LICENSE-APACHE-2.0"
           Copy-Item external/browser/crates/browser-driver/UPSTREAM.md "$stage/UPSTREAM.md"
@@ -302,36 +293,11 @@ jobs:
           test -f "${install_root}/ocr-models/PP-OCRv6_small/rec/inference.onnx"
           test -f "${install_root}/ocr-models/PP-OCRv6_small/rec/inference.yml"
           test -f "${install_root}/dashboard/index.html"
-          test -x "${install_root}/extensions/a3s/science/bin/a3s-use-science"
-          test -f "${install_root}/extensions/a3s/science/a3s-use-extension.acl"
-          test -f "${install_root}/extensions/a3s/science/skills/a3s-use-science/SKILL.md"
-          test -f "${install_root}/extensions/a3s/science/web/activity.html"
+          test ! -e "${install_root}/extensions"
           test -f "${install_root}/LICENSE-APACHE-2.0"
           test -f "${install_root}/UPSTREAM.md"
           test -f "${install_root}/THIRD_PARTY_NOTICES.md"
           "${install_root}/a3s-use" --version
-          "${install_root}/a3s-use" extension catalog --json > "${RUNNER_TEMP}/extension-catalog.json"
-          bundle_sha=$(python3 - "${RUNNER_TEMP}/extension-catalog.json" <<'PY'
-          import json, pathlib, sys
-          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          science = next(package for package in value["data"]["packages"] if package["packageId"] == "a3s/science")
-          assert science["activityCount"] == 1
-          assert science["surfaces"] == ["cli", "mcp", "skill"]
-          print(science["packageSha256"])
-          PY
-          )
-          A3S_USE_HOME="${RUNNER_TEMP}/release-bundle-use-home" \
-            "${install_root}/a3s-use" component install a3s/science --release-bundle-sha256 "${bundle_sha}" --json > "${RUNNER_TEMP}/science-install.json"
-          A3S_USE_HOME="${RUNNER_TEMP}/release-bundle-use-home" \
-            "${install_root}/a3s-use" component status a3s/science --json > "${RUNNER_TEMP}/science-status.json"
-          python3 - "${RUNNER_TEMP}/science-status.json" <<'PY'
-          import json, pathlib, sys
-          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          component = value["component"]
-          assert component["id"] == "a3s/science"
-          assert component["trust"] == "release-bundle"
-          assert component["health"] == "ready"
-          PY
           A3S_USE_BROWSER_SKILLS_DIR="${install_root}/skill-data" \
             "${install_root}/a3s-use" browser skills list --json > "${RUNNER_TEMP}/skills.json"
           python3 - "${RUNNER_TEMP}/skills.json" <<'PY'
@@ -420,29 +386,13 @@ jobs:
             "$root/ocr-models/PP-OCRv6_small/rec/inference.onnx",
             "$root/ocr-models/PP-OCRv6_small/rec/inference.yml",
             "$root/dashboard/index.html",
-            "$root/extensions/a3s/science/bin/a3s-use-science",
-            "$root/extensions/a3s/science/a3s-use-extension.acl",
-            "$root/extensions/a3s/science/skills/a3s-use-science/SKILL.md",
-            "$root/extensions/a3s/science/web/activity.html",
             "$root/LICENSE-APACHE-2.0",
             "$root/UPSTREAM.md",
             "$root/THIRD_PARTY_NOTICES.md"
           ) | ForEach-Object { if (-not (Test-Path $_ -PathType Leaf)) { throw "Missing release file $_" } }
+          if (Test-Path "$root/extensions") { throw "Release archive contains obsolete bundled extensions" }
           & "$root/a3s-use.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "a3s-use --version failed" }
-          $catalog = (& "$root/a3s-use.exe" extension catalog --json | ConvertFrom-Json)
-          $science = $catalog.data.packages | Where-Object packageId -eq "a3s/science"
-          if (-not $catalog.ok -or -not $science -or $science.activityCount -ne 1) {
-            throw "Science release-bundle catalog smoke failed"
-          }
-          $env:A3S_USE_HOME = "$env:RUNNER_TEMP/release-bundle-use-home"
-          $scienceInstall = (& "$root/a3s-use.exe" component install a3s/science --release-bundle-sha256 $science.packageSha256 --json | ConvertFrom-Json)
-          if (-not $scienceInstall.ok -or -not $scienceInstall.data.changed) { throw "Science release-bundle install failed" }
-          $scienceStatus = (& "$root/a3s-use.exe" component status a3s/science --json | ConvertFrom-Json)
-          if ($scienceStatus.component.trust -ne "release-bundle" -or $scienceStatus.component.health -ne "ready") {
-            throw "Science release-bundle status smoke failed"
-          }
-          Remove-Item Env:A3S_USE_HOME
           $env:A3S_USE_BROWSER_SKILLS_DIR = "$root/skill-data"
           $skills = (& "$root/a3s-use.exe" browser skills list --json | ConvertFrom-Json)
           if (-not $skills.success -or $skills.data.Count -ne 6) { throw "Packaged Skills smoke failed" }
@@ -595,7 +545,7 @@ jobs:
           test ! -e target
           test ! -e external/browser/target
       - name: Independently rebuild Use binaries without a build cache
-        run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use -p a3s-use-science
+        run: cargo build --release --locked --target "${{ matrix.target }}" -p a3s-use
       - name: Independently rebuild the pinned Browser driver without a build cache
         run: cargo build --manifest-path external/browser/Cargo.toml --release --locked --target "${{ matrix.target }}" -p a3s-use-browser-driver
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -616,8 +566,7 @@ jobs:
             --source-revision "${{ needs.validate.outputs.source_revision }}" \
             --output "${evidence}" \
             --binary a3s-use "target/${{ matrix.target }}/release/a3s-use" \
-            --binary a3s-use-browser-driver "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver" \
-            --binary extensions/a3s/science/bin/a3s-use-science "target/${{ matrix.target }}/release/a3s-use-science"
+            --binary a3s-use-browser-driver "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver"
           echo "EVIDENCE=${evidence}" >> "${GITHUB_ENV}"
       - name: Compare independent Windows rebuild with the primary archive
         if: runner.os == 'Windows'
@@ -633,8 +582,7 @@ jobs:
             --source-revision "${{ needs.validate.outputs.source_revision }}" `
             --output $evidence `
             --binary a3s-use.exe "target/${{ matrix.target }}/release/a3s-use.exe" `
-            --binary a3s-use-browser-driver.exe "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver.exe" `
-            --binary extensions/a3s/science/bin/a3s-use-science "target/${{ matrix.target }}/release/a3s-use-science.exe"
+            --binary a3s-use-browser-driver.exe "external/browser/target/${{ matrix.target }}/release/a3s-use-browser-driver.exe"
           if ($LASTEXITCODE -ne 0) { throw "Independent release rebuild did not match" }
           "EVIDENCE=$evidence" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Attest independent rebuild evidence
@@ -753,10 +701,20 @@ jobs:
       - name: Keyless-sign and verify checksum evidence
         env:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_REVISION: ${{ needs.validate.outputs.source_revision }}
         shell: bash
         run: |
           set -euo pipefail
-          expected_ref="${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}"
+          remote_revision="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk 'NR == 1 { print $1 }')"
+          if test -z "${remote_revision}"; then
+            remote_revision="$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk 'NR == 1 { print $1 }')"
+          fi
+          test "${remote_revision}" = "${RELEASE_REVISION}"
+          if test "${GITHUB_EVENT_NAME}" = "workflow_dispatch"; then
+            expected_ref="${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/heads/main"
+          else
+            expected_ref="${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}"
+          fi
           test "${GITHUB_WORKFLOW_REF}" = "${expected_ref}"
           certificate_identity="https://github.com/${expected_ref}"
           cd artifacts

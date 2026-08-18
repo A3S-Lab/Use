@@ -275,10 +275,6 @@ fn release_rebuild_verifier_accepts_exact_binaries_and_rejects_drift() {
     let subjects = [
         ("a3s-use", b"use binary\n".as_slice()),
         ("a3s-use-browser-driver", b"browser driver\n".as_slice()),
-        (
-            "extensions/a3s/science/bin/a3s-use-science",
-            b"extension binary\n".as_slice(),
-        ),
     ];
     for (archive_path, contents) in subjects {
         let primary = stage.join(archive_path);
@@ -344,10 +340,17 @@ fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     assert!(workflow.contains("scripts/package-release.py"));
     assert!(workflow.contains("SOURCE_DATE_EPOCH"));
     assert!(workflow.contains("source_revision: ${{ steps.version.outputs.source_revision }}"));
-    assert!(workflow.contains("ref: ${{ github.sha }}"));
+    assert!(workflow.contains(
+        "ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.sha }}"
+    ));
     assert!(!workflow.contains(
         "ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}"
     ));
+    assert!(workflow.contains("test \"${GITHUB_REF_NAME}\" = \"main\""));
+    assert!(workflow.contains("git merge-base --is-ancestor"));
+    assert!(workflow.contains("test \"${remote_revision}\" = \"${RELEASE_REVISION}\""));
+    assert!(!workflow.contains("a3s-use-science"));
+    assert!(!workflow.contains("release-bundle-sha256"));
     assert_eq!(
         workflow
             .matches("ref: ${{ needs.validate.outputs.source_revision }}")
@@ -460,10 +463,6 @@ fn run_rebuild_verifier(archive: &Path, rebuilt: &Path, output_path: &Path) -> O
     for (archive_path, rebuilt_name) in [
         ("a3s-use", "a3s-use"),
         ("a3s-use-browser-driver", "a3s-use-browser-driver"),
-        (
-            "extensions/a3s/science/bin/a3s-use-science",
-            "extensions-a3s-science-bin-a3s-use-science",
-        ),
     ] {
         command
             .arg("--binary")
