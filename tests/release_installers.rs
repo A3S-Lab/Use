@@ -330,7 +330,12 @@ fn windows_installer_rejects_invalid_sigstore_evidence_without_activation() {
         !output.status.success(),
         "installer accepted invalid evidence"
     );
-    assert!(String::from_utf8_lossy(&output.stderr).contains("Sigstore"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Sigstore"),
+        "installer returned an unexpected failure\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(!install_root.join("releases").join(VERSION).exists());
     assert!(!bin_dir.join("a3s-use.cmd").exists());
 }

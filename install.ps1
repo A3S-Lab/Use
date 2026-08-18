@@ -221,12 +221,19 @@ try {
     Get-ReleaseFile ([uri]"$ReleaseUri/checksums.txt") $ChecksumsPath
     Get-ReleaseFile ([uri]"$ReleaseUri/checksums.txt.sigstore.json") $SignatureBundlePath
     $CertificateIdentity = "https://github.com/$Repository/.github/workflows/release.yml@refs/tags/$Tag"
-    & $CosignExecutable verify-blob `
-        --bundle $SignatureBundlePath `
-        --certificate-identity $CertificateIdentity `
-        --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' `
-        $ChecksumsPath *> $null
-    if ($LASTEXITCODE -ne 0) {
+    $CosignExitCode = 1
+    try {
+        & $CosignExecutable verify-blob `
+            --bundle $SignatureBundlePath `
+            --certificate-identity $CertificateIdentity `
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' `
+            $ChecksumsPath *> $null
+        $CosignExitCode = $LASTEXITCODE
+    }
+    catch {
+        $CosignExitCode = 1
+    }
+    if ($CosignExitCode -ne 0) {
         Fail 'Sigstore verification failed for checksums.txt'
     }
     Get-ReleaseFile ([uri]"$ReleaseUri/$ArchiveName") $ArchivePath
