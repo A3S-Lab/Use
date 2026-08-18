@@ -19,6 +19,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo test --workspace --exclude a3s-use-science --all-features --locked
+      - name: Validate packaged Science extension
+        run: cargo test -p a3s-use-science --test integration --locked
       - run: cargo clippy --workspace --exclude a3s-use-science --all-targets --all-features --locked -- -D warnings
       - name: Re-run verified installer release gate
         run: cargo test -p a3s-use --test release_installers --locked

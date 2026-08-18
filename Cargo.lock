@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "a3s-flow",
  "a3s-runtime",
