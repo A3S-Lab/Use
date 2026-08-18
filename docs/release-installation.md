@@ -87,7 +87,7 @@ add an independent attestation check, or the same commands can be used before
 running a reviewed installer:
 
 ```bash
-version=0.3.0
+version=0.3.1
 tag="v${version}"
 archive="a3s-use-${version}-darwin-arm64.tar.gz"
 rebuild="a3s-use-${version}-darwin-arm64.reproducibility.json"

@@ -365,6 +365,7 @@ async fn lifecycle_graph_hide_returns_exact_stable_snapshot_evidence_in_one_cuto
 
 #[tokio::test]
 async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_removed_nodes() {
+    let host_version = env!("CARGO_PKG_VERSION");
     let temp = tempfile::tempdir().unwrap();
     let base_source = temp.path().join("base");
     let prior_root_source = temp.path().join("prior-root");
@@ -389,7 +390,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
     .await;
     let candidate_root_catalog =
         verified_knowledge_catalog(&candidate_root_source, "acme/root", &[], 'c').await;
-    let lock_host = a3s_use_core::PluginPackageLockHost::new("linux-x86_64", "0.3.0").unwrap();
+    let lock_host = a3s_use_core::PluginPackageLockHost::new("linux-x86_64", host_version).unwrap();
     let prior_lock = a3s_use_core::PluginPackageResolver::new(lock_host.clone())
         .resolve(prior_root_catalog.clone(), vec![base_catalog.clone()])
         .unwrap();
@@ -401,7 +402,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
         "acme/base",
         &base_source,
         true,
-        "0.3.0",
+        host_version,
     )
     .await
     .unwrap();
@@ -409,7 +410,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
         "acme/root",
         &prior_root_source,
         true,
-        "0.3.0",
+        host_version,
     )
     .await
     .unwrap();
@@ -417,7 +418,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
         "acme/root",
         &candidate_root_source,
         true,
-        "0.3.0",
+        host_version,
     )
     .await
     .unwrap();
@@ -440,7 +441,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
         .publish_lifecycle_package_graph_for_test_host_version(
             &prior_lock,
             &[base_identity.clone(), prior_root_identity],
-            "0.3.0",
+            host_version,
         )
         .await
         .unwrap();
@@ -472,7 +473,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
     assert!(registry.get("acme/base").await.unwrap().unwrap().enabled());
     assert!(!registry.get("acme/root").await.unwrap().unwrap().enabled());
     let base_lease = registry
-        .acquire_lifecycle_route_for_host_version("base", "0.3.0")
+        .acquire_lifecycle_route_for_host_version("base", host_version)
         .await
         .unwrap()
         .unwrap();

@@ -27,8 +27,8 @@ dependencies = [
 
 [[package]]
 name = "a3s-runtime"
-version = "0.2.0"
-source = "git+https://github.com/A3S-Lab/Runtime?rev=061cde95e16eb4cbd9f58724e6cbb60de6ace77e#061cde95e16eb4cbd9f58724e6cbb60de6ace77e"
+version = "0.3.0"
+source = "git+https://github.com/A3S-Lab/Runtime?rev=6a5546145a74c9f380a0d86c2490a144a22883f8#6a5546145a74c9f380a0d86c2490a144a22883f8"
 dependencies = [
  "async-trait",
  "fs2",
@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "a3s-flow",
  "a3s-runtime",
@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "olpc-cjson",
@@ -117,7 +117,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-extension"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "a3s-acl",
  "a3s-use-core",
@@ -142,7 +142,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-mcp-release-fixture"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "a3s-use-core",
  "anyhow",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-science"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "a3s-use-core",
  "a3s-use-extension",
