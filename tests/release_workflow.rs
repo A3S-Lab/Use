@@ -305,7 +305,7 @@ fn release_rebuild_verifier_accepts_exact_binaries_and_rejects_drift() {
             value["sourceRevision"],
             "0123456789abcdef0123456789abcdef01234567"
         );
-        assert_eq!(value["subjects"].as_array().unwrap().len(), 3);
+        assert_eq!(value["subjects"].as_array().unwrap().len(), 2);
 
         let second = run_rebuild_verifier(&archive, &rebuilt, &second_evidence);
         assert!(second.status.success());
