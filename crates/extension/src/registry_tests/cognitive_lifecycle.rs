@@ -390,8 +390,7 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
     .await;
     let candidate_root_catalog =
         verified_knowledge_catalog(&candidate_root_source, "acme/root", &[], 'c').await;
-    let lock_host =
-        a3s_use_core::PluginPackageLockHost::new("linux-x86_64", host_version).unwrap();
+    let lock_host = a3s_use_core::PluginPackageLockHost::new("linux-x86_64", host_version).unwrap();
     let prior_lock = a3s_use_core::PluginPackageResolver::new(lock_host.clone())
         .resolve(prior_root_catalog.clone(), vec![base_catalog.clone()])
         .unwrap();
