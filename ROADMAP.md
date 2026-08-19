@@ -182,6 +182,8 @@ rejection. They are not supported decode paths.
 
 ### Validation and documentation
 
+- [x] Exact `a3s-flow` `1.0.0-rc.1` candidate qualification for the extension
+  facade through the complete all-feature workspace gate.
 - [x] Canonical fixtures and digest goldens for the current contract line.
 - [x] Unit, integration, remote Registry, crash-replay, grant, Flow, OKF, and
   CLI tests in the Use workspace.
