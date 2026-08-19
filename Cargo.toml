@@ -18,7 +18,7 @@ rust-version = "1.82"
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
-a3s-flow = { version = "=1.0.0-rc.1", git = "https://github.com/A3S-Lab/Flow.git", rev = "74abe05baa5053ec775fd146eeb5831d22128351" }
+a3s-flow = { version = "=1.0.0-rc.1", git = "https://github.com/A3S-Lab/Flow.git", rev = "f6efdf777325dc407bea429674837d24bb77787a" }
 axum = "0.8"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
