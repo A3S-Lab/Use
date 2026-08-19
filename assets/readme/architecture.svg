@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
   <title id="title">A3S Use package and capability lifecycle architecture</title>
-  <desc id="desc">Replaceable local, release, and named TUF registry sources enter one host plugin manager. Registries can be replaced, enabled, or disabled without rewriting package receipts. A3S Use resolves and verifies an exact package graph, prepares Tool and MCP through Runtime, Flow through a3s-flow, OKF through Knowledge, and Skill and UI as static surfaces, then atomically publishes one exact capability generation to Code, Web, agents, and MCP consumers.</desc>
+  <desc id="desc">Replaceable local, release, and named TUF registry sources enter one host plugin manager. Registries can be replaced, enabled, or disabled without rewriting package receipts. A3S Use resolves and verifies an exact package graph, prepares Tool and MCP through Runtime, Flow through a3s-flow, OKF through Knowledge, and Skill and UI as static surfaces, then atomically publishes one exact capability generation to Code, agents, and MCP consumers.</desc>
 
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
@@ -89,7 +89,7 @@
   </g>
 
   <g id="consumers" transform="translate(54 592)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">
-    <text fill="#cbd3de">A3S CODE TUI + WEB</text>
+    <text fill="#cbd3de">A3S CODE TUI</text>
     <text x="330" fill="#677181">·</text>
     <text x="366" fill="#cbd3de">AGENTS + MCP</text>
     <text x="624" fill="#677181">·</text>

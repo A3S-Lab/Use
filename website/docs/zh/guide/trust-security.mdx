@@ -126,7 +126,7 @@ resolve signed dependency graph
 
 精确且已发布的依赖可以 retained 而不重复 commit。卸载按 package 反向顺序执行；另一个已安装包仍需要该依赖时会拒绝移除。部分 enabled receipt 写入在完整 immutable snapshot 发布前保持不可见。
 
-OKF standalone SQLite/FTS5 host 已实现：缺失 Knowledge evidence 为 pending，staged 不发布，只有精确 promoted observation 才是 healthy。Search 必须携带完整 scope 与精确、已审查的 capability/session projection；citation 绑定 package、surface、generation、index、concept path 与 source digest。Code/Web 托管 Workspace/session carrier 与生产 retention/GC 仍在开发中。
+OKF standalone SQLite/FTS5 host 已实现：缺失 Knowledge evidence 为 pending，staged 不发布，只有精确 promoted observation 才是 healthy。Search 必须携带完整 scope 与精确、已审查的 capability/session projection；citation 绑定 package、surface、generation、index、concept path 与 source digest。A3S Code 托管 Workspace/session carrier 与生产 retention/GC 仍在开发中。
 
 认知包平台仍处于 pre-1.0。未知 receipt 或 database version 会 fail closed；未发布状态直接重建，不迁移也不改写。这不影响 package SemVer 解析、host-version requirement、target 检查与 signed provenance 验证。
 

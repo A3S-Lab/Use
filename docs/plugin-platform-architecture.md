@@ -6,7 +6,7 @@ Last updated: 2026-08-11
 ## Executive decision
 
 A3S Use owns one reviewed, recoverable package-graph lifecycle for native and
-cognitive capabilities. CLI, TUI, Web, and agent management MCP are clients of
+cognitive capabilities. CLI, TUI, and agent management MCP are clients of
 one host Plugin Manager. They do not implement separate discovery, planning,
 authorization, installation, enablement, or recovery paths.
 
@@ -51,7 +51,7 @@ protocol baseline and no pre-release compatibility branches.
                            ▼
                atomic capability snapshot
                            ▼
-                Code · Web · OS · agents
+                Code · OS · agents
 ```
 
 ### Ownership
@@ -65,7 +65,7 @@ protocol baseline and no pre-release compatibility branches.
 | Gateway | HTTP/MCP endpoint exposure, routing, health, drain | Package resolution or package receipts |
 | A3S Flow | Workflow compilation, execution, replay, observation | A parallel package format or lifecycle |
 | Knowledge host | OKF validation, indexing, promotion, cited retrieval, retention | Process execution |
-| Code/Web/OS | Product scope, sessions, rendering, placement, user experience | A second plan/apply implementation |
+| Code/OS | Product scope, sessions, rendering, placement, user experience | A second plan/apply implementation |
 
 The concrete managed-host port is `CognitivePackageHostManager`. It composes
 the same `CognitivePackageManager`, persisted Registry source set, lifecycle
@@ -454,7 +454,7 @@ protocol support.
 This architecture is release-qualified only when:
 
 - all six surfaces run through production providers in each declared host;
-- CLI, TUI, Web, and agent MCP use one plan/apply service;
+- CLI, TUI, and agent MCP use one plan/apply service;
 - exact package/Grant recovery passes failure injection at every checkpoint;
 - Linux, macOS, and Windows pass the declared real-process matrix;
 - Registry rotation, replacement, expiry, and offline recovery are exercised;

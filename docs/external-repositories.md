@@ -66,7 +66,7 @@ retained. Unused packages retire in reverse order after one graph cutover.
 | OKF | Content-bound OKF v0.2 concept graph | Knowledge host |
 | Flow | `a3s-flow` Native TypeScript source/export | Flow host |
 | Skill | Content-bound `SKILL.md` and supporting files | Skill projection host |
-| UI | Integrity-bound static entry and declared bindings | Code/Web sandbox host |
+| UI | Integrity-bound static entry and declared bindings | Product UI host |
 
 Tool is the native program or Service, not an MCP `tools/list` item. MCP keeps
 the standard MCP protocol. Flow uses `a3s-flow`; `flow.json` does not create a

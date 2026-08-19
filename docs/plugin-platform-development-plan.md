@@ -18,7 +18,7 @@ work.
 
 1. Work in the relevant Use crate/application, not the A3S monorepo root.
 2. Human-authored package/configuration files use ACL and `a3s-acl`.
-3. CLI, TUI, Web, and agent tools call one Plugin Manager.
+3. CLI, TUI, and agent tools call one Plugin Manager.
 4. Planning is read-only; `plugin_apply_plan` is the only manager mutation.
 5. Registry URLs and trust roots are host configuration.
 6. Required missing provider/readiness evidence fails before publication.
@@ -146,7 +146,7 @@ Acceptance:
   index pages, truncate the WAL, and expose typed usage evidence.
 - [x] Expose exact published-generation leases that participate in package
   route drain before Knowledge retirement.
-- [x] Add Code/Web Workspace and session carriers for exact OKF projections.
+- [x] Add A3S Code Workspace and session carriers for exact OKF projections.
 - [x] Prove leased prior-generation query semantics through managed hosts.
 - Preserve complete User/Workspace scope in every database, request, citation,
   and observation.
@@ -158,34 +158,19 @@ Acceptance:
 
 ### A4 Sandboxed UI
 
-- [x] Publish enabled Code Web Activity documents at exact Registry generation
-  and revision URLs. Inline only verified assets, enforce opaque-origin CSP and
-  restrictive security headers, preserve the identity across restart, reject
-  stale generations with `410 Gone`, and disclose no managed paths.
-- [x] Complete browser-owned exact-URL iframe adoption, dedicated v3
-  `MessagePort` brokering, ambient-message rejection, self-navigation
-  termination, exact-document context binding, and bounded state messaging.
-- [x] Add Code-owned persistent UI state keyed by scope/package/surface, exact
-  published-generation request leases, restart recovery, retained-surface
-  upgrade/rollback preservation, and true-uninstall cleanup.
-- [x] Add Code Web failed-N+1 pre-cutover readiness with path-free candidate
-  delivery, an authority-free script-only sandbox, rollback that keeps N
-  selected and callable, stale-plan non-replay, fresh-plan retry at the same
-  N+1 lifecycle generation, and one successful Registry cutover.
+- [x] Validate exact UI entry points and declared asset digests during package
+  lifecycle changes.
+- [x] Clear receipt-owned UI state on true surface removal.
 - [ ] Bind UI to exact Skill/Tool/MCP/Flow readiness and Grant evidence.
-- [x] Add active-document generation-aware hot replacement and port/frame
-  drain in Code Web.
-- [ ] Add equivalent generation-aware readiness, composition, and drain in
-  CLI, TUI, and native hosts; they remain static-integrity-only until an
-  equivalent renderer is injected.
+- [ ] Add sandboxed, generation-aware rendering in supported hosts; CLI and TUI
+  remain static-integrity-only until a reviewed renderer is injected.
 
 Acceptance:
 
 - UI cannot access undeclared hosts, processes, files, secrets, or network;
-- failed N+1 UI leaves N selected; and
-- uninstall leaves no origin, storage, route, or binding.
+- uninstall leaves no receipt-owned projection, state, route, or binding.
 
-## Workstream B — A3S Code CLI/TUI/Web convergence
+## Workstream B — A3S Code CLI/TUI convergence
 
 Priority: P0
 Status: in progress
@@ -193,8 +178,8 @@ Status: in progress
 - Run one shared Plugin Manager application service.
 - Keep Registry source state, catalog cache, plan generation, policy, apply, and
   operation replay out of view-specific code.
-- TUI `/packages`, Web marketplace, CLI, and agent MCP must display and apply
-  the same operation ID and plan digest.
+- TUI `/packages`, CLI, and agent MCP must display and apply the same operation
+  ID and plan digest.
 - Use one watcher keyed by capability generation plus revision.
 - Preserve exact Flow and OKF history without repository-local paths.
 
@@ -395,7 +380,7 @@ Status: pending
 
 ### Product E2E
 
-- one real signed six-surface package through CLI, TUI, Web, and manager MCP;
+- one real signed six-surface package through CLI, TUI, and manager MCP;
 - install/invoke/upgrade/invoke/uninstall/restart;
 - interruption at every durable checkpoint;
 - Linux, macOS, and Windows; and
@@ -404,7 +389,7 @@ Status: pending
 ## Delivery sequence
 
 1. Finish managed Runtime/Gateway/Knowledge/UI composition.
-2. Converge A3S Code CLI/TUI/Web and agent MCP on the same service.
+2. Converge A3S Code CLI/TUI and agent MCP on the same service.
 3. Complete distributed Flow placement without a second lifecycle.
 4. Run cross-platform real-process and failure-injection qualification.
 5. Complete Registry, distribution, retention, security, and support operations.

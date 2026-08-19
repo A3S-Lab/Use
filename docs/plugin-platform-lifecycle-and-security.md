@@ -292,23 +292,12 @@ origin, CSP, navigation, and backend-binding policy from the embedding host.
 Neither UI nor Skill receives ambient filesystem, network, process, or secret
 authority.
 
-The embedding host also owns UI state. Code admits state operations only for
-the exact current Activity document and while holding the matching published
-package-generation lease. State is bounded and isolated by scope, lifecycle
-package ID, and surface ID; it survives restart and lifecycle transitions only
-when lifecycle intent v3 explicitly retains that surface. True uninstall and
-surface removal clear the namespace even when its stored snapshot is corrupt.
-State retention and failed-N+1 selection remain separate contracts. Code Web
-now composes the latter with a process-local candidate broker: it publishes
-only path-free exact identity and bytes, loads N+1 in a hidden script-only
-sandbox, transfers only readiness-mode `host.init` over a dedicated port, and
-exposes no state, context, Tool, MCP, Flow, or backend authority. Only
-`activity.ready` passes. Load, navigation, protocol, and timeout failure keep N
-selected and callable, roll N+1 back without receipt or generation residue,
-and make the failed reviewed plan non-replayable. A fresh plan may retry the
-same N+1 lifecycle generation before one successful cutover. CLI, TUI, and
-native hosts remain static-integrity-only until they inject an equivalent
-renderer.
+The embedding host also owns UI state. A3S Code currently validates static UI
+entry points and exact asset digests during lifecycle changes, and clears
+receipt-owned UI state on true surface removal. CLI and TUI do not inject a
+browser renderer or ambient state, context, Tool, MCP, Flow, or backend
+authority. Any future renderer must supply those capabilities through an
+explicit reviewed binding.
 
 ## Filesystem and archive safety
 

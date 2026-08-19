@@ -60,7 +60,7 @@ does not scatter authoritative package files into unrelated roots.
 | stdio MCP | Immutable package generation | Host-owned supervised stdio session with exact-generation leases |
 | OKF | Immutable OKF v0.2 content in the package generation | Knowledge-host staging, atomic promotion, cited search, drain, and owned removal |
 | A3S Flow | Content-bound Native TypeScript source and export | `a3s-flow` preflight plus exact compiled-binding evidence |
-| UI | Integrity-bound static assets in the immutable generation | Receipt-owned Code/Web sandbox projection with declared backend bindings |
+| UI | Integrity-bound static assets in the immutable generation | Receipt-owned product-host projection with declared backend bindings |
 
 A managed projection may use a platform-appropriate link, mount, or copied
 cache, but its receipt must bind the source generation and every owned path.
@@ -190,7 +190,7 @@ Before step 4, the host re-derives canonical Grant proposals from the immutable
 plan plus the same durable Grant snapshot, reloads the retained signed planning
 bundle, reconnects the explicit provider assignment, and requires complete
 provider evidence—including Grant-bound semantics—to equal the reviewed plan.
-The shared A3S CLI, TUI, Web, and managed-host enablement paths use these
+The shared A3S CLI, TUI, and managed-host enablement paths use these
 contracts; other embedding products must provide the same durable evidence
 boundary.
 
@@ -284,7 +284,7 @@ Implemented:
 
 Remaining:
 
-- production provider injection for every CLI/Web/Cloud host;
+- production provider injection for every CLI/TUI/Cloud host;
 - real-provider retained-generation upgrade/uninstall and crash-recovery E2E
   across the supported platform matrix;
 - secret, filesystem, egress, and child-process enforcement adapters;

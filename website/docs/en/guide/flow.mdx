@@ -17,7 +17,7 @@ package source / Code flow.json design
         local Code host / remote OS target
 ```
 
-`a3s-flow` owns durable execution, event history, replay, scheduling, storage, and observation. A3S Use owns distribution, integrity, SemVer dependency resolution, capability dependencies, and package lifecycle. A3S Code/Web provides product discovery and an injected runtime host.
+`a3s-flow` owns durable execution, event history, replay, scheduling, storage, and observation. A3S Use owns distribution, integrity, SemVer dependency resolution, capability dependencies, and package lifecycle. A3S Code provides product discovery and an injected runtime host.
 
 ## Manifest contract
 
@@ -86,6 +86,6 @@ The same explicit compiler path is used for install, upgrade, and uninstall afte
 
 Valid source bytes are necessary but not sufficient readiness evidence. A Flow remains pending and absent from the published catalog until the typed A3S Flow host reports successful preflight for that admitted generation; source corruption overrides even a stale positive host observation.
 
-A3S Code injects the concrete host through its shared package lifecycle factory. CLI, TUI, and Web resolve the same strict `flow.json` identity. Before a new run, Code reinspects the current regular package source, verifies containment, size, UTF-8, and SHA-256, stages only the verified bytes, and completes Native TypeScript preflight before creating a binding or event. All three entrypoints use one cross-process-locked `.a3s/flow-runtime/` event store without requiring an OS login.
+A3S Code injects the concrete host through its shared package lifecycle factory. CLI and TUI resolve the same strict `flow.json` identity. Before a new run, Code reinspects the current regular package source, verifies containment, size, UTF-8, and SHA-256, stages only the verified bytes, and completes Native TypeScript preflight before creating a binding or event. Both entrypoints use one cross-process-locked `.a3s/flow-runtime/` event store without requiring an OS login.
 
-Web exposes the live catalog and local run APIs under `/api/v1/plugins/flows`. The detached-Web gate verifies `install → run → upgrade → run → uninstall → restart`, source-drift rejection before compiler/event mutation, retained exact-generation history, and public responses that add no managed or workspace path. The current Marketplace frontend does not yet present Flow run or history controls, so CLI/TUI are the interactive local execution surfaces. This is single-node crash/restart durability. A visible Web control surface, distributed worker placement, automatic resumption of suspended waits/retries/hooks, production retention/garbage collection, and complete real-process cross-platform coverage remain release gates. The [roadmap](./roadmap) tracks those gates explicitly.
+CLI and TUI are the interactive local execution surfaces. The current implementation provides single-node crash/restart durability. Distributed worker placement, automatic resumption of suspended waits/retries/hooks, production retention/garbage collection, and complete real-process cross-platform coverage remain release gates. The [roadmap](./roadmap) tracks those gates explicitly.

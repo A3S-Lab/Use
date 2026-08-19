@@ -111,7 +111,7 @@ impl std::fmt::Debug for CognitivePackageManager {
 
 /// Host composition boundary for one package-owned lifecycle saga.
 ///
-/// A3S Code, Web, or another embedding host injects exact Runtime, Gateway,
+/// A3S Code, A3S OS, or another embedding host injects exact Runtime, Gateway,
 /// Knowledge, Skill, and UI adapters here. The standalone implementation is
 /// deliberately narrower and fails closed for surfaces whose owner is absent.
 pub trait CognitivePackageLifecycleFactory: Send + Sync {

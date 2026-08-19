@@ -228,31 +228,18 @@ Status: in progress
   and Gateway effect, terminal replay, and drain/remove without residue.
 - [ ] Compose production Runtime Service providers in A3S Code and managed
   hosts with exact plan-time and apply-time evidence.
-- [ ] Consume the reviewed Runtime Task projection in Code CLI/TUI/Web agent
+- [ ] Consume the reviewed Runtime Task projection in Code CLI/TUI and agent
   tool discovery, then route invocation through the leased Use dispatcher.
 - [ ] Compose HTTP/streamable MCP through Gateway with health, drain, and
   exact-generation retirement.
 - [x] Complete bounded storage quota, projection retention, tombstone garbage
   collection, and physical compaction in the standalone Knowledge backend.
-- [x] Complete managed Code/Web Knowledge Workspace/session carriers and prove
+- [x] Complete managed A3S Code Knowledge Workspace/session carriers and prove
   leased prior-generation query semantics through those hosts.
-- [x] Publish enabled Code Web Activity documents at exact Registry generation
-  and revision URLs with opaque-origin CSP/security headers, restart stability,
-  stale-generation `410 Gone`, and no managed-path disclosure.
-- [x] Complete Code Web iframe adoption, dedicated v3 `MessagePort` brokering,
-  ambient-message rejection, self-navigation termination, exact-document
-  context binding, bounded state messaging, and active-generation frame/port
-  replacement and drain.
-- [x] Add bounded Code-owned durable UI state keyed by scope/package/surface,
-  exact published-generation request leases, restart recovery, retained-surface
-  upgrade/rollback preservation, and true-uninstall cleanup.
-- [x] Complete Code Web failed-N+1 pre-cutover browser readiness, authority-free
-  candidate delivery, failure rollback with N still callable, stale-plan
-  non-replay, fresh-plan retry at the same N+1 lifecycle generation, and one
-  successful Registry cutover.
-- [ ] Complete reviewed UI backend bindings and equivalent sandbox/generation
-  composition in CLI, TUI, and native hosts. Those hosts remain
-  static-integrity-only until they inject an equivalent renderer.
+- [x] Validate UI entry points and exact asset digests during package lifecycle
+  changes, and clear receipt-owned UI state on true surface removal.
+- [ ] Complete reviewed UI backend bindings and sandboxed rendering in
+  supported hosts. Current CLI and TUI hosts remain static-integrity-only.
 - [x] Prove that every required surface remains unpublished when its owner or
   evidence is missing.
 
@@ -260,14 +247,14 @@ Exit gate: a six-surface signed package completes install, enable, upgrade,
 disable, and uninstall through the same reviewed plan/apply service in each
 supported managed host.
 
-### M2 — Finish A3S Code TUI/Web hot-plug qualification
+### M2 — Finish A3S Code TUI hot-plug qualification
 
 Status: in progress
 
-- [ ] Run one shared Plugin Manager service across CLI, TUI, Web, and manager
+- [ ] Run one shared Plugin Manager service across CLI, TUI, and manager
   MCP without a second catalog, plan, or mutation implementation.
-- [ ] Verify TUI `/packages` and Web marketplace show the exact plan, package
-  graph, source, permission ceiling, and confirmation boundary.
+- [ ] Verify TUI `/packages` and CLI output show the exact plan, package graph,
+  source, permission ceiling, and confirmation boundary.
 - [ ] Prove install → invoke → exact-generation upgrade → invoke → uninstall
   → process restart for Tool, MCP, Flow, Skill, UI, and OKF.
 - [ ] Prove watcher resumption, no duplicate side effects, and path-free
@@ -275,7 +262,7 @@ Status: in progress
 - [ ] Run the same scenarios for User and Workspace scope and reject scope-kind
   substitution under the same textual ID.
 
-Exit gate: Code CLI/TUI/Web and agent tools produce the same plan digest and
+Exit gate: Code CLI/TUI and agent tools produce the same plan digest and
 terminal operation result for the same request.
 
 ### M3 — Distributed Flow and OS integration
@@ -376,7 +363,7 @@ and removed by an operator using only published artifacts and documentation.
 The first supported product release is blocked until all of the following are
 green:
 
-1. One reviewed Plugin Manager serves CLI, TUI, Web, and agent management MCP.
+1. One reviewed Plugin Manager serves CLI, TUI, and agent management MCP.
 2. All six surfaces have production provider composition in declared hosts.
 3. Exact graph and Grant recovery passes failure injection at every checkpoint.
 4. Linux, macOS, and Windows pass the declared real-process matrix.

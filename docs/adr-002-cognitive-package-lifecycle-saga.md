@@ -189,7 +189,7 @@ Still required for product release:
 
 - production Runtime Service, HTTP MCP/Gateway, managed Knowledge, and UI
   sandbox composition in every declared host;
-- complete A3S Code CLI/TUI/Web/agent convergence;
+- complete A3S Code CLI/TUI/agent convergence;
 - distributed Flow/OS placement qualification;
 - full Linux/macOS/Windows real-process recovery matrix; and
 - production Registry, distribution, retention, security, and support gates.

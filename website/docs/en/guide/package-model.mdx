@@ -38,7 +38,7 @@ Only the manifest and `README.md` names are fixed. Contribution paths are declar
 | MCP          | A distinct, standard MCP server                                    | Streamable HTTP Service or supervised stdio session       |
 | Flow         | A durable workflow with explicit capability dependencies           | Injected A3S Flow engine and typed runtime adapter        |
 | Skill        | Instructions and supporting content                                | Managed Skill projection or session registry              |
-| UI           | Integrity-bound static HTML/CSS/JS                                 | A3S Code/Web sandbox                                      |
+| UI           | Integrity-bound static HTML/CSS/JS                                 | Product UI host                                           |
 | OKF          | An Open Knowledge Format package of cross-linked Markdown concepts | A3S Knowledge service, host OKF registry, and local index |
 
 In this model, a **Tool is not an MCP `tools/list` item**. A Tool keeps its own CLI or HTTP contract; Use does not translate every workload into a private universal protocol. Static UI is not a Runtime workload either. Only its declared Tool or MCP backend enters Runtime.
@@ -154,7 +154,7 @@ resolve signed catalogs → freeze exact lock → revalidate all metadata
 
 Shared dependencies are not recommitted. A `Retain` node is reusable only when the exact Registry-backed generation is installed, enabled, and visible in the current capability snapshot. Direct uninstall is rejected while another installed package depends on the target.
 
-The public `CognitivePackageManager` accepts a root Registry and a bounded set of host-injected dependency Registries. It persists the exact root lock plus admitted pending manifest/generation evidence, so a published install can finish incomplete journals and reverse uninstall can resume even after root metadata has already been removed. Code/Web hosts inject surface owners through `CognitivePackageLifecycleFactory`; the standalone factory never substitutes a missing Runtime, Gateway, or Knowledge provider. Its Flow owner is enabled only by an explicit absolute compiler path, and failed candidate preparation remains unpublished while retaining exact replay evidence.
+The public `CognitivePackageManager` accepts a root Registry and a bounded set of host-injected dependency Registries. It persists the exact root lock plus admitted pending manifest/generation evidence, so a published install can finish incomplete journals and reverse uninstall can resume even after root metadata has already been removed. Product hosts inject surface owners through `CognitivePackageLifecycleFactory`; the standalone factory never substitutes a missing Runtime, Gateway, or Knowledge provider. Its Flow owner is enabled only by an explicit absolute compiler path, and failed candidate preparation remains unpublished while retaining exact replay evidence.
 
 ## Surface dependencies and readiness
 

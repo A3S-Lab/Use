@@ -18,7 +18,7 @@ Use owns:
 - reviewed authorization and Workspace Grant transitions; and
 - one atomic capability-Registry cutover per package graph mutation.
 
-Runtime, Gateway, Flow, Knowledge, Skill, Code/Web, and operating-system hosts
+Runtime, Gateway, Flow, Knowledge, Skill, Code, and operating-system hosts
 own execution and presentation. Package content describes requirements but
 cannot select a provider or authorize itself.
 
