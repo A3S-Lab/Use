@@ -32,15 +32,15 @@ v3、catalog v3、receipt v3、plan v4、host protocol v4 和 manager tools v3�
 
 ## 所有权
 
-| 组件                   | 拥有内容                                                                                                   | 不拥有内容                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Umbrella host          | revision-addressed ACL Registry source、trust root、enabled/default 状态、policy、确认、secret 与 provider | 包存储与第二套 lifecycle manager              |
-| Shared Plugin Manager  | catalog、policy、plan/apply、operation replay 与父级 saga                                                  | package archive 格式或 provider 内部调度      |
-| A3S Use                | 包验证、不可变 generation、receipt、grant、binding evidence、route lease 与 capability reconciliation      | 通用 scheduler、UI renderer 或 agent RPC 协议 |
-| A3S Runtime            | Task/Service workload 与 provider capability                                                               | 包解析、信任根与用户授权                      |
-| A3S Flow               | 工作流编译、持久执行、重放、存储与 observation                                                             | 包解析或并行的 `flow.json` 生命周期           |
-| A3S Code/Knowledge | Skill session registry、sandboxed UI、OKF registry/index 与用户体验                                            | 包安装事务与 Runtime provider 注册            |
-| Package process        | 自己的 CLI、HTTP 和 MCP vocabulary                                                                         | 宿主 policy 或 ambient authority              |
+| 组件                  | 拥有内容                                                                                                   | 不拥有内容                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Umbrella host         | revision-addressed ACL Registry source、trust root、enabled/default 状态、policy、确认、secret 与 provider | 包存储与第二套 lifecycle manager              |
+| Shared Plugin Manager | catalog、policy、plan/apply、operation replay 与父级 saga                                                  | package archive 格式或 provider 内部调度      |
+| A3S Use               | 包验证、不可变 generation、receipt、grant、binding evidence、route lease 与 capability reconciliation      | 通用 scheduler、UI renderer 或 agent RPC 协议 |
+| A3S Runtime           | Task/Service workload 与 provider capability                                                               | 包解析、信任根与用户授权                      |
+| A3S Flow              | 工作流编译、持久执行、重放、存储与 observation                                                             | 包解析或并行的 `flow.json` 生命周期           |
+| A3S Code/Knowledge    | Skill session registry、sandboxed UI、OKF registry/index 与用户体验                                        | 包安装事务与 Runtime provider 注册            |
+| Package process       | 自己的 CLI、HTTP 和 MCP vocabulary                                                                         | 宿主 policy 或 ambient authority              |
 
 ## 单一事实来源
 
