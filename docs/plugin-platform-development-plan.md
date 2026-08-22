@@ -229,7 +229,7 @@ Acceptance:
 ## Workstream D — Cross-platform hardening
 
 Priority: P0 release gate
-Status: pending
+Status: in progress
 
 - A killed real-process Registry target download resumes from its exact
   persisted prefix without publishing a receipt, graph, operation, or package
@@ -268,23 +268,30 @@ Status: pending
   enablement regrant/revocation, and remains terminally replayable without
   reauthorization, network access, or Registry generation inflation.
 - Reject package-parent or staging links/reparse points without following them.
-  Fresh Linux and Windows runs remain required for full qualification.
+  Native CI run
+  [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)
+  passed the current Use-owned suite on all five release targets from exact
+  `main` commit `40bc5593cbf58ca2da171d85ba578c2d6bd911c8`; product-host,
+  reboot, external-contention, and replacement-race qualification remains
+  open.
 
 ### Linux
 
-- Full workspace tests on x86_64 and arm64.
-- Real-process Runtime/MCP/Flow/Knowledge/UI lifecycle.
+- [x] Run the current non-Science workspace and real-process package lifecycle
+  tests on native x86_64 and arm64 runners in CI run 32604181662.
 - Container/release-bundle conformance and filesystem failure injection.
 
 ### macOS
 
-- Full workspace and real-process tests on arm64 and x86_64.
+- [x] Run the current non-Science workspace and real-process package lifecycle
+  tests on native arm64 and x86_64 runners in CI run 32604181662.
 - Quarantine, executable permission, browser/runtime, and filesystem cases.
 
 ### Windows
 
 - [x] Run the complete current non-Science workspace suite and reject real
-  directory junctions across package and durable state trust boundaries.
+  directory junctions across package and durable state trust boundaries. CI
+  run 32604181662 provides the latest native Windows evidence.
 - Expand filesystem coverage to replacement races, file locks, antivirus
   contention, process groups, named resources, and reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.

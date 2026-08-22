@@ -340,10 +340,14 @@ and lifecycle journals remain Use-owned and singular.
 
 ### M4 — Cross-platform real-process release matrix
 
-Status: pending
+Status: in progress
 
-- [ ] Run full workspace and real-process package lifecycle tests on Linux
-  x86_64/arm64 and macOS arm64/x86_64.
+- [x] Run full workspace and real-process package lifecycle tests on Linux
+  x86_64/arm64 and macOS arm64/x86_64. Native CI run
+  [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)
+  passed the current non-Science workspace suite on all four targets from exact
+  `main` commit `40bc5593cbf58ca2da171d85ba578c2d6bd911c8` while the
+  matching Windows job and general release gates also passed.
 - [x] Run signed Registry trust/lock, dependency-graph install/upgrade/uninstall,
   Grant, standalone Flow preflight/lifecycle, and OKF cutover scenarios through
   real `a3s-use` processes on Windows x86_64, including killed-process replay

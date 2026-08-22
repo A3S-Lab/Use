@@ -363,6 +363,20 @@ fn ci_runs_the_workspace_suite_on_every_release_target() {
     let ci = include_str!("../.github/workflows/ci.yml").replace("\r\n", "\n");
     let platform_job = &ci[position(&ci, "\n  platform-test:")..];
 
+    for action in ci.lines().filter_map(|line| {
+        line.trim()
+            .strip_prefix("- uses: ")
+            .filter(|value| !value.starts_with("./"))
+    }) {
+        let (_, revision) = action
+            .rsplit_once('@')
+            .unwrap_or_else(|| panic!("CI action reference has no revision: {action}"));
+        assert!(
+            revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "CI action must use an immutable commit SHA: {action}"
+        );
+    }
+
     for (name, runner) in [
         ("linux-x86_64", "ubuntu-24.04"),
         ("linux-arm64", "ubuntu-24.04-arm"),
@@ -379,6 +393,7 @@ fn ci_runs_the_workspace_suite_on_every_release_target() {
 
     assert!(platform_job.contains("fail-fast: false"));
     assert!(!platform_job.contains("continue-on-error"));
+    assert!(platform_job.contains("toolchain: 1.96.0"));
     for command in [
         "run: cargo test --workspace --exclude a3s-use-science --locked --no-run",
         "run: cargo test --workspace --exclude a3s-use-science --locked",

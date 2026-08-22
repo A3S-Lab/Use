@@ -1008,6 +1008,14 @@ release claim.
 | macOS arm64 / x86_64 | Current non-Science workspace build and tests | Development preview |
 | Windows x86_64 | Current non-Science workspace tests, junction rejection, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
+Native CI run
+[32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)
+passed the current non-Science workspace and real-process integration suite on
+all five targets from exact `main` commit
+`40bc5593cbf58ca2da171d85ba578c2d6bd911c8`. This establishes the current
+Use-owned platform baseline only; product-host, reboot, antivirus contention,
+and the remaining recovery scenarios are still release blockers.
+
 Trusted package and state paths use platform-aware metadata checks that reject
 Unix symbolic links and Windows reparse points before traversal. Platform test
 coverage is not the same as production qualification.
