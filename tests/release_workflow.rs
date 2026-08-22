@@ -406,6 +406,54 @@ fn ci_runs_the_workspace_suite_on_every_release_target() {
 }
 
 #[test]
+fn ci_builds_and_validates_the_website_on_every_change() {
+    let ci = include_str!("../.github/workflows/ci.yml").replace("\r\n", "\n");
+    let website_job = &ci[position(&ci, "\n  website:")..position(&ci, "\n  platform-test:")];
+
+    for required in [
+        "runs-on: ubuntu-24.04",
+        "working-directory: website",
+        "node-version: 22",
+        "cache-dependency-path: website/package-lock.json",
+        "run: npm ci",
+        "run: npm run format:check",
+        "run: npm run lint",
+        "run: npm run build",
+        "DOCS_BASE: /Use/",
+        "DOCS_ORIGIN: https://a3s-lab.github.io",
+        "run: npm run check:site",
+    ] {
+        assert!(
+            website_job.contains(required),
+            "website CI must retain: {required}"
+        );
+    }
+}
+
+#[test]
+fn documentation_deployment_uses_only_pinned_actions() {
+    let workflow = include_str!("../.github/workflows/docs-pages.yml");
+    let actions = workflow
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("uses: "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actions.len(),
+        5,
+        "documentation deployment action count drifted"
+    );
+    for action in actions {
+        let (_, revision) = action
+            .rsplit_once('@')
+            .unwrap_or_else(|| panic!("documentation action has no revision: {action}"));
+        assert!(
+            revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "documentation action must use an immutable commit SHA: {action}"
+        );
+    }
+}
+
+#[test]
 fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     let workflow = include_str!("../.github/workflows/release.yml");
     let ci = include_str!("../.github/workflows/ci.yml");
