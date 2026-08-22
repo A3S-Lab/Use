@@ -211,8 +211,8 @@ signed, and published beside the archive.
 
 The `v0.3.2` workflow exposed native linker metadata drift on four of five
 targets and therefore did not create a GitHub Release. Deterministic symbol
-stripping plus Mach-O, PE/COFF, and ELF linker controls are implemented locally,
-and a non-publishing `qualification=true` dispatch now runs the complete
+stripping, content-derived Mach-O UUIDs, and PE/COFF plus ELF linker controls
+are implemented locally, and a non-publishing `qualification=true` dispatch runs the complete
 five-platform archive and clean-runner comparison from the exact `main`
 revision while skipping crates.io and GitHub Release publication. A fresh
 qualification run remains required. Operators can additionally verify

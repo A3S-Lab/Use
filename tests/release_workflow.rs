@@ -470,18 +470,13 @@ fn release_builds_remove_nondeterministic_native_metadata() {
             job.contains("CARGO_PROFILE_RELEASE_STRIP: symbols"),
             "{name} release build must remove nondeterministic native symbol tables"
         );
-        let linker_setup = position(job, "Disable nondeterministic Mach-O UUIDs");
         assert!(
-            job[linker_setup..].contains("if: runner.os == 'macOS'"),
-            "{name} release build must scope the Mach-O linker flag to macOS"
+            !job.contains("-Wl,-no_uuid"),
+            "{name} release build must retain the content-derived Mach-O LC_UUID required by dyld"
         );
         assert!(
-            job[linker_setup..].contains("-C link-arg=-Wl,-no_uuid"),
-            "{name} release build must disable nondeterministic Mach-O UUIDs"
-        );
-        assert!(
-            linker_setup < position(job, "cargo build --release --locked"),
-            "{name} deterministic linker configuration must precede the build"
+            !job.contains("-Wl,-random_uuid"),
+            "{name} release build must use the linker's default content-derived Mach-O LC_UUID"
         );
         let windows_linker_setup = position(job, "Enable deterministic PE/COFF linking");
         assert!(

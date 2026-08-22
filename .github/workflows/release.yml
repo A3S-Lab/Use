@@ -220,10 +220,6 @@ jobs:
         with:
           toolchain: ${{ env.A3S_RELEASE_RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
-      - name: Disable nondeterministic Mach-O UUIDs
-        if: runner.os == 'macOS'
-        shell: bash
-        run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=-Wl,-no_uuid" >> "${GITHUB_ENV}"
       - name: Enable deterministic PE/COFF linking
         if: runner.os == 'Windows'
         shell: bash
@@ -581,10 +577,6 @@ jobs:
         with:
           toolchain: ${{ env.A3S_RELEASE_RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
-      - name: Disable nondeterministic Mach-O UUIDs
-        if: runner.os == 'macOS'
-        shell: bash
-        run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=-Wl,-no_uuid" >> "${GITHUB_ENV}"
       - name: Enable deterministic PE/COFF linking
         if: runner.os == 'Windows'
         shell: bash
