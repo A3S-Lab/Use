@@ -1,7 +1,7 @@
 # A3S Use Plugin Contract Reference
 
 Status: development preview
-Last updated: 2026-08-11
+Last updated: 2026-08-22
 
 ## Scope
 
@@ -28,18 +28,29 @@ current set.
 | Operation plan draft | `a3s.use.plugin-operation-plan-draft.v3` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Operation confirmation | `a3s.use.plugin-operation-confirmation.v1` |
-| Host capabilities | `a3s.use.plugin-host-capabilities.v4` |
-| Host protocol level | `4` |
+| Host capabilities | `a3s.use.plugin-host-capabilities.v6` |
+| Host protocol level | `6` |
+| Host managed scope | `a3s.use.plugin-managed-scope.v2` |
 | Host plan request/result | `a3s.use.plugin-host-plan-request/result.v1` |
 | Host enablement plan request/result | `a3s.use.plugin-host-enablement-plan-request/result.v1` |
 | Host apply request/result | `a3s.use.plugin-host-apply-request/result.v1` |
 | Host observation request/result | `a3s.use.plugin-host-observation-request/result.v1` |
+| Host operation observation request/result | `a3s.use.plugin-host-operation-observation-request/result.v1` |
+| Host operation watch request | `a3s.use.plugin-host-operation-watch-request.v1` |
+| Host cancellation request/result | `a3s.use.plugin-host-cancel-request/result.v1` |
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
-| Installed receipt | numeric schema version `3` |
+| Installed receipt | numeric schema version `4` |
 | Installed package graph | `a3s.use.installed-package-graph.v1` |
-| Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
+| Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
+| Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
+| Pre-plan download attempt | `a3s.use.plugin-download-attempt.v1` |
 | Lifecycle intent/operation | `a3s.use.plugin-lifecycle-intent/operation.v2` |
 | Lifecycle diagnostic | `a3s.use.plugin-lifecycle-diagnostic.v1` |
+| Operation diagnostic | `a3s.use.plugin-operation-diagnostic.v1` |
+| Operation history | `a3s.use.plugin-operation-history.v1` |
+| Operation history diagnostic | `a3s.use.plugin-operation-history-diagnostic.v1` |
+| Pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
+| Pre-plan download diagnostic | `a3s.use.plugin-download-attempt-diagnostic.v1` |
 | Enablement request/result | `a3s.use.cognitive-package-enablement-request/result.v1` |
 | Enablement plan result | `a3s.use.cognitive-package-enablement-plan-result.v1` |
 | Enablement state/operation | `a3s.use.cognitive-package-enablement-state/operation.v2` |
@@ -53,11 +64,25 @@ current set.
 | OKF Knowledge citation | `a3s.use.okf-knowledge-citation.v1` |
 | OKF Knowledge read | `a3s.use.okf-knowledge-read-request.v1` / `a3s.use.okf-knowledge-read-response.v1` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
+| Coordinated Use state backup | `a3s.use.state-backup.v1` |
+| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v1` |
+| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v1` |
+| Coordinated Use state restore plan | `a3s.use.state-restore-plan.v1` |
+| Coordinated Use state restore operation | `a3s.use.state-restore-operation.v1` |
+| Coordinated Use state restore result | `a3s.use.state-restore-result.v1` |
+| Coordinated Use state restore diagnostic | `a3s.use.state-restore-diagnostic.v1` |
+| OKF Knowledge backup retention plan | `a3s.use.okf-knowledge-backup-retention-plan.v1` |
+| OKF Knowledge backup retention result | `a3s.use.okf-knowledge-backup-retention-result.v1` |
+| OKF Knowledge restore plan | `a3s.use.okf-knowledge-restore-plan.v2` |
+| OKF Knowledge restore operation | `a3s.use.okf-knowledge-restore-operation.v2` |
+| OKF Knowledge restore result | `a3s.use.okf-knowledge-restore-result.v2` |
+| OKF Knowledge restore diagnostic | `a3s.use.okf-knowledge-restore-diagnostic.v2` |
 
-The host capability inventory is exact: catalog v3, plan v4, and manager
-toolset v4 only. Toolset v4 exposes optional canonical `registryName` only on
-install planning; upgrade stays bound to installed Registry provenance. A host
-advertising a different inventory is rejected.
+The host capability inventory is exact: the current Host and managed-scope
+schemas above, catalog v3, plan v4, and all six surface kinds. The separate
+manager toolset accepts v4 only. Toolset v4 exposes optional canonical
+`registryName` only on install planning; upgrade stays bound to installed
+Registry provenance. A host advertising a different inventory is rejected.
 
 ## Package manifest
 
@@ -135,10 +160,36 @@ storage accounting, and policy limits. Verification rejects unknown fields,
 scope substitution, symlinks, length/digest mismatch, unsupported SQLite
 schema, invalid receipts, inconsistent accounting, and FTS corruption.
 
+`a3s.use.okf-knowledge-backup-retention-plan.v1` is the canonical review for
+one owned directory, complete scope, bounded entry/byte policy, and exact
+verified backup inventory. It contains only relative file names and digest,
+timestamp, and byte evidence. Candidates are ordered by manifest creation time
+and file name; the removal set is the oldest prefix required to satisfy both
+limits. The plan never selects the last verified scope backup. Apply requires
+the unchanged canonical plan digest and returns
+`a3s.use.okf-knowledge-backup-retention-result.v1`. A changed directory fails
+before removal; a partial filesystem failure reports the exact already-removed
+entries as outcome-unknown. Backups for another complete scope and unrelated
+files are never selected, while malformed managed candidates fail closed.
+
 The backup digest detects corruption but is not a Registry signature. A
 verified database cannot recreate package receipts, immutable package roots,
-Knowledge bindings, lifecycle journals, or Grants. Restore remains unsupported
-until those authorities can be validated together.
+lifecycle journals, or Grants. Standalone restore therefore uses a separate
+reviewed plan that validates those exact authorities together, binds the
+current main/WAL/SHM evidence and current binding-inventory digest, and requires
+the plan digest again at confirmed apply. It can replace or recreate the
+scope-local database and create only binding files missing from an exact subset
+of the backup inventory. Conflicting or newer binding evidence is never
+overwritten. It cannot reconstruct missing Registry, package, lifecycle, or
+Grant authority or perform clean-machine or whole-product recovery.
+
+`a3s.use.okf-knowledge-restore-diagnostic.v2` is the bounded, path-free,
+secret-free projection of the global active marker and one requested scope's
+restore history. It reports exact plan/backup/authority digests, durable phase,
+the reviewed binding-state digest and missing-binding count, timestamps,
+retained prior-file count, physical operation-directory count, marker-handoff
+directories without a journal, the fixed retention limit, and remaining
+capacity. Reading it does not clean, rotate, or rewrite evidence.
 
 Search-index repair is deliberately narrower than lifecycle repair. It first
 validates core SQLite integrity, foreign keys, projection receipts, row
@@ -211,6 +262,12 @@ Install order is dependency-forward; removal order is its exact reverse.
 Retained packages are accepted only when their installed receipt and verified
 catalog evidence match the locked node exactly.
 
+Receipt v4 binds the exact canonical non-empty surface set selected by the
+reviewed lifecycle plan. Missing, empty, duplicated, unsorted, unknown, or
+dependency-incomplete selections fail closed; the loader never expands absent
+evidence to the manifest inventory. Receipt v3 is unsupported preview state
+and must be removed and reinstalled rather than migrated implicitly.
+
 Upgrade always carries two locks:
 
 - the **prior lock**, which proves the installed dependency graph and reverse
@@ -248,19 +305,44 @@ or asks a child operation to invent authority.
 
 ## Host protocol
 
-Host capabilities v4 advertise protocol level 4 and exact current schema
+Host capabilities v6 advertise protocol level 6 and exact current schema
 inventories. Managed hosts expose separate methods for:
 
 1. capability discovery;
-2. catalog/search inspection;
-3. install/upgrade/uninstall planning;
-4. enable/disable planning;
-5. exact reviewed apply; and
-6. observation/watch.
+2. install/upgrade/uninstall planning;
+3. enable/disable planning;
+4. exact reviewed apply;
+5. package observation;
+6. exact operation observation;
+7. revision-bound operation watch; and
+8. explicit-user cancellation.
 
-The managed scope includes both kind (`user` or `workspace`) and ID. Equal
-textual IDs in different kinds cannot alias storage, authorization, plans, or
-observations.
+Operation requests bind the assignment generation, capability digest, exact
+managed scope, package ID, operation ID, and plan digest. The status phases are
+`Planned`, `AwaitingConfirmation`, `Denied`, `Preparing`, `Publishing`,
+`Finalizing`, `Completed`, `Failed`, and `Cancelled`. They are projections of
+durable Host outcomes, pending graph or enablement records, and lifecycle
+journals; they are never inferred from elapsed time. Progress is expressed as
+bounded completed/total checkpoints without percentages. A graph-wide status
+aggregates every changed package generation and omits `currentSurface` when a
+single package cannot be identified unambiguously.
+
+The status revision is the digest of the complete status. A watch returns as
+soon as that revision changes or after its bounded timeout of at most 30
+seconds. `Completed` requires the durable Host outcome. A rolled-back lifecycle
+is `Failed`, but graph failure is not terminal while any matching journal is
+still applying or rolling back.
+
+Cancellation requires explicit user authority and is accepted only before
+durable graph or enablement admission. The accepted cancellation is persisted,
+observes as terminal `Cancelled`, and replays as `AlreadyCancelled`. Once
+admission or publication begins, cancellation returns `TooLate`; a completed
+operation returns `AlreadyCompleted`.
+
+Managed scope v2 includes both kind (`user` or `workspace`) and ID. Equal
+textual IDs in different kinds produce different descriptor digests and cannot
+alias a Host fence, request replay store, authorization, plan, or observation.
+The v1 scope and Host v5 inventory are rejection fixtures only.
 
 The manager toolset contains exactly:
 
@@ -296,6 +378,13 @@ completed lifecycle journal, active/completed enablement operation, or the
 already persisted Host terminal result. The confirmation is revalidated in
 the original plan window. Missing or mismatched evidence fails closed and
 never extends the plan lifetime.
+
+Pending package graph v4 is the only accepted graph-operation record. It
+requires the reviewed envelope, explicit `planned`, `admitted`, or `cancelled`
+phase, `plannedAtMs`, `admittedAtMs`, and durable authorization evidence.
+Cancellation additionally requires its timestamp and request identity. V2 and
+v3 records are unsupported preview state and are rejected rather than upgraded
+or interpreted with implicit defaults.
 
 ## Workspace Grants
 
@@ -368,6 +457,145 @@ missing journal.
 Candidate and retirement phase intents may share the reviewed graph
 `operationId`. `intentDigest` is the exact phase identity; latest and previous
 records with the same intent digest are invalid.
+
+The operation diagnostic is a read-only, computed JSON projection for one exact
+retained install, upgrade, or uninstall graph, one active admitted enable/
+disable operation, or the newest Host-reviewed enable/disable plan that has not
+been admitted in one explicit User or Workspace scope. It is not persisted
+apply or recovery authority. The projection reports:
+
+- exact operation ID, action, phase, reviewed plan digest, lock digests,
+  timing, impact, and authority/confirmation status;
+- package counts plus path-free Registry names, TUF role versions, and verified
+  catalog/archive digests;
+- current Registry generation/snapshot digest and the exact graph cutover
+  status;
+- selected provider identities, builds, capability evidence, enforcement, and
+  readiness;
+- Grant authorization/journal phase and cutover or rollback evidence; and
+- bounded lifecycle publication, accepted-call drain, checkpoint, rollback,
+  and recovery guidance.
+
+`a3s-use extension diagnose <publisher/name> --json` reads this evidence under
+the shared maintenance fence without network access, reconciliation, recovery,
+or writes. Retained graph evidence covers planned, admitted, and cancelled
+install/upgrade/uninstall operations, including a reviewed graph before
+installation. Active Use-owned enablement evidence takes precedence. When no
+active operation exists, an observation-only digest-bound index resolves the
+newest exact Host-reviewed plan by `(plannedAtMs, requestId)` and projects it as
+`planned`, or as `cancelled` when its exact Host cancellation record exists.
+The projection binds the installed receipt, current state generation, selected
+surfaces, plan action/digest, Registry source/cutover, selected providers,
+awaiting-admission or cancelled Grant state, and a deterministic expected
+lifecycle-unit count reconstructed from the installed manifest. It never
+persists that reconstructed intent. A completed Use enablement operation or
+durable Host outcome suppresses the pre-admission plan, while state/desire drift
+causes it to be ignored. The index retains the complete managed scope only for
+private request lookup; Host/request/authority/fence identities do not enter
+the public result. The contract is bounded to 2 MiB, rejects unknown fields and
+inconsistent counts/digests/phases, and omits paths, Registry URLs, idempotency
+keys, credentials, tokens, secret names and values, package content, and
+arbitrary package-authored text. Invalid backing evidence fails closed with a
+path-free cleanup/reinstall instruction instead of echoing the damaged state.
+For each Registry-backed Add or Replace transition in a retained install or
+upgrade graph, the operation reports signed expected bytes, currently retained
+bytes, and an exact-target `missing`, `partial`, or `complete` cache status.
+The aggregate is `missing`, `in-progress`, or `complete`; non-download actions
+are `not-required`, while a graph containing a source that cannot be observed
+is `unavailable`. The datastore identity is derived from the exact historical
+`VerifiedCatalogProvenance`, so replacing the named Registry source cannot
+redirect an old operation to new cache state. Observation is lock-independent,
+zero-network, read-only, and path-free. `complete` means an exact-length regular
+entry exists where only verified promotion normally writes; observation does
+not rehash it. A partial or complete observation is never download, apply, or
+recovery authority.
+
+The same retained graph and download-attempt projections observe every
+separately signed executable-planning target selected by the exact package
+lock. `planningBytes`, `planningRetainedBytes`, `planningTargetCount`, and
+aggregate `planning` accompany a canonical `planningTargets` inventory. Each
+entry contains only package ID, Registry name, target digest, expected/retained
+bytes, and `missing`, `partial`, or `complete` state. A package without a
+planning target contributes no entry; an entirely static operation reports
+`not-required`. Historical Registry provenance selects the datastore exactly
+as it does for archives. Observation never waits for the cache lock, rehashes
+content, or turns a partial/complete entry into planning, apply, or recovery
+authority.
+
+Before Registry/TUF metadata access and before an exact package lock exists,
+Use writes `a3s.use.plugin-resolution-attempt.v1` under the same process-held
+per-package lock used by the later download phase. It binds the explicit User
+or Workspace scope, install/upgrade action, root package, requested version and
+channel, refreshed/cached access, and start time. Each configured root or
+dependency Registry advances through `pending`, `verifying`, `verified`, or
+`failed` with only its path-free name, source-identity and trust-root digests,
+verified TUF role versions, bounded package-target count, observation time, and
+stable bounded error code. The record cannot contain a Registry URL, path, raw
+transport error, credential, or metadata byte. Terminal success additionally
+binds the exact package-lock digest and package count.
+
+When no retained graph or download attempt exists, `extension diagnose` falls
+back to `a3s.use.plugin-resolution-attempt-diagnostic.v1`. Its phase is
+`pre-lock`; access is `refreshed` or `cached`; and overall state is
+`resolving`, `resolved`, or `failed`. Reads are bounded, zero-network,
+read-only, and never wait for or acquire the package lock. Resolution failure
+or process exit retains the record. A successful handoff writes the matching
+download attempt before deleting it, so diagnosis has no intentional gap.
+Damaged state fails closed without echoing its fields. Real CLI tests cover an
+externally killed online resolution, a terminal Registry verification failure,
+and an offline cache-missing failure that constructs no network transport.
+
+After exact lock resolution and disposition selection but before package
+archive transfer, Use writes `a3s.use.plugin-download-attempt.v1`. It binds the
+explicit User or Workspace scope, install/upgrade action, exact package lock and
+digest, selected package IDs, and start time. A process-held per-package lock
+prevents a live attempt from being replaced. Failure or process exit leaves the
+record available for diagnosis; a later process may replace it only after the
+lock is released. Use deletes it only after a matching reviewed pending graph is
+durable. The record is observation state, not a plan, receipt, apply input, or
+recovery authority.
+
+When no graph, active enablement operation, or diagnosable Host-reviewed plan
+exists, `extension diagnose` falls back to
+`a3s.use.plugin-download-attempt-diagnostic.v1`. It reports the action,
+`pre-plan` phase, start time, package-lock digest, package/target counts, and
+exact current archive and planning-target byte evidence. Unknown or
+inconsistent attempt fields fail closed through the same path-free diagnostic
+error. Real killed-process tests observe active archive and planning-target
+partials without waiting for the target-cache lock, reobserve retained bytes
+after exit, resume the exact Range, and prove the attempt disappears after the
+reviewed graph becomes durable.
+
+`extension diagnose --history --json` exposes
+`a3s.use.plugin-operation-history-diagnostic.v1` for the explicit package and
+User or Workspace scope. Its underlying
+`a3s.use.plugin-operation-history.v1` record contains only already validated
+public operation diagnostics. It keeps the newest 16 operation occurrences
+oldest-first on disk and returns them newest-first within an exact 8 MiB stored
+byte limit. Every entry wraps the immutable point-in-time diagnostic with its
+retention time and a `completed`/`rolled-back` operation or `cancelled` graph-
+plan outcome. The
+outcome is accepted only when lifecycle terminal receipts, Grant phase, and
+Registry cutover evidence agree; historical `recovery` inside the embedded
+point-in-time diagnostic is not current recovery authority.
+
+Successful graph and enablement paths durably append history before deleting
+pending graph or active enablement recovery authority. A process exit between
+those writes leaves both records; exact replay deduplicates the occurrence by
+`(operationId, planDigest)` and then completes cleanup. Graph operation IDs are
+lock-derived and can legitimately recur after reinstall, so textual ID alone
+is not a history key. Oldest entries are removed before appending would exceed
+the count or byte limit. History remains queryable after uninstall. Reading it
+performs no network access, reconciliation, recovery, or write. Unknown fields,
+duplicate occurrence identities, inconsistent outcomes, links/reparse points,
+non-regular files, and oversized records fail closed through the path-free
+operation diagnostic error without echoing retained content.
+
+Real Host/CLI tests additionally prove planned and cancelled pre-admission
+enablement projections perform no network request, authorization, admission,
+or lifecycle write, expose no Host fence or path, and disappear during the
+completed-Use/unfinished-Host-outcome window rather than presenting stale
+apply guidance.
 
 ## Canonicalization and limits
 

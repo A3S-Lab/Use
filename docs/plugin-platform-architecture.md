@@ -73,7 +73,10 @@ factory, and authorization provider used by the host. Its additional durable
 state is a narrow protocol index for request replay; it never owns package
 admission, Grants, lifecycle checkpoints, enablement state, or capability
 publication. Expired requests resume only when those existing Use-owned stores
-prove exact prior admission or completion.
+prove exact prior admission or completion. Install and upgrade planning verifies
+and caches the complete selected closure; reviewed digest-only apply consumes
+that exact cache without another network request, so a Registry outage cannot
+change or strand an already reviewed operation.
 
 ## Domain model
 
@@ -263,6 +266,27 @@ Plan v4 is the immutable mutation boundary. It binds:
 Apply re-derives this evidence immediately before mutation. A separately
 reviewed package-lock digest can be required before download.
 
+Once an exact lock and Add/Replace archive set exist, Use persists one
+non-authoritative pre-plan download attempt under a process-held package lock.
+The exact lock also selects any separately signed executable-planning targets.
+Both target families survive interruption for independent byte observation,
+but cannot authorize planning, apply, or recovery. The record is removed only
+after the reviewed pending graph is durable; the graph then becomes the current
+operation diagnostic source.
+After a graph or enablement operation reaches a validated terminal outcome,
+Use appends its path-free snapshot to the bounded per-scope/package operation
+history before removing recovery authority. Exact replay deduplicates
+`(operationId, planDigest)`, so the history survives process exit and package
+removal without becoming a second lifecycle or recovery state machine.
+
+Before enablement admission, a digest-bound Host observation index selects the
+newest exact reviewed enable/disable request for a public PlanScope/package by
+`(plannedAtMs, requestId)`. The index retains the managed scope only to resolve
+the immutable private request and cannot authorize apply or recovery. The
+standalone diagnostic reconstructs a transient expected lifecycle schedule from
+the installed receipt/manifest, projects `planned` or exact `cancelled`
+evidence, and yields to active or completed Use-owned state.
+
 ## Lifecycle coordination
 
 Package storage, Grants, Runtime, Gateway, Flow, Knowledge, static projection,
@@ -273,7 +297,9 @@ durable parent saga with idempotent typed checkpoints.
 
 ```text
 verify plan and candidate lock
+→ retain exact non-authoritative download attempt
 → download changed packages
+→ retain reviewed pending graph and remove the download attempt
 → commit immutable generations as installed-disabled
 → persist candidate Grants
 → prepare packages dependency-forward
@@ -288,7 +314,9 @@ No capability becomes visible until every required candidate is prepared.
 ```text
 verify prior lock + candidate lock
 → classify Add / Replace / Remove / Retain
+→ retain exact non-authoritative download attempt
 → download and prepare only Add/Replace nodes
+→ retain reviewed pending graph and remove the download attempt
 → atomically publish candidate routes and remove obsolete routes
 → mark prior generations hidden only after route absence is proven
 → drain calls admitted by the prior snapshot
@@ -411,7 +439,8 @@ Use owns separate roots for:
 
 - immutable package generations;
 - selected and retained receipts;
-- installed/pending package graphs;
+- pre-plan archive/planning-target attempts and installed/pending package graphs;
+- Host request bindings and their observation-only enablement index;
 - lifecycle intents and journals;
 - Registry snapshots and pending cutovers;
 - Workspace Grants and operations;

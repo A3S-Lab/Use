@@ -14,22 +14,46 @@ evidence, not a release claim.
 
 The current preview accepts one contract line only:
 
-| Contract                   | Current value                                     |
-| -------------------------- | ------------------------------------------------- |
-| Cognitive-package manifest | schema 3                                          |
-| Signed catalog             | `a3s.use.plugin-catalog.v3`                       |
-| Installed receipt          | schema 3                                          |
-| Operation plan             | `a3s.use.plugin-operation-plan.v4`                |
-| Host capabilities          | `a3s.use.plugin-host-capabilities.v4`, protocol 4 |
-| Manager MCP tools          | `a3s.use.plugin-manager-tools.v4`                 |
-| Pending package graph      | `a3s.use.pending-package-graph-operation.v2`      |
-| Enablement state/operation | v2                                                |
-| OKF content                | v0.2 only                                         |
+| Contract                       | Current value                                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| Cognitive-package manifest     | schema 3                                                                                 |
+| Signed catalog                 | `a3s.use.plugin-catalog.v3`                                                              |
+| Installed receipt              | schema 4                                                                                 |
+| Operation plan                 | `a3s.use.plugin-operation-plan.v4`                                                       |
+| Host capabilities              | `a3s.use.plugin-host-capabilities.v6`, protocol 6                                        |
+| Host managed scope             | `a3s.use.plugin-managed-scope.v2`                                                        |
+| Host operation observation     | `a3s.use.plugin-host-operation-observation-request/result.v1`                            |
+| Host operation watch           | `a3s.use.plugin-host-operation-watch-request.v1`                                         |
+| Host cancellation              | `a3s.use.plugin-host-cancel-request/result.v1`                                           |
+| Manager MCP tools              | `a3s.use.plugin-manager-tools.v4`                                                        |
+| Pending package graph          | `a3s.use.pending-package-graph-operation.v4`                                             |
+| Pre-lock resolution attempt    | `a3s.use.plugin-resolution-attempt.v1`                                                   |
+| Pre-plan download attempt      | `a3s.use.plugin-download-attempt.v1`                                                     |
+| Operation diagnostic           | `a3s.use.plugin-operation-diagnostic.v1`                                                 |
+| Operation history              | `a3s.use.plugin-operation-history.v1` / `a3s.use.plugin-operation-history-diagnostic.v1` |
+| Pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1`                                        |
+| Pre-plan download diagnostic   | `a3s.use.plugin-download-attempt-diagnostic.v1`                                          |
+| Enablement state/operation     | v2                                                                                       |
+| Coordinated state backup       | `a3s.use.state-backup.v1`                                                                |
+| Coordinated state restore plan | `a3s.use.state-restore-plan.v1`                                                          |
+| Coordinated restore operation  | `a3s.use.state-restore-operation.v1`                                                     |
+| Coordinated restore result     | `a3s.use.state-restore-result.v1`                                                        |
+| Coordinated restore diagnostic | `a3s.use.state-restore-diagnostic.v1`                                                    |
+| OKF content                    | v0.2 only                                                                                |
 
 Before the first supported release, superseded preview schemas, APIs,
 receipts, and disk state are deleted rather than maintained. Unsupported state
 fails closed with cleanup and reinstall guidance. SemVer, `requires_use`,
 host target, and provider capability checks remain mandatory correctness rules.
+
+Host protocol v6 binds an explicit User or Workspace scope kind and derives
+operation phases and bounded checkpoint counts only from durable Host, graph,
+enablement, and lifecycle evidence. Equal textual IDs in different kinds have
+different fences and replay stores. A status revision binds the complete
+projection, watch long-polls that revision for at most 30 seconds, and
+explicit-user cancellation is accepted only before durable admission.
+Multi-package progress never attributes a `currentSurface` to the wrong
+package, and only a durable Host outcome reports `Completed`.
 
 ## Implemented baseline
 
@@ -46,12 +70,30 @@ host target, and provider capability checks remain mandatory correctness rules.
   current-state evidence.
 - Lifecycle journals provide exact crash replay, cutover-aware publication,
   exact-generation drain, and fail-closed corruption handling.
+- `extension inspect --json` projects bounded lifecycle history, while
+  `extension diagnose --json` reads one retained planned/admitted/cancelled
+  install/upgrade/uninstall graph, active admitted enable/disable operation, or
+  newest Host-reviewed pre-admission enable/disable plan/cancellation without
+  network access or writes and correlates its reviewed plan, Registry/TUF,
+  provider, Grant, cutover, drain, rollback, and recovery evidence.
+- Retained graphs and pre-plan attempts expose independent expected/retained
+  archive and signed executable-planning-target bytes plus exact
+  `missing`/`partial`/`complete` state. Real killed-process tests prove partial
+  observation, exact Range resume, and gap-free handoff to the reviewed graph.
+- Pre-lock resolution attempts expose refreshed/cached per-Registry TUF
+  progress, path-free source/trust digests, bounded failures, and terminal lock
+  evidence across process exit before handing off durably to download state.
+- `extension diagnose --history --json` retains the newest 16 validated
+  completed or rolled-back operations and cancelled graph plans within 8 MiB per scope/package,
+  survives uninstall, and deduplicates exact crash replay.
 - Standalone composition exists for Tool Task, stdio MCP, Skill/UI projection,
   SQLite/FTS5 OKF, and injected `a3s-flow` Native TypeScript preflight.
 - The standalone Knowledge backend enforces whole-scope expanded-byte and
   projection quotas, per-surface generation limits, global tombstone pruning,
   SQLite/WAL compaction, exact-scope usage diagnostics, SQLite/receipt/FTS
-  audit, non-overwriting verified database backup, and derived-index repair.
+  audit, non-overwriting verified database backup, canonical exact-plan
+  oldest-first backup rotation, derived-index repair, and authority-bound
+  database restore.
 - GitHub Pages and bilingual product documentation exist, but they describe a
   development preview only.
 
@@ -95,8 +137,37 @@ host target, and provider capability checks remain mandatory correctness rules.
   state trust boundaries reject Windows reparse points before traversal.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
+- Real-process tests now cover resumable target-download interruption and
+  termination during verified archive extraction. Both withhold all package
+  publication; extraction recovery completes from the revalidated cache with
+  explicit offline mode and no network request.
+- A real-process package-copy interruption also proves the durable pending plan
+  and applying journal replay the same generation, reclaim the physical
+  lifecycle staging residue, and publish only once without network access.
+- A real-process uninstall interruption during partial package-directory
+  removal now proves restart finishes cleanup from the exact lifecycle identity
+  without republishing or advancing the Registry generation again.
+- A real-process nine-node install is now killed after its complete Registry
+  graph and durable cutover are visible but before one dependency journal and
+  the parent graph record complete. Explicit offline replay makes no network
+  request, completes the exact graph, and does not advance the generation again.
+- Externally killed managed-host processes now cover five-node permission-
+  bearing install, upgrade, and uninstall at Registry publish/hide while the
+  Grant operation is still prepared. Recovery disables reauthorization, makes
+  no network request, preserves the exact candidate Grant, retires only the
+  bound prior Grant, and does not inflate the Registry generation.
+- Real Host protocol processes now cover all five reviewed mutations with the
+  Registry server offline. Install, upgrade, and uninstall are killed after
+  five-node graph publication/hide; disable is killed after root hide and Grant
+  cutover while accepted-call drain is blocked; enable is killed after
+  publication while its candidate Grant remains prepared. Restart consumes the
+  durable reviewed plan and confirmation, uses only the verified planning cache
+  for install/upgrade, completes drain and lifecycle/Grant journals, converges
+  the exact candidate/prior Grant or enablement regrant/revocation, and persists
+  replayable terminal Host outcomes without generation inflation.
 - Cover interrupted download, archive extraction, cutover, drain, process
-  crash, reboot, antivirus contention, and reparse-point replacement races.
+  crash, product-host Grant cutover, reboot, antivirus contention, and
+  reparse-point replacement races.
 
 ### 5. Supply chain and operations — in progress
 
@@ -112,15 +183,45 @@ host target, and provider capability checks remain mandatory correctness rules.
 - Both platform installers now require Cosign, verify the checksum manifest
   against the exact tag workflow identity before archive download, fail closed
   on invalid evidence, and retain the verified evidence with each version.
-- Every shipped native executable is rebuilt for all release targets on a
-  second cache-free clean runner and must byte-match the primary archive;
-  deterministic evidence is attested and published.
+- Pass byte-for-byte rebuilds for every shipped native executable on all
+  release targets. The `v0.3.2` attempt passed only macOS arm64; deterministic
+  native metadata controls are locally verified, but a fresh five-platform
+  clean-runner matrix must pass before evidence is attested and published.
 - Add an externally operated witness for the complete staged tree/final archive
   and retain verification evidence outside the Release asset trust boundary.
-- Exercise coordinated restore, binding/authority recovery, backup rotation,
-  whole-product storage policy, telemetry, security response, and support
-  runbooks. The implemented OKF scope audit/backup/FTS repair covers only the
-  standalone Knowledge database.
+- Exercise missing Registry/package/lifecycle/Grant authority recovery,
+  clean-machine recovery, cross-platform restore/retention drills, whole-product storage
+  policy, telemetry, security response, and support runbooks. OKF scope
+  audit/backup/FTS repair and authority-bound database plus exact-subset
+  missing-binding restore are implemented and crash-tested; conflicting or
+  newer binding evidence fails closed. Deterministic whole-installation
+  inventory backup now covers every allowlisted Use-owned family under one
+  exclusive fence, binds Registry/receipt authority, rejects nonterminal or
+  unsafe state, and verifies all payloads offline without extraction. Reviewed
+  same-version/OS/architecture whole-install restore is now implemented with an
+  exact path-free action plan, unchanged live Registry and Grant authority, an
+  external rollback archive, link/reparse-safe candidates, seven durable
+  phases, 15 process-exit recovery boundaries, terminal replay, and read-only
+  bounded status/history. The archive remains integrity evidence and cannot
+  recreate missing authority.
+  Whole-installation retention now fully verifies every managed archive under
+  one external-directory lock, returns a path-free oldest-first canonical plan,
+  requires exact digest confirmation, and preserves two recovery generations.
+  Exact-plan oldest-first scope backup rotation and path-free active/history/
+  capacity diagnostics are also available. Retained planned,
+  admitted, and cancelled install/upgrade/uninstall graphs and active admitted
+  enable/disable operations now have a bounded cross-product diagnostic.
+  Retained Registry-backed install/upgrade graphs and process-resilient
+  pre-plan attempts expose zero-network expected/retained archive bytes and
+  exact-target missing/partial/complete state. The same exact locks now expose
+  independent planning-target byte progress. The newest Host-reviewed
+  pre-admission enable/disable request is projected as `planned` or
+  `cancelled`; active/completed Use evidence takes precedence, and private Host
+  request/fence identity is excluded. Retired operations now have
+  bounded, zero-network, newest-first history with terminal outcome validation
+  and fail-closed corruption handling. Real Host/CLI tests prove the
+  pre-admission projection performs no network, authorization, admission, or
+  lifecycle side effect and suppresses stale evidence during Host finalization.
 
 ## Production-ready definition
 

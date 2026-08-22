@@ -22,16 +22,14 @@ use super::{
     PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
-pub const PLUGIN_MANAGED_SCOPE_SCHEMA: &str = "a3s.use.plugin-managed-scope.v1";
-pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V4: &str = "a3s.use.plugin-host-capabilities.v4";
-pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V5: &str = "a3s.use.plugin-host-capabilities.v5";
-pub const PLUGIN_HOST_PROTOCOL_LEVEL_V4: u32 = 4;
-pub const PLUGIN_HOST_PROTOCOL_LEVEL_V5: u32 = 5;
+pub const PLUGIN_MANAGED_SCOPE_SCHEMA_V2: &str = "a3s.use.plugin-managed-scope.v2";
+pub const PLUGIN_HOST_CAPABILITIES_SCHEMA_V6: &str = "a3s.use.plugin-host-capabilities.v6";
+pub const PLUGIN_HOST_PROTOCOL_LEVEL_V6: u32 = 6;
 
 const MANAGED_SCOPE_ERROR: &str = "use.plugin.managed_scope_invalid";
 const HOST_CAPABILITIES_ERROR: &str = "use.plugin.host_capabilities_invalid";
 
-/// Host-derived workspace identity and the exact exclusive mutation fence.
+/// Host-derived scope identity and the exact exclusive mutation fence.
 ///
 /// This value contains no workspace path or bearer credential. A manager must
 /// compare the complete value with its durable current fence before mutation.
@@ -40,6 +38,7 @@ const HOST_CAPABILITIES_ERROR: &str = "use.plugin.host_capabilities_invalid";
 pub struct PluginManagedScope {
     pub schema: String,
     pub host_id: String,
+    pub scope_kind: PlanScopeKind,
     pub scope_id: String,
     pub authority_id: String,
     pub fence_generation: u64,
@@ -73,7 +72,7 @@ impl PluginManagedScope {
     }
 
     pub fn validate(&self) -> UseResult<()> {
-        if self.schema != PLUGIN_MANAGED_SCOPE_SCHEMA
+        if self.schema != PLUGIN_MANAGED_SCOPE_SCHEMA_V2
             || !valid_opaque_id(&self.host_id)
             || !valid_opaque_id(&self.scope_id)
             || !valid_opaque_id(&self.authority_id)
@@ -98,7 +97,7 @@ impl PluginManagedScope {
 
     pub fn plan_scope(&self) -> PlanScope {
         PlanScope {
-            kind: PlanScopeKind::Workspace,
+            kind: self.scope_kind,
             id: self.scope_id.clone(),
         }
     }
@@ -121,46 +120,18 @@ impl PluginManagedScope {
 }
 
 impl PluginHostCapabilities {
-    pub fn v4(
+    pub fn v6(
         host_id: impl Into<String>,
         manager_version: impl Into<String>,
         manager_build_id: impl Into<String>,
     ) -> UseResult<Self> {
         let capabilities = Self {
-            schema: PLUGIN_HOST_CAPABILITIES_SCHEMA_V4.to_owned(),
-            protocol_level: PLUGIN_HOST_PROTOCOL_LEVEL_V4,
+            schema: PLUGIN_HOST_CAPABILITIES_SCHEMA_V6.to_owned(),
+            protocol_level: PLUGIN_HOST_PROTOCOL_LEVEL_V6,
             host_id: host_id.into(),
             manager_version: manager_version.into(),
             manager_build_id: manager_build_id.into(),
             contract_schemas: current_contract_schemas(),
-            catalog_schemas: vec![PLUGIN_CATALOG_SCHEMA_V3.to_owned()],
-            plan_schemas: vec![PLUGIN_OPERATION_PLAN_SCHEMA_V4.to_owned()],
-            surface_kinds: vec![
-                PluginSurfaceKind::Flow,
-                PluginSurfaceKind::Mcp,
-                PluginSurfaceKind::Okf,
-                PluginSurfaceKind::Skill,
-                PluginSurfaceKind::Tool,
-                PluginSurfaceKind::Ui,
-            ],
-            exclusive_managed_scope_mutation: true,
-        };
-        capabilities.validate()?;
-        Ok(capabilities)
-    }
-
-    pub fn v5(
-        host_id: impl Into<String>,
-        manager_version: impl Into<String>,
-        manager_build_id: impl Into<String>,
-    ) -> UseResult<Self> {
-        let capabilities = Self {
-            schema: PLUGIN_HOST_CAPABILITIES_SCHEMA_V5.to_owned(),
-            protocol_level: PLUGIN_HOST_PROTOCOL_LEVEL_V5,
-            host_id: host_id.into(),
-            manager_version: manager_version.into(),
-            manager_build_id: manager_build_id.into(),
-            contract_schemas: current_contract_schemas_v5(),
             catalog_schemas: vec![PLUGIN_CATALOG_SCHEMA_V3.to_owned()],
             plan_schemas: vec![PLUGIN_OPERATION_PLAN_SCHEMA_V4.to_owned()],
             surface_kinds: vec![
@@ -200,22 +171,9 @@ impl PluginHostCapabilities {
         if !valid_opaque_id(&self.host_id)
             || !canonical_version
             || !valid_opaque_id(&self.manager_build_id)
-            || !matches!(
-                (self.schema.as_str(), self.protocol_level),
-                (
-                    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4,
-                    PLUGIN_HOST_PROTOCOL_LEVEL_V4
-                ) | (
-                    PLUGIN_HOST_CAPABILITIES_SCHEMA_V5,
-                    PLUGIN_HOST_PROTOCOL_LEVEL_V5
-                )
-            )
-            || self.contract_schemas
-                != if self.protocol_level == PLUGIN_HOST_PROTOCOL_LEVEL_V5 {
-                    current_contract_schemas_v5()
-                } else {
-                    current_contract_schemas()
-                }
+            || self.schema != PLUGIN_HOST_CAPABILITIES_SCHEMA_V6
+            || self.protocol_level != PLUGIN_HOST_PROTOCOL_LEVEL_V6
+            || self.contract_schemas != current_contract_schemas()
             || self.catalog_schemas != [PLUGIN_CATALOG_SCHEMA_V3]
             || self.plan_schemas != [PLUGIN_OPERATION_PLAN_SCHEMA_V4]
             || self.surface_kinds != surface_kinds
@@ -307,24 +265,9 @@ fn current_contract_schemas() -> Vec<String> {
     vec![
         PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
         PLUGIN_HOST_APPLY_RESULT_SCHEMA.to_owned(),
-        PLUGIN_HOST_CAPABILITIES_SCHEMA_V4.to_owned(),
-        PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned(),
-        PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned(),
-        PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA.to_owned(),
-        PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA.to_owned(),
-        PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
-        PLUGIN_HOST_PLAN_RESULT_SCHEMA.to_owned(),
-        PLUGIN_MANAGED_SCOPE_SCHEMA.to_owned(),
-    ]
-}
-
-fn current_contract_schemas_v5() -> Vec<String> {
-    vec![
-        PLUGIN_HOST_APPLY_REQUEST_SCHEMA.to_owned(),
-        PLUGIN_HOST_APPLY_RESULT_SCHEMA.to_owned(),
         PLUGIN_HOST_CANCEL_REQUEST_SCHEMA.to_owned(),
         PLUGIN_HOST_CANCEL_RESULT_SCHEMA.to_owned(),
-        PLUGIN_HOST_CAPABILITIES_SCHEMA_V5.to_owned(),
+        PLUGIN_HOST_CAPABILITIES_SCHEMA_V6.to_owned(),
         PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA.to_owned(),
         PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned(),
         PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA.to_owned(),
@@ -334,7 +277,7 @@ fn current_contract_schemas_v5() -> Vec<String> {
         PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA.to_owned(),
         PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_owned(),
         PLUGIN_HOST_PLAN_RESULT_SCHEMA.to_owned(),
-        PLUGIN_MANAGED_SCOPE_SCHEMA.to_owned(),
+        PLUGIN_MANAGED_SCOPE_SCHEMA_V2.to_owned(),
     ]
 }
 
@@ -407,7 +350,7 @@ mod tests {
     #[test]
     fn current_host_protocol_accepts_only_the_current_operation_plan_schema() {
         let capabilities =
-            PluginHostCapabilities::v4("host:node-01", "0.3.0", "use:0.3.0:linux-x86_64").unwrap();
+            PluginHostCapabilities::v6("host:node-01", "0.3.0", "use:0.3.0:linux-x86_64").unwrap();
         verify_supported_plan_schema(&capabilities, PLUGIN_OPERATION_PLAN_SCHEMA_V4).unwrap();
         let error = verify_supported_plan_schema(&capabilities, "a3s.use.plugin-operation-plan.v3")
             .unwrap_err();

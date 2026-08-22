@@ -1,20 +1,20 @@
 use std::sync::Arc;
 
 use a3s_use_core::{
-    PlanPackageRole, PlanPolicyDecision, PluginDesiredState, PluginHostApplyRequest,
-    PluginHostApplyResult, PluginHostCancelRequest, PluginHostCancelResult,
-    PluginHostCancellationStatus, PluginHostCapabilities, PluginHostEnablementPlanRequest,
-    PluginHostEnablementPlanResult, PluginHostEnablementPlanStatus, PluginHostManager,
-    PluginHostObservationRequest, PluginHostObservationResult, PluginHostObservationStatus,
-    PluginHostOperationCancellability, PluginHostOperationObservationRequest,
-    PluginHostOperationObservationResult, PluginHostOperationPhase, PluginHostOperationProgress,
-    PluginHostOperationStatus, PluginHostOperationWatchRequest, PluginHostPackageState,
-    PluginHostPlanRequest, PluginHostPlanResult, PluginManagedScope, PluginObservedState,
-    PluginOperationAction, PluginOperationPlanEnvelope, PluginPackageLock, PluginSurfaceRef,
-    UseError, UseResult, VerifiedPluginCatalogRecord, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
-    PLUGIN_HOST_CANCEL_RESULT_SCHEMA, PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA,
-    PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA,
-    PLUGIN_HOST_PLAN_RESULT_SCHEMA,
+    PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision, PlannedPackageState,
+    PluginDesiredState, PluginHostApplyRequest, PluginHostApplyResult, PluginHostCancelRequest,
+    PluginHostCancelResult, PluginHostCancellationStatus, PluginHostCapabilities,
+    PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
+    PluginHostEnablementPlanStatus, PluginHostManager, PluginHostObservationRequest,
+    PluginHostObservationResult, PluginHostObservationStatus, PluginHostOperationCancellability,
+    PluginHostOperationObservationRequest, PluginHostOperationObservationResult,
+    PluginHostOperationPhase, PluginHostOperationProgress, PluginHostOperationStatus,
+    PluginHostOperationWatchRequest, PluginHostPackageState, PluginHostPlanRequest,
+    PluginHostPlanResult, PluginManagedScope, PluginObservedState, PluginOperationAction,
+    PluginOperationPlanEnvelope, PluginPackageLock, PluginSurfaceRef, UseError, UseResult,
+    VerifiedPluginCatalogRecord, PLUGIN_HOST_APPLY_RESULT_SCHEMA, PLUGIN_HOST_CANCEL_RESULT_SCHEMA,
+    PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA,
+    PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA,
 };
 use a3s_use_extension::{
     ExtensionRegistry, RegistrySourceStore, ResolvedRegistrySources, TrustedRegistry,
@@ -23,7 +23,9 @@ use async_trait::async_trait;
 use serde::Serialize;
 
 use crate::plugin_lifecycle::{
-    PluginLifecycleAction, PluginLifecycleJournalStore, PluginLifecycleOperationStatus,
+    PluginLifecycleAction, PluginLifecycleCheckpointDiagnosticStatus,
+    PluginLifecycleCheckpointKind, PluginLifecycleJournalStore, PluginLifecycleOperationDiagnostic,
+    PluginLifecycleOperationStatus,
 };
 
 use super::embedded::{acquire_capability_lease, inspect_catalog, resolve_lock, search_catalogs};
@@ -72,7 +74,7 @@ impl std::fmt::Debug for CognitivePackageHostManager {
 }
 
 impl CognitivePackageHostManager {
-    /// Compose one manager for an exact durable workspace fence.
+    /// Compose one manager for an exact durable User or Workspace fence.
     ///
     /// The embedding host supplies its lifecycle adapters and policy/provider
     /// authority. Registry source resolution is reused directly from the same
@@ -85,7 +87,7 @@ impl CognitivePackageHostManager {
         authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
     ) -> UseResult<Self> {
         current_scope.validate()?;
-        let capabilities = PluginHostCapabilities::v5(
+        let capabilities = PluginHostCapabilities::v6(
             current_scope.host_id.clone(),
             COGNITIVE_PACKAGE_HOST_VERSION,
             manager_build_id,
@@ -330,7 +332,7 @@ impl CognitivePackageHostManager {
                 let sources = self.resolve_sources(candidate).await?;
                 let result = match envelope.plan.action {
                     PluginOperationAction::Install => reviewed
-                        .install_remote_selected(
+                        .install_cached_selected(
                             sources.root(),
                             sources.dependencies(),
                             stored_request.package_id.as_str(),
@@ -342,7 +344,7 @@ impl CognitivePackageHostManager {
                         .await
                         .map(|result| (result.changed, result.plan)),
                     PluginOperationAction::Upgrade => reviewed
-                        .upgrade_remote_selected(
+                        .upgrade_cached_selected(
                             sources.root(),
                             sources.dependencies(),
                             stored_request.package_id.as_str(),
@@ -644,100 +646,42 @@ impl CognitivePackageHostManager {
         }
 
         let awaiting_confirmation = envelope.plan.authority.decision == PlanPolicyDecision::Ask;
-        let mut phase = if awaiting_confirmation {
+        let phase = if awaiting_confirmation {
             PluginHostOperationPhase::AwaitingConfirmation
         } else {
             PluginHostOperationPhase::Planned
         };
-        let mut cancellability = PluginHostOperationCancellability::Cancellable;
-        let mut progress = None;
-        if let StoredPluginHostPlan::Graph { result, .. } = &stored.plan {
-            let pending = self
-                .manager
-                .pending_store()
-                .get(result.plan.plan.action, result.package_id.as_str())
-                .await?;
-            if let Some(pending) = pending {
-                if pending.envelope != result.plan {
-                    return Err(host_error(
-                        "use.plugin.host_operation_observation_mismatch",
-                        "The Use-owned graph operation differs from the observed Host plan.",
-                    ));
+        let cancellability = PluginHostOperationCancellability::Cancellable;
+        let progress = None;
+        match &stored.plan {
+            StoredPluginHostPlan::Graph { result, .. } => {
+                let pending = self
+                    .manager
+                    .pending_store()
+                    .get(result.plan.plan.action, result.package_id.as_str())
+                    .await?;
+                let mut admitted = false;
+                if let Some(pending) = pending {
+                    if pending.envelope != result.plan {
+                        return Err(host_error(
+                            "use.plugin.host_operation_observation_mismatch",
+                            "The Use-owned graph operation differs from the observed Host plan.",
+                        ));
+                    }
+                    if pending.phase() == PackageGraphOperationPhase::Admitted {
+                        admitted = true;
+                    }
                 }
-                if pending.phase() == PackageGraphOperationPhase::Admitted {
-                    phase = PluginHostOperationPhase::Preparing;
-                    cancellability = PluginHostOperationCancellability::TooLate;
+                if let Some(status) = self.graph_operation_status(&result.plan, admitted).await? {
+                    return Ok(status);
                 }
             }
-            let diagnostic =
-                PluginLifecycleJournalStore::from_extension_paths(self.manager.registry.paths())
-                    .diagnose(&self.manager.scope, result.package_id.as_str())
-                    .await?;
-            if let Some(operation) = diagnostic.latest.filter(|operation| {
-                operation.operation_id == result.plan.plan.operation_id
-                    && operation.plan_digest == result.plan.plan_digest
-            }) {
-                cancellability = PluginHostOperationCancellability::TooLate;
-                let current_surface = operation
-                    .checkpoints
-                    .iter()
-                    .find(|checkpoint| {
-                        checkpoint.status
-                            == crate::plugin_lifecycle::PluginLifecycleCheckpointDiagnosticStatus::Pending
-                    })
-                    .and_then(|checkpoint| checkpoint.surface.clone());
-                progress = Some(PluginHostOperationProgress {
-                    completed_steps: operation.completed_checkpoints,
-                    total_steps: operation.total_checkpoints,
-                    current_surface,
-                });
-                phase = match operation.status {
-                    PluginLifecycleOperationStatus::Applying => {
-                        if operation
-                            .checkpoints
-                            .iter()
-                            .find(|checkpoint| {
-                                checkpoint.status
-                                    == crate::plugin_lifecycle::PluginLifecycleCheckpointDiagnosticStatus::Pending
-                            })
-                            .is_some_and(|checkpoint| {
-                                matches!(
-                                    checkpoint.kind,
-                                    crate::plugin_lifecycle::PluginLifecycleCheckpointKind::CapabilityPublished
-                                        | crate::plugin_lifecycle::PluginLifecycleCheckpointKind::CapabilityHidden
-                                )
-                            })
-                        {
-                            PluginHostOperationPhase::Publishing
-                        } else {
-                            PluginHostOperationPhase::Preparing
-                        }
-                    }
-                    PluginLifecycleOperationStatus::RollingBack => {
-                        PluginHostOperationPhase::Finalizing
-                    }
-                    PluginLifecycleOperationStatus::Completed => {
-                        PluginHostOperationPhase::Finalizing
-                    }
-                    PluginLifecycleOperationStatus::RolledBack => {
-                        PluginHostOperationPhase::Failed
-                    }
-                };
-                if phase == PluginHostOperationPhase::Failed {
-                    let error_code = operation
-                        .checkpoints
-                        .iter()
-                        .find_map(|checkpoint| checkpoint.error_code.clone())
-                        .or_else(|| Some("use.plugin.lifecycle_rolled_back".to_owned()));
-                    return Ok(PluginHostOperationStatus {
-                        phase,
-                        cancellability: PluginHostOperationCancellability::NotApplicable,
-                        progress,
-                        error_code,
-                        completed_at_ms: operation.completed_at_ms,
-                        operation_result_digest: None,
-                        state: None,
-                    });
+            StoredPluginHostPlan::Enablement { request, result } => {
+                if let Some(status) = self
+                    .enablement_operation_status(request, result, envelope)
+                    .await?
+                {
+                    return Ok(status);
                 }
             }
         }
@@ -751,6 +695,239 @@ impl CognitivePackageHostManager {
             operation_result_digest: None,
             state: None,
         })
+    }
+
+    async fn graph_operation_status(
+        &self,
+        envelope: &PluginOperationPlanEnvelope,
+        admitted: bool,
+    ) -> UseResult<Option<PluginHostOperationStatus>> {
+        let expected = expected_graph_lifecycle_units(envelope)?;
+        let journal =
+            PluginLifecycleJournalStore::from_extension_paths(self.manager.registry.paths());
+        let mut observed = std::iter::repeat_with(|| None)
+            .take(expected.len())
+            .collect::<Vec<Option<ObservedGraphLifecycleUnit>>>();
+        for package_id in expected
+            .iter()
+            .map(|unit| unit.package_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let diagnostic = journal.diagnose(&self.manager.scope, package_id).await?;
+            for operation in [diagnostic.latest, diagnostic.previous]
+                .into_iter()
+                .flatten()
+                .filter(|operation| operation.operation_id == envelope.plan.operation_id)
+            {
+                if operation.plan_digest != envelope.plan_digest {
+                    return Err(host_operation_observation_mismatch(
+                        "A graph lifecycle journal differs from the observed Host plan.",
+                    ));
+                }
+                let matching = expected
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, unit)| {
+                        unit.package_id == package_id && unit.action == operation.action
+                    })
+                    .map(|(index, _)| index)
+                    .collect::<Vec<_>>();
+                let [index] = matching.as_slice() else {
+                    return Err(host_operation_observation_mismatch(
+                        "A graph lifecycle journal does not match one reviewed package transition.",
+                    ));
+                };
+                let unit = &expected[*index];
+                if observed[*index].is_some()
+                    || operation.package_digest != unit.package_digest
+                    || operation.manifest_digest != unit.manifest_digest
+                    || operation.total_checkpoints != unit.total_steps
+                {
+                    return Err(host_operation_observation_mismatch(
+                        "A graph lifecycle journal duplicated or drifted from its reviewed package generation.",
+                    ));
+                }
+                let publication_completed = operation.checkpoints.iter().any(|checkpoint| {
+                    matches!(
+                        checkpoint.kind,
+                        PluginLifecycleCheckpointKind::CapabilityPublished
+                            | PluginLifecycleCheckpointKind::CapabilityHidden
+                    ) && checkpoint.status == PluginLifecycleCheckpointDiagnosticStatus::Applied
+                });
+                observed[*index] = Some(ObservedGraphLifecycleUnit {
+                    operation_status: operation.status,
+                    completed_steps: operation.completed_checkpoints,
+                    publication_completed,
+                    projected: lifecycle_operation_status(&operation),
+                });
+            }
+        }
+
+        if !admitted && observed.iter().all(Option::is_none) {
+            return Ok(None);
+        }
+        let total_steps = expected.iter().try_fold(0_u32, |total, unit| {
+            total.checked_add(unit.total_steps).ok_or_else(|| {
+                host_operation_observation_mismatch(
+                    "The graph lifecycle checkpoint total exceeds its protocol bound.",
+                )
+            })
+        })?;
+        let completed_steps = observed
+            .iter()
+            .flatten()
+            .try_fold(0_u32, |total, operation| {
+                total.checked_add(operation.completed_steps).ok_or_else(|| {
+                    host_operation_observation_mismatch(
+                        "The graph lifecycle progress exceeds its protocol bound.",
+                    )
+                })
+            })?;
+        let failed = observed
+            .iter()
+            .flatten()
+            .find(|unit| unit.projected.phase == PluginHostOperationPhase::Failed);
+        let rollback_active = observed.iter().flatten().any(|unit| {
+            matches!(
+                unit.operation_status,
+                PluginLifecycleOperationStatus::Applying
+                    | PluginLifecycleOperationStatus::RollingBack
+            )
+        });
+        if let Some(failed) = failed.filter(|_| !rollback_active) {
+            return Ok(Some(PluginHostOperationStatus {
+                phase: PluginHostOperationPhase::Failed,
+                cancellability: PluginHostOperationCancellability::NotApplicable,
+                progress: Some(PluginHostOperationProgress {
+                    completed_steps,
+                    total_steps,
+                    current_surface: None,
+                }),
+                error_code: failed.projected.error_code.clone(),
+                completed_at_ms: failed.projected.completed_at_ms,
+                operation_result_digest: None,
+                state: None,
+            }));
+        }
+        let publishing = observed
+            .iter()
+            .flatten()
+            .any(|unit| unit.projected.phase == PluginHostOperationPhase::Publishing);
+        let finalizing = observed.iter().flatten().any(|unit| {
+            matches!(
+                unit.projected.phase,
+                PluginHostOperationPhase::Finalizing | PluginHostOperationPhase::Failed
+            )
+        });
+        let publication_crossed = observed
+            .iter()
+            .flatten()
+            .any(|unit| unit.publication_completed);
+        let phase = if publishing {
+            PluginHostOperationPhase::Publishing
+        } else if publication_crossed || finalizing {
+            PluginHostOperationPhase::Finalizing
+        } else {
+            PluginHostOperationPhase::Preparing
+        };
+        let current_surface = if expected.len() == 1 {
+            observed
+                .first()
+                .and_then(Option::as_ref)
+                .and_then(|unit| unit.projected.progress.as_ref())
+                .and_then(|progress| progress.current_surface.clone())
+        } else {
+            None
+        };
+        Ok(Some(PluginHostOperationStatus {
+            phase,
+            cancellability: PluginHostOperationCancellability::TooLate,
+            progress: Some(PluginHostOperationProgress {
+                completed_steps,
+                total_steps,
+                current_surface,
+            }),
+            error_code: None,
+            completed_at_ms: None,
+            operation_result_digest: None,
+            state: None,
+        }))
+    }
+
+    async fn enablement_operation_status(
+        &self,
+        request: &PluginHostEnablementPlanRequest,
+        result: &PluginHostEnablementPlanResult,
+        envelope: &PluginOperationPlanEnvelope,
+    ) -> UseResult<Option<PluginHostOperationStatus>> {
+        let cognitive_request = cognitive_enablement_request(request, envelope)?;
+        let store = self.manager.enablement_store();
+        let completed = store
+            .get_operation(&self.manager.scope, &cognitive_request.operation_id)
+            .await?;
+        if completed.as_ref().is_some_and(|operation| {
+            operation.request != cognitive_request || operation.envelope != *envelope
+        }) {
+            return Err(host_operation_observation_mismatch(
+                "Use-owned enablement completion evidence differs from the observed Host plan.",
+            ));
+        }
+
+        let state = store
+            .get_state(&self.manager.scope, &cognitive_request.package_id)
+            .await?;
+        let active = state.as_ref().and_then(|state| {
+            state
+                .active
+                .as_ref()
+                .filter(|active| active.request.operation_id == cognitive_request.operation_id)
+        });
+        if active.is_some_and(|active| {
+            active.request != cognitive_request || active.envelope != *envelope
+        }) {
+            return Err(host_operation_observation_mismatch(
+                "Use-owned enablement admission evidence differs from the observed Host plan.",
+            ));
+        }
+
+        let diagnostic =
+            PluginLifecycleJournalStore::from_extension_paths(self.manager.registry.paths())
+                .diagnose(&self.manager.scope, result.package_id.as_str())
+                .await?;
+        let lifecycle = exact_lifecycle_operation(
+            diagnostic.latest.as_ref(),
+            diagnostic.previous.as_ref(),
+            envelope,
+        )?;
+        if completed.is_none() && active.is_none() && lifecycle.is_none() {
+            return Ok(None);
+        }
+        if completed.is_some()
+            && lifecycle.is_some_and(|operation| {
+                operation.status != PluginLifecycleOperationStatus::Completed
+            })
+        {
+            return Err(host_operation_observation_mismatch(
+                "Completed enablement evidence disagrees with its lifecycle journal.",
+            ));
+        }
+        if let Some(lifecycle) = lifecycle {
+            return Ok(Some(lifecycle_operation_status(lifecycle)));
+        }
+
+        Ok(Some(PluginHostOperationStatus {
+            phase: if completed.is_some() {
+                PluginHostOperationPhase::Finalizing
+            } else {
+                PluginHostOperationPhase::Preparing
+            },
+            cancellability: PluginHostOperationCancellability::TooLate,
+            progress: None,
+            error_code: None,
+            completed_at_ms: None,
+            operation_result_digest: None,
+            state: None,
+        }))
     }
 
     async fn observe_operation_once(
@@ -1232,11 +1409,53 @@ impl PluginHostManager for CognitivePackageHostManager {
                     if self.has_durable_admission(&stored.plan).await? {
                         PluginHostCancellationStatus::TooLate
                     } else {
-                        PluginHostCancellationStatus::PendingSafePoint
+                        let cancellation = StoredPluginHostCancellation::new(
+                            &request.request_id,
+                            &request.operation_id,
+                            &request.plan_digest,
+                            now_ms()?,
+                        )?;
+                        self.store
+                            .put_cancellation(&request.scope, &cancellation)
+                            .await?;
+                        PluginHostCancellationStatus::Cancelled
                     }
                 }
             }
         };
+        if matches!(
+            status,
+            PluginHostCancellationStatus::Cancelled
+                | PluginHostCancellationStatus::AlreadyCancelled
+        ) {
+            if let StoredPluginHostPlan::Graph { result, .. } = &stored.plan {
+                let pending = self
+                    .manager
+                    .pending_store()
+                    .get(result.plan.plan.action, result.package_id.as_str())
+                    .await?
+                    .ok_or_else(|| {
+                        host_error(
+                            "use.plugin.host_operation_evidence_missing",
+                            "The cancelled graph plan has no Use-owned operation evidence.",
+                        )
+                    })?;
+                if pending.envelope != result.plan
+                    || pending.phase() != PackageGraphOperationPhase::Cancelled
+                {
+                    return Err(host_error(
+                        "use.plugin.host_cancellation_mismatch",
+                        "The retained graph cancellation differs from the exact Host plan.",
+                    ));
+                }
+                self.manager
+                    .retain_graph_operation_diagnostic(
+                        &pending,
+                        super::PluginRetainedOperationOutcome::Cancelled,
+                    )
+                    .await?;
+            }
+        }
         let result = PluginHostCancelResult {
             schema: PLUGIN_HOST_CANCEL_RESULT_SCHEMA.to_owned(),
             request_id: request.request_id.clone(),
@@ -1413,16 +1632,221 @@ fn validate_state_for_plan(
     Ok(())
 }
 
+#[derive(Debug)]
+struct ExpectedGraphLifecycleUnit {
+    package_id: String,
+    action: PluginLifecycleAction,
+    package_digest: String,
+    manifest_digest: String,
+    total_steps: u32,
+}
+
+#[derive(Debug)]
+struct ObservedGraphLifecycleUnit {
+    operation_status: PluginLifecycleOperationStatus,
+    completed_steps: u32,
+    publication_completed: bool,
+    projected: PluginHostOperationStatus,
+}
+
+fn expected_graph_lifecycle_units(
+    envelope: &PluginOperationPlanEnvelope,
+) -> UseResult<Vec<ExpectedGraphLifecycleUnit>> {
+    envelope.validate()?;
+    let mut candidates = Vec::new();
+    let mut retirements = Vec::new();
+    for transition in &envelope.plan.packages {
+        match (envelope.plan.action, transition.change) {
+            (PluginOperationAction::Install, PlanPackageChangeKind::Add)
+            | (PluginOperationAction::Upgrade, PlanPackageChangeKind::Add) => {
+                candidates.push(expected_graph_lifecycle_unit(
+                    &transition.package_id,
+                    PluginLifecycleAction::Install,
+                    transition.after.as_ref(),
+                )?);
+            }
+            (PluginOperationAction::Upgrade, PlanPackageChangeKind::Replace) => {
+                candidates.push(expected_graph_lifecycle_unit(
+                    &transition.package_id,
+                    PluginLifecycleAction::Upgrade,
+                    transition.after.as_ref(),
+                )?);
+                retirements.push(expected_graph_lifecycle_unit(
+                    &transition.package_id,
+                    PluginLifecycleAction::Uninstall,
+                    transition.before.as_ref(),
+                )?);
+            }
+            (PluginOperationAction::Upgrade, PlanPackageChangeKind::Remove)
+            | (PluginOperationAction::Uninstall, PlanPackageChangeKind::Remove) => {
+                retirements.push(expected_graph_lifecycle_unit(
+                    &transition.package_id,
+                    PluginLifecycleAction::Uninstall,
+                    transition.before.as_ref(),
+                )?);
+            }
+            (
+                PluginOperationAction::Install
+                | PluginOperationAction::Upgrade
+                | PluginOperationAction::Uninstall,
+                PlanPackageChangeKind::Retain,
+            ) => {}
+            _ => {
+                return Err(host_operation_observation_mismatch(
+                    "The observed graph plan contains an unsupported lifecycle transition.",
+                ))
+            }
+        }
+    }
+    candidates.extend(retirements);
+    if candidates.is_empty() {
+        return Err(host_operation_observation_mismatch(
+            "The observed graph plan has no changed lifecycle generation.",
+        ));
+    }
+    Ok(candidates)
+}
+
+fn expected_graph_lifecycle_unit(
+    package_id: &str,
+    action: PluginLifecycleAction,
+    state: Option<&PlannedPackageState>,
+) -> UseResult<ExpectedGraphLifecycleUnit> {
+    let state = state.ok_or_else(|| {
+        host_operation_observation_mismatch(
+            "A changed graph package omitted its reviewed lifecycle state.",
+        )
+    })?;
+    let surface_steps = u32::try_from(state.release.surfaces.len()).map_err(|_| {
+        host_operation_observation_mismatch(
+            "A graph package surface count exceeds its protocol bound.",
+        )
+    })?;
+    let fixed_steps = match action {
+        PluginLifecycleAction::Install | PluginLifecycleAction::Upgrade => 2_u32,
+        PluginLifecycleAction::Uninstall => 3_u32,
+        PluginLifecycleAction::Enable | PluginLifecycleAction::Disable => {
+            return Err(host_operation_observation_mismatch(
+                "A graph operation contains an enablement lifecycle unit.",
+            ))
+        }
+    };
+    let total_steps = surface_steps.checked_add(fixed_steps).ok_or_else(|| {
+        host_operation_observation_mismatch(
+            "A graph package checkpoint count exceeds its protocol bound.",
+        )
+    })?;
+    Ok(ExpectedGraphLifecycleUnit {
+        package_id: package_id.to_owned(),
+        action,
+        package_digest: state.release.package_sha256.clone(),
+        manifest_digest: state.release.manifest_sha256.clone(),
+        total_steps,
+    })
+}
+
+fn exact_lifecycle_operation<'a>(
+    latest: Option<&'a PluginLifecycleOperationDiagnostic>,
+    previous: Option<&'a PluginLifecycleOperationDiagnostic>,
+    envelope: &PluginOperationPlanEnvelope,
+) -> UseResult<Option<&'a PluginLifecycleOperationDiagnostic>> {
+    let expected_action = lifecycle_action(envelope.plan.action)?;
+    let mut matched = None;
+    for operation in [latest, previous].into_iter().flatten() {
+        if operation.operation_id != envelope.plan.operation_id {
+            continue;
+        }
+        if operation.plan_digest != envelope.plan_digest || operation.action != expected_action {
+            return Err(host_operation_observation_mismatch(
+                "The lifecycle journal operation differs from the observed Host plan.",
+            ));
+        }
+        if matched.replace(operation).is_some() {
+            return Err(host_operation_observation_mismatch(
+                "The lifecycle journal contains duplicate evidence for the observed Host operation.",
+            ));
+        }
+    }
+    Ok(matched)
+}
+
+fn lifecycle_operation_status(
+    operation: &PluginLifecycleOperationDiagnostic,
+) -> PluginHostOperationStatus {
+    let current_checkpoint = operation.checkpoints.iter().find(|checkpoint| {
+        matches!(
+            checkpoint.status,
+            PluginLifecycleCheckpointDiagnosticStatus::Pending
+                | PluginLifecycleCheckpointDiagnosticStatus::Failed
+        )
+    });
+    let progress = Some(PluginHostOperationProgress {
+        completed_steps: operation.completed_checkpoints,
+        total_steps: operation.total_checkpoints,
+        current_surface: current_checkpoint.and_then(|checkpoint| checkpoint.surface.clone()),
+    });
+    let publication_completed = operation.checkpoints.iter().any(|checkpoint| {
+        matches!(
+            checkpoint.kind,
+            PluginLifecycleCheckpointKind::CapabilityPublished
+                | PluginLifecycleCheckpointKind::CapabilityHidden
+        ) && checkpoint.status == PluginLifecycleCheckpointDiagnosticStatus::Applied
+    });
+    let phase = match operation.status {
+        PluginLifecycleOperationStatus::Applying => {
+            if current_checkpoint.is_some_and(|checkpoint| {
+                matches!(
+                    checkpoint.kind,
+                    PluginLifecycleCheckpointKind::CapabilityPublished
+                        | PluginLifecycleCheckpointKind::CapabilityHidden
+                )
+            }) {
+                PluginHostOperationPhase::Publishing
+            } else if publication_completed || current_checkpoint.is_none() {
+                PluginHostOperationPhase::Finalizing
+            } else {
+                PluginHostOperationPhase::Preparing
+            }
+        }
+        PluginLifecycleOperationStatus::RollingBack | PluginLifecycleOperationStatus::Completed => {
+            PluginHostOperationPhase::Finalizing
+        }
+        PluginLifecycleOperationStatus::RolledBack => PluginHostOperationPhase::Failed,
+    };
+    let failed = phase == PluginHostOperationPhase::Failed;
+    PluginHostOperationStatus {
+        phase,
+        cancellability: if failed {
+            PluginHostOperationCancellability::NotApplicable
+        } else {
+            PluginHostOperationCancellability::TooLate
+        },
+        progress,
+        error_code: failed.then(|| {
+            operation
+                .checkpoints
+                .iter()
+                .find_map(|checkpoint| checkpoint.error_code.clone())
+                .unwrap_or_else(|| "use.plugin.lifecycle_rolled_back".to_owned())
+        }),
+        completed_at_ms: failed.then_some(operation.completed_at_ms).flatten(),
+        operation_result_digest: None,
+        state: None,
+    }
+}
+
 fn lifecycle_action(action: PluginOperationAction) -> UseResult<PluginLifecycleAction> {
     match action {
         PluginOperationAction::Install => Ok(PluginLifecycleAction::Install),
         PluginOperationAction::Upgrade => Ok(PluginLifecycleAction::Upgrade),
         PluginOperationAction::Uninstall => Ok(PluginLifecycleAction::Uninstall),
-        PluginOperationAction::Enable | PluginOperationAction::Disable => Err(host_error(
-            "use.plugin.host_plan_action_unsupported",
-            "Enablement does not use package graph completion evidence.",
-        )),
+        PluginOperationAction::Enable => Ok(PluginLifecycleAction::Enable),
+        PluginOperationAction::Disable => Ok(PluginLifecycleAction::Disable),
     }
+}
+
+fn host_operation_observation_mismatch(message: impl Into<String>) -> UseError {
+    host_error("use.plugin.host_operation_observation_mismatch", message)
 }
 
 fn enablement_operation_id(request: &PluginHostEnablementPlanRequest) -> UseResult<String> {

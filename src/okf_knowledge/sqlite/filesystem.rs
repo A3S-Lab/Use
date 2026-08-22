@@ -7,17 +7,23 @@ use fs2::FileExt;
 use tokio::fs;
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum LockMode {
+pub(crate) enum LockMode {
     Shared,
     Exclusive,
 }
 
-pub(super) struct ScopeDatabaseGuard {
-    pub path: PathBuf,
+pub(crate) struct ScopeDatabaseGuard {
+    pub(super) path: PathBuf,
     _lock: StdFile,
 }
 
-pub(super) async fn prepare_scope_database(
+impl ScopeDatabaseGuard {
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+pub(crate) async fn prepare_scope_database(
     state_root: &Path,
     root: &Path,
     scope_directory: &Path,

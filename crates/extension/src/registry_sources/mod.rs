@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::{UseError, UseResult, VerifiedCatalogProvenance};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::remote::{normalize_registry_url, normalize_sha256};
-use crate::{ExtensionPaths, RegistryNetworkPolicy, TrustedRegistry, VerifiedTargetCachePolicy};
+use crate::{
+    ExtensionPaths, RegistryNetworkPolicy, TrustedRegistry, VerifiedTargetCachePolicy,
+    VerifiedTargetObservation,
+};
 
 mod acl;
 mod io;
@@ -126,6 +128,31 @@ impl RegistrySourceStore {
 
     pub async fn snapshot(&self) -> UseResult<RegistrySourceSnapshot> {
         Ok(io::load(&self.paths).await?.snapshot())
+    }
+
+    /// Observe one exact target in the immutable datastore selected by retained
+    /// catalog provenance, even if the current source configuration was later
+    /// replaced or disabled. This performs no network request or state write.
+    pub async fn observe_retained_target(
+        &self,
+        provenance: &VerifiedCatalogProvenance,
+        expected_length: u64,
+        expected_sha256: &str,
+    ) -> UseResult<VerifiedTargetObservation> {
+        provenance.validate()?;
+        let registry_url = normalize_registry_url(&provenance.registry_url)?.to_string();
+        let root_sha256 = normalize_sha256(&provenance.root_sha256, "registry trust root")?;
+        let identity = source_identity(&provenance.registry_name, &registry_url, &root_sha256);
+        let datastore = self
+            .paths
+            .registry_source_datastore(&provenance.registry_name, &identity)?;
+        crate::remote::observe_verified_target_cache_entry(
+            &datastore,
+            &provenance.registry_name,
+            expected_length,
+            expected_sha256,
+        )
+        .await
     }
 
     pub async fn add(&self, input: RegistrySourceInput) -> UseResult<RegistrySourceMutation> {
@@ -449,13 +476,7 @@ impl RegistrySource {
 }
 
 fn source_identity(name: &str, registry_url: &str, root_sha256: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"a3s.use.registry-source.v1\0");
-    for value in [name, registry_url, root_sha256] {
-        hasher.update((value.len() as u64).to_be_bytes());
-        hasher.update(value.as_bytes());
-    }
-    format!("{:x}", hasher.finalize())
+    crate::remote::registry_source_identity(name, registry_url, root_sha256)
 }
 
 fn mutation(

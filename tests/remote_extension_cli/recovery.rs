@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn schema_v3_install_reclaims_abandoned_package_commit_staging() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let package = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
+    let repository = TestRepository::with_targets(vec![package], 83, FUTURE);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+    let package_parent = home.join("data/extensions/acme/root");
+    let abandoned = package_parent.join(".lifecycle-staging-interrupted");
+    std::fs::create_dir_all(abandoned.join("nested")).unwrap();
+    std::fs::write(abandoned.join("nested/partial"), b"partial package copy").unwrap();
+
+    let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
+
+    assert!(installed.status.success(), "{installed:?}");
+    assert!(!abandoned.exists());
+    assert!(home.join("state/extensions/acme/root.json").is_file());
+    assert!(std::fs::read_dir(&package_parent).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".lifecycle-staging-")
+    }));
+}
+
+#[test]
 fn schema_v3_uninstall_rejects_recovery_when_exact_graph_evidence_was_deleted() {
     let temp = tempfile::tempdir().unwrap();
     let target = host_target();
@@ -387,6 +414,38 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
             "restarted uninstall crossed the drain boundary early: status={process_status:?}, pending={pending_during_drain}, retained={retained_during_drain}, generation={generation_during_drain:?}"
         );
     }
+
+    let diagnostic = Command::new(binary())
+        .args(["extension", "diagnose", "acme/root", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(diagnostic.status.success(), "{diagnostic:?}");
+    let diagnostic = json(&diagnostic);
+    let diagnostic = &diagnostic["data"]["diagnostic"];
+    assert_eq!(diagnostic["operation"]["phase"], "admitted");
+    assert_eq!(diagnostic["operation"]["action"], "uninstall");
+    assert_eq!(diagnostic["operation"]["planDrainRequired"], false);
+    assert_eq!(
+        diagnostic["operation"]["lifecycle"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        diagnostic["operation"]["lifecycle"][0]["publication"],
+        "hidden"
+    );
+    assert_eq!(diagnostic["operation"]["lifecycle"][0]["drain"], "pending");
+    assert_eq!(
+        diagnostic["operation"]["lifecycle"][0]["currentCheckpoint"]["kind"],
+        "calls-drained"
+    );
+    assert_eq!(
+        diagnostic["registry"]["operationCutover"]["status"],
+        "recorded"
+    );
     FileExt::unlock(&route_lock).unwrap();
     drop(route_lock);
 

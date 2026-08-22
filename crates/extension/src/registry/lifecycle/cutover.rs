@@ -176,7 +176,7 @@ impl ExtensionRegistry {
     /// generation and capability digest.
     pub async fn complete_lifecycle_cutover(&self, idempotency_key: &str) -> UseResult<()> {
         canonical_sha256(idempotency_key.to_string(), "cutover idempotency key")?;
-        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let path = self.paths.registry_snapshot_path();
         let mut snapshot = read_registry_snapshot(&path).await?;
         let before = snapshot.pending_cutovers.len();

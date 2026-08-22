@@ -183,6 +183,23 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         .await
         .unwrap()
         .is_some());
+    let history = restarted_again
+        .diagnose_operation_history("acme/root")
+        .await
+        .unwrap();
+    assert_eq!(history.retained_operation_count, 3);
+    assert_eq!(
+        history.operations[0].diagnostic.operation.action,
+        PluginOperationAction::Enable
+    );
+    assert_eq!(
+        history.operations[1].diagnostic.operation.action,
+        PluginOperationAction::Disable
+    );
+    assert_eq!(
+        history.operations[2].diagnostic.operation.action,
+        PluginOperationAction::Install
+    );
     let enabled_generation = enabled.state.package_generation.unwrap();
     let no_change = CognitivePackageEnablementRequest::new(
         "enablement:enable:noop:0003",
@@ -219,6 +236,39 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         .unwrap();
     let reinstalled = restarted_again.observe_package("acme/root").await.unwrap();
     assert!(reinstalled.package_generation.unwrap() > state_generation_before_reinstall);
+    let history = restarted_again
+        .diagnose_operation_history("acme/root")
+        .await
+        .unwrap();
+    assert_eq!(history.retained_operation_count, 5);
+    assert_eq!(
+        history.operations[0].diagnostic.operation.action,
+        PluginOperationAction::Install
+    );
+    assert_eq!(
+        history.operations[1].diagnostic.operation.action,
+        PluginOperationAction::Uninstall
+    );
+    assert_eq!(
+        history.operations[2].diagnostic.operation.action,
+        PluginOperationAction::Enable
+    );
+    assert_eq!(
+        history.operations[3].diagnostic.operation.action,
+        PluginOperationAction::Disable
+    );
+    assert_eq!(
+        history.operations[4].diagnostic.operation.action,
+        PluginOperationAction::Install
+    );
+    assert_eq!(
+        history.operations[0].diagnostic.operation.operation_id,
+        history.operations[4].diagnostic.operation.operation_id
+    );
+    assert_ne!(
+        history.operations[0].diagnostic.operation.plan_digest,
+        history.operations[4].diagnostic.operation.plan_digest
+    );
 }
 
 #[tokio::test]
@@ -369,7 +419,10 @@ fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
             .join(format!("{package_id}.json"));
         let receipt: serde_json::Value =
             serde_json::from_slice(&std::fs::read(receipt_path).unwrap()).unwrap();
-        assert_eq!(receipt["schemaVersion"], 3);
+        assert_eq!(
+            receipt["schemaVersion"],
+            a3s_use_extension::EXTENSION_RECEIPT_SCHEMA_VERSION
+        );
         assert_eq!(receipt["enabled"], true);
         assert!(receipt["lifecycleGeneration"].as_u64().unwrap() > 0);
     }

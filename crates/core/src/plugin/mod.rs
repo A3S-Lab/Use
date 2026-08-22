@@ -49,8 +49,8 @@ pub use grant_resolution::{
 };
 pub use host::{
     PluginHostCapabilities, PluginHostManager, PluginManagedScope,
-    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_CAPABILITIES_SCHEMA_V5,
-    PLUGIN_HOST_PROTOCOL_LEVEL_V4, PLUGIN_HOST_PROTOCOL_LEVEL_V5, PLUGIN_MANAGED_SCOPE_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V6, PLUGIN_HOST_PROTOCOL_LEVEL_V6,
+    PLUGIN_MANAGED_SCOPE_SCHEMA_V2,
 };
 pub use host_cancellation::{
     PluginHostCancelRequest, PluginHostCancelResult, PluginHostCancellationStatus,

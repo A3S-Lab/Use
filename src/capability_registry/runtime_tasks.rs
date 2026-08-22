@@ -186,8 +186,15 @@ extension "acme/research" {
 
     fn installed_extension(package_root: &std::path::Path) -> InstalledExtension {
         let manifest = ExtensionManifest::parse_acl(TASK_PLUGIN).unwrap();
+        let mut selected_surfaces = manifest
+            .plugin_surfaces()
+            .unwrap()
+            .into_iter()
+            .map(|surface| surface.surface)
+            .collect::<Vec<_>>();
+        selected_surfaces.sort();
         let receipt = ExtensionReceipt {
-            schema_version: 3,
+            schema_version: 4,
             package_id: manifest.package_id.clone(),
             component_id: "use/acme/research".to_string(),
             route: manifest.route.clone(),
@@ -199,7 +206,7 @@ extension "acme/research" {
             registry: None,
             verified_catalog: None,
             planning_bundle: None,
-            selected_surfaces: Vec::new(),
+            selected_surfaces,
             installed_at_unix: 1,
             enabled: true,
             lifecycle_generation: Some(7),

@@ -5,10 +5,11 @@ use a3s_use_core::{
 };
 use a3s_use_extension::{
     download_selected_locked_cached_remote_packages, download_selected_locked_remote_packages,
-    resolve_cached_remote_package_lock, resolve_remote_package_lock, DownloadedRemotePackage,
-    TrustedRegistry,
+    resolve_cached_remote_package_lock_with_observer, resolve_remote_package_lock_with_observer,
+    DownloadedRemotePackage, PackageRegistryResolutionObserver, TrustedRegistry,
 };
 
+use super::resolution_attempt::PackageResolutionAccess;
 use super::{
     current_host_target, CognitivePackageInstallResult, CognitivePackageManager,
     CognitivePackageUpgradeResult,
@@ -18,6 +19,15 @@ use super::{
 pub(super) enum RegistryAccess {
     Refreshed,
     Cached,
+}
+
+impl RegistryAccess {
+    pub(super) const fn resolution_access(self) -> PackageResolutionAccess {
+        match self {
+            Self::Refreshed => PackageResolutionAccess::Refreshed,
+            Self::Cached => PackageResolutionAccess::Cached,
+        }
+    }
 }
 
 impl CognitivePackageManager {
@@ -99,6 +109,32 @@ impl CognitivePackageManager {
         .await
     }
 
+    /// Apply a managed-host install from only the exact Registry metadata and
+    /// targets already verified and cached during reviewed planning.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn install_cached_selected(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        selected_surfaces: &[PluginSurfaceRef],
+        expected_package_lock_digest: Option<&str>,
+    ) -> UseResult<CognitivePackageInstallResult> {
+        self.install_remote_with_access(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            RegistryAccess::Cached,
+            Some(selected_surfaces),
+        )
+        .await
+    }
+
     /// Resolve and atomically upgrade one installed cognitive-package graph.
     /// Candidate generations are prepared dependency-first, published once,
     /// and exact prior generations retire only after the snapshot cutover.
@@ -175,6 +211,32 @@ impl CognitivePackageManager {
         )
         .await
     }
+
+    /// Apply a managed-host upgrade from only the exact Registry metadata and
+    /// targets already verified and cached during reviewed planning.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upgrade_cached_selected(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        selected_surfaces: &[PluginSurfaceRef],
+        expected_package_lock_digest: Option<&str>,
+    ) -> UseResult<CognitivePackageUpgradeResult> {
+        self.upgrade_remote_with_access(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            RegistryAccess::Cached,
+            Some(selected_surfaces),
+        )
+        .await
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -185,28 +247,31 @@ pub(super) async fn resolve_package_lock(
     package_id: &str,
     requested_version: Option<&str>,
     channel: PluginReleaseChannel,
+    observer: &dyn PackageRegistryResolutionObserver,
 ) -> UseResult<PluginPackageLock> {
     let host = PluginPackageLockHost::new(current_host_target()?, env!("CARGO_PKG_VERSION"))?;
     match access {
         RegistryAccess::Refreshed => {
-            resolve_remote_package_lock(
+            resolve_remote_package_lock_with_observer(
                 root_registry,
                 dependency_registries,
                 package_id,
                 requested_version,
                 channel,
                 host,
+                observer,
             )
             .await
         }
         RegistryAccess::Cached => {
-            resolve_cached_remote_package_lock(
+            resolve_cached_remote_package_lock_with_observer(
                 root_registry,
                 dependency_registries,
                 package_id,
                 requested_version,
                 channel,
                 host,
+                observer,
             )
             .await
         }

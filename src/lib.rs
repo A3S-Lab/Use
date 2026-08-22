@@ -20,6 +20,10 @@ pub mod plugin_lifecycle;
 #[cfg(feature = "extensions")]
 pub mod plugin_runtime;
 #[cfg(feature = "extensions")]
+pub mod state_backup;
+#[cfg(feature = "extensions")]
+pub mod state_restore;
+#[cfg(feature = "extensions")]
 mod surface_reconciler;
 
 #[cfg(feature = "ocr")]

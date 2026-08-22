@@ -19,9 +19,9 @@ Search runs over verified, size-bounded catalog metadata without downloading pac
 
 ## Release artifact evidence
 
-Tagged preview releases deterministically serialize each staged platform tree and publish an SPDX JSON SBOM beside every archive. GitHub OIDC creates both build-provenance and SBOM attestations for the archive. `checksums.txt.sigstore.json` is a keyless Sigstore bundle for the checksum manifest, and the release job verifies the bundle against the exact tag workflow identity before publishing it. Every Action and the Rust, Python, Syft, and Cosign versions are pinned.
+Successful tagged preview releases deterministically serialize each staged platform tree and publish an SPDX JSON SBOM beside every archive. GitHub OIDC creates both build-provenance and SBOM attestations for the archive. `checksums.txt.sigstore.json` is a keyless Sigstore bundle for the checksum manifest, and the release job verifies the bundle against the exact tag workflow identity before publishing it. Every Action and the Rust, Python, Syft, and Cosign versions are pinned.
 
-The installers require Cosign and authenticate `checksums.txt` against the exact A3S Use tag workflow identity and GitHub OIDC issuer before downloading a platform archive. Invalid or missing evidence fails closed, and the verified manifest and bundle are retained with the installed version. For every target, a second clean runner without a compiled-artifact cache rebuilds every shipped native executable and must byte-match the primary archive; its deterministic `.reproducibility.json` record is attested, checksummed, and signed. The installer script remains a separate bootstrap trust boundary and should be reviewed or distributed through a trusted system package. An externally operated full-tree/final-archive witness and off-Release evidence retention remain release gates.
+The installers require Cosign and authenticate `checksums.txt` against the exact A3S Use tag workflow identity and GitHub OIDC issuer before downloading a platform archive. Invalid or missing evidence fails closed, and the verified manifest and bundle are retained with the installed version. For every target, a second clean runner without a compiled-artifact cache rebuilds every shipped native executable and must byte-match the primary archive; its deterministic `.reproducibility.json` record is attested, checksummed, and signed only after that match passes. The `v0.3.2` attempt failed this comparison on four targets and did not create a GitHub Release; deterministic native metadata controls are locally verified, but the fresh five-platform run remains open. The installer script remains a separate bootstrap trust boundary and should be reviewed or distributed through a trusted system package. An externally operated full-tree/final-archive witness and off-Release evidence retention remain release gates.
 
 ## Replaceable registry sources
 
@@ -73,6 +73,62 @@ Install, upgrade, and uninstall create an expiring canonical plan before mutatio
 Apply accepts the reviewed digest, resolves every input again, and rejects target, content, permission, provider, or ownership drift. User confirmation and each grant proposal bind to the same digest.
 
 For schema-v3 dependencies, the lock binds every selected version, dependency edge, archive/package/manifest digest, host target/version, Registry URL/trust root, and TUF role version. Apply revalidates the complete closure before downloading any archive. The same dependency in multiple enabled Registries is ambiguous and fails closed.
+
+## Operation diagnostics
+
+`a3s-use extension diagnose <publisher/name> --json` reads one exact retained
+planned/admitted/cancelled install, upgrade, or uninstall graph, one active
+admitted enable/disable operation, or the newest Host-reviewed pre-admission
+enable/disable plan or cancellation for the selected User or Workspace scope. It
+performs no Registry request, reconciliation, recovery, or write. The versioned
+projection correlates the reviewed plan and lock, path-free Registry/TUF
+evidence, current Registry generation and cutover, provider readiness, Grant
+journal phase, lifecycle publication/drain/rollback state, and stable recovery
+guidance.
+
+The projection is observation only, never apply or recovery authority. It is
+bounded to 2 MiB, rejects unknown fields and inconsistent evidence, and omits
+paths, Registry URLs, idempotency keys, credentials, tokens, secret names and
+values, package content, and arbitrary package-authored text. Invalid backing
+state fails closed with a path-free cleanup/reinstall instruction. Active Use
+enablement evidence takes precedence; otherwise an observation-only,
+digest-bound index selects the newest exact Host plan by
+`(plannedAtMs, requestId)` and emits `planned` or `cancelled`. The private index
+retains managed scope only for request lookup and never exposes Host ID,
+authority, fence, or Host request/cancellation identity. Completed Use or Host
+outcomes suppress stale plans. Retained Registry-backed install/upgrade graphs
+and durable pre-plan download attempts expose independent expected/retained
+archive and signed executable-planning-target bytes plus exact target
+`missing`/`partial`/`complete` state from historical provenance. The attempt is
+process-locked, survives exit, and is removed only after reviewed graph
+retention. Projection remains zero-network, read-only,
+target-cache-lock-independent, and path-free; targets and partials are never
+planning, apply, or recovery authority.
+
+Before metadata access and exact lock creation, a process-held package lock
+protects `a3s.use.plugin-resolution-attempt.v1`. It records refreshed/cached
+access plus path-free root/dependency Registry verification state,
+source-identity/trust-root digests, TUF role versions, bounded target counts and
+failure codes, and terminal lock evidence. The
+`a3s.use.plugin-resolution-attempt-diagnostic.v1` projection has phase
+`pre-lock`, survives resolution failure or process exit, performs no network
+request or write, and never waits for the package lock. Success writes the
+download attempt before removing the resolution evidence. Registry URLs,
+paths, raw transport errors, credentials, and metadata bytes are excluded.
+Real killed-process and Host/CLI tests prove planning-target partial
+observation and exact Range resume, zero-network/zero-admission planned and
+cancelled enablement diagnosis, no Host/fence/path leakage, and stale-plan
+suppression during the completed-Use/unfinished-Host-outcome window.
+
+`extension diagnose --history --json` exposes a separate bounded history
+contract for retired operations. It keeps the newest 16 occurrences within 8
+MiB per explicit scope/package and validates completed/rolled-back operations or
+cancelled graph plans against lifecycle, Grant, and Registry cutover evidence. Retention
+happens before recovery authority is removed; replay deduplicates the pair
+`(operationId, planDigest)` because an exact reinstall may legitimately reuse a
+lock-derived textual operation ID. The query is zero-network and read-only,
+survives uninstall, and rejects unknown, linked, inconsistent, or oversized
+state through a path-free error.
 
 ## Default authorization policy
 
@@ -128,7 +184,30 @@ A new generation stays invisible until every required dependency is usable. A fa
 
 An exact already-published dependency may be retained without recommit. Uninstall runs in reverse package order and refuses to remove a dependency while another installed package still requires it. Partial enabled-receipt writes stay invisible until the complete immutable snapshot is published.
 
-For OKF, the standalone SQLite/FTS5 host is implemented: missing Knowledge evidence is pending, staged is unpublished, and only an exact promoted observation is healthy. Search requires a complete scope and exact reviewed capability/session projections; citations bind package, surface, generation, index, concept path, and source digest. Managed A3S Code Workspace/session carriers and production retention/GC remain in development.
+For OKF, the standalone SQLite/FTS5 host is implemented: missing Knowledge evidence is pending, staged is unpublished, and only an exact promoted observation is healthy. Search requires a complete scope and exact reviewed capability/session projections; citations bind package, surface, generation, index, concept path, and source digest. Scope-bounded retention/GC, audit, verified backup with exact-plan oldest-first rotation, derived-index repair, and authority-bound database plus exact-subset missing-binding restore are implemented. Restore requires the exact reviewed plan, complete retained Registry/package/lifecycle/Grant authority, and a current binding set that is an exact subset of the backup; conflicts or newer binding evidence fail closed. Ordinary mutation remains blocked while its durable operation is active. A path-free diagnostic exposes only bounded active/history/capacity and reviewed binding-recovery evidence and never rotates or rewrites rollback files. Managed A3S Code leased-query qualification, missing independent-authority and clean-machine recovery, cross-platform operational drills, rollback-evidence retention policy, and whole-product recovery remain open.
+
+Whole-installation backup uses that same exclusive maintenance boundary. `state
+backup` inventories only known Use-owned families, excludes locks, binds the
+published Registry projection and installed receipt digests, copies each
+regular file with exact hashing, and requires an unchanged second inventory
+before publication. An active restore/cutover/operation, partial download,
+lifecycle staging tree, unknown family, non-portable name, link/reparse point,
+or special file fails closed. `state verify-backup` validates canonical
+manifest bytes, complete archive length, and every payload offline without
+extraction. Because the archive contains raw state, operators must protect it
+as sensitive data. `state backup-retention` fully verifies every managed
+archive under one external-directory lock, binds a path-free oldest-first
+canonical plan, requires its unchanged digest plus explicit confirmation, and
+preserves at least two verified recovery generations. Archive digests remain
+corruption evidence, not authentication or missing-authority recovery.
+`state plan-restore` requires the exact current version/platform plus unchanged
+live Registry, receipt, and Grant authority. Confirmed `state restore` captures
+an external rollback archive before its active marker or mutation, rejects
+candidate links/reparse points and durable-evidence substitution, and converges
+seven journal phases across 15 tested process-exit boundaries. Path-free
+`state restore-status` is read-only and completed history is bounded. Missing
+authority, cross-platform operational drills, and clean-machine recovery are
+still open.
 
 The cognitive-package platform is pre-1.0. Unknown receipt or database versions fail closed, and unpublished state is recreated rather than migrated or rewritten. This policy does not weaken package SemVer resolution, host-version requirements, target checks, or signed provenance verification.
 

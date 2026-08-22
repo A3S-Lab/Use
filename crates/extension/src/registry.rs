@@ -22,6 +22,7 @@ use super::package::{
 use super::registry_io::{read_registry_snapshot, write_registry_snapshot};
 use super::remote::ResolvedRemotePackage;
 use super::route_lock::{deadline_after, open_route_lock};
+use super::state_maintenance::StateMaintenanceLock;
 use super::{ExtensionManifest, ExtensionPaths};
 
 mod cutover;
@@ -36,7 +37,7 @@ pub use lifecycle::{
     ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
 };
 
-const RECEIPT_SCHEMA_VERSION_V3: u32 = 3;
+pub const EXTENSION_RECEIPT_SCHEMA_VERSION: u32 = 4;
 pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 1;
 const WATCH_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -49,7 +50,7 @@ pub enum ExtensionTrust {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionReceipt {
     pub schema_version: u32,
     pub package_id: String,
@@ -67,8 +68,6 @@ pub struct ExtensionReceipt {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planning_bundle: Option<PluginPlanningBundle>,
     /// Exact resolved surface set selected by the immutable lifecycle plan.
-    /// Empty retains the pre-selection behavior of legacy v3 receipts.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub selected_surfaces: Vec<PluginSurfaceRef>,
     pub installed_at_unix: u64,
     pub enabled: bool,
@@ -101,9 +100,6 @@ pub struct InstalledExtension {
 
 impl InstalledExtension {
     pub fn surfaces(&self) -> Vec<&'static str> {
-        if self.receipt.selected_surfaces.is_empty() {
-            return self.manifest.surface_kinds();
-        }
         let selected = self
             .receipt
             .selected_surfaces
@@ -123,21 +119,9 @@ impl InstalledExtension {
         .collect()
     }
 
-    /// Return the exact selected surface set. Legacy receipts project the
-    /// complete manifest inventory to preserve their original semantics.
+    /// Return the exact surface set selected by the reviewed lifecycle plan.
     pub fn selected_surfaces(&self) -> UseResult<Vec<PluginSurfaceRef>> {
-        let selected = if self.receipt.selected_surfaces.is_empty() {
-            let mut selected = self
-                .manifest
-                .plugin_surfaces()?
-                .into_iter()
-                .map(|surface| surface.surface)
-                .collect::<Vec<_>>();
-            selected.sort();
-            selected
-        } else {
-            self.receipt.selected_surfaces.clone()
-        };
+        let selected = self.receipt.selected_surfaces.clone();
         validate_surface_selection(
             &self.manifest,
             self.receipt.verified_catalog.as_ref(),
@@ -162,7 +146,7 @@ impl InstalledExtension {
                 "The installed extension does not retain verified package-planning evidence.",
             )
         })?;
-        if self.receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3
+        if self.receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION
             || self.receipt.trust != ExtensionTrust::RegistryTuf
         {
             return Err(plan_evidence_error(
@@ -354,6 +338,16 @@ impl ExtensionRegistry {
         &self.paths
     }
 
+    /// Read the last durably published capability projection without
+    /// reconciling receipts or writing Registry state.
+    ///
+    /// Operational diagnostics use this boundary so observation can never
+    /// become lifecycle recovery authority. Call [`Self::snapshot`] when the
+    /// caller explicitly wants ordinary crash reconciliation semantics.
+    pub async fn published_snapshot(&self) -> UseResult<ExtensionRegistrySnapshot> {
+        read_registry_snapshot(&self.paths.registry_snapshot_path()).await
+    }
+
     /// Return the immutable route projection currently visible to consumers.
     ///
     /// The published projection is compared with ownership-validated receipts
@@ -376,6 +370,17 @@ impl ExtensionRegistry {
             // the only coherent snapshot to return.
             Ok(_) | Err(_) => {}
         }
+        let _maintenance = match StateMaintenanceLock::new(self.paths.state_root())
+            .try_acquire_shared()
+            .await
+        {
+            Ok(Some(guard)) => guard,
+            Ok(None) => return Ok(published),
+            Err(error) if error.code == "use.state.maintenance_restore_active" => {
+                return Ok(published)
+            }
+            Err(error) => return Err(error),
+        };
         let _lock = match RegistryLock::acquire(&self.paths.registry_lock_path()) {
             Ok(lock) => lock,
             Err(error) if error.code == "use.extension.busy" => {
@@ -685,7 +690,7 @@ impl ExtensionRegistry {
                 ),
             )
         })?;
-        if receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3 {
+        if receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION {
             return Err(UseError::new(
                 "use.extension.receipt_incompatible",
                 format!(
@@ -795,20 +800,10 @@ impl ExtensionRegistry {
                 ),
             ));
         }
-        let mut selected_surfaces = if receipt.selected_surfaces.is_empty() {
-            manifest
-                .plugin_surfaces()?
-                .into_iter()
-                .map(|surface| surface.surface)
-                .collect::<Vec<_>>()
-        } else {
-            receipt.selected_surfaces.clone()
-        };
-        selected_surfaces.sort();
         validate_surface_selection(
             &manifest,
             receipt.verified_catalog.as_ref(),
-            &selected_surfaces,
+            &receipt.selected_surfaces,
         )?;
         if receipt.package_root
             != self
@@ -995,7 +990,7 @@ fn lifecycle_route_lock_path(
     paths: &ExtensionPaths,
     receipt: &ExtensionReceipt,
 ) -> UseResult<PathBuf> {
-    if receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3 {
+    if receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION {
         return Err(UseError::new(
             "use.extension.lifecycle_receipt_invalid",
             "An extension receipt has inconsistent route-lease generation evidence.",

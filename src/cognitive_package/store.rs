@@ -19,9 +19,7 @@ use super::grant::PackageGraphAuthorization;
 use super::package_manager_error;
 
 const INSTALLED_GRAPH_SCHEMA: &str = "a3s.use.installed-package-graph.v1";
-const PENDING_GRAPH_SCHEMA_V2: &str = "a3s.use.pending-package-graph-operation.v2";
-const PENDING_GRAPH_SCHEMA_V3: &str = "a3s.use.pending-package-graph-operation.v3";
-const PENDING_GRAPH_SCHEMA_V4: &str = "a3s.use.pending-package-graph-operation.v4";
+const PENDING_GRAPH_SCHEMA: &str = "a3s.use.pending-package-graph-operation.v4";
 const MAX_GRAPH_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,19 +59,18 @@ impl InstalledPackageGraph {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+/// One current v4 graph operation from reviewed planning through admission or
+/// pre-admission cancellation. Superseded preview records fail closed.
 pub(super) struct PendingPackageGraphOperation {
     pub schema: String,
     pub envelope: PluginOperationPlanEnvelope,
-    #[serde(default = "default_admitted_phase")]
     pub phase: PackageGraphOperationPhase,
-    #[serde(default, skip_serializing_if = "is_zero")]
     pub planned_at_ms: u64,
     pub admitted_at_ms: u64,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub cancelled_at_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancellation_request_id: Option<String>,
-    #[serde(default)]
     pub authorization: PackageGraphAuthorization,
     pub generations: BTreeMap<String, u64>,
     pub manifests: BTreeMap<String, ExtensionManifest>,
@@ -96,10 +93,6 @@ pub(super) enum PackageGraphOperationPhase {
     Cancelled,
 }
 
-const fn default_admitted_phase() -> PackageGraphOperationPhase {
-    PackageGraphOperationPhase::Admitted
-}
-
 const fn is_zero(value: &u64) -> bool {
     *value == 0
 }
@@ -113,7 +106,7 @@ impl PendingPackageGraphOperation {
     ) -> UseResult<Self> {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA_V4.to_string(),
+            schema: PENDING_GRAPH_SCHEMA.to_string(),
             envelope,
             phase: PackageGraphOperationPhase::Planned,
             planned_at_ms,
@@ -146,7 +139,7 @@ impl PendingPackageGraphOperation {
         let manifest_digests = manifest_record_digests(&manifests)?;
         let prior_manifest_digests = manifest_record_digests(&prior_manifests)?;
         let operation = Self {
-            schema: PENDING_GRAPH_SCHEMA_V4.to_string(),
+            schema: PENDING_GRAPH_SCHEMA.to_string(),
             envelope,
             phase: PackageGraphOperationPhase::Planned,
             planned_at_ms,
@@ -179,7 +172,7 @@ impl PendingPackageGraphOperation {
             ));
         }
         let mut admitted = self.clone();
-        admitted.schema = PENDING_GRAPH_SCHEMA_V4.to_string();
+        admitted.schema = PENDING_GRAPH_SCHEMA.to_string();
         admitted.phase = PackageGraphOperationPhase::Admitted;
         admitted.admitted_at_ms = admitted_at_ms;
         admitted.authorization = authorization;
@@ -199,7 +192,7 @@ impl PendingPackageGraphOperation {
             ));
         }
         let mut cancelled = self.clone();
-        cancelled.schema = PENDING_GRAPH_SCHEMA_V4.to_string();
+        cancelled.schema = PENDING_GRAPH_SCHEMA.to_string();
         cancelled.phase = PackageGraphOperationPhase::Cancelled;
         cancelled.cancelled_at_ms = cancelled_at_ms;
         cancelled.cancellation_request_id = Some(cancellation_request_id.to_owned());
@@ -209,33 +202,27 @@ impl PendingPackageGraphOperation {
 
     pub fn validate(&self) -> UseResult<()> {
         self.envelope.validate()?;
-        let legacy_admitted = self.schema == PENDING_GRAPH_SCHEMA_V2
-            && self.phase == PackageGraphOperationPhase::Admitted
-            && self.planned_at_ms == 0;
+        if self.schema != PENDING_GRAPH_SCHEMA {
+            return Err(store_error(
+                "A pending cognitive-package graph operation has an unsupported schema.",
+            ));
+        }
         let phase_valid = match self.phase {
             PackageGraphOperationPhase::Planned => {
-                matches!(
-                    self.schema.as_str(),
-                    PENDING_GRAPH_SCHEMA_V3 | PENDING_GRAPH_SCHEMA_V4
-                ) && self.planned_at_ms > 0
+                self.planned_at_ms > 0
                     && self.admitted_at_ms == 0
                     && self.cancelled_at_ms == 0
                     && self.cancellation_request_id.is_none()
                     && self.authorization == PackageGraphAuthorization::default()
             }
             PackageGraphOperationPhase::Admitted => {
-                legacy_admitted
-                    || (matches!(
-                        self.schema.as_str(),
-                        PENDING_GRAPH_SCHEMA_V3 | PENDING_GRAPH_SCHEMA_V4
-                    ) && self.planned_at_ms > 0
-                        && self.admitted_at_ms >= self.planned_at_ms
-                        && self.cancelled_at_ms == 0
-                        && self.cancellation_request_id.is_none())
+                self.planned_at_ms > 0
+                    && self.admitted_at_ms >= self.planned_at_ms
+                    && self.cancelled_at_ms == 0
+                    && self.cancellation_request_id.is_none()
             }
             PackageGraphOperationPhase::Cancelled => {
-                self.schema == PENDING_GRAPH_SCHEMA_V4
-                    && self.planned_at_ms > 0
+                self.planned_at_ms > 0
                     && self.admitted_at_ms == 0
                     && self.cancelled_at_ms >= self.planned_at_ms
                     && self
@@ -641,6 +628,7 @@ impl PendingPackageGraphStore {
         if !validate_existing_directory_chain(&self.state_root, parent).await? {
             return Ok(None);
         }
+        let _guard = acquire_lock(&self.state_root).await?;
         let value: Option<PendingPackageGraphOperation> = read_optional(&path).await?;
         if let Some(value) = &value {
             value.validate()?;
@@ -651,6 +639,57 @@ impl PendingPackageGraphStore {
             }
         }
         Ok(value)
+    }
+
+    /// Read the single pending graph operation owned by one root package.
+    ///
+    /// All action namespaces are inspected under the same graph-store lock so
+    /// diagnostics cannot combine records from different mutation instants.
+    pub async fn get_for_package(
+        &self,
+        root_package_id: &str,
+    ) -> UseResult<Option<PendingPackageGraphOperation>> {
+        PluginPackageId::parse(root_package_id.to_owned())
+            .map_err(|_| store_error("A pending graph diagnostic package identity is invalid."))?;
+        let actions = [
+            PluginOperationAction::Install,
+            PluginOperationAction::Upgrade,
+            PluginOperationAction::Uninstall,
+        ];
+        let mut has_namespace = false;
+        for action in actions {
+            let path = pending_record_path(&self.root, action, root_package_id)?;
+            let parent = path.parent().ok_or_else(path_identity_error)?;
+            has_namespace |= validate_existing_directory_chain(&self.state_root, parent).await?;
+        }
+        if !has_namespace {
+            return Ok(None);
+        }
+
+        let _guard = acquire_lock(&self.state_root).await?;
+        let mut found = None;
+        for action in actions {
+            let path = pending_record_path(&self.root, action, root_package_id)?;
+            let parent = path.parent().ok_or_else(path_identity_error)?;
+            if !validate_existing_directory_chain(&self.state_root, parent).await? {
+                continue;
+            }
+            let Some(value) = read_optional::<PendingPackageGraphOperation>(&path).await? else {
+                continue;
+            };
+            value.validate()?;
+            if value.action() != action || value.root_package_id() != root_package_id {
+                return Err(store_error(
+                    "A pending graph operation does not match its owned path.",
+                ));
+            }
+            if found.replace(value).is_some() {
+                return Err(store_error(
+                    "A cognitive package has more than one pending graph operation.",
+                ));
+            }
+        }
+        Ok(found)
     }
 
     pub async fn put(&self, value: &PendingPackageGraphOperation) -> UseResult<bool> {

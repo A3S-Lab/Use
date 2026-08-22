@@ -103,7 +103,7 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
     let registry =
         a3s_use_extension::ResolvedRemotePackage::from_verified_catalog(&verified).unwrap();
     let receipt = a3s_use_extension::ExtensionReceipt {
-        schema_version: 3,
+        schema_version: 4,
         package_id: manifest.package_id.clone(),
         component_id: "use/acme/guide".to_owned(),
         route: manifest.route.clone(),
@@ -115,7 +115,10 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
         registry: Some(registry),
         verified_catalog: Some(verified),
         planning_bundle: None,
-        selected_surfaces: Vec::new(),
+        selected_surfaces: vec![PluginSurfaceRef {
+            kind: PluginSurfaceKind::Skill,
+            id: "guide".to_owned(),
+        }],
         installed_at_unix: 7,
         enabled: true,
         lifecycle_generation: None,

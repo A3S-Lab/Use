@@ -5,6 +5,7 @@ mod lease;
 mod model;
 mod query;
 mod read;
+mod recovery;
 mod sqlite;
 mod store;
 
@@ -22,14 +23,28 @@ pub use read::{
     OkfKnowledgeReadRequest, OkfKnowledgeReadResponse, OKF_KNOWLEDGE_READ_REQUEST_SCHEMA,
     OKF_KNOWLEDGE_READ_RESPONSE_SCHEMA,
 };
+pub use recovery::{
+    OkfKnowledgeDatabaseEvidence, OkfKnowledgeFileEvidence, OkfKnowledgeRecoveryManager,
+    OkfKnowledgeRestoreDiagnostic, OkfKnowledgeRestoreOperationDiagnostic,
+    OkfKnowledgeRestoreOperationDiagnosticStatus, OkfKnowledgeRestorePlan,
+    OkfKnowledgeRestorePlanStatus, OkfKnowledgeRestoreResult,
+    OKF_KNOWLEDGE_RESTORE_DIAGNOSTIC_SCHEMA, OKF_KNOWLEDGE_RESTORE_OPERATION_SCHEMA,
+    OKF_KNOWLEDGE_RESTORE_PLAN_SCHEMA, OKF_KNOWLEDGE_RESTORE_RESULT_SCHEMA,
+};
+pub(crate) use sqlite::ScopeDatabaseGuard;
 pub use sqlite::{
-    OkfKnowledgeBackupManifest, OkfKnowledgeIntegrityReport, OkfKnowledgeSearchIndexRepair,
-    OkfKnowledgeStoragePolicy, OkfKnowledgeStorageUsage, SqliteOkfKnowledgeAdapter,
-    DEFAULT_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES, DEFAULT_OKF_KNOWLEDGE_SCOPE_PROJECTIONS,
-    DEFAULT_OKF_KNOWLEDGE_SCOPE_TOMBSTONES, MAX_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES,
-    MAX_OKF_KNOWLEDGE_SCOPE_PROJECTIONS, MAX_OKF_KNOWLEDGE_SCOPE_TOMBSTONES,
-    OKF_KNOWLEDGE_BACKUP_SCHEMA, OKF_KNOWLEDGE_INTEGRITY_REPORT_SCHEMA,
-    OKF_KNOWLEDGE_SEARCH_INDEX_REPAIR_SCHEMA,
+    OkfKnowledgeBackupManifest, OkfKnowledgeBackupRetentionEntry, OkfKnowledgeBackupRetentionPlan,
+    OkfKnowledgeBackupRetentionPolicy, OkfKnowledgeBackupRetentionResult,
+    OkfKnowledgeIntegrityReport, OkfKnowledgeSearchIndexRepair, OkfKnowledgeStoragePolicy,
+    OkfKnowledgeStorageUsage, SqliteOkfKnowledgeAdapter,
+    DEFAULT_OKF_KNOWLEDGE_BACKUP_RETENTION_MAX_BACKUPS,
+    DEFAULT_OKF_KNOWLEDGE_BACKUP_RETENTION_MAX_BYTES, DEFAULT_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES,
+    DEFAULT_OKF_KNOWLEDGE_SCOPE_PROJECTIONS, DEFAULT_OKF_KNOWLEDGE_SCOPE_TOMBSTONES,
+    MAX_OKF_KNOWLEDGE_BACKUP_RETENTION_BACKUPS, MAX_OKF_KNOWLEDGE_BACKUP_RETENTION_BYTES,
+    MAX_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES, MAX_OKF_KNOWLEDGE_SCOPE_PROJECTIONS,
+    MAX_OKF_KNOWLEDGE_SCOPE_TOMBSTONES, OKF_KNOWLEDGE_BACKUP_RETENTION_PLAN_SCHEMA,
+    OKF_KNOWLEDGE_BACKUP_RETENTION_RESULT_SCHEMA, OKF_KNOWLEDGE_BACKUP_SCHEMA,
+    OKF_KNOWLEDGE_INTEGRITY_REPORT_SCHEMA, OKF_KNOWLEDGE_SEARCH_INDEX_REPAIR_SCHEMA,
 };
 pub use store::{
     OkfKnowledgeBindingSnapshot, OkfKnowledgeBindingStore, MAX_OKF_KNOWLEDGE_GENERATIONS,

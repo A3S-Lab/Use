@@ -187,20 +187,69 @@ async fn pending_store_persists_exact_cancellation_before_host_projection() {
     assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
 }
 
-#[test]
-fn admitted_v2_package_graph_record_remains_restart_compatible() {
+#[tokio::test]
+async fn pending_store_rejects_superseded_v2_and_v3_records() {
     let lock = package_lock("1.0.0", '1');
     let admitted = install_pending(&lock);
-    let mut legacy = serde_json::to_value(&admitted).unwrap();
-    legacy["schema"] = serde_json::json!(PENDING_GRAPH_SCHEMA_V2);
-    legacy.as_object_mut().unwrap().remove("phase");
-    legacy.as_object_mut().unwrap().remove("plannedAtMs");
+    for schema in [
+        "a3s.use.pending-package-graph-operation.v2",
+        "a3s.use.pending-package-graph-operation.v3",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let state_root = temp.path().join("state");
+        let store = PendingPackageGraphStore::new(&state_root);
+        store.put(&admitted).await.unwrap();
+        let path = pending_record_path(
+            &state_root.join("operations").join("package-graphs"),
+            admitted.action(),
+            admitted.root_package_id(),
+        )
+        .unwrap();
+        let mut superseded = serde_json::to_value(&admitted).unwrap();
+        superseded["schema"] = serde_json::json!(schema);
+        if schema == "a3s.use.pending-package-graph-operation.v2" {
+            superseded.as_object_mut().unwrap().remove("phase");
+            superseded.as_object_mut().unwrap().remove("plannedAtMs");
+        }
+        fs::write(&path, serde_json::to_vec_pretty(&superseded).unwrap())
+            .await
+            .unwrap();
 
-    let decoded: PendingPackageGraphOperation = serde_json::from_value(legacy).unwrap();
-    decoded.validate().unwrap();
-    assert_eq!(decoded.phase(), PackageGraphOperationPhase::Admitted);
-    assert_eq!(decoded.planned_at_ms, 0);
-    assert_eq!(decoded.envelope, admitted.envelope);
+        let error = store
+            .get(admitted.action(), admitted.root_package_id())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
+    }
+}
+
+#[tokio::test]
+async fn pending_store_requires_every_current_v4_phase_field() {
+    let lock = package_lock("1.0.0", '1');
+    let admitted = install_pending(&lock);
+    for field in ["phase", "plannedAtMs", "authorization"] {
+        let temp = tempfile::tempdir().unwrap();
+        let state_root = temp.path().join("state");
+        let store = PendingPackageGraphStore::new(&state_root);
+        store.put(&admitted).await.unwrap();
+        let path = pending_record_path(
+            &state_root.join("operations").join("package-graphs"),
+            admitted.action(),
+            admitted.root_package_id(),
+        )
+        .unwrap();
+        let mut incomplete = serde_json::to_value(&admitted).unwrap();
+        incomplete.as_object_mut().unwrap().remove(field);
+        fs::write(&path, serde_json::to_vec_pretty(&incomplete).unwrap())
+            .await
+            .unwrap();
+
+        let error = store
+            .get(admitted.action(), admitted.root_package_id())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
+    }
 }
 
 #[test]

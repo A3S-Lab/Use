@@ -13,22 +13,44 @@ production-ready。合约完成和测试通过只是实现证据，不是发布�
 
 当前预览版只接受一条合约线：
 
-| 合约                       | 当前值                                            |
-| -------------------------- | ------------------------------------------------- |
-| 认知包 manifest            | schema 3                                          |
-| 签名 catalog               | `a3s.use.plugin-catalog.v3`                       |
-| installed receipt          | schema 3                                          |
-| operation plan             | `a3s.use.plugin-operation-plan.v4`                |
-| host capabilities          | `a3s.use.plugin-host-capabilities.v4`，protocol 4 |
-| manager MCP tools          | `a3s.use.plugin-manager-tools.v4`                 |
-| pending package graph      | `a3s.use.pending-package-graph-operation.v2`      |
-| enablement state/operation | v2                                                |
-| OKF 内容                   | 仅 v0.2                                           |
+| 合约                           | 当前值                                                                                   |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| 认知包 manifest                | schema 3                                                                                 |
+| 签名 catalog                   | `a3s.use.plugin-catalog.v3`                                                              |
+| installed receipt              | schema 4                                                                                 |
+| operation plan                 | `a3s.use.plugin-operation-plan.v4`                                                       |
+| host capabilities              | `a3s.use.plugin-host-capabilities.v6`，protocol 6                                        |
+| Host managed scope             | `a3s.use.plugin-managed-scope.v2`                                                        |
+| Host operation observation     | `a3s.use.plugin-host-operation-observation-request/result.v1`                            |
+| Host operation watch           | `a3s.use.plugin-host-operation-watch-request.v1`                                         |
+| Host cancellation              | `a3s.use.plugin-host-cancel-request/result.v1`                                           |
+| manager MCP tools              | `a3s.use.plugin-manager-tools.v4`                                                        |
+| pending package graph          | `a3s.use.pending-package-graph-operation.v4`                                             |
+| pre-lock resolution attempt    | `a3s.use.plugin-resolution-attempt.v1`                                                   |
+| pre-plan download attempt      | `a3s.use.plugin-download-attempt.v1`                                                     |
+| operation diagnostic           | `a3s.use.plugin-operation-diagnostic.v1`                                                 |
+| operation history              | `a3s.use.plugin-operation-history.v1` / `a3s.use.plugin-operation-history-diagnostic.v1` |
+| pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1`                                        |
+| pre-plan download diagnostic   | `a3s.use.plugin-download-attempt-diagnostic.v1`                                          |
+| enablement state/operation     | v2                                                                                       |
+| coordinated state backup       | `a3s.use.state-backup.v1`                                                                |
+| coordinated state restore plan | `a3s.use.state-restore-plan.v1`                                                          |
+| coordinated restore operation  | `a3s.use.state-restore-operation.v1`                                                     |
+| coordinated restore result     | `a3s.use.state-restore-result.v1`                                                        |
+| coordinated restore diagnostic | `a3s.use.state-restore-diagnostic.v1`                                                    |
+| OKF 内容                       | 仅 v0.2                                                                                  |
 
 首个受支持版本之前，过时的预览 schema、API、receipt 和磁盘状态会被删除，
 不会被当作兼容目标。遇到不支持的状态时 fail closed，并提示清理后重装。
 SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必须的
 正确性规则。
+
+Host protocol v6 显式绑定 User 或 Workspace scope kind，并只从持久化 Host、
+graph、enablement 与 lifecycle 证据推导 operation phase 和有界 checkpoint 数。
+不同 kind 下相同 textual ID 具有不同 fence 和 replay store。status revision
+绑定完整 projection，watch 最多长轮询 30 秒；显式用户 cancellation 只在
+durable admission 前接受。多包进度不会把 `currentSurface` 错归到某个包，只有
+durable Host outcome 才会报告 `Completed`。
 
 ## 已实现基线
 
@@ -43,8 +65,28 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
   scope、package transition、impact、Grant、provider 与当前状态证据。
 - Lifecycle journal 已提供精确崩溃重放、cutover-aware publication、精确
   generation 排空，以及 fail-closed corruption handling。
+- `extension inspect --json` 提供有界 lifecycle 历史；
+  `extension diagnose --json` 则在无网络访问和无写入的情况下读取一个保留的
+  planned/admitted/cancelled install/upgrade/uninstall 图、active admitted
+  enable/disable operation，或最新 Host-reviewed pre-admission enable/disable
+  plan/cancellation，并关联其 reviewed plan、Registry/TUF、provider、Grant、
+  cutover、drain、rollback 与 recovery 证据。
+- 保留图与 pre-plan attempt 会分别暴露 archive 和签名 executable-planning
+  target 的 expected/retained bytes 及精确 `missing`/`partial`/`complete` 状态。
+  真实进程终止测试证明 partial observation、精确 Range resume 和无空窗 graph
+  handoff。
+- pre-lock resolution attempt 会跨进程保留 refreshed/cached 的逐 Registry TUF
+  进度、无路径 source/trust digest、有界失败码与最终 lock 证据，并在删除前先把
+  后继 download state 写稳。
+- `extension diagnose --history --json` 会在每个 scope/package 的 8 MiB 上限内保留
+  最新 16 个已验证 completed/rolled-back operation 或 cancelled graph plan，在 uninstall 后仍可
+  查询，并对精确崩溃重放去重。
 - standalone 已组合 Tool Task、stdio MCP、Skill/UI projection、SQLite/FTS5
   OKF，以及注入式 `a3s-flow` Native TypeScript preflight。
+- standalone Knowledge 后端已实现 whole-scope quota、tombstone pruning、
+  SQLite/WAL compaction、integrity audit、non-overwriting verified backup、
+  canonical exact-plan oldest-first backup rotation、derived-index repair 与
+  authority-bound database restore。
 - GitHub Pages 和中英文产品文档已经存在，但只描述开发预览版。
 
 ## 剩余发布计划
@@ -82,8 +124,33 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
   Windows reparse point。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
-- 覆盖下载中断、归档提取、cutover、drain、进程崩溃、重启、杀毒软件争用
-  和 reparse-point replacement race。
+- 真实进程测试现已覆盖 target 下载断点续传，以及 verified archive 提取期间
+  的进程终止。两种场景都不会发布任何 package 状态；提取恢复会显式使用
+  offline 模式，从重新验证的缓存完成且不发出网络请求。
+- 真实进程 package copy 中断还证明，持久化 pending plan 与 applying journal
+  会重放同一 generation，回收实际 lifecycle staging 残留，并在无网络访问时
+  只发布一次。
+- 真实进程 uninstall 在 package directory 部分删除期间被终止时，重启会从
+  精确 lifecycle identity 完成清理，不会重新发布，也不会再次推进 Registry
+  generation。
+- 九节点真实进程 install 现会在完整 Registry 图和 durable cutover 已可见、
+  但一个依赖 journal 与父图记录尚未完成时被终止。显式 offline 重放不发出
+  网络请求，会完成精确图，并且不会再次推进 generation。
+- 外部终止的 managed-host 进程现已覆盖 Registry publish/hide 边界上的五节点
+  权限包 install、upgrade 与 uninstall，此时 Grant operation 仍为 prepared。
+  恢复会禁用重新授权、不发出网络请求、保留精确 candidate Grant、只退休绑定的
+  prior Grant，并且不会额外推进 Registry generation。
+- 真实 Host protocol 进程现已在 Registry server 下线时覆盖全部五种 reviewed
+  mutation。install、upgrade 与 uninstall 会在五节点 graph publish/hide 后被
+  终止；disable 会在 root hide 和 Grant cutover 已完成、accepted-call drain
+  仍被阻塞时终止；enable 会在 publication 已完成但 candidate Grant 仍为
+  prepared 时终止。重启消费持久化的 reviewed plan 与 confirmation，
+  install/upgrade 只使用 verified planning cache，完成 drain 与
+  lifecycle/Grant journal，收敛精确 candidate/prior Grant 或 enablement
+  regrant/revocation，并且不额外推进 generation，最后持久化可精确重放的
+  terminal Host outcome。
+- 覆盖下载中断、归档提取、cutover、drain、进程崩溃、真实产品宿主 Grant
+  cutover、重启、杀毒软件争用和 reparse-point replacement race。
 
 ### 5. 供应链与运维 — 进行中
 
@@ -97,11 +164,39 @@ SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必�
 - 两套平台 installer 均已要求 Cosign，在下载归档前按精确 tag workflow
   identity 验证 checksum manifest，证据无效时 fail closed，并随版本保留
   已验证的 manifest 与 bundle。
-- 全部随包原生可执行文件已在第二台无编译缓存的干净 runner 上为所有 release
-  target 重建，并必须逐字节匹配主归档；确定性证据会被 attestation 并发布。
+- 仍需让全部随包原生可执行文件在第二台无编译缓存的干净 runner 上为所有
+  release target 逐字节匹配主归档。`v0.3.2` 尝试只有 macOS arm64 通过；
+  确定性原生元数据控制已在本地验证，但新的五平台矩阵仍需全绿，才能发布
+  带 attestation 的证据。
 - 仍需增加外部运营的完整 staged tree/最终归档 witness，并把验证证据保留在
   Release asset 信任边界之外。
-- 演练存储配额/修复、备份、telemetry、安全响应与支持 runbook。
+- 继续演练缺失 Registry/package/lifecycle/Grant authority 恢复、clean-machine
+  恢复、跨平台 restore/retention 演练、whole-product storage
+  policy、telemetry、安全响应与支持 runbook。OKF scope audit/backup/FTS
+  repair、authority-bound database 与 exact-subset missing-binding restore
+  已实现并通过 crash test；冲突或更新的 binding evidence 会 fail closed。
+  确定性的 whole-installation inventory backup 现已在一个独占 fence 内覆盖所有
+  allowlisted Use-owned family，绑定 Registry/receipt authority，拒绝非终结或不安全
+  state，并能不经提取离线校验全部 payload。精确匹配 version/OS/architecture 的
+  reviewed whole-install restore 现已实现，包括无路径的精确 action plan、不变的 live
+  Registry 与 Grant authority、外部 rollback archive、拒绝 link/reparse point 的
+  candidate、七个 durable phase、15 个进程退出恢复边界、终态 replay，以及只读、
+  有界的 status/history。Archive 仍只是完整性证据，无法重建缺失 authority。
+  Whole-installation retention 现会在一个外部目录
+  锁下完整校验每个托管 archive，返回无路径、oldest-first 的 canonical plan，
+  要求精确 digest 确认，并保留两个 recovery generation。exact-plan oldest-first
+  scope backup rotation 与无路径 active/history/capacity diagnostic 也已可用。保留的
+  planned/admitted/cancelled install、upgrade、
+  uninstall 图与 active admitted enable/disable operation 现已有有界的
+  cross-product diagnostic；其中 Registry-backed install/upgrade 图与可跨进程保留
+  的 pre-plan attempt 可无网络报告 expected/retained archive bytes 与
+  exact-target missing/partial/complete 状态；相同精确 lock 也会独立报告
+  planning-target byte progress。最新 Host-reviewed pre-admission enable/disable
+  request 会投影为 `planned` 或 `cancelled`，active/completed Use 证据优先，且不
+  公开私有 Host request/fence identity。已结束 operation 现在也具有有界、无网络、
+  最新优先的历史，并会验证终结 outcome、对损坏状态 fail closed。真实 Host/CLI
+  测试证明 pre-admission 诊断不会联网、授权、admit 或写 lifecycle，并会在 Host
+  finalization 窗口抑制陈旧证据。
 
 ## Production-ready 定义
 

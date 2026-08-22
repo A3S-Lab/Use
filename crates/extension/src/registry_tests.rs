@@ -7,8 +7,12 @@ use crate::package::write_receipt;
 mod cognitive_lifecycle;
 #[path = "registry_tests/cutover.rs"]
 mod cutover;
+#[path = "registry_tests/graph_cutover.rs"]
+mod graph_cutover;
 #[path = "registry_tests/lifecycle_generations.rs"]
 mod lifecycle_generations;
+#[path = "registry_tests/lifecycle_staging.rs"]
+mod lifecycle_staging;
 
 const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 

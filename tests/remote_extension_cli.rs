@@ -37,20 +37,36 @@ fn binary() -> &'static str {
 }
 
 #[cfg(any(unix, windows))]
+#[path = "remote_extension_cli/archive_recovery.rs"]
+mod archive_recovery;
+#[cfg(any(unix, windows))]
 #[path = "remote_extension_cli/flow_lifecycle.rs"]
 mod flow_lifecycle;
+#[cfg(any(unix, windows))]
+#[path = "remote_extension_cli/grant_process_recovery.rs"]
+mod grant_process_recovery;
 #[path = "remote_extension_cli/graph_grants.rs"]
 mod graph_grants;
 #[path = "remote_extension_cli/graph_install.rs"]
 mod graph_install;
+#[cfg(any(unix, windows))]
+#[path = "remote_extension_cli/graph_recovery.rs"]
+mod graph_recovery;
 #[path = "remote_extension_cli/graph_upgrade.rs"]
 mod graph_upgrade;
+#[path = "remote_extension_cli/operation_diagnostic.rs"]
+mod operation_diagnostic;
+#[cfg(any(unix, windows))]
+#[path = "remote_extension_cli/planning_target_diagnostic.rs"]
+mod planning_target_diagnostic;
 #[path = "remote_extension_cli/recovery.rs"]
 mod recovery;
 #[path = "remote_extension_cli/registry.rs"]
 mod registry;
 #[path = "remote_extension_cli/registry_cache.rs"]
 mod registry_cache;
+#[path = "remote_extension_cli/resolution_diagnostic.rs"]
+mod resolution_diagnostic;
 
 fn registry_install(
     server: &TestServer,

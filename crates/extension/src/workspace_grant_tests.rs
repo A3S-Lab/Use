@@ -68,6 +68,23 @@ async fn grant_store_round_trips_active_authority_and_persists_revocation() {
 }
 
 #[tokio::test]
+async fn grant_store_mutation_rejects_an_active_state_restore() {
+    let temporary = TempDir::new().unwrap();
+    let store = WorkspaceGrantStore::new(temporary.path());
+    let ceiling = permission_ceiling();
+    let receipt = receipt(1, grant(&ceiling, 1_000, Some(3_000)));
+    fs::write(
+        temporary.path().join(".maintenance.restore.json"),
+        b"active restore",
+    )
+    .unwrap();
+
+    let error = store.put(&receipt, &ceiling, 1_500).await.unwrap_err();
+    assert_eq!(error.code, "use.state.maintenance_restore_active");
+    assert!(!store.root().exists());
+}
+
+#[tokio::test]
 async fn grant_store_rejects_stale_conflicting_and_pre_revocation_regrants() {
     let temporary = TempDir::new().unwrap();
     let store = WorkspaceGrantStore::new(temporary.path());

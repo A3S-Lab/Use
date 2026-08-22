@@ -5,9 +5,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{
-    PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
+    PlanScope, PluginHostEnablementPlanRequest, PluginHostEnablementPlanResult,
     PluginHostEnablementPlanStatus, PluginHostPackageState, PluginHostPlanRequest,
-    PluginHostPlanResult, PluginManagedScope, PluginOperationPlan, UseError, UseResult,
+    PluginHostPlanResult, PluginManagedScope, PluginOperationPlan, PluginPackageId, UseError,
+    UseResult,
 };
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -18,6 +19,8 @@ use tokio::io::AsyncWriteExt;
 
 const HOST_REQUEST_RECORD_SCHEMA: &str = "a3s.use.plugin-host-request-record.v1";
 const HOST_OPERATION_INDEX_SCHEMA: &str = "a3s.use.plugin-host-operation-index.v1";
+const HOST_ENABLEMENT_DIAGNOSTIC_INDEX_SCHEMA: &str =
+    "a3s.use.plugin-host-enablement-diagnostic-index.v1";
 const HOST_CANCELLATION_RECORD_SCHEMA: &str = "a3s.use.plugin-host-cancellation-record.v1";
 const MAX_HOST_RECORD_BYTES: u64 = 4 * 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -340,6 +343,35 @@ struct StoredPluginHostOperationIndexPayload<'a> {
     plan_digest: &'a str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredPluginHostEnablementDiagnosticIndex {
+    schema: String,
+    record_digest: String,
+    scope: PlanScope,
+    managed_scope: PluginManagedScope,
+    package_id: String,
+    request_id: String,
+    request_digest: String,
+    operation_id: String,
+    plan_digest: String,
+    planned_at_ms: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredPluginHostEnablementDiagnosticIndexPayload<'a> {
+    schema: &'a str,
+    scope: &'a PlanScope,
+    managed_scope: &'a PluginManagedScope,
+    package_id: &'a str,
+    request_id: &'a str,
+    request_digest: &'a str,
+    operation_id: &'a str,
+    plan_digest: &'a str,
+    planned_at_ms: u64,
+}
+
 impl StoredPluginHostOperationIndex {
     fn from_request(record: &StoredPluginHostRequest) -> UseResult<Option<Self>> {
         record.validate()?;
@@ -389,6 +421,97 @@ impl StoredPluginHostOperationIndex {
                 && self.operation_id == binding.0
                 && self.plan_digest == binding.1
         })
+    }
+}
+
+impl StoredPluginHostEnablementDiagnosticIndex {
+    fn from_request(record: &StoredPluginHostRequest) -> UseResult<Option<Self>> {
+        record.validate()?;
+        let Some((request, result)) = record.plan.enablement_parts() else {
+            return Ok(None);
+        };
+        if result.status != PluginHostEnablementPlanStatus::Planned {
+            return Ok(None);
+        }
+        let envelope = result.plan.as_ref().ok_or_else(|| {
+            store_invalid("A reviewed Host enablement plan omitted its exact envelope.")
+        })?;
+        let mut index = Self {
+            schema: HOST_ENABLEMENT_DIAGNOSTIC_INDEX_SCHEMA.to_owned(),
+            record_digest: String::new(),
+            scope: request.scope.plan_scope(),
+            managed_scope: request.scope.clone(),
+            package_id: request.package_id.to_string(),
+            request_id: request.request_id.clone(),
+            request_digest: record.request_digest.clone(),
+            operation_id: envelope.plan.operation_id.clone(),
+            plan_digest: envelope.plan_digest.clone(),
+            planned_at_ms: result.planned_at_ms,
+        };
+        index.record_digest = index.expected_digest()?;
+        index.validate()?;
+        Ok(Some(index))
+    }
+
+    fn validate(&self) -> UseResult<()> {
+        self.managed_scope.validate()?;
+        PluginPackageId::parse(self.package_id.clone()).map_err(|_| {
+            store_invalid("A Host enablement diagnostic package identity is invalid.")
+        })?;
+        PluginOperationPlan::validate_operation_id(&self.operation_id).map_err(|_| {
+            store_invalid("A Host enablement diagnostic operation identity is invalid.")
+        })?;
+        if self.schema != HOST_ENABLEMENT_DIAGNOSTIC_INDEX_SCHEMA
+            || self.scope != self.managed_scope.plan_scope()
+            || self.request_id.is_empty()
+            || self.request_id.len() > 256
+            || !valid_sha256(&self.request_digest)
+            || !valid_sha256(&self.plan_digest)
+            || self.planned_at_ms == 0
+            || self.record_digest != self.expected_digest()?
+        {
+            return Err(store_invalid(
+                "A Host enablement diagnostic index is invalid.",
+            ));
+        }
+        Ok(())
+    }
+
+    fn expected_digest(&self) -> UseResult<String> {
+        digest_value(&StoredPluginHostEnablementDiagnosticIndexPayload {
+            schema: &self.schema,
+            scope: &self.scope,
+            managed_scope: &self.managed_scope,
+            package_id: &self.package_id,
+            request_id: &self.request_id,
+            request_digest: &self.request_digest,
+            operation_id: &self.operation_id,
+            plan_digest: &self.plan_digest,
+            planned_at_ms: self.planned_at_ms,
+        })
+    }
+
+    fn matches(&self, record: &StoredPluginHostRequest) -> bool {
+        let Some((request, result)) = record.plan.enablement_parts() else {
+            return false;
+        };
+        let Some(envelope) = result.plan.as_ref() else {
+            return false;
+        };
+        result.status == PluginHostEnablementPlanStatus::Planned
+            && self.scope == request.scope.plan_scope()
+            && self.managed_scope == request.scope
+            && self.package_id == request.package_id.as_str()
+            && self.request_id == request.request_id
+            && self.request_digest == record.request_digest
+            && self.operation_id == envelope.plan.operation_id
+            && self.plan_digest == envelope.plan_digest
+            && self.planned_at_ms == result.planned_at_ms
+    }
+
+    fn supersedes(&self, other: &Self) -> bool {
+        (self.planned_at_ms, self.request_id.as_str())
+            > (other.planned_at_ms, other.request_id.as_str())
     }
 }
 
@@ -475,6 +598,51 @@ impl PluginHostProtocolStore {
         Ok(Some(record))
     }
 
+    /// Return the newest exact Host-reviewed enablement plan for one public
+    /// package scope. This index is observation-only and is never accepted by
+    /// apply or recovery.
+    pub async fn get_enablement_diagnostic(
+        &self,
+        scope: &PlanScope,
+        package_id: &PluginPackageId,
+    ) -> UseResult<
+        Option<(
+            StoredPluginHostRequest,
+            Option<StoredPluginHostCancellation>,
+        )>,
+    > {
+        let path = self.enablement_diagnostic_path(scope, package_id.as_str());
+        let index: Option<StoredPluginHostEnablementDiagnosticIndex> =
+            read_optional(&self.state_root, &path).await?;
+        let Some(index) = index else {
+            return Ok(None);
+        };
+        index.validate()?;
+        if index.scope != *scope || index.package_id != package_id.as_str() {
+            return Err(store_invalid(
+                "A Host enablement diagnostic index does not match its owned path.",
+            ));
+        }
+        let record = self
+            .get_by_request(&index.managed_scope, &index.request_id)
+            .await?
+            .ok_or_else(|| {
+                store_invalid("A Host enablement diagnostic index refers to a missing request.")
+            })?;
+        if !index.matches(&record) {
+            return Err(store_invalid(
+                "A Host enablement diagnostic index disagrees with its reviewed request.",
+            ));
+        }
+        if record.outcome.is_some() {
+            return Ok(None);
+        }
+        let cancellation = self
+            .get_cancellation(&index.managed_scope, &index.operation_id)
+            .await?;
+        Ok(Some((record, cancellation)))
+    }
+
     pub async fn put_plan(&self, record: &StoredPluginHostRequest) -> UseResult<bool> {
         record.validate()?;
         let scope = record.plan.scope();
@@ -488,10 +656,12 @@ impl PluginHostProtocolStore {
                 ));
             }
             self.ensure_operation_index(&current).await?;
+            self.ensure_enablement_diagnostic_index(&current).await?;
             return Ok(false);
         }
         write_new(&self.state_root, &request_path, record).await?;
         self.ensure_operation_index(record).await?;
+        self.ensure_enablement_diagnostic_index(record).await?;
         Ok(true)
     }
 
@@ -590,6 +760,47 @@ impl PluginHostProtocolStore {
         write_new(&self.state_root, &path, &index).await
     }
 
+    async fn ensure_enablement_diagnostic_index(
+        &self,
+        record: &StoredPluginHostRequest,
+    ) -> UseResult<()> {
+        let Some(index) = StoredPluginHostEnablementDiagnosticIndex::from_request(record)? else {
+            return Ok(());
+        };
+        let path = self.enablement_diagnostic_path(&index.scope, &index.package_id);
+        let directory = path.parent().ok_or_else(|| {
+            store_invalid("A Host enablement diagnostic index path is incomplete.")
+        })?;
+        ensure_owned_directory(&self.state_root, directory).await?;
+        let _lock = acquire_lock(directory.join(".store.lock")).await?;
+        let current: Option<StoredPluginHostEnablementDiagnosticIndex> =
+            read_optional(&self.state_root, &path).await?;
+        let Some(current) = current else {
+            return write_new(&self.state_root, &path, &index).await;
+        };
+        current.validate()?;
+        if current.scope != index.scope || current.package_id != index.package_id {
+            return Err(store_invalid(
+                "A Host enablement diagnostic index moved across its owned package path.",
+            ));
+        }
+        let current_record = self
+            .get_by_request(&current.managed_scope, &current.request_id)
+            .await?
+            .ok_or_else(|| {
+                store_invalid("A Host enablement diagnostic index lost its reviewed request.")
+            })?;
+        if !current.matches(&current_record) {
+            return Err(store_invalid(
+                "A Host enablement diagnostic index drifted from its reviewed request.",
+            ));
+        }
+        if current == index || !index.supersedes(&current) {
+            return Ok(());
+        }
+        write_replace(&self.state_root, &path, &index).await
+    }
+
     async fn lock_store(&self, scope: &PluginManagedScope) -> UseResult<StdFile> {
         let directory = self.scope_root(scope)?;
         ensure_owned_directory(&self.state_root, &directory).await?;
@@ -647,6 +858,14 @@ impl PluginHostProtocolStore {
             .scope_root(scope)?
             .join("cancellations")
             .join(format!("{}.json", sha256_hex(operation_id.as_bytes()))))
+    }
+
+    fn enablement_diagnostic_path(&self, scope: &PlanScope, package_id: &str) -> PathBuf {
+        self.root
+            .join("diagnostics/enablement")
+            .join(scope.kind.as_str())
+            .join(sha256_hex(scope.id.as_bytes()))
+            .join(format!("{}.json", sha256_hex(package_id.as_bytes())))
     }
 }
 

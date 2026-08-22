@@ -10,6 +10,7 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 use super::registry::ExtensionReceipt;
+use super::state_maintenance::{StateMaintenanceGuard, StateMaintenanceLock};
 use super::{ExtensionManifest, ExtensionPaths};
 
 pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
@@ -357,6 +358,7 @@ pub(crate) fn lock_is_contended(error: &std::io::Error) -> bool {
 
 pub(crate) struct RegistryLock {
     file: std::fs::File,
+    _maintenance: Option<StateMaintenanceGuard>,
 }
 
 impl RegistryLock {
@@ -390,7 +392,10 @@ impl RegistryLock {
             .map_err(|error| io_error("truncate extension registry lock", path, error))?;
         writeln!(file, "{}", std::process::id())
             .map_err(|error| io_error("write extension registry lock", path, error))?;
-        Ok(Self { file })
+        Ok(Self {
+            file,
+            _maintenance: None,
+        })
     }
 
     /// Wait briefly for a read-side crash reconciliation to release the
@@ -400,8 +405,17 @@ impl RegistryLock {
     /// waits behind a lifecycle mutation. Mutations use this bounded async
     /// path because a Code watcher may own the lock for one short repair
     /// between two otherwise independent package operations.
-    pub(crate) async fn acquire_for_mutation(path: &Path) -> UseResult<Self> {
-        Self::acquire_for_mutation_with_wait(path, REGISTRY_MUTATION_LOCK_WAIT).await
+    pub(crate) async fn acquire_for_mutation(paths: &ExtensionPaths) -> UseResult<Self> {
+        let maintenance = StateMaintenanceLock::new(paths.state_root())
+            .acquire_shared()
+            .await?;
+        let mut lock = Self::acquire_for_mutation_with_wait(
+            &paths.registry_lock_path(),
+            REGISTRY_MUTATION_LOCK_WAIT,
+        )
+        .await?;
+        lock._maintenance = Some(maintenance);
+        Ok(lock)
     }
 
     async fn acquire_for_mutation_with_wait(path: &Path, wait: Duration) -> UseResult<Self> {

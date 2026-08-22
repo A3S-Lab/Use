@@ -3,7 +3,7 @@ mod r0_cross_project_support;
 use std::path::Path;
 
 use a3s_use_core::{PluginPackageLock, PluginReleaseChannel};
-use a3s_use_extension::{ExtensionReceipt, ExtensionRegistrySnapshot};
+use a3s_use_extension::ExtensionRegistrySnapshot;
 use olpc_cjson::CanonicalFormatter;
 use r0_cross_project_support::{
     canonical_digest, read_fixture, verify_fixture_package, Contract, ContractError,
@@ -270,8 +270,14 @@ fn use_recomputes_candidate_lock_registry_and_generation_evidence() {
         contract.generation.registry_snapshot_digest
     );
     assert_eq!(snapshot.generation, contract.generation.registry_generation);
-    let extension_receipt: ExtensionReceipt = read_json(root, "fixtures/extension-receipt.json");
-    let extension_receipt_digest = extension_receipt.descriptor_digest().unwrap();
+    // This frozen cross-project fixture is pinned to A3S Use 0.3.0 and its
+    // historical receipt v3. Production decoding accepts only the current
+    // receipt contract; the fixture digest remains independently verifiable
+    // without reopening v3 in the runtime loader.
+    let extension_receipt: serde_json::Value = read_json(root, "fixtures/extension-receipt.json");
+    assert_eq!(extension_receipt["schemaVersion"], 3);
+    assert!(extension_receipt.get("selectedSurfaces").is_none());
+    let extension_receipt_digest = use_descriptor_digest(&extension_receipt);
     let generation: GenerationReceiptFixture =
         read_json(root, "fixtures/a3s-use-generation-receipt.json");
 

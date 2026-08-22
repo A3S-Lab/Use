@@ -20,6 +20,18 @@ use super::{
     PluginLifecycleOperationRecord,
 };
 
+pub(crate) fn operation_cutover_key(envelope: &PluginOperationPlanEnvelope) -> UseResult<String> {
+    match envelope.plan.action {
+        PluginOperationAction::Install | PluginOperationAction::Upgrade => {
+            publication_key(envelope)
+        }
+        PluginOperationAction::Uninstall => hide_key(envelope),
+        PluginOperationAction::Enable | PluginOperationAction::Disable => Err(graph_error(
+            "An enablement operation has no package-graph Registry cutover key.",
+        )),
+    }
+}
+
 /// One package-specific coordinator, intent, and admitted manifest belonging
 /// to a single reviewed dependency-closure operation.
 #[derive(Clone)]

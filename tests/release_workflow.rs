@@ -333,6 +333,32 @@ fn release_rebuild_verifier_accepts_exact_binaries_and_rejects_drift() {
 }
 
 #[test]
+fn release_portability_verifier_rejects_repository_local_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let release_root = temp.path().join("release");
+    let checkout = temp.path().join("checkout");
+    fs::create_dir_all(release_root.join("dashboard")).unwrap();
+    fs::create_dir_all(&checkout).unwrap();
+    fs::write(release_root.join("a3s-use"), b"portable executable\n").unwrap();
+
+    let clean = run_portability_verifier(&release_root, &checkout);
+    assert!(
+        clean.status.success(),
+        "clean release tree was rejected: {}",
+        String::from_utf8_lossy(&clean.stderr)
+    );
+
+    fs::write(
+        release_root.join("dashboard/app.js"),
+        format!("sourceRoot={}\n", checkout.display()),
+    )
+    .unwrap();
+    let leaked = run_portability_verifier(&release_root, &checkout);
+    assert!(!leaked.status.success());
+    assert!(String::from_utf8_lossy(&leaked.stderr).contains("repository-local path"));
+}
+
+#[test]
 fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     let workflow = include_str!("../.github/workflows/release.yml");
     let ci = include_str!("../.github/workflows/ci.yml");
@@ -404,6 +430,84 @@ fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     }
 }
 
+#[test]
+fn release_builds_remove_nondeterministic_native_metadata() {
+    let workflow = include_str!("../.github/workflows/release.yml");
+    let binaries_job =
+        &workflow[position(workflow, "\n  binaries:")..position(workflow, "\n  reproducibility:")];
+    let rebuild_job = &workflow
+        [position(workflow, "\n  reproducibility:")..position(workflow, "\n  publish-crates:")];
+
+    for (name, job) in [("primary", binaries_job), ("independent", rebuild_job)] {
+        assert!(
+            job.contains("CARGO_PROFILE_RELEASE_STRIP: symbols"),
+            "{name} release build must remove nondeterministic native symbol tables"
+        );
+        let linker_setup = position(job, "Disable nondeterministic Mach-O UUIDs");
+        assert!(
+            job[linker_setup..].contains("if: runner.os == 'macOS'"),
+            "{name} release build must scope the Mach-O linker flag to macOS"
+        );
+        assert!(
+            job[linker_setup..].contains("-C link-arg=-Wl,-no_uuid"),
+            "{name} release build must disable nondeterministic Mach-O UUIDs"
+        );
+        assert!(
+            linker_setup < position(job, "cargo build --release --locked"),
+            "{name} deterministic linker configuration must precede the build"
+        );
+        let windows_linker_setup = position(job, "Enable deterministic PE/COFF linking");
+        assert!(
+            job[windows_linker_setup..].contains("if: runner.os == 'Windows'"),
+            "{name} release build must scope the PE/COFF linker flag to Windows"
+        );
+        assert!(
+            job[windows_linker_setup..].contains("-C link-arg=/Brepro"),
+            "{name} release build must replace wall-clock PE timestamps"
+        );
+        assert!(
+            windows_linker_setup < position(job, "cargo build --release --locked"),
+            "{name} deterministic PE/COFF configuration must precede the build"
+        );
+        let linux_linker_setup = position(job, "Disable nondeterministic ELF build IDs");
+        assert!(
+            job[linux_linker_setup..].contains("if: runner.os == 'Linux'"),
+            "{name} release build must scope the ELF linker flag to Linux"
+        );
+        assert!(
+            job[linux_linker_setup..].contains("-C link-arg=-Wl,--build-id=none"),
+            "{name} release build must remove build IDs derived from unstable symbols"
+        );
+        assert!(
+            linux_linker_setup < position(job, "cargo build --release --locked"),
+            "{name} deterministic ELF configuration must precede the build"
+        );
+    }
+}
+
+#[test]
+fn installed_release_smoke_is_checkout_independent() {
+    let workflow = include_str!("../.github/workflows/release.yml");
+    let unix = &workflow[position(workflow, "- name: Verify installed Unix release")
+        ..position(workflow, "- name: Verify installed Windows release")];
+    let windows = &workflow[position(workflow, "- name: Verify installed Windows release")
+        ..position(workflow, "- name: Generate SPDX SBOM")];
+
+    assert!(unix.contains("scripts/verify-release-portability.py"));
+    assert!(unix.contains("--release-root \"${install_root}\""));
+    assert!(unix.contains("--forbid-path \"${GITHUB_WORKSPACE}\""));
+    assert!(unix.contains("export A3S_USE_HOME=\"${RUNNER_TEMP}/release-smoke-home-"));
+    assert!(unix.contains("cd \"${smoke_cwd}\""));
+    assert!(unix.contains("\"${install_root}/a3s-use-browser-driver\" --version"));
+
+    assert!(windows.contains("scripts/verify-release-portability.py"));
+    assert!(windows.contains("--release-root $root"));
+    assert!(windows.contains("--forbid-path $env:GITHUB_WORKSPACE"));
+    assert!(windows.contains("$env:A3S_USE_HOME = Join-Path $env:RUNNER_TEMP"));
+    assert!(windows.contains("Set-Location $smokeCwd"));
+    assert!(windows.contains("& \"$root/a3s-use-browser-driver.exe\" --version"));
+}
+
 fn write_release_fixture(root: &Path, reverse: bool) {
     let mut files = vec![
         ("README.md", b"release fixture\n".as_slice()),
@@ -470,6 +574,17 @@ fn run_rebuild_verifier(archive: &Path, rebuilt: &Path, output_path: &Path) -> O
             .arg(rebuilt.join(rebuilt_name));
     }
     command.output().unwrap()
+}
+
+fn run_portability_verifier(release_root: &Path, checkout: &Path) -> Output {
+    Command::new(python_command())
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verify-release-portability.py"))
+        .arg("--release-root")
+        .arg(release_root)
+        .arg("--forbid-path")
+        .arg(checkout)
+        .output()
+        .unwrap()
 }
 
 fn python_command() -> &'static str {

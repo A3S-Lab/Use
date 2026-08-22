@@ -183,3 +183,176 @@ fn registry_cache_policy_rejects_an_oversized_target_before_download() {
     assert_eq!(target_request_count(&server), 0);
     assert!(!home.join("state/extensions/acme/root.json").exists());
 }
+
+#[cfg(any(unix, windows))]
+#[test]
+fn killed_registry_download_resumes_without_publishing_partial_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let target = host_target();
+    let package = cognitive_skill_target(temp.path(), "acme/root", "root", Vec::new(), &target);
+    let archive_bytes = package.archive.len() as u64;
+    let repository = TestRepository::with_targets(vec![package], 79, FUTURE);
+    let target_path = format!("/targets/{}", repository.target_name);
+    let server = TestServer::start(repository.routes.clone());
+    let home = temp.path().join("home");
+
+    configure_registry(&server, &repository, &home, &[]);
+    let source = registry_source_snapshot(&home)["sources"][0].clone();
+    let source_identity = source["sourceIdentity"].as_str().unwrap();
+    let cache_directory = home
+        .join("state/remote-registries/fixture/sources")
+        .join(source_identity)
+        .join("verified-targets/sha256");
+    let partial = cache_directory.join(format!(".target-{}.part", repository.target_sha256));
+    let verified = cache_directory.join(&repository.target_sha256);
+    let pause_after = usize::try_from((archive_bytes / 2).max(1)).unwrap();
+    server.pause_response_after(&target_path, pause_after);
+    server.clear_requests();
+
+    let mut interrupted = Command::new(binary())
+        .args([
+            "install",
+            "acme/root",
+            "--registry-name",
+            "fixture",
+            "--version",
+            "1.0.0",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .spawn()
+        .unwrap();
+    let reached_partial = wait_until(Duration::from_secs(15), || {
+        std::fs::metadata(&partial)
+            .ok()
+            .is_some_and(|metadata| metadata.len() > 0 && metadata.len() < archive_bytes)
+    });
+    if !reached_partial {
+        let process_status = interrupted.try_wait().unwrap();
+        let partial_length = std::fs::metadata(&partial)
+            .ok()
+            .map(|metadata| metadata.len());
+        let requests = server.requests();
+        let _ = interrupted.kill();
+        let _ = interrupted.wait();
+        server.resume_response(&target_path);
+        panic!(
+            "install did not pause during the Registry target download: status={process_status:?}, partial={partial_length:?}, requests={requests:?}"
+        );
+    }
+
+    let requests_before_diagnostic = server.requests().len();
+    let active_diagnostic = Command::new(binary())
+        .args(["extension", "diagnose", "acme/root", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(active_diagnostic.status.success(), "{active_diagnostic:?}");
+    let active_diagnostic = json(&active_diagnostic);
+    let diagnostic = &active_diagnostic["data"]["diagnostic"];
+    assert_eq!(
+        diagnostic["schema"],
+        "a3s.use.plugin-download-attempt-diagnostic.v1"
+    );
+    assert_eq!(diagnostic["packageId"], "acme/root");
+    assert_eq!(diagnostic["scope"]["kind"], "user");
+    assert_eq!(diagnostic["scope"]["id"], "user/current");
+    assert_eq!(diagnostic["attempt"]["action"], "install");
+    assert_eq!(diagnostic["attempt"]["phase"], "pre-plan");
+    assert_eq!(diagnostic["attempt"]["packageCount"], 1);
+    assert_eq!(diagnostic["attempt"]["downloadBytes"], archive_bytes);
+    assert_eq!(diagnostic["attempt"]["downloadTargetCount"], 1);
+    assert_eq!(diagnostic["attempt"]["download"], "in-progress");
+    assert_eq!(diagnostic["attempt"]["downloads"][0]["status"], "partial");
+    let active_retained = diagnostic["attempt"]["downloadRetainedBytes"]
+        .as_u64()
+        .unwrap();
+    assert!(active_retained > 0 && active_retained < archive_bytes);
+    assert_eq!(server.requests().len(), requests_before_diagnostic);
+    let encoded = serde_json::to_string(&active_diagnostic).unwrap();
+    assert!(!encoded.contains(home.to_str().unwrap()));
+    assert!(!encoded.contains(server.base_url()));
+    assert!(!encoded.contains("verified-targets"));
+
+    interrupted.kill().unwrap();
+    interrupted.wait().unwrap();
+    server.resume_response(&target_path);
+    let partial_length = std::fs::metadata(&partial).unwrap().len();
+    assert!(partial_length > 0 && partial_length < archive_bytes);
+    assert!(!verified.exists());
+    assert!(!home.join("state/extensions/acme/root.json").exists());
+    assert!(!home.join("state/package-graphs/acme/root.json").exists());
+    assert!(!home
+        .join("state/operations/package-graphs/install/acme/root.json")
+        .exists());
+    assert!(!home.join("data/extensions/acme/root").exists());
+
+    let attempt_path = home.join("state/operations/package-downloads/install/acme/root.json");
+    let retained_attempt = std::fs::read(&attempt_path).unwrap();
+    let mut invalid_attempt: serde_json::Value = serde_json::from_slice(&retained_attempt).unwrap();
+    invalid_attempt["credential"] = serde_json::json!("download-secret-sentinel-value");
+    std::fs::write(&attempt_path, serde_json::to_vec(&invalid_attempt).unwrap()).unwrap();
+    let invalid_diagnostic = Command::new(binary())
+        .args(["extension", "diagnose", "acme/root", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(
+        !invalid_diagnostic.status.success(),
+        "{invalid_diagnostic:?}"
+    );
+    let invalid_diagnostic = json(&invalid_diagnostic);
+    assert_eq!(
+        invalid_diagnostic["error"]["code"],
+        "use.plugin.operation_diagnostic_state_invalid"
+    );
+    let encoded = serde_json::to_string(&invalid_diagnostic).unwrap();
+    assert!(!encoded.contains("download-secret-sentinel-value"));
+    assert!(!encoded.contains(home.to_str().unwrap()));
+    assert!(!encoded.contains(server.base_url()));
+    std::fs::write(&attempt_path, retained_attempt).unwrap();
+
+    let retained_diagnostic = Command::new(binary())
+        .args(["extension", "diagnose", "acme/root", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(
+        retained_diagnostic.status.success(),
+        "{retained_diagnostic:?}"
+    );
+    let retained_diagnostic = json(&retained_diagnostic);
+    assert_eq!(
+        retained_diagnostic["data"]["diagnostic"]["attempt"]["downloadRetainedBytes"],
+        partial_length
+    );
+    assert_eq!(
+        retained_diagnostic["data"]["diagnostic"]["attempt"]["download"],
+        "in-progress"
+    );
+
+    server.clear_requests();
+    let recovered = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
+    assert!(recovered.status.success(), "{recovered:?}");
+    assert_eq!(
+        server.ranges_for(&target_path),
+        vec![format!("bytes={partial_length}-")]
+    );
+    assert!(!partial.exists());
+    assert!(verified.is_file());
+    assert!(home.join("state/extensions/acme/root.json").is_file());
+    assert!(home.join("state/package-graphs/acme/root.json").is_file());
+    let completed_diagnostic = Command::new(binary())
+        .args(["extension", "diagnose", "acme/root", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(
+        !completed_diagnostic.status.success(),
+        "{completed_diagnostic:?}"
+    );
+    assert_eq!(
+        json(&completed_diagnostic)["error"]["code"],
+        "use.plugin.operation_diagnostic_not_found"
+    );
+}

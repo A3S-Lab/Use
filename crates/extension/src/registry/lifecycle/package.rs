@@ -3,6 +3,7 @@ use std::path::Path;
 use a3s_use_core::{PluginPlanningBundle, UseError, UseResult, VerifiedPluginCatalogRecord};
 use tokio::fs;
 
+use super::staging::{prepare_lifecycle_package_parent, LIFECYCLE_STAGING_PREFIX};
 use super::{
     lifecycle_identity_error, lifecycle_state_error, ExtensionLifecycleIdentity,
     ExtensionLifecyclePackage,
@@ -263,7 +264,12 @@ pub(super) async fn validate_candidate_source(
 pub(super) async fn commit_candidate_root(
     candidate: &ExtensionLifecyclePackage,
     target: &Path,
+    data_root: &Path,
 ) -> UseResult<bool> {
+    let parent = target.parent().ok_or_else(|| {
+        lifecycle_state_error("The lifecycle package root has no owned parent directory.")
+    })?;
+    prepare_lifecycle_package_parent(data_root, parent).await?;
     match fs::symlink_metadata(target).await {
         Ok(_) => {
             validate_committed_root(candidate, target).await?;
@@ -272,14 +278,8 @@ pub(super) async fn commit_candidate_root(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(io_error("inspect lifecycle package", target, error)),
     }
-    let parent = target.parent().ok_or_else(|| {
-        lifecycle_state_error("The lifecycle package root has no owned parent directory.")
-    })?;
-    fs::create_dir_all(parent)
-        .await
-        .map_err(|error| io_error("create lifecycle package directory", parent, error))?;
     let staging = tempfile::Builder::new()
-        .prefix(".lifecycle-staging-")
+        .prefix(LIFECYCLE_STAGING_PREFIX)
         .tempdir_in(parent)
         .map_err(|error| io_error("create lifecycle package staging", parent, error))?;
     copy_package(candidate.source.root(), staging.path()).await?;

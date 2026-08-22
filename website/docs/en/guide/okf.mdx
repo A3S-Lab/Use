@@ -9,7 +9,7 @@ description: How Open Knowledge Format becomes a first-class, non-executable A3S
 
 In A3S Use, OKF is a first-class cognitive surface alongside Tool, MCP, Flow, Skill, and UI, but it is not an executable workload.
 
-> Current status: the standalone lifecycle includes a bundled cross-platform SQLite/FTS5 Knowledge backend, complete User/Workspace isolation, transactional stage/promote/remove, exact projection-authorized cited search, restart recovery, bounded storage quota/retention/GC, scope-local integrity audit, verified database backup, authority-preserving FTS repair, and signed real-process coverage. A3S Code-managed leased-query qualification, coordinated restore, and whole-product recovery remain pending; without exact promoted evidence, the surface is not published.
+> Current status: the standalone lifecycle includes a bundled cross-platform SQLite/FTS5 Knowledge backend, complete User/Workspace isolation, transactional stage/promote/remove, exact projection-authorized cited search, restart recovery, bounded storage quota/retention/GC, scope-local integrity audit, verified database backup with exact-plan oldest-first rotation, authority-preserving FTS repair, authority-bound database and exact-subset missing-binding restore, and signed real-process coverage. Reviewed same-version/OS/architecture whole-installation restore is also implemented. A3S Code-managed leased-query qualification, missing Registry/package/lifecycle/Grant authority and clean-machine recovery, cross-platform operational drills, rollback-evidence retention policy, and whole-product disaster recovery remain pending; without exact promoted evidence, the surface is not published.
 
 ## Bundle structure
 
@@ -129,9 +129,17 @@ Audit verifies SQLite integrity, foreign keys, exact receipt/scope accounting, a
 ```bash
 a3s-use knowledge backup ./user.a3s-okf-backup --json
 a3s-use knowledge verify-backup ./user.a3s-okf-backup --json
+a3s-use knowledge backup-retention ./backups --json
 ```
 
 The versioned backup manifest binds complete scope, creation time, exact database length and SHA-256, storage accounting, and policy limits. The digest detects corruption; it is not a package or Registry signature. The artifact does not contain Registry receipts, immutable package roots, Knowledge bindings, lifecycle journals, Grants, Flow history, or UI state.
+
+`backup-retention` returns a canonical plan for at most 4,096 directory entries,
+one complete scope, and bounded backup-count/byte limits. It fully verifies
+managed candidates, selects the oldest required prefix, and preserves the last
+verified scope backup. Removal requires `--yes` plus the unchanged
+`--plan-digest`; another scope, unrelated files, linked candidates, and stale
+plans cannot be removed.
 
 If audit reports only a derived FTS mismatch, an operator may explicitly rebuild FTS from already-validated documents:
 
@@ -139,7 +147,37 @@ If audit reports only a derived FTS mismatch, an operator may explicitly rebuild
 a3s-use knowledge repair-search-index --yes --json
 ```
 
-Repair never edits projection receipts, selected generations, bindings, lifecycle evidence, or Grants. Copying a backup into live state is unsupported: coordinated restore and whole-product recovery remain release gates. See the [OKF Knowledge operations runbook](https://github.com/A3S-Lab/Use/blob/main/docs/okf-knowledge-operations.md).
+Repair never edits projection receipts, selected generations, bindings, lifecycle evidence, or Grants.
+
+Never copy a backup into live state. Create a path-free review and apply only
+its exact digest:
+
+```bash
+a3s-use knowledge plan-restore ./user.a3s-okf-backup --json
+a3s-use knowledge restore ./user.a3s-okf-backup \
+  --plan-digest sha256:<reviewed-plan-digest> \
+  --yes \
+  --json
+a3s-use knowledge restore-status --json
+```
+
+Planning verifies the backup, exact package/lifecycle/Registry/Grant authority,
+and an exact-subset current binding inventory, then binds that state and the
+current main database, WAL, and SHM. Confirmed apply revalidates the same
+authority, creates only missing exact binding files, retains the exact prior
+database files, and resumes its durable operation after process exit.
+Conflicting or newer binding evidence is never overwritten. It cannot recreate
+missing independent authority, recover a clean machine or another state
+family, or provide whole-product disaster recovery. Scope-local backup
+rotation does not rotate restore rollback evidence or other state families.
+See the [OKF
+Knowledge operations
+runbook](https://github.com/A3S-Lab/Use/blob/main/docs/okf-knowledge-operations.md).
+
+`restore-status` needs neither a backup path nor a plan digest. Its bounded,
+path-free diagnostic reports any global active phase plus the requested
+scope's validated operation history, marker-handoff directory count, and
+remaining capacity. It does not rotate, delete, or rewrite recovery evidence.
 
 ## Compilation is not installation
 

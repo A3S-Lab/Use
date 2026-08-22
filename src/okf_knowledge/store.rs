@@ -8,6 +8,7 @@ use a3s_use_extension::ExtensionPaths;
 use sha2::{Digest, Sha256};
 
 use super::OkfKnowledgeBinding;
+use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
 
 mod io;
 
@@ -17,6 +18,9 @@ use io::{
 };
 
 pub const MAX_OKF_KNOWLEDGE_GENERATIONS: usize = 32;
+const MAX_OKF_SCOPE_PUBLISHERS: usize = 512;
+const MAX_OKF_SCOPE_PACKAGES: usize = 4_096;
+const MAX_OKF_SCOPE_SURFACES: usize = 4_096;
 
 /// Active OKF selection reconstructed exclusively from retained exact records.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -50,7 +54,14 @@ impl OkfKnowledgeBindingStore {
         &self.root
     }
 
+    pub(crate) fn state_root(&self) -> &Path {
+        &self.state_root
+    }
+
     pub async fn put(&self, binding: &OkfKnowledgeBinding) -> UseResult<bool> {
+        let _maintenance = StateMaintenanceLock::new(&self.state_root)
+            .acquire_shared()
+            .await?;
         binding.validate()?;
         let _lock = acquire_lock(&self.state_root, &self.root).await?;
         let directory = self.surface_directory(&binding.receipt.scope, &binding.receipt.surface)?;
@@ -154,6 +165,111 @@ impl OkfKnowledgeBindingStore {
         snapshot_from_records(&records)
     }
 
+    pub(crate) async fn list_scope(
+        &self,
+        scope: &PlanScope,
+    ) -> UseResult<Vec<OkfKnowledgeBinding>> {
+        if !valid_machine_id(&scope.id) {
+            return Err(invalid_path_identity());
+        }
+        let _lock = acquire_lock(&self.state_root, &self.root).await?;
+        self.list_scope_unlocked(scope).await
+    }
+
+    /// Recreate only missing exact binding records from a fully validated
+    /// recovery inventory. The caller must retain the global exclusive state
+    /// maintenance guard and a durable active-restore marker while this method
+    /// runs. Existing records are never replaced or removed.
+    pub(crate) async fn restore_exact_inventory(
+        &self,
+        scope: &PlanScope,
+        expected: &[OkfKnowledgeBinding],
+        _maintenance: &StateMaintenanceGuard,
+    ) -> UseResult<usize> {
+        validate_recovery_inventory(scope, expected)?;
+        let _lock = acquire_lock(&self.state_root, &self.root).await?;
+        let current = self.list_scope_unlocked(scope).await?;
+        let missing = missing_exact_bindings(&current, expected)?;
+        let restored = missing.len();
+        for binding in missing {
+            let directory =
+                self.surface_directory(&binding.receipt.scope, &binding.receipt.surface)?;
+            ensure_owned_directory(&self.state_root, Some(&directory)).await?;
+            let path = binding_path(&directory, binding.receipt.generation);
+            if read_optional_binding(&path).await?.is_some() {
+                return Err(recovery_conflict());
+            }
+            write_binding(&path, binding).await?;
+        }
+        let recovered = self.list_scope_unlocked(scope).await?;
+        if recovered != expected {
+            return Err(recovery_conflict());
+        }
+        Ok(restored)
+    }
+
+    async fn list_scope_unlocked(&self, scope: &PlanScope) -> UseResult<Vec<OkfKnowledgeBinding>> {
+        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+        let scope_root = self.root.join(scope.kind.as_str()).join(scope_digest);
+        if !validate_existing_directory_chain(&self.state_root, Some(&scope_root)).await? {
+            return Ok(Vec::new());
+        }
+
+        let mut bindings = Vec::new();
+        let mut publisher_count = 0_usize;
+        let mut package_count = 0_usize;
+        let mut surface_count = 0_usize;
+        let mut publishers = read_directory(&scope_root, "scope").await?;
+        while let Some(publisher) = next_directory(&mut publishers, &scope_root).await? {
+            publisher_count = publisher_count.saturating_add(1);
+            enforce_scope_bound(
+                publisher_count,
+                MAX_OKF_SCOPE_PUBLISHERS,
+                "publisher directories",
+            )?;
+            let publisher_name = portable_name(&publisher)?;
+            let publisher_path = publisher.path();
+            let mut packages = read_directory(&publisher_path, "publisher").await?;
+            while let Some(package) = next_directory(&mut packages, &publisher_path).await? {
+                package_count = package_count.saturating_add(1);
+                enforce_scope_bound(package_count, MAX_OKF_SCOPE_PACKAGES, "package directories")?;
+                let package_name = portable_name(&package)?;
+                let package_id = format!("{publisher_name}/{package_name}");
+                PluginPackageId::parse(package_id.clone()).map_err(|_| invalid_path_identity())?;
+                let package_path = package.path();
+                let mut surfaces = read_directory(&package_path, "package").await?;
+                while let Some(surface) = next_directory(&mut surfaces, &package_path).await? {
+                    surface_count = surface_count.saturating_add(1);
+                    enforce_scope_bound(
+                        surface_count,
+                        MAX_OKF_SCOPE_SURFACES,
+                        "surface directories",
+                    )?;
+                    let surface_name = portable_name(&surface)?;
+                    let surface_id = surface_name
+                        .strip_prefix("okf-")
+                        .filter(|value| valid_segment(value))
+                        .ok_or_else(invalid_path_identity)?;
+                    let qualified = PlanQualifiedSurfaceRef {
+                        package_id: package_id.clone(),
+                        surface: a3s_use_core::PluginSurfaceRef {
+                            kind: PluginSurfaceKind::Okf,
+                            id: surface_id.to_owned(),
+                        },
+                    };
+                    bindings.extend(read_bindings(&surface.path(), scope, &qualified).await?);
+                }
+            }
+        }
+        bindings.sort_by(|left, right| {
+            left.receipt
+                .surface
+                .cmp(&right.receipt.surface)
+                .then_with(|| left.receipt.generation.cmp(&right.receipt.generation))
+        });
+        Ok(bindings)
+    }
+
     fn surface_directory(
         &self,
         scope: &PlanScope,
@@ -174,6 +290,59 @@ impl OkfKnowledgeBindingStore {
             .join(package)
             .join(format!("okf-{}", surface.surface.id)))
     }
+}
+
+async fn read_directory(path: &Path, label: &str) -> UseResult<tokio::fs::ReadDir> {
+    tokio::fs::read_dir(path).await.map_err(|error| {
+        path_error(
+            &format!("read OKF Knowledge {label} directory"),
+            path,
+            error,
+        )
+    })
+}
+
+async fn next_directory(
+    entries: &mut tokio::fs::ReadDir,
+    parent: &Path,
+) -> UseResult<Option<tokio::fs::DirEntry>> {
+    let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| path_error("read OKF Knowledge binding layout", parent, error))?
+    else {
+        return Ok(None);
+    };
+    let metadata = tokio::fs::symlink_metadata(entry.path())
+        .await
+        .map_err(|error| {
+            path_error(
+                "inspect OKF Knowledge binding directory",
+                &entry.path(),
+                error,
+            )
+        })?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
+        return Err(invalid_path_identity());
+    }
+    Ok(Some(entry))
+}
+
+fn portable_name(entry: &tokio::fs::DirEntry) -> UseResult<String> {
+    entry
+        .file_name()
+        .into_string()
+        .map_err(|_| invalid_path_identity())
+}
+
+fn enforce_scope_bound(count: usize, maximum: usize, label: &str) -> UseResult<()> {
+    if count > maximum {
+        return Err(store_error(
+            "use.okf.knowledge_binding_limit_exceeded",
+            format!("The OKF Knowledge scope exceeds its {label} bound of {maximum}."),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_replacement(
@@ -215,7 +384,7 @@ fn validate_replacement(
     Ok(())
 }
 
-fn snapshot_from_records(
+pub(super) fn snapshot_from_records(
     records: &[OkfKnowledgeBinding],
 ) -> UseResult<OkfKnowledgeBindingSnapshot> {
     let Some(latest) = records.last() else {
@@ -247,6 +416,67 @@ fn snapshot_from_records(
         selected: Some(selected.clone()),
         projection: Some(projection),
     })
+}
+
+fn validate_recovery_inventory(
+    scope: &PlanScope,
+    records: &[OkfKnowledgeBinding],
+) -> UseResult<()> {
+    let mut previous: Option<(PlanQualifiedSurfaceRef, u64)> = None;
+    let mut start = 0_usize;
+    while start < records.len() {
+        let surface = records[start].receipt.surface.clone();
+        let mut end = start;
+        while end < records.len() && records[end].receipt.surface == surface {
+            let binding = &records[end];
+            binding.validate()?;
+            validate_ownership(binding, scope, &surface, binding.receipt.generation)?;
+            let key = (surface.clone(), binding.receipt.generation);
+            if previous.as_ref().is_some_and(|previous| previous >= &key) {
+                return Err(recovery_conflict());
+            }
+            previous = Some(key);
+            end += 1;
+        }
+        if end - start > MAX_OKF_KNOWLEDGE_GENERATIONS {
+            return Err(store_error(
+                "use.okf.knowledge_binding_limit_exceeded",
+                "The recovery inventory exceeds the retained-generation bound for one Knowledge surface.",
+            ));
+        }
+        snapshot_from_records(&records[start..end])?;
+        start = end;
+    }
+    Ok(())
+}
+
+fn missing_exact_bindings<'a>(
+    current: &[OkfKnowledgeBinding],
+    expected: &'a [OkfKnowledgeBinding],
+) -> UseResult<Vec<&'a OkfKnowledgeBinding>> {
+    let expected_by_key = expected
+        .iter()
+        .map(|binding| {
+            (
+                (binding.receipt.surface.clone(), binding.receipt.generation),
+                binding,
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    if expected_by_key.len() != expected.len() {
+        return Err(recovery_conflict());
+    }
+    let mut retained = std::collections::BTreeSet::new();
+    for binding in current {
+        let key = (binding.receipt.surface.clone(), binding.receipt.generation);
+        if expected_by_key.get(&key).copied() != Some(binding) || !retained.insert(key) {
+            return Err(recovery_conflict());
+        }
+    }
+    Ok(expected_by_key
+        .into_iter()
+        .filter_map(|(key, binding)| (!retained.contains(&key)).then_some(binding))
+        .collect())
 }
 
 fn validate_selected_binding(
@@ -332,6 +562,13 @@ fn stale_error(message: impl Into<String>) -> UseError {
 
 fn conflict_error(message: impl Into<String>) -> UseError {
     store_error("use.okf.knowledge_binding_conflict", message)
+}
+
+fn recovery_conflict() -> UseError {
+    store_error(
+        "use.okf.knowledge_binding_recovery_conflict",
+        "The current Knowledge binding inventory is not an exact subset of the reviewed recovery inventory.",
+    )
 }
 
 fn record_error(message: impl Into<String>) -> UseError {

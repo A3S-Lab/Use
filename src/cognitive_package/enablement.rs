@@ -7,6 +7,7 @@ use a3s_use_core::{
 };
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionRegistrySnapshot, InstalledExtension,
+    EXTENSION_RECEIPT_SCHEMA_VERSION,
 };
 use olpc_cjson::CanonicalFormatter;
 use serde::{Deserialize, Serialize};
@@ -32,7 +33,6 @@ pub const COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA: &str =
     "a3s.use.cognitive-package-enablement-request.v1";
 pub const COGNITIVE_PACKAGE_ENABLEMENT_RESULT_SCHEMA: &str =
     "a3s.use.cognitive-package-enablement-result.v1";
-const COGNITIVE_PACKAGE_RECEIPT_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -243,6 +243,7 @@ impl CognitivePackageManager {
         &self,
         request: &CognitivePackageEnablementRequest,
     ) -> UseResult<CognitivePackageEnablementResult> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         request.validate()?;
         let reviewed_plan = self.authorization.reviewed_plan().ok_or_else(|| {
             enablement_error(
@@ -436,6 +437,7 @@ impl CognitivePackageManager {
     /// Observe the exact current package and capability evidence while using
     /// the durable Use-owned state generation for optimistic concurrency.
     pub async fn observe_package(&self, package_id: &str) -> UseResult<PluginHostPackageState> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let package_id = PluginPackageId::parse(package_id.to_string())?;
         let store = self.enablement_store();
         let _guard = store.lock_package(&self.scope, &package_id).await?;
@@ -565,6 +567,7 @@ impl CognitivePackageManager {
             if operation.request != active.request {
                 return Err(operation_conflict());
             }
+            self.retain_enablement_operation_diagnostic(active).await?;
             self.repair_completed_enablement_state(store, &operation)
                 .await?;
             return Ok(operation);
@@ -695,6 +698,7 @@ impl CognitivePackageManager {
             state_after,
         )?;
         store.put_operation(&operation).await?;
+        self.retain_enablement_operation_diagnostic(active).await?;
         store.put_state(&operation.state_after).await?;
         Ok(operation)
     }
@@ -724,14 +728,14 @@ impl CognitivePackageManager {
         package_id: &PluginPackageId,
         extension: &InstalledExtension,
     ) -> UseResult<LockedPluginPackage> {
-        if extension.receipt.schema_version != COGNITIVE_PACKAGE_RECEIPT_SCHEMA_VERSION
+        if extension.receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION
             || extension.receipt.package_id != package_id.as_str()
             || extension.receipt.lifecycle_generation.is_none()
             || extension.receipt.package_sha256.is_none()
         {
             return Err(enablement_error(
                 "use.plugin.package_enablement_unsupported",
-                "Enablement requires an exact schema-v3 cognitive-package receipt.",
+                "Enablement requires an exact schema-v4 cognitive-package receipt.",
             ));
         }
         let catalog = extension.plan_ready_catalog()?;
@@ -808,10 +812,10 @@ pub(super) fn reconcile_state(
 }
 
 fn artifact_state(extension: &InstalledExtension) -> UseResult<CognitivePackageArtifactState> {
-    if extension.receipt.schema_version != COGNITIVE_PACKAGE_RECEIPT_SCHEMA_VERSION {
+    if extension.receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION {
         return Err(enablement_error(
             "use.plugin.package_enablement_unsupported",
-            "Enablement requires a schema-v3 cognitive-package receipt.",
+            "Enablement requires a schema-v4 cognitive-package receipt.",
         ));
     }
     let generation = extension.receipt.lifecycle_generation.ok_or_else(|| {

@@ -19,9 +19,9 @@ A3S Use 的核心安全原则是：**包内容可以描述需求，但不能给�
 
 ## Release artifact 证据
 
-带 tag 的 preview release 会对每个平台的 staged tree 做确定性序列化，并为每个归档发布一份 SPDX JSON SBOM。GitHub OIDC 会为归档创建 build-provenance 与 SBOM attestation；`checksums.txt.sigstore.json` 是 checksum manifest 的 keyless Sigstore bundle，release job 会先按精确 tag workflow identity 复核该 bundle，再发布资产。所有 Action 以及 Rust、Python、Syft、Cosign 版本均已固定。
+成功的带 tag preview release 会对每个平台的 staged tree 做确定性序列化，并为每个归档发布一份 SPDX JSON SBOM。GitHub OIDC 会为归档创建 build-provenance 与 SBOM attestation；`checksums.txt.sigstore.json` 是 checksum manifest 的 keyless Sigstore bundle，release job 会先按精确 tag workflow identity 复核该 bundle，再发布资产。所有 Action 以及 Rust、Python、Syft、Cosign 版本均已固定。
 
-installer 要求 Cosign，并在下载平台归档前按精确 A3S Use tag workflow identity 与 GitHub OIDC issuer 验证 `checksums.txt`。证据缺失或无效时会 fail closed，已验证 manifest 与 bundle 会随安装版本保留。对每个 target，第二台无编译缓存的干净 runner 会重建全部随包原生可执行文件，并必须逐字节匹配主归档；确定性 `.reproducibility.json` 记录会被 attestation、checksum 与签名。installer 脚本自身仍是独立的 bootstrap 信任边界，应先审查或通过可信系统包分发。外部运营的完整 staged tree/最终归档 witness 与 Release 之外的证据保留仍是 release gate。
+installer 要求 Cosign，并在下载平台归档前按精确 A3S Use tag workflow identity 与 GitHub OIDC issuer 验证 `checksums.txt`。证据缺失或无效时会 fail closed，已验证 manifest 与 bundle 会随安装版本保留。对每个 target，第二台无编译缓存的干净 runner 会重建全部随包原生可执行文件，并必须逐字节匹配主归档；只有匹配通过后，确定性 `.reproducibility.json` 记录才会被 attestation、checksum 与签名。`v0.3.2` 尝试在四个 target 上未通过该比较，因此没有创建 GitHub Release；确定性原生元数据控制已在本地验证，但新的五平台运行仍未完成。installer 脚本自身仍是独立的 bootstrap 信任边界，应先审查或通过可信系统包分发。外部运营的完整 staged tree/最终归档 witness 与 Release 之外的证据保留仍是 release gate。
 
 ## 可替换的 Registry 来源
 
@@ -71,6 +71,52 @@ install、upgrade 与 uninstall 在变更前生成带过期时间的 canonical p
 Apply 接受已审查 digest，重新解析所有输入，并在目标、内容、权限、提供者或所有权漂移时拒绝执行。用户确认与每个 grant proposal 也绑定这个 digest。
 
 对于 schema-v3 dependency，lock 绑定每个选定版本、依赖边、archive/package/manifest digest、宿主 target/version、Registry URL/trust root 和 TUF role version。Apply 在下载任何 archive 前重验完整闭包；同一依赖同时出现在多个已启用 Registry 时属于歧义并 fail closed。
+
+## Operation 诊断
+
+`a3s-use extension diagnose <publisher/name> --json` 会读取所选 User 或
+Workspace scope 中一个精确保留的 planned/admitted/cancelled install、upgrade、
+uninstall 图、一个 active admitted enable/disable operation，或最新 Host-reviewed
+pre-admission enable/disable plan/cancellation。它不会请求
+Registry，也不会执行 reconciliation、recovery 或写入。版本化 projection 关联
+reviewed plan 与 lock、无路径 Registry/TUF 证据、当前 Registry generation 与
+cutover、provider readiness、Grant journal phase、lifecycle
+publication/drain/rollback 状态以及稳定的恢复建议。
+
+该 projection 仅用于观察，绝不是 apply 或 recovery authority。其大小上限为
+2 MiB，会拒绝未知字段和不一致证据，并排除 path、Registry URL、idempotency
+key、credential、token、secret 名称和值、package content 以及任意包作者文本。
+底层状态无效时会 fail closed，只返回无路径清理/重装建议。active Use enablement
+证据优先；否则 observation-only digest-bound index 会按
+`(plannedAtMs, requestId)` 选择最新精确 Host plan，并输出 `planned` 或
+`cancelled`。私有 index 只为 request lookup 保留 managed scope，不公开 Host ID、
+authority、fence 或 Host request/cancellation identity。Use completion 或 Host
+outcome 会抑制陈旧 plan。对已保留且由 Registry 支持的 install/upgrade 图以及
+durable pre-plan download attempt，projection 会依据精确历史 provenance 分别报告
+expected/retained archive 和签名 executable-planning-target bytes，以及每个 target
+的 `missing`/`partial`/`complete` 状态。attempt 由进程锁保护，进程退出后仍保留，
+并只在 reviewed graph 持久化后删除。该观察不联网、只读、无路径且不获取 target
+cache lock；target 或 partial 永远不是 planning/apply/recovery authority。
+
+metadata access 与精确 lock 生成前，进程持有的 package lock 会保护
+`a3s.use.plugin-resolution-attempt.v1`。记录包含 refreshed/cached access、无路径的
+root/dependency Registry 验证状态、source-identity/trust-root digest、TUF role
+version、有界 target count 与失败码，以及最终 lock 证据。
+`a3s.use.plugin-resolution-attempt-diagnostic.v1` 的 phase 为 `pre-lock`。resolver
+失败或进程退出后仍可查询；诊断不会联网或写入，也不会等待 package lock。成功路径会
+先写入 download attempt，再删除 resolution evidence。Registry URL、路径、原始
+transport error、credential 与 metadata bytes 均不会进入记录。真实进程终止与
+Host/CLI 测试已证明 planning-target partial observation 和精确 Range resume、
+planned/cancelled enablement 诊断零联网/零 admission、不泄漏 Host/fence/path，
+以及 completed-Use/unfinished-Host-outcome 窗口中的陈旧 plan 抑制。
+
+`extension diagnose --history --json` 通过独立的有界合约暴露已结束 operation
+历史。每个明确 scope/package 最多保留最新 16 项，总计不超过 8 MiB，并要求
+completed/rolled-back operation 或 cancelled graph plan outcome 与 lifecycle、
+Grant、Registry cutover 证据一致。系统会先保留历史，再移除 recovery authority；重放按
+`(operationId, planDigest)` 去重，因为精确重装可以合法复用由 lock 派生的文本
+operation ID。查询不联网、只读、在 uninstall 后仍有效；未知字段、链接、不一致或
+超限状态只产生无路径错误。
 
 ## 默认授权策略
 
@@ -126,7 +172,24 @@ resolve signed dependency graph
 
 精确且已发布的依赖可以 retained 而不重复 commit。卸载按 package 反向顺序执行；另一个已安装包仍需要该依赖时会拒绝移除。部分 enabled receipt 写入在完整 immutable snapshot 发布前保持不可见。
 
-OKF standalone SQLite/FTS5 host 已实现：缺失 Knowledge evidence 为 pending，staged 不发布，只有精确 promoted observation 才是 healthy。Search 必须携带完整 scope 与精确、已审查的 capability/session projection；citation 绑定 package、surface、generation、index、concept path 与 source digest。A3S Code 托管 Workspace/session carrier 与生产 retention/GC 仍在开发中。
+OKF standalone SQLite/FTS5 host 已实现：缺失 Knowledge evidence 为 pending，staged 不发布，只有精确 promoted observation 才是 healthy。Search 必须携带完整 scope 与精确、已审查的 capability/session projection；citation 绑定 package、surface、generation、index、concept path 与 source digest。Scope-bounded retention/GC、audit、verified backup 与 exact-plan oldest-first rotation、derived-index repair、authority-bound database 与 exact-subset missing-binding restore 已实现。Restore 要求精确 reviewed plan、完整保留的 Registry/package/lifecycle/Grant authority，并要求当前 binding set 是备份的精确子集；冲突或更新的 binding evidence 会 fail closed。Durable operation 活跃期间会阻止普通 mutation。无路径 diagnostic 只暴露有界 active/history/capacity 与 reviewed binding-recovery evidence，绝不会轮换或改写 rollback file。A3S Code 托管 leased-query 资格验证、缺失独立 authority 与 clean-machine 恢复、跨平台运营演练、rollback-evidence retention policy 和 whole-product recovery 仍未完成。
+
+Whole-installation backup 使用同一个独占 maintenance boundary。`state backup`
+只盘点已知 Use-owned family，排除 lock，绑定已发布 Registry projection 与
+installed receipt digest，以精确 hash 复制每个 regular file，并要求发布前的第二次
+完整 inventory 完全不变。活动 restore/cutover/operation、partial download、
+lifecycle staging tree、未知 family、不可移植名称、link/reparse point 或 special
+file 都会 fail closed。`state verify-backup` 无需提取即可离线校验 canonical
+manifest、完整 archive 长度与每个 payload。Archive 包含原始 state，运营方必须按
+敏感数据保护。`state backup-retention` 会在一个外部目录锁下完整校验每个托管
+archive，绑定无路径、oldest-first 的 canonical plan，只接受未变化的 digest 与
+显式确认，并至少保留两个已验证 recovery generation。Archive digest 仍只能证明
+损坏，不能提供认证或缺失 authority 的恢复。`state plan-restore` 要求精确匹配当前
+version/platform，并要求 live Registry、receipt 与 Grant authority 保持不变。
+确认后的 `state restore` 会在 active marker 或任何 mutation 之前捕获外部 rollback
+archive，拒绝 candidate link/reparse point 和 durable evidence 替换，并在 15 个已测
+进程退出边界上收敛七阶段 journal。无路径的 `state restore-status` 保持只读，终态
+历史也有明确上限。缺失 authority、跨平台运营演练与 clean-machine recovery 仍未完成。
 
 认知包平台仍处于 pre-1.0。未知 receipt 或 database version 会 fail closed；未发布状态直接重建，不迁移也不改写。这不影响 package SemVer 解析、host-version requirement、target 检查与 signed provenance 验证。
 

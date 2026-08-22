@@ -6,8 +6,15 @@ description: Responsibility boundaries across A3S Use, the shared Plugin Manager
 # Architecture
 
 This is the architecture of the development preview, not a description of a
-released product. Only manifest v3, catalog v3, receipt v3, plan v4, host
-protocol v4, and manager tools v3 are current cognitive-package inputs.
+released product. Only manifest v3, catalog v3, receipt v4, plan v4, host
+protocol v6, managed scope v2, and manager tools v4 are current
+cognitive-package inputs.
+
+Host protocol v6 binds User and Workspace kind independently from the textual
+scope ID. It keeps package observation separate from exact operation
+observation, revision-based watch, and explicit-user pre-admission cancellation.
+Those projections use only durable Use-owned evidence and do not create a
+second lifecycle state machine.
 
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 

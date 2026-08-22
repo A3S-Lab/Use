@@ -3,8 +3,9 @@
 Status: development preview
 
 This runbook covers the scope-local SQLite/FTS5 backend embedded in standalone
-A3S Use. It defines the operations that are implemented today and the recovery
-authority they deliberately do not create.
+A3S Use. It defines the implemented audit, backup, repair, and authority-bound
+database plus missing-binding restore operations, plus the recovery authority
+they deliberately do not create.
 
 ## Safety boundary
 
@@ -134,6 +135,51 @@ SQLite schema, invalid receipts, inconsistent storage evidence, and FTS
 corruption. Store the returned manifest with the operator's broader backup
 inventory.
 
+## Review and apply backup retention
+
+Plan bounded retention for one owned directory and exact scope. The defaults
+retain at most 32 backups and 256 GiB:
+
+```bash
+a3s-use knowledge backup-retention ./backups \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --json
+```
+
+The command holds the same directory lock used by final backup publication,
+scans at most 4,096 entries, and fully verifies every regular
+`*.a3s-okf-backup` candidate before it can enter the plan. Verified backups for
+another scope and unrelated files remain outside the inventory. A malformed,
+linked, or oversized managed candidate fails closed. The canonical
+`a3s.use.okf-knowledge-backup-retention-plan.v1` result orders candidates by
+manifest creation time and file name, then selects only the oldest prefix
+needed to satisfy both `--max-backups` and `--max-bytes`. It never selects the
+last verified backup for the scope.
+
+Review the relative file names, digests, timestamps, byte counts, limits, and
+`planDigest`. Apply only that unchanged digest:
+
+```bash
+a3s-use knowledge backup-retention ./backups \
+  --max-backups 32 \
+  --max-bytes 274877906944 \
+  --plan-digest sha256:<reviewed-plan-digest> \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --yes \
+  --json
+```
+
+Apply re-verifies the complete scope inventory under the directory lock before
+removing anything. A new, missing, or changed backup rejects the stale plan.
+Deletion is oldest-first and directory-synced. A partial filesystem failure
+returns `use.okf.knowledge_backup_retention_outcome_unknown` with the exact
+already-removed entries; inspect and verify the directory, then create a new
+plan. Never recreate a removed path or assume that an error rolled deletion
+back. This rotates only verified scope-local database artifacts; it does not
+rotate restore rollback directories or any other Use-owned state family.
+
 ## Repair the derived search index
 
 If audit reports `use.okf.knowledge_search_index_invalid`, rebuild only the
@@ -158,19 +204,138 @@ receipts, unknown `user_version`, or package/lifecycle corruption. Those cases
 require recovery from exact external authority or cleanup and reinstall; repair
 must never invent evidence.
 
-## Recovery status
+## Plan a database restore
 
-Restore is intentionally not implemented yet. A safe restore must coordinate
-the database with exact Registry receipts, installed immutable package roots,
-Knowledge bindings, lifecycle journals, and Grants. Copying a verified SQLite
-snapshot into the live state directory would bypass that authority check and is
-not a supported procedure.
+Never copy a SQLite file into the live state directory. First create a
+path-free review from one verified backup and the complete retained authority:
+
+```bash
+a3s-use knowledge plan-restore ./workspace.a3s-okf-backup \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --json
+```
+
+The command changes no live Knowledge state. It verifies the archive offline,
+then holds the global maintenance fence while it proves all of the following:
+
+- the backup policy exactly equals the configured storage policy;
+- the current durable binding set is an exact subset of the backup projection
+  inventory; any changed, conflicting, or newer binding fails closed;
+- no projection is staged or failed, and every backup selection matches its
+  exact retained promoted projection;
+- selected generations are still published and leased in the Registry, while
+  retained unselected generations still have immutable package receipts and
+  bundle identity;
+- every package lifecycle journal is terminal and the Registry has no pending
+  cutover;
+- permission-bearing selected packages have the exact active Grant and retired
+  generations have the exact revoked Grant; and
+- Registry authority remains stable across validation.
+
+The `a3s.use.okf-knowledge-restore-plan.v2` plan also binds the exact current
+binding-inventory digest and missing-binding count plus the current main
+database, WAL, and SHM lengths and SHA-256 values. Integrity is audited against
+a private copy so planning never checkpoints or rewrites the live database.
+`status: "no-change"` is returned only when the healthy live main file is
+byte-identical to the verified backup, no sidecar exists, and no binding is
+missing. Store the returned `planDigest` with the review.
+
+## Apply or resume the reviewed restore
+
+Apply only the exact digest returned above:
+
+```bash
+a3s-use knowledge restore ./workspace.a3s-okf-backup \
+  --plan-digest sha256:<64-lowercase-hex-digits> \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --yes \
+  --json
+```
+
+Apply re-verifies the backup, the exact-subset binding state, and all package,
+lifecycle, Registry, and Grant authority under one exclusive cross-process
+maintenance fence. Any drift returns
+`use.okf.knowledge_restore_plan_mismatch` or an authority-specific error before
+a restore operation is created. Missing binding records are recreated only
+from the audited backup inventory; existing files are never overwritten or
+removed.
+
+A required `a3s.use.okf-knowledge-restore-operation.v2` advances through
+`planned`, `staged`, `bindings-restored`, `prior-moved`, `published`, and
+`completed`. The verified candidate is synced before mutation. Exact missing
+bindings are created and synced before the database cutover checkpoint. The
+exact prior main database, WAL, and SHM are moved into a scope- and
+plan-digest-owned restore directory before the candidate is renamed into the
+live path. Every binding write, rename, and journal update is directory-synced.
+The selected Registry generation leases remain held through publication. The
+terminal `a3s.use.okf-knowledge-restore-result.v2` reports the reviewed number
+of restored bindings.
+
+If the process exits, rerun the same command with the same scope and plan
+digest. A durable active marker blocks direct Registry, Workspace Grant,
+lifecycle-journal, Knowledge binding, and Knowledge database mutation with
+`use.state.maintenance_restore_active` until replay converges. These public
+stores enforce the same maintenance fence at their lowest mutation layer, in
+addition to the complete-operation guards held by lifecycle coordinators. The
+last immutable Registry snapshot remains readable but cannot perform crash
+reconciliation or write a new generation while exclusive maintenance is
+active. Once `staged` is durable, replay can use the exact retained candidate
+even if the external backup path is temporarily unavailable. It never accepts
+a different valid backup under the same operation. Terminal replay revalidates
+the published and retained file digests without rewriting them.
+
+Each scope retains at most 32 restore-operation directories. This preview does
+not silently rotate prior databases; it fails with
+`use.okf.knowledge_restore_retention_required` so an operator cannot lose the
+only rollback evidence through automatic cleanup. Do not edit the active
+marker, journal, candidate, or retained prior files manually.
+
+## Inspect restore status
+
+Inspect recovery without supplying the backup path or reviewed plan digest:
+
+```bash
+a3s-use knowledge restore-status \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --json
+```
+
+The `a3s.use.okf-knowledge-restore-diagnostic.v2` result reports any global
+active restore, including its exact scope, plan digest, and current `planned`,
+`staged`, `bindings-restored`, `prior-moved`, `published`, or `completed`
+phase. It also returns the reviewed binding-state digest and missing-binding
+count, requested scope's canonically ordered history, retained
+operation-directory count, directories created during the marker-to-journal
+handoff, the fixed limit of 32, and remaining capacity. Each summary is
+path-free and contains only bounded backup, authority, Registry generation,
+projection, prior-file, and timing evidence.
+
+The command takes the exclusive maintenance fence to make the marker and
+journal view coherent. It does not rewrite the live database, marker, journal,
+candidate, or retained prior files. Use it to recover the exact plan digest,
+then rerun `knowledge restore` with that digest and the original scope. It is
+not a cleanup command: restore rollback review/removal and whole-product
+retention policy remain operator and release gates.
+
+## Recovery boundary
+
+The implemented command restores the scope-local Knowledge database and only
+those Knowledge binding files absent from an otherwise exact subset of the
+backup inventory. It requires Registry receipts, immutable package roots,
+lifecycle journals, and Grants to be present and exact; the unsigned database
+backup cannot recreate that authority. Conflicting or newer bindings are also
+not repaired. Copying only the database backup to a clean machine is therefore
+insufficient.
 
 Before a supported product release, the project must still provide and test:
 
-- coordinated backup and restore for every Use-owned state family;
-- recovery from missing or corrupted binding and lifecycle evidence;
-- retention and rotation policy for backup artifacts;
+- recovery from conflicting/corrupted binding evidence and missing or
+  corrupted lifecycle, Registry, package, and Grant evidence;
+- cross-platform clean-machine drills for coordinated whole-installation
+  restore and retention of its explicit rollback archives;
 - encryption and operator access policy where backup content is sensitive;
 - clean-machine restore and disaster-recovery drills on every supported target;
 - incident escalation and support ownership; and

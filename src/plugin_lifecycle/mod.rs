@@ -32,6 +32,7 @@ pub use diagnostic::{
     PLUGIN_LIFECYCLE_DIAGNOSTIC_SCHEMA,
 };
 pub use grant::{PluginCapabilityCutoverEvidence, PluginGrantLifecycleUnit};
+pub(crate) use graph::operation_cutover_key;
 pub use graph::{
     PluginGraphCapabilityLifecycleHost, PluginGraphCapabilityPublication,
     PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,

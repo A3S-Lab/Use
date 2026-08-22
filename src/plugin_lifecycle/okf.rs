@@ -12,6 +12,7 @@ use crate::okf_knowledge::{
     OkfKnowledgeBinding, OkfKnowledgeBindingStore, OkfKnowledgeClient, OkfKnowledgeStageRequest,
     OkfKnowledgeStageSpec,
 };
+use a3s_use_extension::StateMaintenanceLock;
 
 use super::{PluginLifecycleEvidence, PluginLifecycleIntent, PluginOkfLifecycleHost};
 
@@ -27,6 +28,7 @@ pub struct OkfKnowledgeLifecycleHost {
     package_root: PathBuf,
     client: OkfKnowledgeClient,
     store: OkfKnowledgeBindingStore,
+    maintenance: StateMaintenanceLock,
 }
 
 impl OkfKnowledgeLifecycleHost {
@@ -35,10 +37,12 @@ impl OkfKnowledgeLifecycleHost {
         client: OkfKnowledgeClient,
         store: OkfKnowledgeBindingStore,
     ) -> Self {
+        let maintenance = StateMaintenanceLock::new(store.state_root());
         Self {
             package_root: package_root.into(),
             client,
             store,
+            maintenance,
         }
     }
 
@@ -188,6 +192,7 @@ impl PluginOkfLifecycleHost for OkfKnowledgeLifecycleHost {
         surface: &PluginOkfSurface,
         idempotency_key: &str,
     ) -> UseResult<PluginLifecycleEvidence> {
+        let _maintenance = self.maintenance.acquire_shared().await?;
         self.prepare(intent, surface, idempotency_key).await
     }
 
@@ -197,6 +202,7 @@ impl PluginOkfLifecycleHost for OkfKnowledgeLifecycleHost {
         surface: &PluginOkfSurface,
         idempotency_key: &str,
     ) -> UseResult<PluginLifecycleEvidence> {
+        let _maintenance = self.maintenance.acquire_shared().await?;
         self.stop(intent, surface, idempotency_key).await
     }
 
@@ -206,6 +212,7 @@ impl PluginOkfLifecycleHost for OkfKnowledgeLifecycleHost {
         surface: &PluginOkfSurface,
         idempotency_key: &str,
     ) -> UseResult<PluginLifecycleEvidence> {
+        let _maintenance = self.maintenance.acquire_shared().await?;
         self.remove(intent, surface, idempotency_key).await
     }
 }

@@ -10,7 +10,7 @@ use tokio::fs;
 
 use super::super::{
     normalize_package_id, ExtensionReceipt, ExtensionTrust, InstalledExtension,
-    RECEIPT_SCHEMA_VERSION_V3,
+    EXTENSION_RECEIPT_SCHEMA_VERSION,
 };
 use crate::package::io_error;
 use crate::remote::ResolvedRemotePackage;
@@ -165,7 +165,7 @@ pub(super) fn exact_receipt(
     identity: &ExtensionLifecycleIdentity,
     receipt: &ExtensionReceipt,
 ) -> UseResult<()> {
-    if receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3
+    if receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION
         || receipt.package_id != identity.package_id
         || receipt.lifecycle_generation != Some(identity.generation)
         || receipt.package_sha256.as_deref() != Some(identity.package_sha256())
@@ -215,7 +215,7 @@ pub(super) fn validate_locked_extension(
         .manifest_sha256
         .as_deref()
         .and_then(|digest| digest.strip_prefix("sha256:"));
-    if extension.receipt.schema_version != RECEIPT_SCHEMA_VERSION_V3
+    if extension.receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION
         || extension.receipt.trust != ExtensionTrust::RegistryTuf
         || extension.receipt.package_id != record.package_id
         || extension.receipt.version != record.version

@@ -1364,8 +1364,15 @@ extension "acme/workflow" {
         package_root: PathBuf,
         enabled: bool,
     ) -> a3s_use_extension::InstalledExtension {
+        let mut selected_surfaces = manifest
+            .plugin_surfaces()
+            .unwrap()
+            .into_iter()
+            .map(|surface| surface.surface)
+            .collect::<Vec<_>>();
+        selected_surfaces.sort();
         let receipt = a3s_use_extension::ExtensionReceipt {
-            schema_version: 3,
+            schema_version: 4,
             package_id: manifest.package_id.clone(),
             component_id: format!("use/{}", manifest.route),
             route: manifest.route.clone(),
@@ -1377,7 +1384,7 @@ extension "acme/workflow" {
             registry: None,
             verified_catalog: None,
             planning_bundle: None,
-            selected_surfaces: Vec::new(),
+            selected_surfaces,
             installed_at_unix: 0,
             enabled,
             lifecycle_generation: Some(1),
@@ -1606,7 +1613,6 @@ extension "acme/workflow" {
         tokio::fs::write(&path, b"# Guide\n").await.unwrap();
         let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_ONLY_PLUGIN).unwrap();
         let mut extension = installed_extension(manifest, temp.path().to_path_buf(), true);
-        extension.receipt.schema_version = 3;
         extension.receipt.package_sha256 = Some("a".repeat(64));
         extension.receipt.lifecycle_generation = Some(7);
         let surfaces = extension
@@ -1669,7 +1675,6 @@ extension "acme/workflow" {
             .unwrap();
         let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_UI_PLUGIN).unwrap();
         let mut extension = installed_extension(manifest, temp.path().to_path_buf(), true);
-        extension.receipt.schema_version = 3;
         extension.receipt.package_sha256 = Some("a".repeat(64));
         extension.receipt.lifecycle_generation = Some(9);
         let surfaces = extension
@@ -1832,7 +1837,6 @@ extension "acme/workflow" {
 
         let manifest = a3s_use_extension::ExtensionManifest::parse_acl(FLOW_PLUGIN).unwrap();
         let mut extension = installed_extension(manifest, package_root.clone(), true);
-        extension.receipt.schema_version = 3;
         extension.receipt.package_sha256 = Some("a".repeat(64));
         extension.receipt.lifecycle_generation = Some(12);
         let intent = PluginLifecycleIntent::from_manifest(

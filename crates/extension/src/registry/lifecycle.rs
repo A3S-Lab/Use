@@ -9,6 +9,7 @@ mod cutover;
 mod generations;
 mod model;
 mod package;
+mod staging;
 mod visibility;
 
 use cutover::{
@@ -29,7 +30,7 @@ use package::{commit_candidate_root, validate_candidate_source};
 use super::{
     ensure_no_installed_dependents, published_binding_matches_extension, verify_package_integrity,
     ExtensionReceipt, ExtensionRegistry, InstalledExtension, UninstallResult,
-    MAX_PENDING_REGISTRY_CUTOVERS, RECEIPT_SCHEMA_VERSION_V3,
+    EXTENSION_RECEIPT_SCHEMA_VERSION, MAX_PENDING_REGISTRY_CUTOVERS,
 };
 use crate::package::{
     io_error, sync_parent_directory, unix_timestamp, write_receipt, RegistryLock,
@@ -80,11 +81,11 @@ impl ExtensionRegistry {
             candidate.verified_catalog.as_ref(),
             &selected_surfaces,
         )?;
-        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let mut retained_created = None;
         let mut retained_candidate = None;
         if let Some(current) = self.get(identity.package_id()).await? {
-            if current.receipt.schema_version == RECEIPT_SCHEMA_VERSION_V3 {
+            if current.receipt.schema_version == EXTENSION_RECEIPT_SCHEMA_VERSION {
                 if exact_receipt(identity, &current.receipt).is_ok()
                     && candidate.matches_provenance(&current.receipt)
                 {
@@ -197,7 +198,8 @@ impl ExtensionRegistry {
 
         validate_candidate_source(candidate).await?;
         let target = self.lifecycle_package_root(identity);
-        let target_created = commit_candidate_root(candidate, &target).await?;
+        let target_created =
+            commit_candidate_root(candidate, &target, self.paths.data_root()).await?;
         if let Some((retained_identity, receipt)) = retained_candidate {
             let retained = self
                 .retain_lifecycle_receipt(&retained_identity, &receipt)
@@ -216,7 +218,7 @@ impl ExtensionRegistry {
             }
         }
         let receipt = ExtensionReceipt {
-            schema_version: RECEIPT_SCHEMA_VERSION_V3,
+            schema_version: EXTENSION_RECEIPT_SCHEMA_VERSION,
             package_id: identity.package_id.clone(),
             component_id: format!("use/{}", identity.package_id),
             route: candidate.manifest.route.clone(),
@@ -425,7 +427,7 @@ impl ExtensionRegistry {
         timeout: Duration,
     ) -> UseResult<ExtensionLifecycleResult> {
         crate::route_lock::deadline_after(timeout)?;
-        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let extension = self.exact_lifecycle_extension(identity).await?;
         if extension.receipt.enabled {
             return Err(lifecycle_state_error(
@@ -463,7 +465,7 @@ impl ExtensionRegistry {
         timeout: Duration,
     ) -> UseResult<UninstallResult> {
         crate::route_lock::deadline_after(timeout)?;
-        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let target = self.lifecycle_package_root(identity);
         let selected = self.get(identity.package_id()).await?;
         let selected_is_exact = selected
@@ -608,7 +610,7 @@ impl ExtensionRegistry {
             }
         }
 
-        let _lock = RegistryLock::acquire_for_mutation(&self.paths.registry_lock_path()).await?;
+        let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let snapshot_before = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
         let recorded_cutover = cutover_request
             .map(|request| recorded_cutover(&snapshot_before, request))

@@ -1,7 +1,7 @@
 # A3S Use Architecture
 
 Status: development preview; not production-ready
-Last updated: 2026-08-11
+Last updated: 2026-08-23
 
 ## Product boundary
 
@@ -48,9 +48,41 @@ files across host directories.
 
 The managed-host entry point is `CognitivePackageHostManager`, an adapter over
 `CognitivePackageManager`, not another manager. Its protocol store contains
-only request-to-plan, operation-to-request, and terminal-result bindings. All
-admission, recovery, package state, and capability publication evidence stays
-in the existing Use-owned stores shown below it.
+only request-to-plan, operation-to-request, pre-admission cancellation,
+terminal-result, and observation-index bindings. None is admission or recovery
+authority. All admission, recovery, package state, and capability publication
+evidence stays in the existing Use-owned stores shown below it. Reviewed
+install and upgrade apply consumes the exact verified cache populated by
+planning and never depends on a second Registry request.
+
+Registry/TUF resolution first creates a bounded pre-lock attempt under the
+package-level planning lock. It records refreshed or cached access and
+path-free per-Registry verification state before metadata access begins. A
+failed or externally interrupted resolver therefore remains diagnosable; a
+successful resolver writes its download-attempt successor before deleting the
+pre-lock record.
+
+After exact lock resolution, a process-held pre-plan download-attempt record
+retains the exact lock-selected archive and separately signed executable-
+planning-target observation sets until a reviewed pending graph is durable. It
+survives process exit for path-free byte diagnosis but is never planning, apply,
+or recovery authority.
+
+Host protocol v6 binds an explicit User or Workspace scope kind and projects
+package state separately from exact operation state. Operation observation,
+revision-bound watch, and explicit-user pre-admission cancellation are derived
+from those same Host bindings and Use-owned graph, enablement, and lifecycle
+stores; the adapter does not infer progress from time or maintain another
+operation journal. Equal textual IDs in different scope kinds do not alias a
+Host fence or durable request replay directory.
+
+When no graph or active Use enablement exists, the standalone operation
+diagnostic may follow a digest-bound index to the newest Host-reviewed
+enable/disable plan for the same public PlanScope/package. The index orders
+plans by `(plannedAtMs, requestId)`, retains the exact managed scope only for
+private request lookup, and exposes neither Host/fence/request identity nor a
+new authority path. It projects `planned` or exact `cancelled` evidence and is
+suppressed by active or completed Use state and durable Host outcomes.
 
 ## One current contract line
 
@@ -61,11 +93,15 @@ code accepts one preview baseline only:
 | --- | --- |
 | Manifest | ACL schema 3 |
 | Catalog | `a3s.use.plugin-catalog.v3` |
-| Receipt | numeric schema 3 |
+| Receipt | numeric schema 4 |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
-| Host capabilities | `a3s.use.plugin-host-capabilities.v4`, protocol 4 |
+| Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
+| Host managed scope | `a3s.use.plugin-managed-scope.v2` |
 | Manager tools | `a3s.use.plugin-manager-tools.v4` |
-| Pending graph | `a3s.use.pending-package-graph-operation.v2` |
+| Pending graph | `a3s.use.pending-package-graph-operation.v4` |
+| Pre-lock resolution attempt/diagnostic | `a3s.use.plugin-resolution-attempt.v1` / `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
+| Pre-plan download attempt/diagnostic | `a3s.use.plugin-download-attempt.v1` / `a3s.use.plugin-download-attempt-diagnostic.v1` |
+| Operation diagnostic/history | `a3s.use.plugin-operation-diagnostic.v1` / `a3s.use.plugin-operation-history-diagnostic.v1` |
 | Enablement state/operation | v2 |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |

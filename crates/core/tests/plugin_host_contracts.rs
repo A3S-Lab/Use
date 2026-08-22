@@ -15,26 +15,52 @@ use a3s_use_core::{
     PluginPackageId, PluginSurfaceKind, PluginSurfaceRef, VerifiedCatalogProvenance,
     VerifiedPluginCatalogRecord, PLUGIN_HOST_APPLY_REQUEST_SCHEMA, PLUGIN_HOST_APPLY_RESULT_SCHEMA,
     PLUGIN_HOST_CANCEL_REQUEST_SCHEMA, PLUGIN_HOST_CANCEL_RESULT_SCHEMA,
-    PLUGIN_HOST_CAPABILITIES_SCHEMA_V4, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
+    PLUGIN_HOST_CAPABILITIES_SCHEMA_V6, PLUGIN_HOST_ENABLEMENT_PLAN_REQUEST_SCHEMA,
     PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA, PLUGIN_HOST_OBSERVATION_REQUEST_SCHEMA,
     PLUGIN_HOST_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA,
     PLUGIN_HOST_OPERATION_OBSERVATION_RESULT_SCHEMA, PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA,
-    PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V4,
-    PLUGIN_MANAGED_SCOPE_SCHEMA, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
+    PLUGIN_HOST_PLAN_REQUEST_SCHEMA, PLUGIN_HOST_PLAN_RESULT_SCHEMA, PLUGIN_HOST_PROTOCOL_LEVEL_V6,
+    PLUGIN_MANAGED_SCOPE_SCHEMA_V2, PLUGIN_OPERATION_CONFIRMATION_SCHEMA,
     PLUGIN_OPERATION_PLAN_SCHEMA_V4,
 };
 
 const CATALOG: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
-const HOST_CAPABILITIES: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v4.json");
+const HOST_CAPABILITIES: &[u8] = include_bytes!("../fixtures/plugins/host-capabilities-v6.json");
 const HOST_CAPABILITIES_DIGEST: &str =
-    include_str!("../fixtures/plugins/host-capabilities-v4.sha256").trim_ascii_end();
-const MANAGED_SCOPE: &[u8] = include_bytes!("../fixtures/plugins/managed-scope-v1.json");
+    include_str!("../fixtures/plugins/host-capabilities-v6.sha256").trim_ascii_end();
+const RETIRED_HOST_CAPABILITIES_V5: &[u8] =
+    include_bytes!("../fixtures/plugins/host-capabilities-v5.json");
+const RETIRED_HOST_CAPABILITIES_V4: &[u8] =
+    include_bytes!("../fixtures/plugins/host-capabilities-v4.json");
+const MANAGED_SCOPE: &[u8] = include_bytes!("../fixtures/plugins/managed-scope-v2.json");
 const MANAGED_SCOPE_DIGEST: &str =
-    include_str!("../fixtures/plugins/managed-scope-v1.sha256").trim_ascii_end();
+    include_str!("../fixtures/plugins/managed-scope-v2.sha256").trim_ascii_end();
+const RETIRED_MANAGED_SCOPE: &[u8] = include_bytes!("../fixtures/plugins/managed-scope-v1.json");
 const HOST_OBSERVATION: &[u8] =
     include_bytes!("../fixtures/plugins/host-observation-result-v1.json");
 const HOST_OBSERVATION_DIGEST: &str =
     include_str!("../fixtures/plugins/host-observation-result-v1.sha256").trim_ascii_end();
+const HOST_OPERATION_OBSERVATION_REQUEST: &[u8] =
+    include_bytes!("../fixtures/plugins/host-operation-observation-request-v1.json");
+const HOST_OPERATION_OBSERVATION_REQUEST_DIGEST: &str =
+    include_str!("../fixtures/plugins/host-operation-observation-request-v1.sha256")
+        .trim_ascii_end();
+const HOST_OPERATION_OBSERVATION_RESULT: &[u8] =
+    include_bytes!("../fixtures/plugins/host-operation-observation-result-v1.json");
+const HOST_OPERATION_OBSERVATION_RESULT_DIGEST: &str =
+    include_str!("../fixtures/plugins/host-operation-observation-result-v1.sha256")
+        .trim_ascii_end();
+const HOST_OPERATION_WATCH_REQUEST: &[u8] =
+    include_bytes!("../fixtures/plugins/host-operation-watch-request-v1.json");
+const HOST_OPERATION_WATCH_REQUEST_DIGEST: &str =
+    include_str!("../fixtures/plugins/host-operation-watch-request-v1.sha256").trim_ascii_end();
+const HOST_CANCEL_REQUEST: &[u8] =
+    include_bytes!("../fixtures/plugins/host-cancel-request-v1.json");
+const HOST_CANCEL_REQUEST_DIGEST: &str =
+    include_str!("../fixtures/plugins/host-cancel-request-v1.sha256").trim_ascii_end();
+const HOST_CANCEL_RESULT: &[u8] = include_bytes!("../fixtures/plugins/host-cancel-result-v1.json");
+const HOST_CANCEL_RESULT_DIGEST: &str =
+    include_str!("../fixtures/plugins/host-cancel-result-v1.sha256").trim_ascii_end();
 const DIGEST_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const DIGEST_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const DIGEST_C: &str = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
@@ -46,8 +72,9 @@ fn canonical_fixture(bytes: &[u8]) -> &[u8] {
 
 fn scope() -> PluginManagedScope {
     PluginManagedScope {
-        schema: PLUGIN_MANAGED_SCOPE_SCHEMA.to_owned(),
+        schema: PLUGIN_MANAGED_SCOPE_SCHEMA_V2.to_owned(),
         host_id: "host:node-01".to_owned(),
+        scope_kind: PlanScopeKind::Workspace,
         scope_id: "workspace:research".to_owned(),
         authority_id: "cloud:organization-01".to_owned(),
         fence_generation: 7,
@@ -56,7 +83,7 @@ fn scope() -> PluginManagedScope {
 }
 
 fn capabilities() -> PluginHostCapabilities {
-    PluginHostCapabilities::v4(
+    PluginHostCapabilities::v6(
         "host:node-01",
         env!("CARGO_PKG_VERSION"),
         "use:0.2.1:linux-x86_64",
@@ -191,7 +218,7 @@ fn installed_state(desired: PluginDesiredState) -> PluginHostPackageState {
 }
 
 fn enablement_plan_request(enabled: bool) -> PluginHostEnablementPlanRequest {
-    let capabilities = PluginHostCapabilities::v4(
+    let capabilities = PluginHostCapabilities::v6(
         "host:node-01",
         env!("CARGO_PKG_VERSION"),
         "use:0.3.0:linux-x86_64",
@@ -336,8 +363,8 @@ fn package_identity_is_typed_and_uses_one_validation_rule() {
 fn capabilities_freeze_the_single_current_host_contract() {
     let capabilities = capabilities();
     capabilities.validate().unwrap();
-    assert_eq!(capabilities.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V4);
-    assert_eq!(capabilities.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V4);
+    assert_eq!(capabilities.schema, PLUGIN_HOST_CAPABILITIES_SCHEMA_V6);
+    assert_eq!(capabilities.protocol_level, PLUGIN_HOST_PROTOCOL_LEVEL_V6);
     assert_eq!(capabilities.catalog_schemas, ["a3s.use.plugin-catalog.v3"]);
     assert_eq!(capabilities.plan_schemas, [PLUGIN_OPERATION_PLAN_SCHEMA_V4]);
     assert!(capabilities.exclusive_managed_scope_mutation);
@@ -361,6 +388,12 @@ fn capabilities_freeze_the_single_current_host_contract() {
     assert!(capabilities
         .contract_schemas
         .contains(&PLUGIN_HOST_ENABLEMENT_PLAN_RESULT_SCHEMA.to_owned()));
+    assert!(capabilities
+        .contract_schemas
+        .contains(&PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA.to_owned()));
+    assert!(capabilities
+        .contract_schemas
+        .contains(&PLUGIN_HOST_CANCEL_REQUEST_SCHEMA.to_owned()));
     assert!(!capabilities
         .contract_schemas
         .iter()
@@ -370,6 +403,8 @@ fn capabilities_freeze_the_single_current_host_contract() {
     retired["schema"] = serde_json::json!("a3s.use.plugin-host-capabilities.v3");
     retired["protocolLevel"] = serde_json::json!(3);
     assert!(PluginHostCapabilities::from_json(&serde_json::to_vec(&retired).unwrap()).is_err());
+    assert!(PluginHostCapabilities::from_json(RETIRED_HOST_CAPABILITIES_V5).is_err());
+    assert!(PluginHostCapabilities::from_json(RETIRED_HOST_CAPABILITIES_V4).is_err());
 
     let mut expanded = capabilities;
     expanded
@@ -380,7 +415,7 @@ fn capabilities_freeze_the_single_current_host_contract() {
 
 #[test]
 fn host_enablement_plan_is_explicit_and_reuses_digest_only_apply() {
-    let capabilities = PluginHostCapabilities::v4(
+    let capabilities = PluginHostCapabilities::v6(
         "host:node-01",
         env!("CARGO_PKG_VERSION"),
         "use:0.3.0:linux-x86_64",
@@ -429,7 +464,7 @@ fn host_enablement_plan_is_explicit_and_reuses_digest_only_apply() {
 }
 
 #[test]
-fn host_capability_scope_and_observation_fixtures_are_canonical() {
+fn current_host_protocol_fixtures_are_canonical() {
     let parsed_capabilities = PluginHostCapabilities::from_json(HOST_CAPABILITIES).unwrap();
     assert_eq!(parsed_capabilities, capabilities());
     assert_eq!(
@@ -448,6 +483,7 @@ fn host_capability_scope_and_observation_fixtures_are_canonical() {
         canonical_fixture(MANAGED_SCOPE)
     );
     assert_eq!(scope.descriptor_digest().unwrap(), MANAGED_SCOPE_DIGEST);
+    assert!(PluginManagedScope::from_json(RETIRED_MANAGED_SCOPE).is_err());
 
     let observation = PluginHostObservationResult::from_json(HOST_OBSERVATION).unwrap();
     assert_eq!(
@@ -457,6 +493,78 @@ fn host_capability_scope_and_observation_fixtures_are_canonical() {
     assert_eq!(
         observation.descriptor_digest().unwrap(),
         HOST_OBSERVATION_DIGEST
+    );
+    assert_eq!(
+        observation.capabilities_digest,
+        parsed_capabilities.descriptor_digest().unwrap()
+    );
+
+    let operation_request =
+        PluginHostOperationObservationRequest::from_json(HOST_OPERATION_OBSERVATION_REQUEST)
+            .unwrap();
+    operation_request
+        .validate_for_capabilities(&parsed_capabilities)
+        .unwrap();
+    assert_eq!(
+        operation_request.canonical_bytes().unwrap(),
+        canonical_fixture(HOST_OPERATION_OBSERVATION_REQUEST)
+    );
+    assert_eq!(
+        operation_request.descriptor_digest().unwrap(),
+        HOST_OPERATION_OBSERVATION_REQUEST_DIGEST
+    );
+
+    let operation_result =
+        PluginHostOperationObservationResult::from_json(HOST_OPERATION_OBSERVATION_RESULT).unwrap();
+    operation_result
+        .validate_for(&operation_request, &parsed_capabilities)
+        .unwrap();
+    assert_eq!(
+        operation_result.canonical_bytes().unwrap(),
+        canonical_fixture(HOST_OPERATION_OBSERVATION_RESULT)
+    );
+    assert_eq!(
+        operation_result.descriptor_digest().unwrap(),
+        HOST_OPERATION_OBSERVATION_RESULT_DIGEST
+    );
+
+    let watch = PluginHostOperationWatchRequest::from_json(HOST_OPERATION_WATCH_REQUEST).unwrap();
+    watch
+        .validate_for_capabilities(&parsed_capabilities)
+        .unwrap();
+    assert_eq!(
+        watch.canonical_bytes().unwrap(),
+        canonical_fixture(HOST_OPERATION_WATCH_REQUEST)
+    );
+    assert_eq!(
+        watch.descriptor_digest().unwrap(),
+        HOST_OPERATION_WATCH_REQUEST_DIGEST
+    );
+
+    let cancellation = PluginHostCancelRequest::from_json(HOST_CANCEL_REQUEST).unwrap();
+    cancellation
+        .validate_for_capabilities(&parsed_capabilities)
+        .unwrap();
+    assert_eq!(
+        cancellation.canonical_bytes().unwrap(),
+        canonical_fixture(HOST_CANCEL_REQUEST)
+    );
+    assert_eq!(
+        cancellation.descriptor_digest().unwrap(),
+        HOST_CANCEL_REQUEST_DIGEST
+    );
+
+    let cancellation_result = PluginHostCancelResult::from_json(HOST_CANCEL_RESULT).unwrap();
+    cancellation_result
+        .validate_for(&cancellation, &parsed_capabilities)
+        .unwrap();
+    assert_eq!(
+        cancellation_result.canonical_bytes().unwrap(),
+        canonical_fixture(HOST_CANCEL_RESULT)
+    );
+    assert_eq!(
+        cancellation_result.descriptor_digest().unwrap(),
+        HOST_CANCEL_RESULT_DIGEST
     );
 }
 
@@ -472,6 +580,29 @@ fn managed_scope_is_opaque_and_requires_an_exact_fence() {
         }
     );
     scope.verify_current_fence(&scope.clone()).unwrap();
+
+    let mut same_id_user = scope.clone();
+    same_id_user.scope_kind = PlanScopeKind::User;
+    same_id_user.validate().unwrap();
+    assert_eq!(
+        same_id_user.plan_scope(),
+        PlanScope {
+            kind: PlanScopeKind::User,
+            id: "workspace:research".to_owned(),
+        }
+    );
+    assert_ne!(
+        same_id_user.descriptor_digest().unwrap(),
+        scope.descriptor_digest().unwrap()
+    );
+    assert_eq!(
+        same_id_user.verify_current_fence(&scope).unwrap_err().code,
+        "use.plugin.managed_scope_fence_mismatch"
+    );
+    assert_eq!(
+        scope.verify_current_fence(&same_id_user).unwrap_err().code,
+        "use.plugin.managed_scope_fence_mismatch"
+    );
 
     let mut stale = scope.clone();
     stale.fence_generation -= 1;
@@ -670,6 +801,14 @@ fn host_capability_scope_plan_and_observation_decoders_reject_unknown_fields() {
 
     assert!(PluginHostCapabilities::from_json(&with_unknown(capabilities())).is_err());
     assert!(PluginManagedScope::from_json(&with_unknown(scope())).is_err());
+    let mut missing_scope_kind = serde_json::to_value(scope()).unwrap();
+    missing_scope_kind
+        .as_object_mut()
+        .unwrap()
+        .remove("scopeKind");
+    assert!(
+        PluginManagedScope::from_json(&serde_json::to_vec(&missing_scope_kind).unwrap()).is_err()
+    );
     assert!(PluginHostPlanRequest::from_json(&with_unknown(plan_request())).is_err());
     assert!(PluginHostPlanResult::from_json(&with_unknown(plan_result())).is_err());
     let observation_request = PluginHostObservationRequest {
@@ -683,6 +822,23 @@ fn host_capability_scope_plan_and_observation_decoders_reject_unknown_fields() {
     assert!(PluginHostObservationRequest::from_json(&with_unknown(observation_request)).is_err());
     let observation_result = PluginHostObservationResult::from_json(HOST_OBSERVATION).unwrap();
     assert!(PluginHostObservationResult::from_json(&with_unknown(observation_result)).is_err());
+    let operation_request =
+        PluginHostOperationObservationRequest::from_json(HOST_OPERATION_OBSERVATION_REQUEST)
+            .unwrap();
+    assert!(
+        PluginHostOperationObservationRequest::from_json(&with_unknown(operation_request)).is_err()
+    );
+    let operation_result =
+        PluginHostOperationObservationResult::from_json(HOST_OPERATION_OBSERVATION_RESULT).unwrap();
+    assert!(
+        PluginHostOperationObservationResult::from_json(&with_unknown(operation_result)).is_err()
+    );
+    let watch = PluginHostOperationWatchRequest::from_json(HOST_OPERATION_WATCH_REQUEST).unwrap();
+    assert!(PluginHostOperationWatchRequest::from_json(&with_unknown(watch)).is_err());
+    let cancellation = PluginHostCancelRequest::from_json(HOST_CANCEL_REQUEST).unwrap();
+    assert!(PluginHostCancelRequest::from_json(&with_unknown(cancellation)).is_err());
+    let cancellation_result = PluginHostCancelResult::from_json(HOST_CANCEL_RESULT).unwrap();
+    assert!(PluginHostCancelResult::from_json(&with_unknown(cancellation_result)).is_err());
 }
 
 #[test]
@@ -711,7 +867,7 @@ fn public_host_types_and_service_port_are_send_sync() {
 
 #[test]
 fn operation_observation_revision_binds_exact_progress_without_percentages() {
-    let capabilities = PluginHostCapabilities::v5(
+    let capabilities = PluginHostCapabilities::v6(
         "host:node-01",
         env!("CARGO_PKG_VERSION"),
         "use:0.3.0:linux-x86_64",

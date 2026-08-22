@@ -34,6 +34,7 @@ impl CognitivePackageManager {
         &self,
         root_package_id: &str,
     ) -> UseResult<CognitivePackageUninstallResult> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let graph_store = self.graph_store();
         let pending_store = self.pending_store();
         let existing_pending = pending_store
@@ -259,7 +260,12 @@ impl CognitivePackageManager {
             }
         }
         graph_store.remove(root_package_id, &lock_digest).await?;
-        pending_store.remove(&pending).await?;
+        self.retain_and_remove_graph_operation(
+            &pending_store,
+            &pending,
+            super::PluginRetainedOperationOutcome::Completed,
+        )
+        .await?;
         let removed_packages = lock
             .removal_order()?
             .into_iter()

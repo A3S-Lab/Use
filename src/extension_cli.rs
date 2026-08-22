@@ -157,6 +157,112 @@ pub(crate) async fn extension_inspect(package_id: &str) -> UseResult<CommandOutp
 }
 
 #[cfg(feature = "extensions")]
+pub(crate) async fn extension_operation_diagnostic(
+    package_id: &str,
+    scope: a3s_use_core::PlanScope,
+    include_history: bool,
+) -> UseResult<CommandOutput> {
+    let registry = a3s_use_extension::ExtensionRegistry::from_env()?;
+    let manager = crate::cognitive_package::CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
+        registry,
+        scope,
+        std::sync::Arc::new(
+            crate::cognitive_package::StandaloneCognitivePackageLifecycleFactory::default(),
+        ),
+        std::sync::Arc::new(
+            crate::cognitive_package::StandaloneCognitivePackageAuthorizationProvider,
+        ),
+    )?;
+    let value = if include_history {
+        serde_json::to_value(manager.diagnose_operation_history(package_id).await?)
+            .map_err(|_| diagnostic_encoding_error())?
+    } else {
+        let mut value = None;
+        // Resolution can hand off to download, and download can hand off to a
+        // reviewed graph while a read-only diagnostic is sampling. Three
+        // bounded passes cover both one-way transitions without waiting,
+        // taking the package lock, or manufacturing a mixed projection.
+        for _ in 0..3 {
+            if let Some(observed) = active_extension_diagnostic(&manager, package_id).await? {
+                value = Some(observed);
+                break;
+            }
+        }
+        value.ok_or_else(|| {
+            UseError::new(
+                "use.plugin.operation_diagnostic_not_found",
+                "No diagnosable cognitive-package operation exists for this package and scope.",
+            )
+            .with_suggestion(
+                "Use 'a3s-use extension inspect <publisher/name> --json' for installed lifecycle history.",
+            )
+        })?
+    };
+    Ok(CommandOutput::success(
+        if include_history {
+            format!("Cognitive-package diagnostic history for '{package_id}'.")
+        } else {
+            format!("Cognitive-package diagnostic for '{package_id}'.")
+        },
+        serde_json::json!({ "diagnostic": value }),
+    ))
+}
+
+#[cfg(feature = "extensions")]
+async fn active_extension_diagnostic(
+    manager: &crate::cognitive_package::CognitivePackageManager,
+    package_id: &str,
+) -> UseResult<Option<serde_json::Value>> {
+    match manager.diagnose_operation(package_id).await {
+        Ok(diagnostic) => {
+            return serde_json::to_value(diagnostic)
+                .map(Some)
+                .map_err(|_| diagnostic_encoding_error())
+        }
+        Err(error) if error.code == "use.plugin.operation_diagnostic_not_found" => {}
+        Err(error) => return Err(error),
+    }
+    match manager.diagnose_download_attempt(package_id).await {
+        Ok(diagnostic) => {
+            return serde_json::to_value(diagnostic)
+                .map(Some)
+                .map_err(|_| diagnostic_encoding_error())
+        }
+        Err(error) if error.code == "use.plugin.download_attempt_diagnostic_not_found" => {}
+        Err(error) => return Err(error),
+    }
+    match manager.diagnose_resolution_attempt(package_id).await {
+        Ok(diagnostic) => serde_json::to_value(diagnostic)
+            .map(Some)
+            .map_err(|_| diagnostic_encoding_error()),
+        Err(error) if error.code == "use.plugin.resolution_attempt_diagnostic_not_found" => {
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(feature = "extensions")]
+fn diagnostic_encoding_error() -> UseError {
+    UseError::new(
+        "use.plugin.operation_diagnostic_invalid",
+        "Failed to encode the cognitive-package diagnostic.",
+    )
+}
+
+#[cfg(not(feature = "extensions"))]
+pub(crate) async fn extension_operation_diagnostic(
+    _package_id: &str,
+    _scope: a3s_use_core::PlanScope,
+    _include_history: bool,
+) -> UseResult<CommandOutput> {
+    Err(UseError::new(
+        "use.extension.disabled",
+        "Cognitive-package operation diagnostics require the 'extensions' feature.",
+    ))
+}
+
+#[cfg(feature = "extensions")]
 async fn extension_lifecycle_diagnostic(package_id: &str) -> UseResult<serde_json::Value> {
     let paths = a3s_use_extension::ExtensionPaths::from_env()?;
     let scope = a3s_use_core::PlanScope {

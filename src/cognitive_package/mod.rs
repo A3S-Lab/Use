@@ -5,6 +5,13 @@
 //! composition; Tool, MCP, Skill, UI, and OKF remain contributions inside one
 //! immutable package generation.
 
+mod diagnostic;
+mod diagnostic_history;
+#[cfg(test)]
+mod diagnostic_history_tests;
+mod download_attempt;
+#[cfg(test)]
+mod download_attempt_tests;
 mod embedded;
 mod enablement;
 mod enablement_plan;
@@ -16,9 +23,13 @@ mod hosts;
 mod install;
 mod native_provider;
 mod plan;
+mod planning_attempt_io;
 mod prepare_graph;
 mod provider_plan;
 mod registry_access;
+mod resolution_attempt;
+#[cfg(test)]
+mod resolution_attempt_tests;
 mod reviewed_authorization;
 mod store;
 mod uninstall;
@@ -37,11 +48,35 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::plugin_lifecycle::PluginLifecycleCoordinator;
+use download_attempt::PackageDownloadAttemptStore;
+use resolution_attempt::PackageResolutionAttemptStore;
 use store::{
     InstalledPackageGraphStore, PackageGraphOperationPhase, PendingPackageGraphOperation,
     PendingPackageGraphStore,
 };
 
+pub use diagnostic::{
+    PluginDownloadAttemptDiagnostic, PluginDownloadAttemptPhase, PluginDownloadDiagnosticStatus,
+    PluginDownloadTargetDiagnostic, PluginDownloadTargetDiagnosticStatus,
+    PluginGrantDiagnosticStatus, PluginGrantOperationDiagnostic,
+    PluginLifecycleDrainDiagnosticStatus, PluginLifecycleOperationSummary,
+    PluginLifecyclePublicationDiagnosticStatus, PluginOperationConfirmationDiagnosticStatus,
+    PluginOperationDiagnostic, PluginOperationDiagnosticPhase, PluginOperationHistoryDiagnostic,
+    PluginOperationRecoveryGuidance, PluginOperationSourceDiagnostic,
+    PluginPendingDownloadAttemptDiagnostic, PluginPendingOperationDiagnostic,
+    PluginPendingResolutionAttemptDiagnostic, PluginPlanningTargetDiagnostic,
+    PluginProviderDiagnosticReadiness, PluginProviderOperationDiagnostic,
+    PluginRegistryCutoverDiagnostic, PluginRegistryCutoverDiagnosticStatus,
+    PluginRegistryOperationDiagnostic, PluginRegistryResolutionAccess,
+    PluginRegistryResolutionDiagnostic, PluginRegistryResolutionRole,
+    PluginRegistryResolutionStatus, PluginResolutionAttemptDiagnostic,
+    PluginResolutionAttemptPhase, PluginResolutionDiagnosticStatus,
+    PluginRetainedOperationDiagnostic, PluginRetainedOperationOutcome,
+    MAX_PLUGIN_OPERATION_DIAGNOSTIC_BYTES, MAX_PLUGIN_OPERATION_HISTORY_BYTES,
+    MAX_RETAINED_PLUGIN_OPERATION_DIAGNOSTICS, MAX_RETAINED_PLUGIN_OPERATION_HISTORY_BYTES,
+    PLUGIN_DOWNLOAD_ATTEMPT_DIAGNOSTIC_SCHEMA, PLUGIN_OPERATION_DIAGNOSTIC_SCHEMA,
+    PLUGIN_OPERATION_HISTORY_DIAGNOSTIC_SCHEMA, PLUGIN_RESOLUTION_ATTEMPT_DIAGNOSTIC_SCHEMA,
+};
 pub use embedded::{
     CognitiveCapabilityEvidence, CognitiveCapabilityLease, CognitiveCatalogPageCursor,
     CognitiveCatalogSearchResult, CognitiveRegistryAccess,
@@ -387,8 +422,20 @@ impl CognitivePackageManager {
         PendingPackageGraphStore::new(self.registry.paths().state_root())
     }
 
+    fn download_attempt_store(&self) -> PackageDownloadAttemptStore {
+        PackageDownloadAttemptStore::new(self.registry.paths().state_root())
+    }
+
+    fn resolution_attempt_store(&self) -> PackageResolutionAttemptStore {
+        PackageResolutionAttemptStore::new(self.registry.paths().state_root())
+    }
+
     fn grant_store(&self) -> a3s_use_extension::WorkspaceGrantStore {
         a3s_use_extension::WorkspaceGrantStore::from_extension_paths(self.registry.paths())
+    }
+
+    fn maintenance_lock(&self) -> a3s_use_extension::StateMaintenanceLock {
+        a3s_use_extension::StateMaintenanceLock::new(self.registry.paths().state_root())
     }
 
     async fn admit_planned_graph_operation(

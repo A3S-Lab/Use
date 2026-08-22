@@ -5,8 +5,8 @@ use crate::{UseError, UseResult};
 use super::host::{validate_request_identity, verify_capabilities};
 use super::validation::valid_sha256;
 use super::{
-    canonical_json, contract_error, parse_contract, PlanActor, PluginHostCapabilities,
-    PluginManagedScope, PluginOperationPlan, PluginPackageId,
+    canonical_digest, canonical_json, contract_error, parse_contract, PlanActor,
+    PluginHostCapabilities, PluginManagedScope, PluginOperationPlan, PluginPackageId,
 };
 
 pub const PLUGIN_HOST_CANCEL_REQUEST_SCHEMA: &str = "a3s.use.plugin-host-cancel-request.v1";
@@ -19,7 +19,6 @@ const CANCEL_RESULT_ERROR: &str = "use.plugin.host_cancel_result_invalid";
 #[serde(rename_all = "kebab-case")]
 pub enum PluginHostCancellationStatus {
     Cancelled,
-    PendingSafePoint,
     TooLate,
     AlreadyCompleted,
     AlreadyCancelled,
@@ -107,6 +106,10 @@ impl PluginHostCancelRequest {
             CANCEL_REQUEST_ERROR,
         )
     }
+
+    pub fn descriptor_digest(&self) -> UseResult<String> {
+        Ok(canonical_digest(&self.canonical_bytes()?))
+    }
 }
 
 impl PluginHostCancelResult {
@@ -165,6 +168,15 @@ impl PluginHostCancelResult {
             ));
         }
         Ok(())
+    }
+
+    pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
+        self.validate()?;
+        canonical_json(self, "plugin host cancellation result", CANCEL_RESULT_ERROR)
+    }
+
+    pub fn descriptor_digest(&self) -> UseResult<String> {
+        Ok(canonical_digest(&self.canonical_bytes()?))
     }
 }
 

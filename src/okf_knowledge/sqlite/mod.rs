@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +14,7 @@ use super::{
 
 mod audit;
 mod backup;
+mod backup_retention;
 mod filesystem;
 mod index;
 mod policy;
@@ -28,6 +30,18 @@ pub use audit::{
     OKF_KNOWLEDGE_INTEGRITY_REPORT_SCHEMA, OKF_KNOWLEDGE_SEARCH_INDEX_REPAIR_SCHEMA,
 };
 pub use backup::{OkfKnowledgeBackupManifest, OKF_KNOWLEDGE_BACKUP_SCHEMA};
+pub(crate) use backup::{
+    OkfKnowledgeRestoreInventory, VerifiedOkfKnowledgeBackup, MAX_BACKUP_DATABASE_BYTES,
+};
+pub use backup_retention::{
+    OkfKnowledgeBackupRetentionEntry, OkfKnowledgeBackupRetentionPlan,
+    OkfKnowledgeBackupRetentionPolicy, OkfKnowledgeBackupRetentionResult,
+    DEFAULT_OKF_KNOWLEDGE_BACKUP_RETENTION_MAX_BACKUPS,
+    DEFAULT_OKF_KNOWLEDGE_BACKUP_RETENTION_MAX_BYTES, MAX_OKF_KNOWLEDGE_BACKUP_RETENTION_BACKUPS,
+    MAX_OKF_KNOWLEDGE_BACKUP_RETENTION_BYTES, OKF_KNOWLEDGE_BACKUP_RETENTION_PLAN_SCHEMA,
+    OKF_KNOWLEDGE_BACKUP_RETENTION_RESULT_SCHEMA,
+};
+pub(crate) use filesystem::ScopeDatabaseGuard;
 use filesystem::{prepare_scope_database, LockMode};
 pub use policy::{
     OkfKnowledgeStoragePolicy, DEFAULT_OKF_KNOWLEDGE_SCOPE_EXPANDED_BYTES,
@@ -84,6 +98,7 @@ impl SqliteOkfKnowledgeAdapter {
     }
 
     pub async fn usage(&self, scope: &PlanScope) -> UseResult<OkfKnowledgeStorageUsage> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let guard = self.database_guard(scope, LockMode::Shared).await?;
         let exists = tokio::fs::try_exists(&guard.path).await.map_err(|error| {
             UseError::new(
@@ -110,6 +125,7 @@ impl SqliteOkfKnowledgeAdapter {
 
     /// Validate SQLite, receipt, scope, foreign-key, and derived FTS evidence.
     pub async fn audit(&self, scope: &PlanScope) -> UseResult<OkfKnowledgeIntegrityReport> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let guard = self.database_guard(scope, LockMode::Shared).await?;
         require_database(&guard.path).await?;
         let scope = scope.clone();
@@ -128,6 +144,7 @@ impl SqliteOkfKnowledgeAdapter {
         &self,
         scope: &PlanScope,
     ) -> UseResult<OkfKnowledgeSearchIndexRepair> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let guard = self.database_guard(scope, LockMode::Exclusive).await?;
         require_database(&guard.path).await?;
         let scope = scope.clone();
@@ -148,6 +165,7 @@ impl SqliteOkfKnowledgeAdapter {
         destination: impl Into<PathBuf>,
     ) -> UseResult<OkfKnowledgeBackupManifest> {
         let destination = destination.into();
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let guard = self.database_guard(scope, LockMode::Exclusive).await?;
         require_database(&guard.path).await?;
         let scope = scope.clone();
@@ -172,7 +190,144 @@ impl SqliteOkfKnowledgeAdapter {
             .map_err(|error| blocking_error("verify an OKF Knowledge backup", error))?
     }
 
-    fn scope_directory(&self, scope: &PlanScope) -> UseResult<PathBuf> {
+    /// Build a bounded, oldest-first retention plan for verified backups in
+    /// one owned directory and one complete scope. No backup is removed.
+    pub async fn plan_backup_retention(
+        directory: impl Into<PathBuf>,
+        scope: &PlanScope,
+        policy: OkfKnowledgeBackupRetentionPolicy,
+    ) -> UseResult<OkfKnowledgeBackupRetentionPlan> {
+        let directory = directory.into();
+        let scope = scope.clone();
+        tokio::task::spawn_blocking(move || backup_retention::plan(&directory, &scope, policy))
+            .await
+            .map_err(|error| blocking_error("plan OKF Knowledge backup retention", error))?
+    }
+
+    /// Apply only the exact canonical retention plan digest against an
+    /// unchanged verified directory inventory.
+    pub async fn apply_backup_retention(
+        directory: impl Into<PathBuf>,
+        scope: &PlanScope,
+        policy: OkfKnowledgeBackupRetentionPolicy,
+        expected_plan_digest: impl Into<String>,
+    ) -> UseResult<OkfKnowledgeBackupRetentionResult> {
+        let directory = directory.into();
+        let scope = scope.clone();
+        let expected_plan_digest = expected_plan_digest.into();
+        tokio::task::spawn_blocking(move || {
+            backup_retention::apply(&directory, &scope, policy, expected_plan_digest.as_str())
+        })
+        .await
+        .map_err(|error| blocking_error("apply OKF Knowledge backup retention", error))?
+    }
+
+    pub(crate) async fn inspect_backup_for_restore(
+        backup_path: impl Into<PathBuf>,
+        expected_scope: &PlanScope,
+    ) -> UseResult<VerifiedOkfKnowledgeBackup> {
+        let backup_path = backup_path.into();
+        let expected_scope = expected_scope.clone();
+        tokio::task::spawn_blocking(move || backup::inspect(&backup_path, &expected_scope))
+            .await
+            .map_err(|error| blocking_error("inspect an OKF Knowledge restore backup", error))?
+    }
+
+    pub(crate) async fn inspect_staged_restore_database(
+        &self,
+        database_path: impl Into<PathBuf>,
+        manifest: &OkfKnowledgeBackupManifest,
+    ) -> UseResult<OkfKnowledgeRestoreInventory> {
+        let database_path = database_path.into();
+        let manifest = manifest.clone();
+        tokio::task::spawn_blocking(move || {
+            backup::inspect_restore_database(&database_path, &manifest)
+        })
+        .await
+        .map_err(|error| blocking_error("inspect a staged OKF Knowledge restore database", error))?
+    }
+
+    pub(crate) async fn database_file_evidence(
+        &self,
+        scope: &PlanScope,
+    ) -> UseResult<
+        Option<(
+            u64,
+            String,
+            bool,
+            Option<(u64, String)>,
+            Option<(u64, String)>,
+        )>,
+    > {
+        let guard = self.database_guard(scope, LockMode::Exclusive).await?;
+        match tokio::fs::symlink_metadata(&guard.path).await {
+            Ok(metadata)
+                if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    && metadata.is_file() => {}
+            Ok(_) => {
+                return Err(UseError::new(
+                    "use.okf.knowledge_database_path_invalid",
+                    "The Knowledge database path is not an owned regular file.",
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(UseError::new(
+                    "use.okf.knowledge_database_io",
+                    format!(
+                        "Failed to inspect Knowledge database '{}': {error}",
+                        guard.path.display()
+                    ),
+                ))
+            }
+        }
+        let scope = scope.clone();
+        let policy = self.policy;
+        tokio::task::spawn_blocking(move || {
+            let evidence = || -> UseResult<_> {
+                let (bytes, sha256) = backup::file_evidence(&guard.path)?;
+                let wal = backup::optional_file_evidence(&sidecar_path(&guard.path, "-wal"))?;
+                let shm = backup::optional_file_evidence(&sidecar_path(&guard.path, "-shm"))?;
+                Ok((bytes, sha256, wal, shm))
+            };
+            let before = evidence()?;
+            let temporary = tempfile::tempdir().map_err(|error| {
+                UseError::new(
+                    "use.okf.knowledge_restore_backend_failed",
+                    format!("Failed to create a temporary restore-audit directory: {error}"),
+                )
+            })?;
+            let snapshot = temporary.path().join("knowledge.sqlite3");
+            copy_restore_evidence(&guard.path, &snapshot, Some((&before.0, &before.1)))?;
+            copy_restore_evidence(
+                &sidecar_path(&guard.path, "-wal"),
+                &sidecar_path(&snapshot, "-wal"),
+                before.2.as_ref().map(|(bytes, sha256)| (bytes, sha256)),
+            )?;
+            copy_restore_evidence(
+                &sidecar_path(&guard.path, "-shm"),
+                &sidecar_path(&snapshot, "-shm"),
+                before.3.as_ref().map(|(bytes, sha256)| (bytes, sha256)),
+            )?;
+            let integrity_verified = schema::open(&snapshot, false)
+                .map(|connection| audit::audit(&connection, &scope, &policy).is_ok())
+                .unwrap_or(false);
+            let after = evidence()?;
+            if after != before {
+                return Err(UseError::new(
+                    "use.okf.knowledge_restore_database_changed",
+                    "The Knowledge database or its sidecars changed while read-only restore evidence was collected.",
+                ));
+            }
+            let (bytes, sha256, wal, shm) = before;
+            Ok((bytes, sha256, integrity_verified, wal, shm))
+        })
+        .await
+        .map_err(|error| blocking_error("hash the current OKF Knowledge database", error))?
+        .map(Some)
+    }
+
+    pub(crate) fn scope_directory(&self, scope: &PlanScope) -> UseResult<PathBuf> {
         if !valid_machine_id(&scope.id) {
             return Err(UseError::new(
                 "use.okf.knowledge_database_scope_invalid",
@@ -191,6 +346,55 @@ impl SqliteOkfKnowledgeAdapter {
         let directory = self.scope_directory(scope)?;
         prepare_scope_database(&self.state_root, &self.root, &directory, mode).await
     }
+
+    pub(crate) async fn restore_database_guard(
+        &self,
+        scope: &PlanScope,
+    ) -> UseResult<ScopeDatabaseGuard> {
+        self.database_guard(scope, LockMode::Exclusive).await
+    }
+
+    fn maintenance_lock(&self) -> a3s_use_extension::StateMaintenanceLock {
+        a3s_use_extension::StateMaintenanceLock::new(&self.state_root)
+    }
+}
+
+fn sidecar_path(database: &Path, suffix: &str) -> PathBuf {
+    let mut value = OsString::from(database.as_os_str());
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+fn copy_restore_evidence(
+    source: &Path,
+    destination: &Path,
+    expected: Option<(&u64, &String)>,
+) -> UseResult<()> {
+    let Some((expected_bytes, expected_sha256)) = expected else {
+        return Ok(());
+    };
+    let copied = std::fs::copy(source, destination).map_err(|error| {
+        UseError::new(
+            "use.okf.knowledge_restore_database_changed",
+            format!(
+                "Failed to copy stable Knowledge restore evidence '{}': {error}",
+                source.display()
+            ),
+        )
+    })?;
+    let actual = backup::optional_file_evidence(destination)?.ok_or_else(|| {
+        UseError::new(
+            "use.okf.knowledge_restore_database_changed",
+            "Copied Knowledge restore evidence disappeared before audit.",
+        )
+    })?;
+    if copied != *expected_bytes || actual.0 != *expected_bytes || actual.1 != *expected_sha256 {
+        return Err(UseError::new(
+            "use.okf.knowledge_restore_database_changed",
+            "Knowledge restore evidence changed while it was copied for offline audit.",
+        ));
+    }
+    Ok(())
 }
 
 async fn require_database(path: &Path) -> UseResult<()> {
@@ -222,6 +426,7 @@ async fn require_database(path: &Path) -> UseResult<()> {
 #[async_trait]
 impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
     async fn stage(&self, request: &OkfKnowledgeStageRequest) -> UseResult<OkfKnowledgeBinding> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let spec = request.spec().clone();
         let files = request.shared_files();
         let prepared = tokio::task::spawn_blocking({
@@ -245,6 +450,7 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
     }
 
     async fn promote(&self, receipt: &OkfProjectionReceipt) -> UseResult<OkfKnowledgeObservation> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let receipt = receipt.clone();
         let guard = self
             .database_guard(&receipt.scope, LockMode::Exclusive)
@@ -260,6 +466,7 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
     }
 
     async fn observe(&self, receipt: &OkfProjectionReceipt) -> UseResult<OkfKnowledgeObservation> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let receipt = receipt.clone();
         let guard = self
             .database_guard(&receipt.scope, LockMode::Shared)
@@ -274,6 +481,7 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
     }
 
     async fn remove(&self, receipt: &OkfProjectionReceipt) -> UseResult<OkfKnowledgeObservation> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         let receipt = receipt.clone();
         let guard = self
             .database_guard(&receipt.scope, LockMode::Exclusive)
@@ -295,6 +503,7 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
         &self,
         request: &OkfKnowledgeSearchRequest,
     ) -> UseResult<OkfKnowledgeSearchResponse> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         request.validate()?;
         let request = request.clone();
         let guard = self
@@ -310,6 +519,7 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
     }
 
     async fn read(&self, request: &OkfKnowledgeReadRequest) -> UseResult<OkfKnowledgeReadResponse> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
         request.validate()?;
         let request = request.clone();
         let guard = self
@@ -375,5 +585,7 @@ fn blocking_error(action: &str, error: tokio::task::JoinError) -> UseError {
     )
 }
 
+#[cfg(test)]
+mod backup_retention_tests;
 #[cfg(test)]
 mod tests;

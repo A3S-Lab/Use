@@ -5,6 +5,7 @@ use a3s_use_core::{
     PluginReleaseChannel, UseError, UseResult, VerifiedPluginCatalogRecord,
     MAX_PLUGIN_RESOLUTION_CANDIDATES, PLUGIN_CATALOG_SCHEMA_V3,
 };
+use async_trait::async_trait;
 use semver::{Version, VersionReq};
 
 use super::catalog::{load_cached_plugin_candidates, load_refreshed_plugin_candidates};
@@ -17,6 +18,28 @@ use super::{
 enum RegistrySnapshotAccess {
     Refreshed,
     Cached,
+}
+
+/// Durable-operation observer for the Registry/TUF phase that precedes an
+/// exact package lock.
+///
+/// Implementations must persist only bounded, non-secret evidence. Returning
+/// an error fails the resolution so a manager never silently loses required
+/// operational evidence.
+#[async_trait]
+pub trait PackageRegistryResolutionObserver: Send + Sync {
+    async fn registry_resolution_started(&self, registry_name: &str) -> UseResult<()>;
+
+    async fn registry_resolution_verified(
+        &self,
+        metadata: &super::VerifiedRegistryMetadata,
+    ) -> UseResult<()>;
+
+    async fn registry_resolution_failed(
+        &self,
+        registry_name: &str,
+        error_code: &str,
+    ) -> UseResult<()>;
 }
 
 /// Resolve one exact schema-v3 root and its complete transitive dependency
@@ -42,6 +65,32 @@ pub async fn resolve_remote_package_lock(
         channel,
         host,
         RegistrySnapshotAccess::Refreshed,
+        None,
+    )
+    .await
+}
+
+/// Resolve an exact dependency lock while durably observing each Registry/TUF
+/// verification boundary before the lock exists.
+#[allow(clippy::too_many_arguments)]
+pub async fn resolve_remote_package_lock_with_observer(
+    root_registry: &TrustedRegistry,
+    dependency_registries: &[TrustedRegistry],
+    root_package_id: &str,
+    requested_version: Option<&str>,
+    channel: PluginReleaseChannel,
+    host: PluginPackageLockHost,
+    observer: &dyn PackageRegistryResolutionObserver,
+) -> UseResult<PluginPackageLock> {
+    resolve_remote_package_lock_with_access(
+        root_registry,
+        dependency_registries,
+        root_package_id,
+        requested_version,
+        channel,
+        host,
+        RegistrySnapshotAccess::Refreshed,
+        Some(observer),
     )
     .await
 }
@@ -65,6 +114,32 @@ pub async fn resolve_cached_remote_package_lock(
         channel,
         host,
         RegistrySnapshotAccess::Cached,
+        None,
+    )
+    .await
+}
+
+/// Resolve only from verified cached metadata while observing each pre-lock
+/// Registry boundary without constructing network transport.
+#[allow(clippy::too_many_arguments)]
+pub async fn resolve_cached_remote_package_lock_with_observer(
+    root_registry: &TrustedRegistry,
+    dependency_registries: &[TrustedRegistry],
+    root_package_id: &str,
+    requested_version: Option<&str>,
+    channel: PluginReleaseChannel,
+    host: PluginPackageLockHost,
+    observer: &dyn PackageRegistryResolutionObserver,
+) -> UseResult<PluginPackageLock> {
+    resolve_remote_package_lock_with_access(
+        root_registry,
+        dependency_registries,
+        root_package_id,
+        requested_version,
+        channel,
+        host,
+        RegistrySnapshotAccess::Cached,
+        Some(observer),
     )
     .await
 }
@@ -78,16 +153,38 @@ async fn resolve_remote_package_lock_with_access(
     channel: PluginReleaseChannel,
     host: PluginPackageLockHost,
     access: RegistrySnapshotAccess,
+    observer: Option<&dyn PackageRegistryResolutionObserver>,
 ) -> UseResult<PluginPackageLock> {
     host.validate()?;
     let registries = unique_registries(root_registry, dependency_registries)?;
     let mut candidates = Vec::new();
     let mut root_candidates = Vec::new();
     for registry in registries.values() {
-        let records = match access {
-            RegistrySnapshotAccess::Refreshed => load_refreshed_plugin_candidates(registry).await?,
-            RegistrySnapshotAccess::Cached => load_cached_plugin_candidates(registry).await?,
+        if let Some(observer) = observer {
+            observer
+                .registry_resolution_started(registry.name())
+                .await?;
+        }
+        let loaded = match match access {
+            RegistrySnapshotAccess::Refreshed => load_refreshed_plugin_candidates(registry).await,
+            RegistrySnapshotAccess::Cached => load_cached_plugin_candidates(registry).await,
+        } {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                if let Some(observer) = observer {
+                    observer
+                        .registry_resolution_failed(registry.name(), &error.code)
+                        .await?;
+                }
+                return Err(error);
+            }
         };
+        if let Some(observer) = observer {
+            observer
+                .registry_resolution_verified(&loaded.metadata)
+                .await?;
+        }
+        let records = loaded.records;
         if registry.name() == root_registry.name() {
             root_candidates.extend(records.iter().cloned());
         }

@@ -26,9 +26,11 @@ A3S Use 尚未发布受支持的产品版本，也未达到 production-ready。�
 | 托管宿主     | Runtime Service、HTTP MCP/Gateway、托管 Knowledge/UI 组合仍在开发                       |
 | 平台         | Linux/macOS 开发门禁；Windows 已测签名包生命周期，但仍未达到发布级一致性                |
 
-当前只接受一条预览协议基线：manifest v3、catalog v3、receipt v3、plan v4、
-host protocol v4、manager tools v3、pending graph v2，以及 enablement
-state/operation v2。过时的预览状态会被拒绝，并提示清理后重新安装。
+当前只接受一条预览协议基线。manifest v3、catalog v3、receipt v4、plan v4、
+host protocol v6、managed scope v2、manager tools v4、pending graph v4、
+pre-lock resolution attempt/diagnostic v1、pre-plan download
+attempt/diagnostic v1，以及 enablement state/operation v2。过时的预览状态会被拒绝，
+并提示清理后重新安装。
 
 ## 安装 A3S CLI
 
@@ -92,9 +94,10 @@ Invoke-WebRequest https://raw.githubusercontent.com/A3S-Lab/Use/main/install.ps1
 序列化、逐平台 SPDX SBOM、GitHub OIDC provenance/SBOM attestation 与
 keyless Sigstore checksum bundle。installer 会在下载平台归档前 fail closed
 地验证该 bundle，并把已验证 manifest 与 bundle 保留在安装版本目录中。
-第二台无编译缓存的干净 runner 还必须逐字节匹配全部随包原生可执行文件，并
-发布带 attestation 的 reproducibility 证据。剩余 bootstrap 边界与可选
-GitHub attestation 验证见[信任与安全](./trust-security)。
+第二台无编译缓存的干净 runner 还必须逐字节匹配全部随包原生可执行文件，
+通过后才会发布带 attestation 的 reproducibility 证据。`v0.3.2` 尝试在四个
+target 上未通过该门禁，因此新的五平台运行仍未完成。剩余 bootstrap 边界与
+可选 GitHub attestation 验证见[信任与安全](./trust-security)。
 
 ## 从源码构建
 
@@ -139,6 +142,44 @@ a3s-use upgrade acme/research \
 a3s-use uninstall acme/research --json
 ```
 
+如果精确的 install、upgrade 或 uninstall 图仍被保留、enable/disable apply
+已持久化其 active admitted operation，或者 Host 已审查但尚未 admit 最新
+enablement plan，可以在不访问 Registry、也不修改恢复状态的前提下查看其无路径
+操作证据：
+
+```bash
+a3s-use extension diagnose acme/research --json
+a3s-use extension diagnose acme/research --history --json
+```
+
+Workspace 诊断还必须提供
+`--scope-kind workspace --scope-id <id>`。该命令报告 reviewed plan、
+Registry/TUF 与 cutover 状态、provider readiness、Grant phase、lifecycle
+publication/drain/rollback 证据和稳定的恢复建议。输出不会包含 path、Registry
+URL、idempotency key、credential、secret、package content 或任意包作者文本。
+图诊断覆盖 planned、admitted 和 cancelled operation。Enablement 诊断优先读取
+active Use 证据；否则 digest-bound index 会把最新 Host-reviewed plan 投影为
+`planned` 或精确 `cancelled`，且不公开 Host/request/fence identity。Use completion
+或 Host outcome 会抑制陈旧 plan。对已保留且由 Registry 支持的 install/upgrade
+图以及 durable pre-plan download attempt，projection 会依据精确历史 provenance，
+在不联网、不写入、不暴露路径的前提下分别报告 expected/retained archive 与签名
+executable-planning-target bytes，以及每个 target 的
+`missing`/`partial`/`complete` 状态。attempt 在进程退出后仍会保留，并只在
+reviewed graph 持久化后删除；target 与 partial 仅供观察，绝不是 authority。
+生成精确 lock 之前，durable pre-lock attempt 会记录 refreshed/cached
+Registry/TUF 进度、每个 source 的验证状态和摘要、TUF role version、有界失败码与
+最终 lock 证据。resolver 失败或进程退出后仍可诊断；成功路径会先写入 download
+attempt，再删除 resolution evidence，不留下人为的诊断空窗。输出不含 URL、路径、
+原始 transport error、credential 或 metadata bytes。
+`--history` 会返回该明确 scope/package 中最新 16 个 completed 或 rolled-back
+operation，以及 cancelled graph plan，总存储上限为 8 MiB；每项同时
+包含完整无路径 diagnostic 与单独验证的终结 outcome。系统会先持久化历史，再删除
+recovery authority；精确重放按 `(operationId, planDigest)` 去重，uninstall 后仍可
+查询。损坏、链接或超限历史会 fail closed，且不会泄漏原始字节或路径。
+真实进程终止与 Host/CLI 测试已证明精确 planning-target resume、无副作用的
+planned/cancelled enablement projection，以及 Host finalization 期间的陈旧 plan
+抑制。
+
 应用单独审查过的解析结果时增加
 `--package-lock-digest sha256:<64-hex-digits>`。lock 漂移会在下载 archive
 前失败。source replace/default/enable/disable/remove 需要
@@ -150,7 +191,51 @@ TUF/cache state 和 installed provenance 会被保留。以上 Registry 值仅�
 
 ```bash
 a3s-use knowledge search "retrieval policy" --limit 5 --json
+a3s-use knowledge audit --json
+a3s-use knowledge backup ./user.a3s-okf-backup --json
+a3s-use knowledge verify-backup ./user.a3s-okf-backup --json
+a3s-use knowledge backup-retention ./backups --json
+a3s-use knowledge plan-restore ./user.a3s-okf-backup --json
+a3s-use knowledge restore ./user.a3s-okf-backup \
+  --plan-digest sha256:<reviewed-plan-digest> --yes --json
+a3s-use knowledge restore-status --json
+a3s-use state backup ./use-state.a3s-use-state-backup --json
+a3s-use state verify-backup ./use-state.a3s-use-state-backup --json
+a3s-use state backup-retention ./backups --max-backups 32 --max-bytes 2199023255552 --json
+a3s-use state plan-restore ./use-state.a3s-use-state-backup --json
+a3s-use state restore ./use-state.a3s-use-state-backup \
+  --rollback-backup ./pre-restore.a3s-use-state-backup \
+  --plan-digest sha256:<reviewed-plan-digest> --yes --json
+a3s-use state restore-status --json
 ```
+
+备份验证可以发现损坏，但不能重建 package、Registry、lifecycle 或 Grant
+authority。Standalone restore 会校验这些独立 authority，要求当前 binding set
+是备份 inventory 的精确子集，在无路径计划中绑定该状态与 live main/WAL/SHM
+evidence，并只接受已审查 digest 的确认执行。它只能创建缺失的精确 binding
+文件，绝不覆盖冲突或更新 evidence。更广泛的 authority 恢复、clean-machine
+恢复、其他 state family 与 whole-product disaster recovery 仍是 release gate。
+`restore-status` 会报告 global active phase，以及 requested scope 的有界、无路径
+history 与剩余容量，不会轮换或改写 evidence。
+
+独立的 `state backup` 命令会在同一个独占 maintenance fence 内捕获已安装
+package root，以及所有 allowlisted Registry、generation、Grant、binding、
+lifecycle/package operation、Knowledge、enablement、Host Manager 与 Flow Runtime
+state family。确定性的 `a3s.use.state-backup.v1` manifest 只记录可移植相对路径、
+精确 length/SHA-256/mode、family accounting、Registry 和 installed receipt
+evidence。创建时会拒绝 active/partial work、link/reparse point、special file、
+未知 family 与不可移植路径，并在不可覆盖发布前重新扫描完整 inventory。
+`verify-backup` 无需提取、网络或本机 Use state，即可检查 canonical manifest、
+精确 archive 长度和每个 payload。`backup-retention` 会在一个外部目录锁下完整
+校验每个托管 archive，返回无路径、oldest-first 的 canonical plan，只接受未变化
+的 digest 与显式确认，并至少保留两个已验证 generation。`plan-restore` 还会要求
+精确匹配当前 Use version、OS、architecture，以及独立保留的
+Registry/receipt/Grant authority，随后生成无路径的 Add/Replace/Remove/Retain
+计划。确认后的 `restore` 会先创建或验证独立的外部 rollback archive，再以拒绝
+link/reparse point 的 candidate staging 和七阶段 journal 执行恢复；15 个真实进程
+退出边界均有收敛测试。`restore-status` 只读报告有界的 active/history/capacity
+证据。原始 archive 属于敏感的完整性证据，不是签名，也不能恢复缺失 authority；
+clean-machine recovery、跨平台运营演练与 disaster-recovery 演练仍是 release gate。
 
 Runtime Service、HTTP MCP、Flow、Knowledge、Skill、UI 的 readiness 都依赖
 embedding host 显式提供 owner。owner 缺失时直接 fail closed，不会替换为宽松

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{PlanScope, PluginPackageId, UseError, UseResult};
-use a3s_use_extension::ExtensionPaths;
+use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
 use tokio::fs;
@@ -260,7 +260,22 @@ impl PluginLifecycleJournalStore {
     }
 }
 
-async fn acquire_lock(state_root: &Path, directory: &Path) -> UseResult<StdFile> {
+#[derive(Debug)]
+struct LifecycleOperationLock {
+    file: StdFile,
+    _maintenance: StateMaintenanceGuard,
+}
+
+impl Drop for LifecycleOperationLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
+    }
+}
+
+async fn acquire_lock(state_root: &Path, directory: &Path) -> UseResult<LifecycleOperationLock> {
+    let maintenance = StateMaintenanceLock::new(state_root)
+        .acquire_shared()
+        .await?;
     ensure_owned_directory(state_root, directory).await?;
     let lock_path = directory.join(".operation.lock");
     match fs::symlink_metadata(&lock_path).await {
@@ -275,7 +290,7 @@ async fn acquire_lock(state_root: &Path, directory: &Path) -> UseResult<StdFile>
         Err(error) => return Err(path_error("inspect lifecycle lock", &lock_path, error)),
     }
     let error_path = lock_path.clone();
-    tokio::task::spawn_blocking(move || {
+    let file = tokio::task::spawn_blocking(move || {
         let file = StdOpenOptions::new()
             .create(true)
             .truncate(false)
@@ -295,7 +310,11 @@ async fn acquire_lock(state_root: &Path, directory: &Path) -> UseResult<StdFile>
             ),
         )
     })?
-    .map_err(|error| path_error("acquire lifecycle lock", &error_path, error))
+    .map_err(|error| path_error("acquire lifecycle lock", &error_path, error))?;
+    Ok(LifecycleOperationLock {
+        file,
+        _maintenance: maintenance,
+    })
 }
 
 async fn read_optional_record(path: &Path) -> UseResult<Option<PluginLifecycleOperationRecord>> {

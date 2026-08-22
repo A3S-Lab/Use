@@ -324,6 +324,11 @@ struct LoadedCatalog {
     entries: Vec<CatalogEntry>,
 }
 
+pub(super) struct LoadedPluginCandidates {
+    pub(super) metadata: VerifiedRegistryMetadata,
+    pub(super) records: Vec<VerifiedPluginCatalogRecord>,
+}
+
 /// Refresh and verify a registry, then enumerate current-host-compatible
 /// signed package targets without downloading any archive.
 pub async fn list_remote_packages(
@@ -458,22 +463,28 @@ async fn load_refreshed_catalog(
 
 pub(super) async fn load_refreshed_plugin_candidates(
     registry: &TrustedRegistry,
-) -> UseResult<Vec<VerifiedPluginCatalogRecord>> {
+) -> UseResult<LoadedPluginCandidates> {
     let repository = load_repository(registry).await?;
     let metadata = verified_registry_metadata(registry, &repository)?;
     let entries = collect_catalog_entries(registry, &repository)?;
     persist_catalog_refresh(registry, &repository, &metadata).await?;
-    Ok(entries.into_iter().map(|entry| entry.plugin).collect())
+    Ok(LoadedPluginCandidates {
+        metadata,
+        records: entries.into_iter().map(|entry| entry.plugin).collect(),
+    })
 }
 
 pub(super) async fn load_cached_plugin_candidates(
     registry: &TrustedRegistry,
-) -> UseResult<Vec<VerifiedPluginCatalogRecord>> {
-    let repository = load_verified_cached_repository(registry).await?;
-    Ok(collect_catalog_entries(registry, &repository)?
+) -> UseResult<LoadedPluginCandidates> {
+    let (repository, stamp) = load_cached_repository(registry).await?;
+    let metadata = verified_registry_metadata(registry, &repository)?;
+    verify_stamp_metadata(&stamp, &metadata)?;
+    let records = collect_catalog_entries(registry, &repository)?
         .into_iter()
         .map(|entry| entry.plugin)
-        .collect())
+        .collect();
+    Ok(LoadedPluginCandidates { metadata, records })
 }
 
 pub(super) async fn load_verified_cached_repository(

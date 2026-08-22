@@ -57,7 +57,7 @@ invalid transparency-log proof is rejected. The installer script itself is a
 separate bootstrap trust boundary and should be downloaded for review or
 distributed through a trusted system package.
 
-Each tagged Release also publishes:
+Each successful tagged Release also publishes:
 
 - deterministic tar.gz or ZIP serialization using the tag commit timestamp,
   sorted paths, normalized ownership and modes, and fixed compression tools;
@@ -79,6 +79,18 @@ pinned toolchain without a compiled-artifact cache, rebuilds every native
 executable, and compares it directly with the primary archive. An externally
 operated witness for the complete staged tree/final archive, evidence retention
 outside GitHub Release, and the other product gates remain incomplete.
+
+Before evidence publication, each extracted archive is scanned for the build
+checkout path in native and slash-normalized UTF-8 and UTF-16 encodings. The
+workflow then runs both native executables from an isolated working directory
+and an isolated `A3S_USE_HOME`. This gate is implemented locally, but it still
+requires a successful five-target workflow run for release qualification.
+
+The `v0.3.2` workflow failed the independent rebuild comparison on four
+targets and therefore did not create a GitHub Release. Deterministic symbol
+stripping and platform-specific linker metadata controls are locally verified,
+but a fresh five-platform clean-runner run remains required before relying on
+the evidence set above.
 
 ## Additional independent verification
 

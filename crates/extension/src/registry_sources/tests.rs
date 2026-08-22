@@ -1,4 +1,6 @@
 use super::*;
+use crate::VerifiedTargetObservationStatus;
+use sha2::{Digest, Sha256};
 
 fn store(root: &std::path::Path) -> RegistrySourceStore {
     RegistrySourceStore::new(ExtensionPaths::new(root.join("data"), root.join("state")))
@@ -67,6 +69,16 @@ async fn source_mutations_are_revision_bound_and_preserve_isolated_datastores() 
         .unwrap();
     let resolved = store.resolve(None).await.unwrap();
     assert_eq!(resolved.root().name(), "mirror");
+    assert_eq!(
+        resolved.root().source_identity(),
+        selected
+            .snapshot
+            .sources
+            .iter()
+            .find(|source| source.name == "mirror")
+            .unwrap()
+            .source_identity
+    );
     assert_eq!(resolved.dependencies().len(), 1);
     assert_eq!(resolved.dependencies()[0].name(), "primary");
     assert_eq!(resolved.source_revision(), selected.snapshot.revision);
@@ -229,6 +241,20 @@ async fn source_replacement_changes_identity_without_rewriting_an_old_datastore(
     let first = store.resolve(None).await.unwrap();
     std::fs::create_dir_all(first.root().datastore()).unwrap();
     std::fs::write(first.root().datastore().join("evidence"), b"old").unwrap();
+    let archive_digest = "3".repeat(64);
+    let cache = first.root().datastore().join("verified-targets/sha256");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join(&archive_digest), b"old!").unwrap();
+    let retained_provenance = a3s_use_core::VerifiedCatalogProvenance {
+        registry_name: "packages".to_owned(),
+        registry_url: "https://one.example/".to_owned(),
+        root_sha256: format!("sha256:{}", "1".repeat(64)),
+        root_version: 1,
+        timestamp_version: 2,
+        snapshot_version: 3,
+        targets_version: 4,
+        catalog_record_digest: format!("sha256:{}", "4".repeat(64)),
+    };
 
     let replaced = store
         .replace(
@@ -245,6 +271,16 @@ async fn source_replacement_changes_identity_without_rewriting_an_old_datastore(
         b"old"
     );
     assert!(!next.root().datastore().exists());
+    let observation = store
+        .observe_retained_target(&retained_provenance, 4, &archive_digest)
+        .await
+        .unwrap();
+    assert_eq!(observation.registry_name, "packages");
+    assert_eq!(observation.retained_bytes, 4);
+    assert_eq!(
+        observation.status,
+        VerifiedTargetObservationStatus::Complete
+    );
 }
 
 #[tokio::test]

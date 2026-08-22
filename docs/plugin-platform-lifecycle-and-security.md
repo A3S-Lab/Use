@@ -218,6 +218,17 @@ block planning until the owning operation recovers.
 ## Registry concurrency
 
 Lifecycle mutations remain serialized by the cross-process Registry lock.
+Before committing an immutable package generation, Use validates every
+directory from its configured data root to the package namespace without
+following links or reparse points. Under the same lock it removes only bounded,
+physical `.lifecycle-staging-*` trees left by an interrupted commit. A staging
+link, special file, unbounded inventory, or linked package parent fails closed.
+The real-process recovery test terminates while a high-entry package is being
+copied into that staging tree. Its exact pending plan and applying lifecycle
+journal remain durable, while the receipt, installed graph, and route remain
+absent. Explicit offline replay reclaims the physical partial tree, repeats the
+same package-commit checkpoint, publishes one Registry generation, completes
+the journal, and removes the pending operation without a network request.
 Steady-state snapshot and watch reads consume immutable publications without
 that lock. A read may briefly acquire it only for crash reconciliation when
 receipt state and the last publication disagree.
@@ -244,7 +255,7 @@ and release descriptors before lifecycle admission. Required provider failure
 stays unpublished; there is no `PATH` lookup, unsigned native fallback, or
 provider substitution.
 
-The installed schema-v3 receipt retains the exact signed planning bundle after
+The installed schema-v4 receipt retains the exact signed planning bundle after
 validating it against catalog, manifest, and package bytes. A host can therefore
 plan enablement after restart without fetching mutable Registry metadata. It
 persists the bundle, Grant snapshot, and provider generations with the reviewed
@@ -394,6 +405,15 @@ generations, receipts, Grants, bindings, capability state, or journals. A later
 explicit offline operation fails closed if GC removed one of its exact targets.
 Partial downloads are not offline evidence and never authorize package staging.
 
+A real-process failure test terminates installation after the complete target
+has entered the verified cache but while a high-entry archive is still being
+extracted. At that boundary no package receipt, installed graph, pending graph
+operation, or package root exists. An explicit offline retry revalidates the
+cached target, performs no network request, and completes the ordinary package
+preparation and publication path. The broader cross-platform extraction,
+reboot, temporary-storage retention, and replacement-race matrix remains a
+release gate.
+
 ## Crash recovery
 
 Recovery loads the exact stored request, plan, confirmation, authorization,
@@ -413,6 +433,35 @@ atomic graph publish or hide effect but before package publication receipts and
 Grant cutover evidence. Restart recovery reuses the same cutover key, retains
 one graph effect, completes package and Grant journals, retires only the exact
 prior grants, and does not publish or hide again on terminal replay.
+
+Additional managed-host tests run the production package manager in real OS
+child processes with one permission-bearing root and four dependencies for
+install, upgrade, and uninstall. The parent holds a dependency lifecycle lock
+after Registry publish/hide, so one package receipt is pending and the Grant
+operation remains prepared. The parent kills each child externally. Restart
+injects a provider that rejects any new authorization request; recovery instead
+reuses the durable confirmation and resolved Grant, performs no network
+request, preserves the exact candidate receipt, retires only the bound prior
+receipt, completes package and Grant journals, retires the cutover, and does
+not advance the Registry generation again. Actual Code/Runtime host processes
+and the supported-platform matrix remain separate gates.
+
+The production `CognitivePackageHostManager` path has a separate five-operation
+real-process matrix. Install/upgrade planning verifies and caches the complete
+five-node graph; uninstall planning binds the exact installed lock; disable and
+enable planning bind the exact package state generation. Every plan persists
+the Host request/plan binding and returns the digest-only review boundary before
+the Registry server is stopped. Install, upgrade, and uninstall children are
+externally killed after atomic graph publication/hide while the Grant operation
+and one dependency receipt are incomplete. Disable is killed after root hide
+and Grant cutover while an accepted-call lease blocks drain. Enable is killed
+after Registry publication while its candidate Grant remains prepared. A
+second child uses only the stored plan and confirmation, plus the verified
+planning cache for install/upgrade, to complete drain and lifecycle/Grant
+journals, converge the exact candidate/prior Grant or enablement
+regrant/revocation, and persist the terminal Host outcome. A later digest-only
+apply is an exact outcome replay and does not authorize, access the network, or
+advance the Registry generation.
 
 The Grant Store has an additional test-binary subprocess matrix over all 14
 durable checkpoints in the canonical two-candidate/two-retirement lifecycle.
@@ -441,13 +490,30 @@ Real managed-provider and CLI process-kill qualification across the supported
 platform matrix remains a release gate.
 
 The standalone CLI binary additionally has a deterministic real-process
-uninstall case. The parent holds the package journal lock while the child
+multi-node install case. After the first dependency is fully prepared, the
+parent holds that dependency's journal lock while the child atomically
+publishes all nine package routes and the durable cutover. The child is killed
+before that dependency's publication receipt and the parent graph record are
+written. Explicit offline restart performs no network request, reuses the same
+cutover, completes every package journal and the exact installed graph, clears
+the cutover acknowledgement, and leaves the Registry at generation 1.
+
+The standalone CLI also has a deterministic real-process uninstall case. The
+parent holds the package journal lock while the child
 durably hides the Registry graph. This proves the child can be killed before
 its package hide receipt. On restart, the same pending plan and cutover request
 are replayed; a held prior-generation route lease proves recovery stops at
 accepted-call drain before it removes the retained generation. Releasing the
 lease completes the journal and physical removal without advancing the
 Registry generation again.
+
+A second real-process uninstall case uses a high-entry immutable generation
+and terminates while its directory is physically being removed. By that point
+the route is hidden and both selected and retained receipts are absent, while
+the exact pending graph and applying journal remain. Restart uses the original
+lifecycle identity to finish the partial directory, complete the package
+checkpoint and cutover acknowledgement, and remove pending state without
+advancing the Registry generation again.
 A paired negative case deletes selected state with no matching durable cutover
 and verifies that Registry, graph, and pending-plan evidence remain unchanged.
 
@@ -489,11 +555,72 @@ offline. Confirmed `repair-search-index` may rebuild only FTS rows derived from
 validated documents. It cannot rewrite receipts, projections, bindings,
 lifecycle evidence, or Grants.
 
+`knowledge backup-retention` scans at most 4,096 entries in one owned,
+non-linked directory and fully verifies every managed backup candidate before
+selecting anything. One complete scope, an entry ceiling, and a byte ceiling
+produce a canonical oldest-first plan. Apply requires both `--yes` and the
+unchanged plan digest under the same cross-process directory lock used by
+backup publication. It preserves unrelated files, other scopes, and at least
+one verified backup; stale plans and linked or malformed candidates fail
+closed. A partial deletion reports outcome-unknown with the exact removed
+entries instead of guessing.
+
 The scope-local backup is corruption evidence, not a signature or complete
-recovery authority. Coordinated restore, binding and lifecycle recovery,
-backup rotation, and whole-product procedures remain release gates. The
-detailed boundary is documented in
+recovery authority. Standalone authority-bound database restore is implemented
+as a path-free reviewed plan plus digest-only confirmed apply. Planning binds
+the verified backup, live main/WAL/SHM evidence, and complete
+Registry/package/lifecycle/Grant authority plus the current exact-subset
+binding digest. Apply revalidates that authority under the exclusive
+maintenance fence, creates only missing exact backup binding files, retains
+the exact prior database files, and replays the durable six-state operation
+after process exit. Conflicting or newer binding evidence fails closed.
+Missing Registry/package/lifecycle/Grant authority recovery, clean-machine
+recovery, cross-platform operational drills, and whole-product rollback
+procedures remain release gates. The detailed boundary is
+documented in
 [OKF Knowledge operations](okf-knowledge-operations.md).
+
+`a3s-use knowledge restore-status --json` acquires the exclusive maintenance
+fence only long enough to read a coherent global marker and requested-scope
+inventory. Its `a3s.use.okf-knowledge-restore-diagnostic.v2` result contains no
+paths or package content and reports at most 32 validated operation summaries,
+the active durable phase, reviewed binding-state digest and missing-binding
+count, unrecorded marker-handoff directory count, and remaining capacity. It
+never rotates or deletes rollback evidence.
+
+### Coordinated whole-installation backup
+
+`a3s-use state backup <path> --json` acquires the same exclusive maintenance
+fence used by restore and creates one `a3s.use.state-backup.v1` archive outside
+the live data/state roots. The manifest binds portable relative data/state
+paths, exact file lengths and SHA-256 digests, read-only and Unix-mode evidence,
+per-family accounting, the Registry generation/projection digest, and sorted
+installed-receipt digests. No clock value or source root enters the manifest,
+so unchanged state produces identical archive bytes on the same platform.
+
+Creation inventories the allowlisted roots, copies each regular file while
+rechecking its length and digest, then rebuilds the complete inventory before
+non-overwriting publication. Lock files are excluded. Active restore markers,
+pending Registry cutovers, nonterminal lifecycle/Grant/package/enablement or
+Runtime provisioning evidence, resumable partials, atomic-write leftovers,
+lifecycle package staging, unknown top-level families, non-portable names,
+links/reparse points, and special files fail closed. `state verify-backup`
+checks the canonical manifest, header digest, exact archive length, and every
+concatenated payload digest without extraction, network access, or local state.
+
+The archive contains raw package and state bytes and is sensitive operational
+data. Its hashes detect corruption; they do not authenticate a publisher or
+recreate missing authority. `state backup-retention` fully verifies each managed
+archive under the publication directory lock, returns a path-free oldest-first
+canonical plan, requires its unchanged digest plus explicit confirmation, and
+retains at least two verified recovery generations. `state plan-restore` and
+confirmed `state restore` implement same-version/OS/architecture recovery with
+exact live Registry and Grant authority, an explicit external rollback archive,
+link/reparse-safe candidates, seven durable phases, bounded history, and
+read-only path-free status. Missing Registry/package/lifecycle/Grant authority
+recovery, cross-platform drills, and clean-machine disaster-recovery exercises
+remain release gates. The operator format and procedure are documented in
+[Coordinated state backup operations](state-backup-operations.md).
 
 ## Observability
 
@@ -517,13 +644,97 @@ phase intents for a package. They share the graph `operationId` by design and
 remain distinct through `intentDigest`, action, generation, and artifact
 digests. Duplicate latest/previous intent digests fail closed.
 
-Broader diagnostics still need non-secret evidence sufficient to identify:
+`a3s-use extension diagnose <publisher/name> --json` exposes
+`a3s.use.plugin-operation-diagnostic.v1` for one exact retained install,
+upgrade, or uninstall graph, active admitted enable/disable operation, or
+newest Host-reviewed enable/disable plan that has not been admitted in the
+selected User or Workspace scope. It reads durable graph, enablement, Host
+request-index, Registry snapshot/cutover, lifecycle, and Grant evidence under
+the shared maintenance fence without network access, reconciliation, recovery,
+or writes. Retained graphs cover planned, admitted, and cancelled operations;
+active Use-owned enablement evidence always takes precedence.
+The bounded projection includes:
 
-- Registry/source and TUF role versions;
-- provider selection and readiness;
-- Registry generation/snapshot digest;
-- Grant cutover and drain state; and
-- actionable cleanup/reinstall instructions for unsupported state.
+- exact operation/plan/lock identity, action, phase, timing, counts, impact,
+  authority, and confirmation state;
+- path-free Registry names, TUF role versions, verified catalog/archive
+  digests, and current Registry generation/snapshot/cutover evidence;
+- provider identity/build/capability evidence and readiness;
+- Grant authorization/journal/cutover/rollback evidence;
+- lifecycle publication, accepted-call drain, checkpoint, and rollback
+  summaries; and
+- stable resume, review, cancellation-observation, or operator-review guidance.
+
+The 2 MiB contract rejects unknown fields and internally inconsistent evidence.
+It never contains paths, Registry URLs, idempotency keys, credentials, tokens,
+secret names or values, package content, or arbitrary package-authored text.
+Damaged backing state returns a path-free cleanup/reinstall diagnostic without
+echoing the rejected bytes. For pre-admission enablement, a digest-bound index
+selects the newest exact Host request by `(plannedAtMs, requestId)` and exposes
+only the public plan scope/package plus `planned` or exact `cancelled` state.
+The projection reconstructs the expected lifecycle schedule from the exact
+installed receipt, manifest, selected surfaces, and reviewed plan without
+persisting it. It reports selected providers, awaiting-admission or cancelled
+Grant state, current cutover evidence, and review/cancellation guidance. The
+private index retains the managed scope only for request lookup; Host ID,
+authority, fence, Host request/cancellation IDs, and private paths are excluded.
+A durable Use completion or Host outcome suppresses the stale plan.
+
+For retained Registry-backed install/upgrade graphs and pre-plan download
+attempts, exact historical provenance selects the observed datastore and the
+projection reports expected/retained archive and separately signed executable-
+planning-target bytes plus per-target missing/partial/complete state without
+taking the cache lock, contacting the Registry, writing, or exposing paths.
+Complete is an exact-length observation at the verified-promotion location,
+not a content rehash; no observed target or partial is planning, apply, or
+recovery authority. Static packages report planning as `not-required`.
+
+Before Registry/TUF access begins, the process-held package lock protects a
+bounded `a3s.use.plugin-resolution-attempt.v1` record. It binds scope, action,
+requested version/channel, refreshed/cached access, and path-free root and
+dependency Registry states. Each Registry exposes only source-identity and
+trust-root digests, pending/verifying/verified/failed state, verified TUF role
+versions, bounded package-target count, observation time, and a stable bounded
+error code. Success adds the exact package-lock digest/count. The
+`a3s.use.plugin-resolution-attempt-diagnostic.v1` projection has phase
+`pre-lock`, makes no network request or write, and does not wait for the package
+lock. Failure or process exit retains it; success durably creates the download
+attempt before deleting it. URLs, paths, raw transport errors, credentials, and
+metadata bytes are excluded.
+
+Before a reviewed graph exists, an exact package lock and selected archive set
+are retained as `a3s.use.plugin-download-attempt.v1` under a process-held
+per-package lock. The record survives failure/exit, can be superseded only after
+that lock is released, and is removed only after the pending graph is durable.
+The path-free `a3s.use.plugin-download-attempt-diagnostic.v1` projection exposes
+the same archive and planning-target byte evidence with phase `pre-plan`;
+malformed records fail closed without echoing their fields.
+
+Completed and rolled-back operation observations plus cancelled graph plans are retained in
+`a3s.use.plugin-operation-history.v1` and exposed newest-first through
+`extension diagnose --history --json` as
+`a3s.use.plugin-operation-history-diagnostic.v1`. Each explicit User or
+Workspace scope/package inventory is limited to 16 occurrences and 8 MiB.
+Retention precedes deletion of pending graph or active enablement recovery
+authority; a crash in between is replay-safe because occurrence identity is
+the pair `(operationId, planDigest)`. The plan digest is required because an
+exact reinstall can legitimately recreate the same lock-derived textual graph
+operation ID. Terminal outcome validation correlates lifecycle status and
+completion receipts, Grant terminal phase, and Registry cutover status.
+Historical embedded recovery guidance records the pre-cleanup observation and
+is never current authority. Unknown fields, conflicting identities or
+outcomes, links/reparse points, and oversized state fail closed without echoing
+paths or content. Real CLI install/uninstall/reinstall, pre-admission graph
+cancellation, and killed managed Workspace Host recovery tests prove
+zero-network history, package-removal survival, exact scope isolation, and
+replay deduplication.
+
+Real-process tests kill an executable-planning-target transfer, observe its
+active and retained partial bytes, resume the exact Range, and prove gap-free
+handoff to the reviewed graph. Host/CLI tests prove planned and cancelled
+pre-admission enablement diagnosis has zero network, authorization, admission,
+or lifecycle side effects; exposes no Host/fence/path evidence; and suppresses
+the stale plan after Use completion even before the Host outcome can commit.
 
 Logs and JSON errors must not echo secrets, full untrusted descriptor values, or
 arbitrary package content.
@@ -542,10 +753,25 @@ Required gates include:
   checkpoint in a test-binary subprocess;
 - grant-bearing graph publish/hide effect interruption before package and
   Grant cutover receipts in a test-binary subprocess;
+- externally killed managed-host processes for install, upgrade, and uninstall
+  after multi-node Registry publish/hide but before one dependency receipt and
+  Grant cutover/retirement, followed by zero-network recovery with
+  reauthorization disabled and exact candidate/prior Grant convergence;
+- externally killed `CognitivePackageHostManager` protocol applies for all five
+  reviewed mutations with the Registry unavailable: multi-node
+  install/upgrade publication or uninstall hide, disable after root hide and
+  Grant cutover while drain is blocked, and enable after publication with its
+  candidate Grant prepared; recovery converges exact candidate/prior Grants or
+  enablement regrant/revocation, completes drain and lifecycle/Grant journals,
+  and replays the terminal Host outcome without generation inflation; install
+  and upgrade consume only the reviewed planning cache;
 - Grant Store interruption after every durable phase, candidate, revocation,
   and restoration write in a test-binary subprocess;
 - real CLI uninstall interruption after durable Registry hide but before its
   package receipt, followed by restart drain and exact removal;
+- real CLI multi-node install interruption after durable Registry publication
+  but before dependency journal and parent graph completion, followed by exact
+  zero-network replay without another Registry generation;
 - real-process interruption at every graph/Grant/cutover/drain/removal
   checkpoint;
 - mixed-generation and stale-route prevention;

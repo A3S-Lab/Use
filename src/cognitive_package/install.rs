@@ -13,11 +13,13 @@ use crate::plugin_lifecycle::{
     PluginLifecycleIntentSpec, PluginPackageGraphLifecycleCoordinator, PluginPackageLifecycleUnit,
 };
 
+use super::download_attempt::PendingPackageDownloadAttempt;
 use super::plan::{
     install_generations, install_operation, install_plan_packages, now_ms,
     operation_provider_evidence, package_state_revision, state_surface_refs,
 };
 use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
+use super::resolution_attempt::PendingPackageResolutionAttempt;
 use super::store::PendingPackageGraphOperation;
 use super::{
     installed_matches_lock, package_manager_error, CognitivePackageInstallResult,
@@ -42,15 +44,65 @@ impl CognitivePackageManager {
         access: RegistryAccess,
         requested_root_surfaces: Option<&[PluginSurfaceRef]>,
     ) -> UseResult<CognitivePackageInstallResult> {
-        let lock = resolve_package_lock(
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        let mut resolution_attempt = Some(
+            self.resolution_attempt_store()
+                .begin(PendingPackageResolutionAttempt::new(
+                    self.scope.clone(),
+                    PluginOperationAction::Install,
+                    package_id,
+                    requested_version,
+                    channel,
+                    access.resolution_access(),
+                    root_registry,
+                    dependency_registries,
+                    now_ms()?,
+                )?)
+                .await?,
+        );
+        let lock = match resolve_package_lock(
             access,
             root_registry,
             dependency_registries,
             package_id,
             requested_version,
             channel,
+            resolution_attempt.as_ref().ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_resolution_attempt_invalid",
+                    "The pre-lock Registry resolution observer is unavailable.",
+                )
+            })?,
         )
-        .await?;
+        .await
+        {
+            Ok(lock) => {
+                resolution_attempt
+                    .as_ref()
+                    .ok_or_else(|| {
+                        package_manager_error(
+                            "use.plugin.package_resolution_attempt_invalid",
+                            "The pre-lock Registry resolution observer is unavailable.",
+                        )
+                    })?
+                    .mark_resolved(&lock)
+                    .await?;
+                lock
+            }
+            Err(error) => {
+                resolution_attempt
+                    .as_ref()
+                    .ok_or_else(|| {
+                        package_manager_error(
+                            "use.plugin.package_resolution_attempt_invalid",
+                            "The pre-lock Registry resolution observer is unavailable.",
+                        )
+                    })?
+                    .mark_failed(&error.code)
+                    .await?;
+                return Err(error);
+            }
+        };
         let lock_digest = lock.descriptor_digest()?;
         verify_expected_lock(&lock_digest, expected_package_lock_digest)?;
         let (dispositions, installed) = self.install_dispositions(&lock).await?;
@@ -81,7 +133,12 @@ impl CognitivePackageManager {
             }
             self.graph_store().put(&lock, now_ms()?).await?;
             if let Some(pending) = &pending {
-                pending_store.remove(pending).await?;
+                self.retain_and_remove_graph_operation(
+                    &pending_store,
+                    pending,
+                    super::PluginRetainedOperationOutcome::Completed,
+                )
+                .await?;
             }
             let root = installed
                 .get(&lock.root_package_id)
@@ -92,6 +149,16 @@ impl CognitivePackageManager {
                         "The retained root package disappeared during graph adoption.",
                     )
                 })?;
+            resolution_attempt
+                .take()
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_resolution_attempt_invalid",
+                        "The pre-lock Registry resolution observer is unavailable.",
+                    )
+                })?
+                .finish()
+                .await?;
             return Ok(CognitivePackageInstallResult {
                 changed: false,
                 root,
@@ -106,12 +173,34 @@ impl CognitivePackageManager {
         let mut registries = Vec::with_capacity(dependency_registries.len() + 1);
         registries.push(root_registry.clone());
         registries.extend(dependency_registries.iter().cloned());
-        let selected_downloads = dispositions
+        let selected_downloads: BTreeSet<String> = dispositions
             .iter()
             .filter_map(|(package_id, disposition)| {
                 (*disposition == InstallDisposition::Add).then_some(package_id.clone())
             })
             .collect();
+        let download_store = self.download_attempt_store();
+        let mut download_attempt = Some(
+            resolution_attempt
+                .take()
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_resolution_attempt_invalid",
+                        "The pre-lock Registry resolution observer is unavailable.",
+                    )
+                })?
+                .into_download(
+                    &download_store,
+                    PendingPackageDownloadAttempt::new(
+                        self.scope.clone(),
+                        PluginOperationAction::Install,
+                        lock.clone(),
+                        selected_downloads.clone(),
+                        now_ms()?,
+                    )?,
+                )
+                .await?,
+        );
         let downloads =
             download_selected_packages(access, &lock, &registries, &selected_downloads).await?;
         let mut prepared = Vec::new();
@@ -198,6 +287,9 @@ impl CognitivePackageManager {
                 generated
             }
         };
+        if let Some(attempt) = download_attempt.take() {
+            attempt.finish().await?;
+        }
         let pending = self
             .admit_planned_graph_operation(&pending_store, pending)
             .await?;
@@ -302,7 +394,12 @@ impl CognitivePackageManager {
             }
         }
         self.graph_store().put(&lock, now_ms()?).await?;
-        pending_store.remove(&pending).await?;
+        self.retain_and_remove_graph_operation(
+            &pending_store,
+            &pending,
+            super::PluginRetainedOperationOutcome::Completed,
+        )
+        .await?;
         let root = self
             .registry
             .get(&lock.root_package_id)

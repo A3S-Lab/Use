@@ -147,6 +147,9 @@ fn schema_v3_cli_upgrade_publishes_the_candidate_graph_and_reports_exact_transit
         upgraded["data"]["packageGraph"]["plan"]["plan"]["action"],
         "upgrade"
     );
+    assert!(!home
+        .join("state/operations/package-downloads/upgrade/acme/root.json")
+        .exists());
 
     let replay = cognitive_registry_upgrade(
         &next_server,
@@ -751,6 +754,35 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
             .version,
         "1.1.0"
     );
+    let history = manager
+        .diagnose_operation_history("acme/root")
+        .await
+        .unwrap();
+    assert_eq!(history.retained_operation_count, 3);
+    assert_eq!(
+        history.operations[0].diagnostic.operation.action,
+        PluginOperationAction::Upgrade
+    );
+    assert_eq!(
+        history.operations[0].outcome,
+        a3s_use::cognitive_package::PluginRetainedOperationOutcome::RolledBack
+    );
+    assert!(history.operations[0]
+        .diagnostic
+        .operation
+        .lifecycle
+        .iter()
+        .any(|unit| {
+            unit.status == a3s_use::plugin_lifecycle::PluginLifecycleOperationStatus::RolledBack
+        }));
+    assert_eq!(
+        history.operations[1].diagnostic.operation.action,
+        PluginOperationAction::Upgrade
+    );
+    assert_eq!(
+        history.operations[2].diagnostic.operation.action,
+        PluginOperationAction::Install
+    );
 
     let third = manager
         .upgrade_remote(
@@ -765,4 +797,22 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         .unwrap();
     assert!(third.changed);
     assert_eq!(third.root.manifest.version, "1.2.0");
+    let history = manager
+        .diagnose_operation_history("acme/root")
+        .await
+        .unwrap();
+    assert_eq!(history.retained_operation_count, 4);
+    assert_eq!(
+        history
+            .operations
+            .iter()
+            .map(|entry| entry.diagnostic.operation.action)
+            .collect::<Vec<_>>(),
+        [
+            PluginOperationAction::Upgrade,
+            PluginOperationAction::Upgrade,
+            PluginOperationAction::Upgrade,
+            PluginOperationAction::Install,
+        ]
+    );
 }

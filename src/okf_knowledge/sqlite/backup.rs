@@ -1,15 +1,17 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use a3s_use_core::{PlanScope, UseError, UseResult};
+use a3s_use_core::{
+    OkfKnowledgeObservedState, PlanQualifiedSurfaceRef, PlanScope, UseError, UseResult,
+};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::audit;
 use super::policy::OkfKnowledgeStoragePolicy;
-use super::projection::database_io;
+use super::projection::{database_io, load_projection, observation, selected_generation};
 use super::schema;
 use super::storage::OkfKnowledgeStorageUsage;
 
@@ -18,8 +20,23 @@ pub const OKF_KNOWLEDGE_BACKUP_SCHEMA: &str = "a3s.use.okf-knowledge-backup.v1";
 const BACKUP_MAGIC: &[u8] = b"A3S-OKF-BACKUP\n";
 const MANIFEST_DIGEST_BYTES: usize = 32;
 const MAX_BACKUP_MANIFEST_BYTES: usize = 64 * 1024;
-const MAX_BACKUP_DATABASE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+pub(crate) const MAX_BACKUP_DATABASE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OkfKnowledgeRestoreInventory {
+    pub(crate) bindings: Vec<crate::okf_knowledge::OkfKnowledgeBinding>,
+    pub(crate) selected: Vec<(PlanQualifiedSurfaceRef, u64)>,
+}
+
+#[derive(Debug)]
+pub(crate) struct VerifiedOkfKnowledgeBackup {
+    pub(crate) manifest: OkfKnowledgeBackupManifest,
+    pub(crate) bindings: Vec<crate::okf_knowledge::OkfKnowledgeBinding>,
+    pub(crate) selected: Vec<(PlanQualifiedSurfaceRef, u64)>,
+    pub(crate) database_path: PathBuf,
+    _temporary: tempfile::TempDir,
+}
 
 /// Self-describing receipt for one consistent scope-local SQLite snapshot.
 ///
@@ -38,7 +55,7 @@ pub struct OkfKnowledgeBackupManifest {
 }
 
 impl OkfKnowledgeBackupManifest {
-    fn validate(&self) -> UseResult<OkfKnowledgeStoragePolicy> {
+    pub(crate) fn validate(&self) -> UseResult<OkfKnowledgeStoragePolicy> {
         if self.schema != OKF_KNOWLEDGE_BACKUP_SCHEMA
             || !super::valid_machine_id(&self.scope.id)
             || self.created_at_ms == 0
@@ -130,6 +147,20 @@ pub(super) fn verify(
     backup_path: &Path,
     expected_scope: Option<&PlanScope>,
 ) -> UseResult<OkfKnowledgeBackupManifest> {
+    Ok(load_verified(backup_path, expected_scope)?.manifest)
+}
+
+pub(super) fn inspect(
+    backup_path: &Path,
+    expected_scope: &PlanScope,
+) -> UseResult<VerifiedOkfKnowledgeBackup> {
+    load_verified(backup_path, Some(expected_scope))
+}
+
+fn load_verified(
+    backup_path: &Path,
+    expected_scope: Option<&PlanScope>,
+) -> UseResult<VerifiedOkfKnowledgeBackup> {
     validate_regular_backup_file(backup_path)?;
     let archive_bytes = regular_file_length(backup_path)?;
     let mut reader = BufReader::new(File::open(backup_path).map_err(|error| {
@@ -179,7 +210,7 @@ pub(super) fn verify(
         serde_json::from_slice(&manifest_bytes).map_err(|error| {
             backup_invalid(format!("The Knowledge backup manifest is invalid: {error}"))
         })?;
-    let policy = manifest.validate()?;
+    manifest.validate()?;
     if expected_scope.is_some_and(|scope| scope != &manifest.scope) {
         return Err(UseError::new(
             "use.okf.knowledge_backup_scope_mismatch",
@@ -226,17 +257,131 @@ pub(super) fn verify(
         ));
     }
 
-    let connection = schema::open(&snapshot_path, false)
-        .map_err(|_| backup_invalid("The Knowledge backup database schema is unsupported."))?;
+    let inventory = inspect_restore_database(&snapshot_path, &manifest)?;
+    Ok(VerifiedOkfKnowledgeBackup {
+        manifest,
+        bindings: inventory.bindings,
+        selected: inventory.selected,
+        database_path: snapshot_path,
+        _temporary: temporary_snapshot,
+    })
+}
+
+pub(super) fn inspect_restore_database(
+    database_path: &Path,
+    manifest: &OkfKnowledgeBackupManifest,
+) -> UseResult<OkfKnowledgeRestoreInventory> {
+    let policy = manifest.validate()?;
+    validate_regular_backup_file(database_path)?;
+    let (bytes, sha256) = file_evidence(database_path)?;
+    if bytes != manifest.database_bytes || sha256 != manifest.database_sha256 {
+        return Err(backup_invalid(
+            "The staged Knowledge restore database differs from its reviewed backup manifest.",
+        ));
+    }
+    let connection = schema::open(database_path, false)
+        .map_err(|_| backup_invalid("The Knowledge restore database schema is unsupported."))?;
     let report = audit::audit(&connection, &manifest.scope, &policy).map_err(|_| {
-        backup_invalid("The Knowledge backup database failed integrity validation.")
+        backup_invalid("The Knowledge restore database failed integrity validation.")
     })?;
     if report.storage != manifest.storage {
         return Err(backup_invalid(
-            "The Knowledge backup storage evidence does not match its manifest.",
+            "The Knowledge restore database storage evidence does not match its manifest.",
         ));
     }
-    Ok(manifest)
+    let inventory = restore_inventory(&connection)?;
+    drop(connection);
+    Ok(inventory)
+}
+
+fn restore_inventory(connection: &rusqlite::Connection) -> UseResult<OkfKnowledgeRestoreInventory> {
+    let mut statement = connection
+        .prepare(
+            "SELECT package_id, surface_id, generation
+             FROM knowledge_projections
+             ORDER BY package_id, surface_id, generation",
+        )
+        .map_err(|error| database_io("prepare Knowledge backup restore inventory", error))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|error| database_io("query Knowledge backup restore inventory", error))?;
+    let mut bindings = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| database_io("read Knowledge backup restore inventory", error))?
+    {
+        let package_id = row
+            .get::<_, String>(0)
+            .map_err(|error| database_io("read restore package identity", error))?;
+        let surface_id = row
+            .get::<_, String>(1)
+            .map_err(|error| database_io("read restore surface identity", error))?;
+        let generation = row
+            .get::<_, i64>(2)
+            .map_err(|error| database_io("read restore generation", error))?;
+        let generation = u64::try_from(generation)
+            .map_err(|_| backup_invalid("A restore generation is outside its valid range."))?;
+        let stored = load_projection(connection, &package_id, &surface_id, generation)?
+            .ok_or_else(|| backup_invalid("A restore projection disappeared during inspection."))?;
+        let selected = selected_generation(connection, &package_id, &surface_id)?;
+        let observed = observation(
+            &stored.receipt,
+            stored.state,
+            &stored.index_digest,
+            stored.observed_at_ms,
+            selected,
+        )?;
+        bindings.push(crate::okf_knowledge::OkfKnowledgeBinding::new(
+            stored.receipt,
+            observed,
+        )?);
+    }
+    drop(rows);
+    drop(statement);
+
+    let mut statement = connection
+        .prepare(
+            "SELECT package_id, surface_id, generation
+             FROM knowledge_selection
+             ORDER BY package_id, surface_id",
+        )
+        .map_err(|error| database_io("prepare Knowledge backup selections", error))?;
+    let selected = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|error| database_io("query Knowledge backup selections", error))?
+        .map(|row| {
+            let (package_id, surface_id, generation) =
+                row.map_err(|error| database_io("read Knowledge backup selection", error))?;
+            let generation = u64::try_from(generation).map_err(|_| {
+                backup_invalid("A selected restore generation is outside its valid range.")
+            })?;
+            let binding = bindings
+                .iter()
+                .find(|binding| {
+                    binding.receipt.surface.package_id == package_id
+                        && binding.receipt.surface.surface.id == surface_id
+                        && binding.receipt.generation == generation
+                })
+                .ok_or_else(|| {
+                    backup_invalid(
+                        "A selected restore generation has no retained projection receipt.",
+                    )
+                })?;
+            if binding.observation.state != OkfKnowledgeObservedState::Promoted {
+                return Err(backup_invalid(
+                    "A selected restore generation is not promoted.",
+                ));
+            }
+            Ok((binding.receipt.surface.clone(), generation))
+        })
+        .collect::<UseResult<Vec<_>>>()?;
+    Ok(OkfKnowledgeRestoreInventory { bindings, selected })
 }
 
 fn write_archive(
@@ -261,6 +406,7 @@ fn write_archive(
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
+    let _directory_lock = super::backup_retention::BackupDirectoryLock::acquire(parent)?;
     let temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
         backup_io(format!(
             "Failed to create a temporary Knowledge backup beside '{}': {error}",
@@ -381,6 +527,38 @@ fn regular_file_length(path: &Path) -> UseResult<u64> {
         .map_err(|error| backup_io(format!("Failed to inspect '{}': {error}", path.display())))
 }
 
+pub(super) fn file_evidence(path: &Path) -> UseResult<(u64, String)> {
+    let bytes = regular_file_length(path)?;
+    if bytes == 0 || bytes > MAX_BACKUP_DATABASE_BYTES {
+        return Err(backup_invalid(
+            "The Knowledge database is empty or exceeds the restore safety bound.",
+        ));
+    }
+    Ok((bytes, hash_file(path, bytes)?))
+}
+
+pub(super) fn optional_file_evidence(path: &Path) -> UseResult<Option<(u64, String)>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(backup_io(format!(
+                "Failed to inspect '{}': {error}",
+                path.display()
+            )));
+        }
+    };
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+        || !metadata.is_file()
+        || metadata.len() > MAX_BACKUP_DATABASE_BYTES
+    {
+        return Err(backup_invalid(
+            "A Knowledge database sidecar is not a bounded owned regular file.",
+        ));
+    }
+    Ok(Some((metadata.len(), hash_file(path, metadata.len())?)))
+}
+
 fn hash_file(path: &Path, expected_bytes: u64) -> UseResult<String> {
     let mut reader = BufReader::new(
         File::open(path)
@@ -415,6 +593,16 @@ fn copy_and_hash(
         digest.update(&buffer[..count]);
         remaining -= u64::try_from(count)
             .map_err(|_| backup_invalid("The Knowledge backup copy count overflowed."))?;
+    }
+    let mut extra = [0_u8; 1];
+    if reader
+        .read(&mut extra)
+        .map_err(|error| backup_io(format!("Failed to recheck Knowledge backup bytes: {error}")))?
+        != 0
+    {
+        return Err(backup_invalid(
+            "The Knowledge backup source grew beyond its declared database length.",
+        ));
     }
     Ok(format!("sha256:{:x}", digest.finalize()))
 }

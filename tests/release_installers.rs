@@ -2,7 +2,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -719,7 +719,10 @@ impl TestServer {
         let thread = thread::spawn(move || {
             while !worker_stop.load(Ordering::Acquire) {
                 match listener.accept() {
-                    Ok((mut stream, _)) => serve_request(&mut stream, &files),
+                    Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).unwrap();
+                        serve_request(&mut stream, &files);
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
                     }
@@ -742,7 +745,6 @@ impl TestServer {
 impl Drop for TestServer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        let _ = TcpStream::connect(self.base_url.trim_start_matches("http://"));
         if let Some(thread) = self.thread.take() {
             thread.join().unwrap();
         }
@@ -756,11 +758,15 @@ fn serve_request(stream: &mut TcpStream, files: &HashMap<String, Vec<u8>>) {
     let mut request = Vec::new();
     let mut buffer = [0_u8; 1024];
     while request.len() < 16 * 1024 && !request.ends_with(b"\r\n\r\n") {
-        let read = stream.read(&mut buffer).unwrap_or(0);
-        if read == 0 {
-            break;
+        match stream.read(&mut buffer) {
+            Ok(0) => return,
+            Ok(read) => request.extend_from_slice(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return,
         }
-        request.extend_from_slice(&buffer[..read]);
+    }
+    if !request.ends_with(b"\r\n\r\n") {
+        return;
     }
     let request = String::from_utf8_lossy(&request);
     let path = request
@@ -770,7 +776,13 @@ fn serve_request(stream: &mut TcpStream, files: &HashMap<String, Vec<u8>>) {
         .unwrap_or("/");
     let (status, body): (&str, &[u8]) = match files.get(path) {
         Some(body) => ("200 OK", body),
-        None => ("404 Not Found", b"not found"),
+        None => {
+            eprintln!(
+                "release fixture server has no route for {path:?}; available routes: {:?}",
+                files.keys().collect::<Vec<_>>()
+            );
+            ("404 Not Found", b"not found")
+        }
     };
     if write!(
         stream,
@@ -781,5 +793,9 @@ fn serve_request(stream: &mut TcpStream, files: &HashMap<String, Vec<u8>>) {
     {
         return;
     }
-    let _ = stream.write_all(body);
+    if stream.write_all(body).is_err() {
+        return;
+    }
+    let _ = stream.flush();
+    let _ = stream.shutdown(Shutdown::Write);
 }

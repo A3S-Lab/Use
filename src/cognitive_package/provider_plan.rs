@@ -390,7 +390,11 @@ pub fn plan_cognitive_package_provider_generations(
                 generations.insert((*package_id).to_owned(), generation);
             }
         }
-        PluginOperationAction::Uninstall | PluginOperationAction::Disable => unreachable!(),
+        PluginOperationAction::Uninstall | PluginOperationAction::Disable => {
+            return Err(provider_plan_error(
+                "A retiring provider action reached candidate generation planning.",
+            ))
+        }
     }
     if generations.len() != managed_packages.len() {
         return Err(provider_plan_error(

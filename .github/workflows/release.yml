@@ -170,6 +170,7 @@ jobs:
       id-token: write
     env:
       CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_RELEASE_STRIP: symbols
       RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=.
       SOURCE_DATE_EPOCH: ${{ needs.validate.outputs.source_date_epoch }}
     strategy:
@@ -209,6 +210,18 @@ jobs:
         with:
           toolchain: ${{ env.A3S_RELEASE_RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
+      - name: Disable nondeterministic Mach-O UUIDs
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=-Wl,-no_uuid" >> "${GITHUB_ENV}"
+      - name: Enable deterministic PE/COFF linking
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=/Brepro" >> "${GITHUB_ENV}"
+      - name: Disable nondeterministic ELF build IDs
+        if: runner.os == 'Linux'
+        shell: bash
+        run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=-Wl,--build-id=none" >> "${GITHUB_ENV}"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -282,6 +295,13 @@ jobs:
           install_root="${RUNNER_TEMP}/installed-${{ matrix.name }}"
           install -d "${install_root}"
           tar xzf "${ARCHIVE}" -C "${install_root}"
+          python3 "${GITHUB_WORKSPACE}/scripts/verify-release-portability.py" \
+            --release-root "${install_root}" \
+            --forbid-path "${GITHUB_WORKSPACE}"
+          export A3S_USE_HOME="${RUNNER_TEMP}/release-smoke-home-${{ matrix.name }}"
+          smoke_cwd="${RUNNER_TEMP}/release-smoke-cwd-${{ matrix.name }}"
+          install -d "${A3S_USE_HOME}" "${smoke_cwd}"
+          cd "${smoke_cwd}"
           export A3S_USE_OCR_HOME="${install_root}/ocr-models"
           export A3S_USE_OCR_SKILLS_DIR="${install_root}/ocr-skills"
           test -x "${install_root}/a3s-use"
@@ -298,6 +318,7 @@ jobs:
           test -f "${install_root}/UPSTREAM.md"
           test -f "${install_root}/THIRD_PARTY_NOTICES.md"
           "${install_root}/a3s-use" --version
+          "${install_root}/a3s-use-browser-driver" --version
           A3S_USE_BROWSER_SKILLS_DIR="${install_root}/skill-data" \
             "${install_root}/a3s-use" browser skills list --json > "${RUNNER_TEMP}/skills.json"
           python3 - "${RUNNER_TEMP}/skills.json" <<'PY'
@@ -374,6 +395,14 @@ jobs:
           $ErrorActionPreference = "Stop"
           $root = Join-Path $env:RUNNER_TEMP "installed-${{ matrix.name }}"
           Expand-Archive -Path $env:ARCHIVE -DestinationPath $root
+          python "$env:GITHUB_WORKSPACE/scripts/verify-release-portability.py" `
+            --release-root $root `
+            --forbid-path $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw "Release tree contains repository-local paths" }
+          $env:A3S_USE_HOME = Join-Path $env:RUNNER_TEMP "release-smoke-home-${{ matrix.name }}"
+          $smokeCwd = Join-Path $env:RUNNER_TEMP "release-smoke-cwd-${{ matrix.name }}"
+          New-Item -ItemType Directory -Force -Path $env:A3S_USE_HOME,$smokeCwd | Out-Null
+          Set-Location $smokeCwd
           $env:A3S_USE_OCR_HOME = "$root/ocr-models"
           $env:A3S_USE_OCR_SKILLS_DIR = "$root/ocr-skills"
           @(
@@ -393,6 +422,8 @@ jobs:
           if (Test-Path "$root/extensions") { throw "Release archive contains obsolete bundled extensions" }
           & "$root/a3s-use.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "a3s-use --version failed" }
+          & "$root/a3s-use-browser-driver.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "a3s-use-browser-driver --version failed" }
           $env:A3S_USE_BROWSER_SKILLS_DIR = "$root/skill-data"
           $skills = (& "$root/a3s-use.exe" browser skills list --json | ConvertFrom-Json)
           if (-not $skills.success -or $skills.data.Count -ne 6) { throw "Packaged Skills smoke failed" }
@@ -500,6 +531,7 @@ jobs:
       id-token: write
     env:
       CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_RELEASE_STRIP: symbols
       RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=.
       SOURCE_DATE_EPOCH: ${{ needs.validate.outputs.source_date_epoch }}
     strategy:
@@ -539,6 +571,18 @@ jobs:
         with:
           toolchain: ${{ env.A3S_RELEASE_RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
+      - name: Disable nondeterministic Mach-O UUIDs
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=-Wl,-no_uuid" >> "${GITHUB_ENV}"
+      - name: Enable deterministic PE/COFF linking
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=/Brepro" >> "${GITHUB_ENV}"
+      - name: Disable nondeterministic ELF build IDs
+        if: runner.os == 'Linux'
+        shell: bash
+        run: echo "RUSTFLAGS=${RUSTFLAGS} -C link-arg=-Wl,--build-id=none" >> "${GITHUB_ENV}"
       - name: Require clean independent target directories
         shell: bash
         run: |

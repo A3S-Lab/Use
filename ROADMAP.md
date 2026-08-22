@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-11
+Last updated: 2026-08-23
 
 ## Product status
 
@@ -34,8 +34,10 @@ publishes one capability generation, and retires unused generations in reverse.
 1. **The package is the lifecycle unit.** A surface cannot be installed,
    upgraded, enabled, disabled, or removed independently of its owning package.
 2. **There is one current cognitive-package format.** Manifest v3, catalog v3,
-   receipt v3, plan v4, host protocol v4, manager toolset v4, pending graph v2,
-   and enablement state/operation v2 are the only accepted baseline.
+   receipt v4, plan v4, host protocol v6, managed scope v2, manager toolset v4,
+   pending graph v4, pre-lock resolution attempt/diagnostic v1, pre-plan
+   download attempt/diagnostic v1, and enablement state/operation v2 are the
+   only accepted baseline.
 3. **No pre-release compatibility debt.** Superseded schemas, receipts,
    metadata, APIs, and disk state are rejected. The user must clean the
    unsupported state and reinstall. No migration or fallback is inferred.
@@ -65,19 +67,42 @@ publishes one capability generation, and retires unused generations in reverse.
 | --- | --- |
 | Cognitive-package manifest | schema version 3 |
 | Signed catalog record | `a3s.use.plugin-catalog.v3` |
-| Installed receipt | schema version 3 |
+| Installed receipt | schema version 4 |
 | Package lock | `a3s.use.plugin-package-lock.v1` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
-| Host capabilities | `a3s.use.plugin-host-capabilities.v4`, protocol 4 |
+| Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
+| Host managed scope | `a3s.use.plugin-managed-scope.v2` |
+| Host operation observation | `a3s.use.plugin-host-operation-observation-request/result.v1` |
+| Host operation watch | `a3s.use.plugin-host-operation-watch-request.v1` |
+| Host cancellation | `a3s.use.plugin-host-cancel-request/result.v1` |
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
-| Pending package graph | `a3s.use.pending-package-graph-operation.v2` |
+| Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
+| Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
+| Pre-plan download attempt | `a3s.use.plugin-download-attempt.v1` |
 | Lifecycle diagnostic | `a3s.use.plugin-lifecycle-diagnostic.v1` |
+| Operation diagnostic | `a3s.use.plugin-operation-diagnostic.v1` |
+| Operation history | `a3s.use.plugin-operation-history.v1` / `a3s.use.plugin-operation-history-diagnostic.v1` |
+| Pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
+| Pre-plan download diagnostic | `a3s.use.plugin-download-attempt-diagnostic.v1` |
 | Enablement state | `a3s.use.cognitive-package-enablement-state.v2` |
 | Enablement operation | `a3s.use.cognitive-package-enablement-operation.v2` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
+| Coordinated Use state backup | `a3s.use.state-backup.v1` |
+| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v1` |
+| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v1` |
+| Coordinated Use state restore plan | `a3s.use.state-restore-plan.v1` |
+| Coordinated Use state restore operation | `a3s.use.state-restore-operation.v1` |
+| Coordinated Use state restore result | `a3s.use.state-restore-result.v1` |
+| Coordinated Use state restore diagnostic | `a3s.use.state-restore-diagnostic.v1` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
+| OKF Knowledge backup retention plan | `a3s.use.okf-knowledge-backup-retention-plan.v1` |
+| OKF Knowledge backup retention result | `a3s.use.okf-knowledge-backup-retention-result.v1` |
+| OKF Knowledge restore plan | `a3s.use.okf-knowledge-restore-plan.v2` |
+| OKF Knowledge restore operation | `a3s.use.okf-knowledge-restore-operation.v2` |
+| OKF Knowledge restore result | `a3s.use.okf-knowledge-restore-result.v2` |
+| OKF Knowledge restore diagnostic | `a3s.use.okf-knowledge-restore-diagnostic.v2` |
 
 Negative fixtures for superseded inputs remain only to prove fail-closed
 rejection. They are not supported decode paths.
@@ -160,8 +185,14 @@ rejection. They are not supported decode paths.
   and projection quotas, per-surface generation bounds, global tombstone
   pruning, SQLite/WAL compaction, and exact-scope usage diagnostics.
 - [x] Scope-local OKF SQLite/receipt/FTS integrity audit, non-overwriting
-  digest-bound database backup and offline verification, plus repair limited to
-  rebuilding the derived search index from validated documents.
+  digest-bound database backup and offline verification, exact-scope bounded
+  oldest-first rotation with canonical plan confirmation, plus repair limited
+  to rebuilding the derived search index from validated documents.
+  Authority-bound restore binds exact package/lifecycle/Registry/Grant
+  authority, an exact-subset binding inventory, and live main/WAL/SHM
+  evidence; it can restore missing binding files without overwriting
+  conflicts, preserves prior files, and converges a durable six-state journal
+  after interruption.
 - [x] Real `a3s-flow` Native TypeScript preflight and exact-generation binding
   in injected hosts and the explicitly configured standalone CLI lifecycle.
 - [x] Self-contained release-backed Runtime Task binding and exact-generation
@@ -177,8 +208,12 @@ rejection. They are not supported decode paths.
 - [x] Production `CognitivePackageHostManager` for one exact managed-scope
   fence, with durable request/operation binding, selected-surface planning,
   digest-only graph and enablement apply, restart replay, provenance
-  revalidation, and expired-plan recovery only after Use-owned durable
-  admission or completion evidence.
+  revalidation, zero-network install/upgrade apply from the exact planning
+  cache, and expired-plan recovery only after Use-owned durable admission or
+  completion evidence. Host protocol v6 binds an explicit User or Workspace
+  scope kind, observes exact operations from durable Host, graph, enablement,
+  and lifecycle evidence, long-polls a status revision, and persists
+  explicit-user cancellation only before durable admission.
 
 ### Validation and documentation
 
@@ -195,19 +230,43 @@ rejection. They are not supported decode paths.
   uninstall graph publish/hide effect but before package publication receipts
   and Grant cutover evidence, with exact-key recovery, one graph effect,
   completed package/Grant journals, and no publication on terminal replay.
+  Three externally killed managed-host processes also cover five-node install,
+  upgrade, and uninstall after Registry publish/hide but before one dependency
+  receipt and Grant cutover/retirement. Restart forbids reauthorization,
+  performs no network request, preserves the exact candidate Grant, retires
+  only the bound prior Grant, and completes without another Registry generation.
+  Five real `CognitivePackageHostManager` protocol children also cover every
+  reviewed mutation after the Registry is taken offline. Install, upgrade, and
+  uninstall are killed at the five-node graph publish/hide boundaries; disable
+  is killed after root hide and Grant cutover while accepted-call drain blocks;
+  enable is killed after publication while its candidate Grant is still
+  prepared. Digest-only apply reuses the durable reviewed plan and
+  confirmation; install and upgrade also use only the planning cache. Recovery
+  completes lifecycle/Grant journals, converges the exact candidate/prior
+  Grants or enablement regrant/revocation without another Registry generation,
+  and persists a replayable terminal Host outcome.
 - [x] Test-binary subprocess exit after all 14 Grant Store durable checkpoints
   in the canonical two-candidate/two-retirement lifecycle across forward
   prepare, cutover/retirement, and pre-cutover rollback, with exact
   candidate/prior convergence and terminal journal replay.
-- [x] Real `a3s-use` process exit after an uninstall Registry hide cutover and
-  before its package hide receipt, followed by exact-plan restart, an observed
-  accepted-call drain, physical removal, and no capability-generation
-  inflation. Missing generation state without the exact durable cutover is
-  rejected without changing graph, pending-plan, or Registry evidence.
+- [x] Real `a3s-use` process exit after a nine-node install Registry publish
+  cutover but before dependency journal and parent graph completion, followed
+  by zero-network exact replay with one complete visible closure and no
+  capability-generation inflation; and after an uninstall Registry hide
+  cutover but before its package hide receipt, followed by exact-plan restart,
+  an observed accepted-call drain, and physical removal. Missing generation
+  state without the exact durable cutover is rejected without changing graph,
+  pending-plan, or Registry evidence.
 - [x] Signed standalone CLI Flow/OKF/Skill/UI install, process-restart
   observation, exact upgrade, uninstall, failed-preflight non-publication, and
   repaired exact replay coverage on Unix and Windows x86_64. The OKF fixture
-  also exercises audit, backup, offline verification, and confirmed FTS repair.
+  also exercises audit, backup, offline verification, confirmed FTS repair, and
+  reviewed restore. Test subprocess exits cover the active-marker handoff,
+  every restore journal state, and partial main/WAL/SHM movement; replay works
+  from the durable candidate without the external backup and terminal replay
+  does not rewrite state. A path-free `restore-status` projection reports the
+  global active phase and bounded scope history/capacity at every exit window
+  without changing restore or database evidence.
 - [x] Linux CI, macOS workspace tests, and Windows preview compile/facade plus
   signed Registry, dependency-graph, Grant, Flow, OKF lifecycle, and
   killed-process cutover-replay gates.
@@ -300,10 +359,47 @@ Status: pending
 - [x] Test real-process uninstall interruption between durable Registry cutover
   and its package receipt, then hold the prior generation lease through restart
   to prove drain-before-removal and exact generation replay.
-- [ ] Test the remaining interrupted download, archive extraction, graph/Grant
+- [ ] Complete the interrupted download, archive extraction, graph/Grant
   cutover, drain, removal, process crash, reboot, antivirus contention, and
-  reparse-point replacement races.
+  reparse-point replacement matrix. A real `a3s-use` process-kill test now
+  proves digest-bound target download resume without partial publication. A
+  second real-process test kills installation while a verified high-entry
+  archive is being extracted, proves no receipt, graph, pending operation, or
+  package root was published, and completes an exact zero-network retry from
+  the verified cache. A third real-process test kills the following immutable
+  package copy after its pending plan and applying journal are durable, then
+  proves retry reclaims the actual bounded crash-staging tree, publishes only
+  the exact generation once, and removes the pending operation. Package commit
+  also rejects staging or package-parent links/reparse points. A fourth
+  real-process test kills uninstall during physical generation deletion after
+  route hiding and receipt removal; exact replay finishes the partial directory,
+  completes the journal, and does not inflate the Registry generation. A fifth
+  real-process test kills a nine-node install after the complete atomic graph
+  is visible but before one dependency journal and the installed parent graph
+  complete; offline replay uses the retained cutover, performs no network
+  request, completes every journal, and keeps the original Registry generation.
+  Sixth through eighth externally killed managed-host tests cover install,
+  upgrade, and uninstall publish/hide boundaries with a permission-bearing root
+  and four dependencies while the Grant journal is still prepared. Replay is
+  rejected if it requests authorization again or performs a network request;
+  otherwise it preserves the exact candidate Grant, retires only the bound
+  prior Grant, and completes package and Grant journals without generation
+  inflation. Ninth through thirteenth externally killed
+  `CognitivePackageHostManager` protocol applies cover all five reviewed
+  mutations after the Registry server is stopped. Install, upgrade, and
+  uninstall use the five-node graph publish/hide boundaries; disable stops
+  after root hide and Grant cutover while drain is blocked; enable stops after
+  publication with its candidate Grant prepared. Recovery consumes the durable
+  reviewed request and confirmation, uses only the exact planning cache for
+  install/upgrade, converges the exact candidate/prior Grant or enablement
+  regrant/revocation, completes drain, and persists the terminal Host outcome
+  without reauthorization or generation inflation.
+  Actual Code/Runtime product-host, platform, reboot, contention, and
+  replacement-race qualification stays open.
 - [ ] Verify release archives install and run without repository-local paths.
+  Checkout-path scanning plus isolated-home and isolated-working-directory
+  smoke execution are implemented locally; a fresh five-target workflow run
+  remains required.
 
 Exit gate: every supported target passes the same signed six-surface package
 and failure-injection scenarios.
@@ -337,21 +433,82 @@ Status: in progress
   manifest against the exact tag workflow identity and GitHub OIDC issuer
   before archive download, fail closed on invalid evidence, and retain the
   verified manifest and bundle with the installed version.
-- [x] Rebuild every shipped native executable for all five targets on a second
-  clean runner without a compiled-artifact cache, require a byte match with the
-  primary archive, and publish deterministic attested rebuild evidence.
+- [ ] Pass byte-for-byte independent rebuilds for every shipped native
+  executable on all five targets. The `v0.3.2` Release attempt passed only
+  macOS arm64; Use binaries drifted on both Linux targets and macOS x86_64,
+  while the Windows Browser driver drifted. Deterministic symbol stripping and
+  platform linker metadata controls are implemented locally, but a fresh
+  clean-runner matrix must pass before attested rebuild evidence is published.
 - [ ] Add an externally operated witness for the complete staged tree and final
   archive digest, and retain verification evidence outside the Release asset
   trust boundary.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair
   procedures for packages, cutover evidence, Grants, Flow history, UI state,
-  and OKF projections. Scope-local OKF database audit, verified backup, and
-  derived-index repair are implemented, but restore, binding/authority
-  recovery, backup rotation, and whole-product procedures remain open.
+  and OKF projections. A deterministic `a3s.use.state-backup.v1` whole-install
+  inventory now snapshots all allowlisted Use-owned families under one
+  exclusive maintenance fence, binds Registry generation/snapshot and installed
+  receipt digests, excludes locks, rejects nonterminal or unknown state, and
+  verifies every payload offline without extraction. Signed-package real-process
+  coverage proves path-free inventory and zero-network verification. Coordinated
+  retention now verifies every managed whole-install archive under one external
+  directory lock, returns a path-free oldest-first canonical plan, rejects stale
+  plans or changed candidates, and removes nothing without the exact plan digest
+  and explicit confirmation while retaining at least two recovery generations.
+  Scope-local OKF database audit, verified backup and exact-plan rotation,
+  derived-index repair, and authority-bound database plus missing-binding
+  restore are also implemented. Binding recovery accepts only an exact subset
+  of the verified backup inventory and independently retained Registry/package/lifecycle/Grant
+  authority; conflicting or newer binding evidence fails closed. Reviewed
+  same-version/OS/architecture whole-install restore is now implemented with a
+  path-free Add/Replace/Remove/Retain plan, exact live Registry and Grant
+  authority, a verified external rollback archive, link/reparse-safe staging,
+  seven durable phases, 15 subprocess-exit recovery boundaries, terminal
+  replay, read-only diagnostics, and bounded crash-recoverable history. Missing
+  authority recovery, clean-machine disaster recovery, cross-platform drills,
+  whole-product policy, and complete operational exercises remain open.
 - [x] Expose bounded, secret-free latest/previous lifecycle checkpoint
   diagnostics through `extension inspect --json`.
-- [ ] Add broader telemetry and diagnostics for plan, download, provider
+- [x] Add broader telemetry and diagnostics for plan, download, provider
   readiness, cutover, drain, rollback, and recovery without exposing secrets.
+  `extension diagnose --json` now exposes bounded, path-free Registry/TUF,
+  reviewed-plan, provider, Grant, cutover, lifecycle publication/drain/
+  rollback, and recovery evidence for one exact retained planned/admitted/
+  cancelled install, upgrade, or uninstall graph, active admitted enable/
+  disable operation, or newest Host-reviewed pre-admission enable/disable plan
+  or cancellation. Standalone Knowledge recovery exposes bounded active/
+  history/capacity evidence. Retained install/upgrade graphs and durable
+  pre-plan download attempts expose expected and retained archive and signed
+  executable-planning-target bytes plus exact-target missing/partial/complete
+  state from historical Registry provenance without network I/O, writes,
+  cache-lock acquisition, or paths. Real killed-process tests prove active
+  archive and planning-target partial observation, retained evidence, exact
+  Range resume, and cleanup only after the reviewed graph is durable. Partials
+  and complete observations are never planning/apply/recovery authority.
+  Before an exact lock exists, a durable pre-lock resolution attempt records
+  refreshed/cached access, requested version/channel, per-Registry
+  pending/verifying/verified/failed state, path-free source/trust digests, TUF
+  role versions, bounded failures, and terminal package-lock evidence. The
+  diagnostic survives resolver failure or process exit and is deleted only
+  after its download-attempt successor is durable. Real CLI tests cover a
+  killed online resolution, terminal verification failure, and zero-network
+  offline cache failure.
+  `extension diagnose --history --json` now retains the newest 16 exact
+  completed or rolled-back operations and cancelled graph plans within 8 MiB
+  per scope/package.
+  Retention happens before recovery evidence is removed, exact replay is
+  deduplicated by `(operationId, planDigest)`, history survives uninstall, and
+  malformed, linked, or oversized state fails closed without path or secret
+  leakage. A real CLI install/uninstall/reinstall sequence proves zero-network
+  newest-first history and legitimate textual operation-ID reuse; a Host graph
+  cancellation proves zero-network cancelled outcome and replay deduplication;
+  the managed Workspace Host kill/recovery path proves exact-scope history
+  without a second entry. A digest-bound Host observation index selects the
+  newest reviewed enablement plan by `(plannedAtMs, requestId)` while retaining
+  its exact managed scope only for private request lookup. Real CLI assertions
+  prove `planned`/`cancelled` projection, selected provider and awaiting-Grant
+  state, exact zero-observed lifecycle counts, zero network/authorization/
+  admission, no Host/fence/path leakage, active Use-evidence precedence, and
+  suppression after Use completion before the Host outcome is durable.
 - [ ] Complete threat model review, privilege boundaries, security response,
   upgrade policy, and support runbooks.
 

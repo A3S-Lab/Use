@@ -2,7 +2,7 @@
 
 Status: development preview
 
-Last updated: 2026-08-08
+Last updated: 2026-08-22
 
 ## Boundary
 
@@ -126,6 +126,58 @@ The command performs no network request. Schema v2 JSON reports verified-target,
 resumable-partial, and stale-write entry counts and bytes, available filesystem
 bytes, and the effective policy. If a verified catalog-cache stamp exists, its
 Registry name, URL, and trust-root digest must match the command.
+
+## Observe a retained operation
+
+`a3s-use extension diagnose <publisher/name> --json` correlates a retained
+install or upgrade graph with its exact digest-bound target cache entries. It
+reports total signed `downloadBytes`, current `downloadRetainedBytes`, target
+count, aggregate `missing`/`in-progress`/`complete` status, and per-package
+expected/retained bytes with `missing`/`partial`/`complete` status. The exact
+retained package lock also selects separately signed executable-planning
+targets. Their independent `planningBytes`, `planningRetainedBytes`,
+`planningTargetCount`, aggregate `planning`, and canonical `planningTargets`
+inventory report the same byte states using `targetDigest`; packages without a
+planning target contribute no entry, and an entirely static operation reports
+`not-required`.
+
+The lookup derives the old source-identity datastore from each target's exact
+retained `VerifiedCatalogProvenance`; replacing a named Registry source cannot
+redirect historical diagnostics to the replacement datastore. Before an exact
+lock exists, `a3s.use.plugin-resolution-attempt.v1` retains refreshed/cached
+Registry/TUF progress under the same process-held package lock and
+`a3s.use.plugin-resolution-attempt-diagnostic.v1` exposes its path-free
+`pre-lock` state. Failed or interrupted resolution survives for diagnosis;
+success writes the download attempt before deleting it. The diagnostic makes
+no network request or write and never waits for the package lock. Before a
+reviewed graph exists, `a3s.use.plugin-download-attempt.v1` retains the exact
+lock and selected archive set under a process-held package lock. The CLI returns
+`a3s.use.plugin-download-attempt-diagnostic.v1` for that `pre-plan` window, and
+switches to the operation diagnostic once the pending graph is durable.
+Observation makes no network request or write, exposes no path, and deliberately
+does not take the target-cache lock. It can therefore see a valid partial while
+a retry or transfer is active. Ambiguous complete-plus-partial evidence, links
+or reparse points, non-regular entries, and oversized partials fail closed.
+
+`complete` is an exact-length observation at the location that only verified
+promotion normally writes. The diagnostic does not rehash an archive or
+planning target and cannot be used as download, planning, apply, or recovery
+authority. A partial is likewise never authority or an offline target. The
+attempt survives failure or process exit, and an exact retry replaces it only
+after the prior process lock is released. It is removed only after reviewed
+graph retention. A real killed-process test proves planning-target active and
+retained partial observation, exact Range resume, complete promotion, and
+handoff to the reviewed graph without a diagnostic gap.
+
+After an install or upgrade reaches a validated terminal outcome,
+`a3s-use extension diagnose <publisher/name> --history --json` retains its
+complete path-free download projection together with the rest of the operation
+snapshot. The per-scope/package history keeps the newest 16 occurrences within
+8 MiB and survives package removal. It is written before pending recovery
+authority is deleted, while exact replay deduplicates the pair
+`(operationId, planDigest)`. History observation remains zero-network and
+read-only; cached target state inside an old snapshot is historical evidence,
+not current cache or recovery authority.
 
 ## Prune
 

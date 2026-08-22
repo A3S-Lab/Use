@@ -53,7 +53,9 @@ pub use network::RegistryNetworkPolicy;
 pub use package_graph::{
     download_locked_cached_remote_packages, download_locked_remote_packages,
     download_selected_locked_cached_remote_packages, download_selected_locked_remote_packages,
-    resolve_cached_remote_package_lock, resolve_remote_package_lock,
+    resolve_cached_remote_package_lock, resolve_cached_remote_package_lock_with_observer,
+    resolve_remote_package_lock, resolve_remote_package_lock_with_observer,
+    PackageRegistryResolutionObserver,
 };
 pub use presentation::{
     fetch_cached_cognitive_package_media, fetch_cognitive_package_media,
@@ -69,6 +71,7 @@ use target::{
     decode_registry_target_metadata, resolved_remote_package, validate_target_metadata,
     validate_target_name, RegistryTargetMetadata,
 };
+pub use target_cache::{VerifiedTargetObservation, VerifiedTargetObservationStatus};
 
 const ROOT_NAME: &str = "root.json";
 const ROOT_CACHE_NAME: &str = "bootstrap-root.json";
@@ -164,6 +167,14 @@ impl TrustedRegistry {
         &self.root_sha256
     }
 
+    /// Stable digest of the complete replaceable Registry source identity.
+    ///
+    /// The digest binds name, canonical URL, and trust root without requiring
+    /// diagnostics to expose the URL itself.
+    pub fn source_identity(&self) -> String {
+        registry_source_identity(&self.name, self.base_url.as_str(), &self.root_sha256)
+    }
+
     /// Returns whether this trust configuration is the exact source recorded
     /// in verified catalog provenance.
     pub fn matches_provenance(&self, provenance: &VerifiedCatalogProvenance) -> bool {
@@ -248,6 +259,20 @@ impl TrustedRegistry {
             )
         })
     }
+}
+
+pub(crate) fn registry_source_identity(
+    name: &str,
+    registry_url: &str,
+    root_sha256: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"a3s.use.registry-source.v1\0");
+    for value in [name, registry_url, root_sha256] {
+        hasher.update((value.len() as u64).to_be_bytes());
+        hasher.update(value.as_bytes());
+    }
+    format!("{:x}", hasher.finalize())
 }
 
 /// Exact signed target selected from a verified TUF repository.
@@ -578,6 +603,21 @@ pub async fn inspect_verified_target_cache(
     registry: &TrustedRegistry,
 ) -> UseResult<VerifiedTargetCacheUsage> {
     target_cache::inspect_registry_target_cache(registry).await
+}
+
+pub(crate) async fn observe_verified_target_cache_entry(
+    datastore: &Path,
+    registry_name: &str,
+    expected_length: u64,
+    expected_sha256: &str,
+) -> UseResult<VerifiedTargetObservation> {
+    target_cache::observe_target_cache_entry(
+        datastore,
+        registry_name,
+        expected_length,
+        expected_sha256,
+    )
+    .await
 }
 
 /// Remove stale writes, resumable partials, and the oldest verified targets

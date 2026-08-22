@@ -9,7 +9,7 @@ description: Open Knowledge Format 如何作为 A3S Use 的一等、非执行型
 
 在 A3S Use 中，OKF 是与 Tool、MCP、Flow、Skill、UI 并列的一等认知表面，但它不是可执行 workload。
 
-> 当前状态：standalone lifecycle 已包含跨平台 bundled SQLite/FTS5 Knowledge 后端、完整 User/Workspace 隔离、事务化 stage/promote/remove、基于精确 projection 授权的带引用搜索、重启恢复，以及 signed install/query/upgrade/uninstall 覆盖。A3S Code 托管的 Workspace/session carrier 与生产 retention/GC 仍待完成；没有精确 promoted evidence 就不会发布该表面。
+> 当前状态：standalone lifecycle 已包含跨平台 bundled SQLite/FTS5 Knowledge 后端、完整 User/Workspace 隔离、事务化 stage/promote/remove、基于精确 projection 授权的带引用搜索、重启恢复、有界 quota/retention/GC、scope-local integrity audit、verified database backup 与 exact-plan oldest-first rotation、只重建派生 FTS 的 repair、authority-bound database 与 exact-subset missing-binding restore，以及 signed real-process 覆盖。精确匹配 version/OS/architecture 的 reviewed whole-installation restore 也已实现。A3S Code 托管的 leased-query 资格验证、缺失 Registry/package/lifecycle/Grant authority 与 clean-machine 恢复、跨平台运营演练、rollback-evidence retention policy 和 whole-product disaster recovery 仍待完成；没有精确 promoted evidence 就不会发布该表面。
 
 ## Bundle 结构
 
@@ -94,6 +94,60 @@ A3S Use 负责包与 bundle 完整性；Knowledge host 负责合规后的 promot
 - `a3s.use.okf-capability-projection.v2`：可安全发布的精确、完整 scope promoted evidence。
 
 Standalone 后端为每个完整 scope 使用独立 SQLite/FTS5 数据库。当前 capability snapshot 选择新提升的 generation；已经打开且持有精确旧 projection 的 session 可在 drain 期间继续查询，receipt-owned removal 后该 projection 立即失效。由于尚未发布稳定 Knowledge 数据库格式，未知 `user_version` 会被直接拒绝，不迁移也不改写。
+
+## 存储策略与恢复
+
+默认 standalone policy 把每个完整 User 或 Workspace scope 限制为 512 MiB
+retained expanded OKF content、256 个 retained projection、每个 surface 32 个
+generation，以及 256 个 scope-wide removal tombstone。以下命令检查用量与
+完整性，并创建、离线验证一个不覆盖现有文件的 scope snapshot：
+
+```bash
+a3s-use knowledge usage --json
+a3s-use knowledge audit --json
+a3s-use knowledge backup ./user.a3s-okf-backup --json
+a3s-use knowledge verify-backup ./user.a3s-okf-backup --json
+a3s-use knowledge backup-retention ./backups --json
+```
+
+`backup-retention` 会针对最多 4,096 个 directory entry、一个完整 scope 和
+有界 backup count/byte policy 返回 canonical plan。它完整验证 managed
+candidate，只选择满足限制所需的最旧前缀，并保留最后一份已验证 scope backup。
+删除必须同时提供 `--yes` 与未变化的 `--plan-digest`；其他 scope、无关文件、
+linked candidate 和 stale plan 都不会被删除。
+
+只有 audit 报告派生 FTS 不一致时，才能从已验证 document 明确重建索引：
+
+```bash
+a3s-use knowledge repair-search-index --yes --json
+```
+
+不要把 backup 直接复制到 live state。先生成无路径审查计划，再只执行精确
+digest：
+
+```bash
+a3s-use knowledge plan-restore ./user.a3s-okf-backup --json
+a3s-use knowledge restore ./user.a3s-okf-backup \
+  --plan-digest sha256:<reviewed-plan-digest> \
+  --yes \
+  --json
+a3s-use knowledge restore-status --json
+```
+
+Planning 会验证 backup、完整 package/lifecycle/Registry/Grant authority 与当前
+exact-subset binding inventory，并绑定该状态以及当前 main database、WAL 和
+SHM。确认执行会重新验证同一份 authority，只创建缺失的精确 binding 文件、
+保留精确旧 database 文件，并在进程退出后续跑 durable operation。冲突或更新
+的 binding evidence 绝不会被覆盖。它不能重建缺失的独立 authority、恢复
+clean machine 或其他 state family，也不是 whole-product disaster recovery。
+Scope-local backup rotation 不会轮换 restore rollback evidence 或其他 state
+family。完整边界见 [OKF Knowledge operations
+runbook](https://github.com/A3S-Lab/Use/blob/main/docs/okf-knowledge-operations.md)。
+
+`restore-status` 不需要 backup path 或 plan digest。它返回有界、无路径的
+diagnostic，报告 global active phase、requested scope 的已验证 operation
+history、marker handoff directory 数量与剩余容量；它不会轮换、删除或改写
+recovery evidence。
 
 ## 编译不属于安装
 

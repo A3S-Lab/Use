@@ -25,6 +25,7 @@ mod release_bundle;
 mod remote;
 mod route_lock;
 mod source;
+mod state_maintenance;
 mod surface_files;
 mod workspace_grant;
 mod workspace_grant_io;
@@ -49,7 +50,8 @@ pub use registry::{
     ExtensionLifecycleRollbackResult, ExtensionReceipt, ExtensionRegistry,
     ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot, ExtensionRouteBinding,
     ExtensionRouteLease, ExtensionTrust, InstalledExtension, UninstallResult,
-    EXTENSION_REGISTRY_CUTOVER_SCHEMA, MAX_PENDING_REGISTRY_CUTOVERS,
+    EXTENSION_RECEIPT_SCHEMA_VERSION, EXTENSION_REGISTRY_CUTOVER_SCHEMA,
+    MAX_PENDING_REGISTRY_CUTOVERS,
 };
 pub use registry_sources::{
     RegistrySource, RegistrySourceInput, RegistrySourceMutation, RegistrySourceSnapshot,
@@ -68,21 +70,26 @@ pub use remote::{
     list_remote_packages, plugin_catalog_host_input_schema, plugin_catalog_inspection_input_schema,
     plugin_catalog_search_input_schema, prepare_cached_remote_package, prepare_remote_package,
     prune_verified_target_cache, refresh_remote_registry, resolve_cached_remote_package_lock,
-    resolve_remote_package_lock, search_cached_plugins, search_remote_plugins,
+    resolve_cached_remote_package_lock_with_observer, resolve_remote_package_lock,
+    resolve_remote_package_lock_with_observer, search_cached_plugins, search_remote_plugins,
     CognitivePackageFormFactor, CognitivePackageMediaKind, CognitivePackagePresentationIndexV1,
     CognitivePackagePresentationMediaV1, CognitivePackagePresentationRecordV1,
-    CognitivePackagePresentationV1, DownloadedRemotePackage, PinnedBootstrapRoot,
-    PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection, PluginCatalogPage,
-    PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource, PreparedRemotePackage,
-    RegistryNetworkPolicy, ResolvedRemotePackage, TrustedRegistry, VerifiedCognitivePackageMedia,
-    VerifiedCognitivePackagePresentation, VerifiedRegistryCatalog, VerifiedRegistryMetadata,
-    VerifiedTargetCachePolicy, VerifiedTargetCachePruneResult, VerifiedTargetCacheUsage,
+    CognitivePackagePresentationV1, DownloadedRemotePackage, PackageRegistryResolutionObserver,
+    PinnedBootstrapRoot, PluginCatalogAvailability, PluginCatalogHost, PluginCatalogInspection,
+    PluginCatalogPage, PluginCatalogSearch, PluginCatalogSnapshot, PluginCatalogSnapshotSource,
+    PreparedRemotePackage, RegistryNetworkPolicy, ResolvedRemotePackage, TrustedRegistry,
+    VerifiedCognitivePackageMedia, VerifiedCognitivePackagePresentation, VerifiedRegistryCatalog,
+    VerifiedRegistryMetadata, VerifiedTargetCachePolicy, VerifiedTargetCachePruneResult,
+    VerifiedTargetCacheUsage, VerifiedTargetObservation, VerifiedTargetObservationStatus,
     COGNITIVE_PACKAGE_PRESENTATION_INDEX_SCHEMA, COGNITIVE_PACKAGE_PRESENTATION_SCHEMA,
     DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES, DEFAULT_VERIFIED_TARGET_CACHE_MAX_ENTRIES,
     DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES, MAX_BOOTSTRAP_ROOT_BYTES,
     MAX_COGNITIVE_PACKAGE_MEDIA_BYTES, MAX_COGNITIVE_PACKAGE_PRESENTATION_MEDIA,
     MAX_PLUGIN_CATALOG_PAGE_BYTES, MAX_PLUGIN_CATALOG_PAGE_SIZE,
     VERIFIED_TARGET_CACHE_SCHEMA_VERSION,
+};
+pub use state_maintenance::{
+    StateMaintenanceGuard, StateMaintenanceLock, ACTIVE_STATE_RESTORE_MARKER,
 };
 pub use surface_files::{
     inspect_flow_surface_file, inspect_mcp_surface_files, inspect_skill_surface_file,

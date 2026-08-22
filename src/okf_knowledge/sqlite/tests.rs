@@ -848,7 +848,7 @@ fn database_accepts_only_the_current_schema_without_migration() {
     );
 }
 
-async fn stage_and_promote(
+pub(super) async fn stage_and_promote(
     client: &OkfKnowledgeClient,
     spec: OkfKnowledgeStageSpec,
     files: Vec<OkfBundleFile>,
@@ -864,7 +864,7 @@ fn projection(binding: &OkfKnowledgeBinding) -> OkfCapabilityProjection {
     OkfCapabilityProjection::from_promoted(&binding.receipt, &binding.observation).unwrap()
 }
 
-fn stage_spec(
+pub(super) fn stage_spec(
     generation: u64,
     scope: PlanScope,
     package_id: &str,
@@ -903,7 +903,7 @@ fn bundle(files: &[OkfBundleFile]) -> OkfBundleContract {
     }
 }
 
-fn knowledge_files(throughput: &str, latency: &str) -> Vec<OkfBundleFile> {
+pub(super) fn knowledge_files(throughput: &str, latency: &str) -> Vec<OkfBundleFile> {
     vec![
         OkfBundleFile::new(
             "throughput.md",
@@ -920,7 +920,7 @@ fn knowledge_files(throughput: &str, latency: &str) -> Vec<OkfBundleFile> {
     ]
 }
 
-fn scope(kind: PlanScopeKind) -> PlanScope {
+pub(super) fn scope(kind: PlanScopeKind) -> PlanScope {
     PlanScope {
         kind,
         id: "shared-scope".to_owned(),

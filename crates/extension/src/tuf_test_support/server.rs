@@ -2,20 +2,26 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 pub(crate) struct TestServer {
     base_url: String,
+    shared: SharedServerState,
+    thread: Option<JoinHandle<()>>,
+}
+
+#[derive(Clone)]
+struct SharedServerState {
     routes: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     requests: Arc<Mutex<Vec<String>>>,
     range_requests: Arc<Mutex<Vec<(String, String)>>>,
     interruptions: Arc<Mutex<HashMap<String, InterruptedResponse>>>,
     content_range_overrides: Arc<Mutex<HashMap<String, String>>>,
     ignored_range_paths: Arc<Mutex<HashSet<String>>>,
+    response_pauses: Arc<ResponsePauses>,
     stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -24,47 +30,35 @@ struct InterruptedResponse {
     bytes_per_request: usize,
 }
 
+#[derive(Default)]
+struct ResponsePauses {
+    paths: Mutex<HashMap<String, usize>>,
+    changed: Condvar,
+}
+
 impl TestServer {
     pub(crate) fn start(routes: HashMap<String, Vec<u8>>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let base_url = format!("http://{}/", listener.local_addr().unwrap());
-        let routes = Arc::new(Mutex::new(routes));
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let range_requests = Arc::new(Mutex::new(Vec::new()));
-        let interruptions = Arc::new(Mutex::new(HashMap::new()));
-        let content_range_overrides = Arc::new(Mutex::new(HashMap::new()));
-        let ignored_range_paths = Arc::new(Mutex::new(HashSet::new()));
-        let stop = Arc::new(AtomicBool::new(false));
-        let thread_routes = Arc::clone(&routes);
-        let thread_requests = Arc::clone(&requests);
-        let thread_range_requests = Arc::clone(&range_requests);
-        let thread_interruptions = Arc::clone(&interruptions);
-        let thread_content_range_overrides = Arc::clone(&content_range_overrides);
-        let thread_ignored_range_paths = Arc::clone(&ignored_range_paths);
-        let thread_stop = Arc::clone(&stop);
+        let shared = SharedServerState {
+            routes: Arc::new(Mutex::new(routes)),
+            requests: Arc::new(Mutex::new(Vec::new())),
+            range_requests: Arc::new(Mutex::new(Vec::new())),
+            interruptions: Arc::new(Mutex::new(HashMap::new())),
+            content_range_overrides: Arc::new(Mutex::new(HashMap::new())),
+            ignored_range_paths: Arc::new(Mutex::new(HashSet::new())),
+            response_pauses: Arc::new(ResponsePauses::default()),
+            stop: Arc::new(AtomicBool::new(false)),
+        };
+        let thread_shared = shared.clone();
         let thread = std::thread::spawn(move || {
-            while !thread_stop.load(Ordering::Relaxed) {
+            while !thread_shared.stop.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         stream.set_nonblocking(false).unwrap();
-                        let routes = Arc::clone(&thread_routes);
-                        let requests = Arc::clone(&thread_requests);
-                        let range_requests = Arc::clone(&thread_range_requests);
-                        let interruptions = Arc::clone(&thread_interruptions);
-                        let content_range_overrides = Arc::clone(&thread_content_range_overrides);
-                        let ignored_range_paths = Arc::clone(&thread_ignored_range_paths);
-                        std::thread::spawn(move || {
-                            serve(
-                                stream,
-                                &routes,
-                                &requests,
-                                &range_requests,
-                                &interruptions,
-                                &content_range_overrides,
-                                &ignored_range_paths,
-                            )
-                        });
+                        let connection = thread_shared.clone();
+                        std::thread::spawn(move || serve(stream, &connection));
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         std::thread::sleep(Duration::from_millis(5));
@@ -75,13 +69,7 @@ impl TestServer {
         });
         Self {
             base_url,
-            routes,
-            requests,
-            range_requests,
-            interruptions,
-            content_range_overrides,
-            ignored_range_paths,
-            stop,
+            shared,
             thread: Some(thread),
         }
     }
@@ -91,16 +79,16 @@ impl TestServer {
     }
 
     pub(crate) fn requests(&self) -> Vec<String> {
-        self.requests.lock().unwrap().clone()
+        self.shared.requests.lock().unwrap().clone()
     }
 
     pub(crate) fn clear_requests(&self) {
-        self.requests.lock().unwrap().clear();
-        self.range_requests.lock().unwrap().clear();
+        self.shared.requests.lock().unwrap().clear();
+        self.shared.range_requests.lock().unwrap().clear();
     }
 
     pub(crate) fn replace_routes(&self, routes: HashMap<String, Vec<u8>>) {
-        *self.routes.lock().unwrap() = routes;
+        *self.shared.routes.lock().unwrap() = routes;
     }
 
     pub(crate) fn interrupt_requests(
@@ -111,7 +99,7 @@ impl TestServer {
     ) {
         assert!(remaining_requests > 0);
         assert!(bytes_per_request > 0);
-        self.interruptions.lock().unwrap().insert(
+        self.shared.interruptions.lock().unwrap().insert(
             path.into(),
             InterruptedResponse {
                 remaining_requests,
@@ -121,11 +109,12 @@ impl TestServer {
     }
 
     pub(crate) fn allow_complete_requests(&self, path: &str) {
-        self.interruptions.lock().unwrap().remove(path);
+        self.shared.interruptions.lock().unwrap().remove(path);
     }
 
     pub(crate) fn ranges_for(&self, path: &str) -> Vec<String> {
-        self.range_requests
+        self.shared
+            .range_requests
             .lock()
             .unwrap()
             .iter()
@@ -135,35 +124,54 @@ impl TestServer {
     }
 
     pub(crate) fn override_content_range(&self, path: impl Into<String>, value: impl Into<String>) {
-        self.content_range_overrides
+        self.shared
+            .content_range_overrides
             .lock()
             .unwrap()
             .insert(path.into(), value.into());
     }
 
     pub(crate) fn ignore_ranges_for(&self, path: impl Into<String>) {
-        self.ignored_range_paths.lock().unwrap().insert(path.into());
+        self.shared
+            .ignored_range_paths
+            .lock()
+            .unwrap()
+            .insert(path.into());
+    }
+
+    pub(crate) fn pause_response_after(&self, path: impl Into<String>, bytes: usize) {
+        assert!(bytes > 0);
+        self.shared
+            .response_pauses
+            .paths
+            .lock()
+            .unwrap()
+            .insert(path.into(), bytes);
+    }
+
+    pub(crate) fn resume_response(&self, path: &str) {
+        self.shared
+            .response_pauses
+            .paths
+            .lock()
+            .unwrap()
+            .remove(path);
+        self.shared.response_pauses.changed.notify_all();
     }
 }
 
 impl Drop for TestServer {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.shared.stop.store(true, Ordering::Relaxed);
+        self.shared.response_pauses.paths.lock().unwrap().clear();
+        self.shared.response_pauses.changed.notify_all();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
     }
 }
 
-fn serve(
-    mut stream: TcpStream,
-    routes: &Mutex<HashMap<String, Vec<u8>>>,
-    requests: &Mutex<Vec<String>>,
-    range_requests: &Mutex<Vec<(String, String)>>,
-    interruptions: &Mutex<HashMap<String, InterruptedResponse>>,
-    content_range_overrides: &Mutex<HashMap<String, String>>,
-    ignored_range_paths: &Mutex<HashSet<String>>,
-) {
+fn serve(mut stream: TcpStream, shared: &SharedServerState) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     let mut buffer = [0_u8; 8192];
     let Ok(size) = stream.read(&mut buffer) else {
@@ -176,20 +184,21 @@ fn serve(
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("/")
         .to_string();
-    requests.lock().unwrap().push(path.clone());
+    shared.requests.lock().unwrap().push(path.clone());
     let range = request.lines().skip(1).find_map(|line| {
         let (name, value) = line.split_once(':')?;
         name.eq_ignore_ascii_case("range")
             .then(|| value.trim().to_owned())
     });
     if let Some(range) = &range {
-        range_requests
+        shared
+            .range_requests
             .lock()
             .unwrap()
             .push((path.clone(), range.clone()));
     }
-    let body = routes.lock().unwrap().get(&path).cloned();
-    let effective_range = if ignored_range_paths.lock().unwrap().contains(&path) {
+    let body = shared.routes.lock().unwrap().get(&path).cloned();
+    let effective_range = if shared.ignored_range_paths.lock().unwrap().contains(&path) {
         None
     } else {
         range.as_deref()
@@ -212,7 +221,8 @@ fn serve(
     };
     let content_range = content_range
         .map(|value| {
-            content_range_overrides
+            shared
+                .content_range_overrides
                 .lock()
                 .unwrap()
                 .get(&path)
@@ -226,7 +236,7 @@ fn serve(
         body.len()
     );
     let interrupted_bytes = {
-        let mut interruptions = interruptions.lock().unwrap();
+        let mut interruptions = shared.interruptions.lock().unwrap();
         interruptions.get_mut(&path).and_then(|interruption| {
             if interruption.remaining_requests == 0 {
                 return None;
@@ -236,10 +246,42 @@ fn serve(
         })
     };
     let response = interrupted_bytes.map_or(body.as_slice(), |length| &body[..length]);
-    if stream.write_all(header.as_bytes()).is_ok() && stream.write_all(response).is_ok() {
-        let _ = stream.flush();
-        let _ = stream.shutdown(Shutdown::Write);
+    if stream.write_all(header.as_bytes()).is_err() {
+        return;
     }
+    let pause_after = shared
+        .response_pauses
+        .paths
+        .lock()
+        .unwrap()
+        .get(&path)
+        .copied();
+    if let Some(pause_after) = pause_after {
+        let pause_after = pause_after.min(response.len());
+        if stream.write_all(&response[..pause_after]).is_err() || stream.flush().is_err() {
+            return;
+        }
+        let mut pauses = shared.response_pauses.paths.lock().unwrap();
+        while pauses.contains_key(&path) && !shared.stop.load(Ordering::Relaxed) {
+            pauses = shared
+                .response_pauses
+                .changed
+                .wait_timeout(pauses, Duration::from_millis(100))
+                .unwrap()
+                .0;
+        }
+        if shared.stop.load(Ordering::Relaxed) {
+            return;
+        }
+        drop(pauses);
+        if stream.write_all(&response[pause_after..]).is_err() {
+            return;
+        }
+    } else if stream.write_all(response).is_err() {
+        return;
+    }
+    let _ = stream.flush();
+    let _ = stream.shutdown(Shutdown::Write);
 }
 
 fn range_start(value: &str) -> Option<usize> {

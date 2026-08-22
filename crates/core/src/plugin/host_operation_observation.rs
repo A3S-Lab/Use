@@ -47,8 +47,6 @@ pub enum PluginHostOperationPhase {
 pub enum PluginHostOperationCancellability {
     /// The operation has not crossed durable admission and can be cancelled.
     Cancellable,
-    /// Cancellation is recorded and will be admitted at the next safe point.
-    WaitingForSafePoint,
     /// Durable admission or capability publication has already started.
     TooLate,
     /// The operation is terminal or policy denied it.
@@ -252,6 +250,10 @@ impl PluginHostOperationObservationRequest {
             OBSERVATION_REQUEST_ERROR,
         )
     }
+
+    pub fn descriptor_digest(&self) -> UseResult<String> {
+        Ok(canonical_digest(&self.canonical_bytes()?))
+    }
 }
 
 impl PluginHostOperationWatchRequest {
@@ -286,6 +288,19 @@ impl PluginHostOperationWatchRequest {
     ) -> UseResult<()> {
         self.validate()?;
         self.observation.validate_for_capabilities(capabilities)
+    }
+
+    pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
+        self.validate()?;
+        canonical_json(
+            self,
+            "plugin host operation watch request",
+            WATCH_REQUEST_ERROR,
+        )
+    }
+
+    pub fn descriptor_digest(&self) -> UseResult<String> {
+        Ok(canonical_digest(&self.canonical_bytes()?))
     }
 }
 
@@ -357,6 +372,19 @@ impl PluginHostOperationObservationResult {
             ));
         }
         Ok(())
+    }
+
+    pub fn canonical_bytes(&self) -> UseResult<Vec<u8>> {
+        self.validate()?;
+        canonical_json(
+            self,
+            "plugin host operation observation result",
+            OBSERVATION_RESULT_ERROR,
+        )
+    }
+
+    pub fn descriptor_digest(&self) -> UseResult<String> {
+        Ok(canonical_digest(&self.canonical_bytes()?))
     }
 }
 

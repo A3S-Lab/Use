@@ -9,12 +9,28 @@ use fs2::FileExt;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
+use super::state_maintenance::{StateMaintenanceGuard, StateMaintenanceLock};
 use super::workspace_grant::{record_error, store_error, StoredWorkspaceGrant};
 
 const MAX_WORKSPACE_GRANT_RECORD_BYTES: u64 = 1024 * 1024;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<StdFile> {
+#[derive(Debug)]
+pub(super) struct WorkspaceGrantLock {
+    file: StdFile,
+    _maintenance: StateMaintenanceGuard,
+}
+
+impl Drop for WorkspaceGrantLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
+    }
+}
+
+pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<WorkspaceGrantLock> {
+    let maintenance = StateMaintenanceLock::new(state_root)
+        .acquire_shared()
+        .await?;
     fs::create_dir_all(state_root)
         .await
         .map_err(|error| path_io_error("create workspace grant state root", state_root, error))?;
@@ -42,7 +58,7 @@ pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<St
         }
     }
     let error_path = lock_path.clone();
-    tokio::task::spawn_blocking(move || {
+    let file = tokio::task::spawn_blocking(move || {
         let file = StdOpenOptions::new()
             .create(true)
             .truncate(false)
@@ -62,7 +78,11 @@ pub(super) async fn acquire_lock(state_root: &Path, root: &Path) -> UseResult<St
             ),
         )
     })?
-    .map_err(|error| path_io_error("acquire workspace grant store lock", &error_path, error))
+    .map_err(|error| path_io_error("acquire workspace grant store lock", &error_path, error))?;
+    Ok(WorkspaceGrantLock {
+        file,
+        _maintenance: maintenance,
+    })
 }
 
 pub(super) async fn ensure_owned_directory(root: &Path, parent: Option<&Path>) -> UseResult<()> {

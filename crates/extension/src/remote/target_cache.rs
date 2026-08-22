@@ -20,8 +20,13 @@ const VERIFIED_TARGETS_DIRECTORY: &str = "verified-targets";
 const SHA256_DIRECTORY: &str = "sha256";
 const TARGET_CACHE_LOCK: &str = ".target-cache.lock";
 
+mod observation;
+#[cfg(test)]
+mod observation_tests;
 mod resume;
 
+pub(in crate::remote) use observation::observe_target_cache_entry;
+pub use observation::{VerifiedTargetObservation, VerifiedTargetObservationStatus};
 pub(in crate::remote) use resume::ResumableTarget;
 
 struct TargetCacheLock(File);

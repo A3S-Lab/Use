@@ -45,6 +45,8 @@ Completed in the Use repository:
 - separately signed package-native Tool/stdio MCP planning targets rebound to
   the digest-bound manifest after download;
 - bounded SemVer resolver, package lock, prior/candidate upgrade binding;
+- process-resilient pre-lock Registry/TUF resolution attempts with path-free
+  refreshed/cached per-source diagnostics and exact handoff to download state;
 - operation plan v4, confirmation, policy and host/provider evidence;
 - manager toolset v4 with install-time Registry selection and plan/apply
   enablement;
@@ -69,6 +71,9 @@ Completed in the Use repository:
   that exclude idempotency keys, credentials, tokens, secret values, and
   package-authored error text, while distinguishing same-operation candidate
   and retirement phases by exact intent digest;
+- bounded per-scope/package terminal operation history with validated outcome,
+  replay-safe `(operationId, planDigest)` identity, and zero-network CLI
+  observation after package removal;
 - CLI diagnostics, package graph commands, Knowledge search/usage, and watchers;
 - current-schema fixtures, digest goldens, remote Registry tests, recovery
   tests, and GitHub Pages site.
@@ -226,6 +231,45 @@ Acceptance:
 Priority: P0 release gate
 Status: pending
 
+- A killed real-process Registry target download resumes from its exact
+  persisted prefix without publishing a receipt, graph, operation, or package
+  root.
+- A killed real-process verified archive extraction leaves no receipt, graph,
+  pending operation, or package root; an explicit offline retry revalidates the
+  cached target and completes without a network request.
+- A killed real-process immutable package copy leaves its exact pending plan
+  and applying lifecycle journal but no receipt, graph, or route. Offline replay
+  reclaims the actual bounded crash-staging tree, publishes one generation, and
+  removes the pending operation.
+- A killed real-process uninstall during physical generation deletion retains
+  the exact pending graph and applying journal after route hiding and receipt
+  removal. Replay finishes the partial directory and cutover acknowledgement
+  without advancing the Registry generation again.
+- A killed real-process nine-node install retains one complete atomically
+  published Registry graph and its pending cutover before a dependency journal
+  and the parent graph record complete. Explicit offline replay performs no
+  network request, completes every package journal and the exact parent graph,
+  retires the cutover, and does not advance the Registry generation again.
+- Externally killed managed-host processes cover five-node permission-bearing
+  install, upgrade, and uninstall after Registry publish/hide while one
+  dependency publication receipt is pending and the Grant operation remains
+  prepared. Restart disables reauthorization, performs no network request,
+  preserves the exact candidate Grant, retires only the bound prior Grant,
+  completes package and Grant journals, and does not inflate the Registry
+  generation.
+- Five real `CognitivePackageHostManager` protocol children cover the complete
+  reviewed mutation set after the Registry server is stopped. Install, upgrade,
+  and uninstall stop at the five-node graph publish/hide boundaries. Disable
+  stops after root hide and Grant cutover while accepted-call drain is blocked;
+  enable stops after publication while its candidate Grant remains prepared.
+  Digest-only apply recovers from the durable reviewed plan and confirmation,
+  uses only the exact planning cache for install/upgrade, completes drain and
+  lifecycle/Grant journals, converges the exact candidate/prior Grant or
+  enablement regrant/revocation, and remains terminally replayable without
+  reauthorization, network access, or Registry generation inflation.
+- Reject package-parent or staging links/reparse points without following them.
+  Fresh Linux and Windows runs remain required for full qualification.
+
 ### Linux
 
 - Full workspace tests on x86_64 and arm64.
@@ -277,12 +321,15 @@ Status: in progress
 - [x] Require both platform installers to authenticate the checksum manifest
   with Cosign against the exact tag workflow identity before archive download,
   fail closed, and retain the verified evidence with the installed version.
-- [x] Rebuild every shipped native executable on a second cache-free clean
-  runner for all release targets, require a byte match with the primary
-  archive, and publish deterministic attested evidence.
+- [ ] Pass byte-for-byte rebuilds for every shipped native executable on a
+  second cache-free clean runner for all release targets. The `v0.3.2` attempt
+  failed on four targets; deterministic native metadata controls are locally
+  verified, but the fresh five-platform matrix remains open.
 - Add an externally operated full-tree/final-archive witness and retain its
   evidence outside the Release asset trust boundary.
 - Verify release archives in clean Linux/macOS/Windows environments.
+  Checkout-path scanning and isolated-home/working-directory smoke execution
+  are implemented locally; a fresh five-target workflow run remains open.
 
 Acceptance: an operator can bootstrap trust, install, rotate/replace sources,
 recover offline, audit provenance, and remove the product using published
@@ -298,20 +345,67 @@ Status: pending
 - [x] Define verified target-payload cache byte/entry/free-space bounds,
   deterministic retention, stale-write cleanup, usage, and confirmed GC.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
-  non-overwriting verified database backup, and derived FTS repair as bounded
-  storage controls, not as completion of cross-product restore, authority
-  recovery, backup rotation, or retention operations.
+  non-overwriting verified database backup, exact-plan oldest-first backup
+  rotation, derived FTS repair, and authority-bound database plus
+  exact-subset missing-binding restore as bounded storage controls, not as
+  completion of missing Registry/package/lifecycle/Grant authority recovery,
+  clean-machine recovery, cross-platform recovery drills, or whole-product
+  retention operations.
+- Treat the implemented `a3s.use.state-backup.v1` coordinated inventory as the
+  corruption-detection input for whole-installation operations. It acquires the
+  exclusive maintenance fence, binds Registry and installed-receipt authority,
+  copies every allowlisted state family with exact hashes, rescans before
+  publication, and verifies offline without extraction. Exact-plan retention
+  now fully verifies every archive under one external-directory lock, binds a
+  path-free oldest-first inventory, rejects stale review, and retains at least
+  two recovery generations. Reviewed same-version/OS/architecture restore/apply
+  now uses exact independent authority, an external rollback archive, durable
+  crash replay, and bounded read-only diagnostics. Missing-authority recovery,
+  cross-platform drills, and clean-machine disaster recovery remain open.
 - [x] Expose latest/previous package lifecycle checkpoint status, bounded
   failure codes, digests, timings, and rollback evidence through
   `extension inspect --json` without secret-bearing fields.
-- Add broader diagnostics for plan, download, provider readiness, cutover,
-  drain, rollback, and recovery using non-secret evidence.
+- [x] Add broader diagnostics for plan, download, provider readiness, cutover,
+  drain, rollback, and recovery using non-secret evidence. One exact retained
+  planned/admitted/cancelled install/upgrade/uninstall graph or active admitted
+  enable/disable operation now has a bounded, path-free cross-product
+  projection through `extension diagnose --json`, including reviewed-plan,
+  Registry/TUF, provider, Grant, cutover, lifecycle publication/drain/rollback,
+  recovery, and retained download-cache evidence. Retained Registry-backed
+  install/upgrade graphs and pre-plan download attempts report expected/
+  retained archive and executable-planning-target bytes plus exact-target
+  missing/partial/complete state from historical provenance without network
+  I/O, writes, cache-lock acquisition, or paths. The attempt survives process
+  exit and is removed only after the reviewed graph is durable. Standalone Knowledge recovery exposes a path-free
+  active/history/capacity projection through `knowledge restore-status --json`.
+  `extension diagnose --history --json` additionally retains the newest 16
+  completed or rolled-back operations and cancelled graph plans within 8 MiB
+  per scope/package. Retention precedes recovery-record cleanup, exact replay is
+  deduplicated by `(operationId, planDigest)`, history survives uninstall, and
+  corrupt/link/oversize evidence fails closed. Pre-lock Registry/TUF
+  resolution now records requested version/channel, per-Registry verification
+  state, source/trust digests, role versions, bounded failure, and terminal lock
+  evidence before handing off without a diagnostic gap to the download
+  attempt. Killed online, terminal verification-failure, and zero-network
+  offline-failure CLI tests cover the phase. The newest exact Host-reviewed
+  pre-admission enable/disable plan is selected by a digest-bound
+  `(plannedAtMs, requestId)` index and projected as `planned` or `cancelled`
+  with installed source, selected provider, awaiting/cancelled Grant, exact
+  expected lifecycle-unit count, Registry cutover, and stable guidance. Active
+  Use evidence takes precedence, and completed Use or Host outcomes suppress
+  stale plans. Real CLI tests prove zero network, authorization, admission, and
+  Host/fence/path leakage; a killed planning-target transfer proves partial
+  observation, retained bytes, exact Range resume, and gap-free graph handoff.
 - [x] Define and implement the standalone OKF repair boundary: only FTS rows
   derived from validated documents may be rebuilt; receipt, scope, projection,
   binding, and lifecycle evidence remain immutable and fail closed.
 - [ ] Define coordinated backup/restore and repair boundaries for every state
-  family. Missing exact evidence must remain fail-closed; restore or repair
-  cannot invent authority.
+  family. Coordinated path-free inventory backup and offline payload
+  verification plus reviewed same-version/OS/architecture restore are
+  implemented with exact independent authority, explicit rollback evidence,
+  and crash replay. Missing-authority recovery, clean-machine exercises, and
+  non-restore repair boundaries remain open. Missing exact evidence must remain
+  fail-closed; restore or repair cannot invent authority.
 - Complete threat-model review, security response, upgrade policy, rollback
   policy, and support runbooks.
 - Establish performance budgets for catalog refresh, resolution, install,
@@ -323,6 +417,10 @@ Status: pending
 
 - current schema canonical round trip and SHA-256 golden;
 - unknown-field and superseded-schema rejection;
+- pending-operation, pre-plan download, and operation-history diagnostic round
+  trips; unknown-field rejection; 2 MiB operation and 8 MiB retained-history
+  bounds; exact byte consistency; outcome correlation; replay deduplication;
+  oldest-first retention; and one-based final-checkpoint validation;
 - catalog/manifest/package/receipt binding;
 - host capability and manager toolset exact inventory;
 - plan/confirmation/lock/Grant digest stability.
@@ -355,6 +453,19 @@ Status: pending
   uninstall atomic graph publish/hide effect but before package publication
   receipts and Grant cutover evidence, followed by exact-key recovery with one
   graph effect and completed package/Grant journals;
+- externally killed managed-host processes for five-node install, upgrade, and
+  uninstall after Registry publish/hide but before one dependency publication
+  receipt and Grant cutover/retirement, followed by zero-network replay with
+  reauthorization disabled, the exact candidate/prior Grant transition,
+  completed journals, and no second generation for the same cutover;
+- externally killed `CognitivePackageHostManager` protocol applies for all five
+  reviewed mutations with the Registry unavailable: five-node install/upgrade
+  publication or uninstall hide before one dependency receipt and Grant
+  cutover/retirement, disable after root hide and Grant cutover while drain is
+  blocked, and enable after publication with its candidate Grant prepared;
+  replay converges the exact candidate/prior Grant or enablement
+  regrant/revocation and the terminal Host outcome without another Registry
+  generation; install and upgrade consume only their exact planning caches;
 - test-binary subprocess exit after all 14 Grant Store durable phase,
   candidate-receipt, prior-revocation, and candidate-restoration checkpoints
   in the canonical two-candidate/two-retirement lifecycle, followed by exact
@@ -363,10 +474,21 @@ Status: pending
   package hide receipt, followed by exact-plan restart, observed blocking at
   accepted-call drain, physical generation removal, and no second Registry
   generation; absence without the exact cutover remains fail-closed;
+- real CLI exit after a complete multi-node Registry publish but before one
+  dependency publication receipt and parent graph persistence, followed by
+  zero-network replay of the exact cutover with no second Registry generation;
 - no-op terminal result replay without another host call;
 - completed graph replay without another atomic publish or hide;
 - latest/previous checkpoint diagnostics remain bounded and omit idempotency
   keys and secret-bearing fields;
+- pending graph diagnostics remain zero-network and omit paths, Registry URLs,
+  idempotency keys, credentials, package content, and untrusted package text at
+  reviewed-plan, graph-cutover, Grant-prepared, and accepted-call-drain crash
+  windows; invalid backing JSON fails closed without echoing injected secrets;
+- completed install/uninstall/reinstall history remains newest-first and
+  zero-network after package removal, distinguishes repeated textual operation
+  IDs by plan digest, and rejects injected secret-bearing state without
+  disclosure; managed Workspace Host kill/recovery retains one exact entry;
 - a rolling-back operation rejects a conflicting new intent.
 
 ### Security tests

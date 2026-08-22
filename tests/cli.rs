@@ -189,6 +189,225 @@ fn knowledge_search_fails_closed_without_an_active_projection() {
 
 #[cfg(feature = "extensions")]
 #[test]
+fn coordinated_state_backup_cli_creates_and_verifies_offline() {
+    let temporary = tempfile::tempdir().unwrap();
+    let home = temporary.path().join("home");
+    let package_file = home.join("data/extensions/acme/tool/package/bin/tool");
+    std::fs::create_dir_all(package_file.parent().unwrap()).unwrap();
+    std::fs::write(&package_file, b"portable CLI backup fixture").unwrap();
+    let backup_path = temporary.path().join("state.a3s-use-state-backup");
+
+    let backup = Command::new(binary())
+        .args(["state", "backup", backup_path.to_str().unwrap(), "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(backup.status.success(), "{backup:?}");
+    assert!(backup.stderr.is_empty());
+    let backup_json: serde_json::Value = serde_json::from_slice(&backup.stdout).unwrap();
+    assert_eq!(backup_json["data"]["schema"], "a3s.use.state-backup.v1");
+    assert_eq!(backup_json["data"]["fileCount"], 1);
+    assert_eq!(backup_json["data"]["entries"][0]["root"], "data");
+    assert_eq!(
+        backup_json["data"]["entries"][0]["path"],
+        "extensions/acme/tool/package/bin/tool"
+    );
+    assert!(backup_path.is_file());
+
+    let offline_home = temporary.path().join("unrelated-empty-home");
+    let verified = Command::new(binary())
+        .args([
+            "state",
+            "verify-backup",
+            backup_path.to_str().unwrap(),
+            "--json",
+        ])
+        .env("A3S_USE_HOME", offline_home)
+        .output()
+        .unwrap();
+    assert!(verified.status.success(), "{verified:?}");
+    assert!(verified.stderr.is_empty());
+    let verified_json: serde_json::Value = serde_json::from_slice(&verified.stdout).unwrap();
+    assert_eq!(verified_json["data"], backup_json["data"]);
+}
+
+#[cfg(feature = "extensions")]
+#[test]
+fn coordinated_state_backup_retention_cli_requires_exact_review() {
+    let temporary = tempfile::tempdir().unwrap();
+    let home = temporary.path().join("home");
+    let state_file = home.join("state/registry-trust-roots/sha256/root.json");
+    std::fs::create_dir_all(state_file.parent().unwrap()).unwrap();
+    let backup_directory = temporary.path().join("backups");
+    std::fs::create_dir(&backup_directory).unwrap();
+
+    for (name, bytes) in [
+        ("001.a3s-use-state-backup", b"one".as_slice()),
+        ("002.a3s-use-state-backup", b"two".as_slice()),
+        ("003.a3s-use-state-backup", b"three".as_slice()),
+    ] {
+        std::fs::write(&state_file, bytes).unwrap();
+        let output = Command::new(binary())
+            .args([
+                "state",
+                "backup",
+                backup_directory.join(name).to_str().unwrap(),
+                "--json",
+            ])
+            .env("A3S_USE_HOME", &home)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
+
+    let plan = Command::new(binary())
+        .args([
+            "state",
+            "backup-retention",
+            backup_directory.to_str().unwrap(),
+            "--max-backups",
+            "2",
+            "--max-bytes",
+            "1073741824",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(plan.status.success(), "{plan:?}");
+    assert!(plan.stderr.is_empty());
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let retention = &plan["data"]["state"]["backupRetention"];
+    assert_eq!(
+        retention["plan"]["remove"][0]["fileName"],
+        "001.a3s-use-state-backup"
+    );
+    assert_eq!(retention["plan"]["retainedBackupCount"], 2);
+    let plan_digest = retention["planDigest"].as_str().unwrap();
+
+    let applied = Command::new(binary())
+        .args([
+            "state",
+            "backup-retention",
+            backup_directory.to_str().unwrap(),
+            "--max-backups",
+            "2",
+            "--max-bytes",
+            "1073741824",
+            "--plan-digest",
+            plan_digest,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(applied.status.success(), "{applied:?}");
+    assert!(applied.stderr.is_empty());
+    let applied: serde_json::Value = serde_json::from_slice(&applied.stdout).unwrap();
+    let result = &applied["data"]["state"]["backupRetention"]["result"];
+    assert_eq!(result["schema"], "a3s.use.state-backup-retention-result.v1");
+    assert_eq!(result["removed"].as_array().unwrap().len(), 1);
+    assert_eq!(result["retainedBackupCount"], 2);
+    assert!(!backup_directory.join("001.a3s-use-state-backup").exists());
+    assert!(backup_directory.join("002.a3s-use-state-backup").is_file());
+    assert!(backup_directory.join("003.a3s-use-state-backup").is_file());
+}
+
+#[cfg(feature = "extensions")]
+#[test]
+fn coordinated_state_restore_cli_requires_review_rollback_and_confirmation() {
+    let temporary = tempfile::tempdir().unwrap();
+    let home = temporary.path().join("home");
+    let state_file = home.join("state/knowledge/value.bin");
+    std::fs::create_dir_all(state_file.parent().unwrap()).unwrap();
+    std::fs::write(&state_file, b"candidate").unwrap();
+    let backup_path = temporary.path().join("candidate.a3s-use-state-backup");
+    let backup = Command::new(binary())
+        .args(["state", "backup", backup_path.to_str().unwrap(), "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(backup.status.success(), "{backup:?}");
+    std::fs::write(&state_file, b"live drift").unwrap();
+
+    let plan = Command::new(binary())
+        .args([
+            "state",
+            "plan-restore",
+            backup_path.to_str().unwrap(),
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(plan.status.success(), "{plan:?}");
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    let restore = &plan["data"]["state"]["restore"];
+    assert_eq!(restore["plan"]["schema"], "a3s.use.state-restore-plan.v1");
+    assert_eq!(restore["plan"]["summary"]["replaceFiles"], 1);
+    let plan_digest = restore["planDigest"].as_str().unwrap();
+    let rollback_path = temporary.path().join("rollback.a3s-use-state-backup");
+
+    let unconfirmed = Command::new(binary())
+        .args([
+            "state",
+            "restore",
+            backup_path.to_str().unwrap(),
+            "--rollback-backup",
+            rollback_path.to_str().unwrap(),
+            "--plan-digest",
+            plan_digest,
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(!unconfirmed.status.success());
+    let unconfirmed: serde_json::Value = serde_json::from_slice(&unconfirmed.stdout).unwrap();
+    assert_eq!(unconfirmed["error"]["code"], "use.cli.invalid_usage");
+    assert!(!rollback_path.exists());
+
+    let applied = Command::new(binary())
+        .args([
+            "state",
+            "restore",
+            backup_path.to_str().unwrap(),
+            "--rollback-backup",
+            rollback_path.to_str().unwrap(),
+            "--plan-digest",
+            plan_digest,
+            "--yes",
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(applied.status.success(), "{applied:?}");
+    let applied: serde_json::Value = serde_json::from_slice(&applied.stdout).unwrap();
+    let result = &applied["data"]["state"]["restore"]["result"];
+    assert_eq!(result["schema"], "a3s.use.state-restore-result.v1");
+    assert_eq!(result["changed"], true);
+    assert_eq!(result["planDigest"], plan_digest);
+    assert_eq!(std::fs::read(&state_file).unwrap(), b"candidate");
+    assert!(rollback_path.is_file());
+
+    let status = Command::new(binary())
+        .args(["state", "restore-status", "--json"])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "{status:?}");
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    let diagnostic = &status["data"]["state"]["restore"]["diagnostic"];
+    assert_eq!(diagnostic["schema"], "a3s.use.state-restore-diagnostic.v1");
+    assert!(diagnostic["active"].is_null());
+    assert_eq!(diagnostic["operations"][0]["status"], "completed");
+    assert_eq!(diagnostic["operations"][0]["planDigest"], plan_digest);
+}
+
+#[cfg(feature = "extensions")]
+#[test]
 fn knowledge_usage_reports_an_empty_exact_default_scope() {
     let temporary = tempfile::tempdir().unwrap();
     let output = Command::new(binary())
