@@ -84,7 +84,7 @@ pub(super) async fn acquire_package_lock(
             .open(&path)
             .map_err(|error| path_error(kind, "open planning attempt lock", &path, error))?;
         file.try_lock_exclusive().map_err(|error| {
-            if error.kind() == io::ErrorKind::WouldBlock {
+            if lock_is_contended(&error) {
                 busy_error(kind)
             } else {
                 path_error(kind, "lock planning attempt", &path, error)
@@ -322,6 +322,20 @@ fn busy_error(kind: PlanningAttemptKind) -> UseError {
             "Another pre-lock Registry resolution is active for this cognitive package.",
         ),
     }
+}
+
+fn lock_is_contended(error: &io::Error) -> bool {
+    if error.kind() == io::ErrorKind::WouldBlock {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        // LockFileEx reports sharing or lock violations without consistently
+        // mapping either Windows error to WouldBlock.
+        return matches!(error.raw_os_error(), Some(32 | 33));
+    }
+    #[cfg(not(windows))]
+    false
 }
 
 fn io_code(kind: PlanningAttemptKind) -> &'static str {

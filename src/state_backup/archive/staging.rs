@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
@@ -187,6 +187,18 @@ pub(super) fn set_candidate_permissions(path: &Path, entry: &StateBackupEntry) -
             "A staged restore candidate is not an owned regular file.",
         ));
     }
+    // Keep a write-capable handle across the permission change. Windows
+    // rejects FlushFileBuffers on a handle opened after the read-only bit is
+    // set, while a pre-existing write handle can durably flush the metadata.
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|error| {
+            state_backup_io(format!(
+                "Restore candidate permissions cannot be prepared: {error}"
+            ))
+        })?;
     let mut permissions = metadata.permissions();
     #[cfg(unix)]
     {
@@ -204,13 +216,11 @@ pub(super) fn set_candidate_permissions(path: &Path, entry: &StateBackupEntry) -
             "Restore candidate permissions cannot be preserved: {error}"
         ))
     })?;
-    File::open(path)
-        .and_then(|file| file.sync_all())
-        .map_err(|error| {
-            state_backup_io(format!(
-                "Restore candidate permissions cannot be synchronized: {error}"
-            ))
-        })
+    file.sync_all().map_err(|error| {
+        state_backup_io(format!(
+            "Restore candidate permissions cannot be synchronized: {error}"
+        ))
+    })
 }
 
 pub(super) fn file_matches_entry(path: &Path, entry: &StateBackupEntry) -> UseResult<bool> {
