@@ -359,6 +359,38 @@ fn release_portability_verifier_rejects_repository_local_paths() {
 }
 
 #[test]
+fn ci_runs_the_workspace_suite_on_every_release_target() {
+    let ci = include_str!("../.github/workflows/ci.yml");
+    let platform_job = &ci[position(ci, "\n  platform-test:")..];
+
+    for (name, runner) in [
+        ("linux-x86_64", "ubuntu-24.04"),
+        ("linux-arm64", "ubuntu-24.04-arm"),
+        ("darwin-x86_64", "macos-15-intel"),
+        ("darwin-arm64", "macos-latest"),
+        ("windows-x86_64", "windows-latest"),
+    ] {
+        let matrix_entry = format!("- name: {name}\n            os: {runner}");
+        assert!(
+            platform_job.contains(&matrix_entry),
+            "platform CI must run the workspace suite for {name} on {runner}"
+        );
+    }
+
+    assert!(platform_job.contains("fail-fast: false"));
+    assert!(!platform_job.contains("continue-on-error"));
+    for command in [
+        "run: cargo test --workspace --exclude a3s-use-science --locked --no-run",
+        "run: cargo test --workspace --exclude a3s-use-science --locked",
+    ] {
+        assert!(
+            platform_job.lines().any(|line| line.trim() == command),
+            "platform CI must retain the exact command: {command}"
+        );
+    }
+}
+
+#[test]
 fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     let workflow = include_str!("../.github/workflows/release.yml");
     let ci = include_str!("../.github/workflows/ci.yml");

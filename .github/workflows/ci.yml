@@ -33,11 +33,22 @@ jobs:
           ./scripts/mcp-release-container-conformance.sh
 
   platform-test:
+    name: platform-test (${{ matrix.name }})
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+          - name: darwin-x86_64
+            os: macos-15-intel
+          - name: darwin-arm64
+            os: macos-latest
+          - name: windows-x86_64
+            os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -45,8 +56,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Compile workspace tests
         run: cargo test --workspace --exclude a3s-use-science --locked --no-run
-      # Windows remains a preview target. Browser provider and driver
-      # validation runs in the independent A3S Browser repository, while the
-      # complete Runtime/MCP/watcher/failure-injection matrix remains pending.
+      # Browser provider and driver validation runs in the independent A3S
+      # Browser repository. Product-host, reboot, and external-contention
+      # scenarios remain separate release gates.
       - name: Run non-Science workspace tests
         run: cargo test --workspace --exclude a3s-use-science --locked
