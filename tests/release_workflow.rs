@@ -360,8 +360,8 @@ fn release_portability_verifier_rejects_repository_local_paths() {
 
 #[test]
 fn ci_runs_the_workspace_suite_on_every_release_target() {
-    let ci = include_str!("../.github/workflows/ci.yml");
-    let platform_job = &ci[position(ci, "\n  platform-test:")..];
+    let ci = include_str!("../.github/workflows/ci.yml").replace("\r\n", "\n");
+    let platform_job = &ci[position(&ci, "\n  platform-test:")..];
 
     for (name, runner) in [
         ("linux-x86_64", "ubuntu-24.04"),
