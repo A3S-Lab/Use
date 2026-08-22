@@ -321,15 +321,18 @@ Status: in progress
 - [x] Require both platform installers to authenticate the checksum manifest
   with Cosign against the exact tag workflow identity before archive download,
   fail closed, and retain the verified evidence with the installed version.
-- [ ] Pass byte-for-byte rebuilds for every shipped native executable on a
-  second cache-free clean runner for all release targets. The `v0.3.2` attempt
-  failed on four targets; deterministic native metadata controls are locally
-  verified, but the fresh five-platform matrix remains open.
+- [x] Pass byte-for-byte rebuilds for every shipped native executable on a
+  second cache-free clean runner for all release targets. Non-publishing
+  qualification run
+  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+  byte-matched all five primary archives from exact `main` commit
+  `e3d5f955a63cc136dbb07e9419a32760328df320`.
 - Add an externally operated full-tree/final-archive witness and retain its
   evidence outside the Release asset trust boundary.
-- Verify release archives in clean Linux/macOS/Windows environments.
-  Checkout-path scanning and isolated-home/working-directory smoke execution
-  are implemented locally; a fresh five-target workflow run remains open.
+- [x] Verify release archives in clean Linux/macOS/Windows environments.
+  Qualification run 32600882148 scanned every target archive for checkout
+  paths and passed isolated-home/working-directory execution on all five
+  targets.
 
 Acceptance: an operator can bootstrap trust, install, rotate/replace sources,
 recover offline, audit provenance, and remove the product using published

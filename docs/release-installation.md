@@ -102,14 +102,19 @@ not change the development-preview status.
 Before evidence publication, each extracted archive is scanned for the build
 checkout path in native and slash-normalized UTF-8 and UTF-16 encodings. The
 workflow then runs both native executables from an isolated working directory
-and an isolated `A3S_USE_HOME`. This gate is implemented locally, but it still
-requires a successful five-target workflow run for release qualification.
+and an isolated `A3S_USE_HOME`. Non-publishing qualification run
+[32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+passed this gate on all five targets from exact `main` commit
+`e3d5f955a63cc136dbb07e9419a32760328df320`.
 
-The `v0.3.2` workflow failed the independent rebuild comparison on four
-targets and therefore did not create a GitHub Release. Deterministic symbol
-stripping and platform-specific linker metadata controls are locally verified,
-but a fresh five-platform clean-runner run remains required before relying on
-the evidence set above.
+The tagged `v0.3.2` workflow failed the independent rebuild comparison on four
+targets and therefore did not create a GitHub Release. After deterministic
+symbol stripping and platform-specific linker metadata controls were applied,
+qualification run 32600882148 rebuilt every shipped native executable without
+a compiled-artifact cache and byte-matched all five primary archives. The run
+also produced the corresponding run-scoped SBOMs, attestations, and
+reproducibility records while intentionally skipping crates.io and GitHub
+Release publication.
 
 ## Additional independent verification
 

@@ -209,14 +209,16 @@ all shipped native executables and must byte-match the primary archive before
 deterministic `.reproducibility.json` evidence can be attested, checksummed,
 signed, and published beside the archive.
 
-The `v0.3.2` workflow exposed native linker metadata drift on four of five
-targets and therefore did not create a GitHub Release. Deterministic symbol
+The tagged `v0.3.2` workflow exposed native linker metadata drift on four of
+five targets and therefore did not create a GitHub Release. The non-publishing
+[qualification run 32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+froze `main` commit `e3d5f955a63cc136dbb07e9419a32760328df320` and passed
+the complete five-platform archive, isolated-install path scan, SBOM and
+attestation, and cache-free byte-for-byte rebuild matrix. Deterministic symbol
 stripping, content-derived Mach-O UUIDs, and PE/COFF plus ELF linker controls
-are implemented locally, and a non-publishing `qualification=true` dispatch runs the complete
-five-platform archive and clean-runner comparison from the exact `main`
-revision while skipping crates.io and GitHub Release publication. A fresh
-qualification run remains required. Operators can additionally verify
-successful GitHub attestations by following
+therefore satisfy the current release-workflow qualification while crates.io
+and GitHub Release publication remain intentionally skipped. Operators can
+additionally verify successful GitHub attestations by following
 [Verified release installation](docs/release-installation.md#additional-independent-verification).
 An externally operated full-archive witness, evidence retention outside GitHub
 Release, and the remaining product gates are still open, so this does not
@@ -989,7 +991,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Coordinated whole-installation backup, retention, and reviewed restore | Backup and retention are implemented under the exclusive maintenance fence with deterministic path-free manifests, exact Registry/receipt authority digests, allowlisted state families, scan/copy/rescan consistency, full payload verification, exact-plan retention, and two-generation preservation. Same-version/OS/architecture restore now requires exact independently retained Registry and Grant authority, an explicit verified rollback archive, path-free digest confirmation, link/reparse-safe candidate staging, seven durable journal phases, 15 subprocess-exit recovery boundaries, terminal replay, read-only status, and bounded crash-recoverable history. Missing-authority and clean-machine recovery plus cross-platform operational disaster-recovery drills remain open |
 | Runtime Service, HTTP MCP, managed Knowledge recovery/rollback, and sandboxed UI composition in every declared host | In progress |
 | A3S Code CLI/TUI integration | Reviewed Runtime Task install, offline restart disable/re-enable, apply-time build drift rejection, watcher hot-plug, context review, and TUI `/packages` review are tested; release qualification remains |
-| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and pinned Actions/tools are implemented. The `v0.3.2` clean-runner byte comparison failed on four targets; deterministic native metadata controls are locally verified, but a fresh five-platform pass, an externally operated full-archive witness, and off-Release evidence retention remain open |
+| Verified preview installers and release evidence | Linux/macOS and Windows installers enforce HTTPS, exact tag-identity Sigstore verification, release checksums, safe extraction, packaged OCR/Skill binding, versioned atomic activation, complete-tree reinstall validation, retained local evidence, and managed command ownership. Deterministic archive serialization, per-platform SPDX SBOMs, GitHub OIDC provenance/SBOM attestations, and pinned Actions/tools are implemented. Non-publishing qualification run [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148) passed isolated archive execution and cache-free byte-for-byte rebuilds on all five targets from exact `main` commit `e3d5f955a63cc136dbb07e9419a32760328df320`; an externally operated full-archive witness and off-Release evidence retention remain open |
 | Complete Linux/macOS/Windows real-process E2E and recovery matrix | Release blocker |
 | Public Registry operations, external full-archive reproducibility witness, off-Release evidence retention, support runbooks | Release blocker |
 

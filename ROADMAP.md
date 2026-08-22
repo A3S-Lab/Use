@@ -396,10 +396,12 @@ Status: pending
   without reauthorization or generation inflation.
   Actual Code/Runtime product-host, platform, reboot, contention, and
   replacement-race qualification stays open.
-- [ ] Verify release archives install and run without repository-local paths.
-  Checkout-path scanning plus isolated-home and isolated-working-directory
-  smoke execution are implemented locally; a fresh five-target workflow run
-  remains required.
+- [x] Verify release archives install and run without repository-local paths.
+  Non-publishing qualification run
+  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+  scanned all five target archives for checkout paths and ran the installed
+  native executables with isolated homes and working directories from exact
+  `main` commit `e3d5f955a63cc136dbb07e9419a32760328df320`.
 
 Exit gate: every supported target passes the same signed six-surface package
 and failure-injection scenarios.
@@ -433,14 +435,15 @@ Status: in progress
   manifest against the exact tag workflow identity and GitHub OIDC issuer
   before archive download, fail closed on invalid evidence, and retain the
   verified manifest and bundle with the installed version.
-- [ ] Pass byte-for-byte independent rebuilds for every shipped native
-  executable on all five targets. The `v0.3.2` Release attempt passed only
-  macOS arm64; Use binaries drifted on both Linux targets and macOS x86_64,
-  while the Windows Browser driver drifted. Deterministic symbol stripping and
-  platform linker metadata controls are implemented locally. A non-publishing
-  `qualification=true` workflow dispatch now freezes current `main`, runs the
-  complete five-target archive and clean-runner matrix, and skips crates.io and
-  GitHub Release publication, but a fresh successful run is still required.
+- [x] Pass byte-for-byte independent rebuilds for every shipped native
+  executable on all five targets. The tagged `v0.3.2` attempt exposed drift on
+  four targets and did not publish a Release. After deterministic symbol
+  stripping and platform linker metadata controls were applied,
+  non-publishing qualification run
+  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+  rebuilt every shipped native executable without a build cache and
+  byte-matched all five primary archives from exact `main` commit
+  `e3d5f955a63cc136dbb07e9419a32760328df320`.
 - [ ] Add an externally operated witness for the complete staged tree and final
   archive digest, and retain verification evidence outside the Release asset
   trust boundary.
