@@ -322,8 +322,26 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
         .exists());
 }
 
-#[tokio::test]
-async fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutover() {
+#[test]
+fn permission_bearing_enablement_cuts_over_grants_and_recovers_after_cutover() {
+    const TEST_THREAD_STACK_SIZE: usize = 8 * 1024 * 1024;
+
+    std::thread::Builder::new()
+        .name("permission-bearing-enablement".to_string())
+        .stack_size(TEST_THREAD_STACK_SIZE)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(permission_bearing_enablement_scenario());
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+async fn permission_bearing_enablement_scenario() {
     let temporary = tempfile::tempdir().unwrap();
     let target = host_target();
     let targets = cognitive_tool_targets_version(
