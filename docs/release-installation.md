@@ -80,6 +80,25 @@ executable, and compares it directly with the primary archive. An externally
 operated witness for the complete staged tree/final archive, evidence retention
 outside GitHub Release, and the other product gates remain incomplete.
 
+## Non-publishing qualification
+
+Before creating a version tag, maintainers can run the complete five-target
+archive, isolated-install, SBOM, attestation, and independent-rebuild matrix
+against the current `main` commit:
+
+```bash
+gh workflow run release.yml \
+  --repo A3S-Lab/Use \
+  --ref main \
+  -f qualification=true
+```
+
+Qualification rejects a supplied `release_tag`, freezes the exact `main`
+revision, and skips both crates.io publication and GitHub Release creation.
+Its run-scoped archives, SBOMs, attestations, and reproducibility records are
+evidence for release review; they are not installable release assets and do
+not change the development-preview status.
+
 Before evidence publication, each extracted archive is scanned for the build
 checkout path in native and slash-normalized UTF-8 and UTF-16 encodings. The
 workflow then runs both native executables from an isolated working directory

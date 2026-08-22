@@ -212,8 +212,11 @@ signed, and published beside the archive.
 The `v0.3.2` workflow exposed native linker metadata drift on four of five
 targets and therefore did not create a GitHub Release. Deterministic symbol
 stripping plus Mach-O, PE/COFF, and ELF linker controls are implemented locally,
-but a fresh five-platform clean-runner run remains required. Operators can
-additionally verify successful GitHub attestations by following
+and a non-publishing `qualification=true` dispatch now runs the complete
+five-platform archive and clean-runner comparison from the exact `main`
+revision while skipping crates.io and GitHub Release publication. A fresh
+qualification run remains required. Operators can additionally verify
+successful GitHub attestations by following
 [Verified release installation](docs/release-installation.md#additional-independent-verification).
 An externally operated full-archive witness, evidence retention outside GitHub
 Release, and the remaining product gates are still open, so this does not

@@ -437,8 +437,10 @@ Status: in progress
   executable on all five targets. The `v0.3.2` Release attempt passed only
   macOS arm64; Use binaries drifted on both Linux targets and macOS x86_64,
   while the Windows Browser driver drifted. Deterministic symbol stripping and
-  platform linker metadata controls are implemented locally, but a fresh
-  clean-runner matrix must pass before attested rebuild evidence is published.
+  platform linker metadata controls are implemented locally. A non-publishing
+  `qualification=true` workflow dispatch now freezes current `main`, runs the
+  complete five-target archive and clean-runner matrix, and skips crates.io and
+  GitHub Release publication, but a fresh successful run is still required.
 - [ ] Add an externally operated witness for the complete staged tree and final
   archive digest, and retain verification evidence outside the Release asset
   trust boundary.

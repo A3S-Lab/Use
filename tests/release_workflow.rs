@@ -367,7 +367,7 @@ fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     assert!(workflow.contains("SOURCE_DATE_EPOCH"));
     assert!(workflow.contains("source_revision: ${{ steps.version.outputs.source_revision }}"));
     assert!(workflow.contains(
-        "ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.sha }}"
+        "ref: ${{ github.event_name == 'workflow_dispatch' && !inputs.qualification && inputs.release_tag || github.sha }}"
     ));
     assert!(!workflow.contains(
         "ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}"
@@ -428,6 +428,33 @@ fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
             "release action must use an immutable commit SHA: {action}"
         );
     }
+}
+
+#[test]
+fn main_release_qualification_builds_and_reproduces_without_publication() {
+    let workflow = include_str!("../.github/workflows/release.yml");
+    let dispatch =
+        &workflow[position(workflow, "  workflow_dispatch:")..position(workflow, "\npermissions:")];
+    assert!(dispatch.contains("qualification:"));
+    assert!(dispatch.contains("type: boolean"));
+    assert!(dispatch.contains("default: false"));
+    assert!(dispatch.contains("release_tag:"));
+    assert!(dispatch.contains("required: false"));
+
+    let validation =
+        &workflow[position(workflow, "  validate:")..position(workflow, "\n  binaries:")];
+    assert!(validation.contains("test \"${{ inputs.qualification }}\" = \"true\""));
+    assert!(validation.contains("test -z \"${{ inputs.release_tag }}\""));
+    assert!(validation.contains("test \"${GITHUB_REF_TYPE}\" = \"branch\""));
+    assert!(validation.contains("test \"${GITHUB_REF_NAME}\" = \"main\""));
+
+    let publish =
+        &workflow[position(workflow, "\n  publish-crates:")..position(workflow, "\n  release:")];
+    let release = &workflow[position(workflow, "\n  release:")..];
+    let publication_guard =
+        "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.qualification }}";
+    assert!(publish.contains(publication_guard));
+    assert!(release.contains(publication_guard));
 }
 
 #[test]

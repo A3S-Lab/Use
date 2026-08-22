@@ -6,9 +6,14 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      qualification:
+        description: Build and independently reproduce main without publishing
+        required: true
+        default: false
+        type: boolean
       release_tag:
         description: Existing version tag to rebuild or recover
-        required: true
+        required: false
         type: string
 
 permissions:
@@ -35,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && !inputs.qualification && inputs.release_tag || github.sha }}
           fetch-depth: 0
       - name: Check out pinned OCR release content
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -70,7 +75,12 @@ jobs:
           test "${#source_revision}" -eq 40
           if test "${GITHUB_EVENT_NAME}" = "push"; then
             test "${GITHUB_REF_NAME}" = "v${version}"
+          elif test "${{ inputs.qualification }}" = "true"; then
+            test -z "${{ inputs.release_tag }}"
+            test "${GITHUB_REF_TYPE}" = "branch"
+            test "${GITHUB_REF_NAME}" = "main"
           else
+            test -n "${{ inputs.release_tag }}"
             test "${{ inputs.release_tag }}" = "v${version}"
             test "${GITHUB_REF_TYPE}" = "branch"
             test "${GITHUB_REF_NAME}" = "main"
@@ -641,6 +651,7 @@ jobs:
 
   publish-crates:
     name: Publish typed Rust crates
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.qualification }}
     needs: validate
     runs-on: ubuntu-latest
     steps:
@@ -707,6 +718,7 @@ jobs:
           wait_until_visible a3s-use
 
   release:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.qualification }}
     needs: [validate, binaries, reproducibility, publish-crates]
     runs-on: ubuntu-latest
     permissions:
