@@ -295,7 +295,7 @@ impl PendingRegistryResolution {
             PackageRegistryResolutionStatus::Verifying => {
                 if versions.iter().any(Option::is_some)
                     || self.package_targets.is_some()
-                    || !self.observed_at_ms.is_some_and(|time| time > 0)
+                    || self.observed_at_ms.is_none_or(|time| time == 0)
                     || self.error_code.is_some()
                 {
                     return Err(store_invalid());
@@ -305,10 +305,10 @@ impl PendingRegistryResolution {
                 if versions
                     .iter()
                     .any(|version| !version.is_some_and(|value| value > 0))
-                    || !self
+                    || self
                         .package_targets
-                        .is_some_and(|count| count <= MAX_REGISTRY_PACKAGE_TARGETS)
-                    || !self.observed_at_ms.is_some_and(|time| time > 0)
+                        .is_none_or(|count| count > MAX_REGISTRY_PACKAGE_TARGETS)
+                    || self.observed_at_ms.is_none_or(|time| time == 0)
                     || self.error_code.is_some()
                 {
                     return Err(store_invalid());
@@ -317,7 +317,7 @@ impl PendingRegistryResolution {
             PackageRegistryResolutionStatus::Failed => {
                 if versions.iter().any(Option::is_some)
                     || self.package_targets.is_some()
-                    || !self.observed_at_ms.is_some_and(|time| time > 0)
+                    || self.observed_at_ms.is_none_or(|time| time == 0)
                     || !self.error_code.as_deref().is_some_and(valid_error_code)
                 {
                     return Err(store_invalid());
