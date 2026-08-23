@@ -174,7 +174,42 @@ fn failed_registry_verification_retains_only_a_bounded_error_code() {
     let encoded = serde_json::to_string(&diagnostic).unwrap();
     assert!(!encoded.contains(home.to_str().unwrap()));
     assert!(!encoded.contains(server.base_url()));
-    assert!(!encoded.contains("404"));
+    assert!(attempt.as_object().unwrap().keys().all(|field| matches!(
+        field.as_str(),
+        "action"
+            | "phase"
+            | "access"
+            | "status"
+            | "startedAtMs"
+            | "completedAtMs"
+            | "requestedVersion"
+            | "channel"
+            | "registryCount"
+            | "verifiedRegistryCount"
+            | "packageLockDigest"
+            | "packageCount"
+            | "errorCode"
+            | "registries"
+    )));
+    assert!(attempt["registries"][0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .all(|field| matches!(
+            field.as_str(),
+            "registryName"
+                | "role"
+                | "sourceIdentityDigest"
+                | "trustRootDigest"
+                | "status"
+                | "rootVersion"
+                | "timestampVersion"
+                | "snapshotVersion"
+                | "targetsVersion"
+                | "packageTargets"
+                | "observedAtMs"
+                | "errorCode"
+        )));
 }
 
 #[test]
