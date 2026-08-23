@@ -293,6 +293,15 @@ exact-scope Knowledge storage operations:
 a3s-use install <publisher/name> [--registry-name <name>] [--offline] [--json]
 a3s-use upgrade <publisher/name> [--registry-name <name>] [--offline] [--json]
 a3s-use uninstall <publisher/name> [--json]
+a3s-use plugin search <query> [--kind <flow|mcp|okf|skill|tool|ui>] [--channel <stable|beta|nightly>] [--cursor <cursor>] [--limit <n>] [--offline] [--json]
+a3s-use plugin inspect <publisher/name> [--version <semver>] [--channel <stable|beta|nightly>] [--offline] [--json]
+a3s-use plugin list-installed [--cursor <cursor>] [--limit <n>] [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
+a3s-use plugin status <publisher/name> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
+a3s-use plugin plan-install <publisher/name> [--registry-name <name>] [--version-requirement <semver-range>] [--channel <stable|beta|nightly>] [--surface <kind/id>]... [--offline] [--json]
+a3s-use plugin plan-upgrade <publisher/name> [--version-requirement <semver-range>] [--channel <stable|beta|nightly>] [--surface <kind/id>]... [--offline] [--json]
+a3s-use plugin plan-uninstall <publisher/name> [--json]
+a3s-use plugin plan-enable|plan-disable <publisher/name> [--json]
+a3s-use plugin apply-plan --operation-id <id> --plan-digest <sha256> --yes [--json]
 a3s-use extension inspect <publisher/name> [--json]
 a3s-use extension diagnose <publisher/name> [--history] [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use knowledge search <query> [--limit <n>] [--json]
@@ -328,9 +337,19 @@ Host plan result, and terminal Host apply result. Repeating an unchanged
 operation returns the durable replay result. Offline planning and recovery stay
 zero-network, and a supplied package-lock digest is rejected before any target
 download. The compatibility commands auto-apply only permission-free `Allow`
-plans; explicit reviewed CLI apply, read-side manager commands,
-enable/disable, TUI migration, and Code-side manager MCP composition remain
-open.
+plans. The one-to-one `plugin` commands expose the same four read operations,
+five read-only planning operations, and digest-only apply boundary as manager
+toolset v4. Each successful JSON `data` value is the exact typed service result,
+including the complete Host plan, package lock, source and permission evidence,
+operation ID, plan digest, confirmation decision, and terminal apply result.
+Planning never mutates package state. `plugin apply-plan` reopens only the exact
+durable `(operation ID, plan digest)` pair and requires `--yes`; an ordinary CLI
+call does not imply user confirmation, and an `Ask` plan receives confirmation
+only at that explicit boundary. Exact apply and replay use the verified planning
+cache without Registry access. Code TUI migration and Code-side manager MCP
+composition remain open. The standalone manager is bound to the current User
+scope (`user/current`); a different explicit scope kind or ID is rejected rather
+than treated as authority to mint a Workspace manager.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -951,10 +970,12 @@ through standard MCP initialization, `tools/list`, and `tools/call`; its
 schemas and annotations are generated from the frozen toolset. MCP apply asks
 an injected trusted host confirmation provider for existing exact evidence and
 never treats an agent tool call as user confirmation. The standalone CLI's
-Registry-backed install, upgrade, and uninstall mutations now use this service
-and expose the exact reviewed Host plan/result alongside their released output
-fields. Explicit reviewed CLI apply, read-side and enable/disable convergence,
-the Code TUI, and Code-side manager MCP composition remain release gates.
+Registry-backed install, upgrade, and uninstall mutations use this service and
+expose the exact reviewed Host plan/result alongside their released output
+fields. Its `plugin` surface maps all ten manager operations to the same
+service, keeps every plan read-only, and requires the exact operation ID, plan
+digest, and explicit `--yes` for apply. The Code TUI and Code-side manager MCP
+composition remain release gates.
 
 Host protocol v6 binds an explicit User or Workspace scope kind and projects
 exact operation state from durable evidence only. Equal textual scope IDs in
@@ -1060,7 +1081,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
-| Shared Plugin Manager service and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed install/upgrade/uninstall now use the service and return exact Host plan/apply evidence without breaking their existing JSON fields. Explicit reviewed CLI apply, read-side and enable/disable convergence, TUI migration, and product-host MCP composition remain open |
+| Shared Plugin Manager service, CLI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. TUI migration and product-host MCP composition remain open |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |

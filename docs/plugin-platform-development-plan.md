@@ -187,11 +187,16 @@ Status: in progress
   production Host Manager, including stable listing/search identities, all
   frozen planning operations, durable reviewed-plan reopening, digest-only
   apply, and a standard MCP adapter with injected trusted confirmation.
-- [ ] Migrate CLI and TUI and compose the manager MCP in Code on that service.
-  Registry-backed standalone install, upgrade, and uninstall mutations now use
-  the service and expose exact Host plan/apply results without changing their
-  existing JSON fields. Explicit reviewed CLI apply, read-side and
-  enable/disable convergence, TUI migration, and Code MCP composition remain.
+- [x] Migrate the standalone CLI to that service. The `plugin` command maps the
+  four reads, five planning operations, and digest-only apply directly to the
+  manager-v4 inputs and typed results. Plans do not mutate, apply requires the
+  exact durable operation ID and plan digest plus explicit `--yes`, `Ask` plans
+  receive no implicit confirmation, and exact replay remains zero-network.
+  Registry-backed compatibility install, upgrade, and uninstall fields remain
+  unchanged.
+- [ ] Migrate the A3S Code TUI and compose the manager MCP in Code on that
+  service without a second presentation-owned plan, confirmation, or mutation
+  path.
 - Keep Registry source state, catalog cache, plan generation, policy, apply, and
   operation replay out of view-specific code.
 - TUI `/packages`, CLI, and agent MCP must display and apply the same operation

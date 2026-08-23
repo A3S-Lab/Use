@@ -74,6 +74,9 @@ package, and only a durable Host outcome reports `Completed`.
   production Host Manager. Its standard MCP adapter derives the exact ten v4
   tools from the frozen contract and obtains confirmation only from an injected
   trusted host provider.
+- The standalone `plugin` CLI maps those same ten operations to the service.
+  Planning is non-mutating; exact apply requires the durable operation ID, plan
+  digest, and explicit `--yes`, while cached apply and replay are zero-network.
 - Lifecycle journals provide exact crash replay, cutover-aware publication,
   exact-generation drain, and fail-closed corruption handling.
 - `extension inspect --json` projects bounded lifecycle history, while
@@ -118,12 +121,10 @@ package, and only a durable Host outcome reports `Completed`.
 
 ### 2. A3S Code TUI hot-plug qualification — in progress
 
-- Migrate CLI and TUI and compose the manager MCP in Code on the implemented
-  shared Plugin Manager service. Standalone Registry-backed install, upgrade,
-  and uninstall mutations now use it and return exact Host plan/apply evidence
-  without replacing existing JSON fields. Explicit reviewed CLI apply,
-  read-side and enable/disable convergence, TUI migration, and product
-  presentation wiring remain open.
+- Migrate the A3S Code TUI and compose the manager MCP in Code on the
+  implemented shared Plugin Manager service. The standalone CLI convergence is
+  complete without replacing compatibility JSON fields; TUI and product
+  presentation wiring must not introduce another plan or mutation path.
 - Verify install, invoke, exact-generation upgrade, invoke, uninstall, and
   restart for all six surfaces and dependency-bearing graphs.
 - Prove User/Workspace scope isolation, watcher resumption, terminal-result

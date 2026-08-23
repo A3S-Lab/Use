@@ -144,6 +144,31 @@ a3s-use upgrade acme/research \
 a3s-use uninstall acme/research --json
 ```
 
+需要把 plan 审查与 mutation 分开时，使用一对一 Plugin Manager CLI。
+`plan-*` 命令会返回完整 typed Host plan，但不会修改包状态。从输出复制精确
+`operationId` 与 `planDigest`；apply 只会重开这一持久化组合，并且只有显式
+`--yes` 才表示确认：
+
+```bash
+a3s-use plugin search research --kind tool --json
+a3s-use plugin inspect acme/research --version 2.0.0 --json
+a3s-use plugin plan-install acme/research \
+  --registry-name packages \
+  --version-requirement 2.0.0 \
+  --surface tool/research \
+  --json
+a3s-use plugin apply-plan \
+  --operation-id <operation-id> \
+  --plan-digest sha256:<64-hex-digits> \
+  --yes \
+  --json
+a3s-use plugin plan-disable acme/research --json
+```
+
+search、inspect、planning、精确 apply 与 replay 会在适用位置使用已验证 cache；
+apply 本身不会访问 Registry。MCP Agent call 永远不会隐含用户确认，缺少
+`--yes` 的 CLI call 也不会创建确认。
+
 如果精确的 install、upgrade 或 uninstall 图仍被保留、enable/disable apply
 已持久化其 active admitted operation，或者 Host 已审查但尚未 admit 最新
 enablement plan，可以在不访问 Registry、也不修改恢复状态的前提下查看其无路径
