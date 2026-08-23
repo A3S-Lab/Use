@@ -374,7 +374,11 @@ pub(super) fn stage_restore_entries(
                     "A staged restore candidate differs from its reviewed evidence.",
                 ));
             }
-            std::fs::rename(&candidate.partial, &candidate.destination).map_err(|error| {
+            a3s_use_extension::rename_path_with_windows_retry_blocking(
+                &candidate.partial,
+                &candidate.destination,
+            )
+            .map_err(|error| {
                 state_backup_io(format!("A restore candidate cannot be activated: {error}"))
             })?;
             sync_parent(&candidate.destination)?;

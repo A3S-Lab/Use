@@ -122,11 +122,14 @@ durable Host outcome 才会报告 `Completed`。
 - Windows x86_64 现已运行当前完整的非 Science workspace 测试；确定性的真实
   directory junction 回归测试证明 package 与持久状态信任边界会在遍历前拒绝
   Windows reparse point。
-- Workspace Grant、package 与 Host record、lifecycle、Runtime、Flow、
-  Knowledge、enablement、backup、restore 和 diagnostic 的全部临时文件发布现已
-  共用一个有界 Windows 重试原语，同时保留 replace 与 no-clobber 语义。短暂
-  access、sharing 或 lock violation 释放后会原子收敛；持续 replacement lock
-  会在两秒后停止，且不会改动原 target。
+- Registry state/cache、Workspace Grant、package 与 Host record、lifecycle、
+  Runtime、Flow、Knowledge、enablement、backup、restore 和 diagnostic 的全部
+  生产临时文件发布现已使用有界 Windows 重试原语，同时保留 replace 与
+  no-clobber 语义。restore journal/Knowledge 恢复源会在有界 rename 失败后继续
+  保留，whole-state restore candidate 会保留已审查的文件属性，lifecycle/
+  restore-history 目录移动也使用相同重试边界。短暂 file 或 directory
+  lock 释放后会原子收敛；持续 replacement lock 会在两秒后停止，且不会改动
+  原 target。外部 target 竞争与 reboot recovery 仍未完成。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
 - 真实进程测试现已覆盖 target 下载断点续传，以及 verified archive 提取期间

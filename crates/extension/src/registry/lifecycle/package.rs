@@ -285,7 +285,18 @@ pub(super) async fn commit_candidate_root(
     copy_package(candidate.source.root(), staging.path()).await?;
     validate_committed_root(candidate, staging.path()).await?;
     let staging = staging.keep();
-    if let Err(error) = fs::rename(&staging, target).await {
+    let rename_source = staging.clone();
+    let rename_target = target.to_path_buf();
+    let renamed = tokio::task::spawn_blocking(move || {
+        crate::rename_path_with_windows_retry_blocking(&rename_source, &rename_target)
+    })
+    .await
+    .map_err(|error| {
+        lifecycle_state_error(format!(
+            "Lifecycle package commit worker did not complete: {error}"
+        ))
+    })?;
+    if let Err(error) = renamed {
         let _ = fs::remove_dir_all(&staging).await;
         return Err(io_error(
             "commit lifecycle package generation",

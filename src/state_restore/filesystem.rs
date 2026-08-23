@@ -233,7 +233,7 @@ fn apply_publication(
         remove_owned_file(target)?;
         maybe_test_crash(&format!("action-{index}-target-removed"));
     }
-    std::fs::rename(candidate, target)
+    a3s_use_extension::rename_path_with_windows_retry_blocking(candidate, target)
         .map_err(|error| filesystem_io("publish restore candidate", target, error))?;
     sync_parent(candidate)?;
     if candidate.parent() != target.parent() {

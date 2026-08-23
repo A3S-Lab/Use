@@ -135,12 +135,16 @@ package, and only a durable Host outcome reports `Completed`.
 - The complete current non-Science workspace suite now runs on Windows x86_64.
   A deterministic directory-junction regression proves package and durable
   state trust boundaries reject Windows reparse points before traversal.
-- Every temporary-file publication for Workspace Grants, package and Host
-  records, lifecycle, Runtime, Flow, Knowledge, enablement, backup, restore,
-  and diagnostics now uses one bounded Windows retry primitive while retaining
-  replace versus no-clobber semantics. Released access, sharing, or lock
-  violations converge atomically; a persistent replacement lock stops at two
-  seconds without changing the prior target.
+- Every production temporary-file publication for Registry state/cache,
+  Workspace Grants, package and Host records, lifecycle, Runtime, Flow,
+  Knowledge, enablement, backup, restore, and diagnostics now uses bounded
+  Windows retry primitives while retaining replace versus no-clobber semantics.
+  Restore-journal/Knowledge recovery sources survive bounded rename failures,
+  whole-state restore candidates preserve reviewed file attributes, and
+  lifecycle/restore-history directory moves use the same retry bound.
+  Released file or directory locks converge atomically; a persistent replacement
+  lock stops at two seconds without changing the prior target. Externally raced
+  targets and reboot recovery remain open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Real-process tests now cover resumable target-download interruption and

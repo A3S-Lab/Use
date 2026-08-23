@@ -342,9 +342,19 @@ async fn activate_file(source: &Path, destination: &Path) -> UseResult<()> {
             "A Knowledge restore activation target already exists.",
         ));
     }
-    fs::rename(source, destination)
-        .await
-        .map_err(|error| filesystem_io("activate Knowledge restore file", destination, error))?;
+    let source_path = source.to_path_buf();
+    let destination_path = destination.to_path_buf();
+    let error_destination = destination_path.clone();
+    tokio::task::spawn_blocking(move || {
+        a3s_use_extension::rename_path_with_windows_retry_blocking(&source_path, &destination_path)
+    })
+    .await
+    .map_err(|error| {
+        filesystem_invalid(format!(
+            "Knowledge restore activation worker did not complete: {error}"
+        ))
+    })?
+    .map_err(|error| filesystem_io("activate Knowledge restore file", &error_destination, error))?;
     sync_parent(source).await?;
     let source_parent = source.parent();
     if destination.parent() != source_parent {

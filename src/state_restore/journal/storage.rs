@@ -207,9 +207,21 @@ pub(super) async fn recover_temporary_json(path: &Path, maximum: u64) -> UseResu
             ))
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            fs::rename(&temporary, path)
-                .await
-                .map_err(|error| operation_io("recover temporary restore evidence", path, error))?;
+            let source = temporary.clone();
+            let target = path.to_path_buf();
+            let error_target = target.clone();
+            tokio::task::spawn_blocking(move || {
+                a3s_use_extension::rename_path_with_windows_retry_blocking(&source, &target)
+            })
+            .await
+            .map_err(|error| {
+                operation_invalid(format!(
+                    "Temporary restore evidence recovery worker did not complete: {error}"
+                ))
+            })?
+            .map_err(|error| {
+                operation_io("recover temporary restore evidence", &error_target, error)
+            })?;
         }
         Err(error) => return Err(operation_io("inspect restore evidence target", path, error)),
     }

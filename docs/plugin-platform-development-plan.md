@@ -292,16 +292,19 @@ Status: in progress
 - [x] Run the complete current non-Science workspace suite and reject real
   directory junctions across package and durable state trust boundaries. CI
   run 32604181662 provides the latest native Windows evidence.
-- [x] Route every temporary-file publication for Workspace Grants, package and
-  Host records, lifecycle, Runtime, Flow, Knowledge, enablement, backup,
-  restore evidence, and diagnostics through one blocking primitive while
-  preserving replace versus no-clobber semantics. Retry only Windows access,
-  sharing, and lock violations for at most two seconds; prove released-lock
-  convergence, persistent-lock bounds, existing-target rejection, unchanged
-  prior content, and temporary cleanup.
-- Expand filesystem coverage to replacement races, file locks, antivirus
-  contention outside temporary-file publication, process groups, named
-  resources, and reboot recovery.
+- [x] Route every production temporary-file publication for Registry
+  state/cache, Workspace Grants, package and Host records, lifecycle, Runtime,
+  Flow, Knowledge, enablement, backup, restore evidence, and diagnostics
+  through bounded blocking primitives while preserving replace versus
+  no-clobber semantics. Restore and Knowledge recovery moves retain their
+  replay source on bounded rename failure, and lifecycle/restore-history
+  directory moves use the same retry bound. Retry only Windows access, sharing,
+  and lock violations for at most two seconds; prove released file/directory
+  lock convergence, persistent-lock bounds, existing-target rejection,
+  unchanged prior content, source retention, and temporary cleanup.
+- Expand filesystem coverage to externally raced targets, antivirus contention
+  outside the shared publication paths, process groups, named resources, and
+  reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
 
 Acceptance: every advertised platform passes the same contract, lifecycle,

@@ -282,12 +282,21 @@ pub(crate) async fn activate_temporary_file(
     target: PathBuf,
     action: &'static str,
 ) -> UseResult<()> {
-    // The files are created in the same owned directory, so rename is the
-    // atomic commit. Tokio delegates to std, whose Windows path conversion
-    // supports verbatim paths beyond the legacy 260-character limit.
-    fs::rename(&temporary, &target)
-        .await
-        .map_err(|error| io_error(action, &target, error))
+    let error_target = target.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::persist_temporary_replace_blocking(temporary, &target)
+    })
+    .await
+    .map_err(|error| {
+        UseError::new(
+            "use.extension.io",
+            format!(
+                "Failed to {action} '{}': blocking task failed: {error}",
+                error_target.display()
+            ),
+        )
+    })?
+    .map_err(|error| io_error(action, &error_target, error))
 }
 
 #[cfg(unix)]

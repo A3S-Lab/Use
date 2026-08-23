@@ -159,9 +159,18 @@ pub(super) async fn reserve(
             ))
         }
     }
-    fs::rename(&source, &tombstone)
-        .await
-        .map_err(|error| operation_io("activate restore history pruning", &source, error))?;
+    let rename_source = source.clone();
+    let rename_target = tombstone.clone();
+    tokio::task::spawn_blocking(move || {
+        a3s_use_extension::rename_path_with_windows_retry_blocking(&rename_source, &rename_target)
+    })
+    .await
+    .map_err(|error| {
+        operation_invalid(format!(
+            "Restore history pruning worker did not complete: {error}"
+        ))
+    })?
+    .map_err(|error| operation_io("activate restore history pruning", &source, error))?;
     sync_directory(&store.root).await?;
     finish_pruning(store, &tombstone, segment).await
 }
