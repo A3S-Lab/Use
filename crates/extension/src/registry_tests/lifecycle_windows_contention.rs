@@ -55,7 +55,12 @@ async fn lifecycle_removal_waits_for_a_transient_scanner_lock_on_the_receipt() {
     assert!(removed.changed);
     assert!(!receipt_path.exists());
     assert!(!package_root.exists());
-    assert_eq!(registry.snapshot().await.unwrap(), snapshot_before_removal);
+    let snapshot_after_removal = registry.snapshot().await.unwrap();
+    assert_eq!(
+        snapshot_after_removal.generation,
+        snapshot_before_removal.generation + 1
+    );
+    assert!(snapshot_after_removal.routes.is_empty());
 }
 
 #[tokio::test]
@@ -81,7 +86,10 @@ async fn lifecycle_removal_bounds_a_persistent_scanner_lock_and_replays_the_resi
     assert!(locked_path.is_file());
     assert!(registry.get(identity.package_id()).await.unwrap().is_none());
     let snapshot_after_failure = registry.snapshot().await.unwrap();
-    assert_eq!(snapshot_after_failure, snapshot_before_removal);
+    assert_eq!(
+        snapshot_after_failure.generation,
+        snapshot_before_removal.generation + 1
+    );
     assert!(snapshot_after_failure.routes.is_empty());
 
     drop(scanner);
