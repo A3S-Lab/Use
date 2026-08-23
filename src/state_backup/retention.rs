@@ -193,7 +193,7 @@ pub struct StateBackupRetentionResult {
 }
 
 pub(super) struct BackupDirectoryLock {
-    _file: File,
+    file: File,
 }
 
 impl BackupDirectoryLock {
@@ -244,7 +244,13 @@ impl BackupDirectoryLock {
             )
         })?;
         validate_directory(directory)?;
-        Ok(Self { _file: file })
+        Ok(Self { file })
+    }
+}
+
+impl Drop for BackupDirectoryLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
     }
 }
 
