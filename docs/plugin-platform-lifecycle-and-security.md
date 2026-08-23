@@ -296,6 +296,14 @@ generations, globally prunes removal tombstones, and compacts SQLite plus its
 WAL after removal. User and Workspace scopes with the same textual ID remain
 physically distinct.
 
+Run admission across multiple projected packages uses the higher-level typed
+snapshot cursor. It binds capability generation and revision to the complete
+Registry digest and sorted package-generation identities. The host acquires
+every route lease in canonical order, then rechecks the publication while all
+leases remain held. A cutover at any point yields no lease rather than a mixed
+batch. An enabled route without a schema-v3 lifecycle generation is explicitly
+unleasable and cannot enter this exact-generation admission path.
+
 ### UI and Skill
 
 Static content is integrity-bound and host-rendered. UI requires sandbox,

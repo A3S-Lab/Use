@@ -151,10 +151,18 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
     assert!(evidence.desired_enabled);
 
     let snapshot = CapabilityRegistrySnapshot {
-        schema_version: SCHEMA_VERSION,
+        schema_version: CAPABILITY_REGISTRY_SCHEMA_VERSION,
         generation: 23,
         revision: "e".repeat(64),
         capabilities: vec![binding.clone()],
+        cursor: CapabilitySnapshotCursor {
+            schema: CAPABILITY_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+            generation: 23,
+            revision: "e".repeat(64),
+            registry_revision: format!("sha256:{}", "f".repeat(64)),
+            packages: Vec::new(),
+            unleasable_routes: Vec::new(),
+        },
     };
     let installed = installed_plugin_plan_evidence_from_snapshot(&snapshot, &extension).unwrap();
     assert_eq!(installed.capability_generation, 23);

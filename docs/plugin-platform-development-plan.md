@@ -180,6 +180,9 @@ Acceptance:
 Priority: P0
 Status: in progress
 
+- [x] Expose the Use-owned typed capability/Registry cursor and an injected,
+  all-or-nothing exact-generation snapshot lease. Keep CLI snapshot schema v2
+  unchanged and leave Run scope ownership to Code.
 - Run one shared Plugin Manager application service.
 - Keep Registry source state, catalog cache, plan generation, policy, apply, and
   operation replay out of view-specific code.

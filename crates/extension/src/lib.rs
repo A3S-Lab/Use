@@ -55,8 +55,9 @@ pub use registry::{
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionLifecycleResult,
     ExtensionLifecycleRollbackResult, ExtensionReceipt, ExtensionRegistry,
     ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot, ExtensionRouteBinding,
-    ExtensionRouteLease, ExtensionTrust, InstalledExtension, UninstallResult,
-    EXTENSION_RECEIPT_SCHEMA_VERSION, EXTENSION_REGISTRY_CUTOVER_SCHEMA,
+    ExtensionRouteLease, ExtensionSnapshotCursor, ExtensionSnapshotLease, ExtensionSnapshotPackage,
+    ExtensionTrust, InstalledExtension, UninstallResult, EXTENSION_RECEIPT_SCHEMA_VERSION,
+    EXTENSION_REGISTRY_CUTOVER_SCHEMA, EXTENSION_SNAPSHOT_CURSOR_SCHEMA,
     MAX_PENDING_REGISTRY_CUTOVERS,
 };
 pub use registry_sources::{

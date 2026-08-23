@@ -24,11 +24,24 @@ use tokio::io::AsyncReadExt;
 mod runtime_tasks;
 #[cfg(feature = "extensions")]
 use runtime_tasks::runtime_task_evidence_from_store;
+#[path = "capability_registry/lease.rs"]
+mod lease;
+use lease::ExtensionCursorEvidence;
+pub use lease::{
+    acquire_snapshot_lease, CapabilityPackageGeneration, CapabilitySnapshotCursor,
+    CapabilitySnapshotLease, CAPABILITY_SNAPSHOT_CURSOR_SCHEMA,
+};
+
+#[cfg(feature = "extensions")]
+pub use crate::surface_reconciler::{
+    ReconciledSurface, SurfaceDesiredState, SurfaceObservedState, SurfaceOwner,
+    SurfaceReconcileSnapshot, SurfaceStateReason,
+};
 
 #[cfg(feature = "extensions")]
 use crate::surface_reconciler::{
     reconcile_with_runtime_and_knowledge, PluginDesiredState, PluginObservedState,
-    SurfaceObservations, SurfaceObservedState, SurfaceReconcileSnapshot,
+    SurfaceObservations,
 };
 #[cfg(feature = "extensions")]
 use crate::{
@@ -41,7 +54,7 @@ use crate::{
     plugin_runtime::RuntimeBindingStore,
 };
 
-const SCHEMA_VERSION: u32 = 2;
+pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 2;
 #[cfg(feature = "extensions")]
 const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
 const WATCH_INTERVAL: Duration = Duration::from_millis(100);
@@ -50,14 +63,115 @@ const MAX_FLOW_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CapabilityRegistrySnapshot {
+pub struct CapabilityRegistrySnapshot {
     pub schema_version: u32,
     pub generation: u64,
     pub revision: String,
     pub capabilities: Vec<CapabilityBinding>,
+    #[serde(skip)]
+    cursor: CapabilitySnapshotCursor,
+}
+
+/// Host-composed capability projection over one authoritative Use Registry.
+///
+/// Managed hosts inject the same [`a3s_use_extension::ExtensionRegistry`]
+/// used by package planning and lifecycle cutover. [`Self::from_env`] is only
+/// the standalone facade composition.
+#[derive(Debug, Clone)]
+pub struct CapabilityRegistry {
+    #[cfg(feature = "extensions")]
+    extensions: a3s_use_extension::ExtensionRegistry,
+}
+
+impl CapabilityRegistry {
+    pub fn from_env() -> UseResult<Self> {
+        Ok(Self {
+            #[cfg(feature = "extensions")]
+            extensions: a3s_use_extension::ExtensionRegistry::from_env()?,
+        })
+    }
+
+    #[cfg(feature = "extensions")]
+    pub fn new(extensions: a3s_use_extension::ExtensionRegistry) -> Self {
+        Self { extensions }
+    }
+
+    #[cfg(feature = "extensions")]
+    pub fn extension_registry(&self) -> &a3s_use_extension::ExtensionRegistry {
+        &self.extensions
+    }
+
+    pub async fn snapshot(&self) -> UseResult<CapabilityRegistrySnapshot> {
+        #[cfg(feature = "extensions")]
+        let (extension_cursor, extensions) = stable_extensions(&self.extensions).await?;
+        #[cfg(not(feature = "extensions"))]
+        let (extension_cursor, extensions) = stable_extensions().await?;
+        let mut capabilities = vec![
+            browser_capability().await?,
+            ocr_capability().await?,
+            box_capability(),
+        ];
+        capabilities.extend(extensions);
+        capabilities.sort_by(|left, right| left.id.cmp(&right.id));
+        validate_unique_tool_task_names(&capabilities)?;
+
+        let revision = revision(&capabilities)?;
+        let cursor = CapabilitySnapshotCursor::from_projection(&revision, extension_cursor)?;
+        Ok(CapabilityRegistrySnapshot {
+            schema_version: CAPABILITY_REGISTRY_SCHEMA_VERSION,
+            generation: cursor.generation,
+            revision,
+            capabilities,
+            cursor,
+        })
+    }
+
+    pub async fn acquire_snapshot_lease(
+        &self,
+        expected: &CapabilitySnapshotCursor,
+    ) -> UseResult<Option<CapabilitySnapshotLease>> {
+        lease::acquire_snapshot_lease_from(self, expected).await
+    }
+
+    pub async fn wait_for_change(
+        &self,
+        after_generation: u64,
+        after_revision: Option<&str>,
+        timeout: Duration,
+    ) -> UseResult<Option<CapabilityRegistrySnapshot>> {
+        let deadline = Instant::now().checked_add(timeout).ok_or_else(|| {
+            UseError::new(
+                "use.capability.timeout_invalid",
+                "The capability watch timeout is too large.",
+            )
+        })?;
+
+        loop {
+            let current = self.snapshot().await?;
+            let changed = match after_revision {
+                Some(revision) => {
+                    current.generation != after_generation || current.revision != revision
+                }
+                None => current.generation > after_generation,
+            };
+            if changed {
+                return Ok(Some(current));
+            }
+
+            let now = Instant::now();
+            if now >= deadline {
+                return Ok(None);
+            }
+            tokio::time::sleep(WATCH_INTERVAL.min(deadline.saturating_duration_since(now))).await;
+        }
+    }
 }
 
 impl CapabilityRegistrySnapshot {
+    pub fn cursor(&self) -> &CapabilitySnapshotCursor {
+        &self.cursor
+    }
+
     #[cfg(feature = "extensions")]
     pub(crate) fn knowledge_projections(&self) -> Vec<OkfCapabilityProjection> {
         let mut projections = self
@@ -76,117 +190,117 @@ impl CapabilityRegistrySnapshot {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-enum CapabilityOrigin {
+pub enum CapabilityOrigin {
     BuiltIn,
     Extension,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-enum McpTransport {
+pub enum McpTransport {
     Stdio,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct McpSurface {
-    target: String,
-    transport: McpTransport,
+pub struct McpSurface {
+    pub target: String,
+    pub transport: McpTransport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SkillSurface {
-    path: PathBuf,
-    sha256: String,
+pub struct SkillSurface {
+    pub path: PathBuf,
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-enum FlowEngine {
+pub enum FlowEngine {
     A3sFlow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-enum FlowRuntime {
+pub enum FlowRuntime {
     NativeTs,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FlowSurface {
-    id: String,
-    engine: FlowEngine,
-    runtime: FlowRuntime,
-    source: ManagedAsset,
-    export_name: String,
+pub struct FlowSurface {
+    pub id: String,
+    pub engine: FlowEngine,
+    pub runtime: FlowRuntime,
+    pub source: ManagedAsset,
+    pub export_name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    requires_tools: Vec<String>,
+    pub requires_tools: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    requires_mcp: Vec<String>,
+    pub requires_mcp: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    requires_okf: Vec<String>,
+    pub requires_okf: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ProjectedLifecycleIdentity {
-    package_id: String,
-    package_digest: String,
-    manifest_digest: String,
-    generation: u64,
+pub struct ProjectedLifecycleIdentity {
+    pub package_id: String,
+    pub package_digest: String,
+    pub manifest_digest: String,
+    pub generation: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ToolTaskProjection {
-    tool_name: String,
-    surface_id: String,
-    command: String,
-    json_output: bool,
-    timeout_ms: u64,
-    scope: PlanScope,
-    lifecycle_identity: ProjectedLifecycleIdentity,
-    provider_id: String,
+pub struct ToolTaskProjection {
+    pub tool_name: String,
+    pub surface_id: String,
+    pub command: String,
+    pub json_output: bool,
+    pub timeout_ms: u64,
+    pub scope: PlanScope,
+    pub lifecycle_identity: ProjectedLifecycleIdentity,
+    pub provider_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ManagedAsset {
-    path: PathBuf,
-    sha256: String,
-    media_type: String,
+pub struct ManagedAsset {
+    pub path: PathBuf,
+    pub sha256: String,
+    pub media_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ActivityBarContribution {
-    id: String,
-    title: String,
-    description: String,
-    icon: String,
-    entry: ManagedAsset,
+pub struct ActivityBarContribution {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub icon: String,
+    pub entry: ManagedAsset,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    styles: Vec<ManagedAsset>,
+    pub styles: Vec<ManagedAsset>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    scripts: Vec<ManagedAsset>,
+    pub scripts: Vec<ManagedAsset>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    skill: Option<String>,
-    order: i32,
+    pub skill: Option<String>,
+    pub order: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RepositoryBinding {
-    url: String,
+pub struct RepositoryBinding {
+    pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    revision: Option<String>,
+    pub revision: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PluginPlannerEvidence {
+pub struct PluginPlannerEvidence {
     pub schema_version: u32,
     pub package_id: String,
     pub package_sha256: String,
@@ -199,59 +313,43 @@ pub(crate) struct PluginPlannerEvidence {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CapabilityBinding {
-    id: String,
-    route: String,
-    version: String,
-    origin: CapabilityOrigin,
-    enabled: bool,
-    readiness: Readiness,
+pub struct CapabilityBinding {
+    pub id: String,
+    pub route: String,
+    pub version: String,
+    pub origin: CapabilityOrigin,
+    pub enabled: bool,
+    pub readiness: Readiness,
     #[cfg(feature = "extensions")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    reconciliation: Option<SurfaceReconcileSnapshot>,
+    pub reconciliation: Option<SurfaceReconcileSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    planner_evidence: Option<PluginPlannerEvidence>,
+    pub planner_evidence: Option<PluginPlannerEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    package_root: Option<PathBuf>,
+    pub package_root: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    lifecycle_generation: Option<u64>,
+    pub lifecycle_generation: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    requires_use: Option<String>,
+    pub requires_use: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    repository: Option<RepositoryBinding>,
-    surfaces: Vec<String>,
+    pub repository: Option<RepositoryBinding>,
+    pub surfaces: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mcp: Option<McpSurface>,
+    pub mcp: Option<McpSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    skills: Vec<SkillSurface>,
+    pub skills: Vec<SkillSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    flows: Vec<FlowSurface>,
+    pub flows: Vec<FlowSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    knowledge: Vec<OkfCapabilityProjection>,
+    pub knowledge: Vec<OkfCapabilityProjection>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    activity_bar: Vec<ActivityBarContribution>,
+    pub activity_bar: Vec<ActivityBarContribution>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    tool_tasks: Vec<ToolTaskProjection>,
+    pub tool_tasks: Vec<ToolTaskProjection>,
 }
 
-pub(crate) async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
-    let (generation, extensions) = stable_extensions().await?;
-    let mut capabilities = vec![
-        browser_capability().await?,
-        ocr_capability().await?,
-        box_capability(),
-    ];
-    capabilities.extend(extensions);
-    capabilities.sort_by(|left, right| left.id.cmp(&right.id));
-    validate_unique_tool_task_names(&capabilities)?;
-
-    let revision = revision(&capabilities)?;
-    Ok(CapabilityRegistrySnapshot {
-        schema_version: SCHEMA_VERSION,
-        generation,
-        revision,
-        capabilities,
-    })
+pub async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
+    CapabilityRegistry::from_env()?.snapshot().await
 }
 
 fn validate_unique_tool_task_names(capabilities: &[CapabilityBinding]) -> UseResult<()> {
@@ -296,36 +394,14 @@ pub(crate) async fn installed_plugin_plan_evidence(
     ))
 }
 
-pub(crate) async fn wait_for_change(
+pub async fn wait_for_change(
     after_generation: u64,
     after_revision: Option<&str>,
     timeout: Duration,
 ) -> UseResult<Option<CapabilityRegistrySnapshot>> {
-    let deadline = Instant::now().checked_add(timeout).ok_or_else(|| {
-        UseError::new(
-            "use.capability.timeout_invalid",
-            "The capability watch timeout is too large.",
-        )
-    })?;
-
-    loop {
-        let current = snapshot().await?;
-        let changed = match after_revision {
-            Some(revision) => {
-                current.generation != after_generation || current.revision != revision
-            }
-            None => current.generation > after_generation,
-        };
-        if changed {
-            return Ok(Some(current));
-        }
-
-        let now = Instant::now();
-        if now >= deadline {
-            return Ok(None);
-        }
-        tokio::time::sleep(WATCH_INTERVAL.min(deadline.saturating_duration_since(now))).await;
-    }
+    CapabilityRegistry::from_env()?
+        .wait_for_change(after_generation, after_revision, timeout)
+        .await
 }
 
 async fn browser_capability() -> UseResult<CapabilityBinding> {
@@ -647,15 +723,20 @@ fn skill_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError 
 }
 
 #[cfg(feature = "extensions")]
-async fn stable_extensions() -> UseResult<(u64, Vec<CapabilityBinding>)> {
+async fn stable_extensions(
+    registry: &a3s_use_extension::ExtensionRegistry,
+) -> UseResult<(ExtensionCursorEvidence, Vec<CapabilityBinding>)> {
     for _ in 0..MAX_STABLE_SNAPSHOT_ATTEMPTS {
-        let before = crate::extension_host::snapshot().await?;
-        let Some(capabilities) = project_extensions(&before).await? else {
+        let before = registry.snapshot().await?;
+        let Some(capabilities) = project_extensions(registry, &before).await? else {
             continue;
         };
-        let after = crate::extension_host::snapshot().await?;
+        let after = registry.snapshot().await?;
         if before == after {
-            return Ok((before.generation, capabilities));
+            return Ok((
+                ExtensionCursorEvidence::from_snapshot(&before)?,
+                capabilities,
+            ));
         }
     }
     Err(UseError::new(
@@ -666,17 +747,18 @@ async fn stable_extensions() -> UseResult<(u64, Vec<CapabilityBinding>)> {
 }
 
 #[cfg(not(feature = "extensions"))]
-async fn stable_extensions() -> UseResult<(u64, Vec<CapabilityBinding>)> {
-    Ok((0, Vec::new()))
+async fn stable_extensions() -> UseResult<(ExtensionCursorEvidence, Vec<CapabilityBinding>)> {
+    Ok((ExtensionCursorEvidence::empty(), Vec::new()))
 }
 
 #[cfg(feature = "extensions")]
 async fn project_extensions(
+    registry: &a3s_use_extension::ExtensionRegistry,
     snapshot: &a3s_use_extension::ExtensionRegistrySnapshot,
 ) -> UseResult<Option<Vec<CapabilityBinding>>> {
     let mut capabilities = Vec::with_capacity(snapshot.routes.len());
     for route in &snapshot.routes {
-        let Some(extension) = crate::extension_host::get_snapshot_binding(route).await? else {
+        let Some(extension) = registry.get_snapshot_binding(route).await? else {
             return Ok(None);
         };
         let receipt = &extension.receipt;
@@ -697,7 +779,7 @@ async fn project_extensions(
         {
             return Ok(None);
         }
-        capabilities.push(project_extension(&extension, surfaces).await?);
+        capabilities.push(project_extension(&extension, surfaces, registry.paths()).await?);
     }
     Ok(Some(capabilities))
 }
@@ -706,27 +788,27 @@ async fn project_extensions(
 async fn project_extension(
     extension: &a3s_use_extension::InstalledExtension,
     surfaces: Vec<String>,
+    paths: &a3s_use_extension::ExtensionPaths,
 ) -> UseResult<CapabilityBinding> {
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
     let scope = default_plan_scope();
     let flow_observations = flow_observations_from_store(
         extension,
-        &FlowRuntimeBindingStore::from_extension_paths(&paths),
+        &FlowRuntimeBindingStore::from_extension_paths(paths),
         &scope,
     )
     .await?;
     let knowledge_evidence = knowledge_evidence_from_store(
         extension,
-        &OkfKnowledgeBindingStore::from_extension_paths(&paths),
+        &OkfKnowledgeBindingStore::from_extension_paths(paths),
         &OkfKnowledgeClient::new(std::sync::Arc::new(
-            SqliteOkfKnowledgeAdapter::from_extension_paths(&paths),
+            SqliteOkfKnowledgeAdapter::from_extension_paths(paths),
         )),
         &scope,
     )
     .await?;
     let runtime_task_evidence = runtime_task_evidence_from_store(
         extension,
-        &RuntimeBindingStore::from_extension_paths(&paths),
+        &RuntimeBindingStore::from_extension_paths(paths),
         &scope,
     )
     .await?;

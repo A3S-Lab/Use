@@ -426,6 +426,18 @@ ID; missing or mismatched bindings remain unpublished. Watchers resume by
 generation plus revision and can hot-refresh resident hosts without polling
 package directories.
 
+For admission that spans more than one package, the injected
+`CapabilityRegistry` derives `a3s.use.capability-snapshot-cursor.v1`. It binds
+that capability revision to the exact Extension Registry digest and sorted
+package, manifest, and lifecycle generations. Acquisition takes every shared
+route lease in canonical order and rechecks the publication only after the
+complete batch is held. A concurrent cutover, hidden or contended generation,
+digest drift, or enabled non-lifecycle route yields no partial lease. The
+non-clone `CapabilitySnapshotLease` is `Send + Sync`; Code may own it for a Run
+without receiving package mutation authority. Rust `Drop` releases only the
+synchronous locks, while Use keeps asynchronous drain and retirement in its
+explicit lifecycle coordinator.
+
 The steady-state watch path reads immutable publications without acquiring the
 Registry writer lock. A watcher may take that lock once to repair a verified
 receipt/publication mismatch after a crash. Lifecycle mutations absorb this
