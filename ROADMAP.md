@@ -399,16 +399,21 @@ Status: in progress
   into promotion within the two-second retry bound. A persistent handle stops at
   the bound without publishing or deleting the complete partial; after release,
   the next transaction rehashes, promotes, and stages the exact bytes without a
-  network transfer. Reboot recovery, antivirus contention beyond this exact
-  promotion boundary, product-host contention, and the remaining platform
+  network transfer. Invalid-partial cleanup and cache GC deletion of stale,
+  partial, and verified-target entries now use the same bounded blocking retry.
+  Native tests prove transient scanner release converges for each cleanup path;
+  a persistent selected-target lock stops at two seconds, preserves that entry,
+  and a later prune rescans and finishes after any earlier durable deletions.
+  Reboot recovery, antivirus contention beyond these exact target promotion and
+  cache-removal boundaries, product-host contention, and the remaining platform
   scenarios stay open.
 - [x] Test real-process uninstall interruption between durable Registry cutover
   and its package receipt, then hold the prior generation lease through restart
   to prove drain-before-removal and exact generation replay.
 - [ ] Complete the interrupted download, archive extraction, graph/Grant
   cutover, drain, removal, process crash, reboot, remaining antivirus contention
-  outside verified-target promotion, and reparse-point replacement matrix. A
-  real `a3s-use` process-kill test now
+  outside verified-target promotion and cache removal, and reparse-point
+  replacement matrix. A real `a3s-use` process-kill test now
   proves digest-bound target download resume without partial publication. A
   second real-process test kills installation while a verified high-entry
   archive is being extracted, proves no receipt, graph, pending operation, or

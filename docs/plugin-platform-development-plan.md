@@ -327,9 +327,12 @@ Status: in progress
   tests also prove transient no-delete-share contention converges within the
   two-second promotion bound, while persistent contention preserves the complete
   partial for a later zero-network rehash, promotion, and staging retry.
+  Invalid-partial cleanup and stale/partial/verified-target cache reclamation use
+  the same bounded blocking delete; native tests prove transient convergence and
+  persistent selected-target preservation followed by an exact rescan retry.
 - Expand filesystem coverage to externally raced targets, antivirus contention
-  outside verified-target promotion and the shared publication paths, process
-  groups, named resources, and reboot recovery.
+  outside verified-target promotion, cache removal, and the shared publication
+  paths, process groups, named resources, and reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
 
 Acceptance: every advertised platform passes the same contract, lifecycle,

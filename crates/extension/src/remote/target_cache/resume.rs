@@ -5,7 +5,9 @@ use a3s_use_core::UseResult;
 use tokio::fs;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
-use crate::package::{activate_temporary_file, io_error, sync_parent_directory};
+use crate::package::{
+    activate_temporary_file, io_error, remove_file_with_windows_retry, sync_parent_directory,
+};
 
 use super::{
     acquire_target_cache_lock, ensure_cache_directory, open_verified_file, secure_file,
@@ -494,9 +496,7 @@ fn validate_partial_metadata(
 }
 
 async fn remove_partial(path: &Path, cache_directory: &Path) -> UseResult<()> {
-    fs::remove_file(path)
-        .await
-        .map_err(|error| io_error("remove resumable Registry target", path, error))?;
+    remove_file_with_windows_retry(path.to_path_buf(), "remove resumable Registry target").await?;
     sync_parent_directory(cache_directory, "verified target cache").await
 }
 
@@ -505,20 +505,6 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
-
-    #[cfg(windows)]
-    fn open_reading_scanner_without_delete_share(path: &Path) -> std::fs::File {
-        use std::os::windows::fs::OpenOptionsExt;
-
-        const FILE_SHARE_READ: u32 = 0x0000_0001;
-        const FILE_SHARE_WRITE: u32 = 0x0000_0002;
-
-        std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-            .open(path)
-            .unwrap()
-    }
 
     #[tokio::test]
     async fn complete_partial_is_verified_and_promoted_without_a_request() {
@@ -738,7 +724,7 @@ mod tests {
         .await
         .unwrap();
         target.append(body).await.unwrap();
-        let scanner = open_reading_scanner_without_delete_share(&partial);
+        let scanner = crate::test_filesystem::open_reading_scanner_without_delete_share(&partial);
         let mut promotion = Box::pin(target.commit("use.extension.registry_target_invalid"));
 
         tokio::select! {
@@ -774,7 +760,7 @@ mod tests {
             .await
             .unwrap();
         target.append(body).await.unwrap();
-        let scanner = open_reading_scanner_without_delete_share(&partial);
+        let scanner = crate::test_filesystem::open_reading_scanner_without_delete_share(&partial);
 
         let started = std::time::Instant::now();
         let error = target
@@ -808,6 +794,46 @@ mod tests {
         let staged = temporary.path().join("recovered-staging");
         recovered.stage_into(&staged).await.unwrap();
         assert_eq!(std::fs::read(staged).unwrap(), body);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn invalid_partial_cleanup_waits_for_a_transient_scanner_lock() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let cache = datastore.join("verified-targets/sha256");
+        let expected = b"trusted";
+        let corrupt = b"corrupt";
+        let digest = format!("{:x}", Sha256::digest(expected));
+        let partial = cache.join(partial_name(&digest));
+        let target_path = cache.join(&digest);
+        let mut target = ResumableTarget::begin(
+            datastore,
+            expected.len() as u64,
+            &digest,
+            VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+        target.append(corrupt).await.unwrap();
+        let scanner = crate::test_filesystem::open_reading_scanner_without_delete_share(&partial);
+        let mut commit = Box::pin(target.commit("use.extension.registry_target_invalid"));
+
+        tokio::select! {
+            result = &mut commit => {
+                panic!("invalid-partial cleanup completed while the scanner denied delete sharing: {result:?}")
+            }
+            () = tokio::time::sleep(std::time::Duration::from_millis(200)) => {}
+        }
+
+        drop(scanner);
+        let error = commit
+            .await
+            .expect_err("the corrupt partial must remain untrusted");
+        assert_eq!(error.code, "use.extension.registry_target_invalid");
+        assert!(!target.is_ready());
+        assert!(!partial.exists());
+        assert!(!target_path.exists());
     }
 
     #[cfg(any(unix, windows))]

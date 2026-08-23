@@ -53,7 +53,7 @@ pub fn rename_path_with_windows_retry_blocking(source: &Path, target: &Path) -> 
             match std::fs::rename(source, target) {
                 Ok(()) => return Ok(()),
                 Err(error) => {
-                    if !windows_persist_error_is_retryable(&error)
+                    if !windows_path_mutation_error_is_retryable(&error)
                         || started.elapsed() >= WINDOWS_PERSIST_RETRY_TIMEOUT
                     {
                         return Err(error);
@@ -70,6 +70,35 @@ pub fn rename_path_with_windows_retry_blocking(source: &Path, target: &Path) -> 
     }
 }
 
+/// Remove a file, retrying transient Windows sharing failures.
+///
+/// This function may sleep while Windows releases a transient scanner or
+/// sharing lock, so callers must run it on a blocking worker.
+pub(crate) fn remove_file_with_windows_retry_blocking(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        let started = std::time::Instant::now();
+        loop {
+            match std::fs::remove_file(path) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    if !windows_path_mutation_error_is_retryable(&error)
+                        || started.elapsed() >= WINDOWS_PERSIST_RETRY_TIMEOUT
+                    {
+                        return Err(error);
+                    }
+                    let remaining = WINDOWS_PERSIST_RETRY_TIMEOUT.saturating_sub(started.elapsed());
+                    std::thread::sleep(WINDOWS_PERSIST_RETRY_DELAY.min(remaining));
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::remove_file(path)
+    }
+}
+
 fn persist_temporary_path_blocking(
     temporary: tempfile::TempPath,
     target: &Path,
@@ -83,7 +112,7 @@ fn persist_temporary_path_blocking(
             match persist(temporary, target) {
                 Ok(()) => return Ok(()),
                 Err(error) => {
-                    if !windows_persist_error_is_retryable(&error.error)
+                    if !windows_path_mutation_error_is_retryable(&error.error)
                         || started.elapsed() >= WINDOWS_PERSIST_RETRY_TIMEOUT
                     {
                         return Err(error.error);
@@ -113,9 +142,9 @@ fn persist_noclobber(
 }
 
 #[cfg(windows)]
-fn windows_persist_error_is_retryable(error: &io::Error) -> bool {
-    // MoveFileEx reports transient scanner, sharing, and byte-range locks as
-    // access denied, sharing violations, or lock violations respectively.
+fn windows_path_mutation_error_is_retryable(error: &io::Error) -> bool {
+    // MoveFileEx and DeleteFile report transient scanner, sharing, and
+    // byte-range locks as access denied, sharing violations, or lock violations.
     matches!(error.raw_os_error(), Some(5 | 32 | 33))
 }
 
@@ -182,6 +211,17 @@ mod tests {
         assert!(std::fs::metadata(&target).unwrap().permissions().readonly());
         assert_eq!(std::fs::read(&target).unwrap(), b"state");
         std::fs::set_permissions(&target, original_permissions).unwrap();
+    }
+
+    #[test]
+    fn file_removal_deletes_the_exact_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("state.json");
+        std::fs::write(&target, b"state").unwrap();
+
+        remove_file_with_windows_retry_blocking(&target).unwrap();
+
+        assert!(!target.exists());
     }
 
     #[cfg(windows)]
@@ -259,7 +299,7 @@ mod tests {
         let error = persist_temporary_replace_blocking(temporary.clone(), &target).unwrap_err();
         let elapsed = started.elapsed();
 
-        assert!(windows_persist_error_is_retryable(&error));
+        assert!(windows_path_mutation_error_is_retryable(&error));
         assert!(elapsed >= WINDOWS_PERSIST_RETRY_TIMEOUT);
         assert!(elapsed < WINDOWS_PERSIST_RETRY_TIMEOUT + std::time::Duration::from_secs(8));
         assert!(!temporary.exists());
@@ -320,7 +360,7 @@ mod tests {
         let error = rename_path_with_windows_retry_blocking(&source, &target).unwrap_err();
         let elapsed = started.elapsed();
 
-        assert!(windows_persist_error_is_retryable(&error));
+        assert!(windows_path_mutation_error_is_retryable(&error));
         assert!(elapsed >= WINDOWS_PERSIST_RETRY_TIMEOUT);
         assert!(elapsed < WINDOWS_PERSIST_RETRY_TIMEOUT + std::time::Duration::from_secs(8));
         assert!(source.is_dir());

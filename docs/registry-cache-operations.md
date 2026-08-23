@@ -133,6 +133,16 @@ Under the exclusive target-cache lock, commit removes:
 4. only as many entries as required to satisfy byte, entry, and disk-space
    bounds.
 
+On Windows, invalid-partial cleanup and every selected cache deletion use the
+same blocking two-second retry for access-denied, sharing-violation, and
+lock-violation failures. Native tests hold no-delete-share scanner handles over
+stale entries, inactive partials, and verified targets. Transient release lets
+cleanup finish; a persistent selected-target lock returns `use.extension.io` at
+the bound and leaves that entry intact. Deletions completed earlier in the same
+prune remain durable. After releasing the scanner, retry the confirmed prune;
+the new inventory excludes those earlier deletions and finishes the residual
+selection without touching installed package state.
+
 The incoming target or partial is protected throughout download, verification,
 promotion, and staging. Every deletion is followed by directory synchronization
 where the platform supports it. A race that consumes the admitted free space

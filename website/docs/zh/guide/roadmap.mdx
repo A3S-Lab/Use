@@ -144,7 +144,10 @@ durable Host outcome 才会报告 `Completed`。
   外部写入、删除与替换。Windows 原生 scanner 测试现已证明，短暂的
   no-delete-share 争用会在两秒 promotion 边界内收敛；持续争用不会发布 final
   target，并会保留完整 partial，供后续无网络重试重新哈希、promotion 和 staging。
-  reboot recovery 以及超出这一精确 promotion 边界的 antivirus contention 仍未完成。
+  invalid-partial 清理以及 stale、partial、verified-target cache 删除也使用相同的
+  有界 blocking retry。原生测试证明短暂争用可以收敛；持续的 selected-target
+  lock 会保留该 entry，后续 prune 会重新扫描剩余 inventory。reboot recovery
+  以及超出这些精确 promotion 与 cache-removal 边界的 antivirus contention 仍未完成。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
 - 真实进程测试现已覆盖 target 下载断点续传，以及 verified archive 提取期间
@@ -173,8 +176,8 @@ durable Host outcome 才会报告 `Completed`。
   regrant/revocation，并且不额外推进 generation，最后持久化可精确重放的
   terminal Host outcome。
 - 覆盖下载中断、归档提取、cutover、drain、进程崩溃、真实产品宿主 Grant
-  cutover、重启、verified-target promotion 之外的其余杀毒软件争用，以及
-  reparse-point replacement race。
+  cutover、重启、verified-target promotion 与 cache removal 之外的其余杀毒软件
+  争用，以及 reparse-point replacement race。
 
 ### 5. 供应链与运维 — 进行中
 

@@ -162,8 +162,12 @@ package, and only a durable Host outcome reports `Completed`.
   scanner tests now prove that transient no-delete-share contention converges
   within the two-second promotion bound. Persistent contention publishes
   nothing and preserves the complete partial for a later zero-network rehash,
-  promotion, and staging retry. Reboot recovery and antivirus contention beyond
-  this exact promotion boundary remain open.
+  promotion, and staging retry. Invalid-partial cleanup and stale, partial, and
+  verified-target cache deletion use the same bounded blocking retry. Native
+  tests prove transient convergence and persistent selected-target preservation
+  followed by a residual-inventory rescan. Reboot recovery and antivirus
+  contention beyond these exact promotion and cache-removal boundaries remain
+  open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Real-process tests now cover resumable target-download interruption and
@@ -196,7 +200,8 @@ package, and only a durable Host outcome reports `Completed`.
   replayable terminal Host outcomes without generation inflation.
 - Cover interrupted download, archive extraction, cutover, drain, process
   crash, product-host Grant cutover, reboot, remaining antivirus contention
-  outside verified-target promotion, and reparse-point replacement races.
+  outside verified-target promotion and cache removal, and reparse-point
+  replacement races.
 
 ### 5. Supply chain and operations — in progress
 

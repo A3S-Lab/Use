@@ -583,8 +583,14 @@ leaves the exact complete partial intact, and permits the next operation to
 rehash, promote, and stage it without a network transfer after the handle is
 released. Stale atomic-write files are removed first, followed by the oldest
 resumable partials and then the oldest verified targets until the byte, entry,
-and disk-space bounds are satisfied. This qualifies the verified-target
-promotion boundary, not the broader product-host, reboot, and antivirus matrix.
+and disk-space bounds are satisfied. Invalid-partial cleanup and those three GC
+deletion classes use the same bounded blocking retry. Native Windows tests prove
+transient scanner release for stale entries, partials, and invalid-partial
+cleanup. A persistent lock on the selected verified target stops at two seconds,
+preserves that target, and lets a later prune rescan and finish the remaining
+inventory; any earlier successful deletion remains durable. This qualifies the
+verified-target promotion and cache-removal boundaries, not the broader
+product-host, reboot, and antivirus matrix.
 
 Inspect cache usage without making a Registry request:
 
@@ -1056,7 +1062,7 @@ release claim.
 | --- | --- | --- |
 | Linux x86_64 / arm64 | Full non-Science workspace CI plus release-container conformance | Development preview |
 | macOS arm64 / x86_64 | Current non-Science workspace build and tests | Development preview |
-| Windows x86_64 | Current non-Science workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, verified-target scanner-lock promotion/recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
+| Windows x86_64 | Current non-Science workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, verified-target scanner-lock promotion/cache-removal recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
 Native CI run
 [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)

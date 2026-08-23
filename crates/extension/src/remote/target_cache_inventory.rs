@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use a3s_use_core::{UseError, UseResult};
 use tokio::fs;
 
-use crate::package::{io_error, sync_parent_directory};
+use crate::package::{io_error, remove_file_with_windows_retry, sync_parent_directory};
 
 use super::{VerifiedTargetCachePolicy, MAX_REMOTE_ARCHIVE_BYTES};
 
@@ -424,9 +424,7 @@ async fn available_space(path: &Path) -> UseResult<u64> {
 }
 
 async fn remove_cache_file(path: &Path) -> UseResult<()> {
-    fs::remove_file(path)
-        .await
-        .map_err(|error| io_error("remove verified target cache entry", path, error))
+    remove_file_with_windows_retry(path.to_path_buf(), "remove verified target cache entry").await
 }
 
 fn ensure_target_fits_policy(

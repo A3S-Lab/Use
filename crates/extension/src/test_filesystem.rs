@@ -22,6 +22,20 @@ pub(crate) fn create_directory_link(target: &Path, link: &Path) {
 }
 
 #[cfg(windows)]
+pub(crate) fn open_reading_scanner_without_delete_share(path: &Path) -> std::fs::File {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+
+    std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .open(path)
+        .expect("open test scanner handle")
+}
+
+#[cfg(windows)]
 fn windows_command_path(path: &Path) -> std::ffi::OsString {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 

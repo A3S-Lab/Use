@@ -420,8 +420,12 @@ add a read-only handle that permits the transaction's existing read/write access
 but denies delete sharing: release within the two-second rename retry bound lets
 the same commit finish, while a persistent lock publishes nothing and retains
 the complete partial for rehash, promotion, and staging by a later zero-network
-retry. Antivirus contention beyond this exact target-promotion boundary and
-reboot recovery remain release gates.
+retry. Invalid-partial cleanup and cache GC removal of stale, partial, and
+verified-target entries use the same bounded blocking delete. Transient scanner
+locks converge; a persistent selected-target lock preserves that entry, while
+any earlier successful deletion remains durable and a later prune rescans the
+residual inventory. Antivirus contention beyond these exact target-promotion
+and cache-removal boundaries and reboot recovery remain release gates.
 
 Under the exclusive target-cache lock, admission and confirmed pruning remove
 bounded stale atomic-write files, then resumable partials, then verified targets
