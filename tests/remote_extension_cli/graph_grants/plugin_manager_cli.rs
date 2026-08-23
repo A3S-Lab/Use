@@ -32,7 +32,9 @@ fn run_standalone_plugin_manager_cli_scenario() {
     ));
     let repository = TestRepository::with_targets(targets, 89, FUTURE);
     let server = TestServer::start(repository.routes.clone());
-    let home = temporary.path().join("plugin-manager-cli-home");
+    // Keep the synthetic root below legacy Windows MAX_PATH after the Host
+    // diagnostic store appends its two digest-bound ownership segments.
+    let home = temporary.path().join("h");
     configure_registry(&server, &repository, &home, &[]);
 
     let searched = plugin_command(
