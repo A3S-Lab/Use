@@ -68,6 +68,9 @@ durable Host outcome 才会报告 `Completed`。
   planning operation、持久 reviewed-plan 重开与 digest-only apply。标准 MCP
   adapter 直接从冻结合约生成 10 个 v4 tool，确认只由注入的可信 host provider
   提供。
+- standalone `plugin` CLI 已把同样 10 个 operation 映射到该 service。planning
+  不产生 mutation；精确 apply 必须提供持久 operation ID、plan digest 与显式
+  `--yes`，cached apply 和 replay 均保持零网络。
 - Lifecycle journal 已提供精确崩溃重放、cutover-aware publication、精确
   generation 排空，以及 fail-closed corruption handling。
 - `extension inspect --json` 提供有界 lifecycle 历史；
@@ -105,11 +108,9 @@ durable Host outcome 才会报告 `Completed`。
 
 ### 2. A3S Code TUI 热插拔验收 — 进行中
 
-- 把 CLI、TUI 迁移到已实现的共享 Plugin Manager service，并在 Code 中组合
-  manager MCP。standalone Registry install、upgrade 与 uninstall mutation 已
-  使用该 service，并在保留现有 JSON 字段的同时返回精确 Host plan/apply
-  evidence。显式 reviewed CLI apply、read-side 与 enable/disable 收敛、TUI
-  迁移及 product presentation wiring 仍未完成。
+- 把 A3S Code TUI 迁移到已实现的共享 Plugin Manager service，并在 Code 中
+  组合 manager MCP。standalone CLI 已完成收敛且保留 compatibility JSON 字段；
+  TUI 与 product presentation wiring 不得引入第二套 plan 或 mutation 路径。
 - 对全部六类表面和包含依赖的图验证 install、invoke、精确 generation
   upgrade、再次 invoke、uninstall 与 restart。
 - 证明 User/Workspace scope 隔离、watcher resume、terminal result replay，

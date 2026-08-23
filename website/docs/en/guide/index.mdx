@@ -155,6 +155,33 @@ a3s-use upgrade acme/research \
 a3s-use uninstall acme/research --json
 ```
 
+Use the one-to-one Plugin Manager surface when plan review and mutation must be
+separate. `plan-*` commands return the complete typed Host plan without changing
+package state. Copy the exact `operationId` and `planDigest` from that output;
+apply reopens only that durable pair and accepts confirmation only with explicit
+`--yes`:
+
+```bash
+a3s-use plugin search research --kind tool --json
+a3s-use plugin inspect acme/research --version 2.0.0 --json
+a3s-use plugin plan-install acme/research \
+  --registry-name packages \
+  --version-requirement 2.0.0 \
+  --surface tool/research \
+  --json
+a3s-use plugin apply-plan \
+  --operation-id <operation-id> \
+  --plan-digest sha256:<64-hex-digits> \
+  --yes \
+  --json
+a3s-use plugin plan-disable acme/research --json
+```
+
+Search, inspection, planning, exact apply, and replay support verified-cache
+operation where applicable; apply itself performs no Registry request. An
+MCP agent call never implies user confirmation, and a CLI call without `--yes`
+does not create it either.
+
 When an exact install, upgrade, or uninstall graph remains retained, an
 enable/disable apply has durably admitted its active operation, or a Host has
 reviewed but not admitted its newest enablement plan, inspect the path-free

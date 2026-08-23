@@ -84,11 +84,15 @@ pages, and reviewed-plan reopening all bind back to Host Manager evidence. The
 standard `PluginManagerMcpServer` derives its ten routes directly from
 `PluginManagerToolset::v4()` and delegates every call to that service. Apply
 confirmation is supplied only by an injected trusted host provider. The
-standalone CLI's Registry-backed install, upgrade, and uninstall mutations now
-use this boundary and return the exact Host plan/apply evidence alongside their
-existing output. Explicit reviewed CLI apply, read-side and enable/disable
-convergence, TUI migration, and product-host MCP composition are still open, so
-this partial migration does not satisfy the M2 convergence gate by itself.
+standalone CLI's Registry-backed install, upgrade, and uninstall mutations use
+this boundary and return the exact Host plan/apply evidence alongside their
+existing output. Its `plugin` command maps all ten frozen manager operations to
+the same service: four reads, five non-mutating plans, and one apply that reopens
+the exact durable operation ID plus plan digest and requires explicit `--yes`.
+An ordinary invocation never creates `Ask` confirmation, and exact apply or
+replay performs no Registry request. TUI migration and product-host MCP
+composition remain open, so the complete M2 product convergence gate is not yet
+satisfied.
 
 ## Domain model
 

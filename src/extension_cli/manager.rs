@@ -124,7 +124,7 @@ pub(super) async fn uninstall(package_id: &str) -> UseResult<AppliedGraphMutatio
     })
 }
 
-fn standalone_service() -> UseResult<PluginManagerService> {
+pub(super) fn standalone_service() -> UseResult<PluginManagerService> {
     let host = CognitivePackageHostManager::new(
         standalone_scope(),
         format!("standalone:{}", env!("CARGO_PKG_VERSION")),

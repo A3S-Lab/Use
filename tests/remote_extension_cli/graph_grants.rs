@@ -58,6 +58,8 @@ mod host_scope_isolation;
 mod lifecycle;
 #[path = "graph_grants/plugin_manager.rs"]
 mod plugin_manager;
+#[path = "graph_grants/plugin_manager_cli.rs"]
+mod plugin_manager_cli;
 #[path = "graph_grants/presentation.rs"]
 mod presentation;
 #[path = "graph_grants/reviewed_plan.rs"]

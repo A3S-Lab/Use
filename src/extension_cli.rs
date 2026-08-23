@@ -4,6 +4,8 @@ use std::time::Duration;
 use a3s_use_core::{PluginHostApplyResult, PluginHostPlanResult, UseError, UseResult};
 
 use crate::cli::CommandOutput;
+#[cfg(feature = "extensions")]
+use crate::plugin_manager::PluginManagerService;
 
 #[cfg(feature = "extensions")]
 mod manager;
@@ -74,6 +76,11 @@ impl PluginManagerMutationView {
             result: Box::new(result),
         })
     }
+}
+
+#[cfg(feature = "extensions")]
+pub(crate) fn standalone_plugin_manager_service() -> UseResult<PluginManagerService> {
+    manager::standalone_service()
 }
 
 pub(crate) fn external_package_id(id: &str) -> Option<&str> {

@@ -14,6 +14,21 @@ use std::time::Duration;
 mod component;
 mod knowledge;
 #[cfg(feature = "extensions")]
+mod plugin;
+#[cfg(not(feature = "extensions"))]
+mod plugin {
+    use a3s_use_core::{UseError, UseResult};
+
+    use super::CommandOutput;
+
+    pub(super) async fn run(_args: &[String]) -> UseResult<CommandOutput> {
+        Err(UseError::new(
+            "use.extension.disabled",
+            "Plugin Manager commands require the 'extensions' feature.",
+        ))
+    }
+}
+#[cfg(feature = "extensions")]
 mod registry;
 #[cfg(feature = "extensions")]
 mod state;
@@ -89,6 +104,7 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
         "upgrade" => Box::pin(package_command_alias("upgrade", &args[1..])).await,
         "uninstall" => Box::pin(package_command_alias("uninstall", &args[1..])).await,
         "component" => Box::pin(component::run(&args[1..])).await,
+        "plugin" => Box::pin(plugin::run(&args[1..])).await,
         "knowledge" => knowledge::run(&args[1..]).await,
         "registry" => registry::run(&args[1..]).await,
         "state" => state::run(&args[1..]).await,
@@ -136,6 +152,10 @@ fn help() -> CommandOutput {
             "  a3s-use upgrade <publisher/name> [--registry-name <name>] [--offline] [--json]\n",
             "  a3s-use uninstall <publisher/name> [--json]\n",
             "  a3s-use component list|status|install|upgrade|uninstall [args] [--json]\n",
+            "  a3s-use plugin search|inspect|list-installed|status [args] [--json]\n",
+            "  a3s-use plugin plan-install|plan-upgrade|plan-uninstall [args] [--json]\n",
+            "  a3s-use plugin plan-enable|plan-disable <publisher/name> [--json]\n",
+            "  a3s-use plugin apply-plan --operation-id <id> --plan-digest <sha256> --yes [--json]\n",
             "  a3s-use knowledge search <query> [--limit <n>] [--json]\n",
             "  a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
             "  a3s-use knowledge audit [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
@@ -182,6 +202,7 @@ fn help() -> CommandOutput {
                 "upgrade",
                 "uninstall",
                 "component",
+                "plugin",
                 "knowledge",
                 "registry",
                 "state",
@@ -357,7 +378,7 @@ async fn extension(args: &[String]) -> UseResult<CommandOutput> {
             let package_id = value_argument(args, 1, "extension diagnose requires an ID")?;
             extension_operation_diagnostic(
                 package_id,
-                extension_diagnostic_scope(args)?,
+                managed_scope_argument(args)?,
                 flag_argument(args, "--history")?,
             )
             .await
@@ -809,7 +830,7 @@ fn validate_extension_diagnostic_options(args: &[String]) -> UseResult<()> {
     Ok(())
 }
 
-fn extension_diagnostic_scope(args: &[String]) -> UseResult<a3s_use_core::PlanScope> {
+fn managed_scope_argument(args: &[String]) -> UseResult<a3s_use_core::PlanScope> {
     let kind = match option_argument(args, "--scope-kind")?.unwrap_or("user") {
         "user" => a3s_use_core::PlanScopeKind::User,
         "workspace" => a3s_use_core::PlanScopeKind::Workspace,
