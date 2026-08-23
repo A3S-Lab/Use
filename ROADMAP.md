@@ -410,8 +410,12 @@ Status: in progress
   contention lets the same removal or commit finish; a persistent generation
   lock stops at two seconds after durable hide and receipt removal, retains the
   residual tree, and permits exact removal replay without another Registry
-  generation. Reboot recovery, antivirus contention
-  beyond these exact target promotion, cache-removal, and lifecycle-removal
+  generation. Native tests also hold the active package-staging directory at
+  its atomic generation rename: transient contention lets the same commit
+  finish, while persistent contention fails before receipt or Registry-snapshot
+  mutation, retains residual staging, and permits exact commit replay after
+  release. Reboot recovery, antivirus contention beyond these exact target
+  promotion, cache-removal, active package-commit, and lifecycle-removal
   boundaries, product-host contention, and the remaining platform scenarios
   stay open.
 - [x] Test real-process uninstall interruption between durable Registry cutover
@@ -419,8 +423,9 @@ Status: in progress
   to prove drain-before-removal and exact generation replay.
 - [ ] Complete the interrupted download, archive extraction, graph/Grant
   cutover, drain, removal, process crash, reboot, remaining antivirus contention
-  outside verified-target promotion, cache removal, and lifecycle removal, and
-  reparse-point replacement matrix. A real `a3s-use` process-kill test now
+  outside verified-target promotion, cache removal, active package commit, and
+  lifecycle removal, and reparse-point replacement matrix. A real `a3s-use`
+  process-kill test now
   proves digest-bound target download resume without partial publication. A
   second real-process test kills installation while a verified high-entry
   archive is being extracted, proves no receipt, graph, pending operation, or

@@ -335,10 +335,14 @@ Status: in progress
   retry. Native tests prove transient receipt and nested-file release lets
   removal or commit continue, while persistent generation contention preserves
   the residual tree for exact replay without another Registry generation.
+  Native tests additionally hold the active package-staging directory at its
+  generation rename: transient contention completes the same commit, while a
+  persistent lock fails before receipt or Registry-snapshot mutation, preserves
+  residual staging, and permits exact commit replay after release.
 - Expand filesystem coverage to externally raced targets, antivirus contention
-  outside verified-target promotion, cache removal, lifecycle removal, and the
-  shared publication paths, process groups, named resources, and reboot
-  recovery.
+  outside verified-target promotion, cache removal, active package commit,
+  lifecycle removal, and the shared publication paths, process groups, named
+  resources, and reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
 
 Acceptance: every advertised platform passes the same contract, lifecycle,

@@ -36,6 +36,22 @@ pub(crate) fn open_reading_scanner_without_delete_share(path: &Path) -> std::fs:
 }
 
 #[cfg(windows)]
+pub(crate) fn open_directory_scanner_without_delete_share(path: &Path) -> std::fs::File {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+
+    std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .expect("open test directory scanner handle")
+}
+
+#[cfg(windows)]
 fn windows_command_path(path: &Path) -> std::ffi::OsString {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 

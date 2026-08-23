@@ -229,15 +229,18 @@ journal remain durable, while the receipt, installed graph, and route remain
 absent. Explicit offline replay reclaims the physical partial tree, repeats the
 same package-commit checkpoint, publishes one Registry generation, completes
 the journal, and removes the pending operation without a network request.
-On Windows, lifecycle receipt deletion and recursive removal of that bounded
-abandoned staging tree or a drained immutable package generation retry only
-access-denied, sharing, and lock violations for two seconds on a blocking
-worker. A transient scanner lock over a receipt or nested staging file lets the
-same removal or commit continue. A persistent lock on a drained generation
-returns `use.extension.io` after durable route hiding and receipt removal,
-leaves the exact residual tree, and lets the next removal replay finish without
-another Registry generation. The ownership and bounded inventory checks still
-run before abandoned staging cleanup.
+On Windows, active package-staging rename, lifecycle receipt deletion, and
+recursive removal of that bounded abandoned staging tree or a drained immutable
+package generation retry only access-denied, sharing, and lock violations for
+two seconds per blocking mutation. A transient scanner lock over the active
+staging directory, a receipt, or a nested abandoned-staging file lets the same
+commit or removal continue. A persistent active-staging lock returns
+`use.extension.io` before receipt or Registry-snapshot mutation, leaves the
+residual staging tree, and lets the next commit replay exactly after release. A
+persistent lock on a drained generation returns the same error after durable
+route hiding and receipt removal, leaves its exact residual tree, and lets the
+next removal replay finish without another Registry generation. The ownership
+and bounded inventory checks still run before abandoned staging cleanup.
 Steady-state snapshot and watch reads consume immutable publications without
 that lock. A read may briefly acquire it only for crash reconciliation when
 receipt state and the last publication disagree.

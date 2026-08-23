@@ -17,6 +17,42 @@ use crate::source::{prepare_package_source, PreparedPackageSource};
 use crate::surface_files::validate_planning_bundle_package_binding;
 use crate::ExtensionManifest;
 
+#[cfg(all(test, windows))]
+pub(crate) type BeforeCandidateCommitHook = Box<dyn FnOnce(&Path) + Send>;
+
+#[cfg(all(test, windows))]
+static BEFORE_CANDIDATE_COMMIT_HOOKS: std::sync::Mutex<
+    Vec<(std::path::PathBuf, BeforeCandidateCommitHook)>,
+> = std::sync::Mutex::new(Vec::new());
+
+#[cfg(all(test, windows))]
+pub(crate) fn install_before_candidate_commit_hook(
+    target: std::path::PathBuf,
+    hook: BeforeCandidateCommitHook,
+) {
+    BEFORE_CANDIDATE_COMMIT_HOOKS
+        .lock()
+        .unwrap()
+        .push((target, hook));
+}
+
+#[cfg(all(test, windows))]
+fn run_before_candidate_commit_hook(target: &Path, staging: &Path) {
+    let hook = {
+        let mut hooks = BEFORE_CANDIDATE_COMMIT_HOOKS.lock().unwrap();
+        hooks
+            .iter()
+            .position(|(hook_target, _)| hook_target == target)
+            .map(|index| hooks.swap_remove(index).1)
+    };
+    if let Some(hook) = hook {
+        hook(staging);
+    }
+}
+
+#[cfg(not(all(test, windows)))]
+fn run_before_candidate_commit_hook(_target: &Path, _staging: &Path) {}
+
 impl ExtensionLifecyclePackage {
     pub async fn prepare_local(
         expected_package_id: &str,
@@ -285,6 +321,7 @@ pub(super) async fn commit_candidate_root(
     copy_package(candidate.source.root(), staging.path()).await?;
     validate_committed_root(candidate, staging.path()).await?;
     let staging = staging.keep();
+    run_before_candidate_commit_hook(target, &staging);
     let rename_source = staging.clone();
     let rename_target = target.to_path_buf();
     let renamed = tokio::task::spawn_blocking(move || {

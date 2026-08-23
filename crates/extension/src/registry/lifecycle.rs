@@ -24,6 +24,8 @@ pub use model::{
     ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
     ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
 };
+#[cfg(all(test, windows))]
+pub(crate) use package::install_before_candidate_commit_hook;
 use package::{commit_candidate_root, validate_candidate_source};
 
 use super::{

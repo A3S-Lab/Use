@@ -169,8 +169,13 @@ package, and only a durable Host outcome reports `Completed`.
   lifecycle receipts, abandoned staging, and drained package generations now
   uses the same retry. Native tests prove transient receipt/nested-staging
   convergence and persistent generation preservation followed by exact removal
-  replay without Registry generation inflation. Reboot recovery and antivirus contention beyond these
-  exact promotion, cache-removal, and lifecycle-removal boundaries remain open.
+  replay without Registry generation inflation. Native tests also bind active
+  package-staging rename contention to the commit state machine: a transient
+  lock lets the same commit finish, while a persistent lock leaves receipt and
+  Registry snapshot untouched, preserves residual staging, and permits exact
+  replay after release. Reboot recovery and antivirus contention beyond these
+  exact promotion, cache-removal, active package-commit, and lifecycle-removal
+  boundaries remain open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Real-process tests now cover resumable target-download interruption and

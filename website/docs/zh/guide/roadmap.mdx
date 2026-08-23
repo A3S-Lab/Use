@@ -149,8 +149,11 @@ durable Host outcome 才会报告 `Completed`。
   lock 会保留该 entry，后续 prune 会重新扫描剩余 inventory。bounded abandoned
   lifecycle receipt、staging 与已 drain 的 package generation 也使用相同的删除重试。
   原生测试证明 receipt 与 nested staging 的短暂争用可以收敛；持续的 generation
-  lock 会保留 residual tree，后续 removal 会精确重放且不额外推进 Registry generation。reboot
-  recovery 以及超出这些精确 promotion、cache-removal 与 lifecycle-removal 边界的
+  lock 会保留 residual tree，后续 removal 会精确重放且不额外推进 Registry generation。
+  原生测试也把 active package-staging rename 争用绑定到 commit 状态机。短暂 lock
+  会让同一次 commit 完成；持续 lock 不会改动 receipt 或 Registry snapshot，会保留
+  residual staging，并允许释放后精确重放。reboot recovery 以及超出这些精确
+  promotion、cache-removal、active package-commit 与 lifecycle-removal 边界的
   antivirus contention 仍未完成。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
