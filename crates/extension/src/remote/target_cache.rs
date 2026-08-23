@@ -196,22 +196,21 @@ async fn open_verified_file(
         error_code,
         "The Registry target is not a bounded regular file.",
     )?;
-    let input = verified_file_open_options()
-        .open(path)
-        .await
-        .map_err(|error| {
-            if std::fs::symlink_metadata(path).is_ok_and(|metadata| {
+    let input = match verified_file_open_options().open(path).await {
+        Ok(input) => input,
+        Err(error) => {
+            if fs::symlink_metadata(path).await.is_ok_and(|metadata| {
                 a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file()
             }) {
-                target_cache_error(
+                return Err(target_cache_error(
                     error_code,
                     "The Registry target changed before its bounded handle was opened.",
                 )
-                .with_detail("path", path.display().to_string())
-            } else {
-                io_error("open Registry target", path, error)
+                .with_detail("path", path.display().to_string()));
             }
-        })?;
+            return Err(io_error("open Registry target", path, error));
+        }
+    };
     let opened_metadata = input
         .metadata()
         .await
