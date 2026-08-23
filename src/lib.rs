@@ -1,5 +1,8 @@
 //! Typed facade for A3S application capabilities.
 
+/// Stable user-level scope shared by standalone and embedded package hosts.
+pub const COGNITIVE_PACKAGE_DEFAULT_SCOPE: &str = "user/current";
+
 #[cfg(feature = "browser")]
 mod browser_cli;
 #[cfg(feature = "browser")]
@@ -17,6 +20,8 @@ mod first_use;
 pub mod flow_runtime;
 #[cfg(feature = "extensions")]
 pub mod plugin_lifecycle;
+#[cfg(feature = "extensions")]
+pub mod plugin_manager;
 #[cfg(feature = "extensions")]
 pub mod plugin_runtime;
 #[cfg(feature = "extensions")]

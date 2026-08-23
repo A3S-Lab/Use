@@ -212,6 +212,12 @@ rejection. They are not supported decode paths.
   drain-before-revoke, and joint pre-cutover rollback.
 - [x] Manager MCP toolset v4 with explicit install-time Registry selection,
   read-only planning, and one apply tool.
+- [x] Shared typed `PluginManagerService` over the production Host Manager,
+  with deterministic request replay, Registry-bound catalog cursors, stable
+  installed-state pagination, exact/ranged SemVer selection, durable reviewed
+  plan reopening, and all ten frozen operations. Its standard MCP adapter
+  derives names, schemas, and annotations from toolset v4 and obtains apply
+  confirmation only from an injected trusted host provider.
 - [x] Production `CognitivePackageHostManager` for one exact managed-scope
   fence, with durable request/operation binding, selected-surface planning,
   digest-only graph and enablement apply, restart replay, provenance
@@ -317,8 +323,10 @@ supported managed host.
 
 Status: in progress
 
-- [ ] Run one shared Plugin Manager service across CLI, TUI, and manager
-  MCP without a second catalog, plan, or mutation implementation.
+- [ ] Migrate CLI and TUI, and compose the manager MCP in A3S Code, on the
+  shared `PluginManagerService` without a second catalog, plan, confirmation,
+  or mutation implementation. The Use-owned service and standard MCP adapter
+  are implemented; product presentation wiring is not.
 - [ ] Verify TUI `/packages` and CLI output show the exact plan, package graph,
   source, permission ceiling, and confirmation boundary.
 - [ ] Prove install → invoke → exact-generation upgrade → invoke → uninstall

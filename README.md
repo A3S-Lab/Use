@@ -930,6 +930,18 @@ a different intent cannot replace either one before it reaches a terminal
 record. Inspection reads the latest and previous records under the same
 package-scoped journal lock.
 
+`PluginManagerService` is now the shared typed application boundary over
+`CognitivePackageHostManager`. It owns deterministic request identities,
+Registry-bound search cursors, stable installed-state pagination, SemVer
+install/upgrade selection, all five planning paths, durable plan reopening,
+and digest-only apply. `PluginManagerMcpServer` exposes the exact ten v4 tools
+through standard MCP initialization, `tools/list`, and `tools/call`; its
+schemas and annotations are generated from the frozen toolset. MCP apply asks
+an injected trusted host confirmation provider for existing exact evidence and
+never treats an agent tool call as user confirmation. CLI and Code TUI have not
+yet been migrated to this service, so cross-presentation convergence remains a
+release gate.
+
 Host protocol v6 binds an explicit User or Workspace scope kind and projects
 exact operation state from durable evidence only. Equal textual scope IDs in
 different kinds cannot share a fence, plan, request replay record, or Host
@@ -1034,7 +1046,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
-| Manager MCP install planning with canonical `registryName` source selection | Implemented in toolset v4; upgrade remains pinned to installed provenance |
+| Shared Plugin Manager service and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. CLI/TUI migration and product-host MCP composition remain open |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
@@ -1095,6 +1107,7 @@ Use/
 ├── crates/extension/        ACL packages, TUF Registry, receipts, package store
 ├── crates/science/          real cognitive-package fixture and tooling
 ├── src/cognitive_package/   reviewed package-graph application service
+├── src/plugin_manager/      shared typed service and standard manager MCP
 ├── src/plugin_lifecycle/    durable six-surface lifecycle and host boundaries
 ├── src/plugin_runtime/      Runtime provider selection and exact bindings
 ├── src/okf_knowledge/       standalone OKF Knowledge backend

@@ -14,6 +14,12 @@ observation 与精确 operation observation、revision-based watch、显式用�
 pre-admission cancellation 分开。这些 projection 只使用 Use 持有的持久化证据，
 不会建立第二套 lifecycle state machine。
 
+Use 已在该 Host protocol 之上实现类型化 `PluginManagerService`。标准 MCP
+adapter 只暴露冻结的 10 个 v4 tool，并把每个 operation 委托给同一 service。
+Apply 会重开持久 plan，再向注入的可信 host provider 请求已有 confirmation；
+Agent tool call 不会被当成用户确认。CLI/TUI 迁移与 Code 侧 manager MCP 组合
+仍未完成。
+
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
 ```text
@@ -57,7 +63,8 @@ pre-admission cancellation 分开。这些 projection 只使用 Use 持有的持
 - `src/plugin_lifecycle`：canonical package 与 package-graph intent、依赖顺序、durable journal、coordinator，以及类型化 Tool/MCP/OKF/Flow/Skill/UI host；
 - `src/plugin_runtime`：Runtime selection、binding、receipt、invocation 与 observation；
 - `src/surface_reconciler` + `src/capability_registry`：依赖 readiness 和 capability publication；
-- umbrella CLI 共享 Plugin Manager：唯一 lifecycle application service。
+- `src/plugin_manager`：production Host Manager 之上的共享类型化 application
+  service 与标准 manager MCP adapter；CLI/TUI 迁移仍待完成。
 
 不得新增第二个 manager、grant store、Runtime selector、capability registry 或 generic execution protocol。
 

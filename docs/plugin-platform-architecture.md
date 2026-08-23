@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Architecture
 
 Status: development preview
-Last updated: 2026-08-11
+Last updated: 2026-08-24
 
 ## Executive decision
 
@@ -77,6 +77,15 @@ prove exact prior admission or completion. Install and upgrade planning verifies
 and caches the complete selected closure; reviewed digest-only apply consumes
 that exact cache without another network request, so a Registry outage cannot
 change or strand an already reviewed operation.
+
+The presentation-facing boundary is `PluginManagerService`. It adds no state
+machine: deterministic request IDs, opaque Registry cursors, stable installed
+pages, and reviewed-plan reopening all bind back to Host Manager evidence. The
+standard `PluginManagerMcpServer` derives its ten routes directly from
+`PluginManagerToolset::v4()` and delegates every call to that service. Apply
+confirmation is supplied only by an injected trusted host provider. CLI/TUI
+migration and product-host MCP composition are still open, so the existence of
+this boundary does not satisfy the M2 convergence gate by itself.
 
 ## Domain model
 

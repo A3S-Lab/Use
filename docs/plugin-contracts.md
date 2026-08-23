@@ -370,6 +370,14 @@ plugin_plan_disable
 There is no `plugin_enable` or `plugin_disable` mutation tool. Enablement uses
 plan then `plugin_apply_plan` like every other mutation.
 
+The runtime adapter is standard MCP, not an A3S JSON-RPC dialect. Its
+`tools/list` names, descriptions, input schemas, and annotations are constructed
+from `PluginManagerToolset::v4()`. Each tool deserializes into a closed typed
+input and delegates to the same `PluginManagerService`. The apply input remains
+only `operationId` plus `planDigest`; explicit user confirmation comes from an
+injected trusted host provider after the exact durable plan is reopened. The
+adapter never synthesizes `confirmedBy: User` from a tool invocation.
+
 `CognitivePackageHostManager` is the production adapter for this port. It is
 bound to one exact `PluginManagedScope` fence and advertises one immutable
 capability digest per manager build. Its private durable records map a Host

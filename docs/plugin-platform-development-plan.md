@@ -183,7 +183,11 @@ Status: in progress
 - [x] Expose the Use-owned typed capability/Registry cursor and an injected,
   all-or-nothing exact-generation snapshot lease. Keep CLI snapshot schema v2
   unchanged and leave Run scope ownership to Code.
-- Run one shared Plugin Manager application service.
+- [x] Implement one shared typed Plugin Manager application service over the
+  production Host Manager, including stable listing/search identities, all
+  frozen planning operations, durable reviewed-plan reopening, digest-only
+  apply, and a standard MCP adapter with injected trusted confirmation.
+- [ ] Migrate CLI and TUI and compose the manager MCP in Code on that service.
 - Keep Registry source state, catalog cache, plan generation, policy, apply, and
   operation replay out of view-specific code.
 - TUI `/packages`, CLI, and agent MCP must display and apply the same operation

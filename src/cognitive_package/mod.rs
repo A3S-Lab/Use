@@ -55,6 +55,7 @@ use store::{
     PendingPackageGraphStore,
 };
 
+pub use crate::COGNITIVE_PACKAGE_DEFAULT_SCOPE;
 pub use diagnostic::{
     PluginDownloadAttemptDiagnostic, PluginDownloadAttemptPhase, PluginDownloadDiagnosticStatus,
     PluginDownloadTargetDiagnostic, PluginDownloadTargetDiagnosticStatus,
@@ -108,10 +109,6 @@ pub use provider_plan::{
     CognitivePackageProviderPlan,
 };
 pub use reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
-
-/// Stable user-level scope shared by the standalone facade and embedding A3S
-/// hosts for globally installed cognitive packages.
-pub const COGNITIVE_PACKAGE_DEFAULT_SCOPE: &str = "user/current";
 
 /// Version of the A3S Use package engine enforcing cognitive-package host
 /// compatibility.

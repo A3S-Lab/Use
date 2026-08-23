@@ -240,6 +240,42 @@ pub(super) async fn resolve_lock(
     Ok(lock)
 }
 
+pub(super) async fn resolve_requirement(
+    registry_sources: &RegistrySourceStore,
+    access: CognitiveRegistryAccess,
+    selected_registry: Option<&str>,
+    package_id: &str,
+    version_requirement: Option<&str>,
+    channel: a3s_use_core::PluginReleaseChannel,
+) -> UseResult<PluginPackageLock> {
+    let sources = registry_sources.resolve(selected_registry).await?;
+    let host = PluginPackageLockHost::new(current_host_target()?, env!("CARGO_PKG_VERSION"))?;
+    match access {
+        CognitiveRegistryAccess::Refreshed => {
+            resolve_remote_package_lock(
+                sources.root(),
+                sources.dependencies(),
+                package_id,
+                version_requirement,
+                channel,
+                host,
+            )
+            .await
+        }
+        CognitiveRegistryAccess::Cached => {
+            resolve_cached_remote_package_lock(
+                sources.root(),
+                sources.dependencies(),
+                package_id,
+                version_requirement,
+                channel,
+                host,
+            )
+            .await
+        }
+    }
+}
+
 pub(super) async fn acquire_capability_lease(
     manager: &CognitivePackageManager,
     selected_scope: &PlanScope,

@@ -828,7 +828,7 @@ fn extension_diagnostic_scope(args: &[String]) -> UseResult<a3s_use_core::PlanSc
     Ok(a3s_use_core::PlanScope {
         kind,
         id: scope_id
-            .unwrap_or(crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE)
+            .unwrap_or(crate::COGNITIVE_PACKAGE_DEFAULT_SCOPE)
             .to_owned(),
     })
 }

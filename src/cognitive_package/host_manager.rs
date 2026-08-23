@@ -28,7 +28,9 @@ use crate::plugin_lifecycle::{
     PluginLifecycleOperationStatus,
 };
 
-use super::embedded::{acquire_capability_lease, inspect_catalog, resolve_lock, search_catalogs};
+use super::embedded::{
+    acquire_capability_lease, inspect_catalog, resolve_lock, resolve_requirement, search_catalogs,
+};
 use super::enablement_plan::CognitivePackageEnablementPlanStatus;
 use super::host_store::{
     digest_value, PluginHostProtocolStore, StoredPluginHostCancellation, StoredPluginHostOutcome,
@@ -145,6 +147,94 @@ impl CognitivePackageHostManager {
         candidate: &VerifiedPluginCatalogRecord,
     ) -> UseResult<PluginPackageLock> {
         resolve_lock(&self.registry_sources, access, candidate).await
+    }
+
+    /// Resolve one complete lock from a bounded SemVer selector through the
+    /// host's configured Registry set. The returned root catalog record is the
+    /// exact candidate that every presentation adapter must display.
+    pub async fn resolve_cognitive_package_requirement(
+        &self,
+        access: CognitiveRegistryAccess,
+        selected_registry: Option<&str>,
+        package_id: &str,
+        version_requirement: Option<&str>,
+        channel: a3s_use_core::PluginReleaseChannel,
+    ) -> UseResult<PluginPackageLock> {
+        resolve_requirement(
+            &self.registry_sources,
+            access,
+            selected_registry,
+            package_id,
+            version_requirement,
+            channel,
+        )
+        .await
+    }
+
+    /// Enumerate selected package IDs without exposing receipt-owned paths.
+    pub async fn installed_cognitive_package_ids(&self) -> UseResult<Vec<String>> {
+        let mut package_ids = self
+            .manager
+            .registry
+            .list()
+            .await?
+            .into_iter()
+            .map(|extension| extension.receipt.package_id)
+            .collect::<Vec<_>>();
+        package_ids.sort();
+        package_ids.dedup();
+        Ok(package_ids)
+    }
+
+    pub async fn installed_cognitive_package_lock(
+        &self,
+        package_id: &str,
+    ) -> UseResult<Option<PluginPackageLock>> {
+        self.manager.installed_package_lock(package_id).await
+    }
+
+    /// Reopen the exact durable plan used by digest-only apply and UI review.
+    pub async fn reviewed_cognitive_package_plan(
+        &self,
+        scope: &PluginManagedScope,
+        operation_id: &str,
+        plan_digest: &str,
+    ) -> UseResult<PluginHostPlanResult> {
+        self.verify_fence(scope)?;
+        a3s_use_core::PluginOperationPlan::validate_operation_id(operation_id)?;
+        let stored = self
+            .store
+            .get_by_operation(scope, operation_id)
+            .await?
+            .ok_or_else(|| {
+                host_error(
+                    "use.plugin.host_plan_missing",
+                    "The reviewed operation has no durable Host plan record.",
+                )
+            })?;
+        let result = match &stored.plan {
+            StoredPluginHostPlan::Graph { result, .. } => result.as_ref().clone(),
+            StoredPluginHostPlan::Enablement { result, .. } => result.reviewed_plan()?,
+        };
+        if result.plan.plan.operation_id != operation_id || result.plan.plan_digest != plan_digest {
+            return Err(host_error(
+                "use.plugin.host_plan_mismatch",
+                "The reviewed operation does not bind the requested plan digest.",
+            ));
+        }
+        result.validate()?;
+        if result.scope != self.current_scope
+            || result.capabilities_digest != self.capabilities.descriptor_digest()?
+            || !self
+                .capabilities
+                .supports_plan_schema(&result.plan.plan.schema)
+        {
+            return Err(host_error(
+                "use.plugin.host_plan_mismatch",
+                "The reviewed operation does not match the current Host capabilities or scope.",
+            ));
+        }
+        Ok(result)
     }
 
     /// Inspect presentation evidence signed by the same Registry snapshot as

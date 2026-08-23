@@ -21,6 +21,7 @@ mod host_plan;
 mod identity;
 mod installed_plan;
 mod manager;
+mod manager_input;
 mod package_dependency;
 mod package_lock;
 mod package_resolution;
@@ -86,6 +87,11 @@ pub use identity::PluginPackageId;
 pub use installed_plan::InstalledPluginPlanEvidence;
 pub use manager::{
     PluginManagerToolAnnotations, PluginManagerToolDefinition, PluginManagerToolset,
+};
+pub use manager_input::{
+    PluginManagerApplyPlanInput, PluginManagerInspectInput, PluginManagerInstallPlanInput,
+    PluginManagerListInstalledInput, PluginManagerPackageScopeInput, PluginManagerSearchInput,
+    PluginManagerUpgradePlanInput,
 };
 pub use package_dependency::{PluginPackageDependency, MAX_PLUGIN_PACKAGE_DEPENDENCIES};
 pub use package_lock::{

@@ -364,25 +364,7 @@ fn select_root(
     host: &PluginPackageLockHost,
 ) -> UseResult<VerifiedPluginCatalogRecord> {
     let requested_version = requested_version
-        .map(|value| {
-            Version::parse(value)
-                .map_err(|_| {
-                    package_graph_error(
-                        "use.plugin.package_version_invalid",
-                        "The requested root package version is invalid semantic versioning.",
-                    )
-                })
-                .and_then(|version| {
-                    if version.to_string() == value {
-                        Ok(version)
-                    } else {
-                        Err(package_graph_error(
-                            "use.plugin.package_version_invalid",
-                            "The requested root package version must be canonical semantic versioning.",
-                        ))
-                    }
-                })
-        })
+        .map(parse_requested_root_version)
         .transpose()?;
     let host_version = Version::parse(&host.use_version).map_err(|_| {
         package_graph_error(
@@ -407,7 +389,7 @@ fn select_root(
             };
             if requested_version
                 .as_ref()
-                .is_some_and(|requested| requested != &version)
+                .is_some_and(|requested| !requested.matches(&version))
             {
                 return false;
             }
@@ -447,6 +429,40 @@ fn select_root(
             ),
         )
     })
+}
+
+enum RequestedRootVersion {
+    Exact(Version),
+    Requirement(VersionReq),
+}
+
+impl RequestedRootVersion {
+    fn matches(&self, version: &Version) -> bool {
+        match self {
+            Self::Exact(expected) => expected == version,
+            Self::Requirement(requirement) => requirement.matches(version),
+        }
+    }
+}
+
+fn parse_requested_root_version(value: &str) -> UseResult<RequestedRootVersion> {
+    if let Ok(version) = Version::parse(value) {
+        if version.to_string() == value {
+            return Ok(RequestedRootVersion::Exact(version));
+        }
+        return Err(package_graph_error(
+            "use.plugin.package_version_invalid",
+            "The requested root package version must use canonical semantic versioning.",
+        ));
+    }
+    VersionReq::parse(value)
+        .map(RequestedRootVersion::Requirement)
+        .map_err(|_| {
+            package_graph_error(
+                "use.plugin.package_version_invalid",
+                "The requested root package version or version requirement is invalid.",
+            )
+        })
 }
 
 fn unique_registries<'a>(
@@ -510,4 +526,86 @@ fn verify_registry_binding(
 
 fn package_graph_error(code: &'static str, message: impl Into<String>) -> UseError {
     UseError::new(code, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use a3s_use_core::{
+        PluginCatalogRecord, VerifiedCatalogProvenance, VerifiedPluginCatalogRecord,
+    };
+
+    use super::*;
+
+    const CATALOG: &[u8] =
+        include_bytes!("../../../core/fixtures/plugins/catalog-record-okf-v3.json");
+
+    #[test]
+    fn exact_root_version_remains_exact() {
+        let selected = select_root(
+            vec![candidate("1.2.4"), candidate("1.2.3")],
+            "fixture",
+            "acme/knowledge",
+            Some("1.2.3"),
+            PluginReleaseChannel::Stable,
+            &host(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.record.version, "1.2.3");
+    }
+
+    #[test]
+    fn root_version_requirement_selects_the_highest_match() {
+        let selected = select_root(
+            vec![candidate("1.2.0"), candidate("1.9.9"), candidate("2.0.0")],
+            "fixture",
+            "acme/knowledge",
+            Some("^1.2"),
+            PluginReleaseChannel::Stable,
+            &host(),
+        )
+        .unwrap();
+
+        assert_eq!(selected.record.version, "1.9.9");
+    }
+
+    #[test]
+    fn invalid_root_version_requirement_fails_closed() {
+        let error = select_root(
+            vec![candidate("1.2.3")],
+            "fixture",
+            "acme/knowledge",
+            Some("latest"),
+            PluginReleaseChannel::Stable,
+            &host(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "use.plugin.package_version_invalid");
+    }
+
+    fn candidate(version: &str) -> VerifiedPluginCatalogRecord {
+        let mut record = PluginCatalogRecord::from_json(CATALOG).unwrap();
+        record.archive.target_name = record.archive.target_name.replace("1.0.0", version);
+        record.version = version.to_owned();
+        let catalog_record_digest = record.descriptor_digest().unwrap();
+        VerifiedPluginCatalogRecord::new(
+            record,
+            VerifiedCatalogProvenance {
+                registry_name: "fixture".to_owned(),
+                registry_url: "https://registry.example.com/".to_owned(),
+                root_sha256: format!("sha256:{}", "a".repeat(64)),
+                root_version: 1,
+                timestamp_version: 1,
+                snapshot_version: 1,
+                targets_version: 1,
+                catalog_record_digest,
+            },
+        )
+        .unwrap()
+    }
+
+    fn host() -> PluginPackageLockHost {
+        PluginPackageLockHost::new("linux-x86_64", env!("CARGO_PKG_VERSION")).unwrap()
+    }
 }

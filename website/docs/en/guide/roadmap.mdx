@@ -68,6 +68,12 @@ package, and only a durable Host outcome reports `Completed`.
 - Plan v4 separates review from mutation and binds operation identity,
   confirmation, scope, package transitions, impact, Grants, providers, and
   current-state evidence.
+- The Use-owned typed `PluginManagerService` now implements catalog search and
+  inspection, stable installed-state pagination, status, all frozen planning
+  operations, durable reviewed-plan reopening, and digest-only apply over the
+  production Host Manager. Its standard MCP adapter derives the exact ten v4
+  tools from the frozen contract and obtains confirmation only from an injected
+  trusted host provider.
 - Lifecycle journals provide exact crash replay, cutover-aware publication,
   exact-generation drain, and fail-closed corruption handling.
 - `extension inspect --json` projects bounded lifecycle history, while
@@ -112,7 +118,8 @@ package, and only a durable Host outcome reports `Completed`.
 
 ### 2. A3S Code TUI hot-plug qualification — in progress
 
-- Run CLI, TUI, and manager MCP through one shared Plugin Manager.
+- Migrate CLI and TUI and compose the manager MCP in Code on the implemented
+  shared Plugin Manager service. Product presentation wiring remains open.
 - Verify install, invoke, exact-generation upgrade, invoke, uninstall, and
   restart for all six surfaces and dependency-bearing graphs.
 - Prove User/Workspace scope isolation, watcher resumption, terminal-result

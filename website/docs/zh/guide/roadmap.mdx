@@ -63,6 +63,11 @@ durable Host outcome 才会报告 `Completed`。
   identity 隔离，恢复完全相同的 identity 时不会改写 receipt。
 - Plan v4 分离审查和 mutation，并绑定 operation identity、confirmation、
   scope、package transition、impact、Grant、provider 与当前状态证据。
+- Use 已实现类型化 `PluginManagerService`，在 production Host Manager 之上
+  统一 catalog search/inspect、稳定 installed-state 分页、status、全部冻结的
+  planning operation、持久 reviewed-plan 重开与 digest-only apply。标准 MCP
+  adapter 直接从冻结合约生成 10 个 v4 tool，确认只由注入的可信 host provider
+  提供。
 - Lifecycle journal 已提供精确崩溃重放、cutover-aware publication、精确
   generation 排空，以及 fail-closed corruption handling。
 - `extension inspect --json` 提供有界 lifecycle 历史；
@@ -100,7 +105,8 @@ durable Host outcome 才会报告 `Completed`。
 
 ### 2. A3S Code TUI 热插拔验收 — 进行中
 
-- 让 CLI、TUI、manager MCP 共用一个 Plugin Manager。
+- 把 CLI、TUI 迁移到已实现的共享 Plugin Manager service，并在 Code 中组合
+  manager MCP；product presentation wiring 仍未完成。
 - 对全部六类表面和包含依赖的图验证 install、invoke、精确 generation
   upgrade、再次 invoke、uninstall 与 restart。
 - 证明 User/Workspace scope 隔离、watcher resume、terminal result replay，

@@ -64,6 +64,15 @@ complete verified catalog record.
 A package cannot choose its trust root, source, provider, secret, workspace
 scope, or Grant.
 
+The shared `PluginManagerService` is the single typed application boundary for
+catalog reads, stable installed-state pagination, planning, durable plan
+reopening, and digest-only apply. Its standard MCP adapter publishes only the
+frozen v4 tool inventory. `plugin_apply_plan` carries no confirmation field;
+the adapter asks an injected trusted host confirmation provider for existing
+evidence bound to the exact reopened operation and digest. An agent request is
+never converted into `confirmedBy: User`, and a missing confirmation therefore
+fails closed for an `Ask` plan.
+
 ## Operation state machine
 
 ```text

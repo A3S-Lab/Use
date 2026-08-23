@@ -16,6 +16,13 @@ observation, revision-based watch, and explicit-user pre-admission cancellation.
 Those projections use only durable Use-owned evidence and do not create a
 second lifecycle state machine.
 
+The Use-owned `PluginManagerService` is now the typed presentation boundary
+over that Host protocol. Its standard MCP adapter exposes exactly the frozen
+ten-tool v4 inventory and delegates every operation to the same service. Apply
+reopens the durable plan and requests existing confirmation from an injected
+trusted host provider; an agent tool call never becomes user confirmation.
+CLI/TUI migration and Code-side manager MCP composition remain open.
+
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
 ```text
@@ -59,7 +66,9 @@ The current implementation reuses these existing mechanisms:
 - `src/plugin_lifecycle`: canonical package and package-graph intent, dependency schedule, durable journal, coordinator, and typed Tool/MCP/OKF/Flow/Skill/UI hosts;
 - `src/plugin_runtime`: Runtime selection, bindings, receipts, invocation, and observation;
 - `src/surface_reconciler` plus `src/capability_registry`: dependency readiness and capability publication;
-- the umbrella CLI shared Plugin Manager: the only lifecycle application service.
+- `src/plugin_manager`: the shared typed application service and standard
+  manager MCP adapter over the production Host Manager. CLI/TUI migration is
+  still pending.
 
 Do not add another manager, grant store, Runtime selector, capability registry, or generic execution protocol.
 
