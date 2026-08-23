@@ -10,7 +10,7 @@ use a3s_use_extension::{
     MAX_CONFIGURED_REGISTRY_SOURCES,
 };
 use async_trait::async_trait;
-use semver::Version;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 
 use super::download_attempt::{
@@ -196,11 +196,10 @@ impl PendingPackageResolutionAttempt {
             )
             || !valid_machine_id(&self.scope.id)
             || self.started_at_ms == 0
-            || self.requested_version.as_deref().is_some_and(|version| {
-                Version::parse(version)
-                    .map(|parsed| parsed.to_string() != version)
-                    .unwrap_or(true)
-            })
+            || self
+                .requested_version
+                .as_deref()
+                .is_some_and(|selector| !valid_version_selector(selector))
             || self.registries.is_empty()
             || self.registries.len() > MAX_CONFIGURED_REGISTRY_SOURCES
             || self
@@ -266,6 +265,11 @@ impl PendingPackageResolutionAttempt {
         }
         Ok(())
     }
+}
+
+fn valid_version_selector(selector: &str) -> bool {
+    Version::parse(selector).is_ok_and(|version| version.to_string() == selector)
+        || VersionReq::parse(selector).is_ok_and(|requirement| requirement.to_string() == selector)
 }
 
 impl PendingRegistryResolution {
