@@ -1046,15 +1046,6 @@ async fn apply_enablement_through_observed_windows(
         PluginHostOperationCancellability::Cancellable
     );
 
-    let lifecycle_generation =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")))
-            .get(apply_request.package_id.as_str())
-            .await
-            .unwrap()
-            .unwrap()
-            .receipt
-            .lifecycle_generation
-            .unwrap();
     let managed_scope_digest = apply_request.scope.descriptor_digest().unwrap();
     let plan_scope = apply_request.scope.plan_scope();
     let lifecycle_path = home
@@ -1124,12 +1115,9 @@ async fn apply_enablement_through_observed_windows(
     );
     assert!(preparing.status.progress.is_none());
 
-    let route_lock = exclusive_lock(
-        &home
-            .join("state/route-locks")
-            .join(apply_request.package_id.as_str())
-            .join(format!("{lifecycle_generation:020}.lock")),
-    );
+    // Hold the visibility commit lock so both enable publication and disable
+    // hiding remain at their exact lifecycle checkpoint during observation.
+    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
     let host_store_lock = exclusive_lock(
         &home
             .join("state/plugin-host-manager")
@@ -1147,14 +1135,25 @@ async fn apply_enablement_through_observed_windows(
             .is_some_and(|state| {
                 state["active"]["request"]["operationId"] == apply_request.operation_id.as_str()
             });
-        let active_lifecycle = std::fs::read(&lifecycle_path)
+        let publication_pending = std::fs::read(&lifecycle_path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
             .is_some_and(|operation| {
                 operation["intent"]["operationId"] == apply_request.operation_id.as_str()
                     && operation["status"] == "applying"
+                    && operation["intent"]["checkpoints"]
+                        .as_array()
+                        .and_then(|checkpoints| {
+                            checkpoints.get(operation["receipts"].as_array().map_or(0, Vec::len))
+                        })
+                        .is_some_and(|checkpoint| {
+                            matches!(
+                                checkpoint["kind"].as_str(),
+                                Some("capability-published" | "capability-hidden")
+                            )
+                        })
             });
-        if active_state && active_lifecycle {
+        if active_state && publication_pending {
             reached_publication = true;
             break;
         }
@@ -1174,8 +1173,8 @@ async fn apply_enablement_through_observed_windows(
     .await
     .expect("operation observation blocked behind the live apply")
     .unwrap();
-    FileExt::unlock(&route_lock).unwrap();
-    drop(route_lock);
+    FileExt::unlock(&registry_lock).unwrap();
+    drop(registry_lock);
     assert_eq!(
         publishing.status.phase,
         PluginHostOperationPhase::Publishing
