@@ -1,4 +1,5 @@
 use std::fs::{File, OpenOptions};
+use std::io::SeekFrom;
 use std::path::{Component, Path, PathBuf};
 
 use a3s_use_core::{UseError, UseResult};
@@ -6,7 +7,7 @@ use fs2::FileExt;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::package::io_error;
 
@@ -163,11 +164,28 @@ fn usage(
 
 async fn verify_file(
     path: &Path,
-    mut output: Option<&mut fs::File>,
+    output: Option<&mut fs::File>,
     expected_length: u64,
     expected_sha256: &str,
     error_code: &'static str,
 ) -> UseResult<()> {
+    let mut input = open_verified_file(path, expected_length, error_code).await?;
+    verify_open_file(
+        &mut input,
+        output,
+        path,
+        expected_length,
+        expected_sha256,
+        error_code,
+    )
+    .await
+}
+
+async fn open_verified_file(
+    path: &Path,
+    expected_length: u64,
+    error_code: &'static str,
+) -> UseResult<fs::File> {
     let metadata = fs::symlink_metadata(path)
         .await
         .map_err(|error| io_error("inspect Registry target", path, error))?;
@@ -178,9 +196,22 @@ async fn verify_file(
         error_code,
         "The Registry target is not a bounded regular file.",
     )?;
-    let mut input = fs::File::open(path)
+    let input = verified_file_open_options()
+        .open(path)
         .await
-        .map_err(|error| io_error("open Registry target", path, error))?;
+        .map_err(|error| {
+            if std::fs::symlink_metadata(path).is_ok_and(|metadata| {
+                a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file()
+            }) {
+                target_cache_error(
+                    error_code,
+                    "The Registry target changed before its bounded handle was opened.",
+                )
+                .with_detail("path", path.display().to_string())
+            } else {
+                io_error("open Registry target", path, error)
+            }
+        })?;
     let opened_metadata = input
         .metadata()
         .await
@@ -192,6 +223,33 @@ async fn verify_file(
         error_code,
         "The opened Registry target changed before verification.",
     )?;
+
+    Ok(input)
+}
+
+async fn verify_open_file(
+    input: &mut fs::File,
+    mut output: Option<&mut fs::File>,
+    path: &Path,
+    expected_length: u64,
+    expected_sha256: &str,
+    error_code: &'static str,
+) -> UseResult<()> {
+    let opened_metadata = input
+        .metadata()
+        .await
+        .map_err(|error| io_error("inspect opened Registry target", path, error))?;
+    validate_regular_metadata(
+        path,
+        &opened_metadata,
+        expected_length,
+        error_code,
+        "The opened Registry target changed before verification.",
+    )?;
+    input
+        .seek(SeekFrom::Start(0))
+        .await
+        .map_err(|error| io_error("seek opened Registry target", path, error))?;
 
     let mut digest = Sha256::new();
     let mut length = 0_u64;
@@ -236,6 +294,22 @@ async fn verify_file(
         .with_detail("actualSha256", actual_sha256));
     }
     Ok(())
+}
+
+fn verified_file_open_options() -> fs::OpenOptions {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW);
+    #[cfg(windows)]
+    {
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        options
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .share_mode(FILE_SHARE_READ);
+    }
+    options
 }
 
 fn validated_evidence(expected_length: u64, expected_sha256: &str) -> UseResult<String> {
@@ -375,15 +449,15 @@ fn validate_staging_file_name(file_name: &str) -> UseResult<()> {
 }
 
 #[cfg(unix)]
-async fn secure_file(path: &Path) -> UseResult<()> {
+async fn secure_file(file: &fs::File, path: &Path) -> UseResult<()> {
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))
         .await
         .map_err(|error| io_error("secure verified target cache file", path, error))
 }
 
 #[cfg(not(unix))]
-async fn secure_file(_path: &Path) -> UseResult<()> {
+async fn secure_file(_file: &fs::File, _path: &Path) -> UseResult<()> {
     Ok(())
 }
 

@@ -318,9 +318,12 @@ Status: in progress
   unchanged prior content, source retention, and temporary cleanup.
 - [x] Open retained resumable Registry partials once without following their
   final path and keep that exact handle through admission, append, and
-  checkpoint. On Windows the live handle permits readers but denies external
-  writes, removal, and replacement until transaction release. Verification and
-  promotion races after handle release remain in the external contention gate.
+  checkpoint. Verify complete bytes through that handle, then reopen and rehash
+  the promoted final path without following it and retain the verified handle
+  through staging. A deterministic replacement after initial verification
+  fails commit; a Unix path replacement after reopen cannot redirect staging,
+  and Windows live partial and verified-target handles permit readers while
+  denying external writes, removal, and replacement.
 - Expand filesystem coverage to externally raced targets, antivirus contention
   outside the shared publication paths, process groups, named resources, and
   reboot recovery.

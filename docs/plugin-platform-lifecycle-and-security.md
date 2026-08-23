@@ -372,11 +372,15 @@ network request on the next operation.
 
 The resumable partial's final path is opened with no-follow semantics. An
 existing file is opened once before admission and the same handle owns append
-and checkpoint; creation is create-new under the same policy. Windows shares
-that live handle for read access only, so an external writer cannot modify,
-delete, or replace the partial until the transaction releases it. Final
-verification/promotion contention after release remains part of the open
-replacement-race matrix.
+and checkpoint; creation is create-new under the same policy. Final verification
+reads that transaction-owned handle before it is released. Promotion then
+reopens the final path without following its last component, rehashes it, and
+retains that exact verified handle through staging. A replacement between the
+first verification and promotion fails commit rather than publishing ready
+state. On Unix, replacement of the final path after reopen cannot redirect the
+staged bytes away from the retained handle. Windows shares live partial and
+verified-target handles for read access only, so an external writer cannot
+modify, delete, or replace either object while the transaction owns it.
 
 Cached install or upgrade is available only through an explicit offline path.
 It revalidates the locally trusted TUF metadata, including signatures and

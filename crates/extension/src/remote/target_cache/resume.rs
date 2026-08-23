@@ -8,14 +8,44 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use crate::package::{activate_temporary_file, io_error, sync_parent_directory};
 
 use super::{
-    acquire_target_cache_lock, ensure_cache_directory, secure_file, target_cache_error,
-    validate_regular_metadata, validated_evidence, verify_file, TargetCacheLock,
+    acquire_target_cache_lock, ensure_cache_directory, open_verified_file, secure_file,
+    target_cache_error, validate_regular_metadata, validated_evidence, verify_open_file,
+    TargetCacheLock,
 };
 use crate::remote::target_cache_inventory::admit_target_write;
 use crate::remote::VerifiedTargetCachePolicy;
 
 const PARTIAL_PREFIX: &str = ".target-";
 const PARTIAL_SUFFIX: &str = ".part";
+
+#[cfg(test)]
+type BeforePromotionHook = Box<dyn FnOnce(&Path) + Send>;
+
+#[cfg(test)]
+static BEFORE_PROMOTION_HOOKS: std::sync::Mutex<Vec<(PathBuf, BeforePromotionHook)>> =
+    std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn install_before_promotion_hook(path: PathBuf, hook: BeforePromotionHook) {
+    BEFORE_PROMOTION_HOOKS.lock().unwrap().push((path, hook));
+}
+
+#[cfg(test)]
+fn run_before_promotion_hook(path: &Path) {
+    let hook = {
+        let mut hooks = BEFORE_PROMOTION_HOOKS.lock().unwrap();
+        hooks
+            .iter()
+            .position(|(hook_path, _)| hook_path == path)
+            .map(|index| hooks.swap_remove(index).1)
+    };
+    if let Some(hook) = hook {
+        hook(path);
+    }
+}
+
+#[cfg(not(test))]
+fn run_before_promotion_hook(_path: &Path) {}
 
 /// One exclusive, digest-bound target-cache download transaction.
 ///
@@ -31,6 +61,7 @@ pub(in crate::remote) struct ResumableTarget {
     expected_sha256: String,
     offset: u64,
     partial: Option<fs::File>,
+    verified: Option<fs::File>,
     ready: bool,
 }
 
@@ -55,9 +86,16 @@ impl ResumableTarget {
                 "use.extension.registry_target_cache_invalid",
                 "The verified target cache entry is not a bounded regular file.",
             )?;
-            verify_file(
+            let mut verified = open_verified_file(
                 &target_path,
+                expected_length,
+                "use.extension.registry_target_cache_invalid",
+            )
+            .await?;
+            verify_open_file(
+                &mut verified,
                 None,
+                &target_path,
                 expected_length,
                 &expected_sha256,
                 "use.extension.registry_target_cache_invalid",
@@ -73,6 +111,7 @@ impl ResumableTarget {
                 expected_sha256,
                 offset: expected_length,
                 partial: None,
+                verified: Some(verified),
                 ready: true,
             });
         }
@@ -91,25 +130,36 @@ impl ResumableTarget {
         admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
 
         if existing_length == expected_length && existing_length > 0 {
-            drop(partial.take());
-            let valid = verify_file(
-                &partial_path,
-                None,
-                expected_length,
-                &expected_sha256,
-                "use.extension.registry_target_invalid",
-            )
-            .await
-            .is_ok();
+            let valid = match partial.as_mut() {
+                Some(partial) => verify_open_file(
+                    partial,
+                    None,
+                    &partial_path,
+                    expected_length,
+                    &expected_sha256,
+                    "use.extension.registry_target_invalid",
+                )
+                .await
+                .is_ok(),
+                None => false,
+            };
             if valid {
-                secure_file(&partial_path).await?;
-                activate_temporary_file(
+                let partial = partial.take().ok_or_else(|| {
+                    target_cache_error(
+                        "use.extension.registry_target_cache_invalid",
+                        "The verified resumable target handle is unavailable.",
+                    )
+                })?;
+                let verified = promote_verified_partial(
+                    partial,
                     partial_path.clone(),
                     target_path.clone(),
-                    "activate resumed verified target cache",
+                    &cache_directory,
+                    expected_length,
+                    &expected_sha256,
+                    "use.extension.registry_target_invalid",
                 )
                 .await?;
-                sync_parent_directory(&cache_directory, "verified target cache").await?;
                 return Ok(Self {
                     _lock: lock,
                     cache_directory,
@@ -119,9 +169,11 @@ impl ResumableTarget {
                     expected_sha256,
                     offset: expected_length,
                     partial: None,
+                    verified: Some(verified),
                     ready: true,
                 });
             }
+            drop(partial.take());
             remove_partial(&partial_path, &cache_directory).await?;
             admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
             existing_length = 0;
@@ -146,7 +198,7 @@ impl ResumableTarget {
             .seek(SeekFrom::End(0))
             .await
             .map_err(|error| io_error("seek resumable Registry target", &partial_path, error))?;
-        secure_file(&partial_path).await?;
+        secure_file(&partial, &partial_path).await?;
 
         Ok(Self {
             _lock: lock,
@@ -157,6 +209,7 @@ impl ResumableTarget {
             expected_sha256,
             offset: existing_length,
             partial: Some(partial),
+            verified: None,
             ready: false,
         })
     }
@@ -239,27 +292,37 @@ impl ResumableTarget {
                 io_error("sync resumable Registry target", &self.partial_path, error)
             })?;
         }
-        drop(self.partial.take());
-        if let Err(error) = verify_file(
-            &self.partial_path,
+        let mut partial = self.partial.take().ok_or_else(|| {
+            target_cache_error(
+                "use.extension.registry_target_cache_invalid",
+                "The resumable Registry target is not writable.",
+            )
+        })?;
+        if let Err(error) = verify_open_file(
+            &mut partial,
             None,
+            &self.partial_path,
             self.expected_length,
             &self.expected_sha256,
             error_code,
         )
         .await
         {
+            drop(partial);
             remove_partial(&self.partial_path, &self.cache_directory).await?;
             return Err(error);
         }
-        secure_file(&self.partial_path).await?;
-        activate_temporary_file(
+        let verified = promote_verified_partial(
+            partial,
             self.partial_path.clone(),
             self.target_path.clone(),
-            "activate resumed verified target cache",
+            &self.cache_directory,
+            self.expected_length,
+            &self.expected_sha256,
+            error_code,
         )
         .await?;
-        sync_parent_directory(&self.cache_directory, "verified target cache").await?;
+        self.verified = Some(verified);
         self.ready = true;
         Ok(())
     }
@@ -273,7 +336,7 @@ impl ResumableTarget {
         Ok(())
     }
 
-    pub(in crate::remote) async fn stage_into(&self, output: &Path) -> UseResult<()> {
+    pub(in crate::remote) async fn stage_into(&mut self, output: &Path) -> UseResult<()> {
         if !self.ready {
             return Err(target_cache_error(
                 "use.extension.registry_target_cache_invalid",
@@ -286,9 +349,16 @@ impl ResumableTarget {
             .open(output)
             .await
             .map_err(|error| io_error("create verified target staging file", output, error))?;
-        verify_file(
-            &self.target_path,
+        let verified = self.verified.as_mut().ok_or_else(|| {
+            target_cache_error(
+                "use.extension.registry_target_cache_invalid",
+                "The verified resumable target handle is unavailable.",
+            )
+        })?;
+        verify_open_file(
+            verified,
             Some(&mut destination),
+            &self.target_path,
             self.expected_length,
             &self.expected_sha256,
             "use.extension.registry_target_cache_invalid",
@@ -308,6 +378,38 @@ impl ResumableTarget {
             )
         })
     }
+}
+
+async fn promote_verified_partial(
+    partial: fs::File,
+    partial_path: PathBuf,
+    target_path: PathBuf,
+    cache_directory: &Path,
+    expected_length: u64,
+    expected_sha256: &str,
+    error_code: &'static str,
+) -> UseResult<fs::File> {
+    secure_file(&partial, &partial_path).await?;
+    drop(partial);
+    run_before_promotion_hook(&partial_path);
+    activate_temporary_file(
+        partial_path,
+        target_path.clone(),
+        "activate resumed verified target cache",
+    )
+    .await?;
+    let mut verified = open_verified_file(&target_path, expected_length, error_code).await?;
+    verify_open_file(
+        &mut verified,
+        None,
+        &target_path,
+        expected_length,
+        expected_sha256,
+        error_code,
+    )
+    .await?;
+    sync_parent_directory(cache_directory, "verified target cache").await?;
+    Ok(verified)
 }
 
 fn partial_name(digest: &str) -> String {
@@ -441,6 +543,129 @@ mod tests {
             .unwrap();
 
         assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
+    }
+
+    #[tokio::test]
+    async fn replacement_after_verification_is_not_published_as_verified() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let cache = datastore.join("verified-targets/sha256");
+        let body = b"trusted!";
+        let replacement = b"attacker";
+        let digest = format!("{:x}", Sha256::digest(body));
+        let partial = cache.join(partial_name(&digest));
+        let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
+        let mut target = ResumableTarget::begin(datastore, body.len() as u64, &digest, policy)
+            .await
+            .unwrap();
+        target.append(body).await.unwrap();
+        install_before_promotion_hook(
+            partial.clone(),
+            Box::new(move |path| {
+                std::fs::remove_file(path).unwrap();
+                std::fs::write(path, replacement).unwrap();
+            }),
+        );
+
+        let error = target
+            .commit("use.extension.registry_target_invalid")
+            .await
+            .expect_err("a post-verification replacement must fail closed");
+
+        assert_eq!(error.code, "use.extension.registry_target_invalid");
+        assert!(!target.is_ready());
+        assert_eq!(std::fs::read(cache.join(&digest)).unwrap(), replacement);
+        drop(target);
+
+        let error = match ResumableTarget::begin(
+            datastore,
+            body.len() as u64,
+            &digest,
+            VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap(),
+        )
+        .await
+        {
+            Ok(_) => panic!("the replaced cache target must remain untrusted"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn verified_handle_stages_original_after_target_path_replacement() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let body = b"trusted!";
+        let replacement = b"attacker";
+        let digest = format!("{:x}", Sha256::digest(body));
+        let target_path = datastore.join("verified-targets/sha256").join(&digest);
+        let mut target = ResumableTarget::begin(
+            datastore,
+            body.len() as u64,
+            &digest,
+            VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+        target.append(body).await.unwrap();
+        target
+            .commit("use.extension.registry_target_invalid")
+            .await
+            .unwrap();
+
+        std::fs::remove_file(&target_path).unwrap();
+        std::fs::write(&target_path, replacement).unwrap();
+        let staged = temporary.path().join("staged");
+        target.stage_into(&staged).await.unwrap();
+
+        assert_eq!(std::fs::read(staged).unwrap(), body);
+        assert_eq!(std::fs::read(target_path).unwrap(), replacement);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn active_verified_target_allows_read_but_denies_external_write_and_removal() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let body = b"trusted!";
+        let digest = format!("{:x}", Sha256::digest(body));
+        let target_path = datastore.join("verified-targets/sha256").join(&digest);
+        let mut target = ResumableTarget::begin(
+            datastore,
+            body.len() as u64,
+            &digest,
+            VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+        target.append(body).await.unwrap();
+        target
+            .commit("use.extension.registry_target_invalid")
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&target_path).unwrap(), body);
+        let write_error = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&target_path)
+            .unwrap_err();
+        assert!(
+            matches!(write_error.raw_os_error(), Some(5 | 32 | 33)),
+            "active verified target accepted an external writer: {write_error}"
+        );
+        let remove_error = std::fs::remove_file(&target_path).unwrap_err();
+        assert!(
+            matches!(remove_error.raw_os_error(), Some(5 | 32 | 33)),
+            "active verified target accepted external removal: {remove_error}"
+        );
+        let staged = temporary.path().join("staged");
+        target.stage_into(&staged).await.unwrap();
+        assert_eq!(std::fs::read(staged).unwrap(), body);
+
+        drop(target);
+        std::fs::write(&target_path, b"released").unwrap();
+        assert_eq!(std::fs::read(target_path).unwrap(), b"released");
     }
 
     #[cfg(windows)]

@@ -569,10 +569,15 @@ combined verified targets and resumable partials, with a 256 MiB free-space
 reserve. The same typed policy is enforced before downloading and while
 committing a verified target. Interrupted HTTP downloads retain a digest-bound
 `.target-<sha256>.part` file and retry from its exact length. A resumed response
-must return the exact signed byte range; the complete file is rehashed before
-atomic promotion. Stale atomic-write files are removed first, followed by the
-oldest resumable partials and then the oldest verified targets until the byte,
-entry, and disk-space bounds are satisfied.
+must return the exact signed byte range; the complete file is rehashed through
+the transaction-owned handle before atomic promotion. The promoted path is
+then reopened without following its final component, rehashed, and retained as
+the staging authority. A post-verification replacement therefore fails commit;
+on Unix a later path replacement cannot redirect staging away from the retained
+handle, while Windows permits readers but denies external writes, removal, and
+replacement until staging completes. Stale atomic-write files are removed
+first, followed by the oldest resumable partials and then the oldest verified
+targets until the byte, entry, and disk-space bounds are satisfied.
 
 Inspect cache usage without making a Registry request:
 

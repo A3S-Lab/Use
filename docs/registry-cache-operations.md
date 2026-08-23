@@ -98,17 +98,21 @@ length becomes the next HTTP Range offset. A `206` response must describe the
 exact offset, final byte, total signed length, and remaining content length. A
 complete `200` response is accepted when a server ignores Range, but the old
 partial is truncated first. No partial is staged or exposed as an offline
-target. The complete bytes are re-read, checked against the signed length and
-SHA-256, synchronized, and atomically promoted to `<sha256>`.
+target. The complete bytes are re-read through the transaction-owned handle,
+checked against the signed length and SHA-256, synchronized, and atomically
+promoted to `<sha256>`. The final path is then reopened without following its
+last component, rehashed, and retained as the only staging authority.
 
 An existing partial is opened once without following its final path before
 cache admission, and that exact handle remains the append/checkpoint authority.
 New partial creation uses the same no-follow policy with create-new semantics.
 On Windows the live handle shares read access for scanners and diagnostics but
 denies external write, delete, and replacement access until the transaction
-releases it. This closes the active-partial replacement window; contention or
-replacement after release during final verification and promotion remains a
-separate release-qualification gate.
+releases it after initial verification. A deterministic replacement in the
+release-to-promotion window fails commit during the final-handle rehash. The
+verified handle remains live through staging: Unix path replacement cannot
+redirect the staged bytes, and Windows continues to allow readers while
+denying external write, delete, and replacement access.
 
 Under the exclusive target-cache lock, commit removes:
 

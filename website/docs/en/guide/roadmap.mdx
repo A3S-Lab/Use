@@ -154,10 +154,12 @@ package, and only a durable Host outcome reports `Completed`.
   lifecycle/restore-history directory moves use the same retry bound.
   Released file or directory locks converge atomically; a persistent replacement
   lock stops at two seconds without changing the prior target. Resumable
-  Registry partials now use one final-component no-follow handle; Windows
-  permits readers but denies external writes, removal, and replacement until
-  the transaction releases it. Post-handle-release replacement races and
-  reboot recovery remain open.
+  Registry partials now use one final-component no-follow handle through final
+  verification. Promotion reopens and rehashes the final path, then retains that
+  verified handle through staging. Post-verification replacement fails commit;
+  Unix staging stays bound to the retained handle, and Windows permits readers
+  while denying external writes, removal, and replacement. Reboot recovery
+  remains open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Real-process tests now cover resumable target-download interruption and
