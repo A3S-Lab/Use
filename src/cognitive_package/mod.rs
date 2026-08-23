@@ -102,6 +102,7 @@ pub use hosts::{
     ManagedCognitivePackageLifecycleFactory, StandaloneCognitivePackageLifecycleFactory,
     A3S_FLOW_NATIVE_TS_COMPILER_ENV,
 };
+pub(crate) use install::verify_expected_lock;
 pub use native_provider::plan_native_provider_evidence;
 pub use provider_plan::{
     bind_cognitive_package_provider_plan, plan_cognitive_package_provider_generations,

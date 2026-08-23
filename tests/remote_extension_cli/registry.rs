@@ -295,6 +295,16 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
     assert!(installed.status.success(), "{installed:?}");
     let installed_json = json(&installed);
     assert_eq!(installed_json["data"]["changed"], true);
+    let manager = &installed_json["data"]["pluginManager"];
+    assert_eq!(
+        manager["operationId"],
+        manager["plan"]["plan"]["plan"]["operationId"]
+    );
+    assert_eq!(manager["planDigest"], manager["plan"]["plan"]["planDigest"]);
+    assert_eq!(manager["operationId"], manager["result"]["operationId"]);
+    assert_eq!(manager["planDigest"], manager["result"]["planDigest"]);
+    assert_eq!(manager["plan"]["replayed"], false);
+    assert_eq!(manager["result"]["replayed"], false);
     assert_eq!(installed_json["data"]["component"]["trust"], "registry-tuf");
     assert_eq!(
         installed_json["data"]["component"]["registry"]["registryName"],
@@ -360,7 +370,11 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
 
     let second = registry_install(&server, &repository, &home, Some(&package_lock_digest), &[]);
     assert!(second.status.success(), "{second:?}");
-    assert_eq!(json(&second)["data"]["changed"], false);
+    let second = json(&second);
+    assert_eq!(second["data"]["changed"], false);
+    assert_eq!(second["data"]["pluginManager"]["plan"]["replayed"], true);
+    assert_eq!(second["data"]["pluginManager"]["result"]["replayed"], true);
+    assert!(home.join("state/plugin-host-manager").is_dir());
 }
 
 #[test]

@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::{PluginHostApplyResult, PluginHostPlanResult, UseError, UseResult};
 
 use crate::cli::CommandOutput;
+
+#[cfg(feature = "extensions")]
+mod manager;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ExtensionView {
@@ -30,6 +33,7 @@ pub(crate) struct ExtensionInstallView {
     pub package_graph: Option<serde_json::Value>,
     pub registry_access: &'static str,
     pub registry_source_revision: String,
+    pub plugin_manager: PluginManagerMutationView,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +41,39 @@ pub(crate) struct ExtensionUninstallView {
     pub package_id: String,
     pub changed: bool,
     pub package_graph: Option<serde_json::Value>,
+    pub plugin_manager: PluginManagerMutationView,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginManagerMutationView {
+    pub operation_id: String,
+    pub plan_digest: String,
+    pub plan: Box<PluginHostPlanResult>,
+    pub result: Box<PluginHostApplyResult>,
+}
+
+impl PluginManagerMutationView {
+    fn new(plan: PluginHostPlanResult, result: PluginHostApplyResult) -> UseResult<Self> {
+        plan.validate()?;
+        result.validate()?;
+        if result.operation_id != plan.plan.plan.operation_id
+            || result.plan_digest != plan.plan.plan_digest
+            || result.package_id != plan.package_id
+            || result.scope != plan.scope
+        {
+            return Err(UseError::new(
+                "use.plugin.manager_cli_invalid",
+                "The Plugin Manager CLI result does not bind its exact reviewed plan.",
+            ));
+        }
+        Ok(Self {
+            operation_id: plan.plan.plan.operation_id.clone(),
+            plan_digest: plan.plan.plan_digest.clone(),
+            plan: Box::new(plan),
+            result: Box::new(result),
+        })
+    }
 }
 
 pub(crate) fn external_package_id(id: &str) -> Option<&str> {
@@ -413,61 +450,32 @@ pub(crate) async fn install_remote_extension(
     package_id: &str,
     registry_name: Option<&str>,
     version: Option<&str>,
-    channel: &str,
+    channel: Option<&str>,
     expected_package_lock_digest: Option<&str>,
     offline: bool,
 ) -> UseResult<ExtensionInstallView> {
-    let registries = a3s_use_extension::RegistrySourceStore::from_env()?
-        .resolve(registry_name)
-        .await?;
-    let release_channel = match channel {
-        "stable" => a3s_use_core::PluginReleaseChannel::Stable,
-        "beta" => a3s_use_core::PluginReleaseChannel::Beta,
-        "nightly" => a3s_use_core::PluginReleaseChannel::Nightly,
-        _ => {
-            return Err(UseError::new(
-                "use.extension.channel_invalid",
-                "The cognitive-package Registry channel is invalid.",
-            ))
-        }
-    };
-    let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
-    let result = if offline {
-        manager
-            .install_cached(
-                registries.root(),
-                registries.dependencies(),
-                package_id,
-                version,
-                release_channel,
-                expected_package_lock_digest,
-            )
-            .await?
-    } else {
-        manager
-            .install_remote(
-                registries.root(),
-                registries.dependencies(),
-                package_id,
-                version,
-                release_channel,
-                expected_package_lock_digest,
-            )
-            .await?
-    };
-    let extension = extension_view(result.root.clone())?;
-    let package_graph = serde_json::to_value(&result).map_err(|error| {
+    let result = manager::install(
+        package_id,
+        registry_name,
+        version,
+        channel,
+        expected_package_lock_digest,
+        offline,
+    )
+    .await?;
+    let extension = installed_extension(package_id).await?.ok_or_else(|| {
         UseError::new(
             "use.plugin.package_graph_invalid",
-            format!("Failed to encode cognitive-package graph evidence: {error}"),
+            "The Plugin Manager completed install without an installed root extension.",
         )
     })?;
     Ok(ExtensionInstallView {
-        changed: result.changed,
+        changed: !result.manager.result.replayed,
         extension,
-        package_graph: Some(package_graph),
-        registry_access: if offline { "cached" } else { "refreshed" },
-        registry_source_revision: registries.source_revision().to_owned(),
+        package_graph: Some(result.package_graph),
+        registry_access: result.registry_access,
+        registry_source_revision: result.registry_source_revision,
+        plugin_manager: result.manager,
     })
 }
 
@@ -476,61 +484,32 @@ pub(crate) async fn upgrade_remote_extension(
     package_id: &str,
     registry_name: Option<&str>,
     version: Option<&str>,
-    channel: &str,
+    channel: Option<&str>,
     expected_package_lock_digest: Option<&str>,
     offline: bool,
 ) -> UseResult<ExtensionInstallView> {
-    let registries = a3s_use_extension::RegistrySourceStore::from_env()?
-        .resolve(registry_name)
-        .await?;
-    let release_channel = match channel {
-        "stable" => a3s_use_core::PluginReleaseChannel::Stable,
-        "beta" => a3s_use_core::PluginReleaseChannel::Beta,
-        "nightly" => a3s_use_core::PluginReleaseChannel::Nightly,
-        _ => {
-            return Err(UseError::new(
-                "use.extension.channel_invalid",
-                "The cognitive-package Registry channel is invalid.",
-            ))
-        }
-    };
-    let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
-    let result = if offline {
-        manager
-            .upgrade_cached(
-                registries.root(),
-                registries.dependencies(),
-                package_id,
-                version,
-                release_channel,
-                expected_package_lock_digest,
-            )
-            .await?
-    } else {
-        manager
-            .upgrade_remote(
-                registries.root(),
-                registries.dependencies(),
-                package_id,
-                version,
-                release_channel,
-                expected_package_lock_digest,
-            )
-            .await?
-    };
-    let extension = extension_view(result.root.clone())?;
-    let package_graph = serde_json::to_value(&result).map_err(|error| {
+    let result = manager::upgrade(
+        package_id,
+        registry_name,
+        version,
+        channel,
+        expected_package_lock_digest,
+        offline,
+    )
+    .await?;
+    let extension = installed_extension(package_id).await?.ok_or_else(|| {
         UseError::new(
             "use.plugin.package_graph_invalid",
-            format!("Failed to encode cognitive-package upgrade evidence: {error}"),
+            "The Plugin Manager completed upgrade without an installed root extension.",
         )
     })?;
     Ok(ExtensionInstallView {
-        changed: result.changed,
+        changed: !result.manager.result.replayed,
         extension,
-        package_graph: Some(package_graph),
-        registry_access: if offline { "cached" } else { "refreshed" },
-        registry_source_revision: registries.source_revision().to_owned(),
+        package_graph: Some(result.package_graph),
+        registry_access: result.registry_access,
+        registry_source_revision: result.registry_source_revision,
+        plugin_manager: result.manager,
     })
 }
 
@@ -539,7 +518,7 @@ pub(crate) async fn install_remote_extension(
     _package_id: &str,
     _registry_name: Option<&str>,
     _version: Option<&str>,
-    _channel: &str,
+    _channel: Option<&str>,
     _expected_package_lock_digest: Option<&str>,
     _offline: bool,
 ) -> UseResult<ExtensionInstallView> {
@@ -551,7 +530,7 @@ pub(crate) async fn upgrade_remote_extension(
     _package_id: &str,
     _registry_name: Option<&str>,
     _version: Option<&str>,
-    _channel: &str,
+    _channel: Option<&str>,
     _expected_package_lock_digest: Option<&str>,
     _offline: bool,
 ) -> UseResult<ExtensionInstallView> {
@@ -560,18 +539,12 @@ pub(crate) async fn upgrade_remote_extension(
 
 #[cfg(feature = "extensions")]
 pub(crate) async fn uninstall_extension(package_id: &str) -> UseResult<ExtensionUninstallView> {
-    let manager = crate::cognitive_package::CognitivePackageManager::from_env()?;
-    let result = manager.uninstall(package_id).await?;
-    let package_graph = serde_json::to_value(&result).map_err(|error| {
-        UseError::new(
-            "use.plugin.package_graph_invalid",
-            format!("Failed to encode cognitive-package uninstall evidence: {error}"),
-        )
-    })?;
+    let result = manager::uninstall(package_id).await?;
     Ok(ExtensionUninstallView {
-        package_id: result.root_package_id,
-        changed: result.changed,
-        package_graph: Some(package_graph),
+        package_id: package_id.to_owned(),
+        changed: !result.manager.result.replayed,
+        package_graph: Some(result.package_graph),
+        plugin_manager: result.manager,
     })
 }
 

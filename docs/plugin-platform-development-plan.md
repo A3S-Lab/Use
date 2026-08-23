@@ -188,6 +188,10 @@ Status: in progress
   frozen planning operations, durable reviewed-plan reopening, digest-only
   apply, and a standard MCP adapter with injected trusted confirmation.
 - [ ] Migrate CLI and TUI and compose the manager MCP in Code on that service.
+  Registry-backed standalone install, upgrade, and uninstall mutations now use
+  the service and expose exact Host plan/apply results without changing their
+  existing JSON fields. Explicit reviewed CLI apply, read-side and
+  enable/disable convergence, TUI migration, and Code MCP composition remain.
 - Keep Registry source state, catalog cache, plan generation, policy, apply, and
   operation replay out of view-specific code.
 - TUI `/packages`, CLI, and agent MCP must display and apply the same operation

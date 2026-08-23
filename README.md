@@ -320,6 +320,18 @@ a3s-use state restore-status [--json]
 a3s-use capability snapshot|watch [options] [--json]
 ```
 
+Standalone Registry-backed `install`, `upgrade`, and `uninstall` now plan and
+apply through the shared `PluginManagerService`. Their existing component and
+`packageGraph` fields remain available, while JSON output also includes a
+`pluginManager` object containing the exact operation ID, plan digest, reviewed
+Host plan result, and terminal Host apply result. Repeating an unchanged
+operation returns the durable replay result. Offline planning and recovery stay
+zero-network, and a supplied package-lock digest is rejected before any target
+download. The compatibility commands auto-apply only permission-free `Allow`
+plans; explicit reviewed CLI apply, read-side manager commands,
+enable/disable, TUI migration, and Code-side manager MCP composition remain
+open.
+
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
 generations per surface, and 256 removal tombstones. Staging checks the whole
@@ -938,9 +950,11 @@ and digest-only apply. `PluginManagerMcpServer` exposes the exact ten v4 tools
 through standard MCP initialization, `tools/list`, and `tools/call`; its
 schemas and annotations are generated from the frozen toolset. MCP apply asks
 an injected trusted host confirmation provider for existing exact evidence and
-never treats an agent tool call as user confirmation. CLI and Code TUI have not
-yet been migrated to this service, so cross-presentation convergence remains a
-release gate.
+never treats an agent tool call as user confirmation. The standalone CLI's
+Registry-backed install, upgrade, and uninstall mutations now use this service
+and expose the exact reviewed Host plan/result alongside their released output
+fields. Explicit reviewed CLI apply, read-side and enable/disable convergence,
+the Code TUI, and Code-side manager MCP composition remain release gates.
 
 Host protocol v6 binds an explicit User or Workspace scope kind and projects
 exact operation state from durable evidence only. Equal textual scope IDs in
@@ -1046,7 +1060,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
-| Shared Plugin Manager service and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. CLI/TUI migration and product-host MCP composition remain open |
+| Shared Plugin Manager service and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed install/upgrade/uninstall now use the service and return exact Host plan/apply evidence without breaking their existing JSON fields. Explicit reviewed CLI apply, read-side and enable/disable convergence, TUI migration, and product-host MCP composition remain open |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
@@ -1059,7 +1073,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Secret-free operation diagnostics | Implemented. Latest/previous package checkpoints are exposed through `extension inspect --json`; `extension diagnose --json` projects one exact retained planned/admitted/cancelled install/upgrade/uninstall graph, active admitted enable/disable operation, or newest Host-reviewed pre-admission enable/disable plan/cancellation with Registry/TUF, provider, Grant, cutover, publication, drain, rollback, and recovery evidence. `extension diagnose --history --json` retains the newest 16 completed or rolled-back operations and cancelled graph plans within 8 MiB per scope/package, survives uninstall, deduplicates exact replay, and fails closed on damaged or linked state. Pre-lock Registry/TUF attempts expose refreshed/cached per-Registry verification progress, trust/source digests, role versions, bounded failures, and terminal lock evidence. Retained graphs and pre-plan attempts expose zero-network expected/retained archive and executable-planning-target bytes plus exact-target `missing`/`partial`/`complete` state from historical provenance. Real killed-process and Host-process tests cover every handoff, partial observation, exact resume, zero-side-effect planned/cancelled enablement diagnosis, and completed-Use outcome suppression. Path-free active/history/capacity restore evidence is exposed through `knowledge restore-status --json` |
 | Watcher-safe bounded Registry mutation locking | Implemented and real-process tested |
 | Plan-v4 reviewed enable/disable and terminal `NoChange` | Implemented in the manager contract and package engine |
-| Typed managed Host Manager | `CognitivePackageHostManager` implements host protocol v6 with explicit User/Workspace scope-kind binding, exact capability/fence validation, persisted plan/apply replay, selected-surface evidence, durable operation observation/watch, pre-admission cancellation, Registry provenance revalidation, zero-network install/upgrade apply from the exact planning cache, graph and enablement delegation, and fail-closed expired-plan recovery from Use-owned admission/completion evidence. Same textual IDs in different scope kinds retain distinct Host plans and replay records and reject substitution. Killed real Host protocol install, upgrade, uninstall, disable, and enable applies recover with the Registry offline, converge exact Grants without generation inflation, and persist one terminal outcome; injection into each external managed host remains open |
+| Typed managed Host Manager | `CognitivePackageHostManager` implements host protocol v6 with explicit User/Workspace scope-kind binding, exact capability/fence validation, persisted plan/apply replay, selected-surface evidence, durable operation observation/watch, pre-admission cancellation, Registry provenance revalidation, zero-network install/upgrade apply from the exact planning cache, graph and enablement delegation, and fail-closed expired-plan recovery from Use-owned admission/completion evidence. Operation storage distinguishes repeated lifecycle operation IDs by exact plan digest while retaining legacy lookup aliases, and a terminal outcome is replayed only while its Use-owned graph, lifecycle completion, and package state still match. Same textual IDs in different scope kinds retain distinct Host plans and replay records and reject substitution. Killed real Host protocol install, upgrade, uninstall, disable, and enable applies recover with the Registry offline, converge exact Grants without generation inflation, and persist one terminal outcome; injection into each external managed host remains open |
 | Workspace Grant composition and drain-before-revoke | Implemented in core/standalone lifecycle paths |
 | Mixed native/managed provider planning | Implemented in Use and the shared A3S host path: unbound drafts, assigned-provider preflight, host policy, canonical Grant-bound final selection, durable planning bundles/Grant snapshots/provider generations, exact apply-time reconstruction, restart replay, and provider-drift rejection are tested |
 | Exact published-generation Knowledge lease | Implemented in the Use Registry and SQLite Knowledge host. Acquisition binds the complete capability projection to the installed package, manifest, OKF bundle, lifecycle generation, and route lock; one lease retains that generation across cited search/read, rejects new calls after hide, participates in drain, and fails closed on package or retained-content drift. A3S Code consumption remains an external integration task |

@@ -28,15 +28,15 @@ use crate::plugin_lifecycle::{
     PluginLifecycleOperationStatus,
 };
 
-use super::embedded::{
-    acquire_capability_lease, inspect_catalog, resolve_lock, resolve_requirement, search_catalogs,
-};
+use super::embedded::{acquire_capability_lease, inspect_catalog, resolve_lock, search_catalogs};
 use super::enablement_plan::CognitivePackageEnablementPlanStatus;
 use super::host_store::{
     digest_value, PluginHostProtocolStore, StoredPluginHostCancellation, StoredPluginHostOutcome,
     StoredPluginHostPlan, StoredPluginHostRequest,
 };
 use super::plan::now_ms;
+use super::registry_access::{resolve_package_lock, RegistryAccess};
+use super::resolution_attempt::PendingPackageResolutionAttempt;
 use super::store::PackageGraphOperationPhase;
 use super::{
     CognitiveCapabilityLease, CognitiveCatalogSearchResult, CognitivePackageAuthorizationProvider,
@@ -152,23 +152,68 @@ impl CognitivePackageHostManager {
     /// Resolve one complete lock from a bounded SemVer selector through the
     /// host's configured Registry set. The returned root catalog record is the
     /// exact candidate that every presentation adapter must display.
+    #[allow(clippy::too_many_arguments)]
     pub async fn resolve_cognitive_package_requirement(
         &self,
+        action: PluginOperationAction,
         access: CognitiveRegistryAccess,
         selected_registry: Option<&str>,
         package_id: &str,
         version_requirement: Option<&str>,
         channel: a3s_use_core::PluginReleaseChannel,
+        expected_package_lock_digest: Option<&str>,
     ) -> UseResult<PluginPackageLock> {
-        resolve_requirement(
-            &self.registry_sources,
+        if !matches!(
+            action,
+            PluginOperationAction::Install | PluginOperationAction::Upgrade
+        ) {
+            return Err(host_error(
+                "use.plugin.host_plan_action_unsupported",
+                "Only install and upgrade operations resolve Registry requirements.",
+            ));
+        }
+        let sources = self.registry_sources.resolve(selected_registry).await?;
+        let access = registry_access(access);
+        let _maintenance = self.manager.maintenance_lock().acquire_shared().await?;
+        let attempt = self
+            .manager
+            .resolution_attempt_store()
+            .begin(PendingPackageResolutionAttempt::new(
+                self.manager.scope.clone(),
+                action,
+                package_id,
+                version_requirement,
+                channel,
+                access.resolution_access(),
+                sources.root(),
+                sources.dependencies(),
+                now_ms()?,
+            )?)
+            .await?;
+        let lock = match resolve_package_lock(
             access,
-            selected_registry,
+            sources.root(),
+            sources.dependencies(),
             package_id,
             version_requirement,
             channel,
+            &attempt,
         )
         .await
+        {
+            Ok(lock) => {
+                attempt.mark_resolved(&lock).await?;
+                lock
+            }
+            Err(error) => {
+                attempt.mark_failed(&error.code).await?;
+                return Err(error);
+            }
+        };
+        let lock_digest = lock.descriptor_digest()?;
+        super::install::verify_expected_lock(&lock_digest, expected_package_lock_digest)?;
+        attempt.finish().await?;
+        Ok(lock)
     }
 
     /// Enumerate selected package IDs without exposing receipt-owned paths.
@@ -193,6 +238,18 @@ impl CognitivePackageHostManager {
         self.manager.installed_package_lock(package_id).await
     }
 
+    pub(crate) async fn cognitive_package_uninstall_plan_lock(
+        &self,
+        package_id: &str,
+    ) -> UseResult<Option<PluginPackageLock>> {
+        self.manager.uninstall_plan_lock(package_id).await
+    }
+
+    pub(crate) async fn current_package_graph_revision(&self) -> UseResult<(u64, String)> {
+        let snapshot = self.manager.registry.snapshot().await?;
+        Ok((snapshot.generation, snapshot.descriptor_digest()?))
+    }
+
     /// Reopen the exact durable plan used by digest-only apply and UI review.
     pub async fn reviewed_cognitive_package_plan(
         &self,
@@ -204,7 +261,7 @@ impl CognitivePackageHostManager {
         a3s_use_core::PluginOperationPlan::validate_operation_id(operation_id)?;
         let stored = self
             .store
-            .get_by_operation(scope, operation_id)
+            .get_by_operation(scope, operation_id, plan_digest)
             .await?
             .ok_or_else(|| {
                 host_error(
@@ -313,6 +370,7 @@ impl CognitivePackageHostManager {
     async fn plan_graph(
         &self,
         request: &PluginHostPlanRequest,
+        access: CognitiveRegistryAccess,
     ) -> UseResult<PluginOperationPlanEnvelope> {
         let lock = require_request_lock(request)?;
         let lock_digest = lock.descriptor_digest()?;
@@ -329,27 +387,29 @@ impl CognitivePackageHostManager {
                 match request.action {
                     PluginOperationAction::Install => {
                         self.manager
-                            .prepare_install_remote_selected(
+                            .prepare_install_with_access_selected(
                                 sources.root(),
                                 sources.dependencies(),
                                 request.package_id.as_str(),
                                 requested_version,
                                 candidate.record.channel,
-                                &request.selected_surfaces,
                                 &lock_digest,
+                                registry_access(access),
+                                &request.selected_surfaces,
                             )
                             .await
                     }
                     PluginOperationAction::Upgrade => {
                         self.manager
-                            .prepare_upgrade_remote_selected(
+                            .prepare_upgrade_with_access_selected(
                                 sources.root(),
                                 sources.dependencies(),
                                 request.package_id.as_str(),
                                 requested_version,
                                 candidate.record.channel,
-                                &request.selected_surfaces,
                                 &lock_digest,
+                                registry_access(access),
+                                &request.selected_surfaces,
                             )
                             .await
                     }
@@ -667,7 +727,11 @@ impl CognitivePackageHostManager {
         })?;
         if let Some(cancellation) = self
             .store
-            .get_cancellation(stored.plan.scope(), &envelope.plan.operation_id)
+            .get_cancellation(
+                stored.plan.scope(),
+                &envelope.plan.operation_id,
+                &envelope.plan_digest,
+            )
             .await?
         {
             if cancellation.plan_digest != envelope.plan_digest {
@@ -1028,7 +1092,7 @@ impl CognitivePackageHostManager {
         self.verify_fence(&request.scope)?;
         let stored = self
             .store
-            .get_by_operation(&request.scope, &request.operation_id)
+            .get_by_operation(&request.scope, &request.operation_id, &request.plan_digest)
             .await?
             .ok_or_else(|| {
                 host_error(
@@ -1072,19 +1136,55 @@ impl CognitivePackageHostManager {
         Ok(result)
     }
 
-    fn verify_fence(&self, scope: &PluginManagedScope) -> UseResult<()> {
-        scope.verify_current_fence(&self.current_scope)
+    async fn outcome_is_current(&self, stored: &StoredPluginHostRequest) -> UseResult<bool> {
+        let Some(outcome) = stored.outcome.as_ref() else {
+            return Ok(true);
+        };
+        let envelope = stored.plan.envelope().ok_or_else(|| {
+            host_error(
+                "use.plugin.host_enablement_no_change",
+                "A no-change Host plan cannot retain an operation outcome.",
+            )
+        })?;
+        if let StoredPluginHostPlan::Graph { .. } = &stored.plan {
+            if self.graph_completion(envelope).await? != Some(outcome.completed_at_ms) {
+                return Ok(false);
+            }
+            let installed = self
+                .manager
+                .installed_package_lock(&envelope.plan.package_id)
+                .await?;
+            match envelope.plan.action {
+                PluginOperationAction::Install | PluginOperationAction::Upgrade => {
+                    if installed.as_ref() != envelope.package_lock.as_ref() {
+                        return Ok(false);
+                    }
+                }
+                PluginOperationAction::Uninstall => {
+                    if installed.is_some() {
+                        return Ok(false);
+                    }
+                }
+                PluginOperationAction::Enable | PluginOperationAction::Disable => {
+                    return Err(host_error(
+                        "use.plugin.host_operation_result_mismatch",
+                        "A graph Host outcome contains an enablement action.",
+                    ));
+                }
+            }
+        }
+        let current = self
+            .manager
+            .observe_package(&envelope.plan.package_id)
+            .await?;
+        Ok(package_outcome_matches(&current, &outcome.state))
     }
-}
 
-#[async_trait]
-impl PluginHostManager for CognitivePackageHostManager {
-    async fn capabilities(&self) -> UseResult<PluginHostCapabilities> {
-        self.capabilities.validate()?;
-        Ok(self.capabilities.clone())
-    }
-
-    async fn plan(&self, request: PluginHostPlanRequest) -> UseResult<PluginHostPlanResult> {
+    pub(crate) async fn plan_cognitive_package(
+        &self,
+        request: PluginHostPlanRequest,
+        access: CognitiveRegistryAccess,
+    ) -> UseResult<PluginHostPlanResult> {
         request.validate_for_capabilities(&self.capabilities)?;
         self.verify_fence(&request.scope)?;
         require_request_lock(&request)?;
@@ -1103,13 +1203,16 @@ impl PluginHostManager for CognitivePackageHostManager {
             if stored_request != &request {
                 return Err(host_store_conflict());
             }
+            if !self.outcome_is_current(&record).await? {
+                return Err(host_outcome_stale());
+            }
             let mut replay = stored_result.clone();
             replay.replayed = true;
             replay.validate_for(&request, &self.capabilities)?;
             return Ok(replay);
         }
 
-        let envelope = self.plan_graph(&request).await?;
+        let envelope = self.plan_graph(&request, access).await?;
         let result = PluginHostPlanResult {
             schema: PLUGIN_HOST_PLAN_RESULT_SCHEMA.to_string(),
             request_id: request.request_id.clone(),
@@ -1132,6 +1235,23 @@ impl PluginHostManager for CognitivePackageHostManager {
         Ok(result)
     }
 
+    fn verify_fence(&self, scope: &PluginManagedScope) -> UseResult<()> {
+        scope.verify_current_fence(&self.current_scope)
+    }
+}
+
+#[async_trait]
+impl PluginHostManager for CognitivePackageHostManager {
+    async fn capabilities(&self) -> UseResult<PluginHostCapabilities> {
+        self.capabilities.validate()?;
+        Ok(self.capabilities.clone())
+    }
+
+    async fn plan(&self, request: PluginHostPlanRequest) -> UseResult<PluginHostPlanResult> {
+        self.plan_cognitive_package(request, CognitiveRegistryAccess::Refreshed)
+            .await
+    }
+
     async fn apply(&self, request: PluginHostApplyRequest) -> UseResult<PluginHostApplyResult> {
         request.validate_for_capabilities(&self.capabilities)?;
         self.verify_fence(&request.scope)?;
@@ -1141,7 +1261,7 @@ impl PluginHostManager for CognitivePackageHostManager {
             .await?;
         let stored = self
             .store
-            .get_by_operation(&request.scope, &request.operation_id)
+            .get_by_operation(&request.scope, &request.operation_id, &request.plan_digest)
             .await?
             .ok_or_else(|| {
                 host_error(
@@ -1158,7 +1278,7 @@ impl PluginHostManager for CognitivePackageHostManager {
         })?;
         if self
             .store
-            .get_cancellation(&request.scope, &request.operation_id)
+            .get_cancellation(&request.scope, &request.operation_id, &request.plan_digest)
             .await?
             .is_some()
         {
@@ -1199,6 +1319,9 @@ impl PluginHostManager for CognitivePackageHostManager {
             self.verify_admitted_replay(&request, &stored.plan)?;
         }
         if let Some(outcome) = &stored.outcome {
+            if !self.outcome_is_current(&stored).await? {
+                return Err(host_outcome_stale());
+            }
             validate_state_for_plan(&outcome.state, envelope)?;
             return apply_result(&request, outcome, true, &self.capabilities);
         }
@@ -1386,7 +1509,7 @@ impl PluginHostManager for CognitivePackageHostManager {
             .await?;
         let stored = self
             .store
-            .get_by_operation(&request.scope, &request.operation_id)
+            .get_by_operation(&request.scope, &request.operation_id, &request.plan_digest)
             .await?
             .ok_or_else(|| {
                 host_error(
@@ -1411,7 +1534,7 @@ impl PluginHostManager for CognitivePackageHostManager {
         }
         let status = if let Some(cancellation) = self
             .store
-            .get_cancellation(&request.scope, &request.operation_id)
+            .get_cancellation(&request.scope, &request.operation_id, &request.plan_digest)
             .await?
         {
             if cancellation.plan_digest != request.plan_digest {
@@ -1722,6 +1845,20 @@ fn validate_state_for_plan(
     Ok(())
 }
 
+fn package_outcome_matches(
+    current: &PluginHostPackageState,
+    completed: &PluginHostPackageState,
+) -> bool {
+    current.version == completed.version
+        && current.package_generation == completed.package_generation
+        && current.package_digest == completed.package_digest
+        && current.manifest_digest == completed.manifest_digest
+        && current.receipt_digest == completed.receipt_digest
+        && current.desired == completed.desired
+        && current.observed == completed.observed
+        && current.selected_surfaces == completed.selected_surfaces
+}
+
 #[derive(Debug)]
 struct ExpectedGraphLifecycleUnit {
     package_id: String,
@@ -1935,6 +2072,13 @@ fn lifecycle_action(action: PluginOperationAction) -> UseResult<PluginLifecycleA
     }
 }
 
+const fn registry_access(access: CognitiveRegistryAccess) -> RegistryAccess {
+    match access {
+        CognitiveRegistryAccess::Refreshed => RegistryAccess::Refreshed,
+        CognitiveRegistryAccess::Cached => RegistryAccess::Cached,
+    }
+}
+
 fn host_operation_observation_mismatch(message: impl Into<String>) -> UseError {
     host_error("use.plugin.host_operation_observation_mismatch", message)
 }
@@ -1955,6 +2099,13 @@ fn host_store_conflict() -> UseError {
     host_error(
         "use.plugin.host_store_conflict",
         "The Host request ID already owns a different operation kind or request body.",
+    )
+}
+
+fn host_outcome_stale() -> UseError {
+    host_error(
+        "use.plugin.host_outcome_stale",
+        "The completed Host outcome no longer matches the current Use-owned package state.",
     )
 }
 

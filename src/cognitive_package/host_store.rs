@@ -571,17 +571,33 @@ impl PluginHostProtocolStore {
         &self,
         scope: &PluginManagedScope,
         operation_id: &str,
+        plan_digest: &str,
     ) -> UseResult<Option<StoredPluginHostRequest>> {
-        let path = self.operation_path(scope, operation_id)?;
+        let path = self.operation_path(scope, operation_id, plan_digest)?;
         let index: Option<StoredPluginHostOperationIndex> =
             read_optional(&self.state_root, &path).await?;
-        let Some(index) = index else {
-            return Ok(None);
+        let (index, exact_binding) = match index {
+            Some(index) => (index, true),
+            None => {
+                let legacy_path = self.legacy_operation_path(scope, operation_id)?;
+                let legacy: Option<StoredPluginHostOperationIndex> =
+                    read_optional(&self.state_root, &legacy_path).await?;
+                let Some(legacy) = legacy else {
+                    return Ok(None);
+                };
+                legacy.validate()?;
+                if legacy.operation_id != operation_id {
+                    return Err(store_invalid(
+                        "A legacy Host operation index does not match its owned path.",
+                    ));
+                }
+                (legacy, false)
+            }
         };
         index.validate()?;
-        if index.operation_id != operation_id {
+        if index.operation_id != operation_id || exact_binding && index.plan_digest != plan_digest {
             return Err(store_invalid(
-                "A Host operation index does not match its owned path.",
+                "A Host operation index does not match its exact operation binding path.",
             ));
         }
         let record = self
@@ -638,7 +654,11 @@ impl PluginHostProtocolStore {
             return Ok(None);
         }
         let cancellation = self
-            .get_cancellation(&index.managed_scope, &index.operation_id)
+            .get_cancellation(
+                &index.managed_scope,
+                &index.operation_id,
+                &index.plan_digest,
+            )
             .await?;
         Ok(Some((record, cancellation)))
     }
@@ -701,15 +721,25 @@ impl PluginHostProtocolStore {
         &self,
         scope: &PluginManagedScope,
         operation_id: &str,
+        plan_digest: &str,
     ) -> UseResult<Option<StoredPluginHostCancellation>> {
-        let path = self.cancellation_path(scope, operation_id)?;
+        let path = self.cancellation_path(scope, operation_id, plan_digest)?;
         let value: Option<StoredPluginHostCancellation> =
             read_optional(&self.state_root, &path).await?;
+        let value = match value {
+            Some(value) => Some(value),
+            None => {
+                let legacy_path = self.legacy_cancellation_path(scope, operation_id)?;
+                let legacy: Option<StoredPluginHostCancellation> =
+                    read_optional(&self.state_root, &legacy_path).await?;
+                legacy.filter(|value| value.plan_digest == plan_digest)
+            }
+        };
         if let Some(value) = &value {
             value.validate()?;
-            if value.operation_id != operation_id {
+            if value.operation_id != operation_id || value.plan_digest != plan_digest {
                 return Err(store_invalid(
-                    "A Host cancellation record does not match its owned path.",
+                    "A Host cancellation record does not match its exact operation binding path.",
                 ));
             }
         }
@@ -723,41 +753,68 @@ impl PluginHostProtocolStore {
     ) -> UseResult<bool> {
         cancellation.validate()?;
         let _lock = self.lock_store(scope).await?;
-        let path = self.cancellation_path(scope, &cancellation.operation_id)?;
+        let path =
+            self.cancellation_path(scope, &cancellation.operation_id, &cancellation.plan_digest)?;
         let current: Option<StoredPluginHostCancellation> =
             read_optional(&self.state_root, &path).await?;
-        if let Some(current) = current {
+        let inserted = if let Some(current) = current {
             if current == *cancellation
                 || current.operation_id == cancellation.operation_id
                     && current.plan_digest == cancellation.plan_digest
             {
-                return Ok(false);
+                false
+            } else {
+                return Err(store_conflict(
+                    "The Host operation already owns a different cancellation record.",
+                ));
             }
-            return Err(store_conflict(
-                "The Host operation already owns a different cancellation record.",
-            ));
+        } else {
+            write_new(&self.state_root, &path, cancellation).await?;
+            true
+        };
+        let legacy_path = self.legacy_cancellation_path(scope, &cancellation.operation_id)?;
+        let legacy: Option<StoredPluginHostCancellation> =
+            read_optional(&self.state_root, &legacy_path).await?;
+        match legacy {
+            Some(legacy) => legacy.validate()?,
+            None => write_new(&self.state_root, &legacy_path, cancellation).await?,
         }
-        write_new(&self.state_root, &path, cancellation).await?;
-        Ok(true)
+        Ok(inserted)
     }
 
     async fn ensure_operation_index(&self, record: &StoredPluginHostRequest) -> UseResult<()> {
         let Some(index) = StoredPluginHostOperationIndex::from_request(record)? else {
             return Ok(());
         };
-        let path = self.operation_path(record.plan.scope(), &index.operation_id)?;
+        let path =
+            self.operation_path(record.plan.scope(), &index.operation_id, &index.plan_digest)?;
         let current: Option<StoredPluginHostOperationIndex> =
             read_optional(&self.state_root, &path).await?;
         if let Some(current) = current {
             current.validate()?;
-            if current == index {
-                return Ok(());
+            if current != index {
+                return Err(store_conflict(
+                    "The Host operation binding already owns a different immutable plan.",
+                ));
             }
-            return Err(store_conflict(
-                "The Host operation ID already owns a different immutable plan.",
-            ));
+        } else {
+            write_new(&self.state_root, &path, &index).await?;
         }
-        write_new(&self.state_root, &path, &index).await
+        let legacy_path = self.legacy_operation_path(record.plan.scope(), &index.operation_id)?;
+        let legacy: Option<StoredPluginHostOperationIndex> =
+            read_optional(&self.state_root, &legacy_path).await?;
+        match legacy {
+            Some(legacy) => {
+                legacy.validate()?;
+                if legacy.operation_id != index.operation_id {
+                    return Err(store_invalid(
+                        "A legacy Host operation index moved across its owned path.",
+                    ));
+                }
+                Ok(())
+            }
+            None => write_new(&self.state_root, &legacy_path, &index).await,
+        }
     }
 
     async fn ensure_enablement_diagnostic_index(
@@ -838,9 +895,30 @@ impl PluginHostProtocolStore {
             .join(format!("{}.json", sha256_hex(request_id.as_bytes()))))
     }
 
-    fn operation_path(&self, scope: &PluginManagedScope, operation_id: &str) -> UseResult<PathBuf> {
+    fn operation_path(
+        &self,
+        scope: &PluginManagedScope,
+        operation_id: &str,
+        plan_digest: &str,
+    ) -> UseResult<PathBuf> {
         PluginOperationPlan::validate_operation_id(operation_id)
             .map_err(|_| store_invalid("A Host operation path identity is invalid."))?;
+        if !valid_sha256(plan_digest) {
+            return Err(store_invalid("A Host operation path digest is invalid."));
+        }
+        Ok(self.scope_root(scope)?.join("operations").join(format!(
+            "{}.json",
+            operation_binding_digest(operation_id, plan_digest)
+        )))
+    }
+
+    fn legacy_operation_path(
+        &self,
+        scope: &PluginManagedScope,
+        operation_id: &str,
+    ) -> UseResult<PathBuf> {
+        PluginOperationPlan::validate_operation_id(operation_id)
+            .map_err(|_| store_invalid("A legacy Host operation path identity is invalid."))?;
         Ok(self
             .scope_root(scope)?
             .join("operations")
@@ -851,9 +929,26 @@ impl PluginHostProtocolStore {
         &self,
         scope: &PluginManagedScope,
         operation_id: &str,
+        plan_digest: &str,
     ) -> UseResult<PathBuf> {
         PluginOperationPlan::validate_operation_id(operation_id)
             .map_err(|_| store_invalid("A Host cancellation path identity is invalid."))?;
+        if !valid_sha256(plan_digest) {
+            return Err(store_invalid("A Host cancellation path digest is invalid."));
+        }
+        Ok(self.scope_root(scope)?.join("cancellations").join(format!(
+            "{}.json",
+            operation_binding_digest(operation_id, plan_digest)
+        )))
+    }
+
+    fn legacy_cancellation_path(
+        &self,
+        scope: &PluginManagedScope,
+        operation_id: &str,
+    ) -> UseResult<PathBuf> {
+        PluginOperationPlan::validate_operation_id(operation_id)
+            .map_err(|_| store_invalid("A legacy Host cancellation path identity is invalid."))?;
         Ok(self
             .scope_root(scope)?
             .join("cancellations")
@@ -1130,6 +1225,15 @@ pub(super) fn digest_value<T: Serialize>(value: &T) -> UseResult<String> {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn operation_binding_digest(operation_id: &str, plan_digest: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"a3s.use.plugin-host-operation-binding.v1\0");
+    hasher.update(operation_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(plan_digest.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn valid_sha256(value: &str) -> bool {

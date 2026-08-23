@@ -326,7 +326,11 @@ Status: in progress
 - [ ] Migrate CLI and TUI, and compose the manager MCP in A3S Code, on the
   shared `PluginManagerService` without a second catalog, plan, confirmation,
   or mutation implementation. The Use-owned service and standard MCP adapter
-  are implemented; product presentation wiring is not.
+  are implemented. Standalone Registry-backed install, upgrade, and uninstall
+  mutations now plan and apply through that service and return exact Host
+  plan/result evidence while preserving their existing JSON fields. Explicit
+  reviewed CLI apply, read-side and enable/disable convergence, TUI migration,
+  and product-host MCP composition remain open.
 - [ ] Verify TUI `/packages` and CLI output show the exact plan, package graph,
   source, permission ceiling, and confirmation boundary.
 - [ ] Prove install → invoke → exact-generation upgrade → invoke → uninstall

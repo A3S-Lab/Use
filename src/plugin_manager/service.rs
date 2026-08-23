@@ -187,6 +187,15 @@ impl PluginManagerService {
         input: PluginManagerInstallPlanInput,
         access: CognitiveRegistryAccess,
     ) -> UseResult<PluginHostPlanResult> {
+        self.plan_install_checked(input, access, None).await
+    }
+
+    pub(crate) async fn plan_install_checked(
+        &self,
+        input: PluginManagerInstallPlanInput,
+        access: CognitiveRegistryAccess,
+        expected_package_lock_digest: Option<&str>,
+    ) -> UseResult<PluginHostPlanResult> {
         input.validate()?;
         self.verify_scope(&input.scope())?;
         let selected_surfaces = input.canonical_surfaces();
@@ -195,11 +204,13 @@ impl PluginManagerService {
         let lock = self
             .host
             .resolve_cognitive_package_requirement(
+                PluginOperationAction::Install,
                 access,
                 input.registry_name.as_deref(),
                 input.package_id.as_str(),
                 requirement.as_deref(),
                 channel,
+                expected_package_lock_digest,
             )
             .await?;
         self.plan_graph(
@@ -217,6 +228,15 @@ impl PluginManagerService {
         input: PluginManagerUpgradePlanInput,
         access: CognitiveRegistryAccess,
     ) -> UseResult<PluginHostPlanResult> {
+        self.plan_upgrade_checked(input, access, None).await
+    }
+
+    pub(crate) async fn plan_upgrade_checked(
+        &self,
+        input: PluginManagerUpgradePlanInput,
+        access: CognitiveRegistryAccess,
+        expected_package_lock_digest: Option<&str>,
+    ) -> UseResult<PluginHostPlanResult> {
         input.validate()?;
         self.verify_scope(&input.scope())?;
         let selected_surfaces = input.canonical_surfaces();
@@ -229,11 +249,13 @@ impl PluginManagerService {
         let lock = self
             .host
             .resolve_cognitive_package_requirement(
+                PluginOperationAction::Upgrade,
                 access,
                 Some(&root.provenance.registry_name),
                 input.package_id.as_str(),
                 requirement.as_deref(),
                 channel,
+                expected_package_lock_digest,
             )
             .await?;
         self.plan_graph(
@@ -253,16 +275,28 @@ impl PluginManagerService {
         input.validate()?;
         self.verify_scope(&input.scope())?;
         let lock = self
-            .require_installed_lock(input.package_id.as_str())
-            .await?;
+            .host
+            .cognitive_package_uninstall_plan_lock(input.package_id.as_str())
+            .await?
+            .ok_or_else(|| {
+                UseError::new(
+                    "use.plugin.package_graph_missing",
+                    format!(
+                        "Cognitive package '{}' has no installed dependency-lock ownership record.",
+                        input.package_id
+                    ),
+                )
+            })?;
         let request = self.graph_plan_request(
             PluginOperationAction::Uninstall,
             input.package_id,
             None,
             lock,
             Vec::new(),
+            None,
         )?;
-        self.host.plan(request).await
+        self.submit_graph_plan(request, CognitiveRegistryAccess::Cached)
+            .await
     }
 
     pub async fn plan_enable(
@@ -344,9 +378,45 @@ impl PluginManagerService {
         self.host
             .inspect_cognitive_package(access, &candidate)
             .await?;
-        let request =
-            self.graph_plan_request(action, package_id, Some(candidate), lock, selected_surfaces)?;
-        self.host.plan(request).await
+        let request = self.graph_plan_request(
+            action,
+            package_id,
+            Some(candidate),
+            lock,
+            selected_surfaces,
+            None,
+        )?;
+        self.submit_graph_plan(request, access).await
+    }
+
+    async fn submit_graph_plan(
+        &self,
+        request: PluginHostPlanRequest,
+        access: CognitiveRegistryAccess,
+    ) -> UseResult<PluginHostPlanResult> {
+        match self
+            .host
+            .plan_cognitive_package(request.clone(), access)
+            .await
+        {
+            Ok(result) => Ok(result),
+            Err(error) if error.code == "use.plugin.host_outcome_stale" => {
+                let revision = self.host.current_package_graph_revision().await?;
+                let lock = request.package_lock.clone().ok_or_else(|| {
+                    service_error("A graph plan retry omitted its exact package lock.")
+                })?;
+                let retry = self.graph_plan_request(
+                    request.action,
+                    request.package_id,
+                    request.candidate,
+                    lock,
+                    request.selected_surfaces,
+                    Some(&revision),
+                )?;
+                self.host.plan_cognitive_package(retry, access).await
+            }
+            Err(error) => Err(error),
+        }
     }
 
     fn graph_plan_request(
@@ -356,21 +426,35 @@ impl PluginManagerService {
         candidate: Option<VerifiedPluginCatalogRecord>,
         package_lock: PluginPackageLock,
         selected_surfaces: Vec<PluginSurfaceRef>,
+        replay_revision: Option<&(u64, String)>,
     ) -> UseResult<PluginHostPlanRequest> {
         let package_lock_digest = package_lock.descriptor_digest()?;
         let candidate_digest = candidate
             .as_ref()
             .map(|candidate| candidate.provenance.catalog_record_digest.as_str());
-        let request_id = self.request_id(
-            "plan",
-            &(
-                action,
-                package_id.as_str(),
-                candidate_digest,
-                package_lock_digest.as_str(),
-                &selected_surfaces,
-            ),
-        )?;
+        let request_id = match replay_revision {
+            Some(revision) => self.request_id(
+                "plan-after-stale-outcome",
+                &(
+                    action,
+                    package_id.as_str(),
+                    candidate_digest,
+                    package_lock_digest.as_str(),
+                    &selected_surfaces,
+                    revision,
+                ),
+            )?,
+            None => self.request_id(
+                "plan",
+                &(
+                    action,
+                    package_id.as_str(),
+                    candidate_digest,
+                    package_lock_digest.as_str(),
+                    &selected_surfaces,
+                ),
+            )?,
+        };
         let request = PluginHostPlanRequest {
             schema: PLUGIN_HOST_PLAN_REQUEST_SCHEMA.to_string(),
             request_id,
