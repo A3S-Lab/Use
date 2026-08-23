@@ -214,7 +214,7 @@ async fn lifecycle_upgrade_waits_for_a_transient_scanner_lock_on_the_selected_re
         .retained_lifecycle_receipt_path(
             prior.package_id(),
             prior.generation(),
-            prior.package_sha256(),
+            prior.package_digest().strip_prefix("sha256:").unwrap(),
         )
         .is_file());
     assert!(temporary_receipt_paths(&receipt_path).is_empty());
@@ -234,7 +234,7 @@ async fn lifecycle_upgrade_bounds_a_persistent_receipt_lock_and_rolls_back_befor
     let retained_path = registry.paths().retained_lifecycle_receipt_path(
         prior.package_id(),
         prior.generation(),
-        prior.package_sha256(),
+        prior.package_digest().strip_prefix("sha256:").unwrap(),
     );
     let prior_receipt = fs::read(&receipt_path).await.unwrap();
     let snapshot_before_upgrade = registry.snapshot().await.unwrap();
