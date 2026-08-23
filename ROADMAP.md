@@ -359,7 +359,15 @@ Status: in progress
   HTTP MCP on the configured platform CI jobs. Real managed-provider and CLI
   process-kill qualification remains open.
 - [ ] Expand the remaining Windows gate to the complete filesystem, Runtime,
-  MCP, watcher, failure-injection, and crash-recovery matrix.
+  MCP, watcher, failure-injection, and crash-recovery matrix. All temporary-file
+  publications for Workspace Grants, package and Host records, lifecycle,
+  Runtime, Flow, Knowledge, enablement, backup, restore, and diagnostics now
+  share one bounded Windows retry for transient access, sharing, and lock
+  violations while preserving replace versus no-clobber semantics. A released
+  exclusive lock converges atomically; a persistent replacement lock stops at
+  two seconds and leaves the old target intact. Direct rename races, reboot
+  recovery, product-host contention, and the remaining platform scenarios stay
+  open.
 - [x] Test real-process uninstall interruption between durable Registry cutover
   and its package receipt, then hold the prior generation lease through restart
   to prove drain-before-removal and exact generation replay.

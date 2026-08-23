@@ -309,8 +309,7 @@ fn parse_generation_filename(name: &str) -> UseResult<u64> {
 async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
     let error_target = target.clone();
     tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        temporary.persist(target).map_err(|error| error.error)
+        a3s_use_extension::persist_temporary_replace_blocking(temporary, &target)
     })
     .await
     .map_err(|error| {

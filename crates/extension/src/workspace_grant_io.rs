@@ -263,8 +263,7 @@ pub(super) async fn activate_temporary_file(
     let error_target = target.clone();
     let error_label = label.to_string();
     tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        temporary.persist(target).map_err(|error| error.error)
+        crate::persist_temporary_replace_blocking(temporary, &target)
     })
     .await
     .map_err(|error| {

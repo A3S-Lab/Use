@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 extern crate self as a3s_use_extension;
 
+mod atomic_file;
 mod digest;
 mod package;
 #[cfg(test)]
@@ -38,6 +39,11 @@ mod workspace_grant_snapshot;
 #[cfg(test)]
 mod workspace_grant_tests;
 
+#[doc(hidden)]
+pub use atomic_file::{
+    persist_named_temporary_noclobber_blocking, persist_temporary_noclobber_blocking,
+    persist_temporary_replace_blocking,
+};
 pub use paths::ExtensionPaths;
 pub use plugin_manifest::{
     PluginFlowEngine, PluginFlowRuntime, PluginFlowSurface, PluginMcpLaunch, PluginMcpSurface,

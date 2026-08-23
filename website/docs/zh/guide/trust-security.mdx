@@ -21,7 +21,7 @@ A3S Use 的核心安全原则是：**包内容可以描述需求，但不能给�
 
 成功的带 tag preview release 会对每个平台的 staged tree 做确定性序列化，并为每个归档发布一份 SPDX JSON SBOM。GitHub OIDC 会为归档创建 build-provenance 与 SBOM attestation；`checksums.txt.sigstore.json` 是 checksum manifest 的 keyless Sigstore bundle，release job 会先按精确 tag workflow identity 复核该 bundle，再发布资产。所有 Action 以及 Rust、Python、Syft、Cosign 版本均已固定。
 
-installer 要求 Cosign，并在下载平台归档前按精确 A3S Use tag workflow identity 与 GitHub OIDC issuer 验证 `checksums.txt`。证据缺失或无效时会 fail closed，已验证 manifest 与 bundle 会随安装版本保留。对每个 target，第二台无编译缓存的干净 runner 会重建全部随包原生可执行文件，并必须逐字节匹配主归档；只有匹配通过后，确定性 `.reproducibility.json` 记录才会被 attestation、checksum 与签名。`v0.3.2` 尝试在四个 target 上未通过该比较，因此没有创建 GitHub Release；确定性原生元数据控制已在本地验证，但新的五平台运行仍未完成。installer 脚本自身仍是独立的 bootstrap 信任边界，应先审查或通过可信系统包分发。外部运营的完整 staged tree/最终归档 witness 与 Release 之外的证据保留仍是 release gate。
+installer 要求 Cosign，并在下载平台归档前按精确 A3S Use tag workflow identity 与 GitHub OIDC issuer 验证 `checksums.txt`。证据缺失或无效时会 fail closed，已验证 manifest 与 bundle 会随安装版本保留。对每个 target，第二台无编译缓存的干净 runner 会重建全部随包原生可执行文件，并必须逐字节匹配主归档；只有匹配通过后，确定性 `.reproducibility.json` 记录才会被 attestation、checksum 与签名。带 tag 的 `v0.3.2` 尝试在四个 target 上未通过该比较，因此没有创建 GitHub Release。确定性原生元数据控制落地后，非发布资格运行 [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148) 已让全部五个平台的所有随包可执行文件逐字节匹配，同时有意跳过正式发布。installer 脚本自身仍是独立的 bootstrap 信任边界，应先审查或通过可信系统包分发。外部运营的完整 staged tree/最终归档 witness 与 Release 之外的证据保留仍是 release gate。
 
 ## 可替换的 Registry 来源
 

@@ -106,16 +106,18 @@ pub(super) fn create_backup(
             "Use-owned state changed between the initial and final backup inventories.",
         ));
     }
-    temporary.persist_noclobber(destination).map_err(|error| {
-        if error.error.kind() == io::ErrorKind::AlreadyExists {
-            state_backup_exists()
-        } else {
-            state_backup_io(format!(
-                "The backup staging file cannot be published: {}",
-                error.error
-            ))
-        }
-    })?;
+    a3s_use_extension::persist_named_temporary_noclobber_blocking(temporary, destination).map_err(
+        |error| {
+            if error.kind() == io::ErrorKind::AlreadyExists {
+                state_backup_exists()
+            } else {
+                state_backup_io(format!(
+                    "The backup staging file cannot be published: {}",
+                    error
+                ))
+            }
+        },
+    )?;
     sync_parent(parent)?;
     Ok(manifest)
 }

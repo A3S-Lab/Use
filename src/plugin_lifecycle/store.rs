@@ -16,10 +16,6 @@ use super::model::{valid_machine_id, PluginLifecycleIntent};
 use super::{PluginLifecycleDiagnostic, PluginLifecycleOperationRecord};
 
 const MAX_OPERATION_BYTES: u64 = 1024 * 1024;
-#[cfg(windows)]
-const WINDOWS_ACTIVATION_RETRY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
-#[cfg(windows)]
-const WINDOWS_ACTIVATION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(25);
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Durable, cross-process journal for one package-level lifecycle saga.
@@ -466,8 +462,7 @@ async fn validate_existing_directory_chain(root: &Path, directory: &Path) -> Use
 async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
     let error_target = target.clone();
     tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        persist_temporary(temporary, &target)
+        a3s_use_extension::persist_temporary_replace_blocking(temporary, &target)
     })
     .await
     .map_err(|error| {
@@ -480,41 +475,6 @@ async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()
         )
     })?
     .map_err(|error| path_error("activate lifecycle record", &error_target, error))
-}
-
-fn persist_temporary(temporary: tempfile::TempPath, target: &Path) -> io::Result<()> {
-    #[cfg(windows)]
-    {
-        let started = std::time::Instant::now();
-        let mut temporary = temporary;
-        loop {
-            match temporary.persist(target) {
-                Ok(()) => return Ok(()),
-                Err(error) => {
-                    if !windows_activation_error_is_retryable(&error.error)
-                        || started.elapsed() >= WINDOWS_ACTIVATION_RETRY_TIMEOUT
-                    {
-                        return Err(error.error);
-                    }
-                    temporary = error.path;
-                    let remaining =
-                        WINDOWS_ACTIVATION_RETRY_TIMEOUT.saturating_sub(started.elapsed());
-                    std::thread::sleep(WINDOWS_ACTIVATION_RETRY_DELAY.min(remaining));
-                }
-            }
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        temporary.persist(target).map_err(|error| error.error)
-    }
-}
-
-#[cfg(windows)]
-fn windows_activation_error_is_retryable(error: &io::Error) -> bool {
-    // MoveFileEx reports transient scanner, sharing, and byte-range locks as
-    // access denied, sharing violations, or lock violations respectively.
-    matches!(error.raw_os_error(), Some(5 | 32 | 33))
 }
 
 async fn validate_directory(path: &Path) -> UseResult<()> {

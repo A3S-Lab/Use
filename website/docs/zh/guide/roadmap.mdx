@@ -122,6 +122,11 @@ durable Host outcome 才会报告 `Completed`。
 - Windows x86_64 现已运行当前完整的非 Science workspace 测试；确定性的真实
   directory junction 回归测试证明 package 与持久状态信任边界会在遍历前拒绝
   Windows reparse point。
+- Workspace Grant、package 与 Host record、lifecycle、Runtime、Flow、
+  Knowledge、enablement、backup、restore 和 diagnostic 的全部临时文件发布现已
+  共用一个有界 Windows 重试原语，同时保留 replace 与 no-clobber 语义。短暂
+  access、sharing 或 lock violation 释放后会原子收敛；持续 replacement lock
+  会在两秒后停止，且不会改动原 target。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
 - 真实进程测试现已覆盖 target 下载断点续传，以及 verified archive 提取期间
@@ -164,10 +169,10 @@ durable Host outcome 才会报告 `Completed`。
 - 两套平台 installer 均已要求 Cosign，在下载归档前按精确 tag workflow
   identity 验证 checksum manifest，证据无效时 fail closed，并随版本保留
   已验证的 manifest 与 bundle。
-- 仍需让全部随包原生可执行文件在第二台无编译缓存的干净 runner 上为所有
-  release target 逐字节匹配主归档。`v0.3.2` 尝试只有 macOS arm64 通过；
-  确定性原生元数据控制已在本地验证，但新的五平台矩阵仍需全绿，才能发布
-  带 attestation 的证据。
+- 无编译缓存的逐字节重建现已在非发布资格运行
+  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+  中覆盖全部五个 release target 的所有随包原生可执行文件并通过。正式发布仍
+  受独立 witness 和产品门禁阻断。
 - 仍需增加外部运营的完整 staged tree/最终归档 witness，并把验证证据保留在
   Release asset 信任边界之外。
 - 继续演练缺失 Registry/package/lifecycle/Grant authority 恢复、clean-machine

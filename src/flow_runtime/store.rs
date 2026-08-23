@@ -410,8 +410,7 @@ async fn validate_existing_directory_chain(root: &Path, parent: Option<&Path>) -
 async fn activate_temporary(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
     let error_target = target.clone();
     tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        temporary.persist(target).map_err(|error| error.error)
+        a3s_use_extension::persist_temporary_replace_blocking(temporary, &target)
     })
     .await
     .map_err(|error| {

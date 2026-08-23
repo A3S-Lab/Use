@@ -586,8 +586,7 @@ async fn write_record<T: Serialize>(
 async fn activate_replace(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
     let error_target = target.clone();
     tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        temporary.persist(target).map_err(|error| error.error)
+        a3s_use_extension::persist_temporary_replace_blocking(temporary, &target)
     })
     .await
     .map_err(|error| {
@@ -602,10 +601,7 @@ async fn activate_replace(temporary: PathBuf, target: PathBuf) -> UseResult<()> 
 async fn activate_new(temporary: PathBuf, target: PathBuf) -> UseResult<()> {
     let error_target = target.clone();
     tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        temporary
-            .persist_noclobber(target)
-            .map_err(|error| error.error)
+        a3s_use_extension::persist_temporary_noclobber_blocking(temporary, &target)
     })
     .await
     .map_err(|error| {

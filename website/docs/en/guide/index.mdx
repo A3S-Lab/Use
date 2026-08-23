@@ -104,8 +104,10 @@ installer fails closed unless Cosign verifies that bundle before downloading
 the platform archive, then retains the verified manifest and bundle with the
 installed version. A second cache-free clean runner must also byte-match every
 shipped native executable before attested reproducibility evidence is
-published. The `v0.3.2` attempt failed that gate on four targets, so a fresh
-five-platform pass remains open. See
+published. The tagged `v0.3.2` attempt failed that gate on four targets, but
+non-publishing qualification run
+[32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148)
+subsequently passed all five targets. See
 [Trust & Security](./trust-security) for the remaining bootstrap boundary and
 optional GitHub attestation verification.
 

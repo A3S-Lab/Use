@@ -1000,15 +1000,10 @@ async fn write_record<T: Serialize>(
     let error_target = path.to_path_buf();
     let activation_target = error_target.clone();
     let activation = tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
         if replace {
-            temporary
-                .persist(activation_target)
-                .map_err(|error| error.error)
+            a3s_use_extension::persist_temporary_replace_blocking(temporary, &activation_target)
         } else {
-            temporary
-                .persist_noclobber(activation_target)
-                .map_err(|error| error.error)
+            a3s_use_extension::persist_temporary_noclobber_blocking(temporary, &activation_target)
         }
     })
     .await

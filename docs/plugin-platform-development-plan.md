@@ -1,7 +1,7 @@
 # A3S Use Plugin Platform Development Plan
 
 Status: active
-Last updated: 2026-08-10
+Last updated: 2026-08-23
 
 ## Objective
 
@@ -292,8 +292,16 @@ Status: in progress
 - [x] Run the complete current non-Science workspace suite and reject real
   directory junctions across package and durable state trust boundaries. CI
   run 32604181662 provides the latest native Windows evidence.
+- [x] Route every temporary-file publication for Workspace Grants, package and
+  Host records, lifecycle, Runtime, Flow, Knowledge, enablement, backup,
+  restore evidence, and diagnostics through one blocking primitive while
+  preserving replace versus no-clobber semantics. Retry only Windows access,
+  sharing, and lock violations for at most two seconds; prove released-lock
+  convergence, persistent-lock bounds, existing-target rejection, unchanged
+  prior content, and temporary cleanup.
 - Expand filesystem coverage to replacement races, file locks, antivirus
-  contention, process groups, named resources, and reboot recovery.
+  contention outside temporary-file publication, process groups, named
+  resources, and reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
 
 Acceptance: every advertised platform passes the same contract, lifecycle,

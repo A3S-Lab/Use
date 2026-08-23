@@ -446,17 +446,19 @@ fn write_archive(
         .as_file()
         .sync_all()
         .map_err(|error| backup_io(format!("Failed to sync Knowledge backup: {error}")))?;
-    temporary.persist_noclobber(destination).map_err(|error| {
-        if error.error.kind() == std::io::ErrorKind::AlreadyExists {
-            backup_exists(destination)
-        } else {
-            backup_io(format!(
-                "Failed to publish Knowledge backup '{}': {}",
-                destination.display(),
-                error.error
-            ))
-        }
-    })?;
+    a3s_use_extension::persist_named_temporary_noclobber_blocking(temporary, destination).map_err(
+        |error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                backup_exists(destination)
+            } else {
+                backup_io(format!(
+                    "Failed to publish Knowledge backup '{}': {}",
+                    destination.display(),
+                    error
+                ))
+            }
+        },
+    )?;
     sync_parent(parent).map_err(|error| {
         UseError::new(
             "use.okf.knowledge_backup_outcome_unknown",

@@ -737,8 +737,7 @@ async fn write_json<T: Serialize>(path: &Path, value: &T, maximum: u64) -> UseRe
     let target = path.to_path_buf();
     let error_target = target.clone();
     let activation = tokio::task::spawn_blocking(move || {
-        let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        temporary.persist(target).map_err(|error| error.error)
+        a3s_use_extension::persist_temporary_replace_blocking(temporary, &target)
     })
     .await
     .map_err(|error| {

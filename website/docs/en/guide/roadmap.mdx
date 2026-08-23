@@ -135,6 +135,12 @@ package, and only a durable Host outcome reports `Completed`.
 - The complete current non-Science workspace suite now runs on Windows x86_64.
   A deterministic directory-junction regression proves package and durable
   state trust boundaries reject Windows reparse points before traversal.
+- Every temporary-file publication for Workspace Grants, package and Host
+  records, lifecycle, Runtime, Flow, Knowledge, enablement, backup, restore,
+  and diagnostics now uses one bounded Windows retry primitive while retaining
+  replace versus no-clobber semantics. Released access, sharing, or lock
+  violations converge atomically; a persistent replacement lock stops at two
+  seconds without changing the prior target.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Real-process tests now cover resumable target-download interruption and
@@ -183,10 +189,10 @@ package, and only a durable Host outcome reports `Completed`.
 - Both platform installers now require Cosign, verify the checksum manifest
   against the exact tag workflow identity before archive download, fail closed
   on invalid evidence, and retain the verified evidence with each version.
-- Pass byte-for-byte rebuilds for every shipped native executable on all
-  release targets. The `v0.3.2` attempt passed only macOS arm64; deterministic
-  native metadata controls are locally verified, but a fresh five-platform
-  clean-runner matrix must pass before evidence is attested and published.
+- Byte-for-byte cache-free rebuilds now pass for every shipped native
+  executable on all five release targets in non-publishing qualification run
+  [32600882148](https://github.com/A3S-Lab/Use/actions/runs/32600882148).
+  Publication remains blocked on the independent witness and product gates.
 - Add an externally operated witness for the complete staged tree/final archive
   and retain verification evidence outside the Release asset trust boundary.
 - Exercise missing Registry/package/lifecycle/Grant authority recovery,

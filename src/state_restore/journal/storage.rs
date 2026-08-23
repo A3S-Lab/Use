@@ -154,9 +154,7 @@ pub(super) async fn write_json<T: Serialize>(
     let target = path.to_path_buf();
     let error_target = target.clone();
     tokio::task::spawn_blocking(move || {
-        tempfile::TempPath::try_from_path(source)?
-            .persist(target)
-            .map_err(|error| error.error)
+        a3s_use_extension::persist_temporary_replace_blocking(source, &target)
     })
     .await
     .map_err(|error| {

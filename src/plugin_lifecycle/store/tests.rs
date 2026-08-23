@@ -513,36 +513,6 @@ async fn symlinked_operation_record_fails_closed() {
     assert_eq!(error.code, "use.plugin.lifecycle_record_invalid");
 }
 
-#[cfg(windows)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn activation_retries_while_windows_target_is_temporarily_locked() {
-    use std::os::windows::fs::OpenOptionsExt;
-
-    let temp = tempfile::tempdir().unwrap();
-    let target = temp.path().join("active.json");
-    let temporary = temp.path().join(".operation.tmp");
-    tokio::fs::write(&target, b"old").await.unwrap();
-    tokio::fs::write(&temporary, b"new").await.unwrap();
-
-    let locked_target = StdOpenOptions::new()
-        .read(true)
-        .share_mode(0)
-        .open(&target)
-        .unwrap();
-    let activation = tokio::spawn(activate_temporary(temporary.clone(), target.clone()));
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert!(!activation.is_finished());
-
-    drop(locked_target);
-    tokio::time::timeout(std::time::Duration::from_secs(3), activation)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
-    assert_eq!(tokio::fs::read(&target).await.unwrap(), b"new".to_vec());
-    assert!(!temporary.exists());
-}
-
 #[tokio::test]
 async fn identical_scope_ids_are_isolated_by_scope_kind() {
     let temp = tempfile::tempdir().unwrap();
