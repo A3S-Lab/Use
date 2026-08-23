@@ -1007,7 +1007,7 @@ release claim.
 | --- | --- | --- |
 | Linux x86_64 / arm64 | Full non-Science workspace CI plus release-container conformance | Development preview |
 | macOS arm64 / x86_64 | Current non-Science workspace build and tests | Development preview |
-| Windows x86_64 | Current non-Science workspace tests, junction rejection, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
+| Windows x86_64 | Current non-Science workspace tests, Flow exact-generation/tamper/scope-kind/junction qualification, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
 Native CI run
 [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)

@@ -134,7 +134,10 @@ package, and only a durable Host outcome reports `Completed`.
   inflating the capability generation.
 - The complete current non-Science workspace suite now runs on Windows x86_64.
   A deterministic directory-junction regression proves package and durable
-  state trust boundaries reject Windows reparse points before traversal.
+  state trust boundaries reject Windows reparse points before traversal. Flow
+  Runtime coverage also retains exact generations, rejects artifact
+  substitution and tampered or moved bindings, isolates identical textual IDs
+  by scope kind, and rejects a linked scope directory on Windows.
 - Every production temporary-file publication for Registry state/cache,
   Workspace Grants, package and Host records, lifecycle, Runtime, Flow,
   Knowledge, enablement, backup, restore, and diagnostics now uses bounded

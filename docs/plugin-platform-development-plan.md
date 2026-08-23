@@ -291,7 +291,10 @@ Status: in progress
 
 - [x] Run the complete current non-Science workspace suite and reject real
   directory junctions across package and durable state trust boundaries. CI
-  run 32604181662 provides the latest native Windows evidence.
+  run 32604181662 provides the initial native Windows evidence. The Flow
+  Runtime subset additionally runs exact-generation retention, artifact
+  substitution, tampered or moved binding records, same-text scope-kind
+  isolation, and directory-junction rejection on Windows.
 - [x] Route every production temporary-file publication for Registry
   state/cache, Workspace Grants, package and Host records, lifecycle, Runtime,
   Flow, Knowledge, enablement, backup, restore evidence, and diagnostics

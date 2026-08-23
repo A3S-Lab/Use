@@ -354,7 +354,10 @@ Status: in progress
   of removed-dependency cleanup without capability-generation inflation.
 - [x] Run the complete current non-Science workspace suite on Windows x86_64
   and reject directory junctions across package, Registry/cache, Grant,
-  lifecycle, Runtime, Flow, and Knowledge trust boundaries.
+  lifecycle, Runtime, Flow, and Knowledge trust boundaries. Flow Runtime
+  qualification now also exercises exact-generation retention, artifact
+  substitution, tampered or moved binding records, same-text scope-kind
+  isolation, and directory-junction rejection on Windows.
 - [x] Run the Runtime Service provisioning subprocess-exit matrix for Tool and
   HTTP MCP on the configured platform CI jobs. Real managed-provider and CLI
   process-kill qualification remains open.

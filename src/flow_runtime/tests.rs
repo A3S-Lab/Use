@@ -1,13 +1,9 @@
 use std::path::{Path, PathBuf};
 
-#[cfg(unix)]
 use a3s_use_core::{PlanQualifiedSurfaceRef, PluginSurfaceKind};
-#[cfg(unix)]
 use a3s_use_extension::ExtensionManifest;
-#[cfg(unix)]
 use sha2::{Digest, Sha256};
 
-#[cfg(unix)]
 use crate::plugin_lifecycle::{
     PluginFlowLifecycleHost, PluginLifecycleAction, PluginLifecycleIntent,
     PluginLifecycleIntentSpec,
@@ -15,7 +11,6 @@ use crate::plugin_lifecycle::{
 
 use super::{A3sFlowLifecycleHost, FlowRuntimeBindingStore};
 
-#[cfg(unix)]
 const MANIFEST: &str = r#"
 extension "acme/review" {
   schema_version = 3
@@ -42,11 +37,8 @@ extension "acme/review" {
 }
 "#;
 
-#[cfg(unix)]
 #[tokio::test]
 async fn a3s_flow_preflight_is_retained_per_exact_package_generation() {
-    use std::os::unix::fs::PermissionsExt;
-
     let temporary = tempfile::tempdir().unwrap();
     let package_root = temporary.path().join("package");
     std::fs::create_dir_all(package_root.join("flows")).unwrap();
@@ -55,30 +47,7 @@ async fn a3s_flow_preflight_is_retained_per_exact_package_generation() {
         "export function run() { return { type: 'complete', output: {} }; }\n",
     )
     .unwrap();
-    let compiler = temporary.path().join("a3s-flow-native-compiler");
-    std::fs::write(
-        &compiler,
-        r#"#!/bin/sh
-set -eu
-[ "$1" = "compile" ]
-shift
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
-[ -n "$output" ]
-printf '#!/bin/sh\nexit 0\n' > "$output"
-chmod +x "$output"
-"#,
-    )
-    .unwrap();
-    let mut permissions = std::fs::metadata(&compiler).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&compiler, permissions).unwrap();
+    let compiler = fake_flow_compiler(temporary.path());
 
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
     let store = FlowRuntimeBindingStore::new(temporary.path().join("state"));
@@ -144,11 +113,8 @@ chmod +x "$output"
         .is_some());
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn retained_flow_binding_rejects_artifact_substitution() {
-    use std::os::unix::fs::PermissionsExt;
-
     let temporary = tempfile::tempdir().unwrap();
     let package_root = temporary.path().join("package");
     std::fs::create_dir_all(package_root.join("flows")).unwrap();
@@ -157,15 +123,7 @@ async fn retained_flow_binding_rejects_artifact_substitution() {
         "export function run() {}\n",
     )
     .unwrap();
-    let compiler = temporary.path().join("compiler");
-    std::fs::write(
-        &compiler,
-        "#!/bin/sh\nwhile [ \"$1\" != \"-o\" ]; do shift; done\nshift\nprintf '#!/bin/sh\\nexit 0\\n' > \"$1\"\nchmod +x \"$1\"\n",
-    )
-    .unwrap();
-    let mut permissions = std::fs::metadata(&compiler).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&compiler, permissions).unwrap();
+    let compiler = fake_flow_compiler(temporary.path());
 
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
     let store = FlowRuntimeBindingStore::new(temporary.path().join("state"));
@@ -193,7 +151,6 @@ async fn retained_flow_binding_rejects_artifact_substitution() {
     assert_eq!(error.code, "use.plugin.flow_artifact_changed");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn binding_store_rejects_tampered_and_moved_records() {
     let (temporary, _package_root, _manifest, store) = prepared_fixture(10).await;
@@ -228,7 +185,6 @@ async fn binding_store_rejects_tampered_and_moved_records() {
     drop(temporary);
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn identical_scope_ids_are_isolated_by_scope_kind() {
     let (_temporary, _package_root, _manifest, store) = prepared_fixture(11).await;
@@ -262,11 +218,8 @@ async fn identical_scope_ids_are_isolated_by_scope_kind() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
-async fn binding_store_rejects_a_symlinked_scope_directory() {
-    use std::os::unix::fs::symlink;
-
+async fn binding_store_rejects_a_linked_scope_directory() {
     let (temporary, _package_root, _manifest, store) = prepared_fixture(12).await;
     let record = binding_record_path(&store, &user_scope(), 12);
     let scope_directory = record
@@ -276,7 +229,7 @@ async fn binding_store_rejects_a_symlinked_scope_directory() {
     std::fs::remove_dir_all(scope_directory).unwrap();
     let external = temporary.path().join("external-scope");
     std::fs::create_dir_all(&external).unwrap();
-    symlink(&external, scope_directory).unwrap();
+    create_directory_link(&external, scope_directory);
 
     let error = store
         .get(&user_scope(), &qualified_surface(), 12)
@@ -285,7 +238,6 @@ async fn binding_store_rejects_a_symlinked_scope_directory() {
     assert_eq!(error.code, "use.plugin.flow_binding_path_invalid");
 }
 
-#[cfg(unix)]
 async fn prepared_fixture(
     generation: u64,
 ) -> (
@@ -294,8 +246,6 @@ async fn prepared_fixture(
     ExtensionManifest,
     FlowRuntimeBindingStore,
 ) {
-    use std::os::unix::fs::PermissionsExt;
-
     let temporary = tempfile::tempdir().unwrap();
     let package_root = temporary.path().join("package");
     std::fs::create_dir_all(package_root.join("flows")).unwrap();
@@ -304,15 +254,7 @@ async fn prepared_fixture(
         "export function run() { return { type: 'complete', output: {} }; }\n",
     )
     .unwrap();
-    let compiler = temporary.path().join("compiler");
-    std::fs::write(
-        &compiler,
-        "#!/bin/sh\nwhile [ \"$1\" != \"-o\" ]; do shift; done\nshift\nprintf '#!/bin/sh\\nexit 0\\n' > \"$1\"\nchmod +x \"$1\"\n",
-    )
-    .unwrap();
-    let mut permissions = std::fs::metadata(&compiler).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&compiler, permissions).unwrap();
+    let compiler = fake_flow_compiler(temporary.path());
 
     let manifest = ExtensionManifest::parse_acl(MANIFEST).unwrap();
     let store = FlowRuntimeBindingStore::new(temporary.path().join("state"));
@@ -329,7 +271,93 @@ async fn prepared_fixture(
     (temporary, package_root, manifest, store)
 }
 
+fn fake_flow_compiler(root: &Path) -> PathBuf {
+    let compiler = if cfg!(windows) {
+        root.join("compiler.cmd")
+    } else {
+        root.join("compiler")
+    };
+    write_fake_flow_compiler(&compiler);
+    compiler
+}
+
 #[cfg(unix)]
+fn write_fake_flow_compiler(compiler: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::write(
+        compiler,
+        r#"#!/bin/sh
+set -eu
+[ "$1" = "compile" ]
+shift
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    output="$1"
+  fi
+  shift
+done
+[ -n "$output" ]
+printf '#!/bin/sh\nexit 0\n' > "$output"
+chmod +x "$output"
+"#,
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(compiler).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(compiler, permissions).unwrap();
+}
+
+#[cfg(windows)]
+fn write_fake_flow_compiler(compiler: &Path) {
+    std::fs::write(
+        compiler,
+        "@echo off\r\n\
+setlocal EnableExtensions\r\n\
+if /I not \"%~1\"==\"compile\" exit /b 2\r\n\
+shift\r\n\
+set \"output=\"\r\n\
+:parse\r\n\
+if \"%~1\"==\"\" goto done\r\n\
+if /I \"%~1\"==\"-o\" goto output\r\n\
+:next\r\n\
+shift\r\n\
+goto parse\r\n\
+:output\r\n\
+shift\r\n\
+set \"output=%~1\"\r\n\
+goto next\r\n\
+:done\r\n\
+if not defined output exit /b 3\r\n\
+> \"%output%\" echo @echo off\r\n\
+>> \"%output%\" echo exit /b 0\r\n\
+exit /b 0\r\n",
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+fn create_directory_link(target: &Path, link: &Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+
+#[cfg(windows)]
+fn create_directory_link(target: &Path, link: &Path) {
+    let output = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "mklink /J failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn binding_record_path(
     store: &FlowRuntimeBindingStore,
     scope: &a3s_use_core::PlanScope,
@@ -346,7 +374,6 @@ fn binding_record_path(
         .join(format!("{generation:020}.json"))
 }
 
-#[cfg(unix)]
 fn user_scope() -> a3s_use_core::PlanScope {
     a3s_use_core::PlanScope {
         kind: a3s_use_core::PlanScopeKind::User,
@@ -354,7 +381,6 @@ fn user_scope() -> a3s_use_core::PlanScope {
     }
 }
 
-#[cfg(unix)]
 fn workspace_scope() -> a3s_use_core::PlanScope {
     a3s_use_core::PlanScope {
         kind: a3s_use_core::PlanScopeKind::Workspace,
@@ -362,7 +388,6 @@ fn workspace_scope() -> a3s_use_core::PlanScope {
     }
 }
 
-#[cfg(unix)]
 fn intent(manifest: &ExtensionManifest, generation: u64) -> PluginLifecycleIntent {
     PluginLifecycleIntent::from_manifest(
         PluginLifecycleIntentSpec {
@@ -384,7 +409,6 @@ fn intent(manifest: &ExtensionManifest, generation: u64) -> PluginLifecycleInten
     .unwrap()
 }
 
-#[cfg(unix)]
 fn checkpoint_key(intent: &PluginLifecycleIntent) -> &str {
     &intent
         .checkpoints
@@ -398,7 +422,6 @@ fn checkpoint_key(intent: &PluginLifecycleIntent) -> &str {
         .idempotency_key
 }
 
-#[cfg(unix)]
 fn qualified_surface() -> PlanQualifiedSurfaceRef {
     PlanQualifiedSurfaceRef {
         package_id: "acme/review".to_string(),
