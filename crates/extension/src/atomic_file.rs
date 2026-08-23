@@ -198,8 +198,8 @@ mod tests {
         assert!(windows_persist_error_is_retryable(&error));
         assert!(elapsed >= WINDOWS_PERSIST_RETRY_TIMEOUT);
         assert!(elapsed < WINDOWS_PERSIST_RETRY_TIMEOUT + std::time::Duration::from_secs(8));
-        assert_eq!(std::fs::read(&target).unwrap(), b"old".to_vec());
         assert!(!temporary.exists());
         drop(locked_target);
+        assert_eq!(std::fs::read(&target).unwrap(), b"old".to_vec());
     }
 }
