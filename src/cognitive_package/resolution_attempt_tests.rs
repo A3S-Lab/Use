@@ -1,6 +1,9 @@
 use std::collections::BTreeSet;
 
-use a3s_use_core::{PlanScope, PlanScopeKind, PluginOperationAction, PluginReleaseChannel};
+use a3s_use_core::{
+    PlanScope, PlanScopeKind, PluginManagerInstallPlanInput, PluginOperationAction,
+    PluginPackageId, PluginReleaseChannel,
+};
 use a3s_use_extension::{
     PackageRegistryResolutionObserver, TrustedRegistry, VerifiedRegistryMetadata,
 };
@@ -68,6 +71,42 @@ fn attempt(
         started_at_ms,
     )
     .unwrap()
+}
+
+#[test]
+fn resolution_attempt_accepts_manager_canonical_semver_selectors() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = registry(temp.path(), "packages", 'd');
+    for selector in ["=1.0.0", "^1.2", ">=1.0, <2.0"] {
+        let input = PluginManagerInstallPlanInput {
+            package_id: PluginPackageId::parse("acme/knowledge").unwrap(),
+            registry_name: None,
+            version_requirement: Some(selector.to_string()),
+            channel: Some(PluginReleaseChannel::Stable),
+            surfaces: None,
+            scope_kind: PlanScopeKind::User,
+            scope_id: "user/current".to_string(),
+        };
+        input.validate().unwrap();
+        let canonical = input.canonical_version_requirement().unwrap();
+        let attempt = PendingPackageResolutionAttempt::new(
+            scope(),
+            PluginOperationAction::Install,
+            "acme/knowledge",
+            Some(&canonical),
+            PluginReleaseChannel::Stable,
+            PackageResolutionAccess::Refreshed,
+            &root,
+            &[],
+            10,
+        )
+        .expect("a manager-canonical SemVer selector must be retained");
+
+        assert_eq!(
+            attempt.requested_version.as_deref(),
+            Some(canonical.as_str())
+        );
+    }
 }
 
 #[tokio::test]
