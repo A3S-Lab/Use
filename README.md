@@ -107,9 +107,12 @@ The implementation and fixtures exercise the product model directly:
 CI runs formatting, all non-Science workspace tests, Clippy,
 release-container conformance, and platform jobs. The Windows preview gate now
 executes the complete current non-Science workspace suite, including a real
-directory-junction regression for the shared reparse-point guard. Signed
-Registry, dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF
-scenarios also run through the real CLI. Its killed-process coverage now
+directory-junction regression for the shared reparse-point guard. The native
+Windows suite also proves Registry cutover-capacity rejection happens before
+any lifecycle-receipt replacement and that Box delegation preserves arguments,
+output, and exit status through a native command script. Signed Registry,
+dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF scenarios
+also run through the real CLI. Its killed-process coverage now
 includes a multi-node install killed after the durable Registry graph publish
 but before dependency journal and parent graph completion, removed-dependency
 cleanup after upgrade cutover, and an uninstall killed after the durable

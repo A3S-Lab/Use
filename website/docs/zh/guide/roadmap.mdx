@@ -127,7 +127,9 @@ durable Host outcome 才会报告 `Completed`。
   Windows directory junction，覆盖 Registry target-cache 状态、保留的 lifecycle
   receipt、package graph 与 diagnostic store、enablement lock、Runtime 与 lifecycle
   record、whole-state backup/restore，以及 OKF database、binding、backup 与 restore
-  路径。
+  路径。Windows 原生测试还证明，单 package 与 graph 的 cutover 容量拒绝发生在
+  lifecycle receipt 被替换之前，并且 Box CLI 委派到 `.cmd` component 时会保留
+  参数、输出与退出状态。
 - Registry state/cache、Workspace Grant、package 与 Host record、lifecycle、
   Runtime、Flow、Knowledge、enablement、backup、restore 和 diagnostic 的全部
   生产临时文件发布现已使用有界 Windows 重试原语，同时保留 replace 与

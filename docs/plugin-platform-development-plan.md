@@ -302,6 +302,10 @@ Status: in progress
   and diagnostic stores, enablement locks, lifecycle and Runtime records,
   whole-state backup/restore, and OKF database/binding/backup/restore paths
   through real Windows directory junctions without following external content.
+  Native Windows tests also prove single-package and graph cutover-capacity
+  rejection happens before lifecycle receipt replacement, and that Box CLI
+  delegation preserves arguments, output, and exit status through a `.cmd`
+  component.
 - [x] Route every production temporary-file publication for Registry
   state/cache, Workspace Grants, package and Host records, lifecycle, Runtime,
   Flow, Knowledge, enablement, backup, restore evidence, and diagnostics

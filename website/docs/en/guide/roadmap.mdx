@@ -141,7 +141,10 @@ package, and only a durable Host outcome reports `Completed`.
   link tests also cover Registry target-cache state, retained lifecycle
   receipts, package graph and diagnostic stores, enablement locks, Runtime and
   lifecycle records, whole-state backup/restore, and OKF database, binding,
-  backup, and restore paths with real Windows directory junctions.
+  backup, and restore paths with real Windows directory junctions. Native
+  Windows tests also prove single-package and graph cutover-capacity rejection
+  happens before lifecycle receipt replacement, and that Box CLI delegation
+  preserves arguments, output, and exit status through a `.cmd` component.
 - Every production temporary-file publication for Registry state/cache,
   Workspace Grants, package and Host records, lifecycle, Runtime, Flow,
   Knowledge, enablement, backup, restore, and diagnostics now uses bounded

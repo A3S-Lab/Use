@@ -1,8 +1,5 @@
 use super::*;
 
-#[cfg(unix)]
-use std::os::unix::fs::MetadataExt;
-
 #[tokio::test]
 async fn lifecycle_cutover_replays_original_evidence_after_unrelated_registry_mutation() {
     let temp = tempfile::tempdir().unwrap();
@@ -135,11 +132,9 @@ async fn lifecycle_cutover_capacity_fails_before_receipt_or_generation_mutation(
         .unwrap()
         .enabled());
 
-    #[cfg(unix)]
-    let receipt_inode_before =
-        std::fs::metadata(registry.paths().receipt_path(identity.package_id()))
-            .unwrap()
-            .ino();
+    let receipt_path = registry.paths().receipt_path(identity.package_id());
+    let receipt_identity_probe = temp.path().join("capacity-receipt-identity-probe.json");
+    std::fs::hard_link(&receipt_path, &receipt_identity_probe).unwrap();
     for index in 0..MAX_PENDING_REGISTRY_CUTOVERS {
         snapshot.pending_cutovers.push(
             ExtensionRegistryCutoverRecord::new(
@@ -197,18 +192,17 @@ async fn lifecycle_cutover_capacity_fails_before_receipt_or_generation_mutation(
     let graph_after = registry.snapshot().await.unwrap();
     assert_eq!(graph_after.generation, snapshot.generation);
     assert_eq!(graph_after.pending_cutovers, snapshot.pending_cutovers);
-    #[cfg(unix)]
-    assert_eq!(
-        std::fs::metadata(registry.paths().receipt_path(identity.package_id()),)
-            .unwrap()
-            .ino(),
-        receipt_inode_before,
-        "capacity rejection must happen before any receipt replacement"
-    );
     assert!(!registry
         .get("acme/capacity")
         .await
         .unwrap()
         .unwrap()
         .enabled());
+
+    std::fs::write(&receipt_identity_probe, b"receipt identity probe").unwrap();
+    assert_eq!(
+        std::fs::read(&receipt_path).unwrap(),
+        b"receipt identity probe",
+        "capacity rejection must happen before any receipt replacement"
+    );
 }

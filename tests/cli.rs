@@ -1,4 +1,3 @@
-#[cfg(all(feature = "extensions", unix))]
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 #[cfg(feature = "ocr")]
@@ -110,15 +109,25 @@ fn capability_watch_uses_revision_to_report_an_unchanged_snapshot() {
     assert_eq!(watched["data"]["changed"], false);
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[test]
 fn box_route_preserves_native_arguments_output_and_status() {
     let temp = tempfile::tempdir().unwrap();
+
+    #[cfg(unix)]
     let executable = temp.path().join("a3s-box-fixture");
-    std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\"\nexit 9\n").unwrap();
-    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&executable, permissions).unwrap();
+    #[cfg(windows)]
+    let executable = temp.path().join("a3s-box-fixture.cmd");
+
+    #[cfg(unix)]
+    {
+        std::fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$*\"\nexit 9\n").unwrap();
+        let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&executable, permissions).unwrap();
+    }
+    #[cfg(windows)]
+    std::fs::write(&executable, "@echo off\r\necho %*\r\nexit /b 9\r\n").unwrap();
 
     let output = Command::new(binary())
         .args(["box", "compose", "up", "--detach"])
@@ -128,8 +137,11 @@ fn box_route_preserves_native_arguments_output_and_status() {
 
     assert_eq!(output.status.code(), Some(9));
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
-        "compose up --detach\n"
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        ["compose up --detach"]
     );
     assert!(output.stderr.is_empty());
 }

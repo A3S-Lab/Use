@@ -369,7 +369,10 @@ Status: in progress
   observations, retained lifecycle receipts, package graph and diagnostic
   stores, enablement locks, Runtime and lifecycle records, whole-state backup
   and restore paths, and OKF database, binding, backup, and restore paths with
-  real Windows directory junctions.
+  real Windows directory junctions. Native Windows tests additionally prove
+  single-package and graph cutover-capacity rejection happens before lifecycle
+  receipt replacement, and that Box CLI delegation preserves arguments,
+  output, and exit status through a `.cmd` component.
 - [x] Run the Runtime Service provisioning subprocess-exit matrix for Tool and
   HTTP MCP on the configured platform CI jobs. Real managed-provider and CLI
   process-kill qualification remains open.
