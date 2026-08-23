@@ -297,7 +297,11 @@ pub(super) async fn commit_candidate_root(
         ))
     })?;
     if let Err(error) = renamed {
-        let _ = fs::remove_dir_all(&staging).await;
+        let _ = crate::package::remove_dir_all_with_windows_retry(
+            staging,
+            "remove failed lifecycle package staging",
+        )
+        .await;
         return Err(io_error(
             "commit lifecycle package generation",
             target,

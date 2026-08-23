@@ -404,16 +404,23 @@ Status: in progress
   Native tests prove transient scanner release converges for each cleanup path;
   a persistent selected-target lock stops at two seconds, preserves that entry,
   and a later prune rescans and finishes after any earlier durable deletions.
-  Reboot recovery, antivirus contention beyond these exact target promotion and
-  cache-removal boundaries, product-host contention, and the remaining platform
-  scenarios stay open.
+  Recursive cleanup of bounded abandoned lifecycle staging and drained package
+  generations plus lifecycle receipt deletion now use the same retry without
+  blocking Tokio. Native tests prove transient receipt and nested-staging
+  contention lets the same removal or commit finish; a persistent generation
+  lock stops at two seconds after durable hide and receipt removal, retains the
+  residual tree, and permits exact removal replay without another Registry
+  generation. Reboot recovery, antivirus contention
+  beyond these exact target promotion, cache-removal, and lifecycle-removal
+  boundaries, product-host contention, and the remaining platform scenarios
+  stay open.
 - [x] Test real-process uninstall interruption between durable Registry cutover
   and its package receipt, then hold the prior generation lease through restart
   to prove drain-before-removal and exact generation replay.
 - [ ] Complete the interrupted download, archive extraction, graph/Grant
   cutover, drain, removal, process crash, reboot, remaining antivirus contention
-  outside verified-target promotion and cache removal, and reparse-point
-  replacement matrix. A real `a3s-use` process-kill test now
+  outside verified-target promotion, cache removal, and lifecycle removal, and
+  reparse-point replacement matrix. A real `a3s-use` process-kill test now
   proves digest-bound target download resume without partial publication. A
   second real-process test kills installation while a verified high-entry
   archive is being extracted, proves no receipt, graph, pending operation, or

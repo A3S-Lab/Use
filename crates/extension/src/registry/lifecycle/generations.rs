@@ -8,7 +8,9 @@ use super::{
     exact_receipt, lifecycle_identity_error, lifecycle_root, lifecycle_state_error,
     ExtensionLifecycleIdentity, ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
 };
-use crate::package::{io_error, sync_parent_directory, write_receipt};
+use crate::package::{
+    io_error, remove_file_with_windows_retry, sync_parent_directory, write_receipt,
+};
 use crate::registry::{
     verify_package_integrity, ExtensionReceipt, ExtensionRegistry, ExtensionRouteBinding,
     InstalledExtension,
@@ -133,9 +135,11 @@ impl ExtensionRegistry {
                 if let Some(replacement) = replacement {
                     write_receipt(&receipt_path, replacement).await?;
                 } else {
-                    fs::remove_file(&receipt_path).await.map_err(|error| {
-                        io_error("remove graph candidate receipt", &receipt_path, error)
-                    })?;
+                    remove_file_with_windows_retry(
+                        receipt_path.clone(),
+                        "remove graph candidate receipt",
+                    )
+                    .await?;
                     sync_parent_directory(
                         receipt_path.parent().ok_or_else(path_identity_error)?,
                         "graph candidate receipt",
@@ -428,9 +432,7 @@ impl ExtensionRegistry {
         validate_receipt_metadata(&metadata)?;
         let extension = self.load_receipt(&path).await?;
         exact_receipt(identity, &extension.receipt)?;
-        fs::remove_file(&path)
-            .await
-            .map_err(|error| io_error("remove retained lifecycle receipt", &path, error))?;
+        remove_file_with_windows_retry(path.clone(), "remove retained lifecycle receipt").await?;
         sync_parent_directory(directory, "retained lifecycle receipt").await?;
         Ok(true)
     }

@@ -13,6 +13,9 @@ mod graph_cutover;
 mod lifecycle_generations;
 #[path = "registry_tests/lifecycle_staging.rs"]
 mod lifecycle_staging;
+#[cfg(windows)]
+#[path = "registry_tests/lifecycle_windows_contention.rs"]
+mod lifecycle_windows_contention;
 #[path = "registry_tests/snapshot_lease.rs"]
 mod snapshot_lease;
 

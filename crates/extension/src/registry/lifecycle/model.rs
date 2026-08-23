@@ -12,7 +12,7 @@ use super::super::{
     normalize_package_id, ExtensionReceipt, ExtensionTrust, InstalledExtension,
     EXTENSION_RECEIPT_SCHEMA_VERSION,
 };
-use crate::package::io_error;
+use crate::package::{io_error, remove_dir_all_with_windows_retry};
 use crate::remote::ResolvedRemotePackage;
 use crate::source::PreparedPackageSource;
 use crate::{ExtensionManifest, ExtensionPaths};
@@ -193,9 +193,8 @@ pub(super) async fn remove_exact_root(path: &Path) -> UseResult<bool> {
             ),
         ));
     }
-    fs::remove_dir_all(path)
-        .await
-        .map_err(|error| io_error("remove lifecycle package generation", path, error))?;
+    remove_dir_all_with_windows_retry(path.to_path_buf(), "remove lifecycle package generation")
+        .await?;
     Ok(true)
 }
 

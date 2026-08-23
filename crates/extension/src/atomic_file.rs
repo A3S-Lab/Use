@@ -99,6 +99,37 @@ pub(crate) fn remove_file_with_windows_retry_blocking(path: &Path) -> io::Result
     }
 }
 
+/// Remove a directory tree, retrying transient Windows sharing failures.
+///
+/// A failed recursive removal may already have deleted unlocked entries.
+/// Retrying the same exact root finishes that residual tree after the lock is
+/// released. This function may sleep, so callers must run it on a blocking
+/// worker.
+pub(crate) fn remove_dir_all_with_windows_retry_blocking(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        let started = std::time::Instant::now();
+        loop {
+            match std::fs::remove_dir_all(path) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    if !windows_path_mutation_error_is_retryable(&error)
+                        || started.elapsed() >= WINDOWS_PERSIST_RETRY_TIMEOUT
+                    {
+                        return Err(error);
+                    }
+                    let remaining = WINDOWS_PERSIST_RETRY_TIMEOUT.saturating_sub(started.elapsed());
+                    std::thread::sleep(WINDOWS_PERSIST_RETRY_DELAY.min(remaining));
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::remove_dir_all(path)
+    }
+}
+
 fn persist_temporary_path_blocking(
     temporary: tempfile::TempPath,
     target: &Path,
@@ -222,6 +253,19 @@ mod tests {
         remove_file_with_windows_retry_blocking(&target).unwrap();
 
         assert!(!target.exists());
+    }
+
+    #[test]
+    fn directory_removal_deletes_the_exact_tree() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("staging");
+        std::fs::create_dir_all(target.join("nested")).unwrap();
+        std::fs::write(target.join("nested/state.json"), b"state").unwrap();
+
+        remove_dir_all_with_windows_retry_blocking(&target).unwrap();
+
+        assert!(!target.exists());
+        assert!(directory.path().is_dir());
     }
 
     #[cfg(windows)]

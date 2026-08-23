@@ -320,6 +320,27 @@ pub(crate) async fn remove_file_with_windows_retry(
     .map_err(|error| io_error(action, &error_target, error))
 }
 
+pub(crate) async fn remove_dir_all_with_windows_retry(
+    path: PathBuf,
+    action: &'static str,
+) -> UseResult<()> {
+    let error_target = path.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::atomic_file::remove_dir_all_with_windows_retry_blocking(&path)
+    })
+    .await
+    .map_err(|error| {
+        UseError::new(
+            "use.extension.io",
+            format!(
+                "Failed to {action} '{}': blocking task failed: {error}",
+                error_target.display()
+            ),
+        )
+    })?
+    .map_err(|error| io_error(action, &error_target, error))
+}
+
 #[cfg(unix)]
 pub(crate) async fn sync_parent_directory(parent: &Path, label: &str) -> UseResult<()> {
     fs::File::open(parent)

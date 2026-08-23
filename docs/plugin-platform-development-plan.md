@@ -330,9 +330,15 @@ Status: in progress
   Invalid-partial cleanup and stale/partial/verified-target cache reclamation use
   the same bounded blocking delete; native tests prove transient convergence and
   persistent selected-target preservation followed by an exact rescan retry.
+  Lifecycle receipts, bounded abandoned staging, and drained
+  package-generation trees also use blocking deletion with the same Windows
+  retry. Native tests prove transient receipt and nested-file release lets
+  removal or commit continue, while persistent generation contention preserves
+  the residual tree for exact replay without another Registry generation.
 - Expand filesystem coverage to externally raced targets, antivirus contention
-  outside verified-target promotion, cache removal, and the shared publication
-  paths, process groups, named resources, and reboot recovery.
+  outside verified-target promotion, cache removal, lifecycle removal, and the
+  shared publication paths, process groups, named resources, and reboot
+  recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
 
 Acceptance: every advertised platform passes the same contract, lifecycle,

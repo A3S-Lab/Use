@@ -3,7 +3,9 @@ use std::path::Path;
 use a3s_use_core::{UseError, UseResult};
 use tokio::fs;
 
-use crate::package::{io_error, sync_parent_directory, MAX_PACKAGE_FILES};
+use crate::package::{
+    io_error, remove_dir_all_with_windows_retry, sync_parent_directory, MAX_PACKAGE_FILES,
+};
 
 pub(super) const LIFECYCLE_STAGING_PREFIX: &str = ".lifecycle-staging-";
 
@@ -95,9 +97,8 @@ async fn remove_abandoned_staging_directories(parent: &Path) -> UseResult<()> {
         }
         let path = entry.path();
         validate_abandoned_staging_tree(&path).await?;
-        fs::remove_dir_all(&path).await.map_err(|error| {
-            io_error("remove abandoned lifecycle package staging", &path, error)
-        })?;
+        remove_dir_all_with_windows_retry(path, "remove abandoned lifecycle package staging")
+            .await?;
         removed = true;
     }
     if removed {

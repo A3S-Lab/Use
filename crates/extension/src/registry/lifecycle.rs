@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use a3s_use_core::{PluginPackageLock, PluginSurfaceRef, UseError, UseResult};
-use tokio::fs;
 
 mod cutover;
 mod generations;
@@ -33,7 +32,8 @@ use super::{
     EXTENSION_RECEIPT_SCHEMA_VERSION, MAX_PENDING_REGISTRY_CUTOVERS,
 };
 use crate::package::{
-    io_error, sync_parent_directory, unix_timestamp, write_receipt, RegistryLock,
+    remove_file_with_windows_retry, sync_parent_directory, unix_timestamp, write_receipt,
+    RegistryLock,
 };
 use crate::registry_io::{read_registry_snapshot, write_registry_snapshot};
 
@@ -564,9 +564,8 @@ impl ExtensionRegistry {
         )
         .await?;
         let receipt_path = self.paths.receipt_path(identity.package_id());
-        fs::remove_file(&receipt_path)
-            .await
-            .map_err(|error| io_error("remove lifecycle package receipt", &receipt_path, error))?;
+        remove_file_with_windows_retry(receipt_path.clone(), "remove lifecycle package receipt")
+            .await?;
         let installed = self.list().await?;
         self.publish_snapshot_locked(&installed).await?;
         remove_exact_root(&target).await?;
@@ -909,13 +908,14 @@ impl ExtensionRegistry {
             }
             moved.push(package.clone());
             let receipt_path = self.paths.receipt_path(package.identity.package_id());
-            if let Err(error) = fs::remove_file(&receipt_path).await {
+            if let Err(error) = remove_file_with_windows_retry(
+                receipt_path.clone(),
+                "retain removed lifecycle package receipt",
+            )
+            .await
+            {
                 self.restore_removed_lifecycle_packages(&moved).await?;
-                return Err(io_error(
-                    "retain removed lifecycle package receipt",
-                    &receipt_path,
-                    error,
-                ));
+                return Err(error);
             }
             if let Err(error) = sync_parent_directory(
                 receipt_path

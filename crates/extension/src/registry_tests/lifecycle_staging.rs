@@ -33,6 +33,45 @@ async fn lifecycle_commit_reclaims_abandoned_physical_staging_directories() {
     assert!(target.is_dir());
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn lifecycle_commit_waits_for_a_transient_scanner_lock_on_abandoned_staging() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 16);
+    let registry = registry(temp.path());
+    let target = registry.lifecycle_package_root(&identity);
+    let package_parent = target.parent().unwrap();
+    let abandoned = package_parent.join(".lifecycle-staging-abandoned");
+    let partial = abandoned.join("nested/partial");
+    fs::create_dir_all(partial.parent().unwrap()).await.unwrap();
+    fs::write(&partial, b"partial package").await.unwrap();
+    let scanner = crate::test_filesystem::open_reading_scanner_without_delete_share(&partial);
+    let mut commit = Box::pin(registry.commit_lifecycle_package(&identity, &candidate));
+
+    tokio::select! {
+        result = &mut commit => {
+            panic!("lifecycle commit completed while the scanner denied staging deletion: {result:?}")
+        }
+        () = tokio::time::sleep(Duration::from_millis(200)) => {}
+    }
+
+    drop(scanner);
+    let committed = commit.await.unwrap();
+    assert!(committed.changed);
+    assert!(!abandoned.exists());
+    assert!(target.is_dir());
+}
+
 #[cfg(any(unix, windows))]
 #[tokio::test]
 async fn lifecycle_commit_rejects_an_abandoned_staging_link_without_following_it() {

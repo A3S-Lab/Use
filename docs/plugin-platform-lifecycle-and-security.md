@@ -229,6 +229,15 @@ journal remain durable, while the receipt, installed graph, and route remain
 absent. Explicit offline replay reclaims the physical partial tree, repeats the
 same package-commit checkpoint, publishes one Registry generation, completes
 the journal, and removes the pending operation without a network request.
+On Windows, lifecycle receipt deletion and recursive removal of that bounded
+abandoned staging tree or a drained immutable package generation retry only
+access-denied, sharing, and lock violations for two seconds on a blocking
+worker. A transient scanner lock over a receipt or nested staging file lets the
+same removal or commit continue. A persistent lock on a drained generation
+returns `use.extension.io` after durable route hiding and receipt removal,
+leaves the exact residual tree, and lets the next removal replay finish without
+another Registry generation. The ownership and bounded inventory checks still
+run before abandoned staging cleanup.
 Steady-state snapshot and watch reads consume immutable publications without
 that lock. A read may briefly acquire it only for crash reconciliation when
 receipt state and the last publication disagree.

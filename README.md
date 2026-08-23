@@ -124,6 +124,12 @@ exact cutover offline without another generation or network request. The
 uninstall restarts from the same plan, blocks on the accepted-call generation
 lease, then drains and removes the generation without another Registry
 generation; missing package state without the exact cutover still fails closed.
+Lifecycle cleanup also retries Windows access, sharing, and lock violations for
+at most two seconds on a blocking worker. Transient scanner handles over a
+lifecycle receipt or nested abandoned staging file let removal or commit
+continue; a persistent handle over a drained generation returns an I/O error,
+leaves the exact residual tree, and lets removal replay finish after release
+without advancing the Registry generation.
 A test-binary subprocess matrix also exits after each durable host effect but
 before its receipt for every canonical install, upgrade, enable, disable, and
 uninstall checkpoint; recovery reuses the exact idempotency key without
@@ -1062,7 +1068,7 @@ release claim.
 | --- | --- | --- |
 | Linux x86_64 / arm64 | Full non-Science workspace CI plus release-container conformance | Development preview |
 | macOS arm64 / x86_64 | Current non-Science workspace build and tests | Development preview |
-| Windows x86_64 | Current non-Science workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, verified-target scanner-lock promotion/cache-removal recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
+| Windows x86_64 | Current non-Science workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, scanner-lock target promotion/cache/lifecycle-removal recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
 Native CI run
 [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)

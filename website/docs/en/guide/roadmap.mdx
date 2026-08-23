@@ -165,9 +165,12 @@ package, and only a durable Host outcome reports `Completed`.
   promotion, and staging retry. Invalid-partial cleanup and stale, partial, and
   verified-target cache deletion use the same bounded blocking retry. Native
   tests prove transient convergence and persistent selected-target preservation
-  followed by a residual-inventory rescan. Reboot recovery and antivirus
-  contention beyond these exact promotion and cache-removal boundaries remain
-  open.
+  followed by a residual-inventory rescan. Recursive removal of bounded
+  lifecycle receipts, abandoned staging, and drained package generations now
+  uses the same retry. Native tests prove transient receipt/nested-staging
+  convergence and persistent generation preservation followed by exact removal
+  replay without Registry generation inflation. Reboot recovery and antivirus contention beyond these
+  exact promotion, cache-removal, and lifecycle-removal boundaries remain open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Real-process tests now cover resumable target-download interruption and
@@ -200,8 +203,8 @@ package, and only a durable Host outcome reports `Completed`.
   replayable terminal Host outcomes without generation inflation.
 - Cover interrupted download, archive extraction, cutover, drain, process
   crash, product-host Grant cutover, reboot, remaining antivirus contention
-  outside verified-target promotion and cache removal, and reparse-point
-  replacement races.
+  outside verified-target promotion, cache removal, and lifecycle removal, and
+  reparse-point replacement races.
 
 ### 5. Supply chain and operations — in progress
 
