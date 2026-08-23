@@ -284,7 +284,7 @@ pub(crate) async fn activate_temporary_file(
 ) -> UseResult<()> {
     let error_target = target.clone();
     tokio::task::spawn_blocking(move || {
-        crate::persist_temporary_replace_blocking(temporary, &target)
+        crate::rename_path_with_windows_retry_blocking(&temporary, &target)
     })
     .await
     .map_err(|error| {
