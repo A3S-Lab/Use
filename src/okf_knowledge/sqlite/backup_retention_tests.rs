@@ -206,17 +206,15 @@ async fn is_scope_isolated_and_fails_closed_on_invalid_candidates() {
     assert!(backup_path.is_file());
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn rejects_linked_directories_and_candidates() {
-    use std::os::unix::fs::symlink;
-
     let temporary = TempDir::new().unwrap();
     let workspace_scope = scope(PlanScopeKind::Workspace);
     let directory = temporary.path().join("backups");
     std::fs::create_dir(&directory).unwrap();
     let linked_directory = temporary.path().join("linked-backups");
-    symlink(&directory, &linked_directory).unwrap();
+    crate::test_filesystem::create_directory_link(&directory, &linked_directory);
     let policy = OkfKnowledgeBackupRetentionPolicy::default();
     let error = SqliteOkfKnowledgeAdapter::plan_backup_retention(
         &linked_directory,
@@ -231,8 +229,12 @@ async fn rejects_linked_directories_and_candidates() {
     );
 
     let target = temporary.path().join("outside");
-    std::fs::write(&target, b"not a backup").unwrap();
-    symlink(&target, directory.join("linked.a3s-okf-backup")).unwrap();
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("sentinel"), b"not a backup").unwrap();
+    crate::test_filesystem::create_directory_link(
+        &target,
+        &directory.join("linked.a3s-okf-backup"),
+    );
     let error =
         SqliteOkfKnowledgeAdapter::plan_backup_retention(&directory, &workspace_scope, policy)
             .await
@@ -241,5 +243,8 @@ async fn rejects_linked_directories_and_candidates() {
         error.code,
         "use.okf.knowledge_backup_retention_directory_invalid"
     );
-    assert_eq!(std::fs::read(&target).unwrap(), b"not a backup");
+    assert_eq!(
+        std::fs::read(target.join("sentinel")).unwrap(),
+        b"not a backup"
+    );
 }

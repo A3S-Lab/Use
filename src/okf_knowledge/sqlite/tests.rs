@@ -801,16 +801,14 @@ fn storage_policy_rejects_unbounded_or_inconsistent_limits() {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
-async fn backend_rejects_symlinked_database_roots() {
-    use std::os::unix::fs::symlink;
-
+async fn backend_rejects_linked_database_roots() {
     let temporary = TempDir::new().unwrap();
     let outside = TempDir::new().unwrap();
     let adapter = Arc::new(SqliteOkfKnowledgeAdapter::new(temporary.path()));
     std::fs::create_dir_all(adapter.root().parent().unwrap()).unwrap();
-    symlink(outside.path(), adapter.root()).unwrap();
+    crate::test_filesystem::create_directory_link(outside.path(), adapter.root());
     let client = OkfKnowledgeClient::new(adapter);
     let files = knowledge_files("unsafe throughput", "unsafe latency");
     let error = client

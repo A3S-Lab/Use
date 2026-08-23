@@ -414,19 +414,18 @@ mod tests {
         assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[tokio::test]
-    async fn partial_symlink_fails_closed() {
-        use std::os::unix::fs::symlink;
-
+    async fn linked_partial_fails_closed() {
         let temporary = tempfile::tempdir().unwrap();
         let datastore = temporary.path();
         let cache = datastore.join("verified-targets/sha256");
         std::fs::create_dir_all(&cache).unwrap();
         let digest = "b".repeat(64);
         let outside = temporary.path().join("outside");
-        std::fs::write(&outside, b"x").unwrap();
-        symlink(&outside, cache.join(partial_name(&digest))).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("sentinel"), b"x").unwrap();
+        crate::test_filesystem::create_directory_link(&outside, &cache.join(partial_name(&digest)));
         let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
 
         let error = ResumableTarget::begin(datastore, 2, &digest, policy)
@@ -435,6 +434,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
-        assert_eq!(std::fs::read(outside).unwrap(), b"x");
+        assert_eq!(std::fs::read(outside.join("sentinel")).unwrap(), b"x");
     }
 }

@@ -140,19 +140,25 @@ async fn coordinated_backup_rejects_an_active_restore_and_links() {
     )
     .unwrap();
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
-        use std::os::unix::fs::symlink;
-
-        let outside = temporary.path().join("outside.json");
-        std::fs::write(&outside, b"secret").unwrap();
+        let outside = temporary.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret.json"), b"secret").unwrap();
         std::fs::create_dir_all(paths.state_root().join("grants")).unwrap();
-        symlink(&outside, paths.state_root().join("grants/linked.json")).unwrap();
+        crate::test_filesystem::create_directory_link(
+            &outside,
+            &paths.state_root().join("grants/linked"),
+        );
         let error = StateBackupManager::new(paths)
             .backup(temporary.path().join("linked.a3s-use-state-backup"))
             .await
             .unwrap_err();
         assert_eq!(error.code, "use.state_backup_path_invalid");
+        assert_eq!(
+            std::fs::read(outside.join("secret.json")).unwrap(),
+            b"secret"
+        );
     }
 }
 

@@ -1293,6 +1293,6 @@ mod tests {
     }
 
     mod records;
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     mod symlinks;
 }

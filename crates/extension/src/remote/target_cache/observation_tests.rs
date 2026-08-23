@@ -66,22 +66,24 @@ async fn exact_target_observation_fails_closed_on_ambiguous_or_oversized_state()
     );
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn exact_target_observation_rejects_links_without_following_them() {
-    use std::os::unix::fs::symlink;
-
     let temporary = tempfile::tempdir().unwrap();
     let datastore = temporary.path();
     let cache = cache_directory(datastore);
     let digest = "c".repeat(64);
     let outside = temporary.path().join("outside");
-    std::fs::write(&outside, b"secret").unwrap();
-    symlink(&outside, cache.join(format!(".target-{digest}.part"))).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("sentinel"), b"secret").unwrap();
+    crate::test_filesystem::create_directory_link(
+        &outside,
+        &cache.join(format!(".target-{digest}.part")),
+    );
 
     let error = observe_target_cache_entry(datastore, "fixture", 8, &digest)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
-    assert_eq!(std::fs::read(outside).unwrap(), b"secret");
+    assert_eq!(std::fs::read(outside.join("sentinel")).unwrap(), b"secret");
 }

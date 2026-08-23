@@ -468,16 +468,14 @@ async fn store_detects_a_valid_record_moved_to_another_scope_path() {
     );
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
-async fn store_rejects_symlinked_owned_directories() {
-    use std::os::unix::fs::symlink;
-
+async fn store_rejects_linked_owned_directories() {
     let temporary = TempDir::new().unwrap();
     let outside = TempDir::new().unwrap();
     let store = OkfKnowledgeBindingStore::new(temporary.path());
     fs::create_dir_all(store.root().parent().unwrap()).unwrap();
-    symlink(outside.path(), store.root()).unwrap();
+    crate::test_filesystem::create_directory_link(outside.path(), store.root());
 
     let receipt = receipt(1);
     let error = store

@@ -477,21 +477,21 @@ async fn planning_rejects_active_restore_links_and_unknown_state() {
     assert_eq!(error.code, "use.state_backup_nonterminal");
     std::fs::remove_file(marker).unwrap();
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
-        use std::os::unix::fs::symlink;
-
-        let outside = temporary.path().join("outside.bin");
-        std::fs::write(&outside, b"outside").unwrap();
-        let linked = paths.state_root().join("knowledge/linked.bin");
+        let outside = temporary.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("sentinel"), b"outside").unwrap();
+        let linked = paths.state_root().join("knowledge/linked");
         std::fs::create_dir_all(linked.parent().unwrap()).unwrap();
-        symlink(outside, &linked).unwrap();
+        crate::test_filesystem::create_directory_link(&outside, &linked);
         let error = StateRestoreManager::new(paths.clone())
             .plan_restore(&backup_path)
             .await
             .unwrap_err();
         assert_eq!(error.code, "use.state_backup_path_invalid");
-        std::fs::remove_file(linked).unwrap();
+        assert_eq!(std::fs::read(outside.join("sentinel")).unwrap(), b"outside");
+        crate::test_filesystem::remove_directory_link(&linked);
     }
 
     let unknown = paths.state_root().join("unknown-family/evidence.json");

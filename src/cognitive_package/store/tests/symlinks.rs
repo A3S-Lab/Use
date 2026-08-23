@@ -1,9 +1,7 @@
-use std::os::unix::fs::symlink;
-
 use super::*;
 
 #[tokio::test]
-async fn installed_graph_reads_reject_a_symlinked_publisher_directory() {
+async fn installed_graph_reads_reject_a_linked_publisher_directory() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");
     let external = temp.path().join("external");
@@ -11,7 +9,7 @@ async fn installed_graph_reads_reject_a_symlinked_publisher_directory() {
     fs::write(external.join("root.json"), b"{}").await.unwrap();
     let graph_root = state_root.join("package-graphs");
     fs::create_dir_all(&graph_root).await.unwrap();
-    symlink(&external, graph_root.join("acme")).unwrap();
+    crate::test_filesystem::create_directory_link(&external, &graph_root.join("acme"));
 
     let error = InstalledPackageGraphStore::new(&state_root)
         .get("acme/root")
@@ -21,7 +19,7 @@ async fn installed_graph_reads_reject_a_symlinked_publisher_directory() {
 }
 
 #[tokio::test]
-async fn pending_graph_reads_reject_a_symlinked_publisher_directory() {
+async fn pending_graph_reads_reject_a_linked_publisher_directory() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");
     let external = temp.path().join("external");
@@ -32,7 +30,7 @@ async fn pending_graph_reads_reject_a_symlinked_publisher_directory() {
         .join("package-graphs")
         .join("uninstall");
     fs::create_dir_all(&operation_root).await.unwrap();
-    symlink(&external, operation_root.join("acme")).unwrap();
+    crate::test_filesystem::create_directory_link(&external, &operation_root.join("acme"));
 
     let error = PendingPackageGraphStore::new(&state_root)
         .get(PluginOperationAction::Uninstall, "acme/root")

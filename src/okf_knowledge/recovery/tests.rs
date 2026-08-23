@@ -504,21 +504,24 @@ async fn every_restore_checkpoint_recovers_after_process_exit() {
             .await
             .unwrap_err();
         assert_eq!(blocked.code, "use.state.maintenance_restore_active");
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         if checkpoint == "planned" {
-            use std::os::unix::fs::symlink;
-
             let operation_paths = manager
                 .operations
                 .paths(&fixture.scope, &plan_digest)
                 .unwrap();
-            symlink(&backup, &operation_paths.candidate).unwrap();
+            let linked_target = fixture.root.join("linked-restore-candidate");
+            std::fs::create_dir(&linked_target).unwrap();
+            crate::test_filesystem::create_directory_link(
+                &linked_target,
+                &operation_paths.candidate,
+            );
             let error = manager
                 .apply_restore(&fixture.scope, &backup, &plan_digest)
                 .await
                 .unwrap_err();
             assert_eq!(error.code, "use.okf.knowledge_restore_filesystem_invalid");
-            std::fs::remove_file(&operation_paths.candidate).unwrap();
+            crate::test_filesystem::remove_directory_link(&operation_paths.candidate);
         }
         if !matches!(checkpoint, "marker-active" | "planned") {
             std::fs::remove_file(&backup).unwrap();

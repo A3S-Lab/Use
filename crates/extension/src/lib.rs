@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 extern crate self as a3s_use_extension;
 
+#[cfg(all(test, any(unix, windows)))]
+mod test_filesystem;
+
 mod atomic_file;
 mod digest;
 mod package;

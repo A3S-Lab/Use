@@ -291,14 +291,12 @@ async fn retry_does_not_delete_valid_download_evidence_when_resolution_state_is_
         .is_some());
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn resolution_store_rejects_a_linked_owned_directory() {
-    use std::os::unix::fs::symlink;
-
     let temp = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
-    symlink(outside.path(), temp.path().join("operations")).unwrap();
+    crate::test_filesystem::create_directory_link(outside.path(), &temp.path().join("operations"));
     let root = registry(temp.path(), "packages", 'd');
 
     assert_eq!(

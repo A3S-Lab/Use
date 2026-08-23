@@ -26,6 +26,9 @@ pub mod state_restore;
 #[cfg(feature = "extensions")]
 mod surface_reconciler;
 
+#[cfg(all(test, feature = "extensions", any(unix, windows)))]
+mod test_filesystem;
+
 #[cfg(feature = "ocr")]
 mod ocr_builtin;
 

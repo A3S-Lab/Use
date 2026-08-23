@@ -423,17 +423,18 @@ async fn binding_store_rejects_a_receipt_moved_to_another_generation() {
     assert_eq!(error.code, "use.plugin.runtime.binding_ownership_mismatch");
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
-async fn binding_store_rejects_symlinked_generation_receipts() {
+async fn binding_store_rejects_linked_generation_receipts() {
     let temporary = TempDir::new().unwrap();
     let store = RuntimeBindingStore::new(temporary.path());
     let receipt = task_receipt(7);
     store.put(&receipt).await.unwrap();
     let path = binding_path(&store, receipt.scope(), receipt.surface(), 7);
-    let owned = temporary.path().join("owned-runtime-receipt.json");
-    fs::rename(&path, &owned).unwrap();
-    std::os::unix::fs::symlink(&owned, &path).unwrap();
+    let owned = temporary.path().join("owned-runtime-receipt");
+    fs::remove_file(&path).unwrap();
+    fs::create_dir(&owned).unwrap();
+    crate::test_filesystem::create_directory_link(&owned, &path);
 
     let error = store
         .get(receipt.scope(), receipt.surface())

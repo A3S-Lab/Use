@@ -490,11 +490,9 @@ async fn tampered_active_record_fails_closed() {
     assert_eq!(error.code, "use.plugin.lifecycle_record_invalid");
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
-async fn symlinked_operation_record_fails_closed() {
-    use std::os::unix::fs::symlink;
-
+async fn linked_operation_record_fails_closed() {
     let temp = tempfile::tempdir().unwrap();
     let store = PluginLifecycleJournalStore::new(temp.path().join("state"));
     let intent = intent("install:acme-guide:5");
@@ -502,9 +500,10 @@ async fn symlinked_operation_record_fails_closed() {
 
     let directory = operation_directory(&store, &intent.scope);
     let active = directory.join("active.json");
-    let target = directory.join("outside.json");
-    tokio::fs::rename(&active, &target).await.unwrap();
-    symlink(&target, &active).unwrap();
+    let target = directory.join("outside-record");
+    tokio::fs::remove_file(&active).await.unwrap();
+    tokio::fs::create_dir(&target).await.unwrap();
+    crate::test_filesystem::create_directory_link(&target, &active);
 
     let error = store
         .load_active(&intent.scope, "acme/guide")

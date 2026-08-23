@@ -252,20 +252,23 @@ mod tests {
             .unwrap();
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[tokio::test]
-    async fn maintenance_rejects_a_symlinked_lock() {
-        use std::os::unix::fs::symlink;
-
+    async fn maintenance_rejects_a_linked_lock() {
         let temporary = tempfile::tempdir().unwrap();
         let target = temporary.path().join("target");
-        std::fs::write(&target, b"outside").unwrap();
-        symlink(&target, temporary.path().join(".maintenance.lock")).unwrap();
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("sentinel"), b"outside").unwrap();
+        crate::test_filesystem::create_directory_link(
+            &target,
+            &temporary.path().join(".maintenance.lock"),
+        );
         let error = StateMaintenanceLock::new(temporary.path())
             .acquire_exclusive()
             .await
             .unwrap_err();
         assert_eq!(error.code, "use.state.maintenance_path_invalid");
+        assert_eq!(std::fs::read(target.join("sentinel")).unwrap(), b"outside");
     }
 
     #[tokio::test]

@@ -170,7 +170,7 @@ async fn history_store_rejects_an_oversized_record() -> UseResult<()> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn history_store_rejects_a_linked_record() -> UseResult<()> {
     let temp = tempfile::tempdir().unwrap();
@@ -191,9 +191,10 @@ async fn history_store_rejects_a_linked_record() -> UseResult<()> {
         .join("operations/package-diagnostic-history/scopes")
         .join(scope_digest)
         .join("acme/root.json");
-    let target = temp.path().join("escaped-operation-history.json");
-    std::fs::rename(&path, &target).unwrap();
-    std::os::unix::fs::symlink(&target, &path).unwrap();
+    let target = temp.path().join("escaped-operation-history");
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&target).unwrap();
+    crate::test_filesystem::create_directory_link(&target, &path);
     assert_eq!(
         store
             .get(&first.scope, &first.package_id)

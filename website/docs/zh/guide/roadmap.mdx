@@ -123,7 +123,11 @@ durable Host outcome 才会报告 `Completed`。
   directory junction 回归测试证明 package 与持久状态信任边界会在遍历前拒绝
   Windows reparse point。Flow Runtime 覆盖还会在 Windows 上保留精确 generation、
   拒绝 artifact substitution 与被篡改或移动的 binding、按 scope kind 隔离相同
-  文本 ID，并拒绝 linked scope directory。
+  文本 ID，并拒绝 linked scope directory。共享的原生 link 测试还会使用真实
+  Windows directory junction，覆盖 Registry target-cache 状态、保留的 lifecycle
+  receipt、package graph 与 diagnostic store、enablement lock、Runtime 与 lifecycle
+  record、whole-state backup/restore，以及 OKF database、binding、backup 与 restore
+  路径。
 - Registry state/cache、Workspace Grant、package 与 Host record、lifecycle、
   Runtime、Flow、Knowledge、enablement、backup、restore 和 diagnostic 的全部
   生产临时文件发布现已使用有界 Windows 重试原语，同时保留 replace 与

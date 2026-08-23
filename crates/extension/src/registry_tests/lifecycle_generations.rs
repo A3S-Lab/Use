@@ -89,9 +89,9 @@ async fn lifecycle_candidate_source_drift_leaves_no_retained_state() {
     );
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
-async fn lifecycle_retained_receipt_directory_symlink_fails_closed() {
+async fn lifecycle_retained_receipt_directory_link_fails_closed() {
     let temporary = tempfile::tempdir().unwrap();
     let (registry, _, first, _) = staged_upgrade(temporary.path(), 41, 42).await;
     let directory = registry
@@ -99,7 +99,7 @@ async fn lifecycle_retained_receipt_directory_symlink_fails_closed() {
         .retained_lifecycle_receipt_directory(first.package_id());
     let owned = directory.with_file_name("cognitive-owned");
     fs::rename(&directory, &owned).await.unwrap();
-    std::os::unix::fs::symlink(&owned, &directory).unwrap();
+    crate::test_filesystem::create_directory_link(&owned, &directory);
 
     let error = registry.get_lifecycle_generation(&first).await.unwrap_err();
     assert_eq!(error.code, "use.extension.lifecycle_receipt_path_invalid");

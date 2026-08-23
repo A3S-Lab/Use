@@ -128,23 +128,21 @@ async fn retention_rejects_tampered_linked_and_owned_state_candidates() {
     assert_eq!(error.code, "use.state_backup_invalid");
 
     std::fs::remove_file(&backup).unwrap();
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
-        use std::os::unix::fs::symlink;
-
         let outside = temporary.path().join("outside");
-        std::fs::write(&outside, b"outside").unwrap();
-        symlink(
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("sentinel"), b"outside").unwrap();
+        crate::test_filesystem::create_directory_link(
             &outside,
-            backup_directory.join("linked.a3s-use-state-backup"),
-        )
-        .unwrap();
+            &backup_directory.join("linked.a3s-use-state-backup"),
+        );
         let error = manager
             .plan_backup_retention(&backup_directory, StateBackupRetentionPolicy::default())
             .await
             .unwrap_err();
         assert_eq!(error.code, "use.state_backup_retention_directory_invalid");
-        assert_eq!(std::fs::read(outside).unwrap(), b"outside");
+        assert_eq!(std::fs::read(outside.join("sentinel")).unwrap(), b"outside");
     }
 
     let owned = paths.state_root().join("retained-backups");

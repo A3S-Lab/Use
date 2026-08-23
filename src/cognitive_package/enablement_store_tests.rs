@@ -100,11 +100,9 @@ async fn operation_lock_serializes_the_same_identity_across_packages() {
     drop(second);
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
-async fn enablement_state_and_lock_reject_symlinks() {
-    use std::os::unix::fs::symlink;
-
+async fn enablement_state_and_lock_reject_directory_links() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");
     let store = CognitivePackageEnablementStore::new(&state_root);
@@ -117,16 +115,19 @@ async fn enablement_state_and_lock_reject_symlinks() {
     fs::create_dir_all(package_directory.parent().unwrap())
         .await
         .unwrap();
-    symlink(&external, &package_directory).unwrap();
+    crate::test_filesystem::create_directory_link(&external, &package_directory);
 
     let error = store.get_state(&scope, &package_id).await.unwrap_err();
     assert_eq!(error.code, "use.plugin.package_enablement_path_invalid");
 
-    fs::remove_file(&package_directory).await.unwrap();
+    crate::test_filesystem::remove_directory_link(&package_directory);
     fs::create_dir(&package_directory).await.unwrap();
-    let external_lock = temp.path().join("external.lock");
-    fs::write(&external_lock, b"").await.unwrap();
-    symlink(&external_lock, package_directory.join(".state.lock")).unwrap();
+    let external_lock = temp.path().join("external-lock");
+    fs::create_dir(&external_lock).await.unwrap();
+    crate::test_filesystem::create_directory_link(
+        &external_lock,
+        &package_directory.join(".state.lock"),
+    );
     let error = store.lock_package(&scope, &package_id).await.unwrap_err();
     assert_eq!(error.code, "use.plugin.package_enablement_path_invalid");
 }

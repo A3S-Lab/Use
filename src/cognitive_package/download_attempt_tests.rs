@@ -159,14 +159,12 @@ async fn attempt_store_does_not_reconcile_ambiguous_action_records() {
         .is_file());
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn attempt_store_rejects_a_linked_owned_directory() {
-    use std::os::unix::fs::symlink;
-
     let temp = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
-    symlink(outside.path(), temp.path().join("operations")).unwrap();
+    crate::test_filesystem::create_directory_link(outside.path(), &temp.path().join("operations"));
     let lock = package_lock();
 
     assert_eq!(

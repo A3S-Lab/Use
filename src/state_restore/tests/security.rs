@@ -213,22 +213,7 @@ async fn publication_rejects_candidate_root_link_or_reparse_replacement() {
     let outside = temporary.path().join("outside");
     std::fs::create_dir(&outside).unwrap();
     std::fs::write(outside.join("sentinel"), b"do not modify").unwrap();
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&outside, &candidate_root).unwrap();
-    #[cfg(windows)]
-    {
-        let output = std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(&candidate_root)
-            .arg(&outside)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "mklink /J failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    crate::test_filesystem::create_directory_link(&outside, &candidate_root);
 
     let error = fixture
         .manager

@@ -294,7 +294,11 @@ Status: in progress
   run 32604181662 provides the initial native Windows evidence. The Flow
   Runtime subset additionally runs exact-generation retention, artifact
   substitution, tampered or moved binding records, same-text scope-kind
-  isolation, and directory-junction rejection on Windows.
+  isolation, and directory-junction rejection on Windows. Shared link tests
+  also exercise Registry target-cache state, lifecycle receipts, package graph
+  and diagnostic stores, enablement locks, lifecycle and Runtime records,
+  whole-state backup/restore, and OKF database/binding/backup/restore paths
+  through real Windows directory junctions without following external content.
 - [x] Route every production temporary-file publication for Registry
   state/cache, Workspace Grants, package and Host records, lifecycle, Runtime,
   Flow, Knowledge, enablement, backup, restore evidence, and diagnostics

@@ -229,7 +229,7 @@ async fn binding_store_rejects_a_linked_scope_directory() {
     std::fs::remove_dir_all(scope_directory).unwrap();
     let external = temporary.path().join("external-scope");
     std::fs::create_dir_all(&external).unwrap();
-    create_directory_link(&external, scope_directory);
+    crate::test_filesystem::create_directory_link(&external, scope_directory);
 
     let error = store
         .get(&user_scope(), &qualified_surface(), 12)
@@ -336,26 +336,6 @@ if not defined output exit /b 3\r\n\
 exit /b 0\r\n",
     )
     .unwrap();
-}
-
-#[cfg(unix)]
-fn create_directory_link(target: &Path, link: &Path) {
-    std::os::unix::fs::symlink(target, link).unwrap();
-}
-
-#[cfg(windows)]
-fn create_directory_link(target: &Path, link: &Path) {
-    let output = std::process::Command::new("cmd")
-        .args(["/C", "mklink", "/J"])
-        .arg(link)
-        .arg(target)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "mklink /J failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 fn binding_record_path(
