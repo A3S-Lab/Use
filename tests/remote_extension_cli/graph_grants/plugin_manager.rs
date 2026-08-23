@@ -8,8 +8,26 @@ use a3s_use_core::{
 
 const MANAGER_ASSIGNMENT_GENERATION: u64 = 23;
 
-#[tokio::test]
-async fn shared_plugin_manager_replays_plans_and_preserves_stable_installed_pages() {
+#[test]
+fn shared_plugin_manager_replays_plans_and_preserves_stable_installed_pages() {
+    const TEST_THREAD_STACK_SIZE: usize = 8 * 1024 * 1024;
+
+    std::thread::Builder::new()
+        .name("shared-plugin-manager".to_string())
+        .stack_size(TEST_THREAD_STACK_SIZE)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(run_shared_plugin_manager_scenario());
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+async fn run_shared_plugin_manager_scenario() {
     let temporary = tempfile::tempdir().unwrap();
     let target = host_target();
     let mut targets = cognitive_tool_targets_version(
