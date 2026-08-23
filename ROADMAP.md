@@ -394,14 +394,21 @@ Status: in progress
   through staging; a deterministic post-verification replacement fails commit.
   A live Windows partial or verified-target handle permits readers but denies
   external writes, removal, and replacement, while Unix staging remains bound
-  to the verified handle after a path replacement. Reboot recovery,
-  product-host contention, and the remaining platform scenarios stay open.
+  to the verified handle after a path replacement. Windows-native scanner tests
+  now prove a transient read-only handle that denies delete sharing converges
+  into promotion within the two-second retry bound. A persistent handle stops at
+  the bound without publishing or deleting the complete partial; after release,
+  the next transaction rehashes, promotes, and stages the exact bytes without a
+  network transfer. Reboot recovery, antivirus contention beyond this exact
+  promotion boundary, product-host contention, and the remaining platform
+  scenarios stay open.
 - [x] Test real-process uninstall interruption between durable Registry cutover
   and its package receipt, then hold the prior generation lease through restart
   to prove drain-before-removal and exact generation replay.
 - [ ] Complete the interrupted download, archive extraction, graph/Grant
-  cutover, drain, removal, process crash, reboot, antivirus contention, and
-  reparse-point replacement matrix. A real `a3s-use` process-kill test now
+  cutover, drain, removal, process crash, reboot, remaining antivirus contention
+  outside verified-target promotion, and reparse-point replacement matrix. A
+  real `a3s-use` process-kill test now
   proves digest-bound target download resume without partial publication. A
   second real-process test kills installation while a verified high-entry
   archive is being extracted, proves no receipt, graph, pending operation, or

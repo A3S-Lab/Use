@@ -506,6 +506,20 @@ mod tests {
 
     use super::*;
 
+    #[cfg(windows)]
+    fn open_reading_scanner_without_delete_share(path: &Path) -> std::fs::File {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(path)
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn complete_partial_is_verified_and_promoted_without_a_request() {
         let temporary = tempfile::tempdir().unwrap();
@@ -703,6 +717,97 @@ mod tests {
         drop(target);
         std::fs::write(&partial, b"released").unwrap();
         assert_eq!(std::fs::read(&partial).unwrap(), b"released");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn transient_scanner_lock_releases_into_verified_promotion() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let cache = datastore.join("verified-targets/sha256");
+        let body = b"scanner retained target";
+        let digest = format!("{:x}", Sha256::digest(body));
+        let partial = cache.join(partial_name(&digest));
+        let target_path = cache.join(&digest);
+        let mut target = ResumableTarget::begin(
+            datastore,
+            body.len() as u64,
+            &digest,
+            VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+        target.append(body).await.unwrap();
+        let scanner = open_reading_scanner_without_delete_share(&partial);
+        let mut promotion = Box::pin(target.commit("use.extension.registry_target_invalid"));
+
+        tokio::select! {
+            result = &mut promotion => {
+                panic!("promotion completed while the scanner denied delete sharing: {result:?}")
+            }
+            () = tokio::time::sleep(std::time::Duration::from_millis(200)) => {}
+        }
+
+        drop(scanner);
+        promotion.await.unwrap();
+        assert!(target.is_ready());
+        assert!(!partial.exists());
+        assert_eq!(std::fs::read(&target_path).unwrap(), body);
+
+        let staged = temporary.path().join("staged");
+        target.stage_into(&staged).await.unwrap();
+        assert_eq!(std::fs::read(staged).unwrap(), body);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn persistent_scanner_lock_preserves_complete_partial_for_offline_retry() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let cache = datastore.join("verified-targets/sha256");
+        let body = b"scanner retained target";
+        let digest = format!("{:x}", Sha256::digest(body));
+        let partial = cache.join(partial_name(&digest));
+        let target_path = cache.join(&digest);
+        let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
+        let mut target = ResumableTarget::begin(datastore, body.len() as u64, &digest, policy)
+            .await
+            .unwrap();
+        target.append(body).await.unwrap();
+        let scanner = open_reading_scanner_without_delete_share(&partial);
+
+        let started = std::time::Instant::now();
+        let error = target
+            .commit("use.extension.registry_target_invalid")
+            .await
+            .expect_err("a persistent scanner lock must stop at the retry bound");
+        let elapsed = started.elapsed();
+
+        assert_eq!(error.code, "use.extension.io");
+        assert!(elapsed >= std::time::Duration::from_secs(2));
+        assert!(elapsed < std::time::Duration::from_secs(10));
+        assert!(!target.is_ready());
+        assert_eq!(std::fs::read(&partial).unwrap(), body);
+        assert!(!target_path.exists());
+
+        drop(scanner);
+        drop(target);
+        let mut recovered = ResumableTarget::begin(
+            datastore,
+            body.len() as u64,
+            &digest,
+            VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(recovered.is_ready());
+        assert_eq!(recovered.offset(), body.len() as u64);
+        assert!(!partial.exists());
+        assert_eq!(std::fs::read(&target_path).unwrap(), body);
+        let staged = temporary.path().join("recovered-staging");
+        recovered.stage_into(&staged).await.unwrap();
+        assert_eq!(std::fs::read(staged).unwrap(), body);
     }
 
     #[cfg(any(unix, windows))]

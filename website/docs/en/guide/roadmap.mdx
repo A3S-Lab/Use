@@ -158,8 +158,12 @@ package, and only a durable Host outcome reports `Completed`.
   verification. Promotion reopens and rehashes the final path, then retains that
   verified handle through staging. Post-verification replacement fails commit;
   Unix staging stays bound to the retained handle, and Windows permits readers
-  while denying external writes, removal, and replacement. Reboot recovery
-  remains open.
+  while denying external writes, removal, and replacement. Windows-native
+  scanner tests now prove that transient no-delete-share contention converges
+  within the two-second promotion bound. Persistent contention publishes
+  nothing and preserves the complete partial for a later zero-network rehash,
+  promotion, and staging retry. Reboot recovery and antivirus contention beyond
+  this exact promotion boundary remain open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Real-process tests now cover resumable target-download interruption and
@@ -191,8 +195,8 @@ package, and only a durable Host outcome reports `Completed`.
   the exact candidate/prior Grant or enablement regrant/revocation, and persists
   replayable terminal Host outcomes without generation inflation.
 - Cover interrupted download, archive extraction, cutover, drain, process
-  crash, product-host Grant cutover, reboot, antivirus contention, and
-  reparse-point replacement races.
+  crash, product-host Grant cutover, reboot, remaining antivirus contention
+  outside verified-target promotion, and reparse-point replacement races.
 
 ### 5. Supply chain and operations — in progress
 

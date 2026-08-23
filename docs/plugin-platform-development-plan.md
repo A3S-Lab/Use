@@ -323,10 +323,13 @@ Status: in progress
   through staging. A deterministic replacement after initial verification
   fails commit; a Unix path replacement after reopen cannot redirect staging,
   and Windows live partial and verified-target handles permit readers while
-  denying external writes, removal, and replacement.
+  denying external writes, removal, and replacement. Windows-native scanner
+  tests also prove transient no-delete-share contention converges within the
+  two-second promotion bound, while persistent contention preserves the complete
+  partial for a later zero-network rehash, promotion, and staging retry.
 - Expand filesystem coverage to externally raced targets, antivirus contention
-  outside the shared publication paths, process groups, named resources, and
-  reboot recovery.
+  outside verified-target promotion and the shared publication paths, process
+  groups, named resources, and reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
 
 Acceptance: every advertised platform passes the same contract, lifecycle,

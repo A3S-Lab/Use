@@ -411,6 +411,18 @@ the complete target requirement on its temporary staging filesystem and the
 remaining target bytes on the cache filesystem because they may be different
 volumes.
 
+Each resumable partial is opened without following its final component and the
+same handle remains authoritative through append, checkpoint, and initial
+verification. Promotion then reopens and rehashes the final path and retains
+that verified handle through staging. On Windows these live handles allow
+readers while excluding external mutation and replacement. Native scanner tests
+add a read-only handle that permits the transaction's existing read/write access
+but denies delete sharing: release within the two-second rename retry bound lets
+the same commit finish, while a persistent lock publishes nothing and retains
+the complete partial for rehash, promotion, and staging by a later zero-network
+retry. Antivirus contention beyond this exact target-promotion boundary and
+reboot recovery remain release gates.
+
 Under the exclusive target-cache lock, admission and confirmed pruning remove
 bounded stale atomic-write files, then resumable partials, then verified targets
 in oldest-modified-time and digest order. The active digest is protected and

@@ -575,9 +575,16 @@ then reopened without following its final component, rehashed, and retained as
 the staging authority. A post-verification replacement therefore fails commit;
 on Unix a later path replacement cannot redirect staging away from the retained
 handle, while Windows permits readers but denies external writes, removal, and
-replacement until staging completes. Stale atomic-write files are removed
-first, followed by the oldest resumable partials and then the oldest verified
-targets until the byte, entry, and disk-space bounds are satisfied.
+replacement until staging completes. Windows-native tests also model a read-only
+scanner handle that permits the transaction's existing read/write access but
+denies delete sharing. Promotion completes when a transient handle releases
+within the two-second retry bound; a persistent handle returns an I/O error,
+leaves the exact complete partial intact, and permits the next operation to
+rehash, promote, and stage it without a network transfer after the handle is
+released. Stale atomic-write files are removed first, followed by the oldest
+resumable partials and then the oldest verified targets until the byte, entry,
+and disk-space bounds are satisfied. This qualifies the verified-target
+promotion boundary, not the broader product-host, reboot, and antivirus matrix.
 
 Inspect cache usage without making a Registry request:
 
@@ -1049,15 +1056,15 @@ release claim.
 | --- | --- | --- |
 | Linux x86_64 / arm64 | Full non-Science workspace CI plus release-container conformance | Development preview |
 | macOS arm64 / x86_64 | Current non-Science workspace build and tests | Development preview |
-| Windows x86_64 | Current non-Science workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
+| Windows x86_64 | Current non-Science workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, verified-target scanner-lock promotion/recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
 Native CI run
 [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)
 passed the current non-Science workspace and real-process integration suite on
 all five targets from exact `main` commit
 `40bc5593cbf58ca2da171d85ba578c2d6bd911c8`. This establishes the current
-Use-owned platform baseline only; product-host, reboot, antivirus contention,
-and the remaining recovery scenarios are still release blockers.
+Use-owned platform baseline only; product-host, reboot, broader antivirus
+contention, and the remaining recovery scenarios are still release blockers.
 
 Trusted package and state paths use platform-aware metadata checks that reject
 Unix symbolic links and Windows reparse points before traversal. Platform test

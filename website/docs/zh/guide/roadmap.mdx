@@ -141,7 +141,10 @@ durable Host outcome 才会报告 `Completed`。
   handle 完成最终校验；promotion 随后以 no-follow 方式重开并重新哈希 final path，
   再将该 verified handle 持有到 staging 完成。校验后的 replacement 会让 commit
   失败；Unix staging 始终绑定已持有的 handle，Windows 则允许 reader，同时拒绝
-  外部写入、删除与替换。reboot recovery 仍未完成。
+  外部写入、删除与替换。Windows 原生 scanner 测试现已证明，短暂的
+  no-delete-share 争用会在两秒 promotion 边界内收敛；持续争用不会发布 final
+  target，并会保留完整 partial，供后续无网络重试重新哈希、promotion 和 staging。
+  reboot recovery 以及超出这一精确 promotion 边界的 antivirus contention 仍未完成。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
 - 真实进程测试现已覆盖 target 下载断点续传，以及 verified archive 提取期间
@@ -170,7 +173,8 @@ durable Host outcome 才会报告 `Completed`。
   regrant/revocation，并且不额外推进 generation，最后持久化可精确重放的
   terminal Host outcome。
 - 覆盖下载中断、归档提取、cutover、drain、进程崩溃、真实产品宿主 Grant
-  cutover、重启、杀毒软件争用和 reparse-point replacement race。
+  cutover、重启、verified-target promotion 之外的其余杀毒软件争用，以及
+  reparse-point replacement race。
 
 ### 5. 供应链与运维 — 进行中
 

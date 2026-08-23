@@ -114,6 +114,17 @@ verified handle remains live through staging: Unix path replacement cannot
 redirect the staged bytes, and Windows continues to allow readers while
 denying external write, delete, and replacement access.
 
+Windows promotion retries access-denied, sharing-violation, and lock-violation
+rename failures for at most two seconds on a blocking worker. Native tests model
+a read-only scanner handle that shares the transaction's existing read/write
+access but withholds delete sharing. Releasing a transient handle lets the same
+commit finish promotion and staging. If the handle persists through the bound,
+commit returns `use.extension.io`, publishes no final target, and retains the
+exact complete partial. After the scanner releases it, retry the same operation;
+`begin` rehashes, promotes, and stages those retained bytes before any target
+request. This is the verified-target promotion qualification, not a claim that
+the full product antivirus and reboot matrix is complete.
+
 Under the exclusive target-cache lock, commit removes:
 
 1. bounded stale `.target-<pid>-<time>.tmp` writes;
