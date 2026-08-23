@@ -734,7 +734,7 @@ fn install_surface_selections(
         .collect()
 }
 
-pub(super) fn verify_expected_lock(actual: &str, expected: Option<&str>) -> UseResult<()> {
+pub(crate) fn verify_expected_lock(actual: &str, expected: Option<&str>) -> UseResult<()> {
     let Some(expected) = expected else {
         return Ok(());
     };

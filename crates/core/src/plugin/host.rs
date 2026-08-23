@@ -74,7 +74,7 @@ impl PluginManagedScope {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != PLUGIN_MANAGED_SCOPE_SCHEMA_V2
             || !valid_opaque_id(&self.host_id)
-            || !valid_opaque_id(&self.scope_id)
+            || !valid_machine_id(&self.scope_id)
             || !valid_opaque_id(&self.authority_id)
             || self.fence_generation == 0
             || !valid_sha256(&self.fence_digest)
@@ -346,6 +346,35 @@ fn host_capabilities_error(message: impl Into<String>) -> UseError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn managed_scope_preserves_the_existing_standalone_scope_identity() {
+        let scope = PluginManagedScope {
+            schema: PLUGIN_MANAGED_SCOPE_SCHEMA_V2.to_owned(),
+            host_id: "host:a3s-use-standalone".to_owned(),
+            scope_kind: PlanScopeKind::User,
+            scope_id: "user/current".to_owned(),
+            authority_id: "user:current".to_owned(),
+            fence_generation: 1,
+            fence_digest: format!("sha256:{}", "a".repeat(64)),
+        };
+
+        scope.validate().unwrap();
+
+        let mut invalid_host = scope.clone();
+        invalid_host.host_id = "host/a3s-use-standalone".to_owned();
+        assert_eq!(
+            invalid_host.validate().unwrap_err().code,
+            "use.plugin.managed_scope_invalid"
+        );
+
+        let mut invalid_authority = scope;
+        invalid_authority.authority_id = "user/current".to_owned();
+        assert_eq!(
+            invalid_authority.validate().unwrap_err().code,
+            "use.plugin.managed_scope_invalid"
+        );
+    }
 
     #[test]
     fn current_host_protocol_accepts_only_the_current_operation_plan_schema() {

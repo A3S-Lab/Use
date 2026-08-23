@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use a3s_use_core::{PlanPackageChangeKind, PlanScope, PluginOperationAction, UseResult};
+use a3s_use_core::{
+    PlanPackageChangeKind, PlanScope, PluginOperationAction, PluginPackageLock, UseResult,
+};
 use a3s_use_extension::{ExtensionLifecycleIdentity, ExtensionManifest, InstalledExtension};
 
 use crate::plugin_lifecycle::{
@@ -16,6 +18,41 @@ use super::{
 };
 
 impl CognitivePackageManager {
+    pub(super) async fn uninstall_plan_lock(
+        &self,
+        root_package_id: &str,
+    ) -> UseResult<Option<PluginPackageLock>> {
+        let graph = self.graph_store().get(root_package_id).await?;
+        let pending = self
+            .pending_store()
+            .get(PluginOperationAction::Uninstall, root_package_id)
+            .await?;
+        match (graph, pending) {
+            (Some(graph), Some(pending)) => {
+                validate_pending_lock(&pending, &graph.package_lock, &self.scope)?;
+                Ok(Some(graph.package_lock))
+            }
+            (Some(graph), None) => Ok(Some(graph.package_lock)),
+            (None, Some(pending)) => {
+                pending.validate()?;
+                let lock = pending.envelope.package_lock.ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A pending cognitive-package uninstall omitted its exact dependency lock.",
+                    )
+                })?;
+                if lock.root_package_id != root_package_id {
+                    return Err(package_manager_error(
+                        "use.plugin.package_graph_invalid",
+                        "A pending cognitive-package uninstall does not own its root package path.",
+                    ));
+                }
+                Ok(Some(lock))
+            }
+            (None, None) => Ok(None),
+        }
+    }
+
     pub async fn owns_installed_root(&self, root_package_id: &str) -> UseResult<bool> {
         if self.graph_store().get(root_package_id).await?.is_some() {
             return Ok(true);

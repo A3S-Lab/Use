@@ -17,8 +17,10 @@ pre-admission cancellation 分开。这些 projection 只使用 Use 持有的持
 Use 已在该 Host protocol 之上实现类型化 `PluginManagerService`。标准 MCP
 adapter 只暴露冻结的 10 个 v4 tool，并把每个 operation 委托给同一 service。
 Apply 会重开持久 plan，再向注入的可信 host provider 请求已有 confirmation；
-Agent tool call 不会被当成用户确认。CLI/TUI 迁移与 Code 侧 manager MCP 组合
-仍未完成。
+Agent tool call 不会被当成用户确认。standalone CLI 中由 Registry 驱动的
+install、upgrade 与 uninstall 已改用该 service，并在保留现有 JSON 字段的同时
+返回精确 Host plan/apply result。显式 reviewed CLI apply、read-side 与
+enable/disable 收敛、TUI 迁移及 Code 侧 manager MCP 组合仍未完成。
 
 目标架构把包管理、工作负载调度与宿主渲染分开。最重要的约束是：**CLI、TUI 和 Agent 管理 MCP 必须调用同一个 Plugin Manager，不得各自实现生命周期。**
 
@@ -64,7 +66,9 @@ Agent tool call 不会被当成用户确认。CLI/TUI 迁移与 Code 侧 manager
 - `src/plugin_runtime`：Runtime selection、binding、receipt、invocation 与 observation；
 - `src/surface_reconciler` + `src/capability_registry`：依赖 readiness 和 capability publication；
 - `src/plugin_manager`：production Host Manager 之上的共享类型化 application
-  service 与标准 manager MCP adapter；CLI/TUI 迁移仍待完成。
+  service 与标准 manager MCP adapter；standalone Registry install、upgrade 与
+  uninstall mutation 已使用该 service，显式 reviewed CLI apply、其余 CLI
+  read/enablement 路径、TUI 与 Code MCP 组合仍待完成。
 
 不得新增第二个 manager、grant store、Runtime selector、capability registry 或 generic execution protocol。
 

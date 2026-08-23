@@ -9,6 +9,7 @@ use a3s_use_extension::TrustedRegistry;
 use async_trait::async_trait;
 
 use super::grant::{CognitivePackageAuthorizationEvidence, CognitivePackageAuthorizationProvider};
+use super::registry_access::RegistryAccess;
 use super::{package_manager_error, CognitivePackageManager};
 
 const PLAN_CAPTURED: &str = "use.plugin.package_graph_plan_captured";
@@ -111,6 +112,7 @@ impl CognitivePackageManager {
             requested_version,
             channel,
             expected_package_lock_digest,
+            RegistryAccess::Refreshed,
             None,
         )
         .await
@@ -136,6 +138,32 @@ impl CognitivePackageManager {
             requested_version,
             channel,
             expected_package_lock_digest,
+            RegistryAccess::Refreshed,
+            Some(selected_surfaces),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn prepare_install_with_access_selected(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        expected_package_lock_digest: &str,
+        access: RegistryAccess,
+        selected_surfaces: &[PluginSurfaceRef],
+    ) -> UseResult<PluginOperationPlanEnvelope> {
+        self.prepare_install_remote_with_selection(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            access,
             Some(selected_surfaces),
         )
         .await
@@ -150,6 +178,7 @@ impl CognitivePackageManager {
         requested_version: Option<&str>,
         channel: PluginReleaseChannel,
         expected_package_lock_digest: &str,
+        access: RegistryAccess,
         selected_surfaces: Option<&[PluginSurfaceRef]>,
     ) -> UseResult<PluginOperationPlanEnvelope> {
         if selected_surfaces.is_none() {
@@ -166,33 +195,18 @@ impl CognitivePackageManager {
         }
         let planning = PlanningOnlyAuthorizationProvider::new(self.authorization.clone());
         let manager = self.with_planning_authorization(planning.clone())?;
-        let result = match selected_surfaces {
-            Some(selected_surfaces) => {
-                manager
-                    .install_remote_selected(
-                        root_registry,
-                        dependency_registries,
-                        package_id,
-                        requested_version,
-                        channel,
-                        selected_surfaces,
-                        Some(expected_package_lock_digest),
-                    )
-                    .await
-            }
-            None => {
-                manager
-                    .install_remote(
-                        root_registry,
-                        dependency_registries,
-                        package_id,
-                        requested_version,
-                        channel,
-                        Some(expected_package_lock_digest),
-                    )
-                    .await
-            }
-        };
+        let result = manager
+            .install_remote_with_access(
+                root_registry,
+                dependency_registries,
+                package_id,
+                requested_version,
+                channel,
+                Some(expected_package_lock_digest),
+                access,
+                selected_surfaces,
+            )
+            .await;
         match result {
             Err(error) if error.code == PLAN_CAPTURED => planning.captured(),
             Err(error) => Err(error),
@@ -221,6 +235,7 @@ impl CognitivePackageManager {
             requested_version,
             channel,
             expected_package_lock_digest,
+            RegistryAccess::Refreshed,
             None,
         )
         .await
@@ -246,6 +261,32 @@ impl CognitivePackageManager {
             requested_version,
             channel,
             expected_package_lock_digest,
+            RegistryAccess::Refreshed,
+            Some(selected_surfaces),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn prepare_upgrade_with_access_selected(
+        &self,
+        root_registry: &TrustedRegistry,
+        dependency_registries: &[TrustedRegistry],
+        package_id: &str,
+        requested_version: Option<&str>,
+        channel: PluginReleaseChannel,
+        expected_package_lock_digest: &str,
+        access: RegistryAccess,
+        selected_surfaces: &[PluginSurfaceRef],
+    ) -> UseResult<PluginOperationPlanEnvelope> {
+        self.prepare_upgrade_remote_with_selection(
+            root_registry,
+            dependency_registries,
+            package_id,
+            requested_version,
+            channel,
+            expected_package_lock_digest,
+            access,
             Some(selected_surfaces),
         )
         .await
@@ -260,6 +301,7 @@ impl CognitivePackageManager {
         requested_version: Option<&str>,
         channel: PluginReleaseChannel,
         expected_package_lock_digest: &str,
+        access: RegistryAccess,
         selected_surfaces: Option<&[PluginSurfaceRef]>,
     ) -> UseResult<PluginOperationPlanEnvelope> {
         if selected_surfaces.is_none() {
@@ -276,33 +318,18 @@ impl CognitivePackageManager {
         }
         let planning = PlanningOnlyAuthorizationProvider::new(self.authorization.clone());
         let manager = self.with_planning_authorization(planning.clone())?;
-        let result = match selected_surfaces {
-            Some(selected_surfaces) => {
-                manager
-                    .upgrade_remote_selected(
-                        root_registry,
-                        dependency_registries,
-                        package_id,
-                        requested_version,
-                        channel,
-                        selected_surfaces,
-                        Some(expected_package_lock_digest),
-                    )
-                    .await
-            }
-            None => {
-                manager
-                    .upgrade_remote(
-                        root_registry,
-                        dependency_registries,
-                        package_id,
-                        requested_version,
-                        channel,
-                        Some(expected_package_lock_digest),
-                    )
-                    .await
-            }
-        };
+        let result = manager
+            .upgrade_remote_with_access(
+                root_registry,
+                dependency_registries,
+                package_id,
+                requested_version,
+                channel,
+                Some(expected_package_lock_digest),
+                access,
+                selected_surfaces,
+            )
+            .await;
         match result {
             Err(error) if error.code == PLAN_CAPTURED => planning.captured(),
             Err(error) => Err(error),

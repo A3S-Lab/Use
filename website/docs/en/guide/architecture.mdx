@@ -21,7 +21,11 @@ over that Host protocol. Its standard MCP adapter exposes exactly the frozen
 ten-tool v4 inventory and delegates every operation to the same service. Apply
 reopens the durable plan and requests existing confirmation from an injected
 trusted host provider; an agent tool call never becomes user confirmation.
-CLI/TUI migration and Code-side manager MCP composition remain open.
+Standalone Registry-backed install, upgrade, and uninstall now use this
+service and include the exact Host plan/apply result in their JSON output while
+preserving existing fields. Explicit reviewed CLI apply, read-side and
+enable/disable convergence, TUI migration, and Code-side manager MCP
+composition remain open.
 
 The target architecture separates package management, workload scheduling, and host rendering. Its most important constraint is: **CLI, TUI, and agent management MCP must call one shared Plugin Manager instead of implementing separate lifecycles.**
 
@@ -67,8 +71,10 @@ The current implementation reuses these existing mechanisms:
 - `src/plugin_runtime`: Runtime selection, bindings, receipts, invocation, and observation;
 - `src/surface_reconciler` plus `src/capability_registry`: dependency readiness and capability publication;
 - `src/plugin_manager`: the shared typed application service and standard
-  manager MCP adapter over the production Host Manager. CLI/TUI migration is
-  still pending.
+  manager MCP adapter over the production Host Manager. Standalone
+  Registry-backed install/upgrade/uninstall mutations use this service;
+  explicit reviewed CLI apply, the remaining CLI read/enablement paths, TUI,
+  and Code MCP composition are still pending.
 
 Do not add another manager, grant store, Runtime selector, capability registry, or generic execution protocol.
 

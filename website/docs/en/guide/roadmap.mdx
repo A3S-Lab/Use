@@ -119,7 +119,11 @@ package, and only a durable Host outcome reports `Completed`.
 ### 2. A3S Code TUI hot-plug qualification — in progress
 
 - Migrate CLI and TUI and compose the manager MCP in Code on the implemented
-  shared Plugin Manager service. Product presentation wiring remains open.
+  shared Plugin Manager service. Standalone Registry-backed install, upgrade,
+  and uninstall mutations now use it and return exact Host plan/apply evidence
+  without replacing existing JSON fields. Explicit reviewed CLI apply,
+  read-side and enable/disable convergence, TUI migration, and product
+  presentation wiring remain open.
 - Verify install, invoke, exact-generation upgrade, invoke, uninstall, and
   restart for all six surfaces and dependency-bearing graphs.
 - Prove User/Workspace scope isolation, watcher resumption, terminal-result

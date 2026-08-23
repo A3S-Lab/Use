@@ -106,7 +106,10 @@ durable Host outcome 才会报告 `Completed`。
 ### 2. A3S Code TUI 热插拔验收 — 进行中
 
 - 把 CLI、TUI 迁移到已实现的共享 Plugin Manager service，并在 Code 中组合
-  manager MCP；product presentation wiring 仍未完成。
+  manager MCP。standalone Registry install、upgrade 与 uninstall mutation 已
+  使用该 service，并在保留现有 JSON 字段的同时返回精确 Host plan/apply
+  evidence。显式 reviewed CLI apply、read-side 与 enable/disable 收敛、TUI
+  迁移及 product presentation wiring 仍未完成。
 - 对全部六类表面和包含依赖的图验证 install、invoke、精确 generation
   upgrade、再次 invoke、uninstall 与 restart。
 - 证明 User/Workspace scope 隔离、watcher resume、terminal result replay，

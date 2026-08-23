@@ -44,7 +44,7 @@ async fn upgrade(args: &[String]) -> UseResult<CommandOutput> {
     })?;
     let registry_name = option_argument(args, "--registry-name")?;
     let version = option_argument(args, "--version")?;
-    let channel = option_argument(args, "--channel")?.unwrap_or("stable");
+    let channel = option_argument(args, "--channel")?;
     let expected_lock = option_argument(args, "--package-lock-digest")?;
     let result = upgrade_remote_extension(
         package_id,
@@ -72,7 +72,8 @@ async fn upgrade(args: &[String]) -> UseResult<CommandOutput> {
             "changed": result.changed,
             "registryAccess": result.registry_access,
             "registrySourceRevision": result.registry_source_revision,
-            "packageGraph": result.package_graph
+            "packageGraph": result.package_graph,
+            "pluginManager": result.plugin_manager
         }),
     ))
 }
@@ -258,7 +259,7 @@ async fn install(args: &[String]) -> UseResult<CommandOutput> {
     }
     let registry_name = option_argument(args, "--registry-name")?;
     let version = option_argument(args, "--version")?;
-    let channel = option_argument(args, "--channel")?.unwrap_or("stable");
+    let channel = option_argument(args, "--channel")?;
     let expected_package_lock = option_argument(args, "--package-lock-digest")?;
     let result = install_remote_extension(
         package_id,
@@ -283,7 +284,8 @@ async fn install(args: &[String]) -> UseResult<CommandOutput> {
             "changed": result.changed,
             "registryAccess": result.registry_access,
             "registrySourceRevision": result.registry_source_revision,
-            "packageGraph": result.package_graph
+            "packageGraph": result.package_graph,
+            "pluginManager": result.plugin_manager
         }),
     ))
 }
@@ -347,7 +349,8 @@ async fn uninstall(id: &str) -> UseResult<CommandOutput> {
                 "component": format!("use/{}", result.package_id),
                 "route": extension.route,
                 "changed": result.changed,
-                "packageGraph": result.package_graph
+                "packageGraph": result.package_graph,
+                "pluginManager": result.plugin_manager
             }),
         ));
     }
@@ -362,7 +365,8 @@ async fn uninstall(id: &str) -> UseResult<CommandOutput> {
             serde_json::json!({
                 "component": format!("use/{}", result.package_id),
                 "changed": result.changed,
-                "packageGraph": result.package_graph
+                "packageGraph": result.package_graph,
+                "pluginManager": result.plugin_manager
             }),
         ));
     }

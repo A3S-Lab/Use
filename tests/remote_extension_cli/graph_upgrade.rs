@@ -402,6 +402,29 @@ fn schema_v3_cli_upgrade_removes_an_unreferenced_dependency_node() {
         .is_some_and(|packages| packages
             .iter()
             .all(|package| { package["catalog"]["record"]["packageId"] != "acme/obsolete" })));
+
+    let replayed =
+        cognitive_registry_upgrade(&server, &repository, &home, "acme/root", "1.1.0", &[]);
+    assert!(replayed.status.success(), "{replayed:?}");
+    let replayed = json(&replayed);
+    assert_eq!(replayed["data"]["changed"], false);
+    assert_eq!(
+        replayed["data"]["packageGraph"]["removedPackages"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        replayed["data"]["packageGraph"]["retainedPackages"],
+        serde_json::json!(["acme/base", "acme/root"])
+    );
+    assert_eq!(
+        replayed["data"]["packageGraph"]["plan"],
+        serde_json::Value::Null
+    );
+    assert_eq!(replayed["data"]["pluginManager"]["plan"]["replayed"], true);
+    assert_eq!(
+        replayed["data"]["pluginManager"]["result"]["replayed"],
+        true
+    );
 }
 
 #[test]
