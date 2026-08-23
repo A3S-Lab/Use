@@ -387,9 +387,12 @@ Status: in progress
   candidates preserve reviewed file attributes, and lifecycle-generation plus
   restore-history directory moves use the same retry bound. A released
   exclusive file or directory lock converges atomically, and a persistent
-  replacement lock leaves the old target intact. Externally raced targets,
-  reboot recovery, product-host contention, and the remaining platform
-  scenarios stay open.
+  replacement lock leaves the old target intact. Resumable Registry partials
+  now use one final-component no-follow handle from discovery through append;
+  the live Windows handle allows readers but denies external writes, removal,
+  and replacement until the transaction releases it. Post-handle-release
+  target replacement races, reboot recovery, product-host contention, and the
+  remaining platform scenarios stay open.
 - [x] Test real-process uninstall interruption between durable Registry cutover
   and its package receipt, then hold the prior generation lease through restart
   to prove drain-before-removal and exact generation replay.

@@ -137,7 +137,9 @@ durable Host outcome 才会报告 `Completed`。
   保留，whole-state restore candidate 会保留已审查的文件属性，lifecycle/
   restore-history 目录移动也使用相同重试边界。短暂 file 或 directory
   lock 释放后会原子收敛；持续 replacement lock 会在两秒后停止，且不会改动
-  原 target。外部 target 竞争与 reboot recovery 仍未完成。
+  原 target。Registry resumable partial 现在使用单个 final-component no-follow
+  handle；Windows 允许 reader 访问，但会在 transaction 释放前拒绝外部写入、删除
+  与替换。handle 释放后的 replacement race 与 reboot recovery 仍未完成。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
 - 真实进程测试现已覆盖 target 下载断点续传，以及 verified archive 提取期间

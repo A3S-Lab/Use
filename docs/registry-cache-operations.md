@@ -2,7 +2,7 @@
 
 Status: development preview
 
-Last updated: 2026-08-22
+Last updated: 2026-08-23
 
 ## Boundary
 
@@ -100,6 +100,15 @@ complete `200` response is accepted when a server ignores Range, but the old
 partial is truncated first. No partial is staged or exposed as an offline
 target. The complete bytes are re-read, checked against the signed length and
 SHA-256, synchronized, and atomically promoted to `<sha256>`.
+
+An existing partial is opened once without following its final path before
+cache admission, and that exact handle remains the append/checkpoint authority.
+New partial creation uses the same no-follow policy with create-new semantics.
+On Windows the live handle shares read access for scanners and diagnostics but
+denies external write, delete, and replacement access until the transaction
+releases it. This closes the active-partial replacement window; contention or
+replacement after release during final verification and promotion remains a
+separate release-qualification gate.
 
 Under the exclusive target-cache lock, commit removes:
 

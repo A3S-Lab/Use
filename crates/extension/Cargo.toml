@@ -28,5 +28,8 @@ tough.workspace = true
 url.workspace = true
 zip.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 ring = "0.17"

@@ -316,6 +316,11 @@ Status: in progress
   and lock violations for at most two seconds; prove released file/directory
   lock convergence, persistent-lock bounds, existing-target rejection,
   unchanged prior content, source retention, and temporary cleanup.
+- [x] Open retained resumable Registry partials once without following their
+  final path and keep that exact handle through admission, append, and
+  checkpoint. On Windows the live handle permits readers but denies external
+  writes, removal, and replacement until transaction release. Verification and
+  promotion races after handle release remain in the external contention gate.
 - Expand filesystem coverage to externally raced targets, antivirus contention
   outside the shared publication paths, process groups, named resources, and
   reboot recovery.

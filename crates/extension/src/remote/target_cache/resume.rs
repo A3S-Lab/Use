@@ -77,10 +77,13 @@ impl ResumableTarget {
             });
         }
 
-        let mut partial_metadata = optional_metadata(&partial_path).await?;
-        let mut existing_length = match partial_metadata.as_ref() {
-            Some(metadata) => {
-                validate_partial_metadata(&partial_path, metadata, expected_length)?;
+        let mut partial = open_existing_partial(&partial_path).await?;
+        let mut existing_length = match partial.as_ref() {
+            Some(partial) => {
+                let metadata = partial.metadata().await.map_err(|error| {
+                    io_error("inspect opened resumable target", &partial_path, error)
+                })?;
+                validate_partial_metadata(&partial_path, &metadata, expected_length)?;
                 metadata.len()
             }
             None => 0,
@@ -88,6 +91,7 @@ impl ResumableTarget {
         admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
 
         if existing_length == expected_length && existing_length > 0 {
+            drop(partial.take());
             let valid = verify_file(
                 &partial_path,
                 None,
@@ -120,31 +124,19 @@ impl ResumableTarget {
             }
             remove_partial(&partial_path, &cache_directory).await?;
             admit_target_write(&cache_directory, &expected_sha256, expected_length, policy).await?;
-            partial_metadata = None;
             existing_length = 0;
         }
 
-        let mut options = fs::OpenOptions::new();
-        options.read(true).write(true).truncate(false);
-        if partial_metadata.is_some() {
-            options.create(false);
-        } else {
-            options.create_new(true);
-        }
-        let mut partial = options
-            .open(&partial_path)
-            .await
-            .map_err(|error| io_error("open resumable Registry target", &partial_path, error))?;
+        let mut partial = match partial {
+            Some(partial) => partial,
+            None => create_partial(&partial_path).await?,
+        };
         let opened = partial
             .metadata()
             .await
             .map_err(|error| io_error("inspect opened resumable target", &partial_path, error))?;
         validate_partial_metadata(&partial_path, &opened, expected_length)?;
-        if opened.len() != existing_length
-            || partial_metadata
-                .as_ref()
-                .is_some_and(|metadata| !same_file_identity(metadata, &opened))
-        {
+        if opened.len() != existing_length {
             return Err(target_cache_error(
                 "use.extension.registry_target_cache_invalid",
                 "The resumable Registry target changed while it was opened.",
@@ -330,6 +322,55 @@ async fn optional_metadata(path: &Path) -> UseResult<Option<std::fs::Metadata>> 
     }
 }
 
+async fn open_existing_partial(path: &Path) -> UseResult<Option<fs::File>> {
+    let options = partial_open_options();
+    match options.open(path).await {
+        Ok(file) => Ok(Some(file)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => {
+            if let Ok(metadata) = fs::symlink_metadata(path).await {
+                if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file()
+                {
+                    return Err(target_cache_error(
+                        "use.extension.registry_target_cache_invalid",
+                        "The resumable Registry target is not a bounded regular file.",
+                    )
+                    .with_detail("path", path.display().to_string()));
+                }
+            }
+            Err(io_error("open resumable Registry target", path, error))
+        }
+    }
+}
+
+async fn create_partial(path: &Path) -> UseResult<fs::File> {
+    let mut options = partial_open_options();
+    options.create_new(true);
+    options
+        .open(path)
+        .await
+        .map_err(|error| io_error("create resumable Registry target", path, error))
+}
+
+fn partial_open_options() -> fs::OpenOptions {
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true).truncate(false);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW);
+    #[cfg(windows)]
+    {
+        // Open the final path itself and keep external writers or replacers out
+        // while this download transaction owns the partial. Readers such as
+        // scanners and diagnostics remain permitted.
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        options
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .share_mode(FILE_SHARE_READ);
+    }
+    options
+}
+
 fn validate_partial_metadata(
     path: &Path,
     metadata: &std::fs::Metadata,
@@ -348,18 +389,6 @@ fn validate_partial_metadata(
         .with_detail("expectedLength", expected_length.to_string()));
     }
     Ok(())
-}
-
-#[cfg(unix)]
-fn same_file_identity(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bool {
-    use std::os::unix::fs::MetadataExt;
-
-    left.dev() == right.dev() && left.ino() == right.ino()
-}
-
-#[cfg(not(unix))]
-fn same_file_identity(_left: &std::fs::Metadata, _right: &std::fs::Metadata) -> bool {
-    true
 }
 
 async fn remove_partial(path: &Path, cache_directory: &Path) -> UseResult<()> {
@@ -412,6 +441,43 @@ mod tests {
             .unwrap();
 
         assert_eq!(error.code, "use.extension.registry_target_cache_invalid");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn active_partial_allows_read_but_denies_external_write_and_removal() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let cache = datastore.join("verified-targets/sha256");
+        std::fs::create_dir_all(&cache).unwrap();
+        let digest = "c".repeat(64);
+        let partial = cache.join(partial_name(&digest));
+        std::fs::write(&partial, b"retained").unwrap();
+        let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
+
+        let target = ResumableTarget::begin(datastore, 16, &digest, policy)
+            .await
+            .unwrap();
+        assert_eq!(target.offset(), 8);
+
+        let write_error = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&partial)
+            .unwrap_err();
+        assert!(
+            matches!(write_error.raw_os_error(), Some(5 | 32 | 33)),
+            "active partial accepted an external writer: {write_error}"
+        );
+        let remove_error = std::fs::remove_file(&partial).unwrap_err();
+        assert!(
+            matches!(remove_error.raw_os_error(), Some(5 | 32 | 33)),
+            "active partial accepted external removal: {remove_error}"
+        );
+        assert_eq!(std::fs::read(&partial).unwrap(), b"retained");
+
+        drop(target);
+        std::fs::write(&partial, b"released").unwrap();
+        assert_eq!(std::fs::read(&partial).unwrap(), b"released");
     }
 
     #[cfg(any(unix, windows))]

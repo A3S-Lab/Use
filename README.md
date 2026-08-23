@@ -110,7 +110,10 @@ executes the complete current non-Science workspace suite, including a real
 directory-junction regression for the shared reparse-point guard. The native
 Windows suite also proves Registry cutover-capacity rejection happens before
 any lifecycle-receipt replacement and that Box delegation preserves arguments,
-output, and exit status through a native command script. Signed Registry,
+output, and exit status through a native command script. Resumable Registry
+partials are opened without following their final path and stay owned by one
+handle; the Windows gate proves an active partial permits readers but rejects
+external writes and removal until the transaction releases it. Signed Registry,
 dependency-graph, Grant, Flow-preflight/lifecycle, and standalone OKF scenarios
 also run through the real CLI. Its killed-process coverage now
 includes a multi-node install killed after the durable Registry graph publish
