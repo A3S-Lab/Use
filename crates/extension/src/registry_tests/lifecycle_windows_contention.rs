@@ -22,6 +22,26 @@ async fn prepared_package(
     (registry(root), candidate, identity)
 }
 
+async fn published_package(
+    root: &Path,
+    generation: u64,
+) -> (
+    ExtensionRegistry,
+    ExtensionLifecyclePackage,
+    ExtensionLifecycleIdentity,
+) {
+    let (registry, candidate, identity) = prepared_package(root, generation).await;
+    registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap();
+    registry
+        .publish_lifecycle_package_for_host_version(&identity, "0.3.0")
+        .await
+        .unwrap();
+    (registry, candidate, identity)
+}
+
 fn lifecycle_staging_paths(parent: &Path) -> Vec<PathBuf> {
     std::fs::read_dir(parent)
         .unwrap()
@@ -30,6 +50,18 @@ fn lifecycle_staging_paths(parent: &Path) -> Vec<PathBuf> {
             path.file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| name.starts_with(".lifecycle-staging-"))
+        })
+        .collect()
+}
+
+fn temporary_receipt_paths(receipt: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(receipt.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(".receipt-") && name.ends_with(".tmp"))
         })
         .collect()
 }
@@ -148,30 +180,119 @@ async fn lifecycle_commit_bounds_a_persistent_active_staging_lock_and_replays_ex
     );
 }
 
+#[tokio::test]
+async fn lifecycle_upgrade_waits_for_a_transient_scanner_lock_on_the_selected_receipt() {
+    let temp = tempfile::tempdir().unwrap();
+    let (registry, candidate, prior) = published_package(temp.path(), 16).await;
+    let next = lifecycle_identity(&candidate, 17);
+    let receipt_path = registry.paths().receipt_path(prior.package_id());
+    let prior_receipt = fs::read(&receipt_path).await.unwrap();
+    let snapshot_before_upgrade = registry.snapshot().await.unwrap();
+    let scanner = crate::test_filesystem::open_reading_scanner_without_delete_share(&receipt_path);
+    let mut commit = Box::pin(registry.commit_lifecycle_package(&next, &candidate));
+
+    tokio::select! {
+        result = &mut commit => {
+            panic!("lifecycle upgrade completed while the scanner denied receipt replacement: {result:?}")
+        }
+        () = tokio::time::sleep(Duration::from_millis(200)) => {}
+    }
+
+    drop(scanner);
+    let committed = commit.await.unwrap();
+    assert!(committed.changed);
+    assert_eq!(
+        committed.registry_generation,
+        snapshot_before_upgrade.generation
+    );
+    assert_eq!(committed.extension.receipt.lifecycle_generation, Some(17));
+    assert!(!committed.extension.receipt.enabled);
+    assert_ne!(fs::read(&receipt_path).await.unwrap(), prior_receipt);
+    assert!(registry.lifecycle_package_root(&next).is_dir());
+    assert!(registry
+        .paths()
+        .retained_lifecycle_receipt_path(
+            prior.package_id(),
+            prior.generation(),
+            prior.package_sha256(),
+        )
+        .is_file());
+    assert!(temporary_receipt_paths(&receipt_path).is_empty());
+    assert_eq!(registry.snapshot().await.unwrap(), snapshot_before_upgrade);
+    assert_eq!(
+        registry.snapshot().await.unwrap().routes[0].lifecycle_generation,
+        Some(prior.generation())
+    );
+}
+
+#[tokio::test]
+async fn lifecycle_upgrade_bounds_a_persistent_receipt_lock_and_rolls_back_before_replay() {
+    let temp = tempfile::tempdir().unwrap();
+    let (registry, candidate, prior) = published_package(temp.path(), 18).await;
+    let next = lifecycle_identity(&candidate, 19);
+    let receipt_path = registry.paths().receipt_path(prior.package_id());
+    let retained_path = registry.paths().retained_lifecycle_receipt_path(
+        prior.package_id(),
+        prior.generation(),
+        prior.package_sha256(),
+    );
+    let prior_receipt = fs::read(&receipt_path).await.unwrap();
+    let snapshot_before_upgrade = registry.snapshot().await.unwrap();
+    let scanner = crate::test_filesystem::open_reading_scanner_without_delete_share(&receipt_path);
+
+    let started = std::time::Instant::now();
+    let error = registry
+        .commit_lifecycle_package(&next, &candidate)
+        .await
+        .expect_err("a persistent selected-receipt lock must stop at the retry bound");
+    let elapsed = started.elapsed();
+
+    assert_eq!(error.code, "use.extension.io");
+    assert!(elapsed >= Duration::from_secs(2));
+    assert!(elapsed < Duration::from_secs(10));
+    assert_eq!(fs::read(&receipt_path).await.unwrap(), prior_receipt);
+    assert!(!registry.lifecycle_package_root(&next).exists());
+    assert!(!retained_path.exists());
+    assert!(temporary_receipt_paths(&receipt_path).is_empty());
+    assert_eq!(registry.snapshot().await.unwrap(), snapshot_before_upgrade);
+    let selected = registry.get(prior.package_id()).await.unwrap().unwrap();
+    assert_eq!(
+        selected.receipt.lifecycle_generation,
+        Some(prior.generation())
+    );
+    assert!(selected.receipt.enabled);
+
+    drop(scanner);
+    let committed = registry
+        .commit_lifecycle_package(&next, &candidate)
+        .await
+        .unwrap();
+    assert!(committed.changed);
+    assert_eq!(
+        committed.registry_generation,
+        snapshot_before_upgrade.generation
+    );
+    assert!(registry.lifecycle_package_root(&next).is_dir());
+    assert!(retained_path.is_file());
+    assert!(temporary_receipt_paths(&receipt_path).is_empty());
+    assert_eq!(registry.snapshot().await.unwrap(), snapshot_before_upgrade);
+
+    let replay = registry
+        .commit_lifecycle_package(&next, &candidate)
+        .await
+        .unwrap();
+    assert!(!replay.changed);
+    assert_eq!(
+        replay.registry_generation,
+        snapshot_before_upgrade.generation
+    );
+}
+
 async fn hidden_drained_package(
     root: &Path,
     generation: u64,
 ) -> (ExtensionRegistry, ExtensionLifecycleIdentity) {
-    let source = root.join("cognitive");
-    compatible_cognitive_package(&source).await;
-    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
-        "acme/cognitive",
-        &source,
-        true,
-        "0.3.0",
-    )
-    .await
-    .unwrap();
-    let identity = lifecycle_identity(&candidate, generation);
-    let registry = registry(root);
-    registry
-        .commit_lifecycle_package(&identity, &candidate)
-        .await
-        .unwrap();
-    registry
-        .publish_lifecycle_package_for_host_version(&identity, "0.3.0")
-        .await
-        .unwrap();
+    let (registry, _candidate, identity) = published_package(root, generation).await;
     registry.hide_lifecycle_package(&identity).await.unwrap();
     registry
         .drain_lifecycle_package(&identity, Duration::from_secs(1))

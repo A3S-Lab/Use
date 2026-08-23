@@ -233,10 +233,14 @@ On Windows, active package-staging rename, lifecycle receipt deletion, and
 recursive removal of that bounded abandoned staging tree or a drained immutable
 package generation retry only access-denied, sharing, and lock violations for
 two seconds per blocking mutation. A transient scanner lock over the active
-staging directory, a receipt, or a nested abandoned-staging file lets the same
-commit or removal continue. A persistent active-staging lock returns
-`use.extension.io` before receipt or Registry-snapshot mutation, leaves the
-residual staging tree, and lets the next commit replay exactly after release. A
+staging directory, selected upgrade receipt, removal receipt, or nested
+abandoned-staging file lets the same commit or removal continue. A persistent
+active-staging lock returns `use.extension.io` before receipt or
+Registry-snapshot mutation, leaves the residual staging tree, and lets the next
+commit replay exactly after release. A persistent selected-receipt lock returns
+the same error after removing the candidate root and retained receipt; the
+byte-exact prior receipt and published generation remain authoritative, no
+temporary receipt remains, and upgrade replay succeeds after release. A
 persistent lock on a drained generation returns the same error after durable
 route hiding and receipt removal, leaves its exact residual tree, and lets the
 next removal replay finish without another Registry generation. The ownership

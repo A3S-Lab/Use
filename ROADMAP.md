@@ -414,18 +414,23 @@ Status: in progress
   its atomic generation rename: transient contention lets the same commit
   finish, while persistent contention fails before receipt or Registry-snapshot
   mutation, retains residual staging, and permits exact commit replay after
-  release. Reboot recovery, antivirus contention beyond these exact target
-  promotion, cache-removal, active package-commit, and lifecycle-removal
-  boundaries, product-host contention, and the remaining platform scenarios
-  stay open.
+  release. Selected upgrade-receipt replacement has the same native scanner
+  qualification. Transient contention completes the same upgrade; persistent
+  contention stops at the bound, removes the candidate root and retained
+  receipt, preserves the byte-exact prior receipt and published generation,
+  leaves no temporary receipt, and permits exact replay after release. Reboot
+  recovery, antivirus contention beyond these exact target promotion,
+  cache-removal, active package-commit, upgrade-receipt replacement, and
+  lifecycle-removal boundaries, product-host contention, and the remaining
+  platform scenarios stay open.
 - [x] Test real-process uninstall interruption between durable Registry cutover
   and its package receipt, then hold the prior generation lease through restart
   to prove drain-before-removal and exact generation replay.
 - [ ] Complete the interrupted download, archive extraction, graph/Grant
   cutover, drain, removal, process crash, reboot, remaining antivirus contention
-  outside verified-target promotion, cache removal, active package commit, and
-  lifecycle removal, and reparse-point replacement matrix. A real `a3s-use`
-  process-kill test now
+  outside verified-target promotion, cache removal, active package commit,
+  upgrade-receipt replacement, and lifecycle removal, and reparse-point
+  replacement matrix. A real `a3s-use` process-kill test now
   proves digest-bound target download resume without partial publication. A
   second real-process test kills installation while a verified high-entry
   archive is being extracted, proves no receipt, graph, pending operation, or

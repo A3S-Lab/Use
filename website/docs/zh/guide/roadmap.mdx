@@ -152,9 +152,12 @@ durable Host outcome 才会报告 `Completed`。
   lock 会保留 residual tree，后续 removal 会精确重放且不额外推进 Registry generation。
   原生测试也把 active package-staging rename 争用绑定到 commit 状态机。短暂 lock
   会让同一次 commit 完成；持续 lock 不会改动 receipt 或 Registry snapshot，会保留
-  residual staging，并允许释放后精确重放。reboot recovery 以及超出这些精确
-  promotion、cache-removal、active package-commit 与 lifecycle-removal 边界的
-  antivirus contention 仍未完成。
+  residual staging，并允许释放后精确重放。selected upgrade-receipt replacement
+  现在也有同等的原生验证。短暂 lock 会完成同一次 upgrade；持续 lock 会移除
+  candidate root 与 retained receipt，保留精确的 prior receipt 和已发布 generation，
+  不留下临时 receipt，并允许释放后精确重放。reboot recovery 以及超出这些精确
+  promotion、cache-removal、active package-commit、upgrade-receipt replacement 与
+  lifecycle-removal 边界的 antivirus contention 仍未完成。
 - 在声明支持的 Linux、macOS、Windows target 上运行等价的签名六表面生命
   周期与故障注入场景。
 - 真实进程测试现已覆盖 target 下载断点续传，以及 verified archive 提取期间

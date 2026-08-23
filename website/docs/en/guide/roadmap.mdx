@@ -173,9 +173,13 @@ package, and only a durable Host outcome reports `Completed`.
   package-staging rename contention to the commit state machine: a transient
   lock lets the same commit finish, while a persistent lock leaves receipt and
   Registry snapshot untouched, preserves residual staging, and permits exact
-  replay after release. Reboot recovery and antivirus contention beyond these
-  exact promotion, cache-removal, active package-commit, and lifecycle-removal
-  boundaries remain open.
+  replay after release. Selected upgrade-receipt replacement now has the same
+  native qualification. A transient lock completes the same upgrade; a
+  persistent lock removes candidate and retained state, preserves the exact
+  prior receipt and published generation, leaves no temporary receipt, and
+  permits exact replay after release. Reboot recovery and antivirus contention
+  beyond these exact promotion, cache-removal, active package-commit,
+  upgrade-receipt replacement, and lifecycle-removal boundaries remain open.
 - Run equivalent signed six-surface lifecycle and failure-injection scenarios
   on declared Linux, macOS, and Windows targets.
 - Real-process tests now cover resumable target-download interruption and

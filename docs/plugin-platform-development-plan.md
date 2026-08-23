@@ -338,11 +338,16 @@ Status: in progress
   Native tests additionally hold the active package-staging directory at its
   generation rename: transient contention completes the same commit, while a
   persistent lock fails before receipt or Registry-snapshot mutation, preserves
-  residual staging, and permits exact commit replay after release.
+  residual staging, and permits exact commit replay after release. Selected
+  upgrade-receipt replacement also has native scanner coverage: transient
+  contention completes the same upgrade, while a persistent lock removes the
+  candidate root and retained receipt, preserves the byte-exact prior receipt
+  and published generation, leaves no temporary receipt, and permits exact
+  replay after release.
 - Expand filesystem coverage to externally raced targets, antivirus contention
   outside verified-target promotion, cache removal, active package commit,
-  lifecycle removal, and the shared publication paths, process groups, named
-  resources, and reboot recovery.
+  upgrade-receipt replacement, lifecycle removal, and the shared publication
+  paths, process groups, named resources, and reboot recovery.
 - Run the complete signed six-surface lifecycle and failure matrix.
 
 Acceptance: every advertised platform passes the same contract, lifecycle,
