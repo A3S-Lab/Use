@@ -237,6 +237,37 @@ cargo build --workspace --bins --locked
 ./target/debug/a3s-use capability snapshot --json
 ```
 
+Rust embedding hosts can bind the same authoritative Extension Registry to the
+typed capability bridge and pin one complete published generation:
+
+```rust
+use a3s_use::capability_registry::CapabilityRegistry;
+
+let capabilities = CapabilityRegistry::new(extension_registry);
+let observed = capabilities.snapshot().await?;
+let lease = capabilities
+    .acquire_snapshot_lease(observed.cursor())
+    .await?
+    .ok_or_else(|| a3s_use::core::UseError::new(
+        "host.capability_snapshot_stale",
+        "The observed A3S Use generation is no longer callable.",
+    ))?;
+```
+
+The cursor binds the capability revision, Registry revision, and sorted exact
+package generations. Acquisition takes every package route lease in canonical
+order and rechecks the immutable publication after the complete batch is held.
+A hidden, stale, mixed, contended, or digest-mismatched generation returns no
+lease; an enabled legacy route without immutable lifecycle evidence fails
+closed. The non-clone RAII lease is `Send + Sync`, so A3S Code can retain it in
+a Run scope while Use lifecycle retirement waits for accepted work to drain.
+Dropping it only releases synchronous route locks; asynchronous cleanup remains
+explicitly owned by the Use lifecycle coordinator.
+
+The existing `capability snapshot --json` schema v2 remains byte-compatible;
+the in-process cursor is deliberately not appended to that independently
+released CLI schema.
+
 The standalone CLI currently exposes package-graph lifecycle, diagnostics,
 capability observation, built-in Browser/OCR routes, cited OKF search, and
 exact-scope Knowledge storage operations:

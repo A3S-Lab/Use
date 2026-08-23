@@ -148,6 +148,14 @@ surface, and lifecycle generation. The entry is invocation metadata, not a
 provider fallback: hosts must still possess the named reviewed provider and
 dispatch through the receipt-owned exact-generation lease.
 
+Rust embedding hosts acquire a complete generation through
+`a3s.use.capability-snapshot-cursor.v1`. The cursor binds the capability and
+Registry revisions plus the sorted package, manifest, and lifecycle identities.
+The returned RAII lease is all-or-nothing and must be retained for the full
+accepted Run or invocation. It does not grant package mutation authority and
+does not replace the versioned CLI snapshot, native Tool contract, standard
+MCP transport, or host-owned scope and policy.
+
 The standalone SQLite/FTS5 backend creates the one current database schema for
 new state and rejects every unknown `user_version`. It does not migrate or
 rewrite pre-release databases.

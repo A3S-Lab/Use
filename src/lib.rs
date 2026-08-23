@@ -6,7 +6,7 @@ mod browser_cli;
 mod browser_driver;
 #[cfg(all(feature = "browser", feature = "mcp"))]
 mod browser_session_cli;
-mod capability_registry;
+pub mod capability_registry;
 pub mod cli;
 #[cfg(feature = "extensions")]
 pub mod cognitive_package;

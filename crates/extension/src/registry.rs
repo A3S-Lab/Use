@@ -27,6 +27,7 @@ use super::{ExtensionManifest, ExtensionPaths};
 
 mod cutover;
 mod lifecycle;
+mod snapshot_lease;
 
 pub use cutover::{
     ExtensionRegistryCutoverRecord, EXTENSION_REGISTRY_CUTOVER_SCHEMA,
@@ -35,6 +36,10 @@ pub use cutover::{
 pub use lifecycle::{
     ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
     ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
+};
+pub use snapshot_lease::{
+    ExtensionSnapshotCursor, ExtensionSnapshotLease, ExtensionSnapshotPackage,
+    EXTENSION_SNAPSHOT_CURSOR_SCHEMA,
 };
 
 pub const EXTENSION_RECEIPT_SCHEMA_VERSION: u32 = 4;

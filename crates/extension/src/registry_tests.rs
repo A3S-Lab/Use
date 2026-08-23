@@ -13,6 +13,8 @@ mod graph_cutover;
 mod lifecycle_generations;
 #[path = "registry_tests/lifecycle_staging.rs"]
 mod lifecycle_staging;
+#[path = "registry_tests/snapshot_lease.rs"]
+mod snapshot_lease;
 
 const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 
@@ -21,6 +23,7 @@ fn published_generation_lease_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
 
     assert_send_sync::<ExtensionRouteLease>();
+    assert_send_sync::<ExtensionSnapshotLease>();
 }
 
 fn registry(root: &Path) -> ExtensionRegistry {

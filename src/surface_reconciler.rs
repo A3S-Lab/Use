@@ -23,7 +23,7 @@ pub(crate) type SurfaceObservations = BTreeMap<PluginSurfaceRef, SurfaceObserved
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum SurfaceDesiredState {
+pub enum SurfaceDesiredState {
     Stopped,
     Prepared,
     Healthy,
@@ -31,7 +31,7 @@ pub(crate) enum SurfaceDesiredState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum SurfaceObservedState {
+pub enum SurfaceObservedState {
     Pending,
     Prepared,
     Starting,
@@ -48,7 +48,7 @@ const TRANSITIONAL_SURFACE_STATES: [SurfaceObservedState; 2] = [
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum SurfaceOwner {
+pub enum SurfaceOwner {
     FlowHost,
     KnowledgeHost,
     Runtime,
@@ -59,7 +59,7 @@ pub(crate) enum SurfaceOwner {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum SurfaceStateReason {
+pub enum SurfaceStateReason {
     FlowObservationMissing,
     KnowledgeObservationMissing,
     PackageNotEnabled,
@@ -74,7 +74,7 @@ pub(crate) enum SurfaceStateReason {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ReconciledSurface {
+pub struct ReconciledSurface {
     pub surface: PluginSurfaceRef,
     pub owner: SurfaceOwner,
     pub level: u32,
@@ -89,7 +89,7 @@ pub(crate) struct ReconciledSurface {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SurfaceReconcileSnapshot {
+pub struct SurfaceReconcileSnapshot {
     pub schema_version: u32,
     pub desired: PluginDesiredState,
     pub observed: PluginObservedState,
@@ -98,7 +98,7 @@ pub(crate) struct SurfaceReconcileSnapshot {
 }
 
 impl SurfaceReconcileSnapshot {
-    pub(crate) fn publishes(&self, kind: PluginSurfaceKind, id: &str) -> bool {
+    pub fn publishes(&self, kind: PluginSurfaceKind, id: &str) -> bool {
         self.surfaces.iter().any(|surface| {
             surface.surface.kind == kind && surface.surface.id == id && surface.published
         })

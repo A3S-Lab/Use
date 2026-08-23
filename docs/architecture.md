@@ -183,6 +183,22 @@ snapshot changes only through the graph cutover path. New calls resolve the
 current generation; calls admitted before cutover keep exact-generation leases
 until drain completes.
 
+Embedding hosts use `CapabilityRegistry` with the same injected
+`ExtensionRegistry` that owns planning and cutover. A typed
+`a3s.use.capability-snapshot-cursor.v1` binds the complete capability revision,
+the authoritative Registry revision, and the canonically sorted immutable
+package identities. Acquiring the cursor obtains every shared package route
+lease and then re-reads the publication. If any identity is hidden, stale,
+mixed, contended, digest-mismatched, or lacks lifecycle evidence, the whole
+attempt fails and Rust RAII releases any earlier locks. No partial lease can
+escape.
+
+The resulting non-clone `CapabilitySnapshotLease` owns an `Arc` of the exact
+projection plus the complete upstream lease set. A3S Code retains that value
+for an admitted Run; a later hot-plug affects only a later admission. `Drop`
+performs synchronous lock release only. Use lifecycle coordinators continue to
+own bounded asynchronous drain and retirement.
+
 The Registry projection exposes identities and content-bound host targets, not
 arbitrary package paths or a universal action protocol. Tool contracts remain
 native CLI/HTTP, MCP remains standard MCP, and Flow execution remains owned by

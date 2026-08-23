@@ -89,6 +89,8 @@ publishes one capability generation, and retires unused generations in reverse.
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
+| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v1` |
+| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v1` |
 | Coordinated Use state backup | `a3s.use.state-backup.v1` |
 | Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v1` |
 | Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v1` |
@@ -173,6 +175,11 @@ rejection. They are not supported decode paths.
 - [x] Hosts can acquire an exact currently published lifecycle generation by
   package, manifest, and generation identity; the lease participates in the
   same accepted-call drain as route dispatch.
+- [x] Hosts can derive a typed capability/Registry cursor and atomically lease
+  every callable package generation in canonical order. Publication is
+  rechecked after the complete batch is held; stale, hidden, mixed,
+  digest-mismatched, contended, or non-lifecycle routes fail closed without a
+  partial lease.
 - [x] Missing exact recovery evidence fails closed instead of reconstructing
   state heuristically.
 
