@@ -288,7 +288,7 @@ async fn restart_reconciles_a_synced_binding_left_with_its_provisioning_receipt(
         .unwrap();
     pending
         .record_gateway_readiness(
-            RuntimeEndpointRef::parse(endpoint_id(&intent, &tool.id)).unwrap(),
+            RuntimeEndpointRef::parse(endpoint_id(&intent, &tool.id, prepare_key)).unwrap(),
             RuntimeServiceReadinessEvidence::HttpHealthy,
         )
         .unwrap();

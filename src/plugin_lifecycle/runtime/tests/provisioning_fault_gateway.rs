@@ -60,7 +60,7 @@ impl DurableReadiness {
             surface_kind: surface_kind_name(kind).to_string(),
             surface_id: surface_id.to_string(),
             idempotency_key: idempotency_key.to_string(),
-            endpoint: endpoint_id(intent, surface_id),
+            endpoint: endpoint_id(intent, surface_id, idempotency_key),
             protocol_version,
             initialized_at_ms,
         };

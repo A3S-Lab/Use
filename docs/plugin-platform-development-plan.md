@@ -120,8 +120,9 @@ Status: in progress
 - [x] Recover a confirmed same-generation provider resource loss by draining
   and removing only the stale Gateway route, retaining the Runtime unit,
   replaying apply with a new exact request key, and publishing a fresh binding
-  receipt. Interrupted route removal retains the prior receipt for exact
-  replay without a Runtime stop or remove effect.
+  receipt for the newly allocated Gateway endpoint. Interrupted route removal
+  retains the prior receipt for exact replay without a Runtime stop or remove
+  effect.
 - [x] Consume only Runtime-published generation-bound loopback Service
   endpoints and enforce Gateway drain/remove ordering in the shared lifecycle
   adapter.
