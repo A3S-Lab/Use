@@ -117,6 +117,11 @@ Status: in progress
   route/unit/binding cleanup.
 - Complete production Runtime Service provider
   composition without weakening exact-generation drain and removal.
+- [x] Recover a confirmed same-generation provider resource loss by draining
+  and removing only the stale Gateway route, retaining the Runtime unit,
+  replaying apply with a new exact request key, and publishing a fresh binding
+  receipt. Interrupted route removal retains the prior receipt for exact
+  replay without a Runtime stop or remove effect.
 - [x] Consume only Runtime-published generation-bound loopback Service
   endpoints and enforce Gateway drain/remove ordering in the shared lifecycle
   adapter.

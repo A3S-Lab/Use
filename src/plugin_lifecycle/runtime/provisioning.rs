@@ -1,6 +1,28 @@
 use super::*;
 
 impl RuntimePluginSurfaceLifecycleHost {
+    pub(super) async fn detach_service_route_for_rebind(
+        &self,
+        intent: &PluginLifecycleIntent,
+        receipt: &RuntimeBindingReceipt,
+        idempotency_key: &str,
+    ) -> UseResult<()> {
+        let RuntimeBindingReceipt::Service(service) = receipt else {
+            return Err(runtime_lifecycle_error(
+                "use.plugin.runtime_lifecycle_binding_mismatch",
+                "Only a Runtime Service binding can replace its Gateway route in place.",
+            ));
+        };
+        self.readiness
+            .drain_service(intent, service, idempotency_key, self.deadline_at_ms)
+            .await?;
+        self.readiness
+            .remove_service(intent, service, idempotency_key, self.deadline_at_ms)
+            .await?;
+        self.store.remove(receipt).await?;
+        Ok(())
+    }
+
     pub(super) async fn provision_tool_service(
         &self,
         intent: &PluginLifecycleIntent,

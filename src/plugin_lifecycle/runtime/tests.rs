@@ -28,6 +28,7 @@ use crate::plugin_runtime::{
     RuntimeProviderSelector, RuntimeResourcePolicy, RuntimeSurfaceContext, RuntimeWorkloadPolicy,
 };
 
+use self::fake_runtime::{selection, FakeRuntime, StaticRuntimeFactory};
 use super::*;
 
 const MANIFEST: &str = include_str!(
@@ -540,12 +541,14 @@ async fn gateway_drain_failure_preserves_runtime_and_binding_for_replay() {
         .is_some());
 }
 
+mod fake_runtime;
 mod provisioning;
 mod provisioning_fault_gateway;
 mod provisioning_fault_io;
 mod provisioning_fault_matrix;
 mod provisioning_fault_runtime;
 mod provisioning_fault_support;
+mod rebinding;
 
 #[derive(Default)]
 struct RecordingReadiness {
@@ -554,6 +557,7 @@ struct RecordingReadiness {
     removals: AtomicUsize,
     fail_tool_binds: AtomicUsize,
     fail_mcp_binds: AtomicUsize,
+    fail_removals: AtomicUsize,
     fail_drain: bool,
     deadlines: Mutex<Vec<Option<u64>>>,
 }
@@ -655,6 +659,18 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
     ) -> UseResult<()> {
         self.deadlines.lock().unwrap().push(deadline_at_ms);
         self.removals.fetch_add(1, Ordering::SeqCst);
+        if self
+            .fail_removals
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Err(UseError::new(
+                "use.plugin.gateway_remove_failed",
+                "The test Gateway interrupted exact route removal.",
+            ));
+        }
         Ok(())
     }
 }
@@ -664,202 +680,6 @@ fn endpoint_id(intent: &PluginLifecycleIntent, surface_id: &str) -> String {
         "gateway:{:x}/{surface_id}",
         Sha256::digest(serde_json::to_vec(&intent.scope).unwrap())
     )
-}
-
-struct StaticRuntimeFactory {
-    provider_id: ProviderId,
-    client: Arc<dyn RuntimeClient>,
-}
-
-#[async_trait]
-impl RuntimeProviderFactory for StaticRuntimeFactory {
-    fn provider_id(&self) -> &ProviderId {
-        &self.provider_id
-    }
-
-    async fn create(&self) -> RuntimeResult<Arc<dyn RuntimeClient>> {
-        Ok(self.client.clone())
-    }
-}
-
-struct FakeRuntime {
-    capabilities: RuntimeCapabilities,
-    observation: Mutex<Option<RuntimeObservation>>,
-    apply_receipts: Mutex<BTreeMap<String, (String, RuntimeObservation)>>,
-    apply_count: AtomicUsize,
-    stop_count: AtomicUsize,
-    remove_count: AtomicUsize,
-}
-
-impl FakeRuntime {
-    fn new(capabilities: RuntimeCapabilities) -> Self {
-        Self {
-            capabilities,
-            observation: Mutex::new(None),
-            apply_receipts: Mutex::new(BTreeMap::new()),
-            apply_count: AtomicUsize::new(0),
-            stop_count: AtomicUsize::new(0),
-            remove_count: AtomicUsize::new(0),
-        }
-    }
-}
-
-#[async_trait]
-impl RuntimeClient for FakeRuntime {
-    async fn capabilities(&self) -> RuntimeResult<RuntimeCapabilities> {
-        Ok(self.capabilities.clone())
-    }
-
-    async fn apply(&self, request: &RuntimeApplyRequest) -> RuntimeResult<RuntimeObservation> {
-        let spec_digest = request.spec.digest().map_err(RuntimeError::Protocol)?;
-        if let Some((retained_digest, observation)) = self
-            .apply_receipts
-            .lock()
-            .unwrap()
-            .get(&request.request_id)
-            .cloned()
-        {
-            if retained_digest != spec_digest {
-                return Err(RuntimeError::Protocol(
-                    "test Runtime apply request identity was reused for another spec".to_string(),
-                ));
-            }
-            return Ok(observation);
-        }
-        self.apply_count.fetch_add(1, Ordering::SeqCst);
-        let port = request.spec.network.ports.first().ok_or_else(|| {
-            RuntimeError::Protocol("test Runtime Service omitted its declared port".to_string())
-        })?;
-        let mut claims = BTreeMap::new();
-        RuntimeServiceEndpoint::node_local_tcp(&port.name, 31_337)
-            .map_err(RuntimeError::Protocol)?
-            .insert_claim(&mut claims)
-            .map_err(RuntimeError::Protocol)?;
-        let observation = RuntimeObservation {
-            schema: RuntimeObservation::SCHEMA.to_string(),
-            unit_id: request.spec.unit_id.clone(),
-            generation: request.spec.generation,
-            spec_digest: spec_digest.clone(),
-            class: request.spec.class,
-            state: RuntimeUnitState::Running,
-            provider_resource_id: Some("resource-01".to_string()),
-            provider_build: Some(self.capabilities.provider_build.clone()),
-            observed_at_ms: 1_000,
-            started_at_ms: Some(900),
-            finished_at_ms: None,
-            health: Some(RuntimeHealthObservation {
-                state: RuntimeHealthState::Healthy,
-                checked_at_ms: 1_000,
-                message: None,
-            }),
-            outputs: Vec::new(),
-            usage: None,
-            evidence: Some(RuntimeEvidence {
-                provider_build: self.capabilities.provider_build.clone(),
-                spec_digest: spec_digest.clone(),
-                semantics_profile_digest: request.spec.semantics_profile_digest.clone(),
-                claims,
-            }),
-            provider_attestation: None,
-            failure: None,
-        };
-        *self.observation.lock().unwrap() = Some(observation.clone());
-        self.apply_receipts.lock().unwrap().insert(
-            request.request_id.clone(),
-            (spec_digest, observation.clone()),
-        );
-        Ok(observation)
-    }
-
-    async fn inspect(&self, unit_id: &str) -> RuntimeResult<RuntimeInspection> {
-        Ok(match self.observation.lock().unwrap().clone() {
-            Some(observation) if observation.unit_id == unit_id => RuntimeInspection::Found {
-                schema: RuntimeInspection::SCHEMA.to_string(),
-                observation: Box::new(observation),
-            },
-            _ => RuntimeInspection::NotFound {
-                schema: RuntimeInspection::SCHEMA.to_string(),
-                unit_id: unit_id.to_string(),
-                last_generation: None,
-            },
-        })
-    }
-
-    async fn stop(&self, request: &RuntimeActionRequest) -> RuntimeResult<RuntimeInspection> {
-        self.stop_count.fetch_add(1, Ordering::SeqCst);
-        let mut current = self.observation.lock().unwrap();
-        let Some(observation) = current.as_mut() else {
-            return Ok(RuntimeInspection::NotFound {
-                schema: RuntimeInspection::SCHEMA.to_string(),
-                unit_id: request.unit_id.clone(),
-                last_generation: None,
-            });
-        };
-        observation.state = RuntimeUnitState::Stopped;
-        observation.observed_at_ms = 1_100;
-        observation.finished_at_ms = Some(1_100);
-        observation.clear_service_endpoints();
-        Ok(RuntimeInspection::Found {
-            schema: RuntimeInspection::SCHEMA.to_string(),
-            observation: Box::new(observation.clone()),
-        })
-    }
-
-    async fn remove(&self, request: &RuntimeActionRequest) -> RuntimeResult<RuntimeRemoval> {
-        self.remove_count.fetch_add(1, Ordering::SeqCst);
-        let already_absent = self.observation.lock().unwrap().take().is_none();
-        Ok(RuntimeRemoval {
-            schema: RuntimeRemoval::SCHEMA.to_string(),
-            request_id: request.request_id.clone(),
-            unit_id: request.unit_id.clone(),
-            generation: request.generation,
-            removed_at_ms: 1_200,
-            already_absent,
-        })
-    }
-
-    async fn logs(&self, _query: &RuntimeLogQuery) -> RuntimeResult<Vec<RuntimeLogChunk>> {
-        Ok(Vec::new())
-    }
-
-    async fn exec(&self, _request: &RuntimeExecRequest) -> RuntimeResult<RuntimeExecResult> {
-        Err(RuntimeError::Protocol("unexpected exec".to_string()))
-    }
-}
-
-async fn selection(
-    plans: Vec<RuntimeSurfacePlan>,
-    tool: Arc<FakeRuntime>,
-    mcp: Arc<FakeRuntime>,
-) -> (RuntimeProviderSelection, Arc<RuntimeClientRegistry>) {
-    let mut registry = RuntimeClientRegistry::new();
-    let providers: [(&str, Arc<dyn RuntimeClient>); 2] =
-        [("tool-runtime", tool), ("mcp-runtime", mcp)];
-    for (provider, client) in providers {
-        registry
-            .register(Arc::new(StaticRuntimeFactory {
-                provider_id: ProviderId::parse(provider).unwrap(),
-                client,
-            }))
-            .unwrap();
-    }
-    let assignments = plans
-        .iter()
-        .map(|plan| {
-            let provider = match plan.context().surface().kind {
-                PluginSurfaceKind::Tool => "tool-runtime",
-                PluginSurfaceKind::Mcp => "mcp-runtime",
-                _ => unreachable!(),
-            };
-            RuntimeProviderAssignment::new(plan.surface(), provider).unwrap()
-        })
-        .collect();
-    let registry = Arc::new(registry);
-    let selection = RuntimeProviderSelector::new(&registry)
-        .select(plans, assignments)
-        .await
-        .unwrap();
-    (selection, registry)
 }
 
 fn tool_plan(intent: &PluginLifecycleIntent, surface: &ToolSurface) -> RuntimeSurfacePlan {
