@@ -555,6 +555,7 @@ struct RecordingReadiness {
     calls: AtomicUsize,
     drains: AtomicUsize,
     removals: AtomicUsize,
+    removed_endpoints: Mutex<Vec<String>>,
     fail_tool_binds: AtomicUsize,
     fail_mcp_binds: AtomicUsize,
     fail_removals: AtomicUsize,
@@ -571,7 +572,7 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
         _plan: &RuntimeSurfacePlan,
         _observation: &RuntimeObservation,
         runtime_endpoint: &RuntimeServiceEndpoint,
-        _idempotency_key: &str,
+        idempotency_key: &str,
         deadline_at_ms: Option<u64>,
     ) -> UseResult<RuntimeEndpointRef> {
         self.deadlines.lock().unwrap().push(deadline_at_ms);
@@ -589,7 +590,7 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
                 "The test Gateway interrupted its Tool route bind.",
             ));
         }
-        RuntimeEndpointRef::parse(endpoint_id(intent, &surface.id))
+        RuntimeEndpointRef::parse(endpoint_id(intent, &surface.id, idempotency_key))
     }
 
     async fn bind_mcp_service(
@@ -599,7 +600,7 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
         plan: &RuntimeSurfacePlan,
         observation: &RuntimeObservation,
         runtime_endpoint: &RuntimeServiceEndpoint,
-        _idempotency_key: &str,
+        idempotency_key: &str,
         deadline_at_ms: Option<u64>,
     ) -> UseResult<PluginMcpServiceReadiness> {
         self.deadlines.lock().unwrap().push(deadline_at_ms);
@@ -624,7 +625,7 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
             panic!("test MCP plan must be a service");
         };
         Ok(PluginMcpServiceReadiness::new(
-            RuntimeEndpointRef::parse(endpoint_id(intent, &surface.id))?,
+            RuntimeEndpointRef::parse(endpoint_id(intent, &surface.id, idempotency_key))?,
             RuntimeMcpInitializeEvidence::new(
                 protocol_version.clone(),
                 observation.observed_at_ms + 1,
@@ -653,7 +654,7 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
     async fn remove_service(
         &self,
         _intent: &PluginLifecycleIntent,
-        _receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
+        receipt: &crate::plugin_runtime::RuntimeServiceBindingReceipt,
         _idempotency_key: &str,
         deadline_at_ms: Option<u64>,
     ) -> UseResult<()> {
@@ -671,14 +672,19 @@ impl PluginRuntimeServiceReadinessHost for RecordingReadiness {
                 "The test Gateway interrupted exact route removal.",
             ));
         }
+        self.removed_endpoints
+            .lock()
+            .unwrap()
+            .push(receipt.endpoint_ref.as_str().to_string());
         Ok(())
     }
 }
 
-fn endpoint_id(intent: &PluginLifecycleIntent, surface_id: &str) -> String {
+fn endpoint_id(intent: &PluginLifecycleIntent, surface_id: &str, idempotency_key: &str) -> String {
     format!(
-        "gateway:{:x}/{surface_id}",
-        Sha256::digest(serde_json::to_vec(&intent.scope).unwrap())
+        "gateway:{:x}/{surface_id}/{:x}",
+        Sha256::digest(serde_json::to_vec(&intent.scope).unwrap()),
+        Sha256::digest(idempotency_key.as_bytes())
     )
 }
 
