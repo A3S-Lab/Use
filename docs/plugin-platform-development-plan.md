@@ -131,12 +131,20 @@ Acceptance:
 
 ### A2 HTTP MCP and Gateway
 
-- Compose HTTP/streamable MCP with Gateway-owned endpoint lifecycle.
+- [x] Compose HTTP/streamable MCP with Gateway-owned endpoint lifecycle.
 - [x] Define the typed bind, drain, and receipt-owned remove boundary used by
   Tool Services and Streamable HTTP MCP.
-- Bind private service identity, MCP endpoint, health, and permission ceiling.
-- Drain prior sessions and routes before removing the prior generation.
-- Keep standard MCP transport; do not add an A3S RPC dialect.
+- [x] Bind private service identity, MCP endpoint, health, and permission
+  ceiling.
+- [x] Drain prior sessions and routes before removing the prior generation.
+- [x] Keep standard MCP transport; do not add an A3S RPC dialect.
+
+A3S CLI `main` commit `563e7e139740e845369f9102a2d47026733797a8`
+qualifies four real Linux Tool and MCP processes across retained N/N+1
+routing, standard MCP initialize, Gateway and lifecycle-host restart,
+stop/drain, exact receipt-owned removal, and zero residual routes, Runtime
+units, receipts, or PIDs. Runtime provider-process loss/rebinding, non-Linux
+providers, and the complete cross-platform recovery matrix remain open.
 
 Acceptance:
 
