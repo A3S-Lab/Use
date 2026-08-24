@@ -547,8 +547,12 @@ runtime-applied sync, ambiguous Gateway effect, gateway-ready sync, and the
 final-binding-plus-provisioning window for both Service kinds. Recovery keeps
 one Runtime and Gateway effect, terminal replay is side-effect free, and
 receipt-owned removal leaves no route, unit, binding, or provisioning residue.
-Real managed-provider and CLI process-kill qualification across the supported
-platform matrix remains a release gate.
+A Linux real-process qualification additionally runs retained N/N+1 Tool and
+MCP processes through production Box mapping, standard MCP initialize, Gateway
+and lifecycle-host restart, stop/drain, exact removal, and zero residual route,
+Runtime, receipt, or PID state. Runtime provider-process loss/rebinding,
+non-Linux providers, and the complete cross-platform recovery matrix remain
+release gates.
 
 The standalone CLI binary additionally has a deterministic real-process
 multi-node install case. After the first dependency is fully prepared, the
