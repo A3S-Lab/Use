@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use a3s_runtime::contract::{RuntimeObservation, RuntimeServiceEndpoint, RuntimeUnitClass};
+use a3s_runtime::contract::{
+    RuntimeObservation, RuntimeServiceEndpoint, RuntimeUnitClass, RuntimeUnitState,
+};
 use a3s_runtime::{ProviderId, RuntimeClientRegistry};
 use a3s_use_core::{
     PlanQualifiedSurfaceRef, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
@@ -14,9 +16,9 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
 use crate::plugin_runtime::{
-    PluginRuntimeClient, RuntimeBindingObservedState, RuntimeBindingReceipt, RuntimeBindingStore,
-    RuntimeEndpointRef, RuntimeMcpInitializeEvidence, RuntimeProviderSelection,
-    RuntimeServiceProvisioningPhase, RuntimeServiceProvisioningReceipt,
+    PluginRuntimeClient, RuntimeBindingObservation, RuntimeBindingObservedState,
+    RuntimeBindingReceipt, RuntimeBindingStore, RuntimeEndpointRef, RuntimeMcpInitializeEvidence,
+    RuntimeProviderSelection, RuntimeServiceProvisioningPhase, RuntimeServiceProvisioningReceipt,
     RuntimeServiceReadinessEvidence, RuntimeSurfaceContract, RuntimeSurfacePlan,
     SelectedRuntimeSurface,
 };
@@ -351,8 +353,13 @@ impl RuntimePluginSurfaceLifecycleHost {
             )
             .map(Some);
         }
-        self.retire_binding(intent, &receipt, idempotency_key)
-            .await?;
+        if service_route_can_rebind(&receipt, &observation) {
+            self.detach_service_route_for_rebind(intent, &receipt, idempotency_key)
+                .await?;
+        } else {
+            self.retire_binding(intent, &receipt, idempotency_key)
+                .await?;
+        }
         Ok(None)
     }
 
@@ -522,6 +529,28 @@ impl RuntimePluginSurfaceLifecycleHost {
         }
         Ok(selected)
     }
+}
+
+fn service_route_can_rebind(
+    receipt: &RuntimeBindingReceipt,
+    observed: &RuntimeBindingObservation,
+) -> bool {
+    let (RuntimeBindingReceipt::Service(receipt), Some(observation)) =
+        (receipt, observed.observation.as_ref())
+    else {
+        return false;
+    };
+    matches!(
+        (observed.state, observation.state),
+        (
+            RuntimeBindingObservedState::Failed,
+            RuntimeUnitState::Unknown
+        )
+    ) || observed.state == RuntimeBindingObservedState::Stale
+        && observation.state == RuntimeUnitState::Running
+        && observation
+            .started_at_ms
+            .is_some_and(|started_at_ms| started_at_ms != receipt.runtime_started_at_ms)
 }
 
 #[async_trait]

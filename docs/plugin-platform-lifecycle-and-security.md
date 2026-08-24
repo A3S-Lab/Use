@@ -554,6 +554,15 @@ Runtime, receipt, or PID state. Runtime provider-process loss/rebinding,
 non-Linux providers, and the complete cross-platform recovery matrix remain
 release gates.
 
+If Runtime confirms that a bound provider resource is unknown, or reports a
+healthy replacement process with a different start identity, Use drains and
+removes only the stale Gateway route. It retains the immutable Runtime unit,
+removes the old binding receipt last, reapplies the same Runtime generation
+with the new lifecycle request key, and binds the new generation-fenced
+endpoint. A failed Gateway removal leaves the old receipt durable, performs no
+Runtime stop or remove, and permits exact replay. Real provider-process kill
+qualification remains a separate product-host gate.
+
 The standalone CLI binary additionally has a deterministic real-process
 multi-node install case. After the first dependency is fully prepared, the
 parent holds that dependency's journal lock while the child atomically
