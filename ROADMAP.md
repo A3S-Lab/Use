@@ -329,9 +329,10 @@ Status: in progress
   reopens a durable operation ID plus plan digest, requires explicit `--yes`,
   and uses the verified cache without network access. Compatibility install,
   upgrade, and uninstall fields remain intact.
-- [ ] Migrate the A3S Code TUI to that service and compose the standard manager
-  MCP in Code. Product presentation wiring must not introduce a second plan,
-  confirmation, or mutation path.
+- [x] Migrate the A3S Code TUI to that service and compose the standard manager
+  MCP in Code. CLI, TUI `/packages`, and the exact ten-tool manager-v4 MCP now
+  reuse one host-owned service without a second plan, confirmation, or mutation
+  path at A3S CLI commit `ce1240891d6926c132aed8212efabaf6c925f4db`.
 - [ ] Verify TUI `/packages` and CLI output show the exact plan, package graph,
   source, permission ceiling, and confirmation boundary.
 - [ ] Prove install → invoke → exact-generation upgrade → invoke → uninstall

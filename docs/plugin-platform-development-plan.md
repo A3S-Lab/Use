@@ -194,9 +194,10 @@ Status: in progress
   receive no implicit confirmation, and exact replay remains zero-network.
   Registry-backed compatibility install, upgrade, and uninstall fields remain
   unchanged.
-- [ ] Migrate the A3S Code TUI and compose the manager MCP in Code on that
+- [x] Migrate the A3S Code TUI and compose the manager MCP in Code on that
   service without a second presentation-owned plan, confirmation, or mutation
-  path.
+  path. A3S CLI commit `ce1240891d6926c132aed8212efabaf6c925f4db`
+  composes CLI, TUI `/packages`, and the exact manager-v4 MCP over one service.
 - Keep Registry source state, catalog cache, plan generation, policy, apply, and
   operation replay out of view-specific code.
 - TUI `/packages`, CLI, and agent MCP must display and apply the same operation

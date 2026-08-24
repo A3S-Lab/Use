@@ -346,10 +346,11 @@ Planning never mutates package state. `plugin apply-plan` reopens only the exact
 durable `(operation ID, plan digest)` pair and requires `--yes`; an ordinary CLI
 call does not imply user confirmation, and an `Ask` plan receives confirmation
 only at that explicit boundary. Exact apply and replay use the verified planning
-cache without Registry access. Code TUI migration and Code-side manager MCP
-composition remain open. The standalone manager is bound to the current User
-scope (`user/current`); a different explicit scope kind or ID is rejected rather
-than treated as authority to mint a Workspace manager.
+cache without Registry access. A3S Code CLI, TUI `/packages`, and the standard
+manager-v4 MCP now compose this same service without a presentation-owned plan,
+confirmation, or mutation path. The standalone manager is bound to the current
+User scope (`user/current`); a different explicit scope kind or ID is rejected
+rather than treated as authority to mint a Workspace manager.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -974,8 +975,9 @@ Registry-backed install, upgrade, and uninstall mutations use this service and
 expose the exact reviewed Host plan/result alongside their released output
 fields. Its `plugin` surface maps all ten manager operations to the same
 service, keeps every plan read-only, and requires the exact operation ID, plan
-digest, and explicit `--yes` for apply. The Code TUI and Code-side manager MCP
-composition remain release gates.
+digest, and explicit `--yes` for apply. Code TUI `/packages` and the Code-side
+manager MCP now use that same service; complete plan presentation and the
+six-surface product-host E2E remain release gates.
 
 Host protocol v6 binds an explicit User or Workspace scope kind and projects
 exact operation state from durable evidence only. Equal textual scope IDs in
@@ -1081,7 +1083,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
-| Shared Plugin Manager service, CLI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. TUI migration and product-host MCP composition remain open |
+| Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service; complete plan presentation and product-host E2E remain open |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
