@@ -976,8 +976,16 @@ expose the exact reviewed Host plan/result alongside their released output
 fields. Its `plugin` surface maps all ten manager operations to the same
 service, keeps every plan read-only, and requires the exact operation ID, plan
 digest, and explicit `--yes` for apply. Code TUI `/packages` and the Code-side
-manager MCP now use that same service; complete plan presentation and the
-six-surface product-host E2E remain release gates.
+manager MCP now use that same service. Human CLI and TUI review derive one
+deterministic, read-only projection from the immutable Manager envelope and
+show the exact plan identity, candidate/prior package graph, source,
+transitions, complete permission ceilings, provider/impact/state evidence, and
+confirmation boundary without changing machine JSON. The TUI scrolls the full
+review before exact apply. This qualification landed at A3S CLI `main` commit
+`bef7c913cbefba62638b37f91ce9263f4db2ffbb`; CI run
+[32786647662](https://github.com/A3S-Lab/CLI/actions/runs/32786647662)
+passed all five main, Linux, macOS, and Windows jobs. The six-surface
+product-host E2E remains a release gate.
 
 Host protocol v6 binds an explicit User or Workspace scope kind and projects
 exact operation state from durable evidence only. Equal textual scope IDs in
@@ -1083,7 +1091,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
-| Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service; complete plan presentation and product-host E2E remain open |
+| Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |

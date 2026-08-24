@@ -341,8 +341,16 @@ Status: in progress
   MCP in Code. CLI, TUI `/packages`, and the exact ten-tool manager-v4 MCP now
   reuse one host-owned service without a second plan, confirmation, or mutation
   path at A3S CLI commit `ce1240891d6926c132aed8212efabaf6c925f4db`.
-- [ ] Verify TUI `/packages` and CLI output show the exact plan, package graph,
-  source, permission ceiling, and confirmation boundary.
+- [x] Verify TUI `/packages` and CLI output show the exact plan, package graph,
+  source, permission ceiling, and confirmation boundary. A3S CLI `main` commit
+  `bef7c913cbefba62638b37f91ce9263f4db2ffbb` derives one deterministic,
+  read-only human review from the immutable Manager envelope while preserving
+  the standard machine JSON contracts. CLI and TUI show exact plan/lock,
+  source, transition, permission, provider/impact/state, and confirmation
+  evidence; the TUI scrolls every wrapped line before exact apply. CI run
+  [32786647662](https://github.com/A3S-Lab/CLI/actions/runs/32786647662)
+  passed the main all-target check, Linux release sandbox, Linux ARM64 local
+  inference, and macOS/Windows cross-platform jobs.
 - [ ] Prove install → invoke → exact-generation upgrade → invoke → uninstall
   → process restart for Tool, MCP, Flow, Skill, UI, and OKF.
 - [ ] Prove watcher resumption, no duplicate side effects, and path-free
