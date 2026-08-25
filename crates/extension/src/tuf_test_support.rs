@@ -283,7 +283,7 @@ pub(crate) fn package_directory_archive(root: &Path) -> Vec<u8> {
         let archive_path = format!("package/{relative}");
         let mode = if matches!(
             relative.as_str(),
-            "mcp/bin/library" | "tools/convert/bin/convert"
+            "mcp/bin/library" | "mcp/context" | "tools/convert/bin/convert" | "tools/echo"
         ) {
             0o755
         } else {

@@ -361,8 +361,11 @@ Status: in progress
   [32786647662](https://github.com/A3S-Lab/CLI/actions/runs/32786647662)
   passed the main all-target check, Linux release sandbox, Linux ARM64 local
   inference, and macOS/Windows cross-platform jobs.
-- [ ] Prove install → invoke → exact-generation upgrade → invoke → uninstall
-  → process restart for Tool, MCP, Flow, Skill, UI, and OKF.
+- [x] Prove install → invoke → exact-generation upgrade → invoke → uninstall
+  → process restart for Tool, MCP, Flow, Skill, UI, and OKF. The complete
+  signed six-surface Host Manager matrix now exercises native Tool and stdio
+  MCP launchers, Flow preflight, Skill/UI integrity, and an exact OKF lease
+  across install/replay, upgrade/replay, and uninstall/replay.
 - [x] Prove watcher resumption, no duplicate side effects, and path-free
   retained history after process restart. A real Host-protocol install now
   carries its pre-restart status revision across an externally killed apply
@@ -371,15 +374,12 @@ Status: in progress
   Registry generation, exact apply replay performs no authorization or
   publication side effect, and scoped retained history excludes filesystem
   paths, Registry URLs, Host request IDs, and idempotency material.
-- [ ] Run the same scenarios for User and Workspace scope and reject scope-kind
-  substitution under the same textual ID. A permission-free Skill Host matrix
-  now covers install, restart replay/observation, upgrade, restart
-  replay/observation, uninstall, terminal observation, and plan/apply/
-  operation-observation rejection for the opposite scope kind. A
-  permission-bearing Tool Host matrix now covers the same install/restart,
-  upgrade/restart, uninstall/restart and Grant cutover/revocation evidence for
-  both User and Workspace scopes, including plan/apply/operation-observation
-  scope-fence rejection. The complete six-surface matrix remains open.
+- [x] Run the same scenarios for User and Workspace scope and reject scope-kind
+  substitution under the same textual ID. Permission-free Skill and
+  permission-bearing Tool matrices cover the individual scope fences, and the
+  complete six-surface Host Manager matrix now covers both User and Workspace
+  install/restart, upgrade/restart, uninstall/restart, exact Tool/MCP/OKF
+  observations, and plan/apply/operation-observation scope-fence rejection.
 
 Exit gate: Code CLI/TUI and agent tools produce the same plan digest and
 terminal operation result for the same request.

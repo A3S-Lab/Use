@@ -91,8 +91,9 @@ the same service: four reads, five non-mutating plans, and one apply that reopen
 the exact durable operation ID plus plan digest and requires explicit `--yes`.
 An ordinary invocation never creates `Ask` confirmation, and exact apply or
 replay performs no Registry request. A3S Code CLI, TUI `/packages`, and the
-product-host manager MCP now compose this same service. Complete plan
-presentation and six-surface product-host qualification remain open, so the
+product-host manager MCP now compose this same service. The Host Manager's
+signed six-surface User/Workspace lifecycle and replay matrix is qualified;
+complete Code product-host E2E and release qualification remain open, so the
 complete M2 product convergence gate is not yet satisfied.
 
 ## Domain model
