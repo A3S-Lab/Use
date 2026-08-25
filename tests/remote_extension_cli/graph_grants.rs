@@ -52,6 +52,8 @@ mod host_offline_apply;
 mod host_operation_graph_progress;
 #[path = "graph_grants/host_operations.rs"]
 mod host_operations;
+#[path = "graph_grants/host_permission_lifecycle.rs"]
+mod host_permission_lifecycle;
 #[path = "graph_grants/host_scope_isolation.rs"]
 mod host_scope_isolation;
 #[path = "graph_grants/host_scope_lifecycle.rs"]
