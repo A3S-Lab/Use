@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
 ## Product status
 
@@ -300,8 +300,18 @@ Status: in progress
   and Gateway effect, terminal replay, and drain/remove without residue.
 - [ ] Compose production Runtime Service providers in A3S Code and managed
   hosts with exact plan-time and apply-time evidence.
-- [ ] Consume the reviewed Runtime Task projection in Code CLI/TUI and agent
-  tool discovery, then route invocation through the leased Use dispatcher.
+- [x] Consume the reviewed Runtime Task projection in Code CLI/TUI and agent
+  tool discovery, then route invocation through the leased Use dispatcher. A3S
+  CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7`
+  extends the resident TUI projection to scoped Code Exec: the one-shot host
+  freezes provider-qualified reviewed Tasks with exact count/digest evidence,
+  retains the same trusted Plugin Manager through Session teardown, and invokes
+  through the existing exact-generation dispatcher and Use lease. A missing
+  named provider omits only its Task; MCP, Knowledge, Flow, and Plugin Manager
+  presentation surfaces remain outside the scoped host. CI run
+  [32797862154](https://github.com/A3S-Lab/CLI/actions/runs/32797862154)
+  passed the main all-target check, Linux release sandbox, Linux ARM64 local
+  inference, and native macOS/Windows cross-platform jobs.
 - [x] Compose HTTP/streamable MCP through Gateway with health, drain, and
   exact-generation retirement. A3S CLI `main` commit
   `563e7e139740e845369f9102a2d47026733797a8` qualifies four real Linux Tool
