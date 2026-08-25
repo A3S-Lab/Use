@@ -231,7 +231,10 @@ impl PluginOperationPlan {
                     .as_deref()
                     .is_some_and(|value| !valid_sha256(value))
                 || (impact.enabled_before, impact.enabled_after) != expected_enablement
-                || (impact.grant_before_digest == impact.grant_after_digest
+                // A permission-free upgrade still changes package generation,
+                // even when workspace visibility and Grant evidence are stable.
+                || (self.action != PluginOperationAction::Upgrade
+                    && impact.grant_before_digest == impact.grant_after_digest
                     && impact.enabled_before == impact.enabled_after)
             {
                 return Err(plan_error("A planned workspace impact is invalid."));

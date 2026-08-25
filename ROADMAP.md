@@ -372,7 +372,11 @@ Status: in progress
   publication side effect, and scoped retained history excludes filesystem
   paths, Registry URLs, Host request IDs, and idempotency material.
 - [ ] Run the same scenarios for User and Workspace scope and reject scope-kind
-  substitution under the same textual ID.
+  substitution under the same textual ID. A permission-free Skill Host matrix
+  now covers install, restart replay/observation, upgrade, restart
+  replay/observation, uninstall, terminal observation, and plan/apply/
+  operation-observation rejection for the opposite scope kind; the complete
+  six-surface and permission-bearing matrix remains open.
 
 Exit gate: Code CLI/TUI and agent tools produce the same plan digest and
 terminal operation result for the same request.
