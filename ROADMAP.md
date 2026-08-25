@@ -375,8 +375,11 @@ Status: in progress
   substitution under the same textual ID. A permission-free Skill Host matrix
   now covers install, restart replay/observation, upgrade, restart
   replay/observation, uninstall, terminal observation, and plan/apply/
-  operation-observation rejection for the opposite scope kind; the complete
-  six-surface and permission-bearing matrix remains open.
+  operation-observation rejection for the opposite scope kind. A
+  permission-bearing Tool Host matrix now covers the same install/restart,
+  upgrade/restart, uninstall/restart and Grant cutover/revocation evidence for
+  both User and Workspace scopes, including plan/apply/operation-observation
+  scope-fence rejection. The complete six-surface matrix remains open.
 
 Exit gate: Code CLI/TUI and agent tools produce the same plan digest and
 terminal operation result for the same request.
