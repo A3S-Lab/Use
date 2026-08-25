@@ -54,6 +54,8 @@ mod host_operation_graph_progress;
 mod host_operations;
 #[path = "graph_grants/host_scope_isolation.rs"]
 mod host_scope_isolation;
+#[path = "graph_grants/host_scope_lifecycle.rs"]
+mod host_scope_lifecycle;
 #[path = "graph_grants/lifecycle.rs"]
 mod lifecycle;
 #[path = "graph_grants/plugin_manager.rs"]

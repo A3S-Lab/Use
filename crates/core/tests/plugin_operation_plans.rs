@@ -259,6 +259,48 @@ fn canonical_install_plan_fixture_binds_the_complete_resolved_delta() {
 }
 
 #[test]
+fn permission_free_workspace_upgrade_accepts_a_stable_enablement_impact() {
+    let install = install_plan();
+    let mut prior = install.packages[0]
+        .after
+        .clone()
+        .expect("the install fixture has a candidate package");
+    prior
+        .release
+        .surfaces
+        .retain(|surface| surface.kind == PluginSurfaceKind::Skill);
+    prior.permissions.surfaces.clear();
+    prior.release.permission_ceiling_digest = prior.permissions.descriptor_digest().unwrap();
+    let mut candidate = prior.clone();
+    candidate.release.version = "2.0.0".to_owned();
+    candidate.release.package_sha256 = DIGEST_D.to_owned();
+    candidate.release.manifest_sha256 = DIGEST_E.to_owned();
+    let transition = PlannedPackageTransition::resolved(
+        install.package_id.clone(),
+        PlanPackageRole::Root,
+        PlanPackageChangeKind::Replace,
+        Some(prior),
+        Some(candidate.clone()),
+        Some(PluginPlanSource::ReleaseBundle {
+            bundle_digest: DIGEST_F.to_owned(),
+            package_digest: candidate.release.package_sha256.clone(),
+        }),
+    )
+    .unwrap();
+    let mut upgrade = install;
+    upgrade.action = PluginOperationAction::Upgrade;
+    upgrade.operation_id = "upgrade:permission-free-workspace:0001".to_owned();
+    upgrade.packages = vec![transition];
+    upgrade.secret_changes.clear();
+    upgrade.providers.clear();
+    upgrade.workspace_impacts[0].enabled_before = true;
+    upgrade.workspace_impacts[0].enabled_after = true;
+    upgrade.state.receipt_digest = Some(DIGEST_C.to_owned());
+
+    upgrade.validate().unwrap();
+}
+
+#[test]
 fn an_empty_host_can_plan_from_capability_generation_zero() {
     let mut plan = install_plan();
     plan.state.capability_generation = 0;
