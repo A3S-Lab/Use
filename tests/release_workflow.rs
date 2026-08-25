@@ -4,6 +4,37 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 #[test]
+fn crate_recovery_publication_is_source_bound_ordered_and_idempotent() {
+    let workflow = include_str!("../.github/workflows/publish-crates.yml");
+
+    assert!(workflow.contains("- \"publish/use-crates/v*\""));
+    assert!(workflow.contains("git merge-base --is-ancestor \"$GITHUB_SHA\""));
+    assert!(workflow.contains("main:refs/remotes/origin/main"));
+    assert!(workflow.contains("cargo metadata --locked --no-deps"));
+    assert!(workflow.contains("if [ \"$extension_version\" != \"$facade_version\" ]"));
+    assert!(workflow.contains("for package in a3s-use-core a3s-use-extension a3s-use; do"));
+    assert!(workflow.contains("cargo publish --locked -p \"$package\""));
+    assert!(workflow.contains("already exists; skipping upload"));
+    assert!(workflow.contains("wait_until_visible \"$package\" \"$version\""));
+    assert!(!workflow.contains("cargo publish --locked -p a3s-use-browser"));
+    assert!(!workflow.contains("cargo publish --locked -p a3s-use-ocr"));
+
+    for action in workflow.lines().filter_map(|line| {
+        line.trim()
+            .strip_prefix("- uses: ")
+            .filter(|value| !value.starts_with("./"))
+    }) {
+        let (_, revision) = action
+            .rsplit_once('@')
+            .unwrap_or_else(|| panic!("crate publisher action has no revision: {action}"));
+        assert!(
+            revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "crate publisher action must use an immutable commit SHA: {action}"
+        );
+    }
+}
+
+#[test]
 fn release_publishes_only_use_owned_crates_in_dependency_order() {
     let workflow = include_str!("../.github/workflows/release.yml").replace("\r\n", "\n");
     let workflow = workflow.as_str();

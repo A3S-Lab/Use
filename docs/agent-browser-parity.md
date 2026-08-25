@@ -11,7 +11,7 @@ because it vendors the same source files.
 - Commit: `2b202640ee89dc7aadb5e8c9d600e089e9056985`
 - License: Apache-2.0
 - Imported engine provenance:
-  `https://github.com/A3S-Lab/Browser/blob/1830c7b6896b0a38637eba2b61a386bf8a36eada/crates/browser-driver/UPSTREAM.md`
+  `https://github.com/A3S-Lab/Browser/blob/a4a270f9ca335ceee60c5d9e086ae05005fb7abf/crates/browser-driver/UPSTREAM.md`
 
 ## Required compatibility surface
 

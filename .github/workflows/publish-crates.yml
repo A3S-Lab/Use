@@ -1,0 +1,157 @@
+name: Publish Use crate dependencies
+
+on:
+  push:
+    tags:
+      - "publish/use-crates/v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish the tested Use crate graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Verify published source identity and versions
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          operation_tag="${GITHUB_REF#refs/tags/}"
+          prefix='publish/use-crates/v'
+          if [[ "$operation_tag" != "$prefix"* ]]; then
+            echo "unexpected operation tag: $operation_tag" >&2
+            exit 1
+          fi
+          facade_version="${operation_tag#${prefix}}"
+          if [[ ! "$facade_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "invalid facade version: $facade_version" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "crate source $GITHUB_SHA is not reachable from origin/main" >&2
+            exit 1
+          fi
+          metadata="$(cargo metadata --locked --no-deps --format-version 1)"
+          package_version() {
+            jq -er --arg package "$1" \
+              '.packages[] | select(.name == $package) | .version' \
+              <<<"$metadata"
+          }
+          core_version="$(package_version a3s-use-core)"
+          extension_version="$(package_version a3s-use-extension)"
+          actual_facade_version="$(package_version a3s-use)"
+          if [ "$actual_facade_version" != "$facade_version" ]; then
+            echo "operation tag requests $facade_version but source contains $actual_facade_version" >&2
+            exit 1
+          fi
+          if [ "$extension_version" != "$facade_version" ]; then
+            echo "facade $facade_version and extension $extension_version must advance together" >&2
+            exit 1
+          fi
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "crate source checkout is dirty" >&2
+            exit 1
+          fi
+          echo "core=$core_version" >> "$GITHUB_OUTPUT"
+          echo "extension=$extension_version" >> "$GITHUB_OUTPUT"
+          echo "facade=$facade_version" >> "$GITHUB_OUTPUT"
+          echo "Publishing Core $core_version, Extension $extension_version, and facade $facade_version from $GITHUB_SHA"
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.96.0
+
+      - name: Verify source formatting
+        run: cargo fmt --all -- --check
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Publish crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
+          CORE_VERSION: ${{ steps.versions.outputs.core }}
+          EXTENSION_VERSION: ${{ steps.versions.outputs.extension }}
+          FACADE_VERSION: ${{ steps.versions.outputs.facade }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          user_agent="A3S-Lab-Use-crate-publisher/$FACADE_VERSION (https://github.com/A3S-Lab/Use)"
+
+          package_version() {
+            case "$1" in
+              a3s-use-core) printf '%s\n' "$CORE_VERSION" ;;
+              a3s-use-extension) printf '%s\n' "$EXTENSION_VERSION" ;;
+              a3s-use) printf '%s\n' "$FACADE_VERSION" ;;
+              *) return 1 ;;
+            esac
+          }
+
+          crate_status() {
+            local package="$1"
+            local version="$2"
+            curl --retry 5 --retry-all-errors --silent --show-error \
+              --location --user-agent "$user_agent" \
+              --output /dev/null --write-out '%{http_code}' \
+              "https://crates.io/api/v1/crates/$package/$version"
+          }
+
+          wait_until_visible() {
+            local package="$1"
+            local version="$2"
+            local attempt status
+            for attempt in $(seq 1 24); do
+              status="$(crate_status "$package" "$version")"
+              if [ "$status" = "200" ]; then
+                if cargo info "$package@$version" \
+                     --registry crates-io >/dev/null 2>&1; then
+                  echo "Verified $package@$version in crates.io and its index"
+                  return 0
+                fi
+                echo "$package@$version is visible through the API; waiting for the index"
+              elif [ "$status" != "404" ]; then
+                echo "::error::crates.io returned HTTP $status for $package@$version"
+                return 1
+              fi
+              if [ "$attempt" -lt 24 ]; then
+                sleep 10
+              fi
+            done
+            echo "::error::$package@$version did not become visible in time"
+            return 1
+          }
+
+          for package in a3s-use-core a3s-use-extension a3s-use; do
+            version="$(package_version "$package")"
+            status="$(crate_status "$package" "$version")"
+            case "$status" in
+              200)
+                echo "$package@$version already exists; skipping upload"
+                ;;
+              404)
+                echo "Publishing $package@$version..."
+                if ! cargo publish --locked -p "$package"; then
+                  status="$(crate_status "$package" "$version")"
+                  if [ "$status" != "200" ]; then
+                    echo "::error::$package@$version publication failed"
+                    exit 1
+                  fi
+                  echo "$package@$version became visible after a concurrent publication"
+                fi
+                ;;
+              *)
+                echo "::error::crates.io returned HTTP $status for $package@$version"
+                exit 1
+                ;;
+            esac
+            wait_until_visible "$package" "$version"
+          done

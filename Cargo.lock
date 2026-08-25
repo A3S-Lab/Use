@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "a3s-flow",
  "a3s-runtime",
@@ -80,8 +80,8 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-browser"
-version = "0.3.0"
-source = "git+https://github.com/A3S-Lab/Browser?rev=1830c7b6896b0a38637eba2b61a386bf8a36eada#1830c7b6896b0a38637eba2b61a386bf8a36eada"
+version = "0.3.2"
+source = "git+https://github.com/A3S-Lab/Browser?rev=a4a270f9ca335ceee60c5d9e086ae05005fb7abf#a4a270f9ca335ceee60c5d9e086ae05005fb7abf"
 dependencies = [
  "a3s-use-core",
  "async-trait",
@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "async-trait",
  "olpc-cjson",
@@ -119,7 +119,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-extension"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "a3s-acl",
  "a3s-use-core",
@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-mcp-release-fixture"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "a3s-use-core",
  "anyhow",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-science"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "a3s-use-core",
  "a3s-use-extension",
@@ -3401,7 +3401,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
