@@ -219,6 +219,12 @@ Status: in progress
 - Use one watcher keyed by capability generation plus revision.
 - Preserve exact Flow and OKF history without repository-local paths.
 
+The managed Host process-recovery gate now preserves an operation status
+revision from the reviewed pre-admission state through an externally killed
+apply and offline recovery. The resumed watcher observes one completed change,
+terminal replay remains unchanged, the Registry generation does not inflate,
+and retained history exposes neither paths nor Host request identities.
+
 Required E2E:
 
 ```text

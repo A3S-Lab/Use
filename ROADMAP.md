@@ -363,8 +363,14 @@ Status: in progress
   inference, and macOS/Windows cross-platform jobs.
 - [ ] Prove install → invoke → exact-generation upgrade → invoke → uninstall
   → process restart for Tool, MCP, Flow, Skill, UI, and OKF.
-- [ ] Prove watcher resumption, no duplicate side effects, and path-free
-  retained history after process restart.
+- [x] Prove watcher resumption, no duplicate side effects, and path-free
+  retained history after process restart. A real Host-protocol install now
+  carries its pre-restart status revision across an externally killed apply
+  and offline recovery process, observes exactly one completed revision, and
+  then times out without changing the terminal revision. Recovery retains one
+  Registry generation, exact apply replay performs no authorization or
+  publication side effect, and scoped retained history excludes filesystem
+  paths, Registry URLs, Host request IDs, and idempotency material.
 - [ ] Run the same scenarios for User and Workspace scope and reject scope-kind
   substitution under the same textual ID.
 

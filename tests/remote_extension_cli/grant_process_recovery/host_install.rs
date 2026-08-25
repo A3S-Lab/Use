@@ -1,7 +1,11 @@
 use super::host_support::*;
 use super::*;
 
-use a3s_use_core::{PluginHostManager, PluginOperationAction};
+use a3s_use_core::{
+    PluginHostManager, PluginHostOperationObservationRequest, PluginHostOperationPhase,
+    PluginHostOperationWatchRequest, PluginOperationAction,
+    PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA, PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA,
+};
 
 #[test]
 fn killed_host_protocol_install_apply_replays_offline_without_reauthorization() {
@@ -32,12 +36,30 @@ fn killed_host_protocol_install_apply_replays_offline_without_reauthorization() 
         .await
         .0
     });
+    let observation = PluginHostOperationObservationRequest {
+        schema: PLUGIN_HOST_OPERATION_OBSERVATION_REQUEST_SCHEMA.to_owned(),
+        request_id: "observe:host-process-install:0001".to_owned(),
+        assignment_generation: apply_request.assignment_generation,
+        capabilities_digest: apply_request.capabilities_digest.clone(),
+        scope: apply_request.scope.clone(),
+        package_id: apply_request.package_id.clone(),
+        operation_id: apply_request.operation_id.clone(),
+        plan_digest: apply_request.plan_digest.clone(),
+    };
+    let initial_observation = runtime
+        .block_on(host_manager(&home, &authorization_marker).observe_operation(observation.clone()))
+        .unwrap();
+    assert_eq!(
+        initial_observation.status.phase,
+        PluginHostOperationPhase::AwaitingConfirmation
+    );
     std::fs::write(
         &apply_request_path,
         apply_request.canonical_bytes().unwrap(),
     )
     .unwrap();
     assert!(!authorization_marker.exists());
+    let registry_url = server.base_url().to_owned();
     drop(server);
 
     let pending_path = home.join("state/operations/package-graphs/install/acme/worker.json");
@@ -144,6 +166,36 @@ fn killed_host_protocol_install_apply_replays_offline_without_reauthorization() 
     assert!(!pending_path.exists());
     assert!(graph_path.is_file());
 
+    let final_observation = runtime
+        .block_on(host_manager(&home, &authorization_marker).watch_operation(
+            PluginHostOperationWatchRequest {
+                schema: PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA.to_owned(),
+                observation: observation.clone(),
+                after_revision: Some(initial_observation.revision),
+                timeout_ms: 0,
+            },
+        ))
+        .unwrap();
+    assert!(final_observation.changed);
+    assert!(!final_observation.timed_out);
+    assert_eq!(
+        final_observation.status.phase,
+        PluginHostOperationPhase::Completed
+    );
+    let terminal_replay = runtime
+        .block_on(host_manager(&home, &authorization_marker).watch_operation(
+            PluginHostOperationWatchRequest {
+                schema: PLUGIN_HOST_OPERATION_WATCH_REQUEST_SCHEMA.to_owned(),
+                observation,
+                after_revision: Some(final_observation.revision.clone()),
+                timeout_ms: 0,
+            },
+        ))
+        .unwrap();
+    assert!(!terminal_replay.changed);
+    assert!(terminal_replay.timed_out);
+    assert_eq!(terminal_replay.revision, final_observation.revision);
+
     let replayed = runtime
         .block_on(host_manager(&home, &authorization_marker).apply(apply_request))
         .unwrap();
@@ -182,4 +234,11 @@ fn killed_host_protocol_install_apply_replays_offline_without_reauthorization() 
         history["operations"][0]["diagnostic"]["operation"]["action"],
         "install"
     );
+    let encoded = serde_json::to_string(history).unwrap();
+    assert!(!encoded.contains(home.to_str().unwrap()));
+    assert!(!encoded.contains(&registry_url));
+    assert!(!encoded.contains("plan:host-process-install:0001"));
+    assert!(!encoded.contains("apply:host-process-install:0001"));
+    assert!(!encoded.contains("package-diagnostic-history"));
+    assert!(!encoded.contains("idempotency"));
 }
