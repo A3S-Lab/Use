@@ -8,6 +8,10 @@ fn crate_recovery_publication_is_source_bound_ordered_and_idempotent() {
     let workflow = include_str!("../.github/workflows/publish-crates.yml");
 
     assert!(workflow.contains("- \"publish/use-crates/v*\""));
+    let recovery_pattern = "^([0-9]+\\.[0-9]+\\.[0-9]+)(-recovery\\.[1-9][0-9]*)?$";
+    assert!(workflow.contains(recovery_pattern));
+    assert!(workflow.contains("facade_version=\"${BASH_REMATCH[1]}\""));
+    assert!(workflow.contains("components: rustfmt"));
     assert!(workflow.contains("git merge-base --is-ancestor \"$GITHUB_SHA\""));
     assert!(workflow.contains("main:refs/remotes/origin/main"));
     assert!(workflow.contains("cargo metadata --locked --no-deps"));
