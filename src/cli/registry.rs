@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use a3s_use_core::{UseError, UseResult};
 use a3s_use_extension::{
-    inspect_verified_target_cache, prune_verified_target_cache, RegistrySourceInput,
-    RegistrySourceStore, TrustedRegistry, VerifiedTargetCachePolicy,
+    inspect_verified_target_cache, prune_verified_target_cache, GitHubRegistryRepository,
+    RegistrySourceInput, RegistrySourceStore, TrustedRegistry, VerifiedTargetCachePolicy,
+    DEFAULT_GITHUB_REGISTRY_PATH, DEFAULT_GITHUB_REGISTRY_REF,
     DEFAULT_VERIFIED_TARGET_CACHE_MAX_BYTES, DEFAULT_VERIFIED_TARGET_CACHE_MAX_ENTRIES,
     DEFAULT_VERIFIED_TARGET_CACHE_MIN_FREE_BYTES,
 };
@@ -208,14 +209,40 @@ async fn cache_prune(args: &[String]) -> UseResult<CommandOutput> {
 }
 
 fn source_input(args: &[String], name: &str) -> UseResult<RegistrySourceInput> {
-    let url = required_option(args, "--url", "registry source")?;
+    let url = option_argument(args, "--url")?;
+    let github = option_argument(args, "--github")?;
+    let registry_url = match (url, github) {
+        (Some(url), None) => {
+            if option_argument(args, "--github-ref")?.is_some()
+                || option_argument(args, "--github-path")?.is_some()
+            {
+                return Err(usage_error(
+                    "--github-ref and --github-path require --github",
+                ));
+            }
+            url.to_owned()
+        }
+        (None, Some(slug)) => GitHubRegistryRepository::parse(slug)?
+            .with_git_ref(
+                option_argument(args, "--github-ref")?.unwrap_or(DEFAULT_GITHUB_REGISTRY_REF),
+            )?
+            .with_registry_path(
+                option_argument(args, "--github-path")?.unwrap_or(DEFAULT_GITHUB_REGISTRY_PATH),
+            )?
+            .registry_url()?,
+        _ => {
+            return Err(usage_error(
+                "registry source requires exactly one of --url or --github",
+            ));
+        }
+    };
     let trust_root = required_option(args, "--trust-root", "registry source")?;
     let trusted_root = option_argument(args, "--trusted-root")?
         .map(resolve_path)
         .transpose()?;
     Ok(RegistrySourceInput::new(
         name,
-        url,
+        registry_url,
         trust_root,
         trusted_root,
         source_cache_policy(args)?,
@@ -309,6 +336,9 @@ fn validate_source_write_options(args: &[String], replacement: bool) -> UseResul
     let mut flags = vec!["--json"];
     let mut values = vec![
         "--url",
+        "--github",
+        "--github-ref",
+        "--github-path",
         "--trust-root",
         "--trusted-root",
         "--cache-max-bytes",
@@ -380,6 +410,53 @@ fn validate_options(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn github_registry_options_resolve_to_a_canonical_repository_registry() {
+        let args = vec![
+            "source".to_owned(),
+            "add".to_owned(),
+            "official".to_owned(),
+            "--github".to_owned(),
+            "A3S-Lab/Use-Registry".to_owned(),
+            "--github-ref".to_owned(),
+            "main".to_owned(),
+            "--github-path".to_owned(),
+            "registry".to_owned(),
+            "--trust-root".to_owned(),
+            format!("sha256:{}", "a".repeat(64)),
+        ];
+
+        validate_source_write_options(&args, false).unwrap();
+        let input = source_input(&args, "official").unwrap();
+
+        assert_eq!(
+            input.registry_url,
+            "https://raw.githubusercontent.com/A3S-Lab/Use-Registry/main/registry/"
+        );
+        assert_eq!(input.root_sha256, format!("sha256:{}", "a".repeat(64)));
+    }
+
+    #[test]
+    fn registry_source_rejects_ambiguous_url_and_github_authority() {
+        let args = vec![
+            "source".to_owned(),
+            "add".to_owned(),
+            "official".to_owned(),
+            "--url".to_owned(),
+            "https://packages.example/".to_owned(),
+            "--github".to_owned(),
+            "A3S-Lab/Use-Registry".to_owned(),
+            "--trust-root".to_owned(),
+            "a".repeat(64),
+        ];
+
+        validate_source_write_options(&args, false).unwrap();
+        let error = source_input(&args, "official").unwrap_err();
+
+        assert_eq!(error.code, "use.cli.invalid_usage");
+        assert!(error.message.contains("exactly one of --url or --github"));
+    }
 
     #[test]
     fn source_cache_policy_options_are_typed_and_non_repeatable() {

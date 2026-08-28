@@ -10,7 +10,12 @@ use crate::{
 };
 
 mod acl;
+mod github;
 mod io;
+
+pub use github::{
+    GitHubRegistryRepository, DEFAULT_GITHUB_REGISTRY_PATH, DEFAULT_GITHUB_REGISTRY_REF,
+};
 
 pub const REGISTRY_SOURCE_CONFIG_SCHEMA_VERSION: u32 = 1;
 pub const MAX_CONFIGURED_REGISTRY_SOURCES: usize = 64;

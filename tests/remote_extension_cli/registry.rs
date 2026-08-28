@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn github_registry_source_cli_persists_the_canonical_https_identity() {
+    let temporary = tempfile::tempdir().unwrap();
+    let home = temporary.path().join("home");
+
+    let added = Command::new(binary())
+        .args([
+            "registry",
+            "source",
+            "add",
+            "official",
+            "--github",
+            "A3S-Lab/Use-Registry",
+            "--trust-root",
+            &"a".repeat(64),
+            "--json",
+        ])
+        .env("A3S_USE_HOME", &home)
+        .output()
+        .unwrap();
+
+    assert!(added.status.success(), "{added:?}");
+    let added = json(&added);
+    let source = &added["data"]["registrySources"]["snapshot"]["sources"][0];
+    assert_eq!(source["name"], "official");
+    assert_eq!(
+        source["registryUrl"],
+        "https://raw.githubusercontent.com/A3S-Lab/Use-Registry/main/registry/"
+    );
+    assert_eq!(source["rootSha256"], "a".repeat(64));
+
+    let acl = std::fs::read_to_string(home.join("state/registries.acl")).unwrap();
+    assert!(acl.contains("https://raw.githubusercontent.com/A3S-Lab/Use-Registry/main/registry/"));
+    assert!(!acl.contains("github ="));
+}
+
+#[test]
 fn registry_source_cli_requires_reviewed_revisions_for_authority_changes() {
     let temporary = tempfile::tempdir().unwrap();
     let home = temporary.path().join("home");
