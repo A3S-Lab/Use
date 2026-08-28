@@ -57,7 +57,11 @@ impl PluginLifecycleCoordinator {
         let publication = self
             .hosts
             .capability
-            .publish_capability_with_cutover(intent, &checkpoint.idempotency_key)
+            .publish_capability_with_cutover(
+                intent,
+                self.expected_capability_generation,
+                &checkpoint.idempotency_key,
+            )
             .await?;
         let record = if record.next_checkpoint().is_some() {
             self.journal
@@ -133,7 +137,11 @@ impl PluginLifecycleCoordinator {
         let publication = self
             .hosts
             .capability
-            .hide_capability_with_cutover(intent, &checkpoint.idempotency_key)
+            .hide_capability_with_cutover(
+                intent,
+                self.expected_capability_generation,
+                &checkpoint.idempotency_key,
+            )
             .await?;
         if record
             .next_checkpoint()

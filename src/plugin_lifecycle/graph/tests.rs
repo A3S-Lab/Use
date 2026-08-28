@@ -95,6 +95,7 @@ impl PluginCapabilityLifecycleHost for RecordingHost {
     async fn publish_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
+        _expected_capability_generation: Option<u64>,
         key: &str,
     ) -> UseResult<PluginCapabilityPublication> {
         let evidence = self.evidence("single-publish", intent, key).await?;
@@ -115,6 +116,7 @@ impl PluginCapabilityLifecycleHost for RecordingHost {
     async fn hide_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
+        _expected_capability_generation: Option<u64>,
         key: &str,
     ) -> UseResult<PluginCapabilityPublication> {
         let evidence = self.evidence("hide", intent, key).await?;
@@ -339,6 +341,7 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
         &self,
         _package_lock: &a3s_use_core::PluginPackageLock,
         intents: &[PluginLifecycleIntent],
+        _expected_capability_generation: u64,
         key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication> {
         let mut fail = self.fail_exact_publication_once.lock().await;
@@ -398,6 +401,7 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
         package_lock: &a3s_use_core::PluginPackageLock,
         candidate_intents: &[PluginLifecycleIntent],
         removed_intents: &[PluginLifecycleIntent],
+        expected_capability_generation: u64,
         key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication> {
         if !removed_intents.is_empty() {
@@ -406,14 +410,20 @@ impl PluginGraphCapabilityLifecycleHost for RecordingHost {
                 "The lifecycle test host does not model removed-only cutover here.",
             ));
         }
-        self.publish_capabilities_with_cutover(package_lock, candidate_intents, key)
-            .await
+        self.publish_capabilities_with_cutover(
+            package_lock,
+            candidate_intents,
+            expected_capability_generation,
+            key,
+        )
+        .await
     }
 
     async fn hide_capabilities_with_cutover(
         &self,
         _package_lock: &a3s_use_core::PluginPackageLock,
         intents: &[PluginLifecycleIntent],
+        _expected_capability_generation: u64,
         key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication> {
         self.calls.lock().await.push(format!(

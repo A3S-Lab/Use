@@ -402,3 +402,140 @@ async fn lifecycle_graph_transition_atomically_publishes_candidates_and_hides_re
         after.generation
     );
 }
+
+#[tokio::test]
+async fn lifecycle_graph_hide_revalidates_dependents_outside_the_reviewed_removal_set() {
+    let host_version = env!("CARGO_PKG_VERSION");
+    let temp = tempfile::tempdir().unwrap();
+    let dependency_source = temp.path().join("dependency");
+    let first_source = temp.path().join("first");
+    let second_source = temp.path().join("second");
+    knowledge_package_with_dependencies(&dependency_source, "acme/dependency", "dependency", &[])
+        .await;
+    knowledge_package_with_dependencies(
+        &first_source,
+        "acme/first",
+        "first",
+        &[("acme/dependency", "^1.0.0")],
+    )
+    .await;
+    knowledge_package_with_dependencies(
+        &second_source,
+        "acme/second",
+        "second",
+        &[("acme/dependency", "^1.0.0")],
+    )
+    .await;
+
+    let dependency_catalog =
+        verified_knowledge_catalog(&dependency_source, "acme/dependency", &[], 'd').await;
+    let first_catalog = verified_knowledge_catalog(
+        &first_source,
+        "acme/first",
+        &[("acme/dependency", "^1.0.0")],
+        'e',
+    )
+    .await;
+    let second_catalog = verified_knowledge_catalog(
+        &second_source,
+        "acme/second",
+        &[("acme/dependency", "^1.0.0")],
+        'f',
+    )
+    .await;
+    let reviewed_removal_lock = a3s_use_core::PluginPackageResolver::new(
+        a3s_use_core::PluginPackageLockHost::new("linux-x86_64", host_version).unwrap(),
+    )
+    .resolve(first_catalog.clone(), vec![dependency_catalog.clone()])
+    .unwrap();
+
+    let dependency = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/dependency",
+        &dependency_source,
+        true,
+        host_version,
+    )
+    .await
+    .unwrap();
+    let first = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/first",
+        &first_source,
+        true,
+        host_version,
+    )
+    .await
+    .unwrap();
+    let second = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/second",
+        &second_source,
+        true,
+        host_version,
+    )
+    .await
+    .unwrap();
+    let dependency_identity = lifecycle_identity(&dependency, 61);
+    let first_identity = lifecycle_identity(&first, 62);
+    let second_identity = lifecycle_identity(&second, 63);
+    let identities = [
+        dependency_identity.clone(),
+        first_identity.clone(),
+        second_identity.clone(),
+    ];
+    let registry = registry(temp.path());
+    for (identity, package, catalog) in [
+        (&dependency_identity, &dependency, &dependency_catalog),
+        (&first_identity, &first, &first_catalog),
+        (&second_identity, &second, &second_catalog),
+    ] {
+        registry
+            .commit_lifecycle_package(identity, package)
+            .await
+            .unwrap();
+        bind_remote_catalog_receipt(&registry, identity.package_id(), catalog).await;
+    }
+    registry
+        .publish_lifecycle_packages_for_test_host_version(&identities, host_version)
+        .await
+        .unwrap();
+
+    let snapshot_before = registry.snapshot().await.unwrap();
+    let first_receipt_path = registry.paths().receipt_path(first_identity.package_id());
+    let dependency_receipt_path = registry
+        .paths()
+        .receipt_path(dependency_identity.package_id());
+    let first_receipt_before = std::fs::read(&first_receipt_path).unwrap();
+    let dependency_receipt_before = std::fs::read(&dependency_receipt_path).unwrap();
+    let key = format!("sha256:{}", "7".repeat(64));
+
+    let error = registry
+        .hide_lifecycle_package_graph_with_durable_cutover(
+            &reviewed_removal_lock,
+            &[first_identity.clone(), dependency_identity.clone()],
+            snapshot_before.generation,
+            &key,
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.extension.package_required");
+    assert_eq!(
+        error.details["requiredBy"],
+        serde_json::json!(["acme/second"])
+    );
+    assert_eq!(registry.snapshot().await.unwrap(), snapshot_before);
+    assert_eq!(
+        std::fs::read(&first_receipt_path).unwrap(),
+        first_receipt_before
+    );
+    assert_eq!(
+        std::fs::read(&dependency_receipt_path).unwrap(),
+        dependency_receipt_before
+    );
+    assert!(registry.get("acme/first").await.unwrap().unwrap().enabled());
+    assert!(registry
+        .get("acme/dependency")
+        .await
+        .unwrap()
+        .unwrap()
+        .enabled());
+}

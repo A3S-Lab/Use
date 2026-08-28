@@ -139,6 +139,73 @@ async fn pending_store_advances_one_exact_reviewed_plan_to_admission() {
 }
 
 #[tokio::test]
+async fn one_admitted_graph_durably_owns_the_global_installation_domain() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = PendingPackageGraphStore::new(&state_root);
+    let first_lock = package_lock_for("acme/first", "1.0.0", '1');
+    let second_lock = package_lock_for("acme/second", "1.0.0", '2');
+    let first_fixture = install_pending(&first_lock);
+    let second_fixture = install_pending(&second_lock);
+    let first = PendingPackageGraphOperation::planned(
+        first_fixture.envelope.clone(),
+        10,
+        first_fixture.generations.clone(),
+        first_fixture.manifests.clone(),
+    )
+    .unwrap();
+    let second = PendingPackageGraphOperation::planned(
+        second_fixture.envelope.clone(),
+        10,
+        second_fixture.generations.clone(),
+        second_fixture.manifests.clone(),
+    )
+    .unwrap();
+    store.put(&first).await.unwrap();
+    store.put(&second).await.unwrap();
+
+    let (first_admitted, changed) = store
+        .admit(&first, 11, PackageGraphAuthorization::default())
+        .await
+        .unwrap();
+    assert!(changed);
+    let preflight_error = store
+        .require_admission_available(&second)
+        .await
+        .unwrap_err();
+    assert_eq!(preflight_error.code, "use.plugin.package_graph_busy");
+    let error = store
+        .admit(&second, 11, PackageGraphAuthorization::default())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.package_graph_busy");
+    assert_eq!(
+        error.details["activeOperationId"],
+        serde_json::json!(first_admitted.envelope.plan.operation_id)
+    );
+    assert_eq!(
+        store
+            .get(PluginOperationAction::Install, second.root_package_id())
+            .await
+            .unwrap()
+            .unwrap()
+            .phase(),
+        PackageGraphOperationPhase::Planned
+    );
+
+    store.remove(&first_admitted).await.unwrap();
+    let (second_admitted, changed) = store
+        .admit(&second, 11, PackageGraphAuthorization::default())
+        .await
+        .unwrap();
+    assert!(changed);
+    assert_eq!(
+        second_admitted.phase(),
+        PackageGraphOperationPhase::Admitted
+    );
+}
+
+#[tokio::test]
 async fn pending_store_persists_exact_cancellation_before_host_projection() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");

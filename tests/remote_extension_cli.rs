@@ -49,6 +49,10 @@ mod grant_process_recovery;
 mod graph_grants;
 #[path = "remote_extension_cli/graph_install.rs"]
 mod graph_install;
+#[path = "remote_extension_cli/graph_mutation_recovery.rs"]
+mod graph_mutation_recovery;
+#[path = "remote_extension_cli/graph_mutation_serialization.rs"]
+mod graph_mutation_serialization;
 #[cfg(any(unix, windows))]
 #[path = "remote_extension_cli/graph_recovery.rs"]
 mod graph_recovery;

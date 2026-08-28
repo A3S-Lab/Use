@@ -1,9 +1,32 @@
+use std::collections::BTreeMap;
+
 use a3s_use_core::{
     PlanPackageChangeKind, PlanScope, PluginOperationAction, PluginPackageLock, UseResult,
 };
 
-use super::package_manager_error;
 use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
+use super::{package_manager_error, UpgradeDisposition};
+
+pub(super) fn pending_upgrade_dispositions(
+    pending: &PendingPackageGraphOperation,
+) -> UseResult<BTreeMap<String, UpgradeDisposition>> {
+    pending.validate()?;
+    pending
+        .envelope
+        .plan
+        .packages
+        .iter()
+        .map(|transition| {
+            let disposition = match transition.change {
+                PlanPackageChangeKind::Add => UpgradeDisposition::Add,
+                PlanPackageChangeKind::Replace => UpgradeDisposition::Replace,
+                PlanPackageChangeKind::Remove => UpgradeDisposition::Remove,
+                PlanPackageChangeKind::Retain => UpgradeDisposition::Retain,
+            };
+            Ok((transition.package_id.clone(), disposition))
+        })
+        .collect()
+}
 
 pub(super) fn validate_pending_upgrade(
     pending: &PendingPackageGraphOperation,

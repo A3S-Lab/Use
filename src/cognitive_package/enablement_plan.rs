@@ -355,6 +355,8 @@ impl CognitivePackageManager {
         &self,
         request: &CognitivePackageEnablementRequest,
     ) -> UseResult<CognitivePackageEnablementPreparation> {
+        let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        let _mutation = self.installation_mutation_lock().acquire().await?;
         request.validate()?;
         let store = self.enablement_store();
         let _operation_guard = store

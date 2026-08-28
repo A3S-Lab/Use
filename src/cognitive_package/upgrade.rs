@@ -17,8 +17,10 @@ use super::install::verify_expected_lock;
 use super::plan::{now_ms, package_state_revision, state_surface_refs, upgrade_operation};
 use super::registry_access::{download_selected_packages, resolve_package_lock, RegistryAccess};
 use super::resolution_attempt::PendingPackageResolutionAttempt;
-use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
-use super::upgrade_validation::validate_pending_upgrade;
+use super::store::{
+    InstalledPackageGraph, PackageGraphOperationPhase, PendingPackageGraphOperation,
+};
+use super::upgrade_validation::{pending_upgrade_dispositions, validate_pending_upgrade};
 use super::{
     installed_matches_lock, package_manager_error, CognitivePackageManager,
     CognitivePackageUpgradeResult, UpgradeDisposition,
@@ -43,6 +45,9 @@ impl CognitivePackageManager {
         requested_root_surfaces: Option<&[PluginSurfaceRef]>,
     ) -> UseResult<CognitivePackageUpgradeResult> {
         let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        let _mutation = self.installation_mutation_lock().acquire().await?;
+        self.require_graph_mutation_domain(PluginOperationAction::Upgrade, package_id)
+            .await?;
         let mut resolution_attempt = Some(
             self.resolution_attempt_store()
                 .begin(PendingPackageResolutionAttempt::new(
@@ -483,6 +488,14 @@ impl CognitivePackageManager {
             pending_store.put(&pending).await?;
             pending
         };
+        if pending.phase() == PackageGraphOperationPhase::Planned
+            && pending_upgrade_dispositions(&pending)? != dispositions
+        {
+            return Err(package_manager_error(
+                "use.plugin.package_generation_changed",
+                "The requested root set or dependency ownership changed before upgrade admission.",
+            ));
+        }
         if let Some(attempt) = download_attempt.take() {
             attempt.finish().await?;
         }

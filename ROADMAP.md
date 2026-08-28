@@ -97,12 +97,14 @@ publishes one capability generation, and retires unused generations in reverse.
 Status: release-critical, planned from the 2026-08-28 first-principles review.
 
 The current implementation has strong artifact verification, reviewed plans,
-immutable generations, drain, and crash-replay foundations. It is not yet the
-target architecture: graph mutations are not serializable across different
-roots, installation authority is only partly scoped, and a non-A3S agent
-cannot consume an exact leased capability without learning local execution
-details. A checked item elsewhere in this roadmap is implementation evidence;
-it does not waive the convergence gates below.
+immutable generations, drain, and crash-replay foundations. A0 now gives every
+accepted pre-A1 installation mutation one conservative global serial order and
+rejects stale publication generations; cross-platform CI qualification remains
+open. The implementation is still not the target architecture: installation
+authority is only partly scoped, and a non-A3S agent cannot consume an exact
+leased capability without learning local execution details. A checked item
+elsewhere in this roadmap is implementation evidence; it does not waive the
+convergence gates below.
 
 ### Target responsibility model
 
@@ -146,30 +148,52 @@ over A0 through A3.
 
 ### A0 - Make graph mutation serializable
 
-- [ ] Add a deterministic barrier-based regression for the shared-dependency
+- [x] Add a deterministic barrier-based regression for the shared-dependency
   race: with `Y -> D` installed, one operation plans removing `Y` and `D`
   while another plans installing `X -> D`; no interleaving may publish `X`
   with `D` absent.
-- [ ] Introduce one cross-process installation mutation lease. Use a
+- [x] Introduce one cross-process installation mutation lease. Use a
   conservative global lease until A1 exists, then key it by
   `(scope_kind, scope_id)`. Install, upgrade, uninstall, enable, and disable
   are exclusive writers within that domain.
-- [ ] Bind every reviewed mutation to the expected complete installation
+- [x] Bind every reviewed mutation to the expected complete installation
   generation and make lifecycle publication an exact compare-and-swap from
   installation generation `G` to `G + 1`.
-- [ ] After acquiring the mutation lease, revalidate the complete requested
+- [x] After acquiring the mutation lease, revalidate the complete requested
   root set, resolved closure, dependency ownership, selected artifacts, and
   expected publication generation. A stale plan fails without provider or
   filesystem effects.
-- [ ] Validate live dependents in every retirement branch, including nodes
+- [x] Validate live dependents in every retirement branch, including nodes
   previously classified as retained, before hiding a route or deleting bytes.
-- [ ] Advertise exclusive managed-scope mutation in host capabilities only
+- [x] Advertise exclusive managed-scope mutation in host capabilities only
   when the active coordinator actually enforces it.
 - [ ] Add multi-process stress and crash-replay tests for different roots with
-  shared dependencies on Linux, macOS, and Windows.
+  shared dependencies on Linux, macOS, and Windows. The deterministic
+  cross-process scenario passes locally on Windows; the five-platform CI matrix
+  must qualify the implementation before this item closes.
 
 Exit gate: every accepted graph operation has one serial order, and no stale
 plan can publish a graph whose dependency closure is incomplete.
+
+Implementation evidence (2026-08-28):
+
+- `.installation-mutation.lock` is a cross-process, non-Tokio-blocking writer
+  fence held by install, upgrade, uninstall, enable, disable, and recovery from
+  live-state inspection through terminal persistence. State backup recognizes
+  it as excluded infrastructure rather than portable authority.
+- The admitted pending graph record or active enablement record is the durable
+  mutation owner after process exit. Graph and enablement recovery reject each
+  other until the exact owner reaches a terminal state; no second ownership
+  file can drift from the operation record.
+- Lifecycle publication binds reviewed install, upgrade, uninstall, enable,
+  and disable plans to Registry generation `G` and commits only an exact
+  `G -> G + 1` cutover. Stale generation, root ownership, dependency closure,
+  manifest, artifact, and dependent checks run before authorization or
+  lifecycle effects.
+- Barrier-based, independent-process, stale-plan, root-adoption, dependent,
+  cross-domain interruption, and Registry cutover regressions cover the A0
+  invariants. Existing process-exit lifecycle suites continue to cover exact
+  replay after cutover and removal checkpoints.
 
 ### A1 - Make the scoped installation the authority
 

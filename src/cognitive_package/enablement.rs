@@ -27,7 +27,10 @@ use super::grant::authorize_planned_operation;
 use super::plan::now_ms;
 use super::plan::{enablement_operation, package_state_revision, state_surface_refs};
 use super::reviewed_authorization::ReviewedCognitivePackageAuthorizationProvider;
-use super::{package_manager_error, CognitivePackageManager};
+use super::{
+    installation_mutation_busy, package_manager_error, plugin_operation_action_name,
+    CognitivePackageManager,
+};
 
 pub const COGNITIVE_PACKAGE_ENABLEMENT_REQUEST_SCHEMA: &str =
     "a3s.use.cognitive-package-enablement-request.v1";
@@ -244,6 +247,7 @@ impl CognitivePackageManager {
         request: &CognitivePackageEnablementRequest,
     ) -> UseResult<CognitivePackageEnablementResult> {
         let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        let _mutation = self.installation_mutation_lock().acquire().await?;
         request.validate()?;
         let reviewed_plan = self.authorization.reviewed_plan().ok_or_else(|| {
             enablement_error(
@@ -267,6 +271,27 @@ impl CognitivePackageManager {
             ));
         }
         let store = self.enablement_store();
+        if let Some(active) = self.pending_store().admitted_operation().await? {
+            return Err(installation_mutation_busy(
+                plugin_operation_action_name(active.action()),
+                active.root_package_id(),
+                &active.envelope.plan.operation_id,
+            ));
+        }
+        if let Some(active) = store.active_operation().await? {
+            if active.request != *request || &active.envelope != reviewed_plan {
+                let action = if active.request.enabled {
+                    "enable"
+                } else {
+                    "disable"
+                };
+                return Err(installation_mutation_busy(
+                    action,
+                    active.request.package_id.as_str(),
+                    &active.request.operation_id,
+                ));
+            }
+        }
         let _operation_guard = store
             .lock_operation(&self.scope, &request.operation_id)
             .await?;
@@ -438,6 +463,7 @@ impl CognitivePackageManager {
     /// the durable Use-owned state generation for optimistic concurrency.
     pub async fn observe_package(&self, package_id: &str) -> UseResult<PluginHostPackageState> {
         let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        let _mutation = self.installation_mutation_lock().acquire().await?;
         let package_id = PluginPackageId::parse(package_id.to_string())?;
         let store = self.enablement_store();
         let _guard = store.lock_package(&self.scope, &package_id).await?;
@@ -606,10 +632,13 @@ impl CognitivePackageManager {
             artifact.manifest_digest.clone(),
             artifact.generation,
         )?;
-        let coordinator = self.lifecycle.enablement_coordinator(
-            self.registry.clone(),
-            self.registry.lifecycle_package_root(&identity),
-        )?;
+        let coordinator = self
+            .lifecycle
+            .enablement_coordinator(
+                self.registry.clone(),
+                self.registry.lifecycle_package_root(&identity),
+            )?
+            .with_expected_capability_generation(active.envelope.plan.state.capability_generation);
         self.authorization.verify_plan(&active.envelope)?;
         let grants = active
             .authorization

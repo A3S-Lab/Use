@@ -22,6 +22,7 @@ use super::{CognitivePackageEnablementRequest, CognitivePackageEnablementResult}
 pub(super) const ENABLEMENT_STATE_SCHEMA: &str = "a3s.use.cognitive-package-enablement-state.v2";
 const ENABLEMENT_OPERATION_SCHEMA: &str = "a3s.use.cognitive-package-enablement-operation.v2";
 const MAX_ENABLEMENT_RECORD_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_ENABLEMENT_STATE_INVENTORY_ENTRIES: usize = 2_048;
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -348,6 +349,81 @@ impl CognitivePackageEnablementStore {
         write_replace(&self.state_root, &path, state).await
     }
 
+    /// Return the sole crash-recoverable enable/disable writer across the
+    /// conservative pre-A1 installation domain.
+    pub async fn active_operation(&self) -> UseResult<Option<PendingCognitivePackageEnablement>> {
+        let scopes_root = self.root.join("scopes");
+        match fs::symlink_metadata(&scopes_root).await {
+            Ok(metadata)
+                if !a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+                    && metadata.is_dir() => {}
+            Ok(_) => return Err(path_invalid()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(path_error(
+                    "inspect enablement scope inventory",
+                    &scopes_root,
+                    error,
+                ))
+            }
+        }
+
+        let mut inventory_entries = 0_usize;
+        let mut active = None;
+        let mut scopes = fs::read_dir(&scopes_root)
+            .await
+            .map_err(|error| path_error("open enablement scope inventory", &scopes_root, error))?;
+        while let Some(scope_entry) = scopes
+            .next_entry()
+            .await
+            .map_err(|error| path_error("read enablement scope inventory", &scopes_root, error))?
+        {
+            let scope_path = scope_entry.path();
+            require_inventory_directory(&scope_path, &mut inventory_entries).await?;
+            let mut publishers = fs::read_dir(&scope_path).await.map_err(|error| {
+                path_error("open enablement publisher inventory", &scope_path, error)
+            })?;
+            while let Some(publisher_entry) = publishers.next_entry().await.map_err(|error| {
+                path_error("read enablement publisher inventory", &scope_path, error)
+            })? {
+                let publisher_path = publisher_entry.path();
+                require_inventory_directory(&publisher_path, &mut inventory_entries).await?;
+                let mut packages = fs::read_dir(&publisher_path).await.map_err(|error| {
+                    path_error("open enablement package inventory", &publisher_path, error)
+                })?;
+                while let Some(package_entry) = packages.next_entry().await.map_err(|error| {
+                    path_error("read enablement package inventory", &publisher_path, error)
+                })? {
+                    let package_path = package_entry.path();
+                    require_inventory_directory(&package_path, &mut inventory_entries).await?;
+                    let state_path = package_path.join("state.json");
+                    let Some(state) = read_optional::<StoredCognitivePackageEnablement>(
+                        &self.state_root,
+                        &state_path,
+                    )
+                    .await?
+                    else {
+                        continue;
+                    };
+                    state.validate()?;
+                    let package_id = PluginPackageId::parse(state.package_id.clone())
+                        .map_err(|_| path_invalid())?;
+                    if self.state_path(&state.scope, &package_id)? != state_path {
+                        return Err(path_invalid());
+                    }
+                    if let Some(operation) = state.active {
+                        if active.replace(operation).is_some() {
+                            return Err(store_invalid(
+                                "More than one enablement operation owns the installation mutation domain.",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(active)
+    }
+
     pub async fn get_operation(
         &self,
         scope: &PlanScope,
@@ -419,6 +495,22 @@ impl CognitivePackageEnablementStore {
             .join(scope_digest(scope)?)
             .join(format!("{digest}.json")))
     }
+}
+
+async fn require_inventory_directory(path: &Path, count: &mut usize) -> UseResult<()> {
+    *count = count.saturating_add(1);
+    if *count > MAX_ENABLEMENT_STATE_INVENTORY_ENTRIES {
+        return Err(store_invalid(
+            "The cognitive-package enablement state inventory exceeds its bound.",
+        ));
+    }
+    let metadata = fs::symlink_metadata(path)
+        .await
+        .map_err(|error| path_error("inspect enablement inventory directory", path, error))?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
+        return Err(path_invalid());
+    }
+    Ok(())
 }
 
 async fn acquire_lock(lock_path: PathBuf) -> UseResult<StdFile> {

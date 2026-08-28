@@ -21,6 +21,7 @@ mod host_manager;
 mod host_store;
 mod hosts;
 mod install;
+mod mutation_lock;
 mod native_provider;
 mod plan;
 mod planning_attempt_io;
@@ -37,8 +38,9 @@ mod upgrade;
 mod upgrade_validation;
 
 use a3s_use_core::{
-    LockedPluginPackage, PlanScope, PlanScopeKind, PluginOperationPlanEnvelope, PluginPackageLock,
-    UseError, UseResult, VerifiedPluginCatalogRecord,
+    LockedPluginPackage, PlanScope, PlanScopeKind, PluginOperationAction,
+    PluginOperationPlanEnvelope, PluginPackageLock, UseError, UseResult,
+    VerifiedPluginCatalogRecord,
 };
 use a3s_use_extension::{
     ExtensionLifecyclePackage, ExtensionManifest, ExtensionRegistry, InstalledExtension,
@@ -436,11 +438,56 @@ impl CognitivePackageManager {
         a3s_use_extension::StateMaintenanceLock::new(self.registry.paths().state_root())
     }
 
+    fn installation_mutation_lock(&self) -> mutation_lock::InstallationMutationLock {
+        mutation_lock::InstallationMutationLock::new(self.registry.paths().state_root())
+    }
+
+    async fn require_graph_mutation_domain(
+        &self,
+        action: PluginOperationAction,
+        root_package_id: &str,
+    ) -> UseResult<()> {
+        if let Some(active) = self.enablement_store().active_operation().await? {
+            let active_action = if active.request.enabled {
+                "enable"
+            } else {
+                "disable"
+            };
+            return Err(installation_mutation_busy(
+                active_action,
+                active.request.package_id.as_str(),
+                &active.request.operation_id,
+            ));
+        }
+        if let Some(active) = self.pending_store().admitted_operation().await? {
+            if active.action() != action || active.root_package_id() != root_package_id {
+                return Err(installation_mutation_busy(
+                    plugin_operation_action_name(active.action()),
+                    active.root_package_id(),
+                    &active.envelope.plan.operation_id,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     async fn admit_planned_graph_operation(
         &self,
         store: &PendingPackageGraphStore,
         pending: PendingPackageGraphOperation,
     ) -> UseResult<PendingPackageGraphOperation> {
+        if let Some(active) = self.enablement_store().active_operation().await? {
+            let action = if active.request.enabled {
+                "enable"
+            } else {
+                "disable"
+            };
+            return Err(installation_mutation_busy(
+                action,
+                active.request.package_id.as_str(),
+                &active.request.operation_id,
+            ));
+        }
         match pending.phase() {
             PackageGraphOperationPhase::Cancelled => Err(package_manager_error(
                 "use.plugin.package_graph_cancelled",
@@ -451,6 +498,17 @@ impl CognitivePackageManager {
                 Ok(pending)
             }
             PackageGraphOperationPhase::Planned => {
+                let snapshot = self.registry.snapshot().await?;
+                let expected_generation = pending.envelope.plan.state.capability_generation;
+                if snapshot.generation != expected_generation {
+                    return Err(package_manager_error(
+                        "use.plugin.package_generation_changed",
+                        "The reviewed package graph generation changed before admission.",
+                    )
+                    .with_detail("expectedCapabilityGeneration", expected_generation)
+                    .with_detail("actualCapabilityGeneration", snapshot.generation));
+                }
+                store.require_admission_available(&pending).await?;
                 let grant_snapshot = self
                     .grant_store()
                     .snapshot_scope(&self.scope.id, pending.envelope.plan.state.state_revision)
@@ -518,4 +576,29 @@ pub(super) fn installed_matches_lock(
 
 pub(super) fn package_manager_error(code: &'static str, message: impl Into<String>) -> UseError {
     UseError::new(code, message)
+}
+
+pub(super) fn installation_mutation_busy(
+    action: &str,
+    package_id: &str,
+    operation_id: &str,
+) -> UseError {
+    package_manager_error(
+        "use.plugin.package_graph_busy",
+        format!(
+            "Admitted '{action}' operation for cognitive package '{package_id}' owns the installation mutation domain."
+        ),
+    )
+    .with_detail("activeOperationId", operation_id.to_string())
+    .with_detail("activePackageId", package_id.to_string())
+}
+
+pub(super) fn plugin_operation_action_name(action: PluginOperationAction) -> &'static str {
+    match action {
+        PluginOperationAction::Install => "install",
+        PluginOperationAction::Upgrade => "upgrade",
+        PluginOperationAction::Uninstall => "uninstall",
+        PluginOperationAction::Enable => "enable",
+        PluginOperationAction::Disable => "disable",
+    }
 }

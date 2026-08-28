@@ -11,7 +11,9 @@ use super::model::{
 };
 use super::ExtensionRegistry;
 use crate::package::{write_receipt, RegistryLock};
-use crate::registry::{verify_package_integrity, MAX_PENDING_REGISTRY_CUTOVERS};
+use crate::registry::{
+    ensure_no_installed_dependents, verify_package_integrity, MAX_PENDING_REGISTRY_CUTOVERS,
+};
 use crate::registry_io::read_registry_snapshot;
 
 impl ExtensionRegistry {
@@ -98,6 +100,9 @@ impl ExtensionRegistry {
             .map(|request| recorded_cutover(&published, request))
             .transpose()?
             .flatten();
+        if let Some(request) = cutover_request.filter(|_| recorded_cutover.is_none()) {
+            request.require_current_generation(published.generation)?;
+        }
         if cutover_request.is_some()
             && recorded_cutover.is_none()
             && published.pending_cutovers.len() >= MAX_PENDING_REGISTRY_CUTOVERS
@@ -150,6 +155,10 @@ impl ExtensionRegistry {
                 }],
                 &record,
             );
+        }
+        if selected_is_exact && !enabled && !require_already_hidden {
+            let installed = self.list().await?;
+            ensure_no_installed_dependents(&installed, identity.package_id())?;
         }
         let changed = extension.receipt.enabled != enabled;
         if changed {

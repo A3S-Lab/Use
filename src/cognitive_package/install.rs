@@ -45,6 +45,9 @@ impl CognitivePackageManager {
         requested_root_surfaces: Option<&[PluginSurfaceRef]>,
     ) -> UseResult<CognitivePackageInstallResult> {
         let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        let _mutation = self.installation_mutation_lock().acquire().await?;
+        self.require_graph_mutation_domain(PluginOperationAction::Install, package_id)
+            .await?;
         let mut resolution_attempt = Some(
             self.resolution_attempt_store()
                 .begin(PendingPackageResolutionAttempt::new(

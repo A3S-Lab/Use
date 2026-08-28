@@ -48,6 +48,10 @@ The current architecture has three non-negotiable properties:
 - **One reviewed mutation path:** planning is read-only; apply accepts the
   reviewed operation ID, plan digest, and confirmation. There is no direct
   enable/disable mutation API.
+- **One serial installation mutation:** install, upgrade, uninstall, enable,
+  disable, and exact recovery share a cross-process writer fence. Every
+  reviewed cutover is bound to the expected capability generation; a losing
+  concurrent plan fails before provider or package-publication effects.
 - **One current protocol baseline:** pre-release formats are rejected rather
   than decoded, migrated, or silently defaulted.
 

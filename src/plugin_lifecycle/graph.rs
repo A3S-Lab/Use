@@ -170,6 +170,7 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
         &self,
         package_lock: &PluginPackageLock,
         intents: &[PluginLifecycleIntent],
+        expected_capability_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication>;
 
@@ -180,6 +181,7 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
         package_lock: &PluginPackageLock,
         candidate_intents: &[PluginLifecycleIntent],
         removed_intents: &[PluginLifecycleIntent],
+        expected_capability_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication>;
 
@@ -190,6 +192,7 @@ pub trait PluginGraphCapabilityLifecycleHost: Send + Sync {
         &self,
         package_lock: &PluginPackageLock,
         intents: &[PluginLifecycleIntent],
+        expected_capability_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication>;
 
@@ -302,7 +305,12 @@ impl PluginPackageGraphLifecycleCoordinator {
         }
         let publication = self
             .publication
-            .publish_capabilities_with_cutover(lock, &intents, &cutover_key)
+            .publish_capabilities_with_cutover(
+                lock,
+                &intents,
+                envelope.plan.state.capability_generation,
+                &cutover_key,
+            )
             .await?;
         let evidence = publication.packages;
         let cutover = publication.cutover;
@@ -414,7 +422,12 @@ impl PluginPackageGraphLifecycleCoordinator {
         } else {
             let publication = self
                 .publication
-                .hide_capabilities_with_cutover(lock, &intents, &cutover_key)
+                .hide_capabilities_with_cutover(
+                    lock,
+                    &intents,
+                    envelope.plan.state.capability_generation,
+                    &cutover_key,
+                )
                 .await?;
             if publication.packages.len() != ordered.len() {
                 return Err(graph_error(
@@ -681,6 +694,7 @@ impl PluginPackageGraphLifecycleCoordinator {
                     candidate_lock,
                     &intents,
                     &removed_intents,
+                    envelope.plan.state.capability_generation,
                     &cutover_key,
                 )
                 .await;

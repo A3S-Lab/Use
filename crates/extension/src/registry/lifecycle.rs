@@ -9,6 +9,8 @@ mod generations;
 mod model;
 mod package;
 mod staging;
+#[cfg(test)]
+mod testing;
 mod visibility;
 
 use cutover::{
@@ -474,6 +476,10 @@ impl ExtensionRegistry {
             .as_ref()
             .is_some_and(|extension| exact_receipt(identity, &extension.receipt).is_ok());
         if !selected_is_exact {
+            if selected.is_none() {
+                let installed = self.list().await?;
+                ensure_no_installed_dependents(&installed, identity.package_id())?;
+            }
             let retained = self.get_lifecycle_generation(identity).await?;
             let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
             let published_binding = published
@@ -617,11 +623,27 @@ impl ExtensionRegistry {
             .map(|request| recorded_cutover(&snapshot_before, request))
             .transpose()?
             .flatten();
+        if let Some(request) = cutover_request.filter(|_| recorded_cutover.is_none()) {
+            request.require_current_generation(snapshot_before.generation)?;
+        }
         if cutover_request.is_some()
             && recorded_cutover.is_none()
             && snapshot_before.pending_cutovers.len() >= MAX_PENDING_REGISTRY_CUTOVERS
         {
             return Err(registry_cutover_capacity());
+        }
+        if recorded_cutover.is_none() && !removed_package_ids.is_empty() {
+            let surviving_extensions = self
+                .list()
+                .await?
+                .into_iter()
+                .filter(|extension| {
+                    !removed_package_ids.contains(extension.receipt.package_id.as_str())
+                })
+                .collect::<Vec<_>>();
+            for identity in removed {
+                ensure_no_installed_dependents(&surviving_extensions, identity.package_id())?;
+            }
         }
         if let Some(package_lock) = package_lock {
             package_lock.validate()?;
@@ -954,63 +976,6 @@ impl ExtensionRegistry {
             write_receipt(&self.paths.receipt_path(&receipt.package_id), receipt).await?;
         }
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn publish_lifecycle_package_for_host_version(
-        &self,
-        identity: &ExtensionLifecycleIdentity,
-        host_version: &str,
-    ) -> UseResult<ExtensionLifecycleResult> {
-        self.set_lifecycle_visibility(identity, true, host_version)
-            .await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn publish_lifecycle_packages_for_test_host_version(
-        &self,
-        identities: &[ExtensionLifecycleIdentity],
-        host_version: &str,
-    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
-        Ok(self
-            .publish_lifecycle_packages_for_host_version(identities, &[], host_version, None, None)
-            .await?
-            .packages)
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn publish_lifecycle_package_graph_for_test_host_version(
-        &self,
-        package_lock: &PluginPackageLock,
-        identities: &[ExtensionLifecycleIdentity],
-        host_version: &str,
-    ) -> UseResult<Vec<ExtensionLifecycleResult>> {
-        Ok(self
-            .publish_lifecycle_packages_for_host_version(
-                identities,
-                &[],
-                host_version,
-                Some(package_lock),
-                None,
-            )
-            .await?
-            .packages)
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn acquire_lifecycle_route_for_host_version(
-        &self,
-        route: &str,
-        host_version: &str,
-    ) -> UseResult<Option<super::ExtensionRouteLease>> {
-        let Some(candidate) = self
-            .find_route_for_host_version(route, host_version)
-            .await?
-        else {
-            return Ok(None);
-        };
-        self.acquire_extension_lease_for_host_version(candidate, Some(route), host_version)
-            .await
     }
 
     async fn exact_lifecycle_extension(

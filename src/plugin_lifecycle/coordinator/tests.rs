@@ -152,6 +152,7 @@ impl PluginCapabilityLifecycleHost for RecordingHosts {
     async fn publish_capability_with_cutover(
         &self,
         _intent: &PluginLifecycleIntent,
+        _expected_capability_generation: Option<u64>,
         key: &str,
     ) -> UseResult<PluginCapabilityPublication> {
         let evidence = self.execute("capability.publish".to_string(), key).await?;
@@ -164,6 +165,7 @@ impl PluginCapabilityLifecycleHost for RecordingHosts {
     async fn hide_capability_with_cutover(
         &self,
         _intent: &PluginLifecycleIntent,
+        _expected_capability_generation: Option<u64>,
         key: &str,
     ) -> UseResult<PluginCapabilityPublication> {
         let evidence = self.execute("capability.hide".to_string(), key).await?;
