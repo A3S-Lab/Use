@@ -365,6 +365,7 @@ async fn restore_preserves_windows_read_only_evidence() {
         .await
         .unwrap();
     let mut permissions = std::fs::metadata(&file).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
     permissions.set_readonly(false);
     std::fs::set_permissions(&file, permissions).unwrap();
     std::fs::write(&file, b"live").unwrap();

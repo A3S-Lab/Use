@@ -376,6 +376,7 @@ fn make_writable(path: &Path, mut permissions: std::fs::Permissions) -> UseResul
             permissions.set_mode(permissions.mode() | 0o200);
         }
         #[cfg(not(unix))]
+        #[allow(clippy::permissions_set_readonly_false)]
         permissions.set_readonly(false);
         std::fs::set_permissions(path, permissions).map_err(|error| {
             state_backup_io(format!(

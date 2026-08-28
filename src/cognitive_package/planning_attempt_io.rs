@@ -331,7 +331,7 @@ fn lock_is_contended(error: &io::Error) -> bool {
     {
         // LockFileEx reports sharing or lock violations without consistently
         // mapping either Windows error to WouldBlock.
-        return matches!(error.raw_os_error(), Some(32 | 33));
+        matches!(error.raw_os_error(), Some(32 | 33))
     }
     #[cfg(not(windows))]
     false

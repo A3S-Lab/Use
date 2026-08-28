@@ -191,7 +191,7 @@ fn mhs_bridge_reuses_standard_mcp_flow_skill_and_ui_surfaces() {
     assert!(dependencies(a3s_use_core::PluginSurfaceKind::Mcp, "fleet").is_empty());
     assert_eq!(
         dependencies(a3s_use_core::PluginSurfaceKind::Flow, "monitor"),
-        &[fleet.clone()]
+        std::slice::from_ref(&fleet)
     );
     assert_eq!(
         dependencies(a3s_use_core::PluginSurfaceKind::Skill, "operator"),
