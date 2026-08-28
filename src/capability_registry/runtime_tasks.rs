@@ -312,6 +312,7 @@ extension "acme/research" {
             &evidence.observations,
             &[],
             &evidence.projections,
+            &[],
         )
         .await
         .unwrap();
@@ -368,6 +369,7 @@ extension "acme/research" {
             &evidence.observations,
             &[],
             &evidence.projections,
+            &[],
         )
         .await
         .unwrap();

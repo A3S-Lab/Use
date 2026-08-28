@@ -17,6 +17,8 @@ use crate::registry_io::{read_registry_snapshot, write_registry_snapshot};
 pub(super) struct ExtensionLifecycleCutoverRequest {
     pub(super) idempotency_key: String,
     pub(super) request_digest: String,
+    legacy_request_digest: Option<String>,
+    pub(super) expected_generation: Option<u64>,
 }
 
 impl ExtensionLifecycleCutoverRequest {
@@ -26,6 +28,7 @@ impl ExtensionLifecycleCutoverRequest {
         package_lock: Option<&PluginPackageLock>,
         candidates: &[ExtensionLifecycleIdentity],
         removed: &[ExtensionLifecycleIdentity],
+        expected_generation: Option<u64>,
     ) -> UseResult<Self> {
         let idempotency_key =
             canonical_sha256(idempotency_key.to_string(), "cutover idempotency key")?;
@@ -49,10 +52,32 @@ impl ExtensionLifecycleCutoverRequest {
             identity.push('\n');
             identity.push_str(&prior.descriptor_digest()?);
         }
+        let legacy_request_digest = expected_generation
+            .map(|_| format!("sha256:{:x}", Sha256::digest(identity.as_bytes())));
+        if let Some(generation) = expected_generation {
+            identity.push_str("\nexpected-generation\n");
+            identity.push_str(&generation.to_string());
+        }
         Ok(Self {
             idempotency_key,
             request_digest: format!("sha256:{:x}", Sha256::digest(identity.as_bytes())),
+            legacy_request_digest,
+            expected_generation,
         })
+    }
+
+    pub(super) fn require_current_generation(&self, current_generation: u64) -> UseResult<()> {
+        if self
+            .expected_generation
+            .is_some_and(|expected| expected != current_generation)
+        {
+            return Err(registry_cutover_conflict(
+                "The reviewed capability generation changed before Registry cutover.",
+            )
+            .with_detail("expectedGeneration", self.expected_generation)
+            .with_detail("actualGeneration", current_generation));
+        }
+        Ok(())
     }
 }
 
@@ -64,12 +89,43 @@ impl ExtensionRegistry {
         identity: &ExtensionLifecycleIdentity,
         idempotency_key: &str,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        self.publish_lifecycle_package_with_generation_durable_cutover(
+            identity,
+            None,
+            idempotency_key,
+        )
+        .await
+    }
+
+    /// Publish one exact lifecycle generation only if the immutable Registry
+    /// snapshot still has the generation reviewed by the owning plan.
+    pub async fn publish_lifecycle_package_at_generation_with_durable_cutover(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+        expected_generation: u64,
+        idempotency_key: &str,
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        self.publish_lifecycle_package_with_generation_durable_cutover(
+            identity,
+            Some(expected_generation),
+            idempotency_key,
+        )
+        .await
+    }
+
+    async fn publish_lifecycle_package_with_generation_durable_cutover(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+        expected_generation: Option<u64>,
+        idempotency_key: &str,
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
         let request = ExtensionLifecycleCutoverRequest::new(
             idempotency_key,
             "single-package-publish",
             None,
             std::slice::from_ref(identity),
             &[],
+            expected_generation,
         )?;
         self.set_lifecycle_visibility_with_evidence(
             identity,
@@ -84,6 +140,7 @@ impl ExtensionRegistry {
         &self,
         package_lock: &PluginPackageLock,
         identities: &[ExtensionLifecycleIdentity],
+        expected_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
         let request = ExtensionLifecycleCutoverRequest::new(
@@ -92,6 +149,7 @@ impl ExtensionRegistry {
             Some(package_lock),
             identities,
             &[],
+            Some(expected_generation),
         )?;
         self.publish_lifecycle_packages_for_host_version(
             identities,
@@ -108,6 +166,7 @@ impl ExtensionRegistry {
         package_lock: &PluginPackageLock,
         identities: &[ExtensionLifecycleIdentity],
         removed: &[ExtensionLifecycleIdentity],
+        expected_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
         let request = ExtensionLifecycleCutoverRequest::new(
@@ -116,6 +175,7 @@ impl ExtensionRegistry {
             Some(package_lock),
             identities,
             removed,
+            Some(expected_generation),
         )?;
         self.publish_lifecycle_packages_for_host_version(
             identities,
@@ -131,6 +191,7 @@ impl ExtensionRegistry {
         &self,
         package_lock: &PluginPackageLock,
         identities: &[ExtensionLifecycleIdentity],
+        expected_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
         let request = ExtensionLifecycleCutoverRequest::new(
@@ -139,6 +200,7 @@ impl ExtensionRegistry {
             Some(package_lock),
             &[],
             identities,
+            Some(expected_generation),
         )?;
         self.publish_lifecycle_packages_for_host_version(
             &[],
@@ -155,12 +217,39 @@ impl ExtensionRegistry {
         identity: &ExtensionLifecycleIdentity,
         idempotency_key: &str,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        self.hide_lifecycle_package_with_generation_durable_cutover(identity, None, idempotency_key)
+            .await
+    }
+
+    /// Hide one exact lifecycle generation only if the immutable Registry
+    /// snapshot still has the generation reviewed by the owning plan.
+    pub async fn hide_lifecycle_package_at_generation_with_durable_cutover(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+        expected_generation: u64,
+        idempotency_key: &str,
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        self.hide_lifecycle_package_with_generation_durable_cutover(
+            identity,
+            Some(expected_generation),
+            idempotency_key,
+        )
+        .await
+    }
+
+    async fn hide_lifecycle_package_with_generation_durable_cutover(
+        &self,
+        identity: &ExtensionLifecycleIdentity,
+        expected_generation: Option<u64>,
+        idempotency_key: &str,
+    ) -> UseResult<ExtensionLifecycleGraphPublication> {
         let request = ExtensionLifecycleCutoverRequest::new(
             idempotency_key,
             "single-package-hide",
             None,
             &[],
             std::slice::from_ref(identity),
+            expected_generation,
         )?;
         self.set_lifecycle_visibility_with_evidence(
             identity,
@@ -204,6 +293,7 @@ impl ExtensionRegistry {
         if current.pending_cutovers.len() >= MAX_PENDING_REGISTRY_CUTOVERS {
             return Err(registry_cutover_capacity());
         }
+        request.require_current_generation(current.generation)?;
         let routes = route_bindings(installed);
         if routes == current.routes {
             return Err(registry_cutover_conflict(
@@ -249,9 +339,19 @@ pub(super) fn recorded_cutover(
     else {
         return Ok(None);
     };
-    if record.request_digest != request.request_digest {
+    if record.request_digest != request.request_digest
+        && request.legacy_request_digest.as_deref() != Some(record.request_digest.as_str())
+    {
         return Err(registry_cutover_conflict(
             "A Registry cutover idempotency key was reused for a different lifecycle mutation.",
+        ));
+    }
+    if request.expected_generation.is_some_and(|expected| {
+        record.registry_generation_before != expected
+            || expected.checked_add(1) != Some(record.registry_generation_after)
+    }) {
+        return Err(registry_cutover_conflict(
+            "The Registry cutover record does not match the reviewed capability generation.",
         ));
     }
     Ok(Some(record.clone()))

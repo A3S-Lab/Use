@@ -24,6 +24,7 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
         b"trusted cache bytes",
     )
     .unwrap();
+    std::fs::write(paths.state_root().join(".installation-mutation.lock"), b"").unwrap();
 
     let first = temporary.path().join("first.a3s-use-state-backup");
     let manager = StateBackupManager::new(paths.clone());
@@ -41,6 +42,7 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
         .all(|entry| !entry.path.starts_with('/') && !entry.path.contains("..")));
     let encoded = serde_json::to_string(&manifest).unwrap();
     assert!(!encoded.contains(temporary.path().to_str().unwrap()));
+    assert!(!encoded.contains(".installation-mutation.lock"));
     assert!(!encoded.contains(".maintenance.lock"));
 
     let verified = StateBackupManager::verify_backup(&first).await.unwrap();

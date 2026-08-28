@@ -397,15 +397,14 @@ async fn lifecycle_graph_requires_the_exact_published_retained_dependency() {
         .await
         .unwrap();
     registry
+        .hide_lifecycle_package(&base_identity)
+        .await
+        .unwrap();
+    registry
         .commit_lifecycle_package(&root_identity, &root)
         .await
         .unwrap();
     bind_remote_catalog_receipt(&registry, "acme/root", &root_catalog).await;
-
-    registry
-        .hide_lifecycle_package(&base_identity)
-        .await
-        .unwrap();
     let error = registry
         .publish_lifecycle_package_graph_for_test_host_version(
             &package_lock,
@@ -568,12 +567,8 @@ async fn lifecycle_uninstall_rejects_a_dependency_until_dependents_are_removed()
         registry.dependent_packages("acme/base").await.unwrap(),
         ["acme/root"]
     );
-    registry
-        .hide_lifecycle_package(&base_identity)
-        .await
-        .unwrap();
     let error = registry
-        .remove_lifecycle_package(&base_identity, Duration::from_secs(1))
+        .hide_lifecycle_package(&base_identity)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.extension.package_required");
@@ -581,7 +576,7 @@ async fn lifecycle_uninstall_rejects_a_dependency_until_dependents_are_removed()
         error.details["requiredBy"],
         serde_json::json!(["acme/root"])
     );
-    assert!(registry.get("acme/base").await.unwrap().is_some());
+    assert!(registry.get("acme/base").await.unwrap().unwrap().enabled());
 
     registry
         .hide_lifecycle_package(&root_identity)
@@ -589,6 +584,10 @@ async fn lifecycle_uninstall_rejects_a_dependency_until_dependents_are_removed()
         .unwrap();
     registry
         .remove_lifecycle_package(&root_identity, Duration::from_secs(1))
+        .await
+        .unwrap();
+    registry
+        .hide_lifecycle_package(&base_identity)
         .await
         .unwrap();
     registry

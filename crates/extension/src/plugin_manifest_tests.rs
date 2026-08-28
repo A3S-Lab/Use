@@ -19,6 +19,8 @@ const OKF_MANIFEST_DIGEST: &str =
     include_str!("../fixtures/manifests/plugin-v3-okf.sha256").trim_ascii_end();
 const COGNITIVE_MANIFEST: &str =
     include_str!("../fixtures/packages/plugin-v3-cognitive/package/a3s-use-extension.acl");
+const MHS_BRIDGE_MANIFEST: &str =
+    include_str!("../fixtures/packages/plugin-v3-mhs-bridge/package/a3s-use-extension.acl");
 
 #[test]
 fn schema_v3_acl_fixture_has_a_stable_digest() {
@@ -141,6 +143,64 @@ fn schema_v3_parses_a3s_flow_surfaces_and_typed_consumers() {
         .unwrap()
         .dependencies
         .contains(&flow_ref));
+}
+
+#[test]
+fn mhs_bridge_reuses_standard_mcp_flow_skill_and_ui_surfaces() {
+    let manifest = ExtensionManifest::parse_acl(MHS_BRIDGE_MANIFEST).unwrap();
+    assert_eq!(manifest.package_id, "acme/mhs-bridge");
+    assert!(manifest.tools.is_empty());
+    assert!(manifest.okf.is_empty());
+    assert_eq!(manifest.mcp_servers.len(), 1);
+    assert_eq!(manifest.flows.len(), 1);
+    assert_eq!(manifest.skills.len(), 1);
+    assert_eq!(manifest.ui.len(), 1);
+    assert_eq!(manifest.surface_kinds(), ["mcp", "flow", "skill", "ui"]);
+
+    assert!(matches!(
+        manifest.mcp_servers[0].launch,
+        PluginMcpLaunch::StreamableHttp { .. }
+    ));
+    assert_eq!(manifest.flows[0].requires_mcp, ["fleet"]);
+    assert_eq!(manifest.skills[0].requires_mcp, ["fleet"]);
+    assert_eq!(manifest.skills[0].requires_flows, ["monitor"]);
+    assert_eq!(manifest.ui[0].bind_mcp, ["fleet"]);
+    assert_eq!(manifest.ui[0].bind_flows, ["monitor"]);
+
+    let graph = manifest.plugin_surfaces().unwrap();
+    assert_eq!(graph.len(), 4);
+    let fleet = a3s_use_core::PluginSurfaceRef {
+        kind: a3s_use_core::PluginSurfaceKind::Mcp,
+        id: "fleet".to_string(),
+    };
+    let monitor = a3s_use_core::PluginSurfaceRef {
+        kind: a3s_use_core::PluginSurfaceKind::Flow,
+        id: "monitor".to_string(),
+    };
+    let operator = a3s_use_core::PluginSurfaceRef {
+        kind: a3s_use_core::PluginSurfaceKind::Skill,
+        id: "operator".to_string(),
+    };
+    let dependencies = |kind, id: &str| {
+        &graph
+            .iter()
+            .find(|surface| surface.surface.kind == kind && surface.surface.id == id)
+            .unwrap()
+            .dependencies
+    };
+    assert!(dependencies(a3s_use_core::PluginSurfaceKind::Mcp, "fleet").is_empty());
+    assert_eq!(
+        dependencies(a3s_use_core::PluginSurfaceKind::Flow, "monitor"),
+        std::slice::from_ref(&fleet)
+    );
+    assert_eq!(
+        dependencies(a3s_use_core::PluginSurfaceKind::Skill, "operator"),
+        &[monitor.clone(), fleet.clone()]
+    );
+    assert_eq!(
+        dependencies(a3s_use_core::PluginSurfaceKind::Ui, "devices"),
+        &[monitor, fleet, operator]
+    );
 }
 
 #[test]

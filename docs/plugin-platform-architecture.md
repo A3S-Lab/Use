@@ -203,6 +203,13 @@ Skill and UI are integrity-bound static projections. Skill points to
 declared dependencies are ready. Static content cannot acquire ambient Runtime,
 network, filesystem, or secret authority.
 
+The capability snapshot carries each published UI contribution's canonical,
+sorted Skill/Tool/MCP/Flow dependency set from the package surface graph plus
+the `a3s.use.ui-dependency-evidence.v1` completeness marker. The marker makes
+an intentionally empty set distinct from a legacy producer that omitted the
+evidence. A host stages that evidence with the UI value and does not reparse
+the package manifest or infer backend authority from asset contents.
+
 UI state belongs to the embedding host rather than the package origin. The
 current Code host keys its bounded durable store by `PlanScope`, lifecycle
 package ID, and UI surface ID. A state request is admitted only while an exact
@@ -250,6 +257,14 @@ identity receives a new datastore; disabling, removal, and replacement retain
 the old datastore so restoring the exact identity can reuse its evidence. None
 of these operations mutate existing receipts. Installed provenance remains
 immutable.
+
+`GitHubRegistryRepository` is a typed address adapter, not another Registry
+implementation. It accepts one exact `owner/repository` slug plus canonical
+ref/path components and derives the ordinary HTTPS Registry base URL. The
+result then enters the same source identity, mandatory bootstrap-root pin,
+TUF refresh, cache, catalog, planning, and receipt path as an explicit `--url`.
+The client does not invoke Git, consume a GitHub API token, or treat a branch,
+tag, commit, pull request, or repository signature as package authority.
 
 TUF target metadata contains the complete current catalog record. There is no
 partial metadata or older-catalog fallback. Remote preparation retains:
@@ -443,6 +458,18 @@ bounded argv contract metadata, exact lifecycle identity, and reviewed provider
 ID; missing or mismatched bindings remain unpublished. Watchers resume by
 generation plus revision and can hot-refresh resident hosts without polling
 package directories.
+
+The additive `mcpServers` projection preserves every published extension MCP
+surface instead of collapsing a package to one route. Each entry binds its
+canonical surface ID, collision-resistant host name, activation, exact package
+lifecycle identity, and recomputed file-evidence digest. Stdio entries expose
+only the package-relative executable and bounded arguments. Streamable HTTP
+entries expose only the package-relative release plus an opaque endpoint
+reference/path and the exact Runtime provider/build/generation/descriptor
+evidence whose canonical binding digest matched the package receipt. No
+resolved URL, header, OAuth value, secret, or credential crosses this boundary.
+Mismatched or missing Runtime/Gateway initialize evidence leaves the surface
+unpublished.
 
 For admission that spans more than one package, the injected
 `CapabilityRegistry` derives `a3s.use.capability-snapshot-cursor.v1`. It binds

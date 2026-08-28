@@ -12,8 +12,8 @@ use super::package::{read_manifest, validate_surface_files};
 use super::remote::test_support::{package_directory_archive, TestRepository, TestServer, FUTURE};
 use super::source::prepare_package_source;
 use super::{
-    inspect_flow_surface_file, inspect_skill_surface_file, inspect_tool_surface_files,
-    inspect_ui_surface_files, load_okf_bundle_files, ExtensionManifest,
+    inspect_flow_surface_file, inspect_mcp_surface_files, inspect_skill_surface_file,
+    inspect_tool_surface_files, inspect_ui_surface_files, load_okf_bundle_files, ExtensionManifest,
 };
 
 const TASK_RELEASE: &[u8] =
@@ -358,6 +358,27 @@ async fn admitted_cognitive_package_fixture_contains_all_six_surface_kinds() {
         }),
         serde_json::from_str::<serde_json::Value>(PLUGIN_V3_COGNITIVE_PACKAGE_STATS).unwrap()
     );
+}
+
+#[tokio::test]
+async fn mhs_bridge_fixture_is_a_bounded_standard_surface_package() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/packages/plugin-v3-mhs-bridge/package");
+    let (manifest, _) = read_manifest(&root).await.unwrap();
+
+    assert_eq!(manifest.package_id, "acme/mhs-bridge");
+    assert_eq!(manifest.mcp_servers.len(), 1);
+    assert_eq!(manifest.flows.len(), 1);
+    assert_eq!(manifest.skills.len(), 1);
+    assert_eq!(manifest.ui.len(), 1);
+    validate_surface_files(&manifest, &root).await.unwrap();
+
+    let mcp = inspect_mcp_surface_files(&manifest.mcp_servers[0], &root)
+        .await
+        .unwrap();
+    assert_eq!(mcp.file_count(), 1);
+    assert!(mcp.expanded_bytes() > 0);
+    assert!(mcp.digest().starts_with("sha256:"));
 }
 
 #[tokio::test]

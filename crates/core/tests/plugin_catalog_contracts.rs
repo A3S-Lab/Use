@@ -9,6 +9,10 @@ use a3s_use_core::{
 use sha2::{Digest, Sha256};
 
 const PERMISSION_CEILING: &[u8] = include_bytes!("../fixtures/plugins/permission-ceiling-v1.json");
+const MHS_BRIDGE_PERMISSION_CEILING: &[u8] =
+    include_bytes!("../fixtures/plugins/mhs-bridge-permission-ceiling-v1.json");
+const MHS_BRIDGE_PERMISSION_DIGEST: &str =
+    include_str!("../fixtures/plugins/mhs-bridge-permission-ceiling-v1.sha256").trim_ascii_end();
 const CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-v3.json");
 const OKF_CATALOG_RECORD: &[u8] = include_bytes!("../fixtures/plugins/catalog-record-okf-v3.json");
 const OKF_CATALOG_RECORD_DIGEST: &str =
@@ -99,6 +103,33 @@ fn permission_ceiling_rejects_ambient_or_unscoped_authority() {
             .code,
         "use.plugin.permission_invalid"
     );
+}
+
+#[test]
+fn mhs_bridge_permission_ceiling_grants_only_the_host_gateway_boundary() {
+    let ceiling = PluginPermissionCeiling::from_json(MHS_BRIDGE_PERMISSION_CEILING).unwrap();
+    assert_eq!(
+        ceiling.canonical_bytes().unwrap(),
+        canonical_fixture(MHS_BRIDGE_PERMISSION_CEILING)
+    );
+    assert_eq!(
+        ceiling.descriptor_digest().unwrap(),
+        MHS_BRIDGE_PERMISSION_DIGEST
+    );
+    assert_eq!(ceiling.surfaces.len(), 1);
+    let fleet = &ceiling.surfaces[0];
+    assert_eq!(fleet.surface.kind, PluginSurfaceKind::Mcp);
+    assert_eq!(fleet.surface.id, "fleet");
+    assert!(!fleet.native_execution);
+    assert!(!fleet.child_process);
+    assert!(fleet.filesystem.is_empty());
+    assert!(fleet.private_service);
+    assert_eq!(fleet.network_egress.len(), 1);
+    assert_eq!(fleet.network_egress[0].host, "mhs.internal");
+    assert_eq!(fleet.network_egress[0].ports, [443]);
+    assert_eq!(fleet.secrets, ["mhs-session"]);
+    assert!(fleet.resources.is_some());
+    assert!(fleet.ui_http.is_empty());
 }
 
 #[test]

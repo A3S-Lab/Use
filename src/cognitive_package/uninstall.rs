@@ -11,7 +11,9 @@ use crate::plugin_lifecycle::{
 };
 
 use super::plan::{now_ms, package_state_revision, state_surface_refs, uninstall_operation};
-use super::store::{InstalledPackageGraph, PendingPackageGraphOperation};
+use super::store::{
+    InstalledPackageGraph, PackageGraphOperationPhase, PendingPackageGraphOperation,
+};
 use super::{
     installed_matches_lock, package_manager_error, CognitivePackageManager,
     CognitivePackageUninstallResult, UninstallDisposition,
@@ -72,6 +74,9 @@ impl CognitivePackageManager {
         root_package_id: &str,
     ) -> UseResult<CognitivePackageUninstallResult> {
         let _maintenance = self.maintenance_lock().acquire_shared().await?;
+        let _mutation = self.installation_mutation_lock().acquire().await?;
+        self.require_graph_mutation_domain(PluginOperationAction::Uninstall, root_package_id)
+            .await?;
         let graph_store = self.graph_store();
         let pending_store = self.pending_store();
         let existing_pending = pending_store
@@ -121,6 +126,18 @@ impl CognitivePackageManager {
         let mut installed = self.installed_lock_nodes(&lock).await?;
         let pending = if let Some(pending) = existing_pending {
             validate_pending_lock(&pending, &lock, &self.scope)?;
+            if pending.phase() == PackageGraphOperationPhase::Planned {
+                require_fresh_installed_closure(&lock, &installed)?;
+                let live_dispositions = self
+                    .uninstall_dispositions(&lock, &graph_store.list().await?)
+                    .await?;
+                if pending_dispositions(&pending)? != live_dispositions {
+                    return Err(package_manager_error(
+                        "use.plugin.package_generation_changed",
+                        "The requested root set or dependency ownership changed before uninstall admission.",
+                    ));
+                }
+            }
             pending
         } else {
             let exact = require_fresh_installed_closure(&lock, &installed)?;

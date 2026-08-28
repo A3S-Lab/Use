@@ -152,7 +152,7 @@ fn lock_is_contended(error: &io::Error) -> bool {
     }
     #[cfg(windows)]
     {
-        return matches!(error.raw_os_error(), Some(32 | 33));
+        matches!(error.raw_os_error(), Some(32 | 33))
     }
     #[cfg(not(windows))]
     false

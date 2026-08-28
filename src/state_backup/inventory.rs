@@ -36,6 +36,7 @@ const STATE_DIRECTORIES: &[&str] = &[
 
 const STATE_FILES: &[&str] = &["registries.acl", "registry.json"];
 const STATE_ROOT_LOCKS: &[&str] = &[
+    ".installation-mutation.lock",
     ".maintenance.lock",
     ".package-graph.lock",
     ".registries.lock",

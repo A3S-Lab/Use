@@ -143,6 +143,7 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
         &self,
         package_lock: &a3s_use_core::PluginPackageLock,
         intents: &[PluginLifecycleIntent],
+        expected_capability_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication> {
         let identities = intents
@@ -154,6 +155,7 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
             .publish_lifecycle_package_graph_with_durable_cutover(
                 package_lock,
                 &identities,
+                expected_capability_generation,
                 idempotency_key,
             )
             .await?;
@@ -175,6 +177,7 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
         package_lock: &a3s_use_core::PluginPackageLock,
         candidate_intents: &[PluginLifecycleIntent],
         removed_intents: &[PluginLifecycleIntent],
+        expected_capability_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication> {
         let candidates = candidate_intents
@@ -191,6 +194,7 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
                 package_lock,
                 &candidates,
                 &removed,
+                expected_capability_generation,
                 idempotency_key,
             )
             .await?;
@@ -211,6 +215,7 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
         &self,
         package_lock: &a3s_use_core::PluginPackageLock,
         intents: &[PluginLifecycleIntent],
+        expected_capability_generation: u64,
         idempotency_key: &str,
     ) -> UseResult<PluginGraphCapabilityPublication> {
         let identities = intents
@@ -222,6 +227,7 @@ impl PluginGraphCapabilityLifecycleHost for ExtensionGraphCapabilityLifecycleHos
             .hide_lifecycle_package_graph_with_durable_cutover(
                 package_lock,
                 &identities,
+                expected_capability_generation,
                 idempotency_key,
             )
             .await?;
@@ -429,6 +435,7 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
     async fn publish_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
+        expected_capability_generation: Option<u64>,
         idempotency_key: &str,
     ) -> UseResult<PluginCapabilityPublication> {
         validate_action(
@@ -441,10 +448,22 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
             "capability publication",
         )?;
         let identity = lifecycle_identity(intent)?;
-        let publication = self
-            .registry
-            .publish_lifecycle_package_with_durable_cutover(&identity, idempotency_key)
-            .await?;
+        let publication = match expected_capability_generation {
+            Some(generation) => {
+                self.registry
+                    .publish_lifecycle_package_at_generation_with_durable_cutover(
+                        &identity,
+                        generation,
+                        idempotency_key,
+                    )
+                    .await?
+            }
+            None => {
+                self.registry
+                    .publish_lifecycle_package_with_durable_cutover(&identity, idempotency_key)
+                    .await?
+            }
+        };
         single_package_cutover_publication(
             intent,
             idempotency_key,
@@ -456,6 +475,7 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
     async fn hide_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
+        expected_capability_generation: Option<u64>,
         idempotency_key: &str,
     ) -> UseResult<PluginCapabilityPublication> {
         validate_action(
@@ -467,10 +487,22 @@ impl PluginCapabilityLifecycleHost for ExtensionCapabilityLifecycleHost {
             "capability hiding",
         )?;
         let identity = lifecycle_identity(intent)?;
-        let publication = self
-            .registry
-            .hide_lifecycle_package_with_durable_cutover(&identity, idempotency_key)
-            .await?;
+        let publication = match expected_capability_generation {
+            Some(generation) => {
+                self.registry
+                    .hide_lifecycle_package_at_generation_with_durable_cutover(
+                        &identity,
+                        generation,
+                        idempotency_key,
+                    )
+                    .await?
+            }
+            None => {
+                self.registry
+                    .hide_lifecycle_package_with_durable_cutover(&identity, idempotency_key)
+                    .await?
+            }
+        };
         single_package_cutover_publication(
             intent,
             idempotency_key,

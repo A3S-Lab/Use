@@ -87,6 +87,7 @@ pub trait PluginCapabilityLifecycleHost: Send + Sync {
     async fn publish_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
+        expected_capability_generation: Option<u64>,
         idempotency_key: &str,
     ) -> UseResult<PluginCapabilityPublication>;
 
@@ -95,6 +96,7 @@ pub trait PluginCapabilityLifecycleHost: Send + Sync {
     async fn hide_capability_with_cutover(
         &self,
         intent: &PluginLifecycleIntent,
+        expected_capability_generation: Option<u64>,
         idempotency_key: &str,
     ) -> UseResult<PluginCapabilityPublication>;
 
@@ -314,11 +316,26 @@ impl PluginLifecycleHosts {
 pub struct PluginLifecycleCoordinator {
     pub(super) journal: PluginLifecycleJournalStore,
     pub(super) hosts: PluginLifecycleHosts,
+    pub(super) expected_capability_generation: Option<u64>,
 }
 
 impl PluginLifecycleCoordinator {
     pub fn new(journal: PluginLifecycleJournalStore, hosts: PluginLifecycleHosts) -> Self {
-        Self { journal, hosts }
+        Self {
+            journal,
+            hosts,
+            expected_capability_generation: None,
+        }
+    }
+
+    /// Bind single-package capability cutover to the exact Registry
+    /// generation reviewed by the enclosing operation plan.
+    pub(crate) fn with_expected_capability_generation(
+        mut self,
+        expected_capability_generation: u64,
+    ) -> Self {
+        self.expected_capability_generation = Some(expected_capability_generation);
+        self
     }
 
     pub(crate) async fn apply(
@@ -752,13 +769,13 @@ impl PluginLifecycleCoordinator {
             (PluginLifecycleCheckpointKind::CapabilityPublished, None) => self
                 .hosts
                 .capability
-                .publish_capability_with_cutover(intent, key)
+                .publish_capability_with_cutover(intent, self.expected_capability_generation, key)
                 .await
                 .map(|publication| publication.evidence),
             (PluginLifecycleCheckpointKind::CapabilityHidden, None) => self
                 .hosts
                 .capability
-                .hide_capability_with_cutover(intent, key)
+                .hide_capability_with_cutover(intent, self.expected_capability_generation, key)
                 .await
                 .map(|publication| publication.evidence),
             (PluginLifecycleCheckpointKind::CallsDrained, None) => {
