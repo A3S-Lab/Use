@@ -1,0 +1,1 @@
+{"schema":"a3s.use.plugin-permissions.v1","surfaces":[{"childProcess":false,"filesystem":[],"nativeExecution":false,"networkEgress":[{"host":"mhs.internal","ports":[443]}],"privateService":true,"resources":{"cpuMillis":500,"ephemeralStorageBytes":536870912,"memoryBytes":268435456,"pids":64},"secrets":["mhs-session"],"surface":{"id":"fleet","kind":"mcp"},"uiHttp":[]}]}

@@ -24,6 +24,11 @@ use tokio::io::AsyncReadExt;
 mod runtime_tasks;
 #[cfg(feature = "extensions")]
 use runtime_tasks::runtime_task_evidence_from_store;
+#[cfg(feature = "extensions")]
+#[path = "capability_registry/mcp.rs"]
+mod managed_mcp;
+#[cfg(feature = "extensions")]
+use managed_mcp::mcp_evidence_from_store;
 #[path = "capability_registry/lease.rs"]
 mod lease;
 use lease::ExtensionCursorEvidence;
@@ -55,6 +60,7 @@ use crate::{
 };
 
 pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 2;
+pub const UI_DEPENDENCY_EVIDENCE_SCHEMA: &str = "a3s.use.ui-dependency-evidence.v1";
 #[cfg(feature = "extensions")]
 const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
 const WATCH_INTERVAL: Duration = Duration::from_millis(100);
@@ -114,6 +120,7 @@ impl CapabilityRegistry {
         capabilities.extend(extensions);
         capabilities.sort_by(|left, right| left.id.cmp(&right.id));
         validate_unique_tool_task_names(&capabilities)?;
+        validate_unique_mcp_server_names(&capabilities)?;
 
         let revision = revision(&capabilities)?;
         let cursor = CapabilitySnapshotCursor::from_projection(&revision, extension_cursor)?;
@@ -208,9 +215,61 @@ pub struct McpSurface {
     pub transport: McpTransport,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpSurfaceActivation {
+    Eager,
+    Lazy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpRuntimeProjection {
+    pub scope: PlanScope,
+    pub endpoint_ref: String,
+    pub endpoint_path: String,
+    pub protocol_version: String,
+    pub initialized_at_ms: u64,
+    pub provider_id: String,
+    pub provider_build_id: String,
+    pub runtime_generation: u64,
+    pub descriptor_digest: String,
+    pub binding_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "transport",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+pub enum McpLaunchProjection {
+    Stdio {
+        executable: PathBuf,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        args: Vec<String>,
+    },
+    StreamableHttp {
+        release: PathBuf,
+        runtime: McpRuntimeProjection,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerProjection {
+    pub id: String,
+    pub server_name: String,
+    pub activation: McpSurfaceActivation,
+    pub lifecycle_identity: ProjectedLifecycleIdentity,
+    pub file_evidence_digest: String,
+    pub launch: McpLaunchProjection,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillSurface {
+    pub id: String,
     pub path: PathBuf,
     pub sha256: String,
 }
@@ -287,6 +346,9 @@ pub struct ActivityBarContribution {
     pub scripts: Vec<ManagedAsset>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skill: Option<String>,
+    pub dependency_evidence_schema: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<PluginSurfaceRef>,
     pub order: i32,
 }
 
@@ -337,6 +399,8 @@ pub struct CapabilityBinding {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp: Option<McpSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<McpServerProjection>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<SkillSurface>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flows: Vec<FlowSurface>,
@@ -362,6 +426,22 @@ fn validate_unique_tool_task_names(capabilities: &[CapabilityBinding]) -> UseRes
             return Err(UseError::new(
                 "use.capability.runtime_task_name_conflict",
                 "Two Runtime Tool Tasks resolve to the same host tool identity.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_mcp_server_names(capabilities: &[CapabilityBinding]) -> UseResult<()> {
+    let mut names = std::collections::BTreeSet::new();
+    for server in capabilities
+        .iter()
+        .flat_map(|capability| capability.mcp_servers.iter())
+    {
+        if !names.insert(server.server_name.as_str()) {
+            return Err(UseError::new(
+                "use.capability.mcp_name_conflict",
+                "Two MCP surfaces resolve to the same host server identity.",
             ));
         }
     }
@@ -410,7 +490,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
         let diagnostic = a3s_use_browser::doctor();
         let skill = crate::browser_driver::primary_skill_surface().await;
         let (package_root, skills) = match skill {
-            Some((root, path)) => (Some(root), vec![skill_surface(path).await?]),
+            Some((root, path)) => (Some(root), vec![skill_surface("browser", path).await?]),
             None => (None, Vec::new()),
         };
         Ok(CapabilityBinding {
@@ -432,6 +512,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
                 target: "browser".to_string(),
                 transport: McpTransport::Stdio,
             }),
+            mcp_servers: Vec::new(),
             skills,
             flows: Vec::new(),
             knowledge: Vec::new(),
@@ -457,6 +538,7 @@ async fn browser_capability() -> UseResult<CapabilityBinding> {
             repository: None,
             surfaces: Vec::new(),
             mcp: None,
+            mcp_servers: Vec::new(),
             skills: Vec::new(),
             flows: Vec::new(),
             knowledge: Vec::new(),
@@ -472,7 +554,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
         let diagnostic = crate::ocr_builtin::diagnostic();
         let skill = crate::ocr_builtin::primary_skill_surface().await;
         let (package_root, skills) = match skill {
-            Some((root, path)) => (Some(root), vec![skill_surface(path).await?]),
+            Some((root, path)) => (Some(root), vec![skill_surface("ocr", path).await?]),
             None => (None, Vec::new()),
         };
         let mut surfaces = vec!["cli".to_string()];
@@ -503,6 +585,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             }),
             #[cfg(not(feature = "mcp"))]
             mcp: None,
+            mcp_servers: Vec::new(),
             skills,
             flows: Vec::new(),
             knowledge: Vec::new(),
@@ -528,6 +611,7 @@ async fn ocr_capability() -> UseResult<CapabilityBinding> {
             repository: None,
             surfaces: Vec::new(),
             mcp: None,
+            mcp_servers: Vec::new(),
             skills: Vec::new(),
             flows: Vec::new(),
             knowledge: Vec::new(),
@@ -555,6 +639,7 @@ fn box_capability() -> CapabilityBinding {
         repository: None,
         surfaces: vec!["cli".to_string()],
         mcp: None,
+        mcp_servers: Vec::new(),
         skills: Vec::new(),
         flows: Vec::new(),
         knowledge: Vec::new(),
@@ -574,7 +659,7 @@ fn revision(capabilities: &[CapabilityBinding]) -> UseResult<String> {
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-async fn skill_surface(path: PathBuf) -> UseResult<SkillSurface> {
+async fn skill_surface(id: &str, path: PathBuf) -> UseResult<SkillSurface> {
     let metadata = tokio::fs::symlink_metadata(&path)
         .await
         .map_err(|error| skill_io_error("inspect", &path, error))?;
@@ -605,6 +690,7 @@ async fn skill_surface(path: PathBuf) -> UseResult<SkillSurface> {
     }
 
     Ok(SkillSurface {
+        id: id.to_owned(),
         path,
         sha256: format!("{:x}", digest.finalize()),
     })
@@ -812,10 +898,17 @@ async fn project_extension(
         &scope,
     )
     .await?;
+    let mcp_evidence = mcp_evidence_from_store(
+        extension,
+        &RuntimeBindingStore::from_extension_paths(paths),
+        &scope,
+    )
+    .await?;
     let mut host_observations = flow_observations;
     for (surface, state) in runtime_task_evidence
         .observations
         .into_iter()
+        .chain(mcp_evidence.observations)
         .chain(knowledge_evidence.failures)
     {
         if host_observations.insert(surface, state).is_some() {
@@ -832,6 +925,7 @@ async fn project_extension(
         &host_observations,
         &knowledge_evidence.bindings,
         &runtime_task_evidence.projections,
+        &mcp_evidence.projections,
     )
     .await
 }
@@ -850,6 +944,7 @@ async fn project_extension_for_host(
         &SurfaceObservations::new(),
         &[],
         &[],
+        &[],
     )
     .await
 }
@@ -862,6 +957,7 @@ async fn project_extension_for_host_with_flow_observations(
     host_observations: &SurfaceObservations,
     knowledge_bindings: &[OkfKnowledgeBinding],
     runtime_tasks: &[ToolTaskProjection],
+    mcp_projections: &[McpServerProjection],
 ) -> UseResult<CapabilityBinding> {
     let receipt = &extension.receipt;
     let compatible = extension.supports_use_version(host_version);
@@ -901,12 +997,14 @@ async fn project_extension_for_host_with_flow_observations(
         | PluginObservedState::Removed => Readiness::Unknown,
     };
     let mcp = None;
+    let mut mcp_servers = Vec::new();
     let mut skills = Vec::new();
     if active {
         let snapshot = reconciliation.as_ref().expect("reconciliation is present");
         for skill in &extension.manifest.skills {
             if snapshot.publishes(PluginSurfaceKind::Skill, &skill.id) {
-                skills.push(skill_surface(receipt.package_root.join(&skill.path)).await?);
+                skills
+                    .push(skill_surface(&skill.id, receipt.package_root.join(&skill.path)).await?);
             }
         }
     }
@@ -914,7 +1012,18 @@ async fn project_extension_for_host_with_flow_observations(
     let mut flows = Vec::new();
     let mut knowledge = Vec::new();
     let mut tool_tasks = Vec::new();
+    let surface_graph = if active {
+        extension.manifest.plugin_surfaces()?
+    } else {
+        Vec::new()
+    };
     if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
+        mcp_servers.extend(
+            mcp_projections
+                .iter()
+                .filter(|projection| snapshot.publishes(PluginSurfaceKind::Mcp, &projection.id))
+                .cloned(),
+        );
         tool_tasks.extend(
             runtime_tasks
                 .iter()
@@ -957,6 +1066,23 @@ async fn project_extension_for_host_with_flow_observations(
             if !snapshot.publishes(PluginSurfaceKind::Ui, &surface.id) {
                 continue;
             }
+            let dependencies = surface_graph
+                .iter()
+                .find(|candidate| {
+                    candidate.surface.kind == PluginSurfaceKind::Ui
+                        && candidate.surface.id == surface.id
+                })
+                .ok_or_else(|| {
+                    UseError::new(
+                        "use.capability.surface_graph_inconsistent",
+                        format!(
+                            "Published UI surface '{}' is missing from the canonical package surface graph.",
+                            surface.id
+                        ),
+                    )
+                })?
+                .dependencies
+                .clone();
             let mut styles = Vec::with_capacity(surface.styles.len());
             for path in &surface.styles {
                 styles.push(activity_asset(receipt.package_root.join(path), "text/css").await?);
@@ -977,6 +1103,8 @@ async fn project_extension_for_host_with_flow_observations(
                 styles,
                 scripts,
                 skill: surface.skill.clone(),
+                dependency_evidence_schema: UI_DEPENDENCY_EVIDENCE_SCHEMA.to_owned(),
+                dependencies,
                 order: surface.order,
             });
         }
@@ -1004,6 +1132,7 @@ async fn project_extension_for_host_with_flow_observations(
             }),
         surfaces,
         mcp,
+        mcp_servers,
         skills,
         flows,
         knowledge,
@@ -1038,11 +1167,16 @@ async fn surface_observations(
             .okf
             .iter()
             .any(|okf| okf.id == surface.id),
+        PluginSurfaceKind::Mcp => !extension
+            .manifest
+            .mcp_servers
+            .iter()
+            .any(|mcp| mcp.id == surface.id),
         _ => true,
     }) {
         return Err(UseError::new(
             "use.capability.host_observation_invalid",
-            "Production host observations must reference only their admitted Flow or OKF surfaces.",
+            "Production host observations must reference only their admitted Flow, Runtime Tool, MCP, or OKF surfaces.",
         ));
     }
     if !inspect_enabled_surfaces {
@@ -1540,9 +1674,9 @@ extension "acme/workflow" {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("SKILL.md");
         tokio::fs::write(&path, b"first").await.unwrap();
-        let first = skill_surface(path.clone()).await.unwrap();
+        let first = skill_surface("guide", path.clone()).await.unwrap();
         tokio::fs::write(&path, b"second").await.unwrap();
-        let second = skill_surface(path).await.unwrap();
+        let second = skill_surface("guide", path).await.unwrap();
         assert_ne!(first.sha256, second.sha256);
 
         let mut capability = box_capability();
@@ -1554,7 +1688,8 @@ extension "acme/workflow" {
     }
 
     #[tokio::test]
-    async fn activity_asset_content_is_integrity_bound_to_the_registry_revision() {
+    async fn activity_asset_content_and_dependencies_are_integrity_bound_to_the_registry_revision()
+    {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("activity.html");
         tokio::fs::write(&path, b"<main>first</main>")
@@ -1577,12 +1712,21 @@ extension "acme/workflow" {
             styles: Vec::new(),
             scripts: Vec::new(),
             skill: Some("science".to_string()),
+            dependency_evidence_schema: UI_DEPENDENCY_EVIDENCE_SCHEMA.to_owned(),
+            dependencies: vec![PluginSurfaceRef {
+                kind: a3s_use_core::PluginSurfaceKind::Skill,
+                id: "science".to_string(),
+            }],
             order: 120,
         }];
         let first_revision = revision(&[capability.clone()]).unwrap();
         capability.activity_bar[0].entry = second;
-        let second_revision = revision(&[capability]).unwrap();
+        let second_revision = revision(&[capability.clone()]).unwrap();
         assert_ne!(first_revision, second_revision);
+
+        capability.activity_bar[0].dependencies[0].id = "science-v2".to_string();
+        let dependency_revision = revision(&[capability]).unwrap();
+        assert_ne!(second_revision, dependency_revision);
     }
 
     #[cfg(feature = "extensions")]
@@ -1658,6 +1802,7 @@ extension "acme/workflow" {
             &SurfaceObservations::new(),
             &evidence.bindings,
             &[],
+            &[],
         )
         .await
         .unwrap();
@@ -1711,6 +1856,7 @@ extension "acme/workflow" {
         assert!(binding.enabled);
         assert_eq!(binding.readiness, Readiness::Ready);
         assert_eq!(binding.skills.len(), 1);
+        assert_eq!(binding.skills[0].id, "guide");
         assert_eq!(binding.skills[0].path, path);
         assert_eq!(binding.skills[0].sha256.len(), 64);
         assert_eq!(binding.lifecycle_generation, Some(7));
@@ -1779,6 +1925,17 @@ extension "acme/workflow" {
         assert_eq!(review.icon, "flask-conical");
         assert_eq!(review.order, 80);
         assert_eq!(review.skill.as_deref(), Some("guide"));
+        assert_eq!(
+            review.dependency_evidence_schema,
+            UI_DEPENDENCY_EVIDENCE_SCHEMA
+        );
+        assert_eq!(
+            review.dependencies,
+            vec![PluginSurfaceRef {
+                kind: PluginSurfaceKind::Skill,
+                id: "guide".to_string(),
+            }]
+        );
         assert_eq!(review.entry.media_type, "text/html");
         assert_eq!(review.styles[0].media_type, "text/css");
         assert_eq!(review.scripts[0].media_type, "text/javascript");
@@ -1792,6 +1949,7 @@ extension "acme/workflow" {
         assert_eq!(standalone.icon, "package");
         assert_eq!(standalone.order, 100);
         assert!(standalone.skill.is_none());
+        assert!(standalone.dependencies.is_empty());
         assert!(binding
             .reconciliation
             .as_ref()
@@ -1854,6 +2012,7 @@ extension "acme/workflow" {
             surfaces,
             "0.3.0",
             &flow_observations,
+            &[],
             &[],
             &[],
         )
@@ -2029,6 +2188,7 @@ extension "acme/workflow" {
                 .collect(),
             "0.3.0",
             &flow_observations,
+            &[],
             &[],
             &[],
         )

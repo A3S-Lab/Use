@@ -1,0 +1,54 @@
+extension "acme/mhs-bridge" {
+  schema_version = 3
+  version        = "0.1.0"
+  route          = "mhs-bridge"
+  requires_use   = ">=0.3.0, <0.4.0"
+  actions        = ["read", "execute"]
+
+  repository {
+    url      = "https://github.com/acme/mhs-bridge"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+  }
+
+  mcp "fleet" {
+    transport  = "streamable-http"
+    release    = "releases/mhs-gateway-v1.json"
+    activation = "eager"
+    optional   = false
+  }
+
+  flow "monitor" {
+    engine        = "a3s-flow"
+    runtime       = "native-ts"
+    source        = "flows/monitor.ts"
+    export        = "run"
+    requires_tool = []
+    requires_mcp  = ["fleet"]
+    requires_okf  = []
+    optional      = false
+  }
+
+  skill "operator" {
+    path          = "skills/operator/SKILL.md"
+    requires_tool = []
+    requires_mcp  = ["fleet"]
+    requires_okf  = []
+    requires_flow = ["monitor"]
+    optional      = false
+  }
+
+  ui "devices" {
+    title       = "MHS Devices"
+    description = "Host-observed MHS fleet readiness"
+    icon        = "flask-conical"
+    order       = 90
+    entry       = "ui/devices/index.html"
+    styles      = ["ui/devices/index.css"]
+    scripts     = ["ui/devices/index.js"]
+    skill       = "operator"
+    bind_tool   = []
+    bind_mcp    = ["fleet"]
+    bind_flow   = ["monitor"]
+    optional    = false
+  }
+}
