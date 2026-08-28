@@ -57,6 +57,10 @@ The implementation and fixtures exercise the product model directly:
 
 - [`plugin-v3-cognitive`](crates/extension/fixtures/packages/plugin-v3-cognitive/)
   is a content-addressed package containing all six surface kinds.
+- [`plugin-v3-mhs-bridge`](crates/extension/fixtures/packages/plugin-v3-mhs-bridge/)
+  proves that a hardware adapter reuses the standard MCP, Flow, Skill, and UI
+  graph, remains unpublished without its exact managed gateway binding, and
+  requires no MHS-specific package surface.
 - [`PluginPackageResolver`](crates/core/src/plugin/package_resolution.rs)
   resolves bounded SemVer closures and rejects cycles, incompatible releases,
   and cross-Registry ambiguity.
@@ -288,9 +292,19 @@ a Run scope while Use lifecycle retirement waits for accepted work to drain.
 Dropping it only releases synchronous route locks; asynchronous cleanup remains
 explicitly owned by the Use lifecycle coordinator.
 
-The existing `capability snapshot --json` schema v2 remains byte-compatible;
-the in-process cursor is deliberately not appended to that independently
-released CLI schema.
+The existing `capability snapshot --json` schema v2 remains the outer CLI
+envelope; the in-process cursor is deliberately not appended to that
+independently released schema. Additive managed-MCP, Skill identity, and UI
+dependency fields are explicit. Each extension MCP surface keeps its canonical
+ID and multiplicity, a collision-resistant host server name, activation,
+package/manifest/generation identity, reviewed file-evidence digest, and one
+transport-specific launch projection. Stdio projections contain only a
+package-relative executable and bounded arguments. Streamable HTTP projections
+contain only a package-relative release, opaque endpoint reference/path, and
+exact Runtime/Gateway readiness digests; resolved URLs and credentials never
+enter the snapshot. Every UI contribution carries
+`a3s.use.ui-dependency-evidence.v1` so an empty dependency list is distinguishable
+from an older host that did not publish dependency evidence.
 
 The standalone CLI currently exposes package-graph lifecycle, diagnostics,
 capability observation, built-in Browser/OCR routes, cited OKF search, and
@@ -322,8 +336,8 @@ a3s-use knowledge restore <path> --plan-digest <sha256> --yes [--scope-kind <use
 a3s-use knowledge restore-status [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use knowledge repair-search-index --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
 a3s-use registry source list [--json]
-a3s-use registry source add <name> --url <https-url> --trust-root <sha256> [source options] [--json]
-a3s-use registry source replace <name> --url <https-url> --trust-root <sha256> --expected-revision <sha256> --yes [source options] [--json]
+a3s-use registry source add <name> (--url <https-url> | --github <owner/repository>) --trust-root <sha256> [source options] [--json]
+a3s-use registry source replace <name> (--url <https-url> | --github <owner/repository>) --trust-root <sha256> --expected-revision <sha256> --yes [source options] [--json]
 a3s-use registry source default|enable|disable|remove <name> --expected-revision <sha256> --yes [--json]
 a3s-use registry cache usage [--registry-name <name>] [--json]
 a3s-use registry cache prune [--registry-name <name>] [cache options] --yes [--json]
@@ -534,6 +548,24 @@ a3s-use registry source add packages \
   --trust-root sha256:<64-hex-digits> \
   --json
 ```
+
+A GitHub repository can be used as a Homebrew-tap-like authoring and static
+distribution source without making Git history a trust root:
+
+```bash
+a3s-use registry source add official \
+  --github A3S-Lab/Use-Registry \
+  --trust-root sha256:<64-hex-digits> \
+  --json
+```
+
+The shorthand resolves to
+`https://raw.githubusercontent.com/<owner>/<repository>/main/registry/`.
+`--github-ref` and `--github-path` may select a canonical tag/branch name and
+repository subtree. They are address inputs only: the caller-pinned TUF root,
+signed catalog-v3 metadata, archive hashes, reviewed plan, and Grant remain the
+installation and activation authorities. A3S Use never clones or executes the
+repository checkout.
 
 `--trusted-root /absolute/path/root.json` additionally imports an exact
 digest-matching root into the managed, content-addressed trust-root store.
@@ -783,8 +815,8 @@ extension "acme/research" {
 | MCP | Package-local stdio server or digest-pinned HTTP release | Signed stdio launcher plus the native provider, or Runtime/Gateway readiness |
 | OKF | Open Knowledge Format concept graph | Knowledge host stage, promotion, observation, and cited retrieval |
 | A3S Flow | TypeScript workflow source with explicit surface edges | `a3s-flow` preflight and exact compiled binding |
-| Skill | Content-bound `SKILL.md` plus supporting files | Static projection after required dependencies are ready |
-| UI | Integrity-bound static entry point | The lifecycle validates the entry and exact asset digests, publishes only complete dependency evidence, and clears receipt-owned projections on removal. Sandboxing, rendering, state, and backend bindings remain host-owned |
+| Skill | Canonical surface ID plus content-bound `SKILL.md` and supporting files | Static projection after required dependencies are ready; hosts keep the manifest ID distinct from presentation metadata parsed from the document |
+| UI | Integrity-bound static entry point | The lifecycle validates the entry and exact asset digests, projects the canonical sorted Skill/Tool/MCP/Flow dependency set with a versioned completeness marker, publishes only complete dependency evidence, and clears receipt-owned projections on removal. Sandboxing, rendering, state, and backend bindings remain host-owned |
 
 Surfaces are selectable for projection, but they are not independently
 installed, upgraded, or removed outside their owning package generation.
@@ -1037,7 +1069,9 @@ rolls package and Grant candidates back together.
 
 See [Plugin Platform Architecture](docs/plugin-platform-architecture.md),
 [Lifecycle and Security](docs/plugin-platform-lifecycle-and-security.md), and
-[ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md).
+[ADR-002](docs/adr-002-cognitive-package-lifecycle-saga.md). The research-preview
+[MHS integration profile](docs/mhs-integration.md) defines the hardware adapter
+boundary without adding another package surface or protocol fork.
 
 ## Current contract baseline
 
@@ -1097,6 +1131,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Area | Status |
 | --- | --- |
 | Six-surface ACL package contract | Implemented and fixture-backed |
+| MHS research-preview adapter profile | The A3S Use boundary, least-authority ceiling, exact managed-MCP publication gate, dependency graph, and no-implicit-write-retry rule are documented and contract-tested. This is not an MHS implementation or protocol-conformance claim |
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Verified target cache, explicit offline install/upgrade, bounded retention, resumable downloads, usage, and confirmed GC | Implemented with interruption, range, tamper, and zero-network tests |
@@ -1200,6 +1235,7 @@ the default human-authored configuration format.
 - [Plugin contract reference](docs/plugin-contracts.md)
 - [Plugin platform architecture](docs/plugin-platform-architecture.md)
 - [Lifecycle and security](docs/plugin-platform-lifecycle-and-security.md)
+- [Model Hardware Standard integration profile](docs/mhs-integration.md)
 - [Development plan](docs/plugin-platform-development-plan.md)
 - [Verified release installation](docs/release-installation.md)
 - [Release descriptors](docs/release-descriptors.md)

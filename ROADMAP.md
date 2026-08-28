@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-25
+Last updated: 2026-08-28
 
 ## Product status
 
@@ -14,9 +14,10 @@ chain, recovery, and operational gates in this document.
 
 ## Product outcome
 
-A3S Use will be the AI Native Package Manager for A3S hosts on Linux, macOS,
-and Windows. It must install platform-native capabilities and versioned
-cognitive packages whose dependency graph can contribute:
+A3S Use will be the AI Native Package Manager for arbitrary coding agents and
+A3S hosts on Linux, macOS, and Windows. It must install platform-native
+capabilities and versioned cognitive packages whose dependency graph can
+contribute:
 
 - Tool Tasks and Services;
 - standard MCP servers;
@@ -31,8 +32,11 @@ publishes one capability generation, and retires unused generations in reverse.
 
 ## Product decisions
 
-1. **The package is the lifecycle unit.** A surface cannot be installed,
-   upgraded, enabled, disabled, or removed independently of its owning package.
+1. **The package is the lifecycle unit; the scoped installation is the
+   consistency unit.** A surface cannot be installed, upgraded, enabled,
+   disabled, or removed independently of its owning package. A graph mutation
+   commits one complete scoped installation generation, never a collection of
+   independently authoritative root-package graphs.
 2. **There is one current cognitive-package format.** Manifest v3, catalog v3,
    receipt v4, plan v4, host protocol v6, managed scope v2, manager toolset v4,
    pending graph v4, pre-lock resolution attempt/diagnostic v1, pre-plan
@@ -60,6 +64,288 @@ publishes one capability generation, and retires unused generations in reverse.
 10. **Hosts own providers and UX.** Runtime, Gateway, Flow, Knowledge, Code,
     Web, and OS inject their typed providers; Use never hides missing ownership
     with native or source-only fallback.
+11. **Hardware adapters reuse MCP.** The MHS research-preview profile adds no
+    package surface or private protocol. Use owns package trust and exact
+    publication evidence; the hardware control gateway and device safety layer
+    own physical authorization, interlocks, and ambiguous-operation
+    reconciliation.
+12. **Artifacts are global; authority is scoped.** Immutable content-addressed
+    bytes may be deduplicated globally, but package selection, dependency
+    ownership, enablement, Grants, provider bindings, and capability
+    publication belong to an explicit User or Workspace installation.
+13. **Agents consume capabilities, not host paths.** The portable agent
+    contract is standard MCP plus opaque invocation, artifact, and endpoint
+    references. Local executable paths, package roots, credentials, and
+    provider internals are never part of the external capability contract.
+14. **Management and consumption are separate trust planes.** The Package
+    Manager MCP endpoint performs privileged reviewed lifecycle operations.
+    The Capability MCP Gateway exposes only the capabilities authorized for a
+    consumer and holds exact-generation leases on the consumer's behalf.
+15. **Use-owned mutable authority is transactional.** ACL remains the product
+    configuration format and immutable artifacts remain files, but related
+    installation, operation, Grant, enablement, and publication state commits
+    through one transactional Control Store. Sagas remain only around external
+    provider effects that cannot join that transaction.
+16. **The official package feed is a Registry deployment.** Its target name is
+    `A3S-Lab/Use-Registry`, with root submodule path `use-registry/`.
+    `a3s-use` owns Registry formats and tooling; the Registry repository owns
+    reviewed admission data, signed TUF metadata, and immutable published
+    targets. Package source remains in each owning repository.
+
+## Architecture convergence program
+
+Status: release-critical, planned from the 2026-08-28 first-principles review.
+
+The current implementation has strong artifact verification, reviewed plans,
+immutable generations, drain, and crash-replay foundations. It is not yet the
+target architecture: graph mutations are not serializable across different
+roots, installation authority is only partly scoped, and a non-A3S agent
+cannot consume an exact leased capability without learning local execution
+details. A checked item elsewhere in this roadmap is implementation evidence;
+it does not waive the convergence gates below.
+
+### Target responsibility model
+
+| Boundary | Sole responsibility |
+| --- | --- |
+| Catalog Source | Locate TUF metadata and targets; a Git or GitHub address is transport shorthand, never trust authority. |
+| Artifact Store | Retain verified immutable bytes by digest and deduplicate them globally; it owns no installation or activation authority. |
+| Installation Snapshot | Atomically describe one scope generation: requested roots, resolved packages, dependency edges, selected artifacts, enablement, and publication intent. |
+| Control Store | Serialize and transact Use-owned mutable authority, operation records, checkpoints, and materialized capability generations. |
+| Provider Set | Apply typed Runtime, Gateway, Flow, Knowledge, UI, Web, and OS effects through explicit ports. |
+| Capability Index | Materialize an immutable, scope-specific projection only after lifecycle cutover. |
+| Capability MCP Gateway | Present portable discovery and invocation to arbitrary agents while the Use Host owns exact-generation leases. |
+| Package Manager MCP | Present privileged planning, review, apply, observation, cancellation, and diagnostics to an authorized operator or host. |
+
+Canonical authority keys are explicit:
+
+- installation: `(scope_kind, scope_id)`;
+- installed package: `(installation, package_id, package_generation)`;
+- capability: `(installed_package, surface_kind, surface_id)`; and
+- invocation: an opaque, expiring host reference bound to the exact capability
+  generation and consumer context.
+
+`Package`, `CatalogSource`, `ArtifactStore`, `Installation`, `CapabilityIndex`,
+and `Provider` are the preferred architecture terms. `Plugin`, `Extension`,
+and `Registry` type names with older meanings are removed at the next contract
+cutover instead of being preserved as parallel abstractions.
+
+### Dependency order
+
+```text
+A0 mutation correctness -> A1 scoped installation -> A2 transactional control
+                             |                         `-> A3 agent capability gateway
+                             `--------------------------> A4 provider boundary cleanup
+A0 mutation correctness ------------------------------> A5 official Registry
+A3 agent gateway + A4 provider boundary + A5 Registry -> A6 MHS qualification
+```
+
+Work may proceed in parallel only where this graph permits it. In particular,
+new surfaces, package types, or host-specific integrations do not take priority
+over A0 through A3.
+
+### A0 - Make graph mutation serializable
+
+- [ ] Add a deterministic barrier-based regression for the shared-dependency
+  race: with `Y -> D` installed, one operation plans removing `Y` and `D`
+  while another plans installing `X -> D`; no interleaving may publish `X`
+  with `D` absent.
+- [ ] Introduce one cross-process installation mutation lease. Use a
+  conservative global lease until A1 exists, then key it by
+  `(scope_kind, scope_id)`. Install, upgrade, uninstall, enable, and disable
+  are exclusive writers within that domain.
+- [ ] Bind every reviewed mutation to the expected complete installation
+  generation and make lifecycle publication an exact compare-and-swap from
+  installation generation `G` to `G + 1`.
+- [ ] After acquiring the mutation lease, revalidate the complete requested
+  root set, resolved closure, dependency ownership, selected artifacts, and
+  expected publication generation. A stale plan fails without provider or
+  filesystem effects.
+- [ ] Validate live dependents in every retirement branch, including nodes
+  previously classified as retained, before hiding a route or deleting bytes.
+- [ ] Advertise exclusive managed-scope mutation in host capabilities only
+  when the active coordinator actually enforces it.
+- [ ] Add multi-process stress and crash-replay tests for different roots with
+  shared dependencies on Linux, macOS, and Windows.
+
+Exit gate: every accepted graph operation has one serial order, and no stale
+plan can publish a graph whose dependency closure is incomplete.
+
+### A1 - Make the scoped installation the authority
+
+- [ ] Define `InstallationSnapshot` as the single source of truth for one
+  explicit User or Workspace scope and monotonically increasing generation.
+  It contains the desired root set and one resolved graph, rather than one
+  authoritative graph file per root package.
+- [ ] Keep verified archives in a global content-addressed Artifact Store, but
+  move selections, receipts, routes, enablement, Grants, provider bindings,
+  and capability publication under an `InstallationId`.
+- [ ] Require scope in extension paths, receipts, routes, snapshots, and every
+  `CapabilityRegistry` constructor. Remove implicit `User/current` projection.
+- [ ] Make the same package independently selectable at different versions in
+  User and Workspace installations while safely sharing identical artifact
+  bytes.
+- [ ] Replace route strings as identity with the canonical keys above. Routes
+  remain optional display or CLI aliases and may not carry ownership.
+- [ ] Freeze the new contract versions together. Because Use is pre-release,
+  reject superseded disk state with a documented clean-reinstall procedure
+  instead of maintaining a second live authority model.
+- [ ] Prove apply, restart, snapshot, leased invocation, upgrade, and uninstall
+  for the same package in two scopes, including identical textual scope IDs
+  with different scope kinds.
+
+Exit gate: all lifecycle, authorization, and capability queries can be answered
+from one exact scoped installation generation plus immutable artifact evidence.
+
+### A2 - Consolidate mutable authority in a Control Store
+
+- [ ] Introduce a typed `ControlStore` interface with an initial SQLite/WAL
+  backend for Use-owned mutable metadata. Keep ACL configuration and immutable
+  package, backup, and projection payloads outside the database.
+- [ ] Commit installation generations, reviewed-operation state, lifecycle
+  checkpoints, Grants, enablement, provider-binding identity, and capability
+  generation metadata in explicit transactions with foreign-key and generation
+  constraints.
+- [ ] Use an outbox/checkpoint boundary for provider effects. Never hold a
+  database transaction across Runtime, Gateway, Flow, filesystem, network, or
+  device I/O; reconcile idempotent, rejected, and unknown outcomes explicitly.
+- [ ] Derive backup/restore inventory from the Control Store schema and
+  registered external payload owners instead of maintaining a second manual
+  allowlist that can drift from the state model.
+- [ ] Provide deterministic export, offline verification, restore, corruption
+  diagnostics, and clean-state initialization tests for the new store.
+- [ ] Keep async callers non-blocking through an async database driver or a
+  bounded dedicated store executor.
+
+Exit gate: a process failure cannot expose a combination of graph, Grant,
+enablement, operation, and capability metadata that never committed together.
+
+### A3 - Deliver the arbitrary-agent capability plane
+
+- [ ] Ship two standard MCP service entry points: a privileged Package Manager
+  endpoint and a lower-authority Capability Gateway endpoint. Do not introduce
+  a private Use JSON-RPC protocol.
+- [ ] Define portable `CapabilityDescriptor` contracts with opaque
+  `InvocationRef`, `ArtifactRef`, and `EndpointRef` values. Remove executable
+  paths, package roots, provider release paths, and secrets from external JSON.
+- [ ] Let the Use Host resolve an invocation reference and retain the exact
+  package-generation lease for the entire call, stream, or server connection;
+  drain and retirement operate on those server-side leases.
+- [ ] Define consumer profiles. Generic coding agents receive MCP tools,
+  resources, and prompts; A3S consumers may negotiate additional Flow, UI, and
+  Knowledge metadata without changing the universal contract.
+- [ ] Require signed descriptions and JSON input/output schemas for every
+  agent-visible Tool. Legacy executable-only Tool Tasks remain host-only until
+  a schema-valid descriptor is bound to them.
+- [ ] Materialize one immutable Capability Index at lifecycle cutover and emit
+  generation-change notifications. Remove fixed-interval full filesystem
+  rescans and repeated asset hashing from the normal watch path.
+- [ ] Add CLI/service wiring, fail-closed trusted confirmation for management
+  apply, bounded authentication, authorization, rate limits, and secret-free
+  diagnostics for both endpoints.
+- [ ] Prove one-endpoint discovery and invocation from independent Rust,
+  TypeScript, and Python clients, including a container or remote client with
+  no shared package filesystem. Cover install, live upgrade, prior-generation
+  drain, uninstall, restart, and denied cross-scope access.
+
+Exit gate: an arbitrary MCP-capable coding agent can discover and invoke an
+authorized package without an A3S SDK, local package path, or duplicated
+lifecycle implementation.
+
+### A4 - Invert providers and reduce facade coupling
+
+- [ ] Make the Use Engine own lifecycle coordination, journaling, retries, and
+  recovery. Factories inject a typed `ProviderSet` or lifecycle ports; they do
+  not construct and return concrete coordinators.
+- [ ] Negotiate the actual supported operations, surfaces, protocol versions,
+  concurrency guarantees, and provider readiness. Remove default trait methods
+  that make unsupported behavior appear supported.
+- [ ] Treat Browser, OCR, Box, Runtime, Flow, and UI integrations as provider
+  components or ordinary first-party packages. A bundled profile may install
+  them for convenience, but the universal engine and capability projection do
+  not hardcode their domains.
+- [ ] Split the current all-purpose capability binding into consumer catalog,
+  invocation binding, and operation diagnostic views so management evidence
+  and local provider details cannot leak into agent discovery.
+- [ ] Keep A3S Flow and UI as negotiated consumer extensions over the same
+  package generation; do not make A3S-specific surfaces mandatory for generic
+  agents.
+- [ ] Refactor along the target boundaries before creating more repositories:
+  contracts, catalog/artifacts, control store, engine, host/gateway, and
+  provider adapters. Split oversized files when responsibility moves; do not
+  add forwarding facades or duplicate registries.
+
+Exit gate: the core engine runs against deterministic in-memory providers, and
+each product host composes only the providers and consumer extensions it owns.
+
+### A5 - Build and operate the official Registry
+
+Decision: rename `A3S-Lab/Use-Packages` to `A3S-Lab/Use-Registry` before the
+first production bootstrap root is created. The current repository already
+contains admission material, `registry/` TUF state, immutable targets, and
+Registry verification; `Use-Packages` incorrectly suggests a package-source
+monorepo. The pre-initialization rename avoids creating a second trusted source
+identity later.
+
+- [ ] Rename the GitHub repository and root submodule path to `use-registry/`;
+  update `.gitmodules`, remotes, documentation, tests, CI, and examples in one
+  reviewed change. Do not compile the official URL into the resolver.
+- [ ] Treat any preview configuration using the old address as an explicit
+  source replacement: re-add the renamed source with its pinned bootstrap-root
+  digest. Do not silently turn a GitHub redirect into trust authority.
+- [ ] Keep package source, build logic, and releases in owning repositories
+  such as MHS. `Use-Registry` accepts reviewed admission records, immutable
+  release artifacts, provenance, SBOMs, and signed TUF publication state.
+- [ ] Add package-authoring commands for lint, deterministic build/pack,
+  manifest and expanded-content digesting, permission review, provenance
+  verification, and isolated install tests. These formats and commands are
+  versioned by `a3s-use`, not reimplemented by the Registry repository.
+- [ ] Add Registry assembly and verification commands that preserve canonical
+  catalog metadata, validate the complete staged tree with a released client,
+  and produce a reviewable publication delta before signing.
+- [ ] Document and exercise offline threshold root custody, delegated targets,
+  online snapshot/timestamp custody, expiry monitoring, every-intermediate-root
+  rotation, emergency withdrawal, mirror replacement, and rollback recovery.
+- [ ] Publish staging and production channels through reviewed GitHub CI with
+  no signing key in the repository or package-manager client. Retain witness,
+  provenance, SBOM, and prior-generation recovery evidence outside the mutable
+  delivery boundary.
+
+Exit gate: a clean machine can add `A3S-Lab/Use-Registry` using an independently
+obtained root digest, inspect one exact reviewed plan, install offline from the
+verified cache, and recover or roll back using published operator procedures.
+
+### A6 - Qualify MHS as the reference hardware package
+
+- [ ] Keep MHS source in the `crates/mhs` submodule and publish only its signed
+  package artifacts and admission records through `Use-Registry`.
+- [ ] Express MHS through existing MCP, Flow, Skill, Knowledge, and optional UI
+  surfaces. Do not add a hardware-specific package surface or private protocol.
+- [ ] Keep the virtual industrial laboratory in its own repository. Its
+  simulator connects through the same MHS control-gateway contract used by
+  physical adapters and is test infrastructure, not Use runtime code.
+- [ ] Model read operations as safe observations and physical mutations as
+  explicitly authorized operations with idempotency evidence or an
+  `unknown-outcome` state. Never retry an ambiguous device mutation implicitly.
+- [ ] Prove least-authority Grants, gateway health, dependency publication,
+  exact-generation lease/drain, reconnect, and reconciliation against the
+  virtual laboratory before enabling any physical adapter profile.
+- [ ] Run the same signed package from a generic MCP client and A3S Code:
+  install, discover, observe, invoke a simulated mutation, interrupt/reconcile,
+  upgrade without mixed generations, uninstall, and verify no routes, Grants,
+  processes, or projections remain.
+- [ ] Keep the adapter labeled research preview until the external MHS profile
+  is stable and the package passes its published conformance and hardware
+  safety-gateway requirements.
+
+Exit gate: MHS demonstrates the complete Registry-to-agent capability path in
+the separate virtual laboratory without granting Use direct physical-device
+authority.
+
+The protocol table below describes the currently implemented preview. A1
+through A3 will intentionally supersede affected contracts in one coordinated
+cutover; version numbers are assigned only after their invariants and negative
+fixtures are frozen.
 
 ## Current protocol baseline
 
@@ -136,6 +422,9 @@ rejection. They are not supported decode paths.
   default, revision-bound confirmed authority changes, managed digest-bound
   root import, and source-identity-isolated TUF/cache datastores. Install and
   upgrade consume that same enabled set for cross-Registry dependencies.
+- [x] Accept a typed GitHub `owner/repository` Registry address with bounded
+  ref/path overrides while retaining the ordinary mandatory TUF bootstrap root;
+  never clone or execute Git repository content on the client.
 - [x] Support explicit zero-network install and upgrade from only unexpired,
   revalidated cached metadata and targets; reject missing or tampered evidence
   without implicit online-to-cache fallback.
@@ -207,6 +496,14 @@ rejection. They are not supported decode paths.
   stale-generation rejection, bounded output cleanup, and Registry lease drain.
 - [x] Capability snapshot v2 projection for exact scope/package/generation
   matched release-backed Runtime Tool Task bindings.
+- [x] Capability snapshot v2 projection for every exact extension MCP surface,
+  preserving canonical IDs, collision-resistant host names, activation,
+  package/file identity, bounded package-local stdio launch evidence, and
+  credential-free managed HTTP binding evidence.
+- [x] Research-preview MHS adapter profile and fixture using only MCP, Flow,
+  Skill, and UI surfaces, with a canonical least-authority permission ceiling,
+  fail-closed gateway/dependency publication, and explicit unknown-outcome
+  semantics for physical mutations. This does not claim MHS conformance.
 - [x] Workspace Grant proposal/change/resolution/ceiling binding.
 - [x] Candidate Grant persistence before prepare, cutover checkpointing,
   drain-before-revoke, and joint pre-cutover rollback.
@@ -532,8 +829,10 @@ and failure-injection scenarios.
 
 Status: in progress
 
-- [ ] Publish and operate at least one documented Registry with root rotation,
-  expiry, mirror replacement, offline recovery, and incident procedures.
+- [ ] Initialize and operate `A3S-Lab/Use-Registry` as the documented official
+  Registry with root rotation, expiry, mirror replacement, offline recovery,
+  and incident procedures. Complete architecture track A5 before publishing
+  its first production bootstrap root.
 - [x] Provide durable Registry source add/list/replace/default/enable/disable/
   remove operations; preserve immutable receipts and identity-bound evidence
   across replacement and exact-provenance restoration.
@@ -647,15 +946,27 @@ and removed by an operator using only published artifacts and documentation.
 The first supported product release is blocked until all of the following are
 green:
 
-1. One reviewed Plugin Manager serves CLI, TUI, and agent management MCP.
-2. All six surfaces have production provider composition in declared hosts.
-3. Exact graph and Grant recovery passes failure injection at every checkpoint.
-4. Linux, macOS, and Windows pass the declared real-process matrix.
-5. Registry operations, signing, provenance, and release installation are
-   independently reproducible.
-6. Storage retention, repair, observability, incident response, and support
-   procedures are documented and exercised.
-7. Website and README examples pass against the release candidate.
+1. A0 proves serializable graph mutation and stale-generation rejection across
+   different roots with shared dependencies.
+2. A1 proves one authoritative installation generation for every explicit User
+   and Workspace scope, including independent selection of the same package.
+3. A2 proves atomic Use-owned control state and deterministic recovery around
+   every external provider-effect boundary.
+4. A3 lets an arbitrary MCP-capable agent discover and invoke capabilities
+   through opaque references and server-owned exact-generation leases.
+5. One reviewed Package Manager serves CLI, TUI, and management MCP, with a
+   distinct lower-authority Capability Gateway for agents.
+6. A4 composes all declared production providers without hardcoding
+   A3S-specific domains into the universal engine.
+7. Exact graph and Grant recovery passes failure injection at every checkpoint.
+8. Linux, macOS, and Windows pass the declared real-process matrix.
+9. A5 Registry operations, signing, provenance, and release installation are
+   independently reproducible from `A3S-Lab/Use-Registry`.
+10. Storage retention, repair, observability, incident response, and support
+    procedures are documented and exercised.
+11. A6 qualifies the signed MHS reference package against the separate virtual
+    laboratory without claiming physical-device conformance.
+12. Website and README examples pass against the release candidate.
 
 Until then, README and website copy must say **development preview** and must
 not advertise production readiness or a stable cognitive-package contract.
@@ -663,7 +974,10 @@ not advertise production readiness or a stable cognitive-package contract.
 ## Completion definition
 
 A3S Use is ready to publish only when a user can select a trusted Registry,
-review one exact plan, install a signed dependency graph, hot-use its six
-surface types in a supported host, recover from interruption without guessing,
-upgrade without exposing mixed generations, and uninstall without leaving
-routes, grants, processes, projections, or package-owned state behind.
+review one exact scoped-installation plan, and atomically install a signed
+dependency graph; and when an arbitrary MCP-capable coding agent can discover
+and invoke its authorized capabilities without learning host paths or holding
+lifecycle authority. The system must recover from interruption without
+guessing, upgrade without exposing mixed generations, and uninstall without
+leaving routes, Grants, leases, processes, projections, or package-owned state
+behind.
