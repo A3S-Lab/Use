@@ -202,7 +202,7 @@ pub struct OkfKnowledgeBackupRetentionResult {
 }
 
 pub(super) struct BackupDirectoryLock {
-    _file: File,
+    file: File,
 }
 
 impl BackupDirectoryLock {
@@ -255,7 +255,15 @@ impl BackupDirectoryLock {
             )
         })?;
         validate_directory(directory)?;
-        Ok(Self { _file: file })
+        Ok(Self { file })
+    }
+}
+
+impl Drop for BackupDirectoryLock {
+    fn drop(&mut self) {
+        // Close also releases advisory locks, but an explicit unlock makes the
+        // handoff deterministic before a following operation opens the file.
+        let _ = FileExt::unlock(&self.file);
     }
 }
 
