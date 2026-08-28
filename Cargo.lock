@@ -10,8 +10,9 @@ checksum = "d2dc4eb3b0dd1b11efa0ad9bf397c97fd1d16e3eb4f9ca43872df069560d0b69"
 
 [[package]]
 name = "a3s-flow"
-version = "1.0.0"
-source = "git+https://github.com/A3S-Lab/Flow.git?rev=9a4d41d6eb2d08074483ceac349b4727c5874edb#9a4d41d6eb2d08074483ceac349b4727c5874edb"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a15142002539afe73b8bbbc8ecd88b7c960ebe8695ad5cf967a1b6b71ab2e0fa"
 dependencies = [
  "async-trait",
  "chrono",
@@ -44,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "a3s-flow",
  "a3s-runtime",
@@ -119,7 +120,7 @@ dependencies = [
 
 [[package]]
 name = "a3s-use-extension"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "a3s-acl",
  "a3s-use-core",

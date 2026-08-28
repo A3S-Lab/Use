@@ -18,7 +18,10 @@ rust-version = "1.82"
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
-a3s-flow = { version = "=1.0.0", git = "https://github.com/A3S-Lab/Flow.git", rev = "9a4d41d6eb2d08074483ceac349b4727c5874edb" }
+# Keep the published facade on the same registry Flow release as
+# `a3s-code-core`; mixing exact 1.0.0 and 1.1.0 requirements makes Cargo's
+# registry graph unsatisfiable for consumers that enable `extensions`.
+a3s-flow = "=1.1.0"
 axum = "0.8"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
@@ -50,7 +53,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [package]
 name = "a3s-use"
-version = "0.3.3"
+version = "0.3.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -98,7 +101,7 @@ lightpanda = ["browser", "a3s-use-browser/lightpanda"]
 a3s-use-core = { version = "0.2.4", path = "crates/core" }
 a3s-use-browser = { version = "=0.3.2", git = "https://github.com/A3S-Lab/Browser", rev = "a4a270f9ca335ceee60c5d9e086ae05005fb7abf", optional = true }
 a3s-use-ocr = { version = "=0.3.2", git = "https://github.com/A3S-Lab/OCR", rev = "206552a74f87e39ff9c3735fe5018036b88fcab7", optional = true }
-a3s-use-extension = { version = "0.3.3", path = "crates/extension", optional = true }
+a3s-use-extension = { version = "0.3.4", path = "crates/extension", optional = true }
 a3s-runtime = { version = "=0.3.0", git = "https://github.com/A3S-Lab/Runtime", rev = "6a5546145a74c9f380a0d86c2490a144a22883f8", optional = true }
 a3s-flow = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
