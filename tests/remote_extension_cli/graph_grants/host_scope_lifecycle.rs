@@ -37,8 +37,9 @@ async fn host_manager_replays_the_full_lifecycle_for_each_scope_kind() {
         (PlanScopeKind::Workspace, "workspace"),
     ] {
         let home = temporary.path().join(format!("{label}-lifecycle-home"));
-        let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-        RegistrySourceStore::new(paths.clone())
+        let scope = lifecycle_scope(scope_kind);
+        let paths = managed_extension_paths(&home, &scope);
+        RegistrySourceStore::new(use_paths(&home))
             .add(RegistrySourceInput::new(
                 "fixture",
                 server.base_url(),
@@ -49,7 +50,6 @@ async fn host_manager_replays_the_full_lifecycle_for_each_scope_kind() {
             .await
             .unwrap();
 
-        let scope = lifecycle_scope(scope_kind);
         let host = lifecycle_host(&scope, paths.clone());
         let capabilities_digest = host
             .capabilities()

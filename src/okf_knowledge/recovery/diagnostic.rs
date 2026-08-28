@@ -98,7 +98,7 @@ impl OkfKnowledgeRestoreOperationDiagnostic {
     }
 
     pub fn validate(&self) -> UseResult<()> {
-        if !valid_machine_id(&self.scope.id)
+        if self.scope.validate().is_err()
             || !valid_sha256(&self.plan_digest)
             || self.backup_database_bytes == 0
             || self.backup_database_bytes > MAX_RESTORE_FILE_BYTES
@@ -144,7 +144,7 @@ pub struct OkfKnowledgeRestoreDiagnostic {
 impl OkfKnowledgeRestoreDiagnostic {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != OKF_KNOWLEDGE_RESTORE_DIAGNOSTIC_SCHEMA
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || self.retention_limit != MAX_RESTORE_OPERATIONS_PER_SCOPE
             || self.retained_operation_directories > self.retention_limit
             || self.operations.len() > self.retained_operation_directories
@@ -196,7 +196,7 @@ impl OkfKnowledgeRecoveryManager {
         &self,
         scope: &PlanScope,
     ) -> UseResult<OkfKnowledgeRestoreDiagnostic> {
-        if !valid_machine_id(&scope.id) {
+        if scope.validate().is_err() {
             return Err(diagnostic_error(
                 "The Knowledge restore diagnostic scope is invalid.",
             ));
@@ -266,16 +266,4 @@ fn unique_nonterminal(operations: &[RestoreOperation]) -> UseResult<Option<&Rest
 
 fn diagnostic_error(message: impl Into<String>) -> UseError {
     UseError::new("use.okf.knowledge_restore_diagnostic_invalid", message)
-}
-
-fn valid_machine_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 256
-        && value
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-        })
 }

@@ -29,13 +29,13 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let extension_registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
-    let authorization_count = Arc::new(AtomicUsize::new(0));
     let managed_scope = PlanScope {
         kind: PlanScopeKind::Workspace,
         id: MANAGED_SCOPE_ID.to_string(),
     };
+    let extension_registry =
+        ExtensionRegistry::new(extension_paths_for(&home, managed_scope.clone()));
+    let authorization_count = Arc::new(AtomicUsize::new(0));
     let manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         extension_registry.clone(),
         managed_scope.clone(),
@@ -47,7 +47,11 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     .unwrap();
     assert_eq!(manager.scope(), &managed_scope);
 
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(
+        &extension_paths_for(&home, managed_scope.clone())
+            .state_root()
+            .join("extensions/.registry.lock"),
+    );
     let interrupted = manager
         .install_remote(
             &registry,
@@ -64,30 +68,25 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     FileExt::unlock(&registry_lock).unwrap();
     drop(registry_lock);
 
-    let wrong_scope_manager = CognitivePackageManager::with_scope_lifecycle_and_authorization(
+    let wrong_scope = PlanScope {
+        kind: PlanScopeKind::User,
+        id: MANAGED_SCOPE_ID.to_string(),
+    };
+    let scope_error = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         extension_registry.clone(),
-        MANAGED_SCOPE_ID,
+        wrong_scope,
         Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(ConfirmAllPlans {
             authorization_count: authorization_count.clone(),
         }),
     )
-    .unwrap();
-    let scope_error = wrong_scope_manager
-        .install_remote(
-            &registry,
-            &[],
-            "acme/worker",
-            Some("1.0.0"),
-            PluginReleaseChannel::Stable,
-            None,
-        )
-        .await
-        .unwrap_err();
-    assert_eq!(scope_error.code, "use.plugin.package_graph_busy");
+    .unwrap_err();
+    assert_eq!(scope_error.code, "use.plugin.package_installation_mismatch");
     assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
 
-    let pending_path = home.join("state/operations/package-graphs/install/acme/worker.json");
+    let pending_path = extension_paths_for(&home, managed_scope.clone())
+        .state_root()
+        .join("operations/package-graphs/install/acme/worker.json");
     let pending_bytes = std::fs::read(&pending_path).unwrap();
     let pending: serde_json::Value = serde_json::from_slice(&pending_bytes).unwrap();
     assert_eq!(pending["envelope"]["plan"]["scope"]["kind"], "workspace");
@@ -194,7 +193,7 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     let first_state = install_plan.plan.packages[0].after.as_ref().unwrap();
     assert_granted(
         &home,
-        MANAGED_SCOPE_ID,
+        &managed_scope,
         &first_state.release.package_sha256,
         &first_state.permissions,
     )
@@ -266,10 +265,10 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     let transition = &upgrade_plan.plan.packages[0];
     let prior = transition.before.as_ref().unwrap();
     let candidate = transition.after.as_ref().unwrap();
-    assert_revoked(&home, MANAGED_SCOPE_ID, &prior.release.package_sha256).await;
+    assert_revoked(&home, &managed_scope, &prior.release.package_sha256).await;
     assert_granted(
         &home,
-        MANAGED_SCOPE_ID,
+        &managed_scope,
         &candidate.release.package_sha256,
         &candidate.permissions,
     )
@@ -293,7 +292,7 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     );
     assert_granted(
         &home,
-        MANAGED_SCOPE_ID,
+        &managed_scope,
         &candidate.release.package_sha256,
         &candidate.permissions,
     )
@@ -310,15 +309,16 @@ async fn permission_grants_follow_install_upgrade_uninstall_and_survive_replay()
     assert_eq!(uninstalled.plan, prepared_uninstall);
     assert_eq!(uninstalled.plan.plan.scope, managed_scope);
     assert_eq!(authorization_count.load(Ordering::SeqCst), 3);
-    assert_revoked(&home, MANAGED_SCOPE_ID, &candidate.release.package_sha256).await;
-    assert!(!home
-        .join("state/operations/package-graphs/install/acme/worker.json")
+    assert_revoked(&home, &managed_scope, &candidate.release.package_sha256).await;
+    let managed_state = extension_paths_for(&home, managed_scope.clone()).installation_state_root();
+    assert!(!managed_state
+        .join("operations/package-graphs/install/acme/worker.json")
         .exists());
-    assert!(!home
-        .join("state/operations/package-graphs/upgrade/acme/worker.json")
+    assert!(!managed_state
+        .join("operations/package-graphs/upgrade/acme/worker.json")
         .exists());
-    assert!(!home
-        .join("state/operations/package-graphs/uninstall/acme/worker.json")
+    assert!(!managed_state
+        .join("operations/package-graphs/uninstall/acme/worker.json")
         .exists());
 }
 
@@ -362,8 +362,7 @@ async fn permission_bearing_enablement_scenario() {
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let extension_registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let extension_registry = ExtensionRegistry::new(extension_paths(&home));
     let authorization_count = Arc::new(AtomicUsize::new(0));
     let manager = CognitivePackageManager::with_authorization(
         extension_registry.clone(),
@@ -407,7 +406,7 @@ async fn permission_bearing_enablement_scenario() {
     let catalog = installed.plan_ready_catalog().unwrap();
     let package_digest = catalog.record.package.sha256.clone().unwrap();
     let permissions = catalog.record.permission_ceiling.clone();
-    assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
+    assert_granted(&home, manager.scope(), &package_digest, &permissions).await;
 
     let state = manager.observe_package("acme/worker").await.unwrap();
     let request = CognitivePackageEnablementRequest::new(
@@ -445,7 +444,7 @@ async fn permission_bearing_enablement_scenario() {
             .receipt
             .enabled
     );
-    assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
+    assert_granted(&home, manager.scope(), &package_digest, &permissions).await;
 
     let confirmation_required = manager
         .apply_enablement(&request, planned_envelope.clone(), None)
@@ -464,12 +463,13 @@ async fn permission_bearing_enablement_scenario() {
             .receipt
             .enabled
     );
-    assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
+    assert_granted(&home, manager.scope(), &package_digest, &permissions).await;
     assert_eq!(authorization_count.load(Ordering::SeqCst), 1);
 
     let route_lock = exclusive_lock(
-        &home
-            .join("state/route-locks/acme/worker")
+        &extension_paths(&home)
+            .state_root()
+            .join("route-locks/acme/worker")
             .join(format!("{lifecycle_generation:020}.lock")),
     );
     let interrupted_manager = manager.clone();
@@ -492,7 +492,7 @@ async fn permission_bearing_enablement_scenario() {
             .await
     });
 
-    let grant_store = WorkspaceGrantStore::new(home.join("state"));
+    let grant_store = WorkspaceGrantStore::new(extension_paths(&home).installation_state_root());
     let mut reached_cutover_drain = false;
     let mut disable_cutover_generation = None;
     for _ in 0..500 {
@@ -523,7 +523,7 @@ async fn permission_bearing_enablement_scenario() {
         let outcome = interrupted.await;
         panic!("disable did not reach the cutover-before-drain checkpoint: {outcome:?}");
     }
-    assert_granted(&home, &manager.scope().id, &package_digest, &permissions).await;
+    assert_granted(&home, manager.scope(), &package_digest, &permissions).await;
     assert!(extension_registry
         .find_published_route("worker-v1")
         .await
@@ -567,7 +567,7 @@ async fn permission_bearing_enablement_scenario() {
         .unwrap()
         .pending_cutovers
         .is_empty());
-    assert_revoked(&home, &restarted.scope().id, &package_digest).await;
+    assert_revoked(&home, restarted.scope(), &package_digest).await;
     assert_eq!(
         grant_store
             .observe_change_set(&request.operation_id)
@@ -600,7 +600,7 @@ async fn permission_bearing_enablement_scenario() {
         prepared.installed_generations.get("acme/worker"),
         Some(&lifecycle_generation)
     );
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
     assert_eq!(
         apply_planned_enablement(&restarted, &enable)
             .await
@@ -623,7 +623,7 @@ async fn permission_bearing_enablement_scenario() {
         .await
         .unwrap()
         .is_none());
-    assert_granted(&home, &restarted.scope().id, &package_digest, &permissions).await;
+    assert_granted(&home, restarted.scope(), &package_digest, &permissions).await;
     FileExt::unlock(&registry_lock).unwrap();
     drop(registry_lock);
 
@@ -649,7 +649,7 @@ async fn permission_bearing_enablement_scenario() {
             .phase,
         WorkspaceGrantLifecyclePhase::Completed
     );
-    assert_granted(&home, &restarted.scope().id, &package_digest, &permissions).await;
+    assert_granted(&home, restarted.scope(), &package_digest, &permissions).await;
     assert!(extension_registry
         .find_published_route("worker-v1")
         .await

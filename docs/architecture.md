@@ -1,7 +1,7 @@
 # A3S Use Architecture
 
 Status: development preview; not production-ready
-Last updated: 2026-08-23
+Last updated: 2026-08-29
 
 ## Product boundary
 
@@ -14,7 +14,8 @@ Use owns:
 - package identity, SemVer resolution, exact locks, and dependency order;
 - replaceable Registry input, a host-selected network boundary, and end-to-end
   TUF provenance;
-- immutable package generations, receipts, plans, and operation journals;
+- globally deduplicated immutable artifacts and explicitly scoped package
+  generations, receipts, plans, and operation journals;
 - reviewed authorization and Workspace Grant transitions; and
 - one atomic capability-Registry cutover per package graph mutation.
 
@@ -42,9 +43,13 @@ PackageGraphLifecycle         prepare forward · cut over once · retire reverse
 Immutable package store · receipts · journals · capability snapshots
 ```
 
-The installed package store is authoritative. Host projections and deployed
-units are receipt-owned derived state; packages do not scatter authoritative
-files across host directories.
+`InstallationId(kind, id)` is the authority boundary. Every mutable selection,
+receipt, route, enablement record, Grant, provider binding, and capability
+projection belongs to that exact User or Workspace installation. Host
+projections and deployed units are receipt-owned derived state; packages do not
+scatter authoritative files across host directories. The current preview still
+materializes this authority across multiple scoped stores; ROADMAP A1 tracks
+their consolidation into one `InstallationSnapshot`.
 
 The managed-host entry point is `CognitivePackageHostManager`, an adapter over
 `CognitivePackageManager`, not another manager. Its protocol store contains
@@ -93,7 +98,10 @@ code accepts one preview baseline only:
 | --- | --- |
 | Manifest | ACL schema 3 |
 | Catalog | `a3s.use.plugin-catalog.v3` |
-| Receipt | numeric schema 4 |
+| Receipt | numeric schema 5 |
+| Extension Registry snapshot | numeric schema 2 |
+| Capability snapshot | numeric schema 3 |
+| Extension/capability cursor | `a3s.use.extension-snapshot-cursor.v2` / `a3s.use.capability-snapshot-cursor.v2` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
 | Host managed scope | `a3s.use.plugin-managed-scope.v2` |
@@ -131,10 +139,11 @@ removed independently of its package generation.
 
 ## Resolution and provenance
 
-Registries are named, replaceable host configuration. The standalone host
-persists a canonical, revision-addressed ACL set and isolates TUF/cache state by
-the exact name/URL/bootstrap-root identity. Packages cannot select their
-source. The resolver uses only enabled sources, applies SemVer,
+Registries are named, replaceable host configuration shared across
+installations. The standalone host persists a canonical, revision-addressed ACL
+set and isolates TUF/cache state by the exact name/URL/bootstrap-root identity.
+Packages cannot select their source. The resolver uses only enabled sources,
+applies SemVer,
 `requires_use`, host target, and provider requirements, then freezes the
 selected catalog-v3 records in one exact package lock.
 
@@ -185,9 +194,9 @@ until drain completes.
 
 Embedding hosts use `CapabilityRegistry` with the same injected
 `ExtensionRegistry` that owns planning and cutover. A typed
-`a3s.use.capability-snapshot-cursor.v1` binds the complete capability revision,
-the authoritative Registry revision, and the canonically sorted immutable
-package identities. Acquiring the cursor obtains every shared package route
+`a3s.use.capability-snapshot-cursor.v2` binds the exact installation, complete
+capability revision, authoritative Registry revision, and canonically sorted
+immutable package identities. Acquiring the cursor obtains every shared package route
 lease and then re-reads the publication. If any identity is hidden, stale,
 mixed, contended, digest-mismatched, or lacks lifecycle evidence, the whole
 attempt fails and Rust RAII releases any earlier locks. No partial lease can

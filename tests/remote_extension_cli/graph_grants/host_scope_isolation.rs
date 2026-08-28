@@ -26,18 +26,6 @@ async fn host_manager_binds_same_textual_id_to_exact_scope_kind() {
     );
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("scope-kind-host-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    RegistrySourceStore::new(paths.clone())
-        .add(RegistrySourceInput::new(
-            "fixture",
-            server.base_url(),
-            &repository.root_sha256,
-            None,
-            VerifiedTargetCachePolicy::default(),
-        ))
-        .await
-        .unwrap();
-
     let workspace_scope = PluginManagedScope {
         schema: PLUGIN_MANAGED_SCOPE_SCHEMA_V2.to_owned(),
         host_id: "host:scope-kind".to_owned(),
@@ -51,6 +39,18 @@ async fn host_manager_binds_same_textual_id_to_exact_scope_kind() {
         scope_kind: PlanScopeKind::User,
         ..workspace_scope.clone()
     };
+    let workspace_paths = managed_extension_paths(&home, &workspace_scope);
+    let user_paths = managed_extension_paths(&home, &user_scope);
+    RegistrySourceStore::new(use_paths(&home))
+        .add(RegistrySourceInput::new(
+            "fixture",
+            server.base_url(),
+            &repository.root_sha256,
+            None,
+            VerifiedTargetCachePolicy::default(),
+        ))
+        .await
+        .unwrap();
     assert_ne!(
         workspace_scope.descriptor_digest().unwrap(),
         user_scope.descriptor_digest().unwrap()
@@ -65,7 +65,7 @@ async fn host_manager_binds_same_textual_id_to_exact_scope_kind() {
     let workspace_host = CognitivePackageHostManager::new(
         workspace_scope.clone(),
         "use:scope-kind-test",
-        ExtensionRegistry::new(paths.clone()),
+        ExtensionRegistry::new(workspace_paths.clone()),
         lifecycle(),
         authorization(),
     )
@@ -73,7 +73,7 @@ async fn host_manager_binds_same_textual_id_to_exact_scope_kind() {
     let user_host = CognitivePackageHostManager::new(
         user_scope.clone(),
         "use:scope-kind-test",
-        ExtensionRegistry::new(paths.clone()),
+        ExtensionRegistry::new(user_paths.clone()),
         lifecycle(),
         authorization(),
     )
@@ -185,7 +185,7 @@ async fn host_manager_binds_same_textual_id_to_exact_scope_kind() {
     let restarted_workspace = CognitivePackageHostManager::new(
         workspace_scope,
         "use:scope-kind-test",
-        ExtensionRegistry::new(paths.clone()),
+        ExtensionRegistry::new(workspace_paths),
         lifecycle(),
         authorization(),
     )
@@ -193,7 +193,7 @@ async fn host_manager_binds_same_textual_id_to_exact_scope_kind() {
     let restarted_user = CognitivePackageHostManager::new(
         user_scope,
         "use:scope-kind-test",
-        ExtensionRegistry::new(paths),
+        ExtensionRegistry::new(user_paths),
         lifecycle(),
         authorization(),
     )

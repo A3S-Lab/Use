@@ -21,8 +21,18 @@ async fn reviewed_host_install_and_upgrade_apply_use_only_planning_cache() {
     let repository = TestRepository::with_targets(targets, 117, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("offline-apply-host-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    let sources = RegistrySourceStore::new(paths.clone());
+    let managed_scope = PluginManagedScope {
+        schema: PLUGIN_MANAGED_SCOPE_SCHEMA_V2.to_owned(),
+        host_id: "host:offline-apply".to_owned(),
+        scope_kind: PlanScopeKind::Workspace,
+        scope_id: MANAGED_SCOPE_ID.to_owned(),
+        authority_id: "cloud:control-plane".to_owned(),
+        fence_generation: 11,
+        fence_digest: format!("sha256:{}", "b".repeat(64)),
+    };
+    let installation = managed_scope.plan_scope();
+    let paths = managed_extension_paths(&home, &managed_scope);
+    let sources = RegistrySourceStore::new(use_paths(&home));
     sources
         .add(RegistrySourceInput::new(
             "fixture",
@@ -45,15 +55,6 @@ async fn reviewed_host_install_and_upgrade_apply_use_only_planning_cache() {
     .await
     .unwrap();
     let first_candidate = first_lock.package("acme/worker").unwrap().catalog.clone();
-    let managed_scope = PluginManagedScope {
-        schema: PLUGIN_MANAGED_SCOPE_SCHEMA_V2.to_owned(),
-        host_id: "host:offline-apply".to_owned(),
-        scope_kind: PlanScopeKind::Workspace,
-        scope_id: MANAGED_SCOPE_ID.to_owned(),
-        authority_id: "cloud:control-plane".to_owned(),
-        fence_generation: 11,
-        fence_digest: format!("sha256:{}", "b".repeat(64)),
-    };
     let authorization_count = Arc::new(AtomicUsize::new(0));
     let host = CognitivePackageHostManager::new(
         managed_scope.clone(),
@@ -99,7 +100,7 @@ async fn reviewed_host_install_and_upgrade_apply_use_only_planning_cache() {
     let installed_state = install_transition.after.as_ref().unwrap();
     assert_granted(
         &home,
-        MANAGED_SCOPE_ID,
+        &installation,
         &installed_state.release.package_sha256,
         &installed_state.permissions,
     )
@@ -162,10 +163,10 @@ async fn reviewed_host_install_and_upgrade_apply_use_only_planning_cache() {
     let transition = &upgrade_plan.plan.plan.packages[0];
     let prior = transition.before.as_ref().unwrap();
     let candidate = transition.after.as_ref().unwrap();
-    assert_revoked(&home, MANAGED_SCOPE_ID, &prior.release.package_sha256).await;
+    assert_revoked(&home, &installation, &prior.release.package_sha256).await;
     assert_granted(
         &home,
-        MANAGED_SCOPE_ID,
+        &installation,
         &candidate.release.package_sha256,
         &candidate.permissions,
     )

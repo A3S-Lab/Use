@@ -406,30 +406,25 @@ async fn restore_preserves_reviewed_unix_mode_and_read_only_evidence() {
 }
 
 #[tokio::test]
-async fn planning_rejects_registry_and_grant_authority_drift() {
-    for authority_path in [
-        "registry-trust-roots/sha256/root.json",
-        "grants/user/fixture/grant.json",
-    ] {
-        let temporary = tempfile::tempdir().unwrap();
-        let paths = fixture_paths(temporary.path());
-        let path = paths.state_root().join(authority_path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, b"retained authority").unwrap();
-        let backup_path = temporary.path().join("authority.a3s-use-state-backup");
-        StateBackupManager::new(paths.clone())
-            .backup(&backup_path)
-            .await
-            .unwrap();
-        std::fs::write(path, b"drifted authority").unwrap();
+async fn planning_rejects_grant_authority_drift() {
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = fixture_paths(temporary.path());
+    let path = paths.state_root().join("grants/user/fixture/grant.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, b"retained authority").unwrap();
+    let backup_path = temporary.path().join("authority.a3s-use-state-backup");
+    StateBackupManager::new(paths.clone())
+        .backup(&backup_path)
+        .await
+        .unwrap();
+    std::fs::write(path, b"drifted authority").unwrap();
 
-        let error = StateRestoreManager::new(paths)
-            .plan_restore(backup_path)
-            .await
-            .unwrap_err();
+    let error = StateRestoreManager::new(paths)
+        .plan_restore(backup_path)
+        .await
+        .unwrap_err();
 
-        assert_eq!(error.code, "use.state_restore_authority_mismatch");
-    }
+    assert_eq!(error.code, "use.state_restore_authority_mismatch");
 }
 
 #[tokio::test]
@@ -505,7 +500,7 @@ async fn planning_rejects_active_restore_links_and_unknown_state() {
 }
 
 fn fixture_paths(root: &Path) -> ExtensionPaths {
-    ExtensionPaths::new(root.join("data"), root.join("state"))
+    crate::test_extension_paths(root)
 }
 
 const RESTORE_CHILD_ROOT_ENV: &str = "A3S_USE_TEST_STATE_RESTORE_ROOT";

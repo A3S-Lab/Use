@@ -42,17 +42,6 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
     let repository = TestRepository::with_targets(targets, 70, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("graph-progress-host-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    RegistrySourceStore::new(paths.clone())
-        .add(RegistrySourceInput::new(
-            "fixture",
-            server.base_url(),
-            &repository.root_sha256,
-            None,
-            VerifiedTargetCachePolicy::default(),
-        ))
-        .await
-        .unwrap();
     let scope = PluginManagedScope {
         schema: PLUGIN_MANAGED_SCOPE_SCHEMA_V2.to_owned(),
         host_id: "host:graph-progress".to_owned(),
@@ -62,6 +51,17 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
         fence_generation: 1,
         fence_digest: format!("sha256:{}", "7".repeat(64)),
     };
+    let paths = managed_extension_paths(&home, &scope);
+    RegistrySourceStore::new(use_paths(&home))
+        .add(RegistrySourceInput::new(
+            "fixture",
+            server.base_url(),
+            &repository.root_sha256,
+            None,
+            VerifiedTargetCachePolicy::default(),
+        ))
+        .await
+        .unwrap();
     let host = CognitivePackageHostManager::new(
         scope.clone(),
         "use:graph-progress-test",
@@ -147,24 +147,26 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
         plan_digest: planned.plan.plan_digest.clone(),
     };
 
-    let next_generation = ExtensionRegistry::new(paths)
+    let next_generation = ExtensionRegistry::new(paths.clone())
         .snapshot()
         .await
         .unwrap()
         .generation
         + 1;
     let route_lock = exclusive_lock(
-        &home
-            .join("state/route-locks/acme/worker")
+        &paths
+            .state_root()
+            .join("route-locks/acme/worker")
             .join(format!("{next_generation:020}.lock")),
     );
     let applying_host = host.clone();
     let applying = tokio::spawn(async move { applying_host.apply(apply).await });
     let plan_scope = scope.plan_scope();
-    let lifecycle_root = home
-        .join("state/operations/plugins")
+    let lifecycle_root = paths
+        .state_root()
+        .join("operations/plugins")
         .join(plan_scope.kind.as_str())
-        .join(format!("{:x}", Sha256::digest(plan_scope.id.as_bytes())));
+        .join(plan_scope.storage_key().unwrap());
     let lifecycle_paths = ["acme/base", "acme/worker"]
         .map(|package_id| lifecycle_root.join(package_id).join("active.json"));
     let mut graph_prepared = false;
@@ -295,8 +297,9 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
     };
     let scope_digest = scope.descriptor_digest().unwrap();
     let host_store_lock = exclusive_lock(
-        &home
-            .join("state/plugin-host-manager")
+        &paths
+            .state_root()
+            .join("plugin-host-manager")
             .join(scope_digest.strip_prefix("sha256:").unwrap())
             .join(".store.lock"),
     );
@@ -428,8 +431,9 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
         plan_digest: planned_uninstall.plan.plan_digest.clone(),
     };
     let host_store_lock = exclusive_lock(
-        &home
-            .join("state/plugin-host-manager")
+        &paths
+            .state_root()
+            .join("plugin-host-manager")
             .join(scope_digest.strip_prefix("sha256:").unwrap())
             .join(".store.lock"),
     );

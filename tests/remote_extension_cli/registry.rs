@@ -226,13 +226,9 @@ fn registry_source_cli_requires_reviewed_revisions_for_authority_changes() {
         .to_owned();
 
     let rejected = Command::new(binary())
-        .args([
-            "install",
-            "acme/example",
-            "--registry-name",
-            "mirror",
-            "--json",
-        ])
+        .args(["install", "acme/example", "--registry-name", "mirror"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -360,7 +356,7 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
     );
 
     let receipt: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(home.join("state/extensions/a3s/science.json")).unwrap(),
+        &std::fs::read(scoped_state(&home, "extensions/a3s/science.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(receipt["trust"], "registry-tuf");
@@ -369,7 +365,9 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
     assert_eq!(provenance.plan_digest().unwrap(), target_plan_digest);
 
     let inspected = Command::new(binary())
-        .args(["extension", "inspect", "a3s/science", "--json"])
+        .args(["extension", "inspect", "a3s/science"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -410,7 +408,7 @@ async fn signed_registry_install_uses_reviewed_target_and_reports_tuf_provenance
     assert_eq!(second["data"]["changed"], false);
     assert_eq!(second["data"]["pluginManager"]["plan"]["replayed"], true);
     assert_eq!(second["data"]["pluginManager"]["result"]["replayed"], true);
-    assert!(home.join("state/plugin-host-manager").is_dir());
+    assert!(scoped_state(&home, "plugin-host-manager").is_dir());
 }
 
 #[test]
@@ -455,8 +453,9 @@ fn registry_install_rejects_unsigned_and_local_source_combinations() {
             "--allow-unsigned",
             "--registry-name",
             "fixture",
-            "--json",
         ])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -482,10 +481,12 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     let output = cognitive_registry_install(&server, &repository, &home, "acme/knowledge", &[]);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(json(&output)["data"]["changed"], true);
-    assert!(home.join("state/extensions/acme/knowledge.json").exists());
+    assert!(scoped_state(&home, "extensions/acme/knowledge.json").exists());
 
     let snapshot = Command::new(binary())
-        .args(["capability", "snapshot", "--json"])
+        .args(["capability", "snapshot"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -502,14 +503,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     assert_eq!(capability["knowledge"][0]["scope"]["kind"], "user");
 
     let searched = Command::new(binary())
-        .args([
-            "knowledge",
-            "search",
-            "package activation",
-            "--limit",
-            "5",
-            "--json",
-        ])
+        .args(["knowledge", "search", "package activation", "--limit", "5"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -532,7 +528,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     assert!(storage["retainedExpandedBytes"].as_u64().unwrap() > 0);
 
     let audited = Command::new(binary())
-        .args(["knowledge", "audit", "--json"])
+        .args(["knowledge", "audit"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -548,12 +546,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     let state_backup_path = temp.path().join("use-state.a3s-use-state-backup");
     server.clear_requests();
     let state_backup = Command::new(binary())
-        .args([
-            "state",
-            "backup",
-            state_backup_path.to_str().unwrap(),
-            "--json",
-        ])
+        .args(["state", "backup", state_backup_path.to_str().unwrap()])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -561,7 +556,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     assert!(server.requests().is_empty());
     let state_backup = json(&state_backup);
     let state_manifest = &state_backup["data"];
-    assert_eq!(state_manifest["schema"], "a3s.use.state-backup.v1");
+    assert_eq!(state_manifest["schema"], "a3s.use.state-backup.v2");
+    assert_eq!(state_manifest["installation"]["kind"], TEST_SCOPE_KIND);
+    assert_eq!(state_manifest["installation"]["id"], TEST_SCOPE_ID);
     assert_eq!(state_manifest["authority"]["registryGeneration"], 1);
     assert_eq!(
         state_manifest["authority"]["packages"][0]["packageId"],
@@ -594,8 +591,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
             "state",
             "verify-backup",
             state_backup_path.to_str().unwrap(),
-            "--json",
         ])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", temp.path().join("offline-verifier"))
         .output()
         .unwrap();
@@ -605,12 +603,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
 
     let backup_path = temp.path().join("knowledge.a3s-okf-backup");
     let backup = Command::new(binary())
-        .args([
-            "knowledge",
-            "backup",
-            backup_path.to_str().unwrap(),
-            "--json",
-        ])
+        .args(["knowledge", "backup", backup_path.to_str().unwrap()])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -623,12 +618,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     assert!(backup_path.is_file());
 
     let verified = Command::new(binary())
-        .args([
-            "knowledge",
-            "verify-backup",
-            backup_path.to_str().unwrap(),
-            "--json",
-        ])
+        .args(["knowledge", "verify-backup", backup_path.to_str().unwrap()])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -650,8 +642,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
             "1",
             "--max-bytes",
             "1073741824",
-            "--json",
         ])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -677,8 +670,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
             "--plan-digest",
             "sha256:0000000000000000000000000000000000000000000000000000000000000000",
             "--yes",
-            "--json",
         ])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -702,8 +696,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
             "--plan-digest",
             plan_digest,
             "--yes",
-            "--json",
         ])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -717,7 +712,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     assert!(second_retained.is_file());
 
     let unconfirmed_repair = Command::new(binary())
-        .args(["knowledge", "repair-search-index", "--json"])
+        .args(["knowledge", "repair-search-index"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -727,7 +724,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
         "use.cli.invalid_usage"
     );
     let repaired = Command::new(binary())
-        .args(["knowledge", "repair-search-index", "--yes", "--json"])
+        .args(["knowledge", "repair-search-index", "--yes"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -737,9 +736,8 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
         1
     );
 
-    let scope_digest = format!("{:x}", Sha256::digest(b"user/current"));
-    let binding_directory = home
-        .join("state/bindings/knowledge/user")
+    let scope_digest = test_installation().storage_key().unwrap();
+    let binding_directory = scoped_state(&home, "bindings/knowledge/user")
         .join(&scope_digest)
         .join("acme/knowledge/okf-domain-knowledge");
     let binding_path = std::fs::read_dir(&binding_directory)
@@ -751,23 +749,23 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
         })
         .unwrap();
     std::fs::remove_file(&binding_path).unwrap();
-    let database_path = home
-        .join("state/knowledge/sqlite/user")
+    let database_path = scoped_state(&home, "knowledge/sqlite/user")
         .join(scope_digest)
         .join("knowledge.sqlite3");
-    let connection = rusqlite::Connection::open(&database_path).unwrap();
+    #[cfg(windows)]
+    let database_io_path = a3s_use_core::windows_extended_length_path(&database_path).unwrap();
+    #[cfg(not(windows))]
+    let database_io_path = database_path.clone();
+    let connection = rusqlite::Connection::open(&database_io_path).unwrap();
     connection
         .execute("DELETE FROM knowledge_documents_fts", [])
         .unwrap();
     drop(connection);
 
     let restore_plan = Command::new(binary())
-        .args([
-            "knowledge",
-            "plan-restore",
-            backup_path.to_str().unwrap(),
-            "--json",
-        ])
+        .args(["knowledge", "plan-restore", backup_path.to_str().unwrap()])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -798,8 +796,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
             backup_path.to_str().unwrap(),
             "--plan-digest",
             restore_plan_digest,
-            "--json",
         ])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -817,8 +816,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
             "--plan-digest",
             restore_plan_digest,
             "--yes",
-            "--json",
         ])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -842,7 +842,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     assert!(binding_path.is_file());
 
     let restore_status = Command::new(binary())
-        .args(["knowledge", "restore-status", "--json"])
+        .args(["knowledge", "restore-status"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -865,7 +867,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     );
 
     let audited = Command::new(binary())
-        .args(["knowledge", "audit", "--json"])
+        .args(["knowledge", "audit"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -875,7 +879,9 @@ fn signed_okf_package_installs_queries_and_uninstalls_through_production_knowled
     assert!(removed.status.success(), "{removed:?}");
     assert_eq!(json(&removed)["data"]["changed"], true);
     let searched = Command::new(binary())
-        .args(["knowledge", "search", "package activation", "--json"])
+        .args(["knowledge", "search", "package activation"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -954,7 +960,9 @@ fn signed_okf_upgrade_atomically_switches_the_cited_capability_generation() {
 
 fn knowledge_search(home: &std::path::Path, query: &str) -> Output {
     Command::new(binary())
-        .args(["knowledge", "search", query, "--json"])
+        .args(["knowledge", "search", query])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", home)
         .output()
         .unwrap()
@@ -962,7 +970,9 @@ fn knowledge_search(home: &std::path::Path, query: &str) -> Output {
 
 fn knowledge_usage(home: &std::path::Path) -> Output {
     Command::new(binary())
-        .args(["knowledge", "usage", "--json"])
+        .args(["knowledge", "usage"])
+        .for_test_installation()
+        .arg("--json")
         .env("A3S_USE_HOME", home)
         .output()
         .unwrap()

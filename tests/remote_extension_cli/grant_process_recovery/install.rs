@@ -10,9 +10,10 @@ fn killed_managed_install_replays_graph_and_grant_cutover_without_reauthorizatio
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
     let authorization_marker = temp.path().join("authorization.marker");
-    let pending_path = home.join("state/operations/package-graphs/install/acme/worker.json");
-    let graph_path = home.join("state/package-graphs/acme/worker.json");
-    let snapshot_path = home.join("state/registry.json");
+    let pending_path =
+        managed_state_root(&home).join("operations/package-graphs/install/acme/worker.json");
+    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let snapshot_path = managed_state_root(&home).join("registry.json");
     let held_lifecycle_path = managed_lifecycle_journal_path(&home, "acme/leaf-00");
 
     let mut interrupted = spawn_managed_child(ManagedChildRequest {

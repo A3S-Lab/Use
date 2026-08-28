@@ -159,6 +159,11 @@ async fn snapshot_lease_rejects_stale_and_digest_mismatched_cursors() {
 fn snapshot_cursor_rejects_noncanonical_unleasable_routes() {
     let canonical = ExtensionSnapshotCursor {
         schema: EXTENSION_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+        installation: a3s_use_core::InstallationId::new(
+            a3s_use_core::InstallationKind::User,
+            "snapshot-tests",
+        )
+        .unwrap(),
         generation: 1,
         revision: format!("sha256:{}", "a".repeat(64)),
         packages: Vec::new(),
@@ -202,6 +207,7 @@ async fn snapshot_lease_fails_closed_for_callable_legacy_routes() {
     let registry = registry(tempfile::tempdir().unwrap().path());
     let snapshot = ExtensionRegistrySnapshot {
         schema_version: super::super::REGISTRY_SCHEMA_VERSION,
+        installation: registry.installation().clone(),
         generation: 9,
         routes: vec![ExtensionRouteBinding {
             package_id: "acme/legacy".to_owned(),

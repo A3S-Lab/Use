@@ -529,7 +529,7 @@ impl PendingPackageGraphStore {
     }
 
     /// Fail before authorization when another crash-recoverable graph
-    /// operation already owns the conservative global mutation domain.
+    /// operation already owns this installation's mutation domain.
     pub async fn require_admission_available(
         &self,
         expected: &PendingPackageGraphOperation,

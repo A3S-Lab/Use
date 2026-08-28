@@ -39,7 +39,7 @@ current set.
 | Host operation watch request | `a3s.use.plugin-host-operation-watch-request.v1` |
 | Host cancellation request/result | `a3s.use.plugin-host-cancel-request/result.v1` |
 | Manager MCP toolset | `a3s.use.plugin-manager-tools.v4` |
-| Installed receipt | numeric schema version `4` |
+| Installed receipt | numeric schema version `5` |
 | Installed package graph | `a3s.use.installed-package-graph.v1` |
 | Pending package graph | `a3s.use.pending-package-graph-operation.v4` |
 | Pre-lock resolution attempt | `a3s.use.plugin-resolution-attempt.v1` |
@@ -56,6 +56,10 @@ current set.
 | Enablement state/operation | `a3s.use.cognitive-package-enablement-state/operation.v2` |
 | Workspace Grant | `a3s.use.plugin-workspace-grant.v1` |
 | Registry cutover | `a3s.use.registry-cutover.v1` |
+| Extension Registry snapshot | numeric schema version `2` |
+| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v2` |
+| Capability snapshot | numeric schema version `3` |
+| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v2` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
@@ -64,9 +68,9 @@ current set.
 | OKF Knowledge citation | `a3s.use.okf-knowledge-citation.v1` |
 | OKF Knowledge read | `a3s.use.okf-knowledge-read-request.v1` / `a3s.use.okf-knowledge-read-response.v1` |
 | OKF Knowledge backup | `a3s.use.okf-knowledge-backup.v1` |
-| Coordinated Use state backup | `a3s.use.state-backup.v1` |
-| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v1` |
-| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v1` |
+| Coordinated Use state backup | `a3s.use.state-backup.v2` |
+| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v2` |
+| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v2` |
 | Coordinated Use state restore plan | `a3s.use.state-restore-plan.v1` |
 | Coordinated Use state restore operation | `a3s.use.state-restore-operation.v1` |
 | Coordinated Use state restore result | `a3s.use.state-restore-result.v1` |
@@ -141,7 +145,8 @@ host-side lease pins its lifecycle generation and installed package integrity
 for the complete retrieval. Staged content is not live evidence. Only an exact
 promoted binding may enter the capability snapshot.
 
-Capability snapshot schema v2 applies the same rule to Runtime Tool Tasks. A
+Capability snapshot schema v3 binds the exact installation and applies the
+same rule to Runtime Tool Tasks. A
 `toolTasks` entry is emitted only for a published, non-interactive,
 release-backed Task whose v4 binding matches the exact scope, package digest,
 surface, and lifecycle generation. The entry is invocation metadata, not a
@@ -149,8 +154,9 @@ provider fallback: hosts must still possess the named reviewed provider and
 dispatch through the receipt-owned exact-generation lease.
 
 Rust embedding hosts acquire a complete generation through
-`a3s.use.capability-snapshot-cursor.v1`. The cursor binds the capability and
-Registry revisions plus the sorted package, manifest, and lifecycle identities.
+`a3s.use.capability-snapshot-cursor.v2`. The cursor binds the installation,
+capability and Registry revisions, plus the sorted package, manifest, and
+lifecycle identities.
 The returned RAII lease is all-or-nothing and must be retained for the full
 accepted Run or invocation. It does not grant package mutation authority and
 does not replace the versioned CLI snapshot, native Tool contract, standard
@@ -192,8 +198,8 @@ overwritten. It cannot reconstruct missing Registry, package, lifecycle, or
 Grant authority or perform clean-machine or whole-product recovery.
 
 `a3s.use.okf-knowledge-restore-diagnostic.v2` is the bounded, path-free,
-secret-free projection of the global active marker and one requested scope's
-restore history. It reports exact plan/backup/authority digests, durable phase,
+secret-free projection of the selected installation's active marker and restore
+history. It reports exact plan/backup/authority digests, durable phase,
 the reviewed binding-state digest and missing-binding count, timestamps,
 retained prior-file count, physical operation-directory count, marker-handoff
 directories without a journal, the fixed retention limit, and remaining
@@ -270,11 +276,12 @@ Install order is dependency-forward; removal order is its exact reverse.
 Retained packages are accepted only when their installed receipt and verified
 catalog evidence match the locked node exactly.
 
-Receipt v4 binds the exact canonical non-empty surface set selected by the
-reviewed lifecycle plan. Missing, empty, duplicated, unsorted, unknown, or
-dependency-incomplete selections fail closed; the loader never expands absent
-evidence to the manifest inventory. Receipt v3 is unsupported preview state
-and must be removed and reinstalled rather than migrated implicitly.
+Receipt v5 binds the exact installation and canonical non-empty surface set
+selected by the reviewed lifecycle plan. Missing, empty, duplicated, unsorted,
+unknown, installation-mismatched, or dependency-incomplete selections fail
+closed; the loader never expands absent evidence to the manifest inventory.
+Receipt v4 and earlier are unsupported preview state and must be removed and
+reinstalled rather than migrated implicitly.
 
 Upgrade always carries two locks:
 
@@ -492,7 +499,8 @@ apply or recovery authority. The projection reports:
 - bounded lifecycle publication, accepted-call drain, checkpoint, rollback,
   and recovery guidance.
 
-`a3s-use extension diagnose <publisher/name> --json` reads this evidence under
+`a3s-use extension diagnose <publisher/name> --scope-kind <user|workspace>
+--scope-id <id> --json` reads this evidence under
 the shared maintenance fence without network access, reconciliation, recovery,
 or writes. Retained graph evidence covers planned, admitted, and cancelled
 install/upgrade/uninstall operations, including a reviewed graph before

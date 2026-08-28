@@ -389,9 +389,11 @@ mod tests {
         let paths = ExtensionPaths::new(
             temporary.path().join("data"),
             temporary.path().join("state"),
-        );
+            scope.plan_scope(),
+        )
+        .unwrap();
         let host = CognitivePackageHostManager::new(
-            scope,
+            scope.clone(),
             "use:plugin-manager-mcp-tests",
             ExtensionRegistry::new(paths),
             Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),

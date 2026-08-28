@@ -103,8 +103,8 @@ Status: in progress
   self-contained argument-free binding template, with receipt-owned provider
   reconnection, stale-generation rejection, and an accepted-call Registry
   lease held through capture and cleanup.
-- [x] Publish exact scope/package/generation-matched Runtime Tool Tasks through
-  capability snapshot schema v2; omit missing or mismatched bindings.
+- [x] Publish exact installation/package/generation-matched Runtime Tool Tasks
+  through capability snapshot schema v3; omit missing or mismatched bindings.
 - [x] Require explicit owner evidence for every required Tool, MCP, Flow, OKF,
   Skill, and UI surface before atomically publishing the capability generation.
 - [x] Persist `a3s.use.runtime-service-provisioning.v1` before apply, retain
@@ -314,19 +314,19 @@ Status: in progress
 
 ### Linux
 
-- [x] Run the current non-Science workspace and real-process package lifecycle
+- [x] Run the current Use-owned workspace and real-process package lifecycle
   tests on native x86_64 and arm64 runners in CI run 32604181662.
 - Container/release-bundle conformance and filesystem failure injection.
 
 ### macOS
 
-- [x] Run the current non-Science workspace and real-process package lifecycle
+- [x] Run the current Use-owned workspace and real-process package lifecycle
   tests on native arm64 and x86_64 runners in CI run 32604181662.
 - Quarantine, executable permission, browser/runtime, and filesystem cases.
 
 ### Windows
 
-- [x] Run the complete current non-Science workspace suite and reject real
+- [x] Run the complete current Use-owned workspace suite and reject real
   directory junctions across package and durable state trust boundaries. CI
   run 32604181662 provides the initial native Windows evidence. The Flow
   Runtime subset additionally runs exact-generation retention, artifact
@@ -449,9 +449,10 @@ Status: pending
   completion of missing Registry/package/lifecycle/Grant authority recovery,
   clean-machine recovery, cross-platform recovery drills, or whole-product
   retention operations.
-- Treat the implemented `a3s.use.state-backup.v1` coordinated inventory as the
-  corruption-detection input for whole-installation operations. It acquires the
-  exclusive maintenance fence, binds Registry and installed-receipt authority,
+- Treat the implemented `a3s.use.state-backup.v2` coordinated inventory as the
+  corruption-detection input for one explicit installation. It acquires that
+  installation's exclusive maintenance fence, binds its Registry and
+  installed-receipt authority,
   copies every allowlisted state family with exact hashes, rescans before
   publication, and verifies offline without extraction. Exact-plan retention
   now fully verifies every archive under one external-directory lock, binds a

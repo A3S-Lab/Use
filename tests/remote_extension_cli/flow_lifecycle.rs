@@ -47,8 +47,10 @@ fn standalone_cli_installs_upgrades_observes_and_uninstalls_a3s_flow() {
     );
     assert_flow_capability(&home, "1.1.0", next_generation);
 
-    let removed = Command::new(binary())
-        .args(["uninstall", "acme/flow-suite", "--json"])
+    let mut removed = Command::new(binary());
+    removed.args(["uninstall", "acme/flow-suite", "--json"]);
+    append_test_installation_args(&mut removed);
+    let removed = removed
         .env("A3S_USE_HOME", &home)
         .env("A3S_FLOW_NATIVE_TS_COMPILER", &compiler)
         .output()
@@ -180,16 +182,18 @@ fn flow_registry_command(
     version: &str,
 ) -> Output {
     configure_registry(server, repository, home, &[]);
-    Command::new(binary())
-        .args([
-            action,
-            "acme/flow-suite",
-            "--registry-name",
-            "fixture",
-            "--version",
-            version,
-            "--json",
-        ])
+    let mut command = Command::new(binary());
+    command.args([
+        action,
+        "acme/flow-suite",
+        "--registry-name",
+        "fixture",
+        "--version",
+        version,
+        "--json",
+    ]);
+    append_test_installation_args(&mut command);
+    command
         .env("A3S_USE_HOME", home)
         .env("A3S_FLOW_NATIVE_TS_COMPILER", compiler)
         .output()
@@ -197,7 +201,9 @@ fn flow_registry_command(
 }
 
 fn receipt_path(home: &Path) -> PathBuf {
-    home.join("state/extensions/acme/flow-suite.json")
+    extension_paths(home)
+        .state_root()
+        .join("extensions/acme/flow-suite.json")
 }
 
 fn receipt(home: &Path) -> serde_json::Value {
@@ -223,7 +229,10 @@ fn flow_bindings(home: &Path) -> Vec<serde_json::Value> {
     }
 
     let mut bindings = Vec::new();
-    collect(&home.join("state/bindings/flow"), &mut bindings);
+    collect(
+        &extension_paths(home).state_root().join("bindings/flow"),
+        &mut bindings,
+    );
     bindings.sort_by_key(|binding| binding["generation"].as_u64().unwrap_or_default());
     bindings
 }
@@ -238,11 +247,10 @@ fn flow_capability(home: &Path) -> Option<serde_json::Value> {
 }
 
 fn capability_registry(home: &Path) -> serde_json::Value {
-    let snapshot = Command::new(binary())
-        .args(["capability", "snapshot", "--json"])
-        .env("A3S_USE_HOME", home)
-        .output()
-        .unwrap();
+    let mut snapshot = Command::new(binary());
+    snapshot.args(["capability", "snapshot", "--json"]);
+    append_test_installation_args(&mut snapshot);
+    let snapshot = snapshot.env("A3S_USE_HOME", home).output().unwrap();
     assert!(snapshot.status.success(), "{snapshot:?}");
     json(&snapshot)["data"]["registry"].clone()
 }

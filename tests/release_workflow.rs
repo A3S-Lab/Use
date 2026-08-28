@@ -439,8 +439,8 @@ fn ci_runs_the_workspace_suite_on_every_release_target() {
     assert!(!platform_job.contains("continue-on-error"));
     assert!(platform_job.contains("toolchain: 1.96.0"));
     for command in [
-        "run: cargo test --workspace --exclude a3s-use-science --locked --no-run",
-        "run: cargo test --workspace --exclude a3s-use-science --locked",
+        "run: cargo test --workspace --locked --no-run",
+        "run: cargo test --workspace --locked",
     ] {
         assert!(
             platform_job.lines().any(|line| line.trim() == command),
@@ -501,6 +501,7 @@ fn documentation_deployment_uses_only_pinned_actions() {
 fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     let workflow = include_str!("../.github/workflows/release.yml");
     let ci = include_str!("../.github/workflows/ci.yml");
+    let workspace = include_str!("../Cargo.toml");
 
     assert!(workflow.contains("scripts/package-release.py"));
     assert!(workflow.contains("SOURCE_DATE_EPOCH"));
@@ -515,6 +516,8 @@ fn release_supply_chain_is_pinned_attested_and_keyless_signed() {
     assert!(workflow.contains("git merge-base --is-ancestor"));
     assert!(workflow.contains("test \"${remote_revision}\" = \"${RELEASE_REVISION}\""));
     assert!(!workflow.contains("a3s-use-science"));
+    assert!(!ci.contains("a3s-use-science"));
+    assert!(!workspace.contains("crates/science"));
     assert!(!workflow.contains("release-bundle-sha256"));
     assert_eq!(
         workflow
@@ -701,7 +704,8 @@ fn assert_packager_success(source: &Path, output_path: &Path, format: &str) {
 }
 
 fn run_packager(source: &Path, output_path: &Path, format: &str) -> Output {
-    Command::new(python_command())
+    let mut command = python_command();
+    command
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/package-release.py"))
         .args(["--format", format, "--source"])
         .arg(source)
@@ -713,7 +717,7 @@ fn run_packager(source: &Path, output_path: &Path, format: &str) -> Output {
 }
 
 fn run_rebuild_verifier(archive: &Path, rebuilt: &Path, output_path: &Path) -> Output {
-    let mut command = Command::new(python_command());
+    let mut command = python_command();
     command
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verify-release-rebuild.py"))
         .arg("--archive")
@@ -738,7 +742,8 @@ fn run_rebuild_verifier(archive: &Path, rebuilt: &Path, output_path: &Path) -> O
 }
 
 fn run_portability_verifier(release_root: &Path, checkout: &Path) -> Output {
-    Command::new(python_command())
+    let mut command = python_command();
+    command
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verify-release-portability.py"))
         .arg("--release-root")
         .arg(release_root)
@@ -748,16 +753,21 @@ fn run_portability_verifier(release_root: &Path, checkout: &Path) -> Output {
         .unwrap()
 }
 
-fn python_command() -> &'static str {
-    ["python3", "python"]
-        .into_iter()
-        .find(|candidate| {
-            Command::new(candidate)
-                .arg("--version")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .expect("Python 3 is required to test deterministic release packaging")
+fn python_command() -> Command {
+    for (executable, prefix) in [
+        ("python3", &[][..]),
+        ("python", &[][..]),
+        ("py", &["-3"][..]),
+    ] {
+        let mut probe = Command::new(executable);
+        probe.args(prefix).arg("--version");
+        if probe.output().is_ok_and(|output| output.status.success()) {
+            let mut command = Command::new(executable);
+            command.args(prefix);
+            return command;
+        }
+    }
+    panic!("Python 3 is required to test deterministic release packaging")
 }
 
 fn position(workflow: &str, command: &str) -> usize {

@@ -76,12 +76,19 @@ async fn search(args: &[String]) -> UseResult<CommandOutput> {
         args,
         2,
         &["--json", "--offline"],
-        &["--kind", "--channel", "--cursor", "--limit"],
+        &[
+            "--kind",
+            "--channel",
+            "--cursor",
+            "--limit",
+            "--scope-kind",
+            "--scope-id",
+        ],
         &[],
         "plugin search",
     )?;
     let query = value_argument(args, 1, "plugin search requires a query")?;
-    let result = standalone_plugin_manager_service()?
+    let result = standalone_plugin_manager_service(managed_scope_argument(args)?)?
         .search(
             PluginManagerSearchInput {
                 query: query.to_owned(),
@@ -108,12 +115,12 @@ async fn inspect(args: &[String]) -> UseResult<CommandOutput> {
         args,
         2,
         &["--json", "--offline"],
-        &["--version", "--channel"],
+        &["--version", "--channel", "--scope-kind", "--scope-id"],
         &[],
         "plugin inspect",
     )?;
     let package_id = package_id_argument(args, 1, "plugin inspect requires a package ID")?;
-    let result = standalone_plugin_manager_service()?
+    let result = standalone_plugin_manager_service(managed_scope_argument(args)?)?
         .inspect(
             PluginManagerInspectInput {
                 package_id,
@@ -144,7 +151,7 @@ async fn list_installed(args: &[String]) -> UseResult<CommandOutput> {
         "plugin list-installed",
     )?;
     let scope = managed_scope_argument(args)?;
-    let result = standalone_plugin_manager_service()?
+    let result = standalone_plugin_manager_service(scope.clone())?
         .list_installed(PluginManagerListInstalledInput {
             scope_kind: scope.kind,
             scope_id: scope.id,
@@ -160,8 +167,11 @@ async fn list_installed(args: &[String]) -> UseResult<CommandOutput> {
 
 async fn status(args: &[String]) -> UseResult<CommandOutput> {
     validate_package_scope_options(args, "plugin status")?;
+    let installation = managed_scope_argument(args)?;
     let input = package_scope_input(args, "plugin status requires a package ID")?;
-    let result = standalone_plugin_manager_service()?.status(input).await?;
+    let result = standalone_plugin_manager_service(installation)?
+        .status(input)
+        .await?;
     let state = match &result.status {
         PluginHostObservationStatus::Available { state } => format!(
             "{} / {}",
@@ -194,7 +204,7 @@ async fn plan_install(args: &[String]) -> UseResult<CommandOutput> {
         "plugin plan-install",
     )?;
     let scope = managed_scope_argument(args)?;
-    let result = standalone_plugin_manager_service()?
+    let result = standalone_plugin_manager_service(scope.clone())?
         .plan_install(
             PluginManagerInstallPlanInput {
                 package_id: package_id_argument(
@@ -233,7 +243,7 @@ async fn plan_upgrade(args: &[String]) -> UseResult<CommandOutput> {
         "plugin plan-upgrade",
     )?;
     let scope = managed_scope_argument(args)?;
-    let result = standalone_plugin_manager_service()?
+    let result = standalone_plugin_manager_service(scope.clone())?
         .plan_upgrade(
             PluginManagerUpgradePlanInput {
                 package_id: package_id_argument(
@@ -270,8 +280,9 @@ async fn plan_package(args: &[String], command: PluginPlanCommand) -> UseResult<
         PluginPlanCommand::Disable => "plugin plan-disable",
     };
     validate_package_scope_options(args, label)?;
+    let installation = managed_scope_argument(args)?;
     let input = package_scope_input(args, &format!("{label} requires a package ID"))?;
-    let service = standalone_plugin_manager_service()?;
+    let service = standalone_plugin_manager_service(installation)?;
     match command {
         PluginPlanCommand::Uninstall => {
             let result = service.plan_uninstall(input).await?;
@@ -293,7 +304,12 @@ async fn apply_plan(args: &[String]) -> UseResult<CommandOutput> {
         args,
         1,
         &["--json", "--yes"],
-        &["--operation-id", "--plan-digest"],
+        &[
+            "--operation-id",
+            "--plan-digest",
+            "--scope-kind",
+            "--scope-id",
+        ],
         &[],
         "plugin apply-plan",
     )?;
@@ -307,7 +323,7 @@ async fn apply_plan(args: &[String]) -> UseResult<CommandOutput> {
         ));
     }
 
-    let service = standalone_plugin_manager_service()?;
+    let service = standalone_plugin_manager_service(managed_scope_argument(args)?)?;
     let input = PluginManagerApplyPlanInput {
         operation_id: operation_id.to_owned(),
         plan_digest: plan_digest.to_owned(),

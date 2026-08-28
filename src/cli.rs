@@ -97,9 +97,9 @@ pub async fn run(args: Vec<String>) -> UseResult<CommandOutput> {
     match command {
         "-V" | "--version" | "version" => Ok(version()),
         "-h" | "--help" | "help" => Ok(help()),
-        "capabilities" => capabilities().await,
+        "capabilities" => capabilities(&args[1..]).await,
         "capability" => capability(&args[1..]).await,
-        "doctor" => doctor(args.get(1).map(String::as_str)).await,
+        "doctor" => doctor(&args[1..]).await,
         "install" => Box::pin(package_command_alias("install", &args[1..])).await,
         "upgrade" => Box::pin(package_command_alias("upgrade", &args[1..])).await,
         "uninstall" => Box::pin(package_command_alias("uninstall", &args[1..])).await,
@@ -142,53 +142,33 @@ fn version() -> CommandOutput {
 fn help() -> CommandOutput {
     CommandOutput::success(
         concat!(
-            "a3s-use — AI Native Package Manager\n\n",
+            "a3s-use - AI Native Package Manager\n\n",
             "usage:\n",
-            "  a3s-use capabilities [--json]\n",
-            "  a3s-use capability snapshot [--json]\n",
-            "  a3s-use capability watch [--after-generation <n>] [--after-revision <sha256>] [--timeout-ms <ms>] [--json]\n",
-            "  a3s-use doctor [browser|box|ocr] [--json]\n",
-            "  a3s-use install <publisher/name> [--registry-name <name>] [--offline] [--json]\n",
-            "  a3s-use upgrade <publisher/name> [--registry-name <name>] [--offline] [--json]\n",
-            "  a3s-use uninstall <publisher/name> [--json]\n",
-            "  a3s-use component list|status|install|upgrade|uninstall [args] [--json]\n",
-            "  a3s-use plugin search|inspect|list-installed|status [args] [--json]\n",
-            "  a3s-use plugin plan-install|plan-upgrade|plan-uninstall [args] [--json]\n",
-            "  a3s-use plugin plan-enable|plan-disable <publisher/name> [--json]\n",
-            "  a3s-use plugin apply-plan --operation-id <id> --plan-digest <sha256> --yes [--json]\n",
-            "  a3s-use knowledge search <query> [--limit <n>] [--json]\n",
-            "  a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use knowledge audit [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use knowledge backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use knowledge verify-backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use knowledge backup-retention <directory> [--max-backups <n>] [--max-bytes <n>] [--plan-digest <sha256> --yes] [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use knowledge plan-restore <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use knowledge restore <path> --plan-digest <sha256> --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use knowledge restore-status [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use knowledge repair-search-index --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
+            "  a3s-use capabilities --scope-kind <user|workspace> --scope-id <id> [--json]\n",
+            "  a3s-use capability snapshot --scope-kind <user|workspace> --scope-id <id> [--json]\n",
+            "  a3s-use capability watch --scope-kind <user|workspace> --scope-id <id> [--after-generation <n>] [--after-revision <sha256>] [--timeout-ms <ms>] [--json]\n",
+            "  a3s-use doctor [<external-domain>] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
+            "  a3s-use doctor browser|box|ocr [--json]\n",
+            "  a3s-use install <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--registry-name <name>] [--offline] [--json]\n",
+            "  a3s-use upgrade <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--registry-name <name>] [--offline] [--json]\n",
+            "  a3s-use uninstall <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]\n",
+            "  a3s-use component list|status|install|upgrade|uninstall [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
+            "  a3s-use plugin <command> [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
+            "  a3s-use knowledge <command> [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
             "  a3s-use registry source list [--json]\n",
             "  a3s-use registry source add <name> (--url <https-url> | --github <owner/repository>) --trust-root <sha256> [source options] [--json]\n",
             "  a3s-use registry source replace <name> (--url <https-url> | --github <owner/repository>) --trust-root <sha256> --expected-revision <sha256> --yes [source options] [--json]\n",
             "  a3s-use registry source default|enable|disable|remove <name> --expected-revision <sha256> --yes [--json]\n",
             "  a3s-use registry cache usage [--registry-name <name>] [--json]\n",
             "  a3s-use registry cache prune [--registry-name <name>] [cache options] --yes [--json]\n",
-            "  a3s-use state backup <path> [--json]\n",
-            "  a3s-use state verify-backup <path> [--json]\n",
-            "  a3s-use state backup-retention <directory> [--max-backups <n>] [--max-bytes <n>] [--plan-digest <sha256> --yes] [--json]\n",
-            "  a3s-use state plan-restore <backup> [--json]\n",
-            "  a3s-use state restore <backup> --rollback-backup <external-path> --plan-digest <sha256> --yes [--json]\n",
-            "  a3s-use state restore-status [--json]\n",
+            "  a3s-use state <command> [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
             "  a3s-use browser doctor [--json]\n",
             "  a3s-use browser render <url> [--output <path>] [--screenshot <path>] [--json]\n",
             "  a3s-use browser open|list|navigate|snapshot|click|type|press|select|scroll|screenshot|close [args] [--json]\n",
             "  a3s-use box <a3s-box-args...>\n",
-            "  a3s-use <external-route> [args]\n",
             "  a3s-use ocr doctor [--json]\n",
             "  a3s-use ocr extract <image> [--json]\n",
-            "  a3s-use extension list|inspect|doctor [args] [--json]\n",
-            "  a3s-use extension diagnose <publisher/name> [--history] [--scope-kind <user|workspace>] [--scope-id <id>] [--json]\n",
-            "  a3s-use extension planning-evidence <publisher/name> [--json]\n",
-            "  a3s-use extension snapshot|watch [--after-generation <n>] [--timeout-ms <ms>] [--json]\n",
+            "  a3s-use extension list|inspect|doctor|diagnose|planning-evidence|snapshot|watch [args] --scope-kind <user|workspace> --scope-id <id> [--json]\n",
             "  a3s-use mcp serve browser [--tools <profiles>]\n",
             "  a3s-use mcp serve ocr\n",
             "  a3s-use mcp start|status|stop [browser] [--json]"
@@ -223,11 +203,13 @@ async fn package_command_alias(command: &str, args: &[String]) -> UseResult<Comm
     component::run(&delegated).await
 }
 
-async fn capabilities() -> UseResult<CommandOutput> {
+async fn capabilities(args: &[String]) -> UseResult<CommandOutput> {
+    validate_scoped_read_options(args, "capabilities")?;
+    let installation = managed_scope_argument(args)?;
     let browser = browser_diagnostic();
     let box_domain = crate::component_route::box_diagnostic();
     let ocr = ocr_diagnostic();
-    let (extension_generation, extensions) = extension_capabilities().await?;
+    let (extension_generation, extensions) = extension_capabilities(installation).await?;
     Ok(CommandOutput::success(
         "Built-in routes: browser, box, ocr",
         serde_json::json!({
@@ -263,10 +245,11 @@ async fn capabilities() -> UseResult<CommandOutput> {
 }
 
 async fn capability(args: &[String]) -> UseResult<CommandOutput> {
+    let installation = managed_scope_argument(args)?;
     match args.first().map(String::as_str) {
         Some("snapshot") => {
             validate_capability_options(args, false)?;
-            let snapshot = capability_registry_snapshot().await?;
+            let snapshot = capability_registry_snapshot(installation).await?;
             Ok(CommandOutput::success(
                 format!(
                     "Capability registry generation {} ({}).",
@@ -280,7 +263,14 @@ async fn capability(args: &[String]) -> UseResult<CommandOutput> {
             let after_generation = integer_option(args, "--after-generation", 0)?;
             let after_revision = option_argument(args, "--after-revision")?;
             let timeout = duration_option(args, "--timeout-ms", 30_000)?;
-            match wait_for_capability_change(after_generation, after_revision, timeout).await? {
+            match wait_for_capability_change(
+                installation,
+                after_generation,
+                after_revision,
+                timeout,
+            )
+            .await?
+            {
                 Some(snapshot) => Ok(CommandOutput::success(
                     "The capability registry changed.",
                     serde_json::json!({ "changed": true, "registry": snapshot }),
@@ -301,16 +291,19 @@ async fn capability(args: &[String]) -> UseResult<CommandOutput> {
     }
 }
 
-async fn doctor(domain: Option<&str>) -> UseResult<CommandOutput> {
+async fn doctor(args: &[String]) -> UseResult<CommandOutput> {
+    let domain = args.first().map(String::as_str);
     let diagnostics = match domain {
-        None | Some("--json") => {
+        None | Some("--json" | "--scope-kind" | "--scope-id") => {
+            validate_scoped_read_options(args, "doctor")?;
+            let installation = managed_scope_argument(args)?;
             let mut diagnostics = vec![
                 browser_diagnostic(),
                 ocr_diagnostic(),
                 crate::component_route::box_diagnostic(),
             ];
             diagnostics.extend(
-                installed_extensions()
+                installed_extensions(installation)
                     .await?
                     .iter()
                     .map(extension_diagnostic),
@@ -320,18 +313,20 @@ async fn doctor(domain: Option<&str>) -> UseResult<CommandOutput> {
         Some("browser") => vec![browser_diagnostic()],
         Some("box") => vec![crate::component_route::box_diagnostic()],
         Some("ocr") => vec![ocr_diagnostic()],
-        Some(value) => match installed_extension_for_id(value).await? {
-            Some(extension) => vec![extension_diagnostic(&extension)],
-            None => {
-                return Err(UseError::new(
-                    "use.domain_unknown",
-                    format!("Unknown domain '{value}'."),
-                )
-                .with_suggestion(
-                    "Install the external capability or run 'a3s use capabilities --json'.",
-                ))
+        Some(value) => {
+            match installed_extension_for_id(managed_scope_argument(args)?, value).await? {
+                Some(extension) => vec![extension_diagnostic(&extension)],
+                None => {
+                    return Err(UseError::new(
+                        "use.domain_unknown",
+                        format!("Unknown domain '{value}'."),
+                    )
+                    .with_suggestion(
+                        "Install the external capability or run 'a3s use capabilities --json'.",
+                    ))
+                }
             }
-        },
+        }
     };
     let ready = diagnostics
         .iter()
@@ -367,18 +362,19 @@ async fn browser(args: &[String]) -> UseResult<CommandOutput> {
 }
 
 async fn extension(args: &[String]) -> UseResult<CommandOutput> {
+    let installation = managed_scope_argument(args)?;
     match args.first().map(String::as_str) {
-        None | Some("list") => extension_list().await,
+        Some("list") => extension_list(installation).await,
         Some("inspect" | "doctor") => {
             let package_id = value_argument(args, 1, "extension inspect requires an ID")?;
-            extension_inspect(package_id).await
+            extension_inspect(installation, package_id).await
         }
         Some("diagnose") => {
             validate_extension_diagnostic_options(args)?;
             let package_id = value_argument(args, 1, "extension diagnose requires an ID")?;
             extension_operation_diagnostic(
                 package_id,
-                managed_scope_argument(args)?,
+                installation,
                 flag_argument(args, "--history")?,
             )
             .await
@@ -386,22 +382,23 @@ async fn extension(args: &[String]) -> UseResult<CommandOutput> {
         Some("planning-evidence") => {
             validate_extension_options(args, 2, false)?;
             let package_id = value_argument(args, 1, "extension planning-evidence requires an ID")?;
-            extension_planning_evidence(package_id).await
+            extension_planning_evidence(installation, package_id).await
         }
         Some("snapshot") => {
             validate_extension_options(args, 1, false)?;
-            extension_snapshot().await
+            extension_snapshot(installation).await
         }
         Some("watch") => {
             validate_extension_watch_options(args)?;
             let after_generation = integer_option(args, "--after-generation", 0)?;
             let timeout = duration_option(args, "--timeout-ms", 30_000)?;
-            extension_watch(after_generation, timeout).await
+            extension_watch(installation, after_generation, timeout).await
         }
         Some(command) => Err(UseError::new(
             "use.extension.command_unknown",
             format!("Unknown extension command '{command}'."),
         )),
+        None => Err(usage_error("extension requires an explicit command")),
     }
 }
 
@@ -727,7 +724,12 @@ fn validate_component_install_options(args: &[String]) -> UseResult<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--json" | "--force" | "--offline" => index += 1,
-            "--registry-name" | "--version" | "--channel" | "--package-lock-digest" => {
+            "--registry-name"
+            | "--version"
+            | "--channel"
+            | "--package-lock-digest"
+            | "--scope-kind"
+            | "--scope-id" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));
                 }
@@ -748,7 +750,12 @@ fn validate_component_upgrade_options(args: &[String]) -> UseResult<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--json" | "--offline" => index += 1,
-            "--registry-name" | "--version" | "--channel" | "--package-lock-digest" => {
+            "--registry-name"
+            | "--version"
+            | "--channel"
+            | "--package-lock-digest"
+            | "--scope-kind"
+            | "--scope-id" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));
                 }
@@ -779,6 +786,12 @@ fn validate_extension_options(
                 }
                 index += 2;
             }
+            "--scope-kind" | "--scope-id" => {
+                if args.get(index + 1).is_none() {
+                    return Err(usage_error(format!("{} requires a value", args[index])));
+                }
+                index += 2;
+            }
             value => return Err(usage_error(format!("unknown extension option '{value}'"))),
         }
     }
@@ -790,7 +803,7 @@ fn validate_extension_watch_options(args: &[String]) -> UseResult<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--json" => index += 1,
-            "--after-generation" | "--timeout-ms" => {
+            "--after-generation" | "--timeout-ms" | "--scope-kind" | "--scope-id" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error(format!("{} requires a value", args[index])));
                 }
@@ -831,7 +844,9 @@ fn validate_extension_diagnostic_options(args: &[String]) -> UseResult<()> {
 }
 
 fn managed_scope_argument(args: &[String]) -> UseResult<a3s_use_core::PlanScope> {
-    let kind = match option_argument(args, "--scope-kind")?.unwrap_or("user") {
+    let kind = match option_argument(args, "--scope-kind")?.ok_or_else(|| {
+        usage_error("--scope-kind <user|workspace> is required for installation-scoped commands")
+    })? {
         "user" => a3s_use_core::PlanScopeKind::User,
         "workspace" => a3s_use_core::PlanScopeKind::Workspace,
         value => {
@@ -840,18 +855,10 @@ fn managed_scope_argument(args: &[String]) -> UseResult<a3s_use_core::PlanScope>
             )))
         }
     };
-    let scope_id = option_argument(args, "--scope-id")?;
-    if kind == a3s_use_core::PlanScopeKind::Workspace && scope_id.is_none() {
-        return Err(usage_error(
-            "--scope-id is required when --scope-kind is 'workspace'",
-        ));
-    }
-    Ok(a3s_use_core::PlanScope {
-        kind,
-        id: scope_id
-            .unwrap_or(crate::COGNITIVE_PACKAGE_DEFAULT_SCOPE)
-            .to_owned(),
-    })
+    let scope_id = option_argument(args, "--scope-id")?.ok_or_else(|| {
+        usage_error("--scope-id <id> is required for installation-scoped commands")
+    })?;
+    a3s_use_core::InstallationId::new(kind, scope_id)
 }
 
 fn validate_capability_options(args: &[String], watch: bool) -> UseResult<()> {
@@ -865,7 +872,30 @@ fn validate_capability_options(args: &[String], watch: bool) -> UseResult<()> {
                 }
                 index += 2;
             }
+            "--scope-kind" | "--scope-id" => {
+                if args.get(index + 1).is_none() {
+                    return Err(usage_error(format!("{} requires a value", args[index])));
+                }
+                index += 2;
+            }
             value => return Err(usage_error(format!("unknown capability option '{value}'"))),
+        }
+    }
+    Ok(())
+}
+
+fn validate_scoped_read_options(args: &[String], command: &str) -> UseResult<()> {
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--json" => index += 1,
+            "--scope-kind" | "--scope-id" => {
+                if args.get(index + 1).is_none() {
+                    return Err(usage_error(format!("{} requires a value", args[index])));
+                }
+                index += 2;
+            }
+            value => return Err(usage_error(format!("unknown {command} option '{value}'"))),
         }
     }
     Ok(())

@@ -160,7 +160,7 @@ async fn restore_plan_rejects_a_conflicting_current_binding() {
         .unwrap();
     binding.observation.observed_at_ms += 1;
     binding.validate().unwrap();
-    let scope_digest = format!("{:x}", Sha256::digest(fixture.scope.id.as_bytes()));
+    let scope_digest = fixture.scope.storage_key().unwrap();
     let path = store
         .root()
         .join("workspace")
@@ -288,7 +288,7 @@ async fn restore_apply_requires_exact_review_and_revalidates_authority() {
         .join(a3s_use_extension::ACTIVE_STATE_RESTORE_MARKER)
         .exists());
 
-    let scope_digest = format!("{:x}", Sha256::digest(fixture.scope.id.as_bytes()));
+    let scope_digest = fixture.scope.storage_key().unwrap();
     let binding = OkfKnowledgeBindingStore::from_extension_paths(&fixture.paths)
         .root()
         .join("workspace")
@@ -643,11 +643,16 @@ async fn restore_checkpoint_crash_child() {
     );
     let plan_digest = std::env::var(RESTORE_CHILD_PLAN_DIGEST_ENV)
         .expect("restore checkpoint child plan digest is missing");
-    let paths = a3s_use_extension::ExtensionPaths::new(root.join("data"), root.join("state"));
     let scope = a3s_use_core::PlanScope {
         kind: PlanScopeKind::Workspace,
         id: "restore-workspace".to_owned(),
     };
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        root.join("data"),
+        root.join("state"),
+        scope.clone(),
+    )
+    .unwrap();
     let outcome = OkfKnowledgeRecoveryManager::from_extension_paths(&paths)
         .apply_restore(&scope, backup, &plan_digest)
         .await;
@@ -695,7 +700,16 @@ impl RestoreFixture {
     ) -> Self {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path().to_path_buf();
-        let paths = a3s_use_extension::ExtensionPaths::new(root.join("data"), root.join("state"));
+        let scope = a3s_use_core::PlanScope {
+            kind: PlanScopeKind::Workspace,
+            id: "restore-workspace".to_owned(),
+        };
+        let paths = a3s_use_extension::ExtensionPaths::new(
+            root.join("data"),
+            root.join("state"),
+            scope.clone(),
+        )
+        .unwrap();
         let registry = a3s_use_extension::ExtensionRegistry::new(paths.clone());
         let package_root = fixture_package_root();
         let candidate =
@@ -710,10 +724,6 @@ impl RestoreFixture {
             generation,
         )
         .unwrap();
-        let scope = a3s_use_core::PlanScope {
-            kind: PlanScopeKind::Workspace,
-            id: "restore-workspace".to_owned(),
-        };
         let surface = candidate.manifest().okf[0].clone();
         let files = load_okf_bundle_files(&surface, &package_root)
             .await

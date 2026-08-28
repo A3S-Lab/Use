@@ -9,8 +9,8 @@ fn killed_managed_uninstall_replays_graph_hide_and_grant_retirement_without_reau
     let repository = TestRepository::with_targets(targets, 113, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let graph_path = home.join("state/package-graphs/acme/worker.json");
-    let snapshot_path = home.join("state/registry.json");
+    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let baseline_marker = temp.path().join("baseline-authorization.marker");
     let baseline = spawn_managed_child(ManagedChildRequest {
@@ -45,7 +45,8 @@ fn killed_managed_uninstall_replays_graph_hide_and_grant_retirement_without_reau
     assert_eq!(baseline_snapshot["generation"], 1);
     assert_eq!(route_package_ids(&baseline_snapshot), expected_package_ids);
 
-    let pending_path = home.join("state/operations/package-graphs/uninstall/acme/worker.json");
+    let pending_path =
+        managed_state_root(&home).join("operations/package-graphs/uninstall/acme/worker.json");
     let held_lifecycle_path = managed_lifecycle_journal_path(&home, "acme/leaf-00");
     let lifecycle_lock = exclusive_lock(&held_lifecycle_path.with_file_name(".operation.lock"));
     let authorization_marker = temp.path().join("uninstall-authorization.marker");
@@ -149,8 +150,8 @@ fn killed_managed_uninstall_replays_graph_hide_and_grant_retirement_without_reau
     assert!(!pending_path.exists());
     assert!(!graph_path.exists());
     for package_id in &expected_package_ids {
-        assert!(!home
-            .join("state/extensions")
+        assert!(!managed_state_root(&home)
+            .join("extensions")
             .join(format!("{package_id}.json"))
             .exists());
     }

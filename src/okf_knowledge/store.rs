@@ -5,7 +5,6 @@ use a3s_use_core::{
     PlanQualifiedSurfaceRef, PlanScope, PluginPackageId, PluginSurfaceKind, UseError, UseResult,
 };
 use a3s_use_extension::ExtensionPaths;
-use sha2::{Digest, Sha256};
 
 use super::OkfKnowledgeBinding;
 use a3s_use_extension::{StateMaintenanceGuard, StateMaintenanceLock};
@@ -47,7 +46,7 @@ impl OkfKnowledgeBindingStore {
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.state_root())
+        Self::new(paths.installation_state_root())
     }
 
     pub fn root(&self) -> &Path {
@@ -169,7 +168,7 @@ impl OkfKnowledgeBindingStore {
         &self,
         scope: &PlanScope,
     ) -> UseResult<Vec<OkfKnowledgeBinding>> {
-        if !valid_machine_id(&scope.id) {
+        if scope.validate().is_err() {
             return Err(invalid_path_identity());
         }
         let _lock = acquire_lock(&self.state_root, &self.root).await?;
@@ -209,7 +208,7 @@ impl OkfKnowledgeBindingStore {
     }
 
     async fn list_scope_unlocked(&self, scope: &PlanScope) -> UseResult<Vec<OkfKnowledgeBinding>> {
-        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+        let scope_digest = scope.storage_key().map_err(|_| invalid_path_identity())?;
         let scope_root = self.root.join(scope.kind.as_str()).join(scope_digest);
         if !validate_existing_directory_chain(&self.state_root, Some(&scope_root)).await? {
             return Ok(Vec::new());
@@ -281,7 +280,7 @@ impl OkfKnowledgeBindingStore {
             .as_str()
             .split_once('/')
             .ok_or_else(invalid_path_identity)?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+        let scope_digest = scope.storage_key().map_err(|_| invalid_path_identity())?;
         Ok(self
             .root
             .join(scope.kind.as_str())
@@ -500,7 +499,7 @@ fn validate_selected_binding(
 }
 
 fn validate_path_identity(scope: &PlanScope, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
-    if !valid_machine_id(&scope.id)
+    if scope.validate().is_err()
         || PluginPackageId::parse(surface.package_id.clone()).is_err()
         || surface.surface.kind != PluginSurfaceKind::Okf
         || !valid_segment(&surface.surface.id)
@@ -535,18 +534,6 @@ fn valid_segment(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
-
-fn valid_machine_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 256
-        && value
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-        })
 }
 
 fn selection_error() -> UseError {

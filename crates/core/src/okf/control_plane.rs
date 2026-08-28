@@ -356,7 +356,7 @@ fn valid_okf_surface(surface: &PlanQualifiedSurfaceRef) -> bool {
 }
 
 fn valid_scope(scope: &PlanScope) -> bool {
-    valid_machine_id(&scope.id)
+    scope.validate().is_ok()
 }
 
 fn parse_contract<T>(

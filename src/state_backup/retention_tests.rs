@@ -177,13 +177,89 @@ async fn coordinated_backup_and_retention_share_one_external_directory_lock() {
 }
 
 fn fixture_paths(root: &Path) -> a3s_use_extension::ExtensionPaths {
-    a3s_use_extension::ExtensionPaths::new(root.join("data"), root.join("state"))
+    crate::test_extension_paths(root)
+}
+
+#[tokio::test]
+async fn retention_never_selects_backups_owned_by_another_installation() {
+    let temporary = tempfile::tempdir().unwrap();
+    let backup_directory = temporary.path().join("backups");
+    std::fs::create_dir(&backup_directory).unwrap();
+    let user =
+        a3s_use_core::InstallationId::new(a3s_use_core::InstallationKind::User, "shared/research")
+            .unwrap();
+    let workspace = a3s_use_core::InstallationId::new(
+        a3s_use_core::InstallationKind::Workspace,
+        "shared/research",
+    )
+    .unwrap();
+    let user_paths = a3s_use_extension::ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        user.clone(),
+    )
+    .unwrap();
+    let workspace_paths = a3s_use_extension::ExtensionPaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+        workspace.clone(),
+    )
+    .unwrap();
+    let user_manager = StateBackupManager::new(user_paths.clone());
+    let workspace_manager = StateBackupManager::new(workspace_paths.clone());
+
+    for index in 1..=3 {
+        write_fixture_state(&user_paths, format!("user-{index}").as_bytes());
+        user_manager
+            .backup(backup_directory.join(format!("user-{index:03}.a3s-use-state-backup")))
+            .await
+            .unwrap();
+        write_fixture_state(&workspace_paths, format!("workspace-{index}").as_bytes());
+        workspace_manager
+            .backup(backup_directory.join(format!("workspace-{index:03}.a3s-use-state-backup")))
+            .await
+            .unwrap();
+    }
+
+    let policy = StateBackupRetentionPolicy::new(2, 1024 * 1024 * 1024).unwrap();
+    let plan = user_manager
+        .plan_backup_retention(&backup_directory, policy)
+        .await
+        .unwrap();
+    assert_eq!(plan.installation, user);
+    assert_eq!(plan.before_backup_count, 3);
+    assert_eq!(plan.remove.len(), 1);
+    assert_eq!(plan.remove[0].file_name, "user-001.a3s-use-state-backup");
+    assert!(plan
+        .remove
+        .iter()
+        .chain(&plan.retain)
+        .all(|entry| entry.installation == plan.installation));
+
+    let result = user_manager
+        .apply_backup_retention(&backup_directory, policy, plan.descriptor_digest().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(result.installation, plan.installation);
+    assert!(!backup_directory
+        .join("user-001.a3s-use-state-backup")
+        .exists());
+    for index in 1..=3 {
+        assert!(backup_directory
+            .join(format!("workspace-{index:03}.a3s-use-state-backup"))
+            .is_file());
+    }
+
+    let workspace_plan = workspace_manager
+        .plan_backup_retention(&backup_directory, policy)
+        .await
+        .unwrap();
+    assert_eq!(workspace_plan.installation, workspace);
+    assert_eq!(workspace_plan.before_backup_count, 3);
 }
 
 fn write_fixture_state(paths: &a3s_use_extension::ExtensionPaths, bytes: &[u8]) {
-    let path = paths
-        .state_root()
-        .join("registry-trust-roots/sha256/root.json");
+    let path = paths.state_root().join("bindings/runtime/fixture.json");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }

@@ -27,7 +27,7 @@ pub struct OkfKnowledgeStageSpec {
 impl OkfKnowledgeStageSpec {
     pub fn validate(&self) -> UseResult<()> {
         if !valid_machine_id(&self.operation_id)
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || PluginPackageId::parse(self.surface.package_id.clone()).is_err()
             || self.surface.surface.kind != PluginSurfaceKind::Okf
             || !valid_segment(&self.surface.surface.id)

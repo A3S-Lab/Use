@@ -33,30 +33,24 @@ async fn search(args: &[String]) -> UseResult<CommandOutput> {
     let query = value_argument(args, 1, "knowledge search requires a query")?;
     let limit = usize::try_from(integer_option(args, "--limit", 10)?)
         .map_err(|_| usage_error("--limit exceeds the platform range"))?;
-    let snapshot = capability_registry_snapshot().await?;
+    let scope = scope(args)?;
+    let snapshot = capability_registry_snapshot(scope.clone()).await?;
     let projections = snapshot.knowledge_projections();
     if projections.is_empty() {
         return Err(UseError::new(
             "use.okf.knowledge_unavailable",
-            "No promoted OKF Knowledge projection is active in the current User scope.",
+            "No promoted OKF Knowledge projection is active in the selected installation.",
         )
         .with_suggestion(
             "Install and enable a signed cognitive package with an OKF surface, then retry the search.",
         ));
     }
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let paths = a3s_use_extension::ExtensionPaths::from_env(scope.clone())?;
     let client = crate::okf_knowledge::OkfKnowledgeClient::new(std::sync::Arc::new(
         crate::okf_knowledge::SqliteOkfKnowledgeAdapter::from_extension_paths(&paths),
     ));
-    let request = crate::okf_knowledge::OkfKnowledgeSearchRequest::new(
-        a3s_use_core::PlanScope {
-            kind: a3s_use_core::PlanScopeKind::User,
-            id: crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
-        },
-        query,
-        limit,
-        projections,
-    )?;
+    let request =
+        crate::okf_knowledge::OkfKnowledgeSearchRequest::new(scope, query, limit, projections)?;
     let response = client.search(&request).await?;
     Ok(CommandOutput::success(
         format!(
@@ -71,7 +65,7 @@ async fn search(args: &[String]) -> UseResult<CommandOutput> {
 async fn usage(args: &[String]) -> UseResult<CommandOutput> {
     validate_scope_options(args, 1, false)?;
     let scope = scope(args)?;
-    let adapter = adapter()?;
+    let adapter = adapter(scope.clone())?;
     let usage = adapter.usage(&scope).await?;
     Ok(CommandOutput::success(
         format!(
@@ -90,7 +84,7 @@ async fn usage(args: &[String]) -> UseResult<CommandOutput> {
 async fn audit(args: &[String]) -> UseResult<CommandOutput> {
     validate_scope_options(args, 1, false)?;
     let scope = scope(args)?;
-    let report = adapter()?.audit(&scope).await?;
+    let report = adapter(scope.clone())?.audit(&scope).await?;
     Ok(CommandOutput::success(
         format!(
             "Knowledge scope {}/{} passed SQLite, receipt, scope, foreign-key, and FTS integrity checks for {} document(s).",
@@ -107,7 +101,7 @@ async fn backup(args: &[String]) -> UseResult<CommandOutput> {
     validate_scope_options(args, 2, false)?;
     let destination = value_argument(args, 1, "knowledge backup requires a path")?;
     let scope = scope(args)?;
-    let manifest = adapter()?.backup(&scope, destination).await?;
+    let manifest = adapter(scope.clone())?.backup(&scope, destination).await?;
     Ok(CommandOutput::success(
         format!(
             "Backed up Knowledge scope {}/{} to '{}' ({} bytes, {}).",
@@ -232,7 +226,7 @@ async fn plan_restore(args: &[String]) -> UseResult<CommandOutput> {
     validate_scope_options(args, 2, false)?;
     let backup_path = value_argument(args, 1, "knowledge plan-restore requires a backup path")?;
     let scope = scope(args)?;
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let paths = a3s_use_extension::ExtensionPaths::from_env(scope.clone())?;
     let plan = crate::okf_knowledge::OkfKnowledgeRecoveryManager::from_extension_paths(&paths)
         .plan_restore(&scope, backup_path)
         .await?;
@@ -269,7 +263,7 @@ async fn restore(args: &[String]) -> UseResult<CommandOutput> {
         usage_error("knowledge restore requires the exact --plan-digest returned by plan-restore")
     })?;
     let scope = scope(args)?;
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let paths = a3s_use_extension::ExtensionPaths::from_env(scope.clone())?;
     let result = crate::okf_knowledge::OkfKnowledgeRecoveryManager::from_extension_paths(&paths)
         .apply_restore(&scope, backup_path, plan_digest)
         .await?;
@@ -306,7 +300,7 @@ async fn restore(args: &[String]) -> UseResult<CommandOutput> {
 async fn restore_status(args: &[String]) -> UseResult<CommandOutput> {
     validate_scope_options(args, 1, false)?;
     let scope = scope(args)?;
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+    let paths = a3s_use_extension::ExtensionPaths::from_env(scope.clone())?;
     let diagnostic =
         crate::okf_knowledge::OkfKnowledgeRecoveryManager::from_extension_paths(&paths)
             .diagnose_restores(&scope)
@@ -345,7 +339,7 @@ async fn repair_search_index(args: &[String]) -> UseResult<CommandOutput> {
         ));
     }
     let scope = scope(args)?;
-    let repaired = adapter()?.repair_search_index(&scope).await?;
+    let repaired = adapter(scope.clone())?.repair_search_index(&scope).await?;
     Ok(CommandOutput::success(
         format!(
             "Rebuilt the derived Knowledge search index for {}/{} from {} validated document(s).",
@@ -358,8 +352,10 @@ async fn repair_search_index(args: &[String]) -> UseResult<CommandOutput> {
 }
 
 #[cfg(feature = "extensions")]
-fn adapter() -> UseResult<crate::okf_knowledge::SqliteOkfKnowledgeAdapter> {
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
+fn adapter(
+    installation: a3s_use_core::InstallationId,
+) -> UseResult<crate::okf_knowledge::SqliteOkfKnowledgeAdapter> {
+    let paths = a3s_use_extension::ExtensionPaths::from_env(installation)?;
     Ok(crate::okf_knowledge::SqliteOkfKnowledgeAdapter::from_extension_paths(&paths))
 }
 
@@ -369,7 +365,7 @@ fn validate_search_options(args: &[String]) -> UseResult<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--json" => index += 1,
-            "--limit" => {
+            "--limit" | "--scope-kind" | "--scope-id" => {
                 if args.get(index + 1).is_none() {
                     return Err(usage_error("--limit requires a value"));
                 }
@@ -447,27 +443,7 @@ fn validate_backup_retention_options(args: &[String]) -> UseResult<()> {
 
 #[cfg(feature = "extensions")]
 fn scope(args: &[String]) -> UseResult<a3s_use_core::PlanScope> {
-    let kind = match option_argument(args, "--scope-kind")?.unwrap_or("user") {
-        "user" => a3s_use_core::PlanScopeKind::User,
-        "workspace" => a3s_use_core::PlanScopeKind::Workspace,
-        value => {
-            return Err(usage_error(format!(
-                "--scope-kind must be 'user' or 'workspace', received '{value}'"
-            )))
-        }
-    };
-    let scope_id = option_argument(args, "--scope-id")?;
-    if kind == a3s_use_core::PlanScopeKind::Workspace && scope_id.is_none() {
-        return Err(usage_error(
-            "--scope-id is required when --scope-kind is 'workspace'",
-        ));
-    }
-    Ok(a3s_use_core::PlanScope {
-        kind,
-        id: scope_id
-            .unwrap_or(crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE)
-            .to_owned(),
-    })
+    super::managed_scope_argument(args)
 }
 
 #[cfg(not(feature = "extensions"))]

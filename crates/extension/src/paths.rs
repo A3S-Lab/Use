@@ -1,21 +1,26 @@
 use std::path::{Path, PathBuf};
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::{InstallationId, UseError, UseResult};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtensionPaths {
+pub struct UsePaths {
     data_root: PathBuf,
     state_root: PathBuf,
 }
 
-impl ExtensionPaths {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionPaths {
+    roots: UsePaths,
+    installation: InstallationId,
+    data_root: PathBuf,
+    state_root: PathBuf,
+}
+
+impl UsePaths {
     pub fn from_env() -> UseResult<Self> {
         if let Some(root) = std::env::var_os("A3S_USE_HOME") {
             let root = absolute(PathBuf::from(root))?;
-            return Ok(Self {
-                data_root: root.join("data"),
-                state_root: root.join("state"),
-            });
+            return Ok(Self::new(root.join("data"), root.join("state")));
         }
 
         let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -31,10 +36,7 @@ impl ExtensionPaths {
             home.as_deref().map(|path| path.join(".local/state")),
         )?
         .join("use");
-        Ok(Self {
-            data_root,
-            state_root,
-        })
+        Ok(Self::new(data_root, state_root))
     }
 
     pub fn new(data_root: impl Into<PathBuf>, state_root: impl Into<PathBuf>) -> Self {
@@ -52,16 +54,103 @@ impl ExtensionPaths {
         &self.state_root
     }
 
+    pub fn for_installation(&self, installation: InstallationId) -> UseResult<ExtensionPaths> {
+        ExtensionPaths::from_roots(self.clone(), installation)
+    }
+
+    pub(crate) fn registry_sources_path(&self) -> PathBuf {
+        self.state_root.join("registries.acl")
+    }
+
+    pub(crate) fn registry_sources_lock_path(&self) -> PathBuf {
+        self.state_root.join(".registries.lock")
+    }
+
+    pub(crate) fn registry_source_datastore(
+        &self,
+        registry_name: &str,
+        source_identity: &str,
+    ) -> UseResult<PathBuf> {
+        super::remote::validate_registry_name(registry_name)?;
+        validate_sha256_path_segment(source_identity, "Registry source identity")?;
+        Ok(self
+            .state_root
+            .join("remote-registries")
+            .join(registry_name)
+            .join("sources")
+            .join(source_identity))
+    }
+
+    pub(crate) fn registry_trusted_root_path(&self, root_sha256: &str) -> UseResult<PathBuf> {
+        validate_sha256_path_segment(root_sha256, "Registry trust-root digest")?;
+        Ok(self
+            .state_root
+            .join("registry-trust-roots")
+            .join("sha256")
+            .join(format!("{root_sha256}.json")))
+    }
+}
+
+impl ExtensionPaths {
+    pub fn from_env(installation: InstallationId) -> UseResult<Self> {
+        UsePaths::from_env()?.for_installation(installation)
+    }
+
+    pub fn new(
+        data_root: impl Into<PathBuf>,
+        state_root: impl Into<PathBuf>,
+        installation: InstallationId,
+    ) -> UseResult<Self> {
+        Self::from_roots(UsePaths::new(data_root, state_root), installation)
+    }
+
+    pub fn from_roots(roots: UsePaths, installation: InstallationId) -> UseResult<Self> {
+        let installation_key = installation.storage_key()?;
+        reject_unscoped_installation_state(&roots)?;
+        let data_root = installation_root(roots.data_root(), &installation, &installation_key);
+        let state_root = installation_root(roots.state_root(), &installation, &installation_key);
+        Ok(Self {
+            roots,
+            installation,
+            data_root,
+            state_root,
+        })
+    }
+
+    pub fn use_paths(&self) -> &UsePaths {
+        &self.roots
+    }
+
+    pub fn data_root(&self) -> &Path {
+        &self.data_root
+    }
+
+    pub fn state_root(&self) -> &Path {
+        &self.state_root
+    }
+
+    pub fn installation(&self) -> &InstallationId {
+        &self.installation
+    }
+
+    pub fn installation_data_root(&self) -> PathBuf {
+        self.data_root.clone()
+    }
+
+    pub fn installation_state_root(&self) -> PathBuf {
+        self.state_root.clone()
+    }
+
     pub(crate) fn extensions_root(&self) -> PathBuf {
-        self.data_root.join("extensions")
+        self.installation_data_root().join("extensions")
     }
 
     pub(crate) fn receipts_root(&self) -> PathBuf {
-        self.state_root.join("extensions")
+        self.installation_state_root().join("extensions")
     }
 
     pub(crate) fn retained_lifecycle_receipts_root(&self) -> PathBuf {
-        self.state_root.join("extension-generations")
+        self.installation_state_root().join("extension-generations")
     }
 
     pub(crate) fn package_parent(&self, package_id: &str) -> PathBuf {
@@ -103,53 +192,79 @@ impl ExtensionPaths {
     }
 
     pub(crate) fn registry_snapshot_path(&self) -> PathBuf {
-        self.state_root.join("registry.json")
+        self.installation_state_root().join("registry.json")
     }
 
     pub(crate) fn lifecycle_package_lock_path(&self, package_id: &str, generation: u64) -> PathBuf {
-        append_package_id(self.state_root.join("route-locks"), package_id)
-            .join(format!("{generation:020}.lock"))
+        append_package_id(
+            self.installation_state_root().join("route-locks"),
+            package_id,
+        )
+        .join(format!("{generation:020}.lock"))
     }
+}
 
-    pub fn tuf_datastore(&self, registry_name: &str) -> UseResult<PathBuf> {
-        super::remote::validate_registry_name(registry_name)?;
-        Ok(self
-            .state_root
-            .join("remote-registries")
-            .join(registry_name))
-    }
+fn installation_root(root: &Path, installation: &InstallationId, key: &str) -> PathBuf {
+    root.join("installations")
+        .join(installation.kind.as_str())
+        .join(key)
+}
 
-    pub(crate) fn registry_sources_path(&self) -> PathBuf {
-        self.state_root.join("registries.acl")
-    }
+const LEGACY_DATA_ENTRIES: &[&str] = &["extensions"];
+const LEGACY_STATE_ENTRIES: &[&str] = &[
+    ".installation-mutation.lock",
+    ".maintenance.lock",
+    ".package-graph.lock",
+    "bindings",
+    "extension-generations",
+    "extensions",
+    "flow-runtime",
+    "grants",
+    "knowledge",
+    "operations",
+    "package-enablement",
+    "package-graphs",
+    "plugin-host-manager",
+    "registry.json",
+    "route-locks",
+];
 
-    pub(crate) fn registry_sources_lock_path(&self) -> PathBuf {
-        self.state_root.join(".registries.lock")
+fn reject_unscoped_installation_state(roots: &UsePaths) -> UseResult<()> {
+    for path in LEGACY_DATA_ENTRIES
+        .iter()
+        .map(|entry| roots.data_root().join(entry))
+        .chain(
+            LEGACY_STATE_ENTRIES
+                .iter()
+                .map(|entry| roots.state_root().join(entry)),
+        )
+    {
+        match std::fs::symlink_metadata(&path) {
+            Ok(_) => {
+                return Err(UseError::new(
+                    "use.installation.legacy_state_unsupported",
+                    format!(
+                        "Unscoped pre-release installation state '{}' is unsupported.",
+                        path.display()
+                    ),
+                )
+                .with_suggestion(
+                    "Preserve the old state for incident review, remove it with an approved cleanup procedure, then reinstall into an explicit User or Workspace installation.",
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(UseError::new(
+                    "use.installation.state_inspection_failed",
+                    format!(
+                        "Unscoped pre-release installation state '{}' cannot be inspected: {error}",
+                        path.display()
+                    ),
+                ));
+            }
+        }
     }
-
-    pub(crate) fn registry_source_datastore(
-        &self,
-        registry_name: &str,
-        source_identity: &str,
-    ) -> UseResult<PathBuf> {
-        super::remote::validate_registry_name(registry_name)?;
-        validate_sha256_path_segment(source_identity, "Registry source identity")?;
-        Ok(self
-            .state_root
-            .join("remote-registries")
-            .join(registry_name)
-            .join("sources")
-            .join(source_identity))
-    }
-
-    pub(crate) fn registry_trusted_root_path(&self, root_sha256: &str) -> UseResult<PathBuf> {
-        validate_sha256_path_segment(root_sha256, "Registry trust-root digest")?;
-        Ok(self
-            .state_root
-            .join("registry-trust-roots")
-            .join("sha256")
-            .join(format!("{root_sha256}.json")))
-    }
+    Ok(())
 }
 
 fn validate_sha256_path_segment(value: &str, label: &str) -> UseResult<()> {
@@ -218,40 +333,43 @@ mod tests {
 
     #[test]
     fn package_paths_preserve_publisher_namespace() {
-        let paths = ExtensionPaths::new("/data/use", "/state/use");
+        let installation =
+            InstallationId::new(a3s_use_core::InstallationKind::Workspace, "same/identity")
+                .unwrap();
+        let paths = ExtensionPaths::new("/data/use", "/state/use", installation.clone()).unwrap();
+        let key = installation.storage_key().unwrap();
+        let data = PathBuf::from(format!("/data/use/installations/workspace/{key}"));
+        let state = PathBuf::from(format!("/state/use/installations/workspace/{key}"));
+        assert_eq!(paths.installation(), &installation);
+        assert_eq!(paths.installation_data_root(), data);
+        assert_eq!(paths.installation_state_root(), state);
         assert_eq!(
             paths.lifecycle_package_root("acme/slack", 7, &"a".repeat(64)),
-            PathBuf::from(format!(
-                "/data/use/extensions/acme/slack/lifecycle-7-{}",
+            data.join(format!(
+                "extensions/acme/slack/lifecycle-7-{}",
                 "a".repeat(64)
             ))
         );
         assert_eq!(
             paths.receipt_path("acme/slack"),
-            PathBuf::from("/state/use/extensions/acme/slack.json")
+            state.join("extensions/acme/slack.json")
         );
         assert_eq!(
             paths.retained_lifecycle_receipt_path("acme/slack", 7, &"a".repeat(64)),
-            PathBuf::from(format!(
-                "/state/use/extension-generations/acme/slack/{:020}-{}.json",
+            state.join(format!(
+                "extension-generations/acme/slack/{:020}-{}.json",
                 7,
                 "a".repeat(64)
             ))
         );
         assert_eq!(
             paths.lifecycle_package_lock_path("acme/slack", 7),
-            PathBuf::from("/state/use/route-locks/acme/slack/00000000000000000007.lock")
+            state.join("route-locks/acme/slack/00000000000000000007.lock")
         );
-        assert_eq!(
-            paths.registry_snapshot_path(),
-            PathBuf::from("/state/use/registry.json")
-        );
-        assert_eq!(
-            paths.tuf_datastore("a3s").unwrap(),
-            PathBuf::from("/state/use/remote-registries/a3s")
-        );
+        assert_eq!(paths.registry_snapshot_path(), state.join("registry.json"));
         assert_eq!(
             paths
+                .use_paths()
                 .registry_source_datastore("a3s", &"b".repeat(64))
                 .unwrap(),
             PathBuf::from(format!(
@@ -260,15 +378,65 @@ mod tests {
             ))
         );
         assert_eq!(
-            paths.registry_trusted_root_path(&"c".repeat(64)).unwrap(),
+            paths
+                .use_paths()
+                .registry_trusted_root_path(&"c".repeat(64))
+                .unwrap(),
             PathBuf::from(format!(
                 "/state/use/registry-trust-roots/sha256/{}.json",
                 "c".repeat(64)
             ))
         );
-        assert_eq!(
-            paths.tuf_datastore("../escape").unwrap_err().code,
-            "use.extension.registry_name_invalid"
+    }
+
+    #[test]
+    fn same_textual_id_has_distinct_user_and_workspace_roots() {
+        let user = ExtensionPaths::new(
+            "/data/use",
+            "/state/use",
+            InstallationId::new(a3s_use_core::InstallationKind::User, "same").unwrap(),
+        )
+        .unwrap();
+        let workspace = ExtensionPaths::new(
+            "/data/use",
+            "/state/use",
+            InstallationId::new(a3s_use_core::InstallationKind::Workspace, "same").unwrap(),
+        )
+        .unwrap();
+
+        assert_ne!(
+            user.installation_data_root(),
+            workspace.installation_data_root()
         );
+        assert_ne!(
+            user.installation_state_root(),
+            workspace.installation_state_root()
+        );
+    }
+
+    #[test]
+    fn unscoped_installation_state_is_rejected_but_global_registry_state_is_allowed() {
+        let temporary = tempfile::tempdir().unwrap();
+        let roots = UsePaths::new(
+            temporary.path().join("data"),
+            temporary.path().join("state"),
+        );
+        std::fs::create_dir_all(roots.state_root().join("remote-registries/fixture")).unwrap();
+        std::fs::create_dir_all(roots.state_root().join("registry-trust-roots/sha256")).unwrap();
+        std::fs::write(
+            roots.state_root().join("registries.acl"),
+            b"schema_version = 1\n",
+        )
+        .unwrap();
+        let installation = InstallationId::new(
+            a3s_use_core::InstallationKind::Workspace,
+            "workspace/acme-project",
+        )
+        .unwrap();
+        roots.for_installation(installation.clone()).unwrap();
+
+        std::fs::create_dir_all(roots.state_root().join("bindings/runtime")).unwrap();
+        let error = roots.for_installation(installation).unwrap_err();
+        assert_eq!(error.code, "use.installation.legacy_state_unsupported");
     }
 }

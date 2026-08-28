@@ -138,8 +138,7 @@ async fn different_roots_with_a_shared_dependency_serialize_before_authorization
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let registry = ExtensionRegistry::new(extension_paths(&home));
     let initial = CognitivePackageManager::new(registry.clone()).unwrap();
     initial
         .install_remote(
@@ -264,7 +263,7 @@ async fn separate_cli_processes_leave_a_linearizable_shared_dependency_graph() {
     let initial = cognitive_registry_install(&server, &repository, &home, "acme/first", &[]);
     assert!(initial.status.success(), "{initial:?}");
 
-    let mutation_lock = exclusive_lock(&home.join("state/.installation-mutation.lock"));
+    let mutation_lock = exclusive_lock(&scoped_state(&home, ".installation-mutation.lock"));
     let mut install = tokio::process::Command::new(binary())
         .args([
             "install",
@@ -275,6 +274,7 @@ async fn separate_cli_processes_leave_a_linearizable_shared_dependency_graph() {
             "1.0.0",
             "--json",
         ])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -283,6 +283,7 @@ async fn separate_cli_processes_leave_a_linearizable_shared_dependency_graph() {
         .unwrap();
     let mut uninstall = tokio::process::Command::new(binary())
         .args(["uninstall", "acme/first", "--yes", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -326,8 +327,7 @@ async fn separate_cli_processes_leave_a_linearizable_shared_dependency_graph() {
         );
     }
 
-    let registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let registry = ExtensionRegistry::new(extension_paths(&home));
     let first_exists = registry.get("acme/first").await.unwrap().is_some();
     let second_exists = registry.get("acme/second").await.unwrap().is_some();
     let dependency_exists = registry.get("acme/dependency").await.unwrap().is_some();
@@ -383,8 +383,7 @@ async fn a_stale_reviewed_graph_fails_before_authorization_or_installation_effec
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let registry = ExtensionRegistry::new(extension_paths(&home));
     let planner = CognitivePackageManager::new(registry.clone()).unwrap();
     let reviewed_lock = resolve_remote_package_lock(
         &trusted,
@@ -493,8 +492,7 @@ async fn uninstall_revalidates_a_dependency_adopted_as_a_root_without_generation
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let registry = ExtensionRegistry::new(extension_paths(&home));
     let planner = CognitivePackageManager::new(registry.clone()).unwrap();
     let installed = planner
         .install_remote(
@@ -619,8 +617,7 @@ async fn upgrade_revalidates_a_dependency_adopted_as_a_root_without_generation_c
         home.join("state/remote-registries/next"),
     )
     .unwrap();
-    let registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let registry = ExtensionRegistry::new(extension_paths(&home));
     let planner = CognitivePackageManager::new(registry.clone()).unwrap();
     planner
         .install_remote(

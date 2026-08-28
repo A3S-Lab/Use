@@ -10,13 +10,13 @@ use a3s_use::cognitive_package::{
     CognitivePackageEnablementRequest, CognitivePackageManager,
 };
 use a3s_use_core::{
-    CatalogAvailability, CatalogSurface, PluginCatalogRecord, PluginDesiredState,
-    PluginObservedState, PluginOperationAction, PluginPackageDependency, PluginPackageLockHost,
-    PluginReleaseChannel, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA_V3,
+    CatalogAvailability, CatalogSurface, InstallationId, InstallationKind, PluginCatalogRecord,
+    PluginDesiredState, PluginObservedState, PluginOperationAction, PluginPackageDependency,
+    PluginPackageLockHost, PluginReleaseChannel, PluginSurfaceKind, PLUGIN_CATALOG_SCHEMA_V3,
 };
 use a3s_use_extension::{
     prepare_remote_package, resolve_remote_package_lock, ExtensionPaths, ExtensionRegistry,
-    ResolvedRemotePackage, TrustedRegistry,
+    ResolvedRemotePackage, TrustedRegistry, UsePaths,
 };
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
@@ -31,9 +31,63 @@ use tuf_test_support::{
 
 const OKF_CATALOG_V3: &[u8] =
     include_bytes!("../crates/core/fixtures/plugins/catalog-record-okf-v3.json");
+const TEST_SCOPE_KIND: &str = "user";
+const TEST_SCOPE_ID: &str = "user/current";
 
 fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_a3s-use")
+}
+
+fn test_installation() -> InstallationId {
+    InstallationId::new(InstallationKind::User, TEST_SCOPE_ID).unwrap()
+}
+
+fn extension_paths(home: &std::path::Path) -> ExtensionPaths {
+    extension_paths_for(home, test_installation())
+}
+
+fn extension_paths_for(home: &std::path::Path, installation: InstallationId) -> ExtensionPaths {
+    ExtensionPaths::new(home.join("data"), home.join("state"), installation).unwrap()
+}
+
+fn use_paths(home: &std::path::Path) -> UsePaths {
+    UsePaths::new(home.join("data"), home.join("state"))
+}
+
+fn scoped_state(
+    home: &std::path::Path,
+    relative: impl AsRef<std::path::Path>,
+) -> std::path::PathBuf {
+    extension_paths(home).state_root().join(relative)
+}
+
+fn scoped_data(
+    home: &std::path::Path,
+    relative: impl AsRef<std::path::Path>,
+) -> std::path::PathBuf {
+    extension_paths(home).data_root().join(relative)
+}
+
+fn append_test_installation_args(command: &mut Command) {
+    command.args(["--scope-kind", TEST_SCOPE_KIND, "--scope-id", TEST_SCOPE_ID]);
+}
+
+trait TestInstallationCommand {
+    fn for_test_installation(&mut self) -> &mut Self;
+}
+
+impl TestInstallationCommand for Command {
+    fn for_test_installation(&mut self) -> &mut Self {
+        append_test_installation_args(self);
+        self
+    }
+}
+
+impl TestInstallationCommand for tokio::process::Command {
+    fn for_test_installation(&mut self) -> &mut Self {
+        self.args(["--scope-kind", TEST_SCOPE_KIND, "--scope-id", TEST_SCOPE_ID]);
+        self
+    }
 }
 
 #[cfg(any(unix, windows))]
@@ -91,6 +145,7 @@ fn registry_install(
     if let Some(package_lock_digest) = package_lock_digest {
         command.args(["--package-lock-digest", package_lock_digest]);
     }
+    append_test_installation_args(&mut command);
     command
         .args(extra)
         .arg("--json")
@@ -117,6 +172,7 @@ fn cognitive_registry_install(
             "1.0.0",
         ])
         .args(extra)
+        .args(["--scope-kind", TEST_SCOPE_KIND, "--scope-id", TEST_SCOPE_ID])
         .arg("--json")
         .env("A3S_USE_HOME", home)
         .output()
@@ -125,7 +181,15 @@ fn cognitive_registry_install(
 
 fn cognitive_uninstall(home: &std::path::Path, package_id: &str) -> Output {
     Command::new(binary())
-        .args(["uninstall", package_id, "--json"])
+        .args([
+            "uninstall",
+            package_id,
+            "--scope-kind",
+            TEST_SCOPE_KIND,
+            "--scope-id",
+            TEST_SCOPE_ID,
+            "--json",
+        ])
         .env("A3S_USE_HOME", home)
         .output()
         .unwrap()
@@ -269,6 +333,7 @@ fn cognitive_registry_upgrade(
             version,
         ])
         .args(extra)
+        .args(["--scope-kind", TEST_SCOPE_KIND, "--scope-id", TEST_SCOPE_ID])
         .arg("--json")
         .env("A3S_USE_HOME", home)
         .output()
@@ -375,8 +440,8 @@ fn target_request_count(server: &TestServer) -> usize {
 }
 
 fn lifecycle_journal_path(home: &std::path::Path, package_id: &str) -> std::path::PathBuf {
-    let scope = format!("{:x}", Sha256::digest(b"user/current"));
-    home.join("state/operations/plugins")
+    let scope = test_installation().storage_key().unwrap();
+    scoped_state(home, "operations/plugins")
         .join("user")
         .join(scope)
         .join(package_id)

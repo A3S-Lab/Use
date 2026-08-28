@@ -18,6 +18,7 @@ use super::{FlowRuntimeBinding, FlowRuntimeBindingStore};
 #[derive(Debug, Clone)]
 pub struct A3sFlowLifecycleHost {
     package_root: PathBuf,
+    runtime_entrypoint_root: PathBuf,
     runtime: NativeTsRuntime,
     store: FlowRuntimeBindingStore,
 }
@@ -28,18 +29,21 @@ impl A3sFlowLifecycleHost {
         compiler_binary: impl Into<PathBuf>,
         cache_dir: impl Into<PathBuf>,
         store: FlowRuntimeBindingStore,
-    ) -> Self {
+    ) -> UseResult<Self> {
         let package_root = package_root.into();
+        let runtime_entrypoint_root = runtime_entrypoint_root(&package_root)?;
+        let cache_dir = cache_dir.into();
         let runtime = NativeTsRuntime::new(NativeTsRuntimeConfig::new(
             compiler_binary,
+            cache_dir.clone(),
             cache_dir,
-            package_root.clone(),
         ));
-        Self {
+        Ok(Self {
             package_root,
+            runtime_entrypoint_root,
             runtime,
             store,
-        }
+        })
     }
 
     pub fn package_root(&self) -> &std::path::Path {
@@ -72,10 +76,11 @@ impl A3sFlowLifecycleHost {
         }
 
         let source = inspect_flow_surface_file(surface, &self.package_root).await?;
+        let runtime_entrypoint = self.runtime_entrypoint_root.join(&surface.source);
         let spec = WorkflowSpec::native_ts(
             format!("{}:{}", intent.package_id, surface.id),
             format!("generation-{}", intent.generation),
-            surface.source.to_string_lossy(),
+            runtime_entrypoint.to_string_lossy(),
             surface.export_name.clone(),
         );
         let preflight = self.runtime.preflight(&spec).await.map_err(|error| {
@@ -87,6 +92,12 @@ impl A3sFlowLifecycleHost {
                 ),
             )
         })?;
+        if preflight.entrypoint != runtime_entrypoint {
+            return Err(flow_error(
+                "use.plugin.flow_preflight_mismatch",
+                "a3s-flow returned an entrypoint outside the exact configured package source.",
+            ));
+        }
         let artifact_sha256 = digest_artifact(&preflight.artifact).await?;
         let binding = FlowRuntimeBinding::new(FlowRuntimeBindingSpec {
             scope: intent.scope.clone(),
@@ -98,7 +109,7 @@ impl A3sFlowLifecycleHost {
             runtime: surface.runtime,
             source_digest: source.digest().to_string(),
             export_name: surface.export_name.clone(),
-            entrypoint: preflight.entrypoint,
+            entrypoint: self.package_root.join(&surface.source),
             artifact: preflight.artifact,
             artifact_sha256,
             source_hash: preflight.source_hash,
@@ -155,6 +166,33 @@ impl A3sFlowLifecycleHost {
         let subject = binding.descriptor_digest()?;
         self.store.remove(&binding).await?;
         checkpoint_evidence("flow-removed", idempotency_key, &subject)
+    }
+}
+
+fn runtime_entrypoint_root(package_root: &std::path::Path) -> UseResult<PathBuf> {
+    #[cfg(windows)]
+    {
+        a3s_use_core::windows_extended_length_path(package_root).map_err(|error| {
+            flow_error(
+                "use.plugin.flow_source_path_invalid",
+                format!(
+                    "Failed to prepare the A3S Flow compiler source path '{}': {error}",
+                    package_root.display()
+                ),
+            )
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        std::path::absolute(package_root).map_err(|error| {
+            flow_error(
+                "use.plugin.flow_source_path_invalid",
+                format!(
+                    "Failed to prepare the A3S Flow compiler source path '{}': {error}",
+                    package_root.display()
+                ),
+            )
+        })
     }
 }
 
@@ -255,4 +293,18 @@ fn checkpoint_evidence(
 ) -> UseResult<PluginLifecycleEvidence> {
     let identity = format!("{label}\n{idempotency_key}\n{subject_digest}");
     PluginLifecycleEvidence::new(format!("sha256:{:x}", Sha256::digest(identity.as_bytes())))
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn compiler_entrypoint_root_is_absolute() {
+        assert!(
+            runtime_entrypoint_root(std::path::Path::new("relative-package"))
+                .unwrap()
+                .is_absolute()
+        );
+    }
 }

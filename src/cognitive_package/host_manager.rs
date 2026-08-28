@@ -104,9 +104,9 @@ impl CognitivePackageHostManager {
         Ok(Self {
             current_scope,
             capabilities,
-            registry_sources: RegistrySourceStore::new(paths.clone()),
+            registry_sources: RegistrySourceStore::new(paths.use_paths().clone()),
             manager,
-            store: PluginHostProtocolStore::new(paths.state_root()),
+            store: PluginHostProtocolStore::new(paths.installation_state_root()),
         })
     }
 
@@ -179,7 +179,7 @@ impl CognitivePackageHostManager {
             .manager
             .resolution_attempt_store()
             .begin(PendingPackageResolutionAttempt::new(
-                self.manager.scope.clone(),
+                self.manager.scope().clone(),
                 action,
                 package_id,
                 version_requirement,
@@ -455,7 +455,7 @@ impl CognitivePackageHostManager {
             ReviewedCognitivePackageAuthorizationProvider::new(envelope, confirmation)?;
         CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
             self.manager.registry.clone(),
-            self.manager.scope.clone(),
+            self.manager.scope().clone(),
             self.manager.lifecycle.clone(),
             Arc::new(authorization),
         )
@@ -600,10 +600,10 @@ impl CognitivePackageHostManager {
             PluginLifecycleJournalStore::from_extension_paths(self.manager.registry.paths());
         for record in [
             store
-                .load_active(&self.manager.scope, &envelope.plan.package_id)
+                .load_active(self.manager.scope(), &envelope.plan.package_id)
                 .await?,
             store
-                .load_last(&self.manager.scope, &envelope.plan.package_id)
+                .load_last(self.manager.scope(), &envelope.plan.package_id)
                 .await?,
         ]
         .into_iter()
@@ -612,7 +612,7 @@ impl CognitivePackageHostManager {
             if record.status == PluginLifecycleOperationStatus::Completed
                 && record.intent.operation_id == envelope.plan.operation_id
                 && record.intent.plan_digest == envelope.plan_digest
-                && record.intent.scope == self.manager.scope
+                && record.intent.scope == *self.manager.scope()
                 && record.intent.package_id == envelope.plan.package_id
                 && record.intent.action == lifecycle_action(envelope.plan.action)?
             {
@@ -681,7 +681,7 @@ impl CognitivePackageHostManager {
                 let cognitive_request = cognitive_enablement_request(request, envelope)?;
                 let store = self.manager.enablement_store();
                 if let Some(operation) = store
-                    .get_operation(&self.manager.scope, &cognitive_request.operation_id)
+                    .get_operation(self.manager.scope(), &cognitive_request.operation_id)
                     .await?
                 {
                     if operation.request != cognitive_request || operation.envelope != *envelope {
@@ -693,7 +693,7 @@ impl CognitivePackageHostManager {
                     return Ok(true);
                 }
                 let Some(state) = store
-                    .get_state(&self.manager.scope, &cognitive_request.package_id)
+                    .get_state(self.manager.scope(), &cognitive_request.package_id)
                     .await?
                 else {
                     return Ok(false);
@@ -867,7 +867,7 @@ impl CognitivePackageHostManager {
             .map(|unit| unit.package_id.as_str())
             .collect::<std::collections::BTreeSet<_>>()
         {
-            let diagnostic = journal.diagnose(&self.manager.scope, package_id).await?;
+            let diagnostic = journal.diagnose(self.manager.scope(), package_id).await?;
             for operation in [diagnostic.latest, diagnostic.previous]
                 .into_iter()
                 .flatten()
@@ -1017,7 +1017,7 @@ impl CognitivePackageHostManager {
         let cognitive_request = cognitive_enablement_request(request, envelope)?;
         let store = self.manager.enablement_store();
         let completed = store
-            .get_operation(&self.manager.scope, &cognitive_request.operation_id)
+            .get_operation(self.manager.scope(), &cognitive_request.operation_id)
             .await?;
         if completed.as_ref().is_some_and(|operation| {
             operation.request != cognitive_request || operation.envelope != *envelope
@@ -1028,7 +1028,7 @@ impl CognitivePackageHostManager {
         }
 
         let state = store
-            .get_state(&self.manager.scope, &cognitive_request.package_id)
+            .get_state(self.manager.scope(), &cognitive_request.package_id)
             .await?;
         let active = state.as_ref().and_then(|state| {
             state
@@ -1046,7 +1046,7 @@ impl CognitivePackageHostManager {
 
         let diagnostic =
             PluginLifecycleJournalStore::from_extension_paths(self.manager.registry.paths())
-                .diagnose(&self.manager.scope, result.package_id.as_str())
+                .diagnose(self.manager.scope(), result.package_id.as_str())
                 .await?;
         let lifecycle = exact_lifecycle_operation(
             diagnostic.latest.as_ref(),

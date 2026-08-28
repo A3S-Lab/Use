@@ -5,7 +5,7 @@ use a3s_use_core::{UseError, UseResult};
 use sha2::{Digest, Sha256};
 
 use super::{
-    ExtensionPaths, RegistrySource, RegistrySourceSnapshot, VerifiedTargetCachePolicy,
+    RegistrySource, RegistrySourceSnapshot, UsePaths, VerifiedTargetCachePolicy,
     MAX_CONFIGURED_REGISTRY_SOURCES, REGISTRY_SOURCE_CONFIG_SCHEMA_VERSION,
 };
 
@@ -59,7 +59,7 @@ impl RegistrySourcesDocument {
     }
 }
 
-pub(super) fn decode(input: &str, paths: &ExtensionPaths) -> UseResult<RegistrySourcesDocument> {
+pub(super) fn decode(input: &str, paths: &UsePaths) -> UseResult<RegistrySourcesDocument> {
     let parsed = a3s_acl::parse_acl(input)
         .map_err(|error| config_error(format!("Failed to parse Registry source ACL: {error}")))?;
     let [root] = parsed.blocks.as_slice() else {
@@ -153,7 +153,7 @@ fn source_block(source: &RegistrySource) -> Block {
     }
 }
 
-fn parse_source(block: &Block, paths: &ExtensionPaths) -> UseResult<RegistrySource> {
+fn parse_source(block: &Block, paths: &UsePaths) -> UseResult<RegistrySource> {
     if block.name != SOURCE_BLOCK || block.labels.len() != 1 || !block.blocks.is_empty() {
         return Err(config_error(
             "Each Registry source must be one labeled registry block without nested blocks.",

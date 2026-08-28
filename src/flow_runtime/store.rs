@@ -9,11 +9,10 @@ use a3s_use_core::{
 };
 use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
-use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-use super::model::{flow_error, valid_machine_id, valid_segment};
+use super::model::{flow_error, valid_segment};
 use super::FlowRuntimeBinding;
 
 pub const MAX_FLOW_RUNTIME_GENERATIONS: usize = 32;
@@ -39,7 +38,7 @@ impl FlowRuntimeBindingStore {
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.state_root())
+        Self::new(paths.installation_state_root())
     }
 
     pub fn root(&self) -> &Path {
@@ -129,7 +128,7 @@ impl FlowRuntimeBindingStore {
             .as_str()
             .split_once('/')
             .ok_or_else(invalid_path_identity)?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+        let scope_digest = scope.storage_key().map_err(|_| invalid_path_identity())?;
         Ok(self
             .root
             .join(scope.kind.as_str())
@@ -207,7 +206,7 @@ fn validate_ownership(
 }
 
 fn validate_path_identity(scope: &PlanScope, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
-    if !valid_machine_id(&scope.id)
+    if scope.validate().is_err()
         || PluginPackageId::parse(surface.package_id.clone()).is_err()
         || surface.surface.kind != PluginSurfaceKind::Flow
         || !valid_segment(&surface.surface.id)

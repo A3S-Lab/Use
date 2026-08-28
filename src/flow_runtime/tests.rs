@@ -56,7 +56,8 @@ async fn a3s_flow_preflight_is_retained_per_exact_package_generation() {
         &compiler,
         temporary.path().join("cache"),
         store.clone(),
-    );
+    )
+    .unwrap();
     let first = intent(&manifest, 7);
     let first_key = checkpoint_key(&first);
     host.prepare_flow(&first, &manifest.flows[0], first_key)
@@ -132,7 +133,8 @@ async fn retained_flow_binding_rejects_artifact_substitution() {
         &compiler,
         temporary.path().join("cache"),
         store.clone(),
-    );
+    )
+    .unwrap();
     let intent = intent(&manifest, 9);
     host.prepare_flow(&intent, &manifest.flows[0], checkpoint_key(&intent))
         .await
@@ -263,7 +265,8 @@ async fn prepared_fixture(
         &compiler,
         temporary.path().join("cache"),
         store.clone(),
-    );
+    )
+    .unwrap();
     let intent = intent(&manifest, generation);
     host.prepare_flow(&intent, &manifest.flows[0], checkpoint_key(&intent))
         .await
@@ -343,7 +346,7 @@ fn binding_record_path(
     scope: &a3s_use_core::PlanScope,
     generation: u64,
 ) -> PathBuf {
-    let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+    let scope_digest = scope.storage_key().unwrap();
     store
         .root()
         .join(scope.kind.as_str())

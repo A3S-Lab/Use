@@ -48,6 +48,7 @@ pub(super) fn create_backup(
     let families = summarize_families(&entries)?;
     let manifest = StateBackupManifest {
         schema: A3S_USE_STATE_BACKUP_SCHEMA.to_owned(),
+        installation: paths.installation().clone(),
         use_version: env!("CARGO_PKG_VERSION").to_owned(),
         os: std::env::consts::OS.to_owned(),
         architecture: std::env::consts::ARCH.to_owned(),
@@ -459,6 +460,7 @@ fn selected_restore_entries(
 
 pub(super) fn validate_manifest(manifest: &StateBackupManifest) -> UseResult<()> {
     if manifest.schema != A3S_USE_STATE_BACKUP_SCHEMA
+        || manifest.installation.validate().is_err()
         || !valid_identity(&manifest.use_version)
         || !valid_identity(&manifest.os)
         || !valid_identity(&manifest.architecture)

@@ -31,7 +31,7 @@ impl CognitivePackageManager {
             .await?;
         match (graph, pending) {
             (Some(graph), Some(pending)) => {
-                validate_pending_lock(&pending, &graph.package_lock, &self.scope)?;
+                validate_pending_lock(&pending, &graph.package_lock, self.scope())?;
                 Ok(Some(graph.package_lock))
             }
             (Some(graph), None) => Ok(Some(graph.package_lock)),
@@ -85,7 +85,7 @@ impl CognitivePackageManager {
         let graph = graph_store.get(root_package_id).await?;
         let (lock, lock_digest) = match (&graph, &existing_pending) {
             (Some(graph), Some(pending)) => {
-                validate_pending_lock(pending, &graph.package_lock, &self.scope)?;
+                validate_pending_lock(pending, &graph.package_lock, self.scope())?;
                 (
                     graph.package_lock.clone(),
                     graph.package_lock_digest.clone(),
@@ -125,7 +125,7 @@ impl CognitivePackageManager {
 
         let mut installed = self.installed_lock_nodes(&lock).await?;
         let pending = if let Some(pending) = existing_pending {
-            validate_pending_lock(&pending, &lock, &self.scope)?;
+            validate_pending_lock(&pending, &lock, self.scope())?;
             if pending.phase() == PackageGraphOperationPhase::Planned {
                 require_fresh_installed_closure(&lock, &installed)?;
                 let live_dispositions = self
@@ -185,7 +185,10 @@ impl CognitivePackageManager {
             let snapshot = self.registry.snapshot().await?;
             let grant_snapshot = self
                 .grant_store()
-                .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
+                .snapshot_scope(
+                    &self.scope().id,
+                    package_state_revision(snapshot.generation)?,
+                )
                 .await?;
             let generated = uninstall_operation(
                 &lock,
@@ -194,7 +197,7 @@ impl CognitivePackageManager {
                 generations,
                 root.receipt.descriptor_digest()?,
                 snapshot.generation,
-                &self.scope,
+                self.scope(),
                 now_ms()?,
                 &grant_snapshot,
                 self.authorization.as_ref(),
@@ -264,7 +267,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope: self.scope.clone(),
+                    scope: self.scope().clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),

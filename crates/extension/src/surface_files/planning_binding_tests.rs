@@ -23,8 +23,8 @@ extension "a3s/science" {
   tool "science" {
     workload = "task"
     interface = "cli"
-    executable = "bin/a3s-use-science"
-    command = "a3s-use-science"
+    executable = "bin/science-fixture"
+    command = "science-fixture"
     json_output = true
     interactive = false
     timeout_ms = 120000
@@ -34,7 +34,7 @@ extension "a3s/science" {
 
   mcp "science" {
     transport = "stdio"
-    executable = "bin/a3s-use-science"
+    executable = "bin/science-fixture"
     args = ["serve", "--mcp"]
     activation = "lazy"
     optional = false
@@ -57,14 +57,14 @@ extension "a3s/science" {
             ExecutablePlanningSurface::McpStdio {
                 id: "science".to_owned(),
                 activation: PlanningSurfaceActivation::Lazy,
-                executable: "bin/a3s-use-science".to_owned(),
+                executable: "bin/science-fixture".to_owned(),
                 args: vec!["serve".to_owned(), "--mcp".to_owned()],
             },
             ExecutablePlanningSurface::ToolTaskNative {
                 id: "science".to_owned(),
                 activation: PlanningSurfaceActivation::Lazy,
-                executable: "bin/a3s-use-science".to_owned(),
-                command: "a3s-use-science".to_owned(),
+                executable: "bin/science-fixture".to_owned(),
+                command: "science-fixture".to_owned(),
                 json_output: true,
                 timeout_ms: 120_000,
             },

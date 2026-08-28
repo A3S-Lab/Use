@@ -5,7 +5,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use a3s_use_core::{OkfKnowledgeObservation, OkfProjectionReceipt, PlanScope, UseError, UseResult};
 use a3s_use_extension::ExtensionPaths;
 use async_trait::async_trait;
-use sha2::{Digest, Sha256};
 
 use super::{
     OkfKnowledgeAdapter, OkfKnowledgeBinding, OkfKnowledgeReadRequest, OkfKnowledgeReadResponse,
@@ -79,14 +78,14 @@ impl SqliteOkfKnowledgeAdapter {
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.state_root())
+        Self::new(paths.installation_state_root())
     }
 
     pub fn from_extension_paths_with_policy(
         paths: &ExtensionPaths,
         policy: OkfKnowledgeStoragePolicy,
     ) -> Self {
-        Self::with_policy(paths.state_root(), policy)
+        Self::with_policy(paths.installation_state_root(), policy)
     }
 
     pub fn root(&self) -> &Path {
@@ -328,13 +327,18 @@ impl SqliteOkfKnowledgeAdapter {
     }
 
     pub(crate) fn scope_directory(&self, scope: &PlanScope) -> UseResult<PathBuf> {
-        if !valid_machine_id(&scope.id) {
+        if scope.validate().is_err() {
             return Err(UseError::new(
                 "use.okf.knowledge_database_scope_invalid",
                 "The Knowledge database requires a valid complete User or Workspace scope.",
             ));
         }
-        let digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+        let digest = scope.storage_key().map_err(|_| {
+            UseError::new(
+                "use.okf.knowledge_database_scope_invalid",
+                "The Knowledge database requires a valid complete User or Workspace installation identity.",
+            )
+        })?;
         Ok(self.root.join(scope.kind.as_str()).join(digest))
     }
 
@@ -533,18 +537,6 @@ impl OkfKnowledgeAdapter for SqliteOkfKnowledgeAdapter {
         .await
         .map_err(|error| blocking_error("read the cited OKF Knowledge document", error))?
     }
-}
-
-fn valid_machine_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 256
-        && value
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-        })
 }
 
 fn now_ms() -> UseResult<u64> {

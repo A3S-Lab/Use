@@ -103,11 +103,16 @@ generation，以及 256 个 scope-wide removal tombstone。以下命令检查用
 完整性，并创建、离线验证一个不覆盖现有文件的 scope snapshot：
 
 ```bash
-a3s-use knowledge usage --json
-a3s-use knowledge audit --json
-a3s-use knowledge backup ./user.a3s-okf-backup --json
-a3s-use knowledge verify-backup ./user.a3s-okf-backup --json
-a3s-use knowledge backup-retention ./backups --json
+a3s-use knowledge usage \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge audit \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge backup ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge verify-backup ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge backup-retention ./backups \
+  --scope-kind user --scope-id user/current --json
 ```
 
 `backup-retention` 会针对最多 4,096 个 directory entry、一个完整 scope 和
@@ -119,19 +124,23 @@ linked candidate 和 stale plan 都不会被删除。
 只有 audit 报告派生 FTS 不一致时，才能从已验证 document 明确重建索引：
 
 ```bash
-a3s-use knowledge repair-search-index --yes --json
+a3s-use knowledge repair-search-index \
+  --scope-kind user --scope-id user/current --yes --json
 ```
 
 不要把 backup 直接复制到 live state。先生成无路径审查计划，再只执行精确
 digest：
 
 ```bash
-a3s-use knowledge plan-restore ./user.a3s-okf-backup --json
+a3s-use knowledge plan-restore ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
 a3s-use knowledge restore ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current \
   --plan-digest sha256:<reviewed-plan-digest> \
   --yes \
   --json
-a3s-use knowledge restore-status --json
+a3s-use knowledge restore-status \
+  --scope-kind user --scope-id user/current --json
 ```
 
 Planning 会验证 backup、完整 package/lifecycle/Registry/Grant authority 与当前

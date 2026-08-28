@@ -11,6 +11,9 @@ pub mod plugin;
 pub mod release;
 
 pub use filesystem::metadata_is_link_or_reparse_point;
+#[cfg(windows)]
+#[doc(hidden)]
+pub use filesystem::windows_extended_length_path;
 pub use okf::{
     inspect_okf_bundle, inspect_okf_bundle_files, OkfBundleContract, OkfBundleDiagnostic,
     OkfBundleFile, OkfBundleInspection, OkfBundleLimits, OkfCapabilityProjection,
@@ -22,13 +25,14 @@ pub use okf::{
 pub use plugin::{
     CatalogArchive, CatalogAvailability, CatalogMcpTransport, CatalogPackage,
     CatalogPlanningTarget, CatalogSurface, ExecutablePlanningSurface, FilesystemAccess,
-    FilesystemPermission, FilesystemScope, HttpMethod, InstalledPluginPlanEvidence,
-    LockedPluginPackage, LockedPluginPackageDependency, NetworkEgressPermission, PlanActor,
-    PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
-    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOkfSurfaceChange,
-    PlannedOperationImpact, PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease,
-    PlannedProviderEvidence, PlannedSecretChange, PlannedSecretChangeKind, PlannedStateEvidence,
-    PlannedSurfaceChange, PlannedWorkspaceGrantChange, PlannedWorkspaceImpact, PlanningArtifactRef,
+    FilesystemPermission, FilesystemScope, HttpMethod, InstallationId, InstallationKind,
+    InstalledPluginPlanEvidence, LockedPluginPackage, LockedPluginPackageDependency,
+    NetworkEgressPermission, PlanActor, PlanAuthority, PlanEnforcementProfile,
+    PlanPackageChangeKind, PlanPackageRole, PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope,
+    PlanScopeKind, PlannedOkfSurfaceChange, PlannedOperationImpact, PlannedPackageState,
+    PlannedPackageTransition, PlannedPluginRelease, PlannedProviderEvidence, PlannedSecretChange,
+    PlannedSecretChangeKind, PlannedStateEvidence, PlannedSurfaceChange,
+    PlannedWorkspaceGrantChange, PlannedWorkspaceImpact, PlanningArtifactRef,
     PlanningSurfaceActivation, PluginCatalogRecord, PluginDesiredState, PluginGrantConfirmation,
     PluginHostApplyRequest, PluginHostApplyResult, PluginHostCancelRequest, PluginHostCancelResult,
     PluginHostCancellationStatus, PluginHostCapabilities, PluginHostEnablementPlanRequest,

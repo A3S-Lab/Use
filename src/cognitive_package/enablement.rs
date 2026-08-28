@@ -235,7 +235,7 @@ impl CognitivePackageManager {
             ReviewedCognitivePackageAuthorizationProvider::new(reviewed_plan, confirmation)?;
         let reviewed = Self::with_plan_scope_lifecycle_and_authorization(
             self.registry.clone(),
-            self.scope.clone(),
+            self.scope().clone(),
             self.lifecycle.clone(),
             Arc::new(authorization),
         )?;
@@ -262,7 +262,7 @@ impl CognitivePackageManager {
         };
         if reviewed_plan.plan.operation_id != request.operation_id
             || reviewed_plan.plan.package_id != request.package_id.as_str()
-            || reviewed_plan.plan.scope != self.scope
+            || reviewed_plan.plan.scope != *self.scope()
             || reviewed_plan.plan.action != expected_action
         {
             return Err(enablement_error(
@@ -293,12 +293,14 @@ impl CognitivePackageManager {
             }
         }
         let _operation_guard = store
-            .lock_operation(&self.scope, &request.operation_id)
+            .lock_operation(self.scope(), &request.operation_id)
             .await?;
-        let _package_guard = store.lock_package(&self.scope, &request.package_id).await?;
+        let _package_guard = store
+            .lock_package(self.scope(), &request.package_id)
+            .await?;
 
         if let Some(operation) = store
-            .get_operation(&self.scope, &request.operation_id)
+            .get_operation(self.scope(), &request.operation_id)
             .await?
         {
             return self
@@ -306,7 +308,7 @@ impl CognitivePackageManager {
                 .await;
         }
 
-        let mut current = store.get_state(&self.scope, &request.package_id).await?;
+        let mut current = store.get_state(self.scope(), &request.package_id).await?;
         if let Some(pending) = current
             .as_ref()
             .filter(|state| state.active.is_some())
@@ -323,7 +325,7 @@ impl CognitivePackageManager {
         }
 
         if let Some(operation) = store
-            .get_operation(&self.scope, &request.operation_id)
+            .get_operation(self.scope(), &request.operation_id)
             .await?
         {
             return self
@@ -342,7 +344,7 @@ impl CognitivePackageManager {
         }
         let admitted_at_ms = now_ms()?;
         let reconciled = reconcile_state(
-            &self.scope,
+            self.scope(),
             &request.package_id,
             current.as_ref(),
             &extension,
@@ -386,7 +388,10 @@ impl CognitivePackageManager {
         let snapshot = self.registry.snapshot().await?;
         let grant_snapshot = self
             .grant_store()
-            .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
+            .snapshot_scope(
+                &self.scope().id,
+                package_state_revision(snapshot.generation)?,
+            )
             .await?;
         let generated = enablement_operation(
             request,
@@ -395,7 +400,7 @@ impl CognitivePackageManager {
             &extension.manifest,
             extension.receipt.descriptor_digest()?,
             snapshot.generation,
-            &self.scope,
+            self.scope(),
             admitted_at_ms,
             &grant_snapshot,
             self.authorization.as_ref(),
@@ -431,7 +436,7 @@ impl CognitivePackageManager {
             PluginLifecycleIntentSpec {
                 operation_id: request.operation_id.clone(),
                 plan_digest: generated.envelope.plan_digest.clone(),
-                scope: self.scope.clone(),
+                scope: self.scope().clone(),
                 package_id: request.package_id.to_string(),
                 package_digest: artifact.package_digest.clone(),
                 manifest_digest: artifact.manifest_digest.clone(),
@@ -466,8 +471,8 @@ impl CognitivePackageManager {
         let _mutation = self.installation_mutation_lock().acquire().await?;
         let package_id = PluginPackageId::parse(package_id.to_string())?;
         let store = self.enablement_store();
-        let _guard = store.lock_package(&self.scope, &package_id).await?;
-        let mut current = store.get_state(&self.scope, &package_id).await?;
+        let _guard = store.lock_package(self.scope(), &package_id).await?;
+        let mut current = store.get_state(self.scope(), &package_id).await?;
         if let Some(pending) = current
             .as_ref()
             .filter(|state| state.active.is_some())
@@ -490,7 +495,7 @@ impl CognitivePackageManager {
                         .checked_add(1)
                         .ok_or_else(generation_exhausted)?;
                     let tombstone = StoredCognitivePackageEnablement::new(
-                        self.scope.clone(),
+                        self.scope().clone(),
                         package_id.to_string(),
                         state_generation,
                         None,
@@ -505,7 +510,7 @@ impl CognitivePackageManager {
         self.validate_enablement_extension(&package_id, &extension)
             .await?;
         let reconciled = reconcile_state(
-            &self.scope,
+            self.scope(),
             &package_id,
             current.as_ref(),
             &extension,
@@ -541,7 +546,7 @@ impl CognitivePackageManager {
         operation: &StoredCognitivePackageEnablementOperation,
     ) -> UseResult<()> {
         let package_id = &operation.request.package_id;
-        let current = store.get_state(&self.scope, package_id).await?;
+        let current = store.get_state(self.scope(), package_id).await?;
         if current
             .as_ref()
             .is_some_and(|state| state.state_generation > operation.state_after.state_generation)
@@ -587,7 +592,7 @@ impl CognitivePackageManager {
             )
         })?;
         if let Some(operation) = store
-            .get_operation(&self.scope, &active.request.operation_id)
+            .get_operation(self.scope(), &active.request.operation_id)
             .await?
         {
             if operation.request != active.request {
@@ -710,7 +715,7 @@ impl CognitivePackageManager {
         let result =
             CognitivePackageEnablementResult::new(&active.request, completed_at_ms, true, state)?;
         let state_after = StoredCognitivePackageEnablement::new(
-            self.scope.clone(),
+            self.scope().clone(),
             active.request.package_id.to_string(),
             active.state_generation_after,
             Some(artifact),
@@ -718,7 +723,7 @@ impl CognitivePackageManager {
             completed_at_ms,
         )?;
         let operation = StoredCognitivePackageEnablementOperation::new(
-            self.scope.clone(),
+            self.scope().clone(),
             active.request.clone(),
             active.envelope.clone(),
             active.authorization.clone(),

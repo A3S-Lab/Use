@@ -30,10 +30,14 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         kind: PlanScopeKind::Workspace,
         id: MANAGED_SCOPE_ID.to_string(),
     };
-    let source_extension_registry = ExtensionRegistry::new(ExtensionPaths::new(
-        source_home.join("data"),
-        source_home.join("state"),
-    ));
+    let source_extension_registry = ExtensionRegistry::new(
+        ExtensionPaths::new(
+            source_home.join("data"),
+            source_home.join("state"),
+            reviewed_scope.clone(),
+        )
+        .unwrap(),
+    );
     let authorization_count = Arc::new(AtomicUsize::new(0));
     let source_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         source_extension_registry.clone(),
@@ -118,10 +122,14 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         target_home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let target_extension_registry = ExtensionRegistry::new(ExtensionPaths::new(
-        target_home.join("data"),
-        target_home.join("state"),
-    ));
+    let target_extension_registry = ExtensionRegistry::new(
+        ExtensionPaths::new(
+            target_home.join("data"),
+            target_home.join("state"),
+            reviewed_scope.clone(),
+        )
+        .unwrap(),
+    );
     let target_manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         target_extension_registry.clone(),
         reviewed_scope.clone(),
@@ -135,7 +143,11 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
         ),
     )
     .unwrap();
-    let registry_lock = exclusive_lock(&target_home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(
+        &extension_paths_for(&target_home, reviewed_scope.clone())
+            .state_root()
+            .join("extensions/.registry.lock"),
+    );
     let interrupted = target_manager
         .install_remote(
             &target_registry,
@@ -230,7 +242,7 @@ async fn reviewed_host_plan_reproduces_exact_signed_lock_and_grant_in_a_clean_wo
     let installed = reviewed.plan.packages[0].after.as_ref().unwrap();
     assert_granted(
         &target_home,
-        MANAGED_SCOPE_ID,
+        replay_manager.scope(),
         &installed.release.package_sha256,
         &installed.permissions,
     )

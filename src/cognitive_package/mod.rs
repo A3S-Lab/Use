@@ -38,7 +38,7 @@ mod upgrade;
 mod upgrade_validation;
 
 use a3s_use_core::{
-    LockedPluginPackage, PlanScope, PlanScopeKind, PluginOperationAction,
+    InstallationId, LockedPluginPackage, PlanScope, PluginOperationAction,
     PluginOperationPlanEnvelope, PluginPackageLock, UseError, UseResult,
     VerifiedPluginCatalogRecord,
 };
@@ -57,7 +57,6 @@ use store::{
     PendingPackageGraphStore,
 };
 
-pub use crate::COGNITIVE_PACKAGE_DEFAULT_SCOPE;
 pub use diagnostic::{
     PluginDownloadAttemptDiagnostic, PluginDownloadAttemptPhase, PluginDownloadDiagnosticStatus,
     PluginDownloadTargetDiagnostic, PluginDownloadTargetDiagnosticStatus,
@@ -127,7 +126,6 @@ pub fn cognitive_package_host_target() -> UseResult<String> {
 #[derive(Clone)]
 pub struct CognitivePackageManager {
     registry: ExtensionRegistry,
-    scope: PlanScope,
     lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
     authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
 }
@@ -137,7 +135,7 @@ impl std::fmt::Debug for CognitivePackageManager {
         formatter
             .debug_struct("CognitivePackageManager")
             .field("registry", &self.registry)
-            .field("scope", &self.scope)
+            .field("installation", self.registry.installation())
             .field("lifecycle", &self.lifecycle.name())
             .field("authorization", &self.authorization.name())
             .finish()
@@ -263,22 +261,18 @@ pub(super) enum UpgradeDisposition {
 }
 
 impl CognitivePackageManager {
-    pub fn from_env() -> UseResult<Self> {
+    pub fn from_env(installation: InstallationId) -> UseResult<Self> {
         Self::with_lifecycle(
-            ExtensionRegistry::from_env()?,
+            ExtensionRegistry::from_env(installation)?,
             Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory::from_env()?),
         )
     }
 
     pub fn new(registry: ExtensionRegistry) -> UseResult<Self> {
-        Self::with_scope(registry, COGNITIVE_PACKAGE_DEFAULT_SCOPE)
-    }
-
-    pub fn with_scope(registry: ExtensionRegistry, scope_id: impl Into<String>) -> UseResult<Self> {
-        Self::with_scope_and_lifecycle(
+        Self::with_lifecycle_and_authorization(
             registry,
-            scope_id,
             Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory::default()),
+            Arc::new(StandaloneCognitivePackageAuthorizationProvider),
         )
     }
 
@@ -286,17 +280,8 @@ impl CognitivePackageManager {
         registry: ExtensionRegistry,
         lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
     ) -> UseResult<Self> {
-        Self::with_scope_and_lifecycle(registry, COGNITIVE_PACKAGE_DEFAULT_SCOPE, lifecycle)
-    }
-
-    pub fn with_scope_and_lifecycle(
-        registry: ExtensionRegistry,
-        scope_id: impl Into<String>,
-        lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
-    ) -> UseResult<Self> {
-        Self::with_scope_lifecycle_and_authorization(
+        Self::with_lifecycle_and_authorization(
             registry,
-            scope_id,
             lifecycle,
             Arc::new(StandaloneCognitivePackageAuthorizationProvider),
         )
@@ -306,65 +291,45 @@ impl CognitivePackageManager {
         registry: ExtensionRegistry,
         authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
     ) -> UseResult<Self> {
-        Self::with_scope_lifecycle_and_authorization(
+        Self::with_lifecycle_and_authorization(
             registry,
-            COGNITIVE_PACKAGE_DEFAULT_SCOPE,
             Arc::new(hosts::StandaloneCognitivePackageLifecycleFactory::default()),
             authorization,
         )
     }
 
-    pub fn with_scope_lifecycle_and_authorization(
+    pub fn with_lifecycle_and_authorization(
         registry: ExtensionRegistry,
-        scope_id: impl Into<String>,
         lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
         authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
     ) -> UseResult<Self> {
-        Self::with_plan_scope_lifecycle_and_authorization(
+        registry.installation().validate()?;
+        Ok(Self {
             registry,
-            PlanScope {
-                kind: PlanScopeKind::User,
-                id: scope_id.into(),
-            },
             lifecycle,
             authorization,
-        )
+        })
     }
 
     /// Construct an embedding-host manager bound to one exact plan scope.
     ///
-    /// Standalone callers retain the user-scoped constructors above. Managed
-    /// hosts use this entry point so a workspace-scoped reviewed plan cannot
-    /// be regenerated or replayed as a user-scoped operation with the same ID.
+    /// The Registry already owns an explicit installation. Managed hosts use
+    /// this entry point to prove their advertised scope is that same identity,
+    /// so equal textual IDs in different kinds cannot be substituted.
     pub fn with_plan_scope_lifecycle_and_authorization(
         registry: ExtensionRegistry,
         scope: PlanScope,
         lifecycle: Arc<dyn CognitivePackageLifecycleFactory>,
         authorization: Arc<dyn CognitivePackageAuthorizationProvider>,
     ) -> UseResult<Self> {
-        let scope_id = &scope.id;
-        if scope_id.is_empty()
-            || scope_id.len() > 256
-            || !scope_id
-                .as_bytes()
-                .first()
-                .is_some_and(u8::is_ascii_alphanumeric)
-            || !scope_id.bytes().all(|byte| {
-                byte.is_ascii_alphanumeric()
-                    || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-            })
-        {
+        scope.validate()?;
+        if registry.installation() != &scope {
             return Err(package_manager_error(
-                "use.plugin.package_scope_invalid",
-                "The cognitive-package manager scope identity is invalid.",
+                "use.plugin.package_installation_mismatch",
+                "The cognitive-package manager scope differs from its Registry installation.",
             ));
         }
-        Ok(Self {
-            registry,
-            scope,
-            lifecycle,
-            authorization,
-        })
+        Self::with_lifecycle_and_authorization(registry, lifecycle, authorization)
     }
 
     pub fn registry(&self) -> &ExtensionRegistry {
@@ -372,7 +337,7 @@ impl CognitivePackageManager {
     }
 
     pub fn scope(&self) -> &PlanScope {
-        &self.scope
+        self.registry.installation()
     }
 
     pub fn lifecycle(&self) -> &dyn CognitivePackageLifecycleFactory {
@@ -415,19 +380,19 @@ impl CognitivePackageManager {
     }
 
     fn graph_store(&self) -> InstalledPackageGraphStore {
-        InstalledPackageGraphStore::new(self.registry.paths().state_root())
+        InstalledPackageGraphStore::new(self.registry.paths().installation_state_root())
     }
 
     fn pending_store(&self) -> PendingPackageGraphStore {
-        PendingPackageGraphStore::new(self.registry.paths().state_root())
+        PendingPackageGraphStore::new(self.registry.paths().installation_state_root())
     }
 
     fn download_attempt_store(&self) -> PackageDownloadAttemptStore {
-        PackageDownloadAttemptStore::new(self.registry.paths().state_root())
+        PackageDownloadAttemptStore::new(self.registry.paths().installation_state_root())
     }
 
     fn resolution_attempt_store(&self) -> PackageResolutionAttemptStore {
-        PackageResolutionAttemptStore::new(self.registry.paths().state_root())
+        PackageResolutionAttemptStore::new(self.registry.paths().installation_state_root())
     }
 
     fn grant_store(&self) -> a3s_use_extension::WorkspaceGrantStore {
@@ -439,7 +404,9 @@ impl CognitivePackageManager {
     }
 
     fn installation_mutation_lock(&self) -> mutation_lock::InstallationMutationLock {
-        mutation_lock::InstallationMutationLock::new(self.registry.paths().state_root())
+        mutation_lock::InstallationMutationLock::new(
+            self.registry.paths().installation_state_root(),
+        )
     }
 
     async fn require_graph_mutation_domain(
@@ -511,7 +478,7 @@ impl CognitivePackageManager {
                 store.require_admission_available(&pending).await?;
                 let grant_snapshot = self
                     .grant_store()
-                    .snapshot_scope(&self.scope.id, pending.envelope.plan.state.state_revision)
+                    .snapshot_scope(&self.scope().id, pending.envelope.plan.state.state_revision)
                     .await?;
                 let grants = grant::reconstruct_planned_workspace_grants(
                     &pending.envelope.plan,
@@ -534,7 +501,9 @@ impl CognitivePackageManager {
     }
 
     fn enablement_store(&self) -> enablement_store::CognitivePackageEnablementStore {
-        enablement_store::CognitivePackageEnablementStore::new(self.registry.paths().state_root())
+        enablement_store::CognitivePackageEnablementStore::new(
+            self.registry.paths().installation_state_root(),
+        )
     }
 }
 

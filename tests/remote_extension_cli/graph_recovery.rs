@@ -38,9 +38,9 @@ fn killed_graph_publication_replays_exact_cutover_offline_without_generation_inf
     let repository = TestRepository::with_targets(targets, 103, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let pending_path = home.join("state/operations/package-graphs/install/acme/root.json");
-    let graph_path = home.join("state/package-graphs/acme/root.json");
-    let snapshot_path = home.join("state/registry.json");
+    let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
+    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let snapshot_path = scoped_state(&home, "registry.json");
     let held_journal = lifecycle_journal_path(&home, "acme/leaf-00");
 
     configure_registry(&server, &repository, &home, &[]);
@@ -55,6 +55,7 @@ fn killed_graph_publication_replays_exact_cutover_offline_without_generation_inf
             "1.0.0",
             "--json",
         ])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .spawn()
         .unwrap();
@@ -128,12 +129,9 @@ fn killed_graph_publication_replays_exact_cutover_offline_without_generation_inf
     assert!(pending_path.is_file());
     assert!(!graph_path.exists());
     for package_id in &expected_package_ids {
-        let receipt = read_json(
-            &home
-                .join("state/extensions")
-                .join(format!("{package_id}.json")),
-        )
-        .unwrap();
+        let receipt =
+            read_json(&scoped_state(&home, "extensions").join(format!("{package_id}.json")))
+                .unwrap();
         assert_eq!(receipt["packageId"], package_id.as_str());
         assert_eq!(receipt["enabled"], true);
     }
@@ -141,6 +139,7 @@ fn killed_graph_publication_replays_exact_cutover_offline_without_generation_inf
     let requests_before_diagnostic = server.requests().len();
     let diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();

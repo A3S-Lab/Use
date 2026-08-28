@@ -274,7 +274,7 @@ fn runtime_binding_digest(
 
 #[cfg(test)]
 mod tests {
-    use a3s_use_core::{PlanEnforcementProfile, PlanScopeKind};
+    use a3s_use_core::PlanEnforcementProfile;
     use a3s_use_extension::{ExtensionManifest, ExtensionReceipt, ExtensionTrust};
 
     use crate::plugin_runtime::{
@@ -347,7 +347,8 @@ extension "acme/research" {
             .collect::<Vec<_>>();
         selected_surfaces.sort();
         let receipt = ExtensionReceipt {
-            schema_version: 4,
+            schema_version: a3s_use_extension::EXTENSION_RECEIPT_SCHEMA_VERSION,
+            installation: crate::test_installation(),
             package_id: manifest.package_id.clone(),
             component_id: format!("use/{}", manifest.package_id),
             route: manifest.route.clone(),
@@ -368,10 +369,7 @@ extension "acme/research" {
     }
 
     fn scope() -> PlanScope {
-        PlanScope {
-            kind: PlanScopeKind::User,
-            id: crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_string(),
-        }
+        crate::test_installation()
     }
 
     async fn write_executable(path: &Path, bytes: &[u8]) {

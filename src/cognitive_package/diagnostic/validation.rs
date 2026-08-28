@@ -19,7 +19,7 @@ impl PluginOperationDiagnostic {
             .map_err(|_| diagnostic_error("The diagnostic package identity is invalid."))?;
         if self.schema != PLUGIN_OPERATION_DIAGNOSTIC_SCHEMA
             || self.observed_at_ms == 0
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
         {
             return Err(diagnostic_error(
                 "The cognitive-package operation diagnostic is invalid.",
@@ -58,7 +58,7 @@ impl PluginOperationHistoryDiagnostic {
             .map_err(|_| diagnostic_error("The history package identity is invalid."))?;
         if self.schema != PLUGIN_OPERATION_HISTORY_DIAGNOSTIC_SCHEMA
             || self.observed_at_ms == 0
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || self.retention_limit as usize != MAX_RETAINED_PLUGIN_OPERATION_DIAGNOSTICS
             || self.retention_byte_limit as usize != MAX_RETAINED_PLUGIN_OPERATION_HISTORY_BYTES
             || self.retained_operation_count as usize != self.operations.len()
@@ -182,7 +182,7 @@ impl PluginDownloadAttemptDiagnostic {
             .map_err(|_| diagnostic_error("The download package identity is invalid."))?;
         if self.schema != PLUGIN_DOWNLOAD_ATTEMPT_DIAGNOSTIC_SCHEMA
             || self.observed_at_ms == 0
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
         {
             return Err(diagnostic_error(
                 "The package download attempt diagnostic is invalid.",
@@ -316,7 +316,7 @@ impl PluginResolutionAttemptDiagnostic {
             .map_err(|_| diagnostic_error("The resolution package identity is invalid."))?;
         if self.schema != PLUGIN_RESOLUTION_ATTEMPT_DIAGNOSTIC_SCHEMA
             || self.observed_at_ms == 0
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || self.attempt.started_at_ms > self.observed_at_ms
             || self
                 .attempt

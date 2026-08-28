@@ -1,19 +1,21 @@
-use std::path::Path;
-
 use a3s_use_core::{UseError, UseResult};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 use super::package::{activate_temporary_file, io_error, sync_parent_directory, unique_suffix};
 use super::registry::ExtensionRegistrySnapshot;
+use super::ExtensionPaths;
 
-pub(super) async fn read_registry_snapshot(path: &Path) -> UseResult<ExtensionRegistrySnapshot> {
-    let bytes = match fs::read(path).await {
+pub(super) async fn read_registry_snapshot(
+    paths: &ExtensionPaths,
+) -> UseResult<ExtensionRegistrySnapshot> {
+    let path = paths.registry_snapshot_path();
+    let bytes = match fs::read(&path).await {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(ExtensionRegistrySnapshot::default())
+            return ExtensionRegistrySnapshot::empty(paths.installation().clone())
         }
-        Err(error) => return Err(io_error("read extension registry snapshot", path, error)),
+        Err(error) => return Err(io_error("read extension registry snapshot", &path, error)),
     };
     let snapshot: ExtensionRegistrySnapshot = serde_json::from_slice(&bytes).map_err(|error| {
         UseError::new(
@@ -25,13 +27,27 @@ pub(super) async fn read_registry_snapshot(path: &Path) -> UseResult<ExtensionRe
         )
     })?;
     snapshot.validate()?;
+    if snapshot.installation != *paths.installation() {
+        return Err(UseError::new(
+            "use.extension.registry_scope_mismatch",
+            "The extension Registry snapshot belongs to a different installation.",
+        ));
+    }
     Ok(snapshot)
 }
 
 pub(super) async fn write_registry_snapshot(
-    path: &Path,
+    paths: &ExtensionPaths,
     snapshot: &ExtensionRegistrySnapshot,
 ) -> UseResult<()> {
+    snapshot.validate()?;
+    if snapshot.installation != *paths.installation() {
+        return Err(UseError::new(
+            "use.extension.registry_scope_mismatch",
+            "The extension Registry snapshot belongs to a different installation.",
+        ));
+    }
+    let path = paths.registry_snapshot_path();
     let parent = path.parent().ok_or_else(|| {
         UseError::new(
             "use.extension.registry_invalid",

@@ -1,14 +1,14 @@
 use std::fmt;
 use std::sync::Arc;
 
-use a3s_use_core::{UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
+use a3s_use_core::{InstallationId, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
 use serde::{Deserialize, Serialize};
 #[cfg(not(feature = "extensions"))]
 use sha2::{Digest, Sha256};
 
 use super::CapabilityRegistrySnapshot;
 
-pub const CAPABILITY_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.capability-snapshot-cursor.v1";
+pub const CAPABILITY_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.capability-snapshot-cursor.v2";
 
 /// Exact Use-owned package generation projected into a capability snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -31,6 +31,7 @@ pub struct CapabilityPackageGeneration {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CapabilitySnapshotCursor {
     pub schema: String,
+    pub installation: InstallationId,
     pub generation: u64,
     pub revision: String,
     pub registry_revision: String,
@@ -46,6 +47,7 @@ impl CapabilitySnapshotCursor {
     ) -> UseResult<Self> {
         let cursor = Self {
             schema: CAPABILITY_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+            installation: extension.installation,
             generation: extension.generation,
             revision: revision.to_owned(),
             registry_revision: extension.registry_revision,
@@ -57,6 +59,9 @@ impl CapabilitySnapshotCursor {
     }
 
     pub fn validate(&self) -> UseResult<()> {
+        self.installation.validate().map_err(|_| {
+            cursor_error("The capability snapshot cursor installation identity is invalid.")
+        })?;
         if self.schema != CAPABILITY_SNAPSHOT_CURSOR_SCHEMA
             || !valid_lower_sha256(&self.revision)
             || !valid_canonical_sha256(&self.registry_revision)
@@ -102,6 +107,7 @@ impl CapabilitySnapshotCursor {
         extension: &a3s_use_extension::ExtensionSnapshotCursor,
     ) -> bool {
         self.generation == extension.generation
+            && self.installation == extension.installation
             && self.registry_revision == extension.revision
             && self.unleasable_routes == extension.unleasable_routes
             && self.packages
@@ -162,9 +168,10 @@ impl fmt::Debug for CapabilitySnapshotLease {
 /// `None` means capability readiness changed, the Registry cursor became
 /// stale, a generation was hidden, or lifecycle drain won the race.
 pub async fn acquire_snapshot_lease(
+    installation: InstallationId,
     expected: &CapabilitySnapshotCursor,
 ) -> UseResult<Option<CapabilitySnapshotLease>> {
-    let registry = super::CapabilityRegistry::from_env()?;
+    let registry = super::CapabilityRegistry::from_env(installation)?;
     acquire_snapshot_lease_from(&registry, expected).await
 }
 
@@ -173,6 +180,12 @@ pub(super) async fn acquire_snapshot_lease_from(
     expected: &CapabilitySnapshotCursor,
 ) -> UseResult<Option<CapabilitySnapshotLease>> {
     expected.validate()?;
+    if expected.installation != *registry.installation() {
+        return Err(UseError::new(
+            "use.capability.snapshot_scope_mismatch",
+            "The capability snapshot cursor belongs to a different installation.",
+        ));
+    }
     let observed = registry.snapshot().await?;
     if observed.cursor() != expected {
         return Ok(None);
@@ -207,6 +220,7 @@ pub(super) async fn acquire_snapshot_lease_from(
 
 #[derive(Debug, Clone)]
 pub(super) struct ExtensionCursorEvidence {
+    installation: InstallationId,
     generation: u64,
     registry_revision: String,
     packages: Vec<CapabilityPackageGeneration>,
@@ -220,6 +234,7 @@ impl ExtensionCursorEvidence {
     ) -> UseResult<Self> {
         let cursor = snapshot.cursor()?;
         Ok(Self {
+            installation: cursor.installation,
             generation: cursor.generation,
             registry_revision: cursor.revision,
             packages: cursor
@@ -232,8 +247,9 @@ impl ExtensionCursorEvidence {
     }
 
     #[cfg(not(feature = "extensions"))]
-    pub(super) fn empty() -> Self {
+    pub(super) fn empty(installation: InstallationId) -> Self {
         Self {
+            installation,
             generation: 0,
             registry_revision: format!(
                 "sha256:{:x}",
@@ -284,6 +300,11 @@ mod tests {
     fn cursor() -> CapabilitySnapshotCursor {
         CapabilitySnapshotCursor {
             schema: CAPABILITY_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+            installation: InstallationId::new(
+                a3s_use_core::InstallationKind::User,
+                "capability-tests",
+            )
+            .unwrap(),
             generation: 7,
             revision: "a".repeat(64),
             registry_revision: format!("sha256:{}", "b".repeat(64)),
@@ -343,17 +364,18 @@ mod tests {
     }
 
     #[test]
-    fn internal_cursor_does_not_change_capability_snapshot_v2_json() {
+    fn internal_cursor_does_not_change_capability_snapshot_v3_json() {
         let cursor = cursor();
         let snapshot = CapabilityRegistrySnapshot {
             schema_version: super::super::CAPABILITY_REGISTRY_SCHEMA_VERSION,
+            installation: cursor.installation.clone(),
             generation: cursor.generation,
             revision: cursor.revision.clone(),
             capabilities: vec![super::super::box_capability()],
             cursor,
         };
         let json = serde_json::to_value(snapshot).unwrap();
-        assert_eq!(json["schemaVersion"], 2);
+        assert_eq!(json["schemaVersion"], 3);
         assert_eq!(json["generation"], 7);
         assert!(json.get("cursor").is_none());
     }
@@ -387,11 +409,15 @@ mod tests {
     #[cfg(feature = "extensions")]
     async fn injected_registry_snapshot_lease() {
         let temporary = tempfile::tempdir().unwrap();
-        let extension_registry =
-            a3s_use_extension::ExtensionRegistry::new(a3s_use_extension::ExtensionPaths::new(
+        let extension_registry = a3s_use_extension::ExtensionRegistry::new(
+            a3s_use_extension::ExtensionPaths::new(
                 temporary.path().join("data"),
                 temporary.path().join("state"),
-            ));
+                InstallationId::new(a3s_use_core::InstallationKind::Workspace, "lease-tests")
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         let fixture = temporary.path().join("package");
         tokio::fs::create_dir_all(fixture.join("skills/guide"))
             .await
@@ -457,6 +483,25 @@ mod tests {
         let snapshot = registry.snapshot().await.unwrap();
         assert_eq!(snapshot.cursor().packages.len(), 1);
         assert_eq!(snapshot.cursor().packages[0].package_id, "acme/guide");
+        let other_installation =
+            InstallationId::new(a3s_use_core::InstallationKind::User, "lease-tests").unwrap();
+        let other_registry =
+            super::super::CapabilityRegistry::new(a3s_use_extension::ExtensionRegistry::new(
+                a3s_use_extension::ExtensionPaths::new(
+                    temporary.path().join("data"),
+                    temporary.path().join("state"),
+                    other_installation,
+                )
+                .unwrap(),
+            ));
+        assert_eq!(
+            other_registry
+                .acquire_snapshot_lease(snapshot.cursor())
+                .await
+                .unwrap_err()
+                .code,
+            "use.capability.snapshot_scope_mismatch"
+        );
         let lease = registry
             .acquire_snapshot_lease(snapshot.cursor())
             .await

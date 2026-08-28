@@ -57,8 +57,9 @@ async fn host_manager_replays_the_complete_six_surface_lifecycle_scenario() {
         (PlanScopeKind::Workspace, "workspace"),
     ] {
         let home = temporary.path().join(format!("{label}-six-surface-home"));
-        let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-        RegistrySourceStore::new(paths.clone())
+        let scope = managed_scope(scope_kind);
+        let paths = managed_extension_paths(&home, &scope);
+        RegistrySourceStore::new(use_paths(&home))
             .add(RegistrySourceInput::new(
                 "fixture",
                 server.base_url(),
@@ -69,7 +70,6 @@ async fn host_manager_replays_the_complete_six_surface_lifecycle_scenario() {
             .await
             .unwrap();
 
-        let scope = managed_scope(scope_kind);
         let host = six_surface_host(&scope, paths.clone(), &compiler);
         let capabilities_digest = host
             .capabilities()

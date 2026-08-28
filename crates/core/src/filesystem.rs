@@ -1,4 +1,8 @@
 use std::fs::Metadata;
+#[cfg(windows)]
+use std::io;
+#[cfg(windows)]
+use std::path::{Component, Path, PathBuf};
 
 /// Returns whether host filesystem metadata identifies a link-like object.
 ///
@@ -8,6 +12,71 @@ use std::fs::Metadata;
 /// or traversing them.
 pub fn metadata_is_link_or_reparse_point(metadata: &Metadata) -> bool {
     metadata.file_type().is_symlink() || metadata_has_reparse_point(metadata)
+}
+
+/// Converts an ordinary Windows path into the extended-length namespace used
+/// by native APIs that do not opt in to modern long-path behavior.
+///
+/// The returned path is absolute because the extended namespace does not
+/// resolve relative components. Device and already-verbatim paths retain their
+/// namespace; UNC paths are translated to `\\?\UNC\...`.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn windows_extended_length_path(path: &Path) -> io::Result<PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    let absolute = std::path::absolute(path)?;
+    if absolute
+        .components()
+        .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "extended-length Windows paths cannot contain relative components",
+        ));
+    }
+
+    let mut path: Vec<u16> = absolute.as_os_str().encode_wide().collect();
+    if path.contains(&0) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Windows paths cannot contain NUL characters",
+        ));
+    }
+    for unit in &mut path {
+        if *unit == b'/' as u16 {
+            *unit = b'\\' as u16;
+        }
+    }
+
+    const VERBATIM: &[u16] = &[b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
+    const DEVICE: &[u16] = &[b'\\' as u16, b'\\' as u16, b'.' as u16, b'\\' as u16];
+    const UNC: &[u16] = &[
+        b'\\' as u16,
+        b'\\' as u16,
+        b'?' as u16,
+        b'\\' as u16,
+        b'U' as u16,
+        b'N' as u16,
+        b'C' as u16,
+        b'\\' as u16,
+    ];
+
+    let extended = if path.starts_with(VERBATIM) || path.starts_with(DEVICE) {
+        path
+    } else if path.starts_with(&[b'\\' as u16, b'\\' as u16]) {
+        let mut extended = Vec::with_capacity(UNC.len() + path.len() - 2);
+        extended.extend_from_slice(UNC);
+        extended.extend_from_slice(&path[2..]);
+        extended
+    } else {
+        let mut extended = Vec::with_capacity(VERBATIM.len() + path.len());
+        extended.extend_from_slice(VERBATIM);
+        extended.extend_from_slice(&path);
+        extended
+    };
+    Ok(PathBuf::from(OsString::from_wide(&extended)))
 }
 
 #[cfg(windows)]

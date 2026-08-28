@@ -25,10 +25,14 @@ fn killed_registry_resolution_retains_a_path_free_pre_lock_diagnostic() {
             "1.0.0",
             "--json",
         ])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .spawn()
         .unwrap();
-    let attempt_path = home.join("state/operations/package-resolutions/install/acme/root.json");
+    let attempt_path = scoped_state(
+        &home,
+        "operations/package-resolutions/install/acme/root.json",
+    );
     let reached_resolution = wait_until(Duration::from_secs(15), || {
         attempt_path.is_file()
             && server
@@ -50,6 +54,7 @@ fn killed_registry_resolution_retains_a_path_free_pre_lock_diagnostic() {
     let requests_before_diagnostic = server.requests().len();
     let active = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -98,6 +103,7 @@ fn killed_registry_resolution_retains_a_path_free_pre_lock_diagnostic() {
     let retained_bytes = std::fs::read(&attempt_path).unwrap();
     let retained = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -112,6 +118,7 @@ fn killed_registry_resolution_retains_a_path_free_pre_lock_diagnostic() {
     std::fs::write(&attempt_path, serde_json::to_vec(&invalid).unwrap()).unwrap();
     let rejected = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -131,7 +138,7 @@ fn killed_registry_resolution_retains_a_path_free_pre_lock_diagnostic() {
     let recovered = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(recovered.status.success(), "{recovered:?}");
     assert!(!attempt_path.exists());
-    assert!(home.join("state/extensions/acme/root.json").is_file());
+    assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
 }
 
 #[test]
@@ -155,6 +162,7 @@ fn failed_registry_verification_retains_only_a_bounded_error_code() {
     let requests_before_diagnostic = server.requests().len();
     let diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -234,6 +242,7 @@ fn offline_resolution_failure_is_diagnostic_and_constructs_no_network_transport(
 
     let diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();

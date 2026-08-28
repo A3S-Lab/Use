@@ -8,7 +8,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use a3s_use_core::{PlanScope, PluginPackageId, UseError, UseResult};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
@@ -201,7 +200,7 @@ impl PluginOperationHistoryStore {
 
 impl CognitivePackageManager {
     fn operation_history_store(&self) -> PluginOperationHistoryStore {
-        PluginOperationHistoryStore::new(self.registry.paths().state_root())
+        PluginOperationHistoryStore::new(self.registry.paths().installation_state_root())
     }
 
     /// Read bounded, newest-first retired operation history without network
@@ -223,13 +222,13 @@ impl CognitivePackageManager {
             .map_err(|_| diagnostic_state_error())?;
         let operations = self
             .operation_history_store()
-            .get(&self.scope, package_id)
+            .get(self.scope(), package_id)
             .await
             .map_err(|_| diagnostic_state_error())?;
         let diagnostic = PluginOperationHistoryDiagnostic {
             schema: PLUGIN_OPERATION_HISTORY_DIAGNOSTIC_SCHEMA.to_owned(),
             observed_at_ms: super::plan::now_ms().map_err(|_| diagnostic_state_error())?,
-            scope: self.scope.clone(),
+            scope: self.scope().clone(),
             package_id: package_id.to_owned(),
             retention_limit: bounded_count(
                 MAX_RETAINED_PLUGIN_OPERATION_DIAGNOSTICS,
@@ -310,28 +309,11 @@ fn package_relative_path(package_id: &str, extension: &str) -> UseResult<PathBuf
 }
 
 fn scope_digest(scope: &PlanScope) -> UseResult<String> {
-    validate_scope(scope)?;
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(format!("{}\n{}", scope.kind.as_str(), scope.id).as_bytes())
-    ))
+    scope.storage_key().map_err(|_| history_invalid())
 }
 
 fn validate_scope(scope: &PlanScope) -> UseResult<()> {
-    if scope.id.is_empty()
-        || scope.id.len() > 256
-        || !scope
-            .id
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        || !scope.id.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-        })
-    {
-        return Err(history_invalid());
-    }
-    Ok(())
+    scope.validate().map_err(|_| history_invalid())
 }
 
 async fn acquire_lock(path: PathBuf) -> UseResult<StdFile> {

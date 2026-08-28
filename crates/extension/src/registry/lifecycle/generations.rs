@@ -59,9 +59,7 @@ impl ExtensionRegistry {
         }
 
         let _lock = crate::package::RegistryLock::acquire_for_mutation(self.paths()).await?;
-        let snapshot_before =
-            crate::registry_io::read_registry_snapshot(&self.paths().registry_snapshot_path())
-                .await?;
+        let snapshot_before = crate::registry_io::read_registry_snapshot(self.paths()).await?;
         let mut changed = candidates
             .iter()
             .map(|candidate| (candidate.package_id(), false))
@@ -259,9 +257,7 @@ impl ExtensionRegistry {
             ));
         }
         let _lock = crate::package::RegistryLock::acquire_for_mutation(self.paths()).await?;
-        let published =
-            crate::registry_io::read_registry_snapshot(&self.paths().registry_snapshot_path())
-                .await?;
+        let published = crate::registry_io::read_registry_snapshot(self.paths()).await?;
         if published
             .routes
             .iter()
@@ -344,7 +340,7 @@ impl ExtensionRegistry {
         exact_receipt(identity, receipt)?;
         let path = self.retained_receipt_path(identity);
         let directory = path.parent().ok_or_else(path_identity_error)?;
-        ensure_owned_directory_chain(self.paths().state_root(), directory).await?;
+        ensure_owned_directory_chain(&self.paths().installation_state_root(), directory).await?;
         match fs::symlink_metadata(&path).await {
             Ok(metadata) => {
                 validate_receipt_metadata(&metadata)?;
@@ -391,7 +387,8 @@ impl ExtensionRegistry {
         let path = self.retained_receipt_path(identity);
         let directory = path.parent().ok_or_else(path_identity_error)?;
         let Some(()) =
-            validate_existing_directory_chain(self.paths().state_root(), directory).await?
+            validate_existing_directory_chain(&self.paths().installation_state_root(), directory)
+                .await?
         else {
             return Err(lifecycle_state_error(
                 "The retained lifecycle receipt disappeared before its visibility update.",
@@ -418,7 +415,7 @@ impl ExtensionRegistry {
     ) -> UseResult<bool> {
         let path = self.retained_receipt_path(identity);
         let directory = path.parent().ok_or_else(path_identity_error)?;
-        if validate_existing_directory_chain(self.paths().state_root(), directory)
+        if validate_existing_directory_chain(&self.paths().installation_state_root(), directory)
             .await?
             .is_none()
         {
@@ -444,7 +441,7 @@ impl ExtensionRegistry {
         let directory = self
             .paths()
             .retained_lifecycle_receipt_directory(package_id);
-        if validate_existing_directory_chain(self.paths().state_root(), &directory)
+        if validate_existing_directory_chain(&self.paths().installation_state_root(), &directory)
             .await?
             .is_none()
         {

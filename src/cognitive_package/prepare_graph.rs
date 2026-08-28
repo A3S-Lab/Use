@@ -387,7 +387,7 @@ impl CognitivePackageManager {
     ) -> UseResult<Self> {
         Self::with_plan_scope_lifecycle_and_authorization(
             self.registry.clone(),
-            self.scope.clone(),
+            self.scope().clone(),
             self.lifecycle.clone(),
             Arc::new(authorization),
         )

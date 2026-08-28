@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{UseError, UseResult};
 
-use super::validation::{valid_machine_id, valid_segment, valid_sha256};
+use super::validation::{valid_segment, valid_sha256};
 use super::{
-    PlanScope, PlanScopeKind, PluginOperationPlan, PluginPackageId, PluginReleaseChannel,
-    PluginSurfaceKind, PluginSurfaceRef,
+    InstallationId, PlanScope, PlanScopeKind, PluginOperationPlan, PluginPackageId,
+    PluginReleaseChannel, PluginSurfaceKind, PluginSurfaceRef,
 };
 
 const MANAGER_INPUT_ERROR: &str = "use.plugin.manager_input_invalid";
@@ -244,13 +244,9 @@ impl PluginManagerApplyPlanInput {
 }
 
 fn validate_scope(kind: PlanScopeKind, id: &str) -> UseResult<()> {
-    let _ = kind;
-    if !valid_machine_id(id) {
-        return Err(manager_input_error(
-            "The plugin manager scope identity is invalid.",
-        ));
-    }
-    Ok(())
+    InstallationId::new(kind, id)
+        .map(|_| ())
+        .map_err(|_| manager_input_error("The plugin manager installation identity is invalid."))
 }
 
 fn validate_version_requirement(requirement: Option<&str>) -> UseResult<()> {

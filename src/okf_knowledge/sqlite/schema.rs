@@ -10,6 +10,9 @@ pub(super) fn open(path: &Path, create: bool) -> rusqlite::Result<Connection> {
     if create {
         flags |= OpenFlags::SQLITE_OPEN_CREATE;
     }
+    #[cfg(windows)]
+    let path = a3s_use_core::windows_extended_length_path(path)
+        .map_err(|_| rusqlite::Error::InvalidPath(path.to_path_buf()))?;
     let mut connection = Connection::open_with_flags(path, flags)?;
     connection.busy_timeout(Duration::from_secs(10))?;
     connection.execute_batch(
@@ -34,6 +37,30 @@ pub(super) fn open(path: &Path, create: bool) -> rusqlite::Result<Connection> {
         _ => return Err(rusqlite::Error::InvalidQuery),
     }
     Ok(connection)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opens_database_beyond_the_legacy_windows_path_limit() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut directory = temporary.path().to_path_buf();
+        while directory.as_os_str().len() < 280 {
+            directory.push("installation-state-segment");
+        }
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("knowledge.sqlite3");
+
+        let connection = open(&path, true).unwrap();
+        assert_eq!(
+            connection
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            DATABASE_SCHEMA_VERSION
+        );
+    }
 }
 
 const DDL: &str = r#"

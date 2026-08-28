@@ -3,7 +3,7 @@ use crate::VerifiedTargetObservationStatus;
 use sha2::{Digest, Sha256};
 
 fn store(root: &std::path::Path) -> RegistrySourceStore {
-    RegistrySourceStore::new(ExtensionPaths::new(root.join("data"), root.join("state")))
+    RegistrySourceStore::new(UsePaths::new(root.join("data"), root.join("state")))
 }
 
 fn input(name: &str, url: &str, root: &str) -> RegistrySourceInput {
@@ -349,7 +349,7 @@ async fn replacing_or_removing_unknown_sources_fails_without_writing() {
 #[tokio::test]
 async fn source_mutations_fail_closed_while_the_configuration_lock_is_held() {
     let temporary = tempfile::tempdir().unwrap();
-    let paths = ExtensionPaths::new(
+    let paths = UsePaths::new(
         temporary.path().join("data"),
         temporary.path().join("state"),
     );

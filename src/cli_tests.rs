@@ -12,10 +12,30 @@ async fn version_json_exposes_a_typed_data_payload_for_consumers() {
 }
 
 #[tokio::test]
+async fn help_exposes_only_supported_scoped_package_entrypoints() {
+    let output = run(vec!["--help".to_string()]).await.unwrap();
+
+    assert!(output
+        .human
+        .contains("doctor [<external-domain>] --scope-kind <user|workspace> --scope-id <id>"));
+    assert!(output
+        .human
+        .contains("install <publisher/name> --scope-kind <user|workspace> --scope-id <id>"));
+    assert!(!output.human.contains("<external-route>"));
+}
+
+#[tokio::test]
 async fn capabilities_include_only_the_builtin_domains() {
-    let output = run(vec!["capabilities".to_string(), "--json".to_string()])
-        .await
-        .unwrap();
+    let output = run(vec![
+        "capabilities".to_string(),
+        "--scope-kind".to_string(),
+        "user".to_string(),
+        "--scope-id".to_string(),
+        "test/current".to_string(),
+        "--json".to_string(),
+    ])
+    .await
+    .unwrap();
     let domains = output.json["data"]["domains"].as_array().unwrap();
     assert_eq!(domains[0]["id"], "browser");
     assert_eq!(domains[1]["id"], "ocr");
@@ -34,6 +54,10 @@ async fn capability_snapshot_unifies_built_ins_without_rpc_envelopes() {
     let output = run(vec![
         "capability".to_string(),
         "snapshot".to_string(),
+        "--scope-kind".to_string(),
+        "user".to_string(),
+        "--scope-id".to_string(),
+        "test/current".to_string(),
         "--json".to_string(),
     ])
     .await

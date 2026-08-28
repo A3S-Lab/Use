@@ -107,8 +107,7 @@ impl ExtensionRegistry {
                     let retained = self
                         .retained_lifecycle_extensions(identity.package_id())
                         .await?;
-                    let snapshot =
-                        read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+                    let snapshot = read_registry_snapshot(&self.paths).await?;
                     if retained.is_empty() {
                         if snapshot.routes.iter().any(|binding| {
                             binding.enabled
@@ -154,8 +153,7 @@ impl ExtensionRegistry {
                     ));
                 }
                 verify_package_integrity(&current).await?;
-                let published =
-                    read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+                let published = read_registry_snapshot(&self.paths).await?;
                 if !published
                     .routes
                     .iter()
@@ -203,7 +201,7 @@ impl ExtensionRegistry {
         validate_candidate_source(candidate).await?;
         let target = self.lifecycle_package_root(identity);
         let target_created =
-            commit_candidate_root(candidate, &target, self.paths.data_root()).await?;
+            commit_candidate_root(candidate, &target, &self.paths.installation_data_root()).await?;
         if let Some((retained_identity, receipt)) = retained_candidate {
             let retained = self
                 .retain_lifecycle_receipt(&retained_identity, &receipt)
@@ -223,6 +221,7 @@ impl ExtensionRegistry {
         }
         let receipt = ExtensionReceipt {
             schema_version: EXTENSION_RECEIPT_SCHEMA_VERSION,
+            installation: self.installation().clone(),
             package_id: identity.package_id.clone(),
             component_id: format!("use/{}", identity.package_id),
             route: candidate.manifest.route.clone(),
@@ -262,7 +261,7 @@ impl ExtensionRegistry {
         // generation out of the immutable route snapshot prevents a later
         // graph node from replacing the prior closure before the one atomic
         // dependency-graph cutover.
-        let snapshot = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let snapshot = read_registry_snapshot(&self.paths).await?;
         Ok(ExtensionLifecycleResult {
             changed: true,
             extension: InstalledExtension {
@@ -438,7 +437,7 @@ impl ExtensionRegistry {
                 "The cognitive package must be hidden before accepted calls can drain.",
             ));
         }
-        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let published = read_registry_snapshot(&self.paths).await?;
         let snapshot = if published
             .routes
             .iter()
@@ -481,7 +480,7 @@ impl ExtensionRegistry {
                 ensure_no_installed_dependents(&installed, identity.package_id())?;
             }
             let retained = self.get_lifecycle_generation(identity).await?;
-            let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+            let published = read_registry_snapshot(&self.paths).await?;
             let published_binding = published
                 .routes
                 .iter()
@@ -618,7 +617,7 @@ impl ExtensionRegistry {
         }
 
         let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
-        let snapshot_before = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let snapshot_before = read_registry_snapshot(&self.paths).await?;
         let recorded_cutover = cutover_request
             .map(|request| recorded_cutover(&snapshot_before, request))
             .transpose()?
@@ -894,8 +893,7 @@ impl ExtensionRegistry {
                 self.restore_lifecycle_receipts(&originals).await?;
                 self.restore_removed_lifecycle_packages(&moved_removed)
                     .await?;
-                write_registry_snapshot(&self.paths.registry_snapshot_path(), &snapshot_before)
-                    .await?;
+                write_registry_snapshot(&self.paths, &snapshot_before).await?;
                 return Err(error);
             }
         };

@@ -19,6 +19,7 @@ mod host_operation;
 mod host_operation_observation;
 mod host_plan;
 mod identity;
+mod installation;
 mod installed_plan;
 mod manager;
 mod manager_input;
@@ -84,6 +85,7 @@ pub use host_plan::{
     PLUGIN_HOST_PLAN_RESULT_SCHEMA,
 };
 pub use identity::PluginPackageId;
+pub use installation::{InstallationId, InstallationKind, PlanScope, PlanScopeKind};
 pub use installed_plan::InstalledPluginPlanEvidence;
 pub use manager::{
     PluginManagerToolAnnotations, PluginManagerToolDefinition, PluginManagerToolset,
@@ -105,10 +107,10 @@ pub use permission::{
 };
 pub use plan::{
     PlanActor, PlanAuthority, PlanEnforcementProfile, PlanPackageChangeKind, PlanPackageRole,
-    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind, PlannedOkfSurfaceChange,
-    PlannedOperationImpact, PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease,
-    PlannedProviderEvidence, PlannedSecretChange, PlannedSecretChangeKind, PlannedStateEvidence,
-    PlannedSurfaceChange, PlannedWorkspaceImpact, PluginOperationAction, PluginOperationPlan,
+    PlanPolicyDecision, PlanQualifiedSurfaceRef, PlannedOkfSurfaceChange, PlannedOperationImpact,
+    PlannedPackageState, PlannedPackageTransition, PlannedPluginRelease, PlannedProviderEvidence,
+    PlannedSecretChange, PlannedSecretChangeKind, PlannedStateEvidence, PlannedSurfaceChange,
+    PlannedWorkspaceImpact, PluginOperationAction, PluginOperationPlan,
     PluginOperationPlanEnvelope, PluginPlanSource, SurfaceChangeKind,
 };
 pub use plan_confirmation::PluginOperationConfirmation;

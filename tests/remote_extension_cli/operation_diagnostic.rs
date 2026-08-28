@@ -14,6 +14,7 @@ fn completed_operations_have_bounded_zero_network_history_after_package_removal(
     let requests_before_history = server.requests().len();
     let first_history = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--history", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -47,6 +48,7 @@ fn completed_operations_have_bounded_zero_network_history_after_package_removal(
     let requests_before_history = server.requests().len();
     let removed_history = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--history", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -69,6 +71,7 @@ fn completed_operations_have_bounded_zero_network_history_after_package_removal(
     let requests_before_history = server.requests().len();
     let reinstalled_history = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--history", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -102,9 +105,8 @@ fn completed_operations_have_bounded_zero_network_history_after_package_removal(
     assert!(!encoded.contains("package-diagnostic-history"));
     assert!(!encoded.contains("idempotency"));
 
-    let scope_digest = format!("{:x}", Sha256::digest(b"user\nuser/current"));
-    let history_path = home
-        .join("state/operations/package-diagnostic-history/scopes")
+    let scope_digest = test_installation().storage_key().unwrap();
+    let history_path = scoped_state(&home, "operations/package-diagnostic-history/scopes")
         .join(scope_digest)
         .join("acme/root.json");
     let mut damaged: serde_json::Value =
@@ -116,6 +118,7 @@ fn completed_operations_have_bounded_zero_network_history_after_package_removal(
     std::fs::write(&history_path, serde_json::to_vec(&damaged).unwrap()).unwrap();
     let invalid = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--history", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -140,8 +143,8 @@ async fn reviewed_graph_plan_has_a_bounded_path_free_operation_diagnostic() {
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("private-home-marker");
     configure_registry(&server, &repository, &home, &[]);
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    let resolved = a3s_use_extension::RegistrySourceStore::new(paths.clone())
+    let paths = extension_paths(&home);
+    let resolved = a3s_use_extension::RegistrySourceStore::new(use_paths(&home))
         .resolve(Some("fixture"))
         .await
         .unwrap();
@@ -174,6 +177,7 @@ async fn reviewed_graph_plan_has_a_bounded_path_free_operation_diagnostic() {
 
     let output = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -267,6 +271,7 @@ async fn reviewed_graph_plan_has_a_bounded_path_free_operation_diagnostic() {
 
     let missing = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -293,6 +298,7 @@ async fn reviewed_graph_plan_has_a_bounded_path_free_operation_diagnostic() {
     .unwrap();
     let partial = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -315,6 +321,7 @@ async fn reviewed_graph_plan_has_a_bounded_path_free_operation_diagnostic() {
     std::fs::write(&complete_path, &complete_bytes).unwrap();
     let invalid = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -362,8 +369,7 @@ async fn operation_diagnostic_sanitizes_invalid_pending_state() {
     .await
     .unwrap();
     let lock_digest = lock.descriptor_digest().unwrap();
-    let registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let registry = ExtensionRegistry::new(extension_paths(&home));
     CognitivePackageManager::new(registry)
         .unwrap()
         .prepare_install_remote(
@@ -377,7 +383,7 @@ async fn operation_diagnostic_sanitizes_invalid_pending_state() {
         .await
         .unwrap();
 
-    let pending_path = home.join("state/operations/package-graphs/install/acme/root.json");
+    let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
     let mut pending: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&pending_path).unwrap()).unwrap();
     pending["credential"] = serde_json::json!("secret-sentinel-value");
@@ -385,6 +391,7 @@ async fn operation_diagnostic_sanitizes_invalid_pending_state() {
 
     let output = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();

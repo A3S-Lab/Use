@@ -30,8 +30,9 @@ async fn permission_bearing_tool_lifecycle_replays_for_each_scope_kind() {
         (PlanScopeKind::Workspace, "workspace"),
     ] {
         let home = temporary.path().join(format!("{label}-permission-home"));
-        let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-        RegistrySourceStore::new(paths.clone())
+        let scope = managed_scope(scope_kind);
+        let paths = managed_extension_paths(&home, &scope);
+        RegistrySourceStore::new(use_paths(&home))
             .add(RegistrySourceInput::new(
                 "fixture",
                 server.base_url(),
@@ -42,7 +43,6 @@ async fn permission_bearing_tool_lifecycle_replays_for_each_scope_kind() {
             .await
             .unwrap();
 
-        let scope = managed_scope(scope_kind);
         let host = managed_host(&scope, paths.clone());
         let capabilities_digest = host
             .capabilities()
@@ -173,7 +173,7 @@ async fn permission_bearing_tool_lifecycle_replays_for_each_scope_kind() {
             .as_ref()
             .expect("upgrade prior state");
         let candidate = upgrade_transition.after.as_ref().expect("upgrade state");
-        assert_revoked_local(&home, SCOPE_ID, &prior.release.package_sha256).await;
+        assert_revoked_local(&home, &scope, &prior.release.package_sha256).await;
         assert_grant(
             &home,
             &scope,
@@ -227,7 +227,7 @@ async fn permission_bearing_tool_lifecycle_replays_for_each_scope_kind() {
         assert!(!uninstalled.replayed);
         assert_eq!(uninstalled.state.desired, PluginDesiredState::Absent);
         assert_eq!(uninstalled.state.observed, PluginObservedState::Removed);
-        assert_revoked_local(&home, SCOPE_ID, &candidate.release.package_sha256).await;
+        assert_revoked_local(&home, &scope, &candidate.release.package_sha256).await;
         assert_operation_completed(
             &restarted,
             &scope,
@@ -382,7 +382,7 @@ async fn assert_grant(
     package_digest: &str,
     ceiling: &a3s_use_core::PluginPermissionCeiling,
 ) {
-    let record = WorkspaceGrantStore::new(home.join("state"))
+    let record = WorkspaceGrantStore::new(managed_extension_paths(home, scope).state_root())
         .observe(&scope.scope_id, PACKAGE_ID, package_digest)
         .await
         .unwrap()
@@ -395,9 +395,13 @@ async fn assert_grant(
     assert_eq!(receipt.grant.package_id, PACKAGE_ID);
 }
 
-async fn assert_revoked_local(home: &std::path::Path, scope_id: &str, package_digest: &str) {
-    let record = WorkspaceGrantStore::new(home.join("state"))
-        .observe(scope_id, PACKAGE_ID, package_digest)
+async fn assert_revoked_local(
+    home: &std::path::Path,
+    scope: &PluginManagedScope,
+    package_digest: &str,
+) {
+    let record = WorkspaceGrantStore::new(managed_extension_paths(home, scope).state_root())
+        .observe(&scope.scope_id, PACKAGE_ID, package_digest)
         .await
         .unwrap()
         .unwrap();

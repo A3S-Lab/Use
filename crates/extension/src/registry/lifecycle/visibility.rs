@@ -95,7 +95,7 @@ impl ExtensionRegistry {
                 ),
             ));
         }
-        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let published = read_registry_snapshot(&self.paths).await?;
         let recorded_cutover = cutover_request
             .map(|request| recorded_cutover(&published, request))
             .transpose()?

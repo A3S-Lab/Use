@@ -24,9 +24,11 @@ fn service() -> PluginManagerService {
         fence_digest: format!("sha256:{}", "7".repeat(64)),
     };
     let host = CognitivePackageHostManager::new(
-        scope,
+        scope.clone(),
         "use:plugin-manager-tests",
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state"))),
+        ExtensionRegistry::new(
+            ExtensionPaths::new(home.join("data"), home.join("state"), scope.plan_scope()).unwrap(),
+        ),
         Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(StandaloneCognitivePackageAuthorizationProvider),
     )

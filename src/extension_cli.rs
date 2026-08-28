@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use a3s_use_core::{PluginHostApplyResult, PluginHostPlanResult, UseError, UseResult};
+use a3s_use_core::{
+    InstallationId, PluginHostApplyResult, PluginHostPlanResult, UseError, UseResult,
+};
 
 use crate::cli::CommandOutput;
 #[cfg(feature = "extensions")]
@@ -79,8 +81,10 @@ impl PluginManagerMutationView {
 }
 
 #[cfg(feature = "extensions")]
-pub(crate) fn standalone_plugin_manager_service() -> UseResult<PluginManagerService> {
-    manager::standalone_service()
+pub(crate) fn standalone_plugin_manager_service(
+    installation: InstallationId,
+) -> UseResult<PluginManagerService> {
+    manager::standalone_service(installation)
 }
 
 pub(crate) fn external_package_id(id: &str) -> Option<&str> {
@@ -99,22 +103,27 @@ pub(crate) fn external_route(id: &str) -> Option<&str> {
     (valid_segment(route) && !route.contains('/')).then_some(route)
 }
 
-pub(crate) async fn installed_extension_for_id(id: &str) -> UseResult<Option<ExtensionView>> {
+pub(crate) async fn installed_extension_for_id(
+    installation: InstallationId,
+    id: &str,
+) -> UseResult<Option<ExtensionView>> {
     if let Some(package_id) = external_package_id(id) {
-        return installed_extension(package_id).await;
+        return installed_extension(installation, package_id).await;
     }
     let Some(route) = external_route(id) else {
         return Ok(None);
     };
-    Ok(installed_extensions()
+    Ok(installed_extensions(installation)
         .await?
         .into_iter()
         .find(|extension| extension.route == route))
 }
 
-pub(crate) async fn extension_capabilities() -> UseResult<(u64, Vec<serde_json::Value>)> {
-    let generation = extension_registry_generation().await?;
-    let extensions = installed_extensions()
+pub(crate) async fn extension_capabilities(
+    installation: InstallationId,
+) -> UseResult<(u64, Vec<serde_json::Value>)> {
+    let generation = extension_registry_generation(installation.clone()).await?;
+    let extensions = installed_extensions(installation)
         .await?
         .into_iter()
         .map(|extension| {
@@ -140,9 +149,9 @@ pub(crate) async fn extension_capabilities() -> UseResult<(u64, Vec<serde_json::
     Ok((generation, extensions))
 }
 
-pub(crate) async fn extension_list() -> UseResult<CommandOutput> {
-    let extensions = installed_extensions().await?;
-    let generation = extension_registry_generation().await?;
+pub(crate) async fn extension_list(installation: InstallationId) -> UseResult<CommandOutput> {
+    let extensions = installed_extensions(installation.clone()).await?;
+    let generation = extension_registry_generation(installation).await?;
     let human = if extensions.is_empty() {
         "No external Use extensions are installed.".to_string()
     } else {
@@ -173,14 +182,17 @@ pub(crate) async fn extension_list() -> UseResult<CommandOutput> {
     ))
 }
 
-pub(crate) async fn extension_inspect(package_id: &str) -> UseResult<CommandOutput> {
-    let Some(extension) = installed_extension(package_id).await? else {
+pub(crate) async fn extension_inspect(
+    installation: InstallationId,
+    package_id: &str,
+) -> UseResult<CommandOutput> {
+    let Some(extension) = installed_extension(installation.clone(), package_id).await? else {
         return Err(UseError::new(
             "use.extension.not_installed",
             format!("Extension '{package_id}' is not installed."),
         ));
     };
-    let lifecycle = extension_lifecycle_diagnostic(package_id).await?;
+    let lifecycle = extension_lifecycle_diagnostic(installation, package_id).await?;
     Ok(CommandOutput::success(
         format!(
             "Extension '{}' is {} on route '{}'.",
@@ -206,7 +218,7 @@ pub(crate) async fn extension_operation_diagnostic(
     scope: a3s_use_core::PlanScope,
     include_history: bool,
 ) -> UseResult<CommandOutput> {
-    let registry = a3s_use_extension::ExtensionRegistry::from_env()?;
+    let registry = a3s_use_extension::ExtensionRegistry::from_env(scope.clone())?;
     let manager = crate::cognitive_package::CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         registry,
         scope,
@@ -307,15 +319,14 @@ pub(crate) async fn extension_operation_diagnostic(
 }
 
 #[cfg(feature = "extensions")]
-async fn extension_lifecycle_diagnostic(package_id: &str) -> UseResult<serde_json::Value> {
-    let paths = a3s_use_extension::ExtensionPaths::from_env()?;
-    let scope = a3s_use_core::PlanScope {
-        kind: a3s_use_core::PlanScopeKind::User,
-        id: crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
-    };
+async fn extension_lifecycle_diagnostic(
+    installation: InstallationId,
+    package_id: &str,
+) -> UseResult<serde_json::Value> {
+    let paths = a3s_use_extension::ExtensionPaths::from_env(installation.clone())?;
     let diagnostic =
         crate::plugin_lifecycle::PluginLifecycleJournalStore::from_extension_paths(&paths)
-            .diagnose(&scope, package_id)
+            .diagnose(&installation, package_id)
             .await?;
     serde_json::to_value(diagnostic).map_err(|error| {
         UseError::new(
@@ -326,12 +337,20 @@ async fn extension_lifecycle_diagnostic(package_id: &str) -> UseResult<serde_jso
 }
 
 #[cfg(not(feature = "extensions"))]
-async fn extension_lifecycle_diagnostic(_package_id: &str) -> UseResult<serde_json::Value> {
+async fn extension_lifecycle_diagnostic(
+    _installation: InstallationId,
+    _package_id: &str,
+) -> UseResult<serde_json::Value> {
     Ok(serde_json::Value::Null)
 }
 
-pub(crate) async fn extension_planning_evidence(package_id: &str) -> UseResult<CommandOutput> {
-    let evidence = crate::capability_registry::installed_plugin_plan_evidence(package_id).await?;
+pub(crate) async fn extension_planning_evidence(
+    installation: InstallationId,
+    package_id: &str,
+) -> UseResult<CommandOutput> {
+    let evidence =
+        crate::capability_registry::installed_plugin_plan_evidence(installation, package_id)
+            .await?;
     Ok(CommandOutput::success(
         format!(
             "Resolved plan-ready installed evidence for '{}'.",
@@ -341,8 +360,8 @@ pub(crate) async fn extension_planning_evidence(package_id: &str) -> UseResult<C
     ))
 }
 
-pub(crate) async fn extension_snapshot() -> UseResult<CommandOutput> {
-    let snapshot = current_registry_snapshot().await?;
+pub(crate) async fn extension_snapshot(installation: InstallationId) -> UseResult<CommandOutput> {
+    let snapshot = current_registry_snapshot(installation).await?;
     Ok(CommandOutput::success(
         format!("Extension registry generation {}.", snapshot["generation"]),
         serde_json::json!({ "registry": snapshot }),
@@ -350,10 +369,11 @@ pub(crate) async fn extension_snapshot() -> UseResult<CommandOutput> {
 }
 
 pub(crate) async fn extension_watch(
+    installation: InstallationId,
     after_generation: u64,
     timeout: Duration,
 ) -> UseResult<CommandOutput> {
-    let snapshot = watch_registry(after_generation, timeout).await?;
+    let snapshot = watch_registry(installation, after_generation, timeout).await?;
     match snapshot {
         Some(snapshot) => Ok(CommandOutput::success(
             format!("Extension registry advanced beyond generation {after_generation}."),
@@ -426,8 +446,10 @@ fn valid_segment(value: &str) -> bool {
 }
 
 #[cfg(feature = "extensions")]
-pub(crate) async fn installed_extensions() -> UseResult<Vec<ExtensionView>> {
-    crate::extension_host::list()
+pub(crate) async fn installed_extensions(
+    installation: InstallationId,
+) -> UseResult<Vec<ExtensionView>> {
+    crate::extension_host::list(installation)
         .await?
         .into_iter()
         .map(extension_view)
@@ -435,25 +457,34 @@ pub(crate) async fn installed_extensions() -> UseResult<Vec<ExtensionView>> {
 }
 
 #[cfg(not(feature = "extensions"))]
-pub(crate) async fn installed_extensions() -> UseResult<Vec<ExtensionView>> {
+pub(crate) async fn installed_extensions(
+    _installation: InstallationId,
+) -> UseResult<Vec<ExtensionView>> {
     Ok(Vec::new())
 }
 
 #[cfg(feature = "extensions")]
-pub(crate) async fn installed_extension(package_id: &str) -> UseResult<Option<ExtensionView>> {
-    crate::extension_host::get(package_id)
+pub(crate) async fn installed_extension(
+    installation: InstallationId,
+    package_id: &str,
+) -> UseResult<Option<ExtensionView>> {
+    crate::extension_host::get(installation, package_id)
         .await?
         .map(extension_view)
         .transpose()
 }
 
 #[cfg(not(feature = "extensions"))]
-pub(crate) async fn installed_extension(_package_id: &str) -> UseResult<Option<ExtensionView>> {
+pub(crate) async fn installed_extension(
+    _installation: InstallationId,
+    _package_id: &str,
+) -> UseResult<Option<ExtensionView>> {
     Ok(None)
 }
 
 #[cfg(feature = "extensions")]
 pub(crate) async fn install_remote_extension(
+    installation: InstallationId,
     package_id: &str,
     registry_name: Option<&str>,
     version: Option<&str>,
@@ -462,6 +493,7 @@ pub(crate) async fn install_remote_extension(
     offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     let result = manager::install(
+        installation.clone(),
         package_id,
         registry_name,
         version,
@@ -470,12 +502,14 @@ pub(crate) async fn install_remote_extension(
         offline,
     )
     .await?;
-    let extension = installed_extension(package_id).await?.ok_or_else(|| {
-        UseError::new(
-            "use.plugin.package_graph_invalid",
-            "The Plugin Manager completed install without an installed root extension.",
-        )
-    })?;
+    let extension = installed_extension(installation, package_id)
+        .await?
+        .ok_or_else(|| {
+            UseError::new(
+                "use.plugin.package_graph_invalid",
+                "The Plugin Manager completed install without an installed root extension.",
+            )
+        })?;
     Ok(ExtensionInstallView {
         changed: !result.manager.result.replayed,
         extension,
@@ -488,6 +522,7 @@ pub(crate) async fn install_remote_extension(
 
 #[cfg(feature = "extensions")]
 pub(crate) async fn upgrade_remote_extension(
+    installation: InstallationId,
     package_id: &str,
     registry_name: Option<&str>,
     version: Option<&str>,
@@ -496,6 +531,7 @@ pub(crate) async fn upgrade_remote_extension(
     offline: bool,
 ) -> UseResult<ExtensionInstallView> {
     let result = manager::upgrade(
+        installation.clone(),
         package_id,
         registry_name,
         version,
@@ -504,12 +540,14 @@ pub(crate) async fn upgrade_remote_extension(
         offline,
     )
     .await?;
-    let extension = installed_extension(package_id).await?.ok_or_else(|| {
-        UseError::new(
-            "use.plugin.package_graph_invalid",
-            "The Plugin Manager completed upgrade without an installed root extension.",
-        )
-    })?;
+    let extension = installed_extension(installation, package_id)
+        .await?
+        .ok_or_else(|| {
+            UseError::new(
+                "use.plugin.package_graph_invalid",
+                "The Plugin Manager completed upgrade without an installed root extension.",
+            )
+        })?;
     Ok(ExtensionInstallView {
         changed: !result.manager.result.replayed,
         extension,
@@ -522,6 +560,7 @@ pub(crate) async fn upgrade_remote_extension(
 
 #[cfg(not(feature = "extensions"))]
 pub(crate) async fn install_remote_extension(
+    _installation: InstallationId,
     _package_id: &str,
     _registry_name: Option<&str>,
     _version: Option<&str>,
@@ -534,6 +573,7 @@ pub(crate) async fn install_remote_extension(
 
 #[cfg(not(feature = "extensions"))]
 pub(crate) async fn upgrade_remote_extension(
+    _installation: InstallationId,
     _package_id: &str,
     _registry_name: Option<&str>,
     _version: Option<&str>,
@@ -545,8 +585,11 @@ pub(crate) async fn upgrade_remote_extension(
 }
 
 #[cfg(feature = "extensions")]
-pub(crate) async fn uninstall_extension(package_id: &str) -> UseResult<ExtensionUninstallView> {
-    let result = manager::uninstall(package_id).await?;
+pub(crate) async fn uninstall_extension(
+    installation: InstallationId,
+    package_id: &str,
+) -> UseResult<ExtensionUninstallView> {
+    let result = manager::uninstall(installation, package_id).await?;
     Ok(ExtensionUninstallView {
         package_id: package_id.to_owned(),
         changed: !result.manager.result.replayed,
@@ -556,13 +599,16 @@ pub(crate) async fn uninstall_extension(package_id: &str) -> UseResult<Extension
 }
 
 #[cfg(not(feature = "extensions"))]
-pub(crate) async fn uninstall_extension(_package_id: &str) -> UseResult<ExtensionUninstallView> {
+pub(crate) async fn uninstall_extension(
+    _installation: InstallationId,
+    _package_id: &str,
+) -> UseResult<ExtensionUninstallView> {
     Err(extensions_disabled())
 }
 
 #[cfg(feature = "extensions")]
-async fn current_registry_snapshot() -> UseResult<serde_json::Value> {
-    serde_json::to_value(crate::extension_host::snapshot().await?).map_err(|error| {
+async fn current_registry_snapshot(installation: InstallationId) -> UseResult<serde_json::Value> {
+    serde_json::to_value(crate::extension_host::snapshot(installation).await?).map_err(|error| {
         UseError::new(
             "use.extension.registry_invalid",
             format!("Failed to encode the extension registry snapshot: {error}"),
@@ -571,7 +617,7 @@ async fn current_registry_snapshot() -> UseResult<serde_json::Value> {
 }
 
 #[cfg(not(feature = "extensions"))]
-async fn current_registry_snapshot() -> UseResult<serde_json::Value> {
+async fn current_registry_snapshot(_installation: InstallationId) -> UseResult<serde_json::Value> {
     Ok(serde_json::json!({
         "schemaVersion": 1,
         "generation": 0,
@@ -579,18 +625,19 @@ async fn current_registry_snapshot() -> UseResult<serde_json::Value> {
     }))
 }
 
-async fn extension_registry_generation() -> UseResult<u64> {
-    Ok(current_registry_snapshot().await?["generation"]
+async fn extension_registry_generation(installation: InstallationId) -> UseResult<u64> {
+    Ok(current_registry_snapshot(installation).await?["generation"]
         .as_u64()
         .unwrap_or(0))
 }
 
 #[cfg(feature = "extensions")]
 async fn watch_registry(
+    installation: InstallationId,
     after_generation: u64,
     timeout: Duration,
 ) -> UseResult<Option<serde_json::Value>> {
-    crate::extension_host::wait_for_change(after_generation, timeout)
+    crate::extension_host::wait_for_change(installation, after_generation, timeout)
         .await?
         .map(|snapshot| {
             serde_json::to_value(snapshot).map_err(|error| {
@@ -605,6 +652,7 @@ async fn watch_registry(
 
 #[cfg(not(feature = "extensions"))]
 async fn watch_registry(
+    _installation: InstallationId,
     _after_generation: u64,
     _timeout: Duration,
 ) -> UseResult<Option<serde_json::Value>> {

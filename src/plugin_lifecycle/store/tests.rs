@@ -1,6 +1,5 @@
 use a3s_use_core::{PlanScope, PlanScopeKind};
 use a3s_use_extension::ExtensionManifest;
-use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::plugin_lifecycle::{
@@ -568,7 +567,7 @@ fn operation_directory(
     store
         .root()
         .join(scope.kind.as_str())
-        .join(format!("{:x}", Sha256::digest(scope.id.as_bytes())))
+        .join(scope.storage_key().unwrap())
         .join("acme")
         .join("guide")
 }

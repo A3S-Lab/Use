@@ -153,7 +153,7 @@ async fn lifecycle_cutover_capacity_fails_before_receipt_or_generation_mutation(
             .unwrap(),
         );
     }
-    write_registry_snapshot(&registry.paths().registry_snapshot_path(), &snapshot)
+    write_registry_snapshot(registry.paths(), &snapshot)
         .await
         .unwrap();
 

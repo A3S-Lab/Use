@@ -5,16 +5,16 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
         usage_error("component requires list, status, install, upgrade, or uninstall")
     })?;
     match command {
-        "list" => list().await,
+        "list" => list(args).await,
         "status" => {
             let id = value_argument(args, 1, "component status requires an ID")?;
-            status(id).await
+            status(id, args).await
         }
         "install" => install(args).await,
         "upgrade" => upgrade(args).await,
         "uninstall" => {
             let id = value_argument(args, 1, "component uninstall requires an ID")?;
-            uninstall(id).await
+            uninstall(id, args).await
         }
         value => Err(usage_error(format!("unknown component command '{value}'"))),
     }
@@ -30,7 +30,8 @@ async fn upgrade(args: &[String]) -> UseResult<CommandOutput> {
             format!("Built-in component '{id}' is not a cognitive package graph."),
         ));
     }
-    let resolved = installed_extension_for_id(id).await?;
+    let installation = managed_scope_argument(args)?;
+    let resolved = installed_extension_for_id(installation.clone(), id).await?;
     let package_id = external_package_id(id).or_else(|| {
         resolved
             .as_ref()
@@ -47,6 +48,7 @@ async fn upgrade(args: &[String]) -> UseResult<CommandOutput> {
     let channel = option_argument(args, "--channel")?;
     let expected_lock = option_argument(args, "--package-lock-digest")?;
     let result = upgrade_remote_extension(
+        installation,
         package_id,
         registry_name,
         version,
@@ -78,11 +80,11 @@ async fn upgrade(args: &[String]) -> UseResult<CommandOutput> {
     ))
 }
 
-async fn list() -> UseResult<CommandOutput> {
+async fn list(args: &[String]) -> UseResult<CommandOutput> {
     let browser = component_value("browser", &browser_diagnostic());
     let box_component = component_value("box", &crate::component_route::box_diagnostic());
     let ocr = component_value("ocr", &ocr_diagnostic());
-    let extensions = installed_extensions().await?;
+    let extensions = installed_extensions(managed_scope_argument(args)?).await?;
     let mut components = vec![browser, box_component, ocr];
     components.extend(
         extensions
@@ -101,7 +103,7 @@ async fn list() -> UseResult<CommandOutput> {
     ))
 }
 
-async fn status(id: &str) -> UseResult<CommandOutput> {
+async fn status(id: &str, args: &[String]) -> UseResult<CommandOutput> {
     if let Some(diagnostic) = builtin_diagnostic(id) {
         return Ok(CommandOutput {
             human: diagnostic.message.clone(),
@@ -114,7 +116,7 @@ async fn status(id: &str) -> UseResult<CommandOutput> {
             should_print: true,
         });
     }
-    if let Some(extension) = installed_extension_for_id(id).await? {
+    if let Some(extension) = installed_extension_for_id(managed_scope_argument(args)?, id).await? {
         return Ok(CommandOutput {
             human: format!(
                 "Extension '{}' is {} on route '{}'.",
@@ -237,7 +239,8 @@ async fn install(args: &[String]) -> UseResult<CommandOutput> {
         ));
     }
 
-    let resolved = installed_extension_for_id(id).await?;
+    let installation = managed_scope_argument(args)?;
+    let resolved = installed_extension_for_id(installation.clone(), id).await?;
     let package_id = external_package_id(id).or_else(|| {
         resolved
             .as_ref()
@@ -262,6 +265,7 @@ async fn install(args: &[String]) -> UseResult<CommandOutput> {
     let channel = option_argument(args, "--channel")?;
     let expected_package_lock = option_argument(args, "--package-lock-digest")?;
     let result = install_remote_extension(
+        installation,
         package_id,
         registry_name,
         version,
@@ -290,7 +294,7 @@ async fn install(args: &[String]) -> UseResult<CommandOutput> {
     ))
 }
 
-async fn uninstall(id: &str) -> UseResult<CommandOutput> {
+async fn uninstall(id: &str, args: &[String]) -> UseResult<CommandOutput> {
     if matches!(id, "browser" | "use/browser") {
         #[cfg(feature = "browser")]
         {
@@ -337,8 +341,9 @@ async fn uninstall(id: &str) -> UseResult<CommandOutput> {
             }),
         ));
     }
-    if let Some(extension) = installed_extension_for_id(id).await? {
-        let result = uninstall_extension(&extension.package_id).await?;
+    let installation = managed_scope_argument(args)?;
+    if let Some(extension) = installed_extension_for_id(installation.clone(), id).await? {
+        let result = uninstall_extension(installation.clone(), &extension.package_id).await?;
         return Ok(CommandOutput::success(
             if result.changed {
                 format!("Uninstalled extension '{}'.", result.package_id)
@@ -355,7 +360,7 @@ async fn uninstall(id: &str) -> UseResult<CommandOutput> {
         ));
     }
     if let Some(package_id) = external_package_id(id) {
-        let result = uninstall_extension(package_id).await?;
+        let result = uninstall_extension(installation, package_id).await?;
         return Ok(CommandOutput::success(
             if result.changed {
                 format!("Uninstalled extension '{}'.", result.package_id)

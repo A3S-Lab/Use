@@ -32,8 +32,6 @@ fn run_standalone_plugin_manager_cli_scenario() {
     ));
     let repository = TestRepository::with_targets(targets, 89, FUTURE);
     let server = TestServer::start(repository.routes.clone());
-    // Keep the synthetic root below legacy Windows MAX_PATH after the Host
-    // diagnostic store appends its two digest-bound ownership segments.
     let home = temporary.path().join("h");
     configure_registry(&server, &repository, &home, &[]);
 
@@ -86,7 +84,7 @@ fn run_standalone_plugin_manager_cli_scenario() {
     assert!(cached_inspection.status.success(), "{cached_inspection:?}");
     assert!(server.requests().is_empty());
 
-    let wrong_scope = plugin_command(
+    let workspace_scope = plugin_command(
         &home,
         &[
             "list-installed",
@@ -96,11 +94,12 @@ fn run_standalone_plugin_manager_cli_scenario() {
             "user/current",
         ],
     );
-    assert!(!wrong_scope.status.success(), "{wrong_scope:?}");
-    assert_eq!(
-        json(&wrong_scope)["error"]["code"],
-        "use.plugin.manager_scope_mismatch"
-    );
+    assert!(workspace_scope.status.success(), "{workspace_scope:?}");
+    assert_eq!(json(&workspace_scope)["data"]["scope"]["kind"], "workspace");
+    assert!(json(&workspace_scope)["data"]["packages"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 
     let first_plan = plugin_command(
         &home,
@@ -197,6 +196,23 @@ fn run_standalone_plugin_manager_cli_scenario() {
     assert_eq!(installed["data"]["replayed"], false);
     assert_eq!(installed["data"]["state"]["version"], "1.0.0");
     assert!(server.requests().is_empty());
+    let workspace_after_user_install = plugin_command(
+        &home,
+        &[
+            "list-installed",
+            "--scope-kind",
+            "workspace",
+            "--scope-id",
+            "user/current",
+        ],
+    );
+    assert!(
+        json(&workspace_after_user_install)["data"]["packages"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{workspace_after_user_install:?}"
+    );
 
     let replayed_apply = apply_plan(&home, &install_operation_id, &install_plan_digest);
     assert!(replayed_apply.status.success(), "{replayed_apply:?}");
@@ -288,13 +304,12 @@ fn run_standalone_plugin_manager_cli_scenario() {
 }
 
 fn plugin_command(home: &std::path::Path, args: &[&str]) -> Output {
-    Command::new(binary())
-        .arg("plugin")
-        .args(args)
-        .arg("--json")
-        .env("A3S_USE_HOME", home)
-        .output()
-        .unwrap()
+    let mut command = Command::new(binary());
+    command.arg("plugin").args(args).arg("--json");
+    if !args.contains(&"--scope-kind") {
+        append_test_installation_args(&mut command);
+    }
+    command.env("A3S_USE_HOME", home).output().unwrap()
 }
 
 fn apply_plan(home: &std::path::Path, operation_id: &str, plan_digest: &str) -> Output {
@@ -325,11 +340,10 @@ fn plan_identity(plan: &serde_json::Value) -> (String, String) {
 }
 
 fn extension_routes(home: &std::path::Path) -> Vec<String> {
-    let snapshot = Command::new(binary())
-        .args(["extension", "snapshot", "--json"])
-        .env("A3S_USE_HOME", home)
-        .output()
-        .unwrap();
+    let mut snapshot = Command::new(binary());
+    snapshot.args(["extension", "snapshot", "--json"]);
+    append_test_installation_args(&mut snapshot);
+    let snapshot = snapshot.env("A3S_USE_HOME", home).output().unwrap();
     assert!(snapshot.status.success(), "{snapshot:?}");
     json(&snapshot)["data"]["registry"]["routes"]
         .as_array()

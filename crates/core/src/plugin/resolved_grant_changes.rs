@@ -36,7 +36,7 @@ impl ResolvedWorkspaceGrantChangeSet {
         if !valid_machine_id(&self.operation_id)
             || !valid_sha256(&self.plan_digest)
             || !valid_sha256(&self.change_set_digest)
-            || !valid_machine_id(&self.scope_id)
+            || PluginWorkspaceGrant::validate_scope_id(&self.scope_id).is_err()
             || self.state_revision_before == 0
             || self.state_revision_before.checked_add(1) != Some(self.revision)
             || self.capability_generation_before.checked_add(1)

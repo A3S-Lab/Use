@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{
-    InstalledPluginPlanEvidence, OkfCapabilityProjection, PlanScope, PluginSurfaceRef, Readiness,
-    UseError, UseResult,
+    InstallationId, InstalledPluginPlanEvidence, OkfCapabilityProjection, PlanScope,
+    PluginSurfaceRef, Readiness, UseError, UseResult,
 };
 #[cfg(feature = "extensions")]
 use a3s_use_core::{
@@ -50,7 +50,6 @@ use crate::surface_reconciler::{
 };
 #[cfg(feature = "extensions")]
 use crate::{
-    cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE,
     flow_runtime::FlowRuntimeBindingStore,
     okf_knowledge::{
         OkfKnowledgeBinding, OkfKnowledgeBindingStore, OkfKnowledgeClient,
@@ -59,7 +58,7 @@ use crate::{
     plugin_runtime::RuntimeBindingStore,
 };
 
-pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 2;
+pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 3;
 pub const UI_DEPENDENCY_EVIDENCE_SCHEMA: &str = "a3s.use.ui-dependency-evidence.v1";
 #[cfg(feature = "extensions")]
 const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
@@ -71,6 +70,7 @@ const MAX_FLOW_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
 #[serde(rename_all = "camelCase")]
 pub struct CapabilityRegistrySnapshot {
     pub schema_version: u32,
+    pub installation: InstallationId,
     pub generation: u64,
     pub revision: String,
     pub capabilities: Vec<CapabilityBinding>,
@@ -87,19 +87,41 @@ pub struct CapabilityRegistrySnapshot {
 pub struct CapabilityRegistry {
     #[cfg(feature = "extensions")]
     extensions: a3s_use_extension::ExtensionRegistry,
+    #[cfg(not(feature = "extensions"))]
+    installation: InstallationId,
 }
 
 impl CapabilityRegistry {
-    pub fn from_env() -> UseResult<Self> {
+    pub fn from_env(installation: InstallationId) -> UseResult<Self> {
+        installation.validate()?;
         Ok(Self {
             #[cfg(feature = "extensions")]
-            extensions: a3s_use_extension::ExtensionRegistry::from_env()?,
+            extensions: a3s_use_extension::ExtensionRegistry::from_env(installation)?,
+            #[cfg(not(feature = "extensions"))]
+            installation,
         })
     }
 
     #[cfg(feature = "extensions")]
     pub fn new(extensions: a3s_use_extension::ExtensionRegistry) -> Self {
         Self { extensions }
+    }
+
+    #[cfg(not(feature = "extensions"))]
+    pub fn new(installation: InstallationId) -> UseResult<Self> {
+        installation.validate()?;
+        Ok(Self { installation })
+    }
+
+    pub fn installation(&self) -> &InstallationId {
+        #[cfg(feature = "extensions")]
+        {
+            self.extensions.installation()
+        }
+        #[cfg(not(feature = "extensions"))]
+        {
+            &self.installation
+        }
     }
 
     #[cfg(feature = "extensions")]
@@ -111,7 +133,7 @@ impl CapabilityRegistry {
         #[cfg(feature = "extensions")]
         let (extension_cursor, extensions) = stable_extensions(&self.extensions).await?;
         #[cfg(not(feature = "extensions"))]
-        let (extension_cursor, extensions) = stable_extensions().await?;
+        let (extension_cursor, extensions) = stable_extensions(self.installation()).await?;
         let mut capabilities = vec![
             browser_capability().await?,
             ocr_capability().await?,
@@ -122,10 +144,11 @@ impl CapabilityRegistry {
         validate_unique_tool_task_names(&capabilities)?;
         validate_unique_mcp_server_names(&capabilities)?;
 
-        let revision = revision(&capabilities)?;
+        let revision = revision(self.installation(), &capabilities)?;
         let cursor = CapabilitySnapshotCursor::from_projection(&revision, extension_cursor)?;
         Ok(CapabilityRegistrySnapshot {
             schema_version: CAPABILITY_REGISTRY_SCHEMA_VERSION,
+            installation: self.installation().clone(),
             generation: cursor.generation,
             revision,
             capabilities,
@@ -412,8 +435,8 @@ pub struct CapabilityBinding {
     pub tool_tasks: Vec<ToolTaskProjection>,
 }
 
-pub async fn snapshot() -> UseResult<CapabilityRegistrySnapshot> {
-    CapabilityRegistry::from_env()?.snapshot().await
+pub async fn snapshot(installation: InstallationId) -> UseResult<CapabilityRegistrySnapshot> {
+    CapabilityRegistry::from_env(installation)?.snapshot().await
 }
 
 fn validate_unique_tool_task_names(capabilities: &[CapabilityBinding]) -> UseResult<()> {
@@ -450,10 +473,11 @@ fn validate_unique_mcp_server_names(capabilities: &[CapabilityBinding]) -> UseRe
 
 #[cfg(feature = "extensions")]
 pub(crate) async fn installed_plugin_plan_evidence(
+    installation: InstallationId,
     package_id: &str,
 ) -> UseResult<InstalledPluginPlanEvidence> {
-    let snapshot = snapshot().await?;
-    let extension = crate::extension_host::get(package_id)
+    let snapshot = snapshot(installation.clone()).await?;
+    let extension = crate::extension_host::get(installation, package_id)
         .await?
         .ok_or_else(|| {
             UseError::new(
@@ -466,6 +490,7 @@ pub(crate) async fn installed_plugin_plan_evidence(
 
 #[cfg(not(feature = "extensions"))]
 pub(crate) async fn installed_plugin_plan_evidence(
+    _installation: InstallationId,
     _package_id: &str,
 ) -> UseResult<InstalledPluginPlanEvidence> {
     Err(UseError::new(
@@ -475,11 +500,12 @@ pub(crate) async fn installed_plugin_plan_evidence(
 }
 
 pub async fn wait_for_change(
+    installation: InstallationId,
     after_generation: u64,
     after_revision: Option<&str>,
     timeout: Duration,
 ) -> UseResult<Option<CapabilityRegistrySnapshot>> {
-    CapabilityRegistry::from_env()?
+    CapabilityRegistry::from_env(installation)?
         .wait_for_change(after_generation, after_revision, timeout)
         .await
 }
@@ -648,8 +674,11 @@ fn box_capability() -> CapabilityBinding {
     }
 }
 
-fn revision(capabilities: &[CapabilityBinding]) -> UseResult<String> {
-    let bytes = serde_json::to_vec(capabilities).map_err(|error| {
+fn revision(
+    installation: &InstallationId,
+    capabilities: &[CapabilityBinding],
+) -> UseResult<String> {
+    let bytes = serde_json::to_vec(&(installation, capabilities)).map_err(|error| {
         UseError::new(
             "use.capability.snapshot_invalid",
             format!("Failed to encode the capability snapshot: {error}"),
@@ -833,8 +862,13 @@ async fn stable_extensions(
 }
 
 #[cfg(not(feature = "extensions"))]
-async fn stable_extensions() -> UseResult<(ExtensionCursorEvidence, Vec<CapabilityBinding>)> {
-    Ok((ExtensionCursorEvidence::empty(), Vec::new()))
+async fn stable_extensions(
+    installation: &InstallationId,
+) -> UseResult<(ExtensionCursorEvidence, Vec<CapabilityBinding>)> {
+    Ok((
+        ExtensionCursorEvidence::empty(installation.clone()),
+        Vec::new(),
+    ))
 }
 
 #[cfg(feature = "extensions")]
@@ -876,7 +910,7 @@ async fn project_extension(
     surfaces: Vec<String>,
     paths: &a3s_use_extension::ExtensionPaths,
 ) -> UseResult<CapabilityBinding> {
-    let scope = default_plan_scope();
+    let scope = paths.installation().clone();
     let flow_observations = flow_observations_from_store(
         extension,
         &FlowRuntimeBindingStore::from_extension_paths(paths),
@@ -1337,14 +1371,6 @@ async fn knowledge_evidence_from_store(
 }
 
 #[cfg(feature = "extensions")]
-fn default_plan_scope() -> a3s_use_core::PlanScope {
-    a3s_use_core::PlanScope {
-        kind: a3s_use_core::PlanScopeKind::User,
-        id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
-    }
-}
-
-#[cfg(feature = "extensions")]
 fn plugin_planner_evidence(
     extension: &a3s_use_extension::InstalledExtension,
     reconciliation: Option<&SurfaceReconcileSnapshot>,
@@ -1588,7 +1614,8 @@ extension "acme/workflow" {
             .collect::<Vec<_>>();
         selected_surfaces.sort();
         let receipt = a3s_use_extension::ExtensionReceipt {
-            schema_version: 4,
+            schema_version: a3s_use_extension::EXTENSION_RECEIPT_SCHEMA_VERSION,
+            installation: crate::test_installation(),
             package_id: manifest.package_id.clone(),
             component_id: format!("use/{}", manifest.route),
             route: manifest.route.clone(),
@@ -1610,8 +1637,10 @@ extension "acme/workflow" {
 
     #[tokio::test]
     async fn built_ins_are_projected_without_extension_identity() {
-        let snapshot = snapshot().await.unwrap();
-        assert_eq!(snapshot.schema_version, 2);
+        let installation = crate::test_installation();
+        let snapshot = snapshot(installation.clone()).await.unwrap();
+        assert_eq!(snapshot.schema_version, 3);
+        assert_eq!(snapshot.installation, installation);
         let browser = snapshot
             .capabilities
             .iter()
@@ -1681,9 +1710,9 @@ extension "acme/workflow" {
 
         let mut capability = box_capability();
         capability.skills = vec![first];
-        let first_revision = revision(&[capability.clone()]).unwrap();
+        let first_revision = revision(&crate::test_installation(), &[capability.clone()]).unwrap();
         capability.skills = vec![second];
-        let second_revision = revision(&[capability]).unwrap();
+        let second_revision = revision(&crate::test_installation(), &[capability]).unwrap();
         assert_ne!(first_revision, second_revision);
     }
 
@@ -1719,13 +1748,13 @@ extension "acme/workflow" {
             }],
             order: 120,
         }];
-        let first_revision = revision(&[capability.clone()]).unwrap();
+        let first_revision = revision(&crate::test_installation(), &[capability.clone()]).unwrap();
         capability.activity_bar[0].entry = second;
-        let second_revision = revision(&[capability.clone()]).unwrap();
+        let second_revision = revision(&crate::test_installation(), &[capability.clone()]).unwrap();
         assert_ne!(first_revision, second_revision);
 
         capability.activity_bar[0].dependencies[0].id = "science-v2".to_string();
-        let dependency_revision = revision(&[capability]).unwrap();
+        let dependency_revision = revision(&crate::test_installation(), &[capability]).unwrap();
         assert_ne!(second_revision, dependency_revision);
     }
 
@@ -1747,10 +1776,7 @@ extension "acme/workflow" {
             Some(package_digest.strip_prefix("sha256:").unwrap().to_owned());
         extension.receipt.manifest_sha256 = format!("{:x}", Sha256::digest(MANIFEST.as_bytes()));
         extension.receipt.lifecycle_generation = Some(7);
-        let paths = a3s_use_extension::ExtensionPaths::new(
-            temporary.path().join("data"),
-            temporary.path().join("state"),
-        );
+        let paths = crate::test_extension_paths(temporary.path());
         let adapter = std::sync::Arc::new(SqliteOkfKnowledgeAdapter::from_extension_paths(&paths));
         let client = OkfKnowledgeClient::new(adapter);
         let store = OkfKnowledgeBindingStore::from_extension_paths(&paths);
@@ -1758,7 +1784,7 @@ extension "acme/workflow" {
         let files = a3s_use_extension::load_okf_bundle_files(surface, &package_root)
             .await
             .unwrap();
-        let scope = default_plan_scope();
+        let scope = crate::test_installation();
         let staged = client
             .stage(
                 crate::okf_knowledge::OkfKnowledgeStageRequest::new(
@@ -2084,10 +2110,7 @@ extension "acme/workflow" {
             PluginLifecycleIntentSpec {
                 operation_id: "flow-observation-install".to_string(),
                 plan_digest: format!("sha256:{}", "1".repeat(64)),
-                scope: a3s_use_core::PlanScope {
-                    kind: a3s_use_core::PlanScopeKind::User,
-                    id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_string(),
-                },
+                scope: crate::test_installation(),
                 package_id: extension.receipt.package_id.clone(),
                 package_digest: format!("sha256:{}", "a".repeat(64)),
                 manifest_digest: format!("sha256:{}", extension.receipt.manifest_sha256),
@@ -2115,14 +2138,16 @@ extension "acme/workflow" {
             &compiler,
             temp.path().join("cache"),
             store.clone(),
-        );
+        )
+        .unwrap();
         host.prepare_flow(&intent, &extension.manifest.flows[0], key)
             .await
             .unwrap();
 
-        let observations = flow_observations_from_store(&extension, &store, &default_plan_scope())
-            .await
-            .unwrap();
+        let observations =
+            flow_observations_from_store(&extension, &store, &crate::test_installation())
+                .await
+                .unwrap();
         assert_eq!(
             observations.get(&PluginSurfaceRef {
                 kind: PluginSurfaceKind::Flow,
@@ -2132,7 +2157,7 @@ extension "acme/workflow" {
         );
         let binding = store
             .get(
-                &default_plan_scope(),
+                &crate::test_installation(),
                 &PlanQualifiedSurfaceRef {
                     package_id: extension.receipt.package_id.clone(),
                     surface: PluginSurfaceRef {
@@ -2148,7 +2173,7 @@ extension "acme/workflow" {
         tokio::fs::write(binding.artifact(), b"substituted")
             .await
             .unwrap();
-        let failed = flow_observations_from_store(&extension, &store, &default_plan_scope())
+        let failed = flow_observations_from_store(&extension, &store, &crate::test_installation())
             .await
             .unwrap();
         assert_eq!(
@@ -2350,10 +2375,12 @@ extension "acme/workflow" {
 
     #[tokio::test]
     async fn matching_revision_times_out_without_reporting_a_change() {
-        let current = snapshot().await.unwrap();
+        let installation = crate::test_installation();
+        let current = snapshot(installation.clone()).await.unwrap();
         let changed = wait_for_change(
+            installation,
             current.generation,
-            Some(&current.revision),
+            Some(current.revision.as_str()),
             Duration::from_millis(1),
         )
         .await

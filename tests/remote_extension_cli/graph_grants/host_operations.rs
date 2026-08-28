@@ -16,8 +16,7 @@ async fn host_operation_observation_and_pre_admission_cancellation_are_exact() {
     );
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("cancel-host-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    RegistrySourceStore::new(paths.clone())
+    RegistrySourceStore::new(use_paths(&home))
         .add(RegistrySourceInput::new(
             "fixture",
             server.base_url(),
@@ -36,10 +35,11 @@ async fn host_operation_observation_and_pre_admission_cancellation_are_exact() {
         fence_generation: 1,
         fence_digest: format!("sha256:{}", "9".repeat(64)),
     };
+    let paths = managed_extension_paths(&home, &scope);
     let host = CognitivePackageHostManager::new(
         scope.clone(),
         "use:cancel-test",
-        ExtensionRegistry::new(paths),
+        ExtensionRegistry::new(paths.clone()),
         Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(ConfirmAllPlans {
             authorization_count: Arc::new(AtomicUsize::new(0)),
@@ -123,8 +123,9 @@ async fn host_operation_observation_and_pre_admission_cancellation_are_exact() {
     let cancelled = host.cancel(cancellation.clone()).await.unwrap();
     assert_eq!(cancelled.status, PluginHostCancellationStatus::Cancelled);
     let scope_digest = scope.descriptor_digest().unwrap();
-    let cancellation_path = home
-        .join("state/plugin-host-manager")
+    let cancellation_path = paths
+        .state_root()
+        .join("plugin-host-manager")
         .join(scope_digest.strip_prefix("sha256:").unwrap())
         .join("cancellations")
         .join(format!(
@@ -133,7 +134,7 @@ async fn host_operation_observation_and_pre_admission_cancellation_are_exact() {
         ));
     std::fs::remove_file(&cancellation_path).unwrap();
     drop(host);
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
+    let paths = managed_extension_paths(&home, &scope);
     let restarted = CognitivePackageHostManager::new(
         scope.clone(),
         "use:cancel-test",
@@ -219,8 +220,7 @@ async fn host_cancel_is_too_late_after_exact_durable_admission_and_watch_times_o
     );
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("too-late-host-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    RegistrySourceStore::new(paths.clone())
+    RegistrySourceStore::new(use_paths(&home))
         .add(RegistrySourceInput::new(
             "fixture",
             server.base_url(),
@@ -239,6 +239,7 @@ async fn host_cancel_is_too_late_after_exact_durable_admission_and_watch_times_o
         fence_generation: 1,
         fence_digest: format!("sha256:{}", "8".repeat(64)),
     };
+    let paths = managed_extension_paths(&home, &scope);
     let host = CognitivePackageHostManager::new(
         scope.clone(),
         "use:too-late-test",
@@ -309,7 +310,7 @@ async fn host_cancel_is_too_late_after_exact_durable_admission_and_watch_times_o
             confirmed_at_ms: planned.plan.plan.created_at_ms + 1,
         }),
     };
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(&paths.state_root().join("extensions/.registry.lock"));
     let interrupted = host.apply(apply).await.unwrap_err();
     assert_eq!(interrupted.code, "use.extension.busy");
 
@@ -371,8 +372,7 @@ async fn production_host_manager_persists_plan_apply_replay_and_exact_fence() {
     );
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("host-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    let sources = RegistrySourceStore::new(paths.clone());
+    let sources = RegistrySourceStore::new(use_paths(&home));
     sources
         .add(RegistrySourceInput::new(
             "fixture",
@@ -404,6 +404,7 @@ async fn production_host_manager_persists_plan_apply_replay_and_exact_fence() {
         fence_generation: 7,
         fence_digest: format!("sha256:{}", "f".repeat(64)),
     };
+    let paths = managed_extension_paths(&home, &managed_scope);
     let authorization_count = Arc::new(AtomicUsize::new(0));
     let host = CognitivePackageHostManager::new(
         managed_scope.clone(),
@@ -1006,8 +1007,9 @@ async fn production_host_manager_persists_plan_apply_replay_and_exact_fence() {
     assert_eq!(authorization_count.load(Ordering::SeqCst), 0);
 
     let scope_digest = recovered.managed_scope().descriptor_digest().unwrap();
-    let request_path = home
-        .join("state/plugin-host-manager")
+    let request_path = paths
+        .state_root()
+        .join("plugin-host-manager")
         .join(scope_digest.strip_prefix("sha256:").unwrap())
         .join("requests")
         .join(format!("{:x}.json", Sha256::digest(b"plan:worker:0001")));
@@ -1048,23 +1050,22 @@ async fn apply_enablement_through_observed_windows(
 
     let managed_scope_digest = apply_request.scope.descriptor_digest().unwrap();
     let plan_scope = apply_request.scope.plan_scope();
-    let lifecycle_path = home
-        .join("state/operations/plugins")
+    let paths = extension_paths_for(home, plan_scope.clone());
+    let state_root = paths.state_root();
+    let lifecycle_path = state_root
+        .join("operations/plugins")
         .join(plan_scope.kind.as_str())
-        .join(format!("{:x}", Sha256::digest(plan_scope.id.as_bytes())))
+        .join(plan_scope.storage_key().unwrap())
         .join(apply_request.package_id.as_str())
         .join("active.json");
-    let enablement_scope_digest = format!(
-        "{:x}",
-        Sha256::digest(format!("{}\n{}", plan_scope.kind.as_str(), plan_scope.id).as_bytes())
-    );
-    let enablement_state_path = home
-        .join("state/package-enablement/scopes")
+    let enablement_scope_digest = plan_scope.storage_key().unwrap();
+    let enablement_state_path = state_root
+        .join("package-enablement/scopes")
         .join(&enablement_scope_digest)
         .join(apply_request.package_id.as_str())
         .join("state.json");
-    let enablement_operation_path = home
-        .join("state/package-enablement/operations")
+    let enablement_operation_path = state_root
+        .join("package-enablement/operations")
         .join(&enablement_scope_digest)
         .join(format!(
             "{:x}.json",
@@ -1117,10 +1118,10 @@ async fn apply_enablement_through_observed_windows(
 
     // Hold the visibility commit lock so both enable publication and disable
     // hiding remain at their exact lifecycle checkpoint during observation.
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(&state_root.join("extensions/.registry.lock"));
     let host_store_lock = exclusive_lock(
-        &home
-            .join("state/plugin-host-manager")
+        &state_root
+            .join("plugin-host-manager")
             .join(managed_scope_digest.strip_prefix("sha256:").unwrap())
             .join(".store.lock"),
     );

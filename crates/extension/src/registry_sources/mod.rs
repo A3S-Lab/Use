@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::remote::{normalize_registry_url, normalize_sha256};
 use crate::{
-    ExtensionPaths, RegistryNetworkPolicy, TrustedRegistry, VerifiedTargetCachePolicy,
+    RegistryNetworkPolicy, TrustedRegistry, UsePaths, VerifiedTargetCachePolicy,
     VerifiedTargetObservation,
 };
 
@@ -110,16 +110,16 @@ impl ResolvedRegistrySources {
 
 #[derive(Debug, Clone)]
 pub struct RegistrySourceStore {
-    paths: ExtensionPaths,
+    paths: UsePaths,
     network_policy: RegistryNetworkPolicy,
 }
 
 impl RegistrySourceStore {
     pub fn from_env() -> UseResult<Self> {
-        Ok(Self::new(ExtensionPaths::from_env()?))
+        Ok(Self::new(UsePaths::from_env()?))
     }
 
-    pub fn new(paths: ExtensionPaths) -> Self {
+    pub fn new(paths: UsePaths) -> Self {
         Self {
             paths,
             network_policy: RegistryNetworkPolicy::default(),
@@ -429,7 +429,7 @@ impl RegistrySourceStore {
 
 impl RegistrySource {
     fn from_persisted(
-        paths: &ExtensionPaths,
+        paths: &UsePaths,
         name: String,
         registry_url: String,
         root_sha256: String,

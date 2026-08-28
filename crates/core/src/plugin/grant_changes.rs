@@ -9,7 +9,7 @@ use super::validation::{valid_machine_id, valid_package_id, valid_sha256};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, PlanPackageChangeKind,
     PlanPolicyDecision, PlannedPackageState, PlannedPackageTransition, PluginGrantConfirmation,
-    PluginOperationAction, PluginOperationConfirmation, PluginOperationPlan,
+    PluginOperationAction, PluginOperationConfirmation, PluginOperationPlan, PluginWorkspaceGrant,
     PluginWorkspaceGrantProposal, WorkspaceGrantAuthority, MAX_PLUGIN_PLAN_ITEMS,
     PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA, PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA,
 };
@@ -69,7 +69,7 @@ impl PluginWorkspaceGrantSnapshot {
 
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != PLUGIN_WORKSPACE_GRANT_SNAPSHOT_SCHEMA
-            || !valid_machine_id(&self.scope_id)
+            || PluginWorkspaceGrant::validate_scope_id(&self.scope_id).is_err()
             || self.state_revision == 0
             || self.grants.len() > MAX_PLUGIN_PLAN_ITEMS
             || self
@@ -132,7 +132,7 @@ impl PluginWorkspaceGrantChangeSet {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != PLUGIN_WORKSPACE_GRANT_CHANGE_SET_SCHEMA
             || !valid_machine_id(&self.operation_id)
-            || !valid_machine_id(&self.scope_id)
+            || PluginWorkspaceGrant::validate_scope_id(&self.scope_id).is_err()
             || self.state_revision == 0
             || self.changes.is_empty()
             || self.changes.len() > MAX_PLUGIN_PLAN_ITEMS

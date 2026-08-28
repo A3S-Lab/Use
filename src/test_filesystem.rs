@@ -23,20 +23,9 @@ pub(crate) fn create_directory_link(target: &Path, link: &Path) {
 
 #[cfg(windows)]
 fn windows_command_path(path: &Path) -> std::ffi::OsString {
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-
-    let path = path
-        .as_os_str()
-        .encode_wide()
-        .map(|unit| {
-            if unit == u16::from(b'/') {
-                u16::from(b'\\')
-            } else {
-                unit
-            }
-        })
-        .collect::<Vec<_>>();
-    std::ffi::OsString::from_wide(&path)
+    a3s_use_core::windows_extended_length_path(path)
+        .expect("normalize test junction path")
+        .into_os_string()
 }
 
 #[cfg(unix)]

@@ -8,14 +8,12 @@ use tokio::fs;
 
 const INSTALLATION_MUTATION_LOCK_FILE: &str = ".installation-mutation.lock";
 
-/// Conservative cross-process writer fence for the current global
-/// installation domain.
+/// Conservative cross-process writer fence for one explicit installation.
 ///
-/// The pre-A1 graph model stores one record per requested root, while package
-/// publication and dependency ownership are global. Holding this guard from
-/// live-state inspection through terminal graph persistence gives every
-/// install, upgrade, uninstall, enablement, and recovery mutation one serial
-/// order. A1 will key the same boundary by explicit `InstallationId`.
+/// Holding this guard from live-state inspection through terminal graph
+/// persistence gives every install, upgrade, uninstall, enablement, and
+/// recovery mutation in that installation one serial order without blocking
+/// independent installations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InstallationMutationLock {
     state_root: PathBuf,

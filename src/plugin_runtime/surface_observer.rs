@@ -10,8 +10,8 @@ use serde::Serialize;
 use super::client::{runtime_error, PluginRuntimeClient};
 use super::lifecycle::RuntimeBindingObservedState;
 use super::model::{
-    runtime_contract_error, runtime_input_error, valid_machine_id, valid_sha256,
-    valid_surface_segment, RuntimeServiceBindingReceipt, RuntimeSurfaceContract,
+    runtime_contract_error, runtime_input_error, valid_sha256, valid_surface_segment,
+    RuntimeServiceBindingReceipt, RuntimeSurfaceContract,
 };
 use super::receipt::RuntimeBindingReceipt;
 use super::store::RuntimeBindingStore;
@@ -299,7 +299,7 @@ fn validate_manifest_identity(manifest: &ExtensionManifest) -> UseResult<()> {
 }
 
 fn validate_scope_and_digest(scope: &PlanScope, package_digest: &str) -> UseResult<()> {
-    if !valid_machine_id(&scope.id) || !valid_sha256(package_digest) {
+    if scope.validate().is_err() || !valid_sha256(package_digest) {
         return Err(runtime_input_error(
             "Runtime surface observation requires an explicit scope and canonical package digest.",
         ));

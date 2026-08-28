@@ -627,7 +627,7 @@ impl PluginHostProtocolStore {
             Option<StoredPluginHostCancellation>,
         )>,
     > {
-        let path = self.enablement_diagnostic_path(scope, package_id.as_str());
+        let path = self.enablement_diagnostic_path(scope, package_id.as_str())?;
         let index: Option<StoredPluginHostEnablementDiagnosticIndex> =
             read_optional(&self.state_root, &path).await?;
         let Some(index) = index else {
@@ -824,7 +824,7 @@ impl PluginHostProtocolStore {
         let Some(index) = StoredPluginHostEnablementDiagnosticIndex::from_request(record)? else {
             return Ok(());
         };
-        let path = self.enablement_diagnostic_path(&index.scope, &index.package_id);
+        let path = self.enablement_diagnostic_path(&index.scope, &index.package_id)?;
         let directory = path.parent().ok_or_else(|| {
             store_invalid("A Host enablement diagnostic index path is incomplete.")
         })?;
@@ -955,12 +955,20 @@ impl PluginHostProtocolStore {
             .join(format!("{}.json", sha256_hex(operation_id.as_bytes()))))
     }
 
-    fn enablement_diagnostic_path(&self, scope: &PlanScope, package_id: &str) -> PathBuf {
-        self.root
+    fn enablement_diagnostic_path(
+        &self,
+        scope: &PlanScope,
+        package_id: &str,
+    ) -> UseResult<PathBuf> {
+        let scope_digest = scope.storage_key().map_err(|_| {
+            store_invalid("A Host enablement diagnostic installation identity is invalid.")
+        })?;
+        Ok(self
+            .root
             .join("diagnostics/enablement")
             .join(scope.kind.as_str())
-            .join(sha256_hex(scope.id.as_bytes()))
-            .join(format!("{}.json", sha256_hex(package_id.as_bytes())))
+            .join(scope_digest)
+            .join(format!("{}.json", sha256_hex(package_id.as_bytes()))))
     }
 }
 

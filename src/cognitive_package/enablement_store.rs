@@ -547,31 +547,15 @@ async fn acquire_lock(lock_path: PathBuf) -> UseResult<StdFile> {
 }
 
 fn scope_digest(scope: &PlanScope) -> UseResult<String> {
-    validate_scope(scope)?;
-    let kind = scope.kind.as_str();
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(format!("{kind}\n{}", scope.id).as_bytes())
-    ))
+    scope.storage_key().map_err(|_| {
+        store_invalid("A cognitive-package enablement installation identity is invalid.")
+    })
 }
 
 fn validate_scope(scope: &PlanScope) -> UseResult<()> {
-    if scope.id.is_empty()
-        || scope.id.len() > 256
-        || !scope
-            .id
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        || !scope.id.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-        })
-    {
-        return Err(store_invalid(
-            "A cognitive-package enablement scope identity is invalid.",
-        ));
-    }
-    Ok(())
+    scope.validate().map_err(|_| {
+        store_invalid("A cognitive-package enablement installation identity is invalid.")
+    })
 }
 
 async fn read_optional<T: DeserializeOwned>(

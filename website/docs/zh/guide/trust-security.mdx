@@ -74,7 +74,8 @@ Apply 接受已审查 digest，重新解析所有输入，并在目标、内容�
 
 ## Operation 诊断
 
-`a3s-use extension diagnose <publisher/name> --json` 会读取所选 User 或
+`a3s-use extension diagnose <publisher/name> --scope-kind user --scope-id
+user/current --json` 会读取所选 User 或
 Workspace scope 中一个精确保留的 planned/admitted/cancelled install、upgrade、
 uninstall 图、一个 active admitted enable/disable operation，或最新 Host-reviewed
 pre-admission enable/disable plan/cancellation。它不会请求

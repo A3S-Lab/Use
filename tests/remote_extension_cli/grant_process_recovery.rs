@@ -129,6 +129,19 @@ fn expected_package_ids() -> std::collections::BTreeSet<String> {
         .collect()
 }
 
+fn managed_installation() -> PlanScope {
+    PlanScope {
+        kind: PlanScopeKind::Workspace,
+        id: MANAGED_SCOPE_ID.to_owned(),
+    }
+}
+
+fn managed_state_root(home: &Path) -> PathBuf {
+    extension_paths_for(home, managed_installation())
+        .state_root()
+        .to_path_buf()
+}
+
 fn managed_graph_targets(
     fixture_root: &Path,
     version: &str,
@@ -200,7 +213,8 @@ async fn managed_grant_operation_child() {
     let offline = std::env::var(CHILD_OFFLINE_ENV).as_deref() == Ok("1");
     let action = std::env::var(CHILD_ACTION_ENV).unwrap();
     let version = std::env::var(CHILD_VERSION_ENV).unwrap_or_default();
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
+    let installation = managed_installation();
+    let paths = extension_paths_for(&home, installation.clone());
     let registry = TrustedRegistry::new(
         "fixture",
         registry_url,
@@ -211,10 +225,7 @@ async fn managed_grant_operation_child() {
     .unwrap();
     let manager = CognitivePackageManager::with_plan_scope_lifecycle_and_authorization(
         ExtensionRegistry::new(paths),
-        PlanScope {
-            kind: PlanScopeKind::Workspace,
-            id: MANAGED_SCOPE_ID.to_owned(),
-        },
+        installation,
         Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(ProcessAuthorization {
             marker,
@@ -342,7 +353,7 @@ fn wait_for_grant_phase(home: &Path, action: &str, expected: &str) -> Option<Pat
 }
 
 fn find_grant_operation(home: &Path, action: &str) -> Option<(PathBuf, serde_json::Value)> {
-    let operations = std::fs::read_dir(home.join("state/grants/.operations")).ok()?;
+    let operations = std::fs::read_dir(managed_state_root(home).join("grants/.operations")).ok()?;
     let mut found = operations
         .filter_map(Result::ok)
         .filter(|entry| {
@@ -367,8 +378,9 @@ fn grant_phase(path: &Path) -> Option<String> {
 }
 
 fn managed_lifecycle_journal_path(home: &Path, package_id: &str) -> PathBuf {
-    let scope = format!("{:x}", Sha256::digest(MANAGED_SCOPE_ID.as_bytes()));
-    home.join("state/operations/plugins/workspace")
+    let scope = managed_installation().storage_key().unwrap();
+    managed_state_root(home)
+        .join("operations/plugins/workspace")
         .join(scope)
         .join(package_id)
         .join("active.json")
@@ -446,7 +458,7 @@ fn observe_grant(home: &Path, package_digest: &str) -> StoredWorkspaceGrant {
         .enable_all()
         .build()
         .unwrap()
-        .block_on(WorkspaceGrantStore::new(home.join("state")).observe(
+        .block_on(WorkspaceGrantStore::new(managed_state_root(home)).observe(
             MANAGED_SCOPE_ID,
             PACKAGE_ID,
             package_digest,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use a3s_use_core::{
-    PlanPackageChangeKind, PlanPolicyDecision, PlanScopeKind, PluginHostApplyResult,
+    InstallationId, PlanPackageChangeKind, PlanPolicyDecision, PluginHostApplyResult,
     PluginHostPlanResult, PluginManagedScope, PluginManagerApplyPlanInput,
     PluginManagerInstallPlanInput, PluginManagerPackageScopeInput, PluginManagerUpgradePlanInput,
     PluginOperationAction, PluginPackageId, PluginPackageLock, PluginReleaseChannel, UseError,
@@ -14,14 +14,10 @@ use crate::cognitive_package::{
     StandaloneCognitivePackageAuthorizationProvider, StandaloneCognitivePackageLifecycleFactory,
 };
 use crate::plugin_manager::PluginManagerService;
-use crate::COGNITIVE_PACKAGE_DEFAULT_SCOPE;
 
 use super::PluginManagerMutationView;
 
 const STANDALONE_ASSIGNMENT_GENERATION: u64 = 1;
-const STANDALONE_FENCE_DIGEST: &str =
-    "sha256:ca77efcea9662c63ece2b19809d29816580a764bb9f1ec88331b350108888d0a";
-
 pub(super) struct AppliedGraphMutation {
     pub manager: PluginManagerMutationView,
     pub package_graph: serde_json::Value,
@@ -30,6 +26,7 @@ pub(super) struct AppliedGraphMutation {
 }
 
 pub(super) async fn install(
+    installation: InstallationId,
     package_id: &str,
     registry_name: Option<&str>,
     version_requirement: Option<&str>,
@@ -39,7 +36,7 @@ pub(super) async fn install(
 ) -> UseResult<AppliedGraphMutation> {
     let source_store = RegistrySourceStore::from_env()?;
     let source_revision = source_store.snapshot().await?.revision;
-    let service = standalone_service()?;
+    let service = standalone_service(installation.clone())?;
     let plan = service
         .plan_install_checked(
             PluginManagerInstallPlanInput {
@@ -48,8 +45,8 @@ pub(super) async fn install(
                 version_requirement: version_requirement.map(str::to_owned),
                 channel: channel.map(parse_channel).transpose()?,
                 surfaces: None,
-                scope_kind: PlanScopeKind::User,
-                scope_id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
+                scope_kind: installation.kind,
+                scope_id: installation.id.clone(),
             },
             registry_access(offline),
             expected_package_lock_digest,
@@ -58,7 +55,7 @@ pub(super) async fn install(
     verify_plan_lock(&plan, expected_package_lock_digest)?;
     verify_source_revision(&source_store, &source_revision).await?;
     let result = apply(&service, &plan).await?;
-    let package_graph = install_graph(&plan, &result).await?;
+    let package_graph = install_graph(installation, &plan, &result).await?;
     Ok(AppliedGraphMutation {
         manager: PluginManagerMutationView::new(plan, result)?,
         package_graph,
@@ -68,6 +65,7 @@ pub(super) async fn install(
 }
 
 pub(super) async fn upgrade(
+    installation: InstallationId,
     package_id: &str,
     expected_registry_name: Option<&str>,
     version_requirement: Option<&str>,
@@ -77,7 +75,7 @@ pub(super) async fn upgrade(
 ) -> UseResult<AppliedGraphMutation> {
     let source_store = RegistrySourceStore::from_env()?;
     let source_revision = source_store.snapshot().await?.revision;
-    let service = standalone_service()?;
+    let service = standalone_service(installation.clone())?;
     let plan = service
         .plan_upgrade_checked(
             PluginManagerUpgradePlanInput {
@@ -85,8 +83,8 @@ pub(super) async fn upgrade(
                 version_requirement: version_requirement.map(str::to_owned),
                 channel: channel.map(parse_channel).transpose()?,
                 surfaces: None,
-                scope_kind: PlanScopeKind::User,
-                scope_id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
+                scope_kind: installation.kind,
+                scope_id: installation.id.clone(),
             },
             registry_access(offline),
             expected_package_lock_digest,
@@ -96,7 +94,7 @@ pub(super) async fn upgrade(
     verify_plan_lock(&plan, expected_package_lock_digest)?;
     verify_source_revision(&source_store, &source_revision).await?;
     let result = apply(&service, &plan).await?;
-    let package_graph = upgrade_graph(&plan, &result).await?;
+    let package_graph = upgrade_graph(installation, &plan, &result).await?;
     Ok(AppliedGraphMutation {
         manager: PluginManagerMutationView::new(plan, result)?,
         package_graph,
@@ -105,13 +103,16 @@ pub(super) async fn upgrade(
     })
 }
 
-pub(super) async fn uninstall(package_id: &str) -> UseResult<AppliedGraphMutation> {
-    let service = standalone_service()?;
+pub(super) async fn uninstall(
+    installation: InstallationId,
+    package_id: &str,
+) -> UseResult<AppliedGraphMutation> {
+    let service = standalone_service(installation.clone())?;
     let plan = service
         .plan_uninstall(PluginManagerPackageScopeInput {
             package_id: PluginPackageId::parse(package_id)?,
-            scope_kind: PlanScopeKind::User,
-            scope_id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
+            scope_kind: installation.kind,
+            scope_id: installation.id.clone(),
         })
         .await?;
     let result = apply(&service, &plan).await?;
@@ -124,27 +125,31 @@ pub(super) async fn uninstall(package_id: &str) -> UseResult<AppliedGraphMutatio
     })
 }
 
-pub(super) fn standalone_service() -> UseResult<PluginManagerService> {
+pub(super) fn standalone_service(installation: InstallationId) -> UseResult<PluginManagerService> {
     let host = CognitivePackageHostManager::new(
-        standalone_scope(),
+        standalone_scope(&installation)?,
         format!("standalone:{}", env!("CARGO_PKG_VERSION")),
-        ExtensionRegistry::from_env()?,
+        ExtensionRegistry::from_env(installation)?,
         Arc::new(StandaloneCognitivePackageLifecycleFactory::from_env()?),
         Arc::new(StandaloneCognitivePackageAuthorizationProvider),
     )?;
     PluginManagerService::new(host, STANDALONE_ASSIGNMENT_GENERATION)
 }
 
-fn standalone_scope() -> PluginManagedScope {
-    PluginManagedScope {
+fn standalone_scope(installation: &InstallationId) -> UseResult<PluginManagedScope> {
+    installation.validate()?;
+    let installation_key = installation.storage_key()?;
+    let scope = PluginManagedScope {
         schema: PLUGIN_MANAGED_SCOPE_SCHEMA_V2.to_owned(),
         host_id: "host:a3s-use-standalone".to_owned(),
-        scope_kind: PlanScopeKind::User,
-        scope_id: COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_owned(),
-        authority_id: "user:current".to_owned(),
+        scope_kind: installation.kind,
+        scope_id: installation.id.clone(),
+        authority_id: format!("installation:{installation_key}"),
         fence_generation: STANDALONE_ASSIGNMENT_GENERATION,
-        fence_digest: STANDALONE_FENCE_DIGEST.to_owned(),
-    }
+        fence_digest: format!("sha256:{installation_key}"),
+    };
+    scope.validate()?;
+    Ok(scope)
 }
 
 async fn apply(
@@ -236,12 +241,13 @@ async fn verify_source_revision(
 }
 
 async fn install_graph(
+    installation: InstallationId,
     plan: &PluginHostPlanResult,
     result: &PluginHostApplyResult,
 ) -> UseResult<serde_json::Value> {
     require_action(plan, PluginOperationAction::Install)?;
     let lock = root_lock(plan)?;
-    let root = ExtensionRegistry::from_env()?
+    let root = ExtensionRegistry::from_env(installation)?
         .get(plan.package_id.as_str())
         .await?
         .ok_or_else(|| {
@@ -280,6 +286,7 @@ async fn install_graph(
 }
 
 async fn upgrade_graph(
+    installation: InstallationId,
     plan: &PluginHostPlanResult,
     result: &PluginHostApplyResult,
 ) -> UseResult<serde_json::Value> {
@@ -288,7 +295,7 @@ async fn upgrade_graph(
     let prior = plan.plan.prior_package_lock.as_ref().ok_or_else(|| {
         manager_error("The reviewed upgrade plan omitted its prior package lock.")
     })?;
-    let root = ExtensionRegistry::from_env()?
+    let root = ExtensionRegistry::from_env(installation)?
         .get(plan.package_id.as_str())
         .await?
         .ok_or_else(|| manager_error("The upgraded root is missing after Plugin Manager apply."))?;
@@ -470,11 +477,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn standalone_scope_preserves_the_existing_cli_scope() {
-        let scope = standalone_scope();
+    fn standalone_scope_is_derived_from_the_exact_installation() {
+        let installation =
+            InstallationId::new(a3s_use_core::InstallationKind::Workspace, "same/identity")
+                .unwrap();
+        let scope = standalone_scope(&installation).unwrap();
         scope.validate().unwrap();
-        assert_eq!(scope.scope_kind, PlanScopeKind::User);
-        assert_eq!(scope.scope_id, COGNITIVE_PACKAGE_DEFAULT_SCOPE);
-        assert_eq!(scope.plan_scope().id, "user/current");
+        assert_eq!(scope.plan_scope(), installation);
+        assert!(scope.authority_id.starts_with("installation:"));
     }
 }

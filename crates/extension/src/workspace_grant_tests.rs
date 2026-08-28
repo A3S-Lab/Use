@@ -1,10 +1,9 @@
 use std::fs;
 
 use a3s_use_core::{
-    PlanActor, PlanPolicyDecision, PluginPermissionCeiling, PluginWorkspaceGrant,
-    WorkspaceGrantAuthority, PLUGIN_WORKSPACE_GRANT_SCHEMA,
+    InstallationId, InstallationKind, PlanActor, PlanPolicyDecision, PluginPermissionCeiling,
+    PluginWorkspaceGrant, WorkspaceGrantAuthority, PLUGIN_WORKSPACE_GRANT_SCHEMA,
 };
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use super::{
@@ -427,7 +426,10 @@ fn authority() -> WorkspaceGrantAuthority {
 }
 
 fn record_path(store: &WorkspaceGrantStore) -> std::path::PathBuf {
-    let scope_digest = format!("{:x}", Sha256::digest(b"workspace-01"));
+    let scope_digest = InstallationId::new(InstallationKind::Workspace, "workspace-01")
+        .unwrap()
+        .storage_key()
+        .unwrap();
     store
         .root()
         .join(scope_digest)

@@ -47,8 +47,9 @@ async fn run_shared_plugin_manager_scenario() {
     let repository = TestRepository::with_targets(targets, 83, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("manager-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    RegistrySourceStore::new(paths.clone())
+    let scope = managed_scope();
+    let paths = managed_extension_paths(&home, &scope);
+    RegistrySourceStore::new(use_paths(&home))
         .add(RegistrySourceInput::new(
             "fixture",
             server.base_url(),
@@ -58,7 +59,6 @@ async fn run_shared_plugin_manager_scenario() {
         ))
         .await
         .unwrap();
-    let scope = managed_scope();
     let service = PluginManagerService::new(
         CognitivePackageHostManager::new(
             scope.clone(),

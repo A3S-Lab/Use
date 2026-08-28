@@ -74,7 +74,7 @@ impl PluginManagedScope {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != PLUGIN_MANAGED_SCOPE_SCHEMA_V2
             || !valid_opaque_id(&self.host_id)
-            || !valid_machine_id(&self.scope_id)
+            || self.plan_scope().validate().is_err()
             || !valid_opaque_id(&self.authority_id)
             || self.fence_generation == 0
             || !valid_sha256(&self.fence_digest)

@@ -141,6 +141,7 @@ dependencies = [
  "tokio",
  "tough",
  "url",
+ "windows-sys 0.61.2",
  "zip",
 ]
 
@@ -184,24 +185,6 @@ dependencies = [
  "sha2",
  "tar",
  "tokio",
-]
-
-[[package]]
-name = "a3s-use-science"
-version = "0.2.4"
-dependencies = [
- "a3s-use-core",
- "a3s-use-extension",
- "axum",
- "clap",
- "reqwest 0.12.28",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "url",
 ]
 
 [[package]]

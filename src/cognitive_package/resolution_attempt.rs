@@ -194,7 +194,7 @@ impl PendingPackageResolutionAttempt {
                 self.action,
                 PluginOperationAction::Install | PluginOperationAction::Upgrade
             )
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || self.started_at_ms == 0
             || self
                 .requested_version
@@ -732,18 +732,6 @@ fn valid_registry_name(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
-
-fn valid_machine_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 256
-        && value
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-        })
 }
 
 fn valid_error_code(value: &str) -> bool {

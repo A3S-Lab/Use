@@ -3,7 +3,6 @@ members = [
     "crates/core",
     "crates/extension",
     "crates/mcp-release-fixture",
-    "crates/science",
 ]
 resolver = "2"
 
@@ -24,7 +23,6 @@ async-trait = "0.1"
 a3s-flow = "=1.1.0"
 axum = "0.8"
 base64 = "0.22"
-clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
 futures-util = "0.3"
 flate2 = "1"
@@ -33,8 +31,6 @@ olpc-cjson = "0.1"
 percent-encoding = "2"
 pulldown-cmark = { version = "0.13", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
-quick-xml = "0.38"
-regex = "1"
 rmcp = { version = "=0.8.5", default-features = false, features = ["base64", "client", "macros", "server", "transport-io", "transport-streamable-http-client-reqwest", "transport-streamable-http-server"] }
 schemars = "1.2"
 semver = "1"

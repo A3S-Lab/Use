@@ -8,10 +8,36 @@ fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_a3s-use")
 }
 
+const TEST_SCOPE_ARGS: [&str; 4] = ["--scope-kind", "user", "--scope-id", "user/current"];
+
+#[test]
+fn installation_scoped_commands_require_an_explicit_identity() {
+    let output = Command::new(binary())
+        .args(["capabilities", "--json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stderr.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["error"]["code"], "use.cli.invalid_usage");
+}
+
+#[cfg(feature = "extensions")]
+fn test_extension_paths(home: &std::path::Path) -> a3s_use_extension::ExtensionPaths {
+    a3s_use_extension::ExtensionPaths::new(
+        home.join("data"),
+        home.join("state"),
+        a3s_use_core::InstallationId::new(a3s_use_core::InstallationKind::User, "user/current")
+            .unwrap(),
+    )
+    .unwrap()
+}
+
 #[test]
 fn capabilities_are_available_as_versioned_json() {
     let output = Command::new(binary())
         .args(["capabilities", "--json"])
+        .args(TEST_SCOPE_ARGS)
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -33,6 +59,7 @@ fn unified_capability_snapshot_projects_builtin_skills() {
     let temp = tempfile::tempdir().unwrap();
     let output = Command::new(binary())
         .args(["capability", "snapshot", "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", temp.path())
         .output()
         .unwrap();
@@ -80,6 +107,7 @@ fn capability_watch_uses_revision_to_report_an_unchanged_snapshot() {
     let temp = tempfile::tempdir().unwrap();
     let snapshot = Command::new(binary())
         .args(["capability", "snapshot", "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", temp.path())
         .output()
         .unwrap();
@@ -101,6 +129,7 @@ fn capability_watch_uses_revision_to_report_an_unchanged_snapshot() {
             "1",
             "--json",
         ])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", temp.path())
         .output()
         .unwrap();
@@ -190,6 +219,7 @@ fn knowledge_search_fails_closed_without_an_active_projection() {
     let temporary = tempfile::tempdir().unwrap();
     let output = Command::new(binary())
         .args(["knowledge", "search", "package activation", "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", temporary.path())
         .output()
         .unwrap();
@@ -204,20 +234,23 @@ fn knowledge_search_fails_closed_without_an_active_projection() {
 fn coordinated_state_backup_cli_creates_and_verifies_offline() {
     let temporary = tempfile::tempdir().unwrap();
     let home = temporary.path().join("home");
-    let package_file = home.join("data/extensions/acme/tool/package/bin/tool");
+    let package_file = test_extension_paths(&home)
+        .data_root()
+        .join("extensions/acme/tool/package/bin/tool");
     std::fs::create_dir_all(package_file.parent().unwrap()).unwrap();
     std::fs::write(&package_file, b"portable CLI backup fixture").unwrap();
     let backup_path = temporary.path().join("state.a3s-use-state-backup");
 
     let backup = Command::new(binary())
         .args(["state", "backup", backup_path.to_str().unwrap(), "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
     assert!(backup.status.success(), "{backup:?}");
     assert!(backup.stderr.is_empty());
     let backup_json: serde_json::Value = serde_json::from_slice(&backup.stdout).unwrap();
-    assert_eq!(backup_json["data"]["schema"], "a3s.use.state-backup.v1");
+    assert_eq!(backup_json["data"]["schema"], "a3s.use.state-backup.v2");
     assert_eq!(backup_json["data"]["fileCount"], 1);
     assert_eq!(backup_json["data"]["entries"][0]["root"], "data");
     assert_eq!(
@@ -234,6 +267,7 @@ fn coordinated_state_backup_cli_creates_and_verifies_offline() {
             backup_path.to_str().unwrap(),
             "--json",
         ])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", offline_home)
         .output()
         .unwrap();
@@ -248,7 +282,9 @@ fn coordinated_state_backup_cli_creates_and_verifies_offline() {
 fn coordinated_state_backup_retention_cli_requires_exact_review() {
     let temporary = tempfile::tempdir().unwrap();
     let home = temporary.path().join("home");
-    let state_file = home.join("state/registry-trust-roots/sha256/root.json");
+    let state_file = test_extension_paths(&home)
+        .state_root()
+        .join("bindings/runtime/fixture.json");
     std::fs::create_dir_all(state_file.parent().unwrap()).unwrap();
     let backup_directory = temporary.path().join("backups");
     std::fs::create_dir(&backup_directory).unwrap();
@@ -266,6 +302,7 @@ fn coordinated_state_backup_retention_cli_requires_exact_review() {
                 backup_directory.join(name).to_str().unwrap(),
                 "--json",
             ])
+            .args(TEST_SCOPE_ARGS)
             .env("A3S_USE_HOME", &home)
             .output()
             .unwrap();
@@ -283,6 +320,7 @@ fn coordinated_state_backup_retention_cli_requires_exact_review() {
             "1073741824",
             "--json",
         ])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -311,6 +349,7 @@ fn coordinated_state_backup_retention_cli_requires_exact_review() {
             "--yes",
             "--json",
         ])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -318,7 +357,7 @@ fn coordinated_state_backup_retention_cli_requires_exact_review() {
     assert!(applied.stderr.is_empty());
     let applied: serde_json::Value = serde_json::from_slice(&applied.stdout).unwrap();
     let result = &applied["data"]["state"]["backupRetention"]["result"];
-    assert_eq!(result["schema"], "a3s.use.state-backup-retention-result.v1");
+    assert_eq!(result["schema"], "a3s.use.state-backup-retention-result.v2");
     assert_eq!(result["removed"].as_array().unwrap().len(), 1);
     assert_eq!(result["retainedBackupCount"], 2);
     assert!(!backup_directory.join("001.a3s-use-state-backup").exists());
@@ -331,12 +370,15 @@ fn coordinated_state_backup_retention_cli_requires_exact_review() {
 fn coordinated_state_restore_cli_requires_review_rollback_and_confirmation() {
     let temporary = tempfile::tempdir().unwrap();
     let home = temporary.path().join("home");
-    let state_file = home.join("state/knowledge/value.bin");
+    let state_file = test_extension_paths(&home)
+        .state_root()
+        .join("knowledge/value.bin");
     std::fs::create_dir_all(state_file.parent().unwrap()).unwrap();
     std::fs::write(&state_file, b"candidate").unwrap();
     let backup_path = temporary.path().join("candidate.a3s-use-state-backup");
     let backup = Command::new(binary())
         .args(["state", "backup", backup_path.to_str().unwrap(), "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -350,6 +392,7 @@ fn coordinated_state_restore_cli_requires_review_rollback_and_confirmation() {
             backup_path.to_str().unwrap(),
             "--json",
         ])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -372,6 +415,7 @@ fn coordinated_state_restore_cli_requires_review_rollback_and_confirmation() {
             plan_digest,
             "--json",
         ])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -392,6 +436,7 @@ fn coordinated_state_restore_cli_requires_review_rollback_and_confirmation() {
             "--yes",
             "--json",
         ])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -406,6 +451,7 @@ fn coordinated_state_restore_cli_requires_review_rollback_and_confirmation() {
 
     let status = Command::new(binary())
         .args(["state", "restore-status", "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -420,10 +466,11 @@ fn coordinated_state_restore_cli_requires_review_rollback_and_confirmation() {
 
 #[cfg(feature = "extensions")]
 #[test]
-fn knowledge_usage_reports_an_empty_exact_default_scope() {
+fn knowledge_usage_reports_an_empty_explicit_user_scope() {
     let temporary = tempfile::tempdir().unwrap();
     let output = Command::new(binary())
         .args(["knowledge", "usage", "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", temporary.path())
         .output()
         .unwrap();
@@ -611,6 +658,7 @@ fn browser_capability_projection_coexists_with_authenticated_standard_mcp() {
 
     let snapshot = Command::new(binary())
         .args(["capability", "snapshot", "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_RUNTIME_DIR", temp.path())
         .output()
         .unwrap();
@@ -988,6 +1036,7 @@ fn built_in_ocr_projects_the_canonical_code_route_and_skill() {
 
     let snapshot = Command::new(binary())
         .args(["capability", "snapshot", "--json"])
+        .args(TEST_SCOPE_ARGS)
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();

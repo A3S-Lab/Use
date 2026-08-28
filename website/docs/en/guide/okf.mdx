@@ -106,30 +106,37 @@ The default standalone policy bounds each complete User or Workspace scope to:
 
 Expanded bytes come from each immutable projection receipt and are revalidated when accounting is rebuilt after restart. Staging checks byte and projection quota inside the same immediate transaction that inserts the candidate, so a rejected candidate cannot change the selected generation or consume a partial row. Receipt-owned removal frees quota, globally prunes old tombstones, vacuums free SQLite pages, and truncates the WAL.
 
-Inspect the default User scope or an exact Workspace scope without reading concept content:
+Inspect an exact User or Workspace installation without reading concept content:
 
 ```bash
-a3s-use knowledge usage --json
+a3s-use knowledge usage \
+  --scope-kind user \
+  --scope-id user/current \
+  --json
 a3s-use knowledge usage \
   --scope-kind workspace \
   --scope-id workspace/acme-project \
   --json
 ```
 
-The report includes retained projections, tombstones, expanded bytes, active policy limits, allocated database bytes, and reclaimable bytes. Workspace diagnostics require an explicit `--scope-id`; the CLI never guesses a current Workspace identity.
+The report includes retained projections, tombstones, expanded bytes, active policy limits, allocated database bytes, and reclaimable bytes. Every diagnostic requires an explicit installation identity; the CLI never guesses a current User or Workspace installation.
 
 Audit the current database without exposing concept content:
 
 ```bash
-a3s-use knowledge audit --json
+a3s-use knowledge audit \
+  --scope-kind user --scope-id user/current --json
 ```
 
 Audit verifies SQLite integrity, foreign keys, exact receipt/scope accounting, and FTS consistency. Create and then independently verify a non-overwriting scope snapshot:
 
 ```bash
-a3s-use knowledge backup ./user.a3s-okf-backup --json
-a3s-use knowledge verify-backup ./user.a3s-okf-backup --json
-a3s-use knowledge backup-retention ./backups --json
+a3s-use knowledge backup ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge verify-backup ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge backup-retention ./backups \
+  --scope-kind user --scope-id user/current --json
 ```
 
 The versioned backup manifest binds complete scope, creation time, exact database length and SHA-256, storage accounting, and policy limits. The digest detects corruption; it is not a package or Registry signature. The artifact does not contain Registry receipts, immutable package roots, Knowledge bindings, lifecycle journals, Grants, Flow history, or UI state.
@@ -144,7 +151,8 @@ plans cannot be removed.
 If audit reports only a derived FTS mismatch, an operator may explicitly rebuild FTS from already-validated documents:
 
 ```bash
-a3s-use knowledge repair-search-index --yes --json
+a3s-use knowledge repair-search-index \
+  --scope-kind user --scope-id user/current --yes --json
 ```
 
 Repair never edits projection receipts, selected generations, bindings, lifecycle evidence, or Grants.
@@ -153,12 +161,15 @@ Never copy a backup into live state. Create a path-free review and apply only
 its exact digest:
 
 ```bash
-a3s-use knowledge plan-restore ./user.a3s-okf-backup --json
+a3s-use knowledge plan-restore ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
 a3s-use knowledge restore ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current \
   --plan-digest sha256:<reviewed-plan-digest> \
   --yes \
   --json
-a3s-use knowledge restore-status --json
+a3s-use knowledge restore-status \
+  --scope-kind user --scope-id user/current --json
 ```
 
 Planning verifies the backup, exact package/lifecycle/Registry/Grant authority,
