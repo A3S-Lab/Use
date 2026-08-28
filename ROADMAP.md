@@ -99,10 +99,11 @@ Status: release-critical, planned from the 2026-08-28 first-principles review.
 The current implementation has strong artifact verification, reviewed plans,
 immutable generations, drain, and crash-replay foundations. A0 now gives every
 accepted pre-A1 installation mutation one conservative global serial order and
-rejects stale publication generations; cross-platform CI qualification remains
-open. The implementation is still not the target architecture: installation
-authority is only partly scoped, and a non-A3S agent cannot consume an exact
-leased capability without learning local execution details. A checked item
+rejects stale publication generations. A0 is qualified on the declared
+five-platform CI matrix. The implementation is still not the target
+architecture: installation authority is only partly scoped, and a non-A3S agent
+cannot consume an exact leased capability without learning local execution
+details. A checked item
 elsewhere in this roadmap is implementation evidence; it does not waive the
 convergence gates below.
 
@@ -167,10 +168,12 @@ over A0 through A3.
   previously classified as retained, before hiding a route or deleting bytes.
 - [x] Advertise exclusive managed-scope mutation in host capabilities only
   when the active coordinator actually enforces it.
-- [ ] Add multi-process stress and crash-replay tests for different roots with
-  shared dependencies on Linux, macOS, and Windows. The deterministic
-  cross-process scenario passes locally on Windows; the five-platform CI matrix
-  must qualify the implementation before this item closes.
+- [x] Add multi-process stress and crash-replay tests for different roots with
+  shared dependencies on Linux, macOS, and Windows. CI run
+  [33158712152](https://github.com/A3S-Lab/Use/actions/runs/33158712152)
+  passed the main release gate and native Linux x86_64/ARM64, macOS
+  x86_64/ARM64, and Windows x86_64 jobs from exact commit
+  `5a78b32f1db1880fe456ced1b76a027981381b52`.
 
 Exit gate: every accepted graph operation has one serial order, and no stale
 plan can publish a graph whose dependency closure is incomplete.
