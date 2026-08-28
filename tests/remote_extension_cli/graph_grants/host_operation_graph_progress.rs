@@ -309,7 +309,11 @@ async fn host_graph_operation_observation_aggregates_dependency_progress() {
         )
     });
     let mut replacement_lifecycles_completed = false;
-    for _ in 0..500 {
+    // The replacement journals are written by two independent lifecycle
+    // workers. A cold CI runner can spend several seconds starting the
+    // workers before either journal becomes visible, so keep the polling
+    // budget comfortably above the normal path without hiding a stuck apply.
+    for _ in 0..3_000 {
         replacement_lifecycles_completed = retirement_paths.iter().all(|(active, previous)| {
             let active = std::fs::read(active)
                 .ok()

@@ -226,12 +226,15 @@ all shipped native executables and must byte-match the primary archive before
 deterministic `.reproducibility.json` evidence can be attested, checksummed,
 signed, and published beside the archive.
 
-The `v0.3.3` Rust compatibility release publishes the post-`v0.3.2` atomic
-snapshot-lease, shared manager, and Runtime service rebinding contracts as
-`a3s-use-core 0.2.4`, `a3s-use-extension 0.3.3`, and `a3s-use 0.3.3`. The
-facade now uses the same released Browser 0.3.2 provider as A3S Search, so one
-packaged consumer can resolve a single nominal Browser/Core capability graph.
-This dependency alignment does not change the development-preview status.
+The `v0.3.4` Rust compatibility release keeps the post-`v0.3.3` atomic
+snapshot-lease, shared manager, and Runtime service rebinding contracts while
+aligning the facade's exact `a3s-flow 1.1.0` registry dependency with
+`a3s-code-core 8.0.3`. It publishes `a3s-use-core 0.2.4`,
+`a3s-use-extension 0.3.4`, and `a3s-use 0.3.4`; the facade continues to use
+the same released Browser 0.3.2 provider as A3S Search, so a packaged
+consumer can resolve one nominal Browser/Core/Flow capability graph. This is a
+dependency compatibility release and does not change the development-preview
+status.
 
 The tagged `v0.3.2` workflow exposed native linker metadata drift on four of
 five targets and therefore did not create a GitHub Release. The non-publishing
