@@ -143,16 +143,18 @@ impl DispatchFixture {
         let candidate = ExtensionLifecyclePackage::prepare_local("acme/research", &source, true)
             .await
             .unwrap();
-        let paths = ExtensionPaths::new(
-            temporary.path().join("data"),
-            temporary.path().join("state"),
-        );
-        let registry = ExtensionRegistry::new(paths.clone());
-        let bindings = RuntimeBindingStore::from_extension_paths(&paths);
         let scope = PlanScope {
             kind: PlanScopeKind::Workspace,
             id: "workspace-01".to_string(),
         };
+        let paths = ExtensionPaths::new(
+            temporary.path().join("data"),
+            temporary.path().join("state"),
+            scope.clone(),
+        )
+        .unwrap();
+        let registry = ExtensionRegistry::new(paths.clone());
+        let bindings = RuntimeBindingStore::from_extension_paths(&paths);
         let bootstrap_plan = task_plan(&candidate, &scope, 7);
         let runtime_capabilities = capabilities(&bootstrap_plan);
         let mut runtime = FakeRuntime::new(runtime_capabilities, true).with_logs(vec![log_chunk(

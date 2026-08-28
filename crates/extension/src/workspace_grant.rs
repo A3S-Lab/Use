@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use a3s_use_core::{
-    PluginPermissionCeiling, PluginWorkspaceGrant, UseError, UseResult, WorkspaceGrantAuthority,
+    InstallationId, InstallationKind, PluginPermissionCeiling, PluginWorkspaceGrant, UseError,
+    UseResult, WorkspaceGrantAuthority,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use super::workspace_grant_io::{
     acquire_lock, ensure_owned_directory, read_optional_record, validate_existing_directory_chain,
@@ -181,7 +181,7 @@ impl WorkspaceGrantStore {
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.state_root())
+        Self::new(paths.installation_state_root())
     }
 
     pub fn root(&self) -> &Path {
@@ -353,13 +353,19 @@ impl WorkspaceGrantStore {
     }
 
     pub(super) fn scope_path(&self, scope_id: &str) -> UseResult<PathBuf> {
-        PluginWorkspaceGrant::validate_scope_id(scope_id).map_err(|_| {
+        let installation =
+            InstallationId::new(InstallationKind::Workspace, scope_id).map_err(|_| {
+                store_error(
+                    "use.plugin.grant_store.path_invalid",
+                    "A workspace grant scope path identity is invalid.",
+                )
+            })?;
+        let scope_digest = installation.storage_key().map_err(|_| {
             store_error(
                 "use.plugin.grant_store.path_invalid",
                 "A workspace grant scope path identity is invalid.",
             )
         })?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope_id.as_bytes()));
         Ok(self.root.join(scope_digest))
     }
 }

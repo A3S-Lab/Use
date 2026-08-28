@@ -163,7 +163,8 @@ Registry name, URL, and trust-root digest must match the command.
 
 ## Observe a retained operation
 
-`a3s-use extension diagnose <publisher/name> --json` correlates a retained
+`a3s-use extension diagnose <publisher/name> --scope-kind <user|workspace>
+--scope-id <id> --json` correlates a retained
 install or upgrade graph with its exact digest-bound target cache entries. It
 reports total signed `downloadBytes`, current `downloadRetainedBytes`, target
 count, aggregate `missing`/`in-progress`/`complete` status, and per-package
@@ -204,7 +205,8 @@ retained partial observation, exact Range resume, complete promotion, and
 handoff to the reviewed graph without a diagnostic gap.
 
 After an install or upgrade reaches a validated terminal outcome,
-`a3s-use extension diagnose <publisher/name> --history --json` retains its
+`a3s-use extension diagnose <publisher/name> --scope-kind <user|workspace>
+--scope-id <id> --history --json` retains its
 complete path-free download projection together with the rest of the operation
 snapshot. The per-scope/package history keeps the newest 16 occurrences within
 8 MiB and survives package removal. It is written before pending recovery

@@ -3,7 +3,7 @@ use std::fs::{self, File, OpenOptions};
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use a3s_use_core::{UseError, UseResult};
+use a3s_use_core::{InstallationId, UseError, UseResult};
 use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -16,9 +16,9 @@ use super::{
 };
 
 pub const A3S_USE_STATE_BACKUP_RETENTION_PLAN_SCHEMA: &str =
-    "a3s.use.state-backup-retention-plan.v1";
+    "a3s.use.state-backup-retention-plan.v2";
 pub const A3S_USE_STATE_BACKUP_RETENTION_RESULT_SCHEMA: &str =
-    "a3s.use.state-backup-retention-result.v1";
+    "a3s.use.state-backup-retention-result.v2";
 pub const DEFAULT_STATE_BACKUP_RETENTION_MAX_BACKUPS: u64 = 32;
 pub const DEFAULT_STATE_BACKUP_RETENTION_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024 * 1024;
 pub const MIN_STATE_BACKUP_RETENTION_BACKUPS: u64 = 2;
@@ -77,6 +77,7 @@ impl Default for StateBackupRetentionPolicy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StateBackupRetentionEntry {
+    pub installation: InstallationId,
     pub file_name: String,
     pub modified_at_ns: u64,
     pub archive_bytes: u64,
@@ -90,6 +91,7 @@ pub struct StateBackupRetentionEntry {
 
 impl StateBackupRetentionEntry {
     fn validate(&self) -> UseResult<()> {
+        self.installation.validate()?;
         let components = Path::new(&self.file_name).components().collect::<Vec<_>>();
         if self.file_name.is_empty()
             || self.file_name.len() > MAX_BACKUP_FILE_NAME_BYTES
@@ -117,6 +119,7 @@ impl StateBackupRetentionEntry {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StateBackupRetentionPlan {
     pub schema: String,
+    pub installation: InstallationId,
     pub policy: StateBackupRetentionPolicy,
     pub before_backup_count: u64,
     pub before_archive_bytes: u64,
@@ -128,15 +131,18 @@ pub struct StateBackupRetentionPlan {
 
 impl StateBackupRetentionPlan {
     fn new(
+        installation: InstallationId,
         policy: StateBackupRetentionPolicy,
         inventory: Vec<StateBackupRetentionEntry>,
     ) -> UseResult<Self> {
+        installation.validate()?;
         policy.validate()?;
         let before_backup_count = count(&inventory)?;
         let before_archive_bytes = total_bytes(&inventory)?;
         let (remove, retain) = partition_inventory(inventory, policy)?;
         let plan = Self {
             schema: A3S_USE_STATE_BACKUP_RETENTION_PLAN_SCHEMA.to_owned(),
+            installation,
             policy,
             before_backup_count,
             before_archive_bytes,
@@ -150,6 +156,7 @@ impl StateBackupRetentionPlan {
     }
 
     pub fn validate(&self) -> UseResult<()> {
+        self.installation.validate()?;
         self.policy.validate()?;
         if self.schema != A3S_USE_STATE_BACKUP_RETENTION_PLAN_SCHEMA {
             return Err(plan_invalid(
@@ -159,6 +166,14 @@ impl StateBackupRetentionPlan {
         let mut inventory = self.remove.clone();
         inventory.extend(self.retain.clone());
         validate_inventory(&inventory)?;
+        if inventory
+            .iter()
+            .any(|entry| entry.installation != self.installation)
+        {
+            return Err(plan_invalid(
+                "A state backup retention entry belongs to a different installation.",
+            ));
+        }
         let (expected_remove, expected_retain) =
             partition_inventory(inventory.clone(), self.policy)?;
         if self.before_backup_count != count(&inventory)?
@@ -185,6 +200,7 @@ impl StateBackupRetentionPlan {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StateBackupRetentionResult {
     pub schema: String,
+    pub installation: InstallationId,
     pub plan_digest: String,
     pub changed: bool,
     pub removed: Vec<StateBackupRetentionEntry>,
@@ -283,14 +299,17 @@ pub(super) fn resolve_directory(directory: &Path, paths: &ExtensionPaths) -> Use
 
 pub(super) fn plan(
     directory: &Path,
+    installation: &InstallationId,
     policy: StateBackupRetentionPolicy,
 ) -> UseResult<StateBackupRetentionPlan> {
+    installation.validate()?;
     let _lock = BackupDirectoryLock::acquire(directory)?;
-    build_plan(directory, policy)
+    build_plan(directory, installation, policy)
 }
 
 pub(super) fn apply(
     directory: &Path,
+    installation: &InstallationId,
     policy: StateBackupRetentionPolicy,
     expected_plan_digest: &str,
 ) -> UseResult<StateBackupRetentionResult> {
@@ -300,7 +319,8 @@ pub(super) fn apply(
         ));
     }
     let _lock = BackupDirectoryLock::acquire(directory)?;
-    let current = build_plan(directory, policy)?;
+    installation.validate()?;
+    let current = build_plan(directory, installation, policy)?;
     let actual_digest = current.descriptor_digest()?;
     if actual_digest != expected_plan_digest {
         return Err(plan_mismatch(
@@ -338,7 +358,7 @@ pub(super) fn apply(
             ));
         }
     }
-    let after = inventory(directory).map_err(|error| {
+    let after = inventory(directory, installation).map_err(|error| {
         retention_outcome_unknown(
             format!(
                 "State backup retention changed files, but the retained inventory could not be verified: {}",
@@ -355,6 +375,7 @@ pub(super) fn apply(
     }
     Ok(StateBackupRetentionResult {
         schema: A3S_USE_STATE_BACKUP_RETENTION_RESULT_SCHEMA.to_owned(),
+        installation: installation.clone(),
         plan_digest: actual_digest,
         changed: !removed.is_empty(),
         removed,
@@ -365,13 +386,22 @@ pub(super) fn apply(
 
 fn build_plan(
     directory: &Path,
+    installation: &InstallationId,
     policy: StateBackupRetentionPolicy,
 ) -> UseResult<StateBackupRetentionPlan> {
     policy.validate()?;
-    StateBackupRetentionPlan::new(policy, inventory(directory)?)
+    StateBackupRetentionPlan::new(
+        installation.clone(),
+        policy,
+        inventory(directory, installation)?,
+    )
 }
 
-fn inventory(directory: &Path) -> UseResult<Vec<StateBackupRetentionEntry>> {
+fn inventory(
+    directory: &Path,
+    installation: &InstallationId,
+) -> UseResult<Vec<StateBackupRetentionEntry>> {
+    installation.validate()?;
     validate_directory(directory)?;
     let mut entries = Vec::new();
     let mut inspected = 0usize;
@@ -401,7 +431,10 @@ fn inventory(directory: &Path) -> UseResult<Vec<StateBackupRetentionEntry>> {
             )));
         }
         if file_name.ends_with(BACKUP_SUFFIX) {
-            entries.push(inspect_entry(&entry.path())?);
+            let candidate = inspect_entry(&entry.path())?;
+            if candidate.installation == *installation {
+                entries.push(candidate);
+            }
         }
     }
     entries.sort_by(entry_order);
@@ -446,6 +479,7 @@ fn entry_from_manifest(
     manifest: &StateBackupManifest,
 ) -> UseResult<StateBackupRetentionEntry> {
     let entry = StateBackupRetentionEntry {
+        installation: manifest.installation.clone(),
         file_name: path
             .file_name()
             .and_then(|name| name.to_str())

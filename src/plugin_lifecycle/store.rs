@@ -7,12 +7,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use a3s_use_core::{PlanScope, PluginPackageId, UseError, UseResult};
 use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
 use fs2::FileExt;
-use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 use super::journal::{record_error, PluginLifecycleCheckpointOutcome};
-use super::model::{valid_machine_id, PluginLifecycleIntent};
+use super::model::PluginLifecycleIntent;
 use super::{PluginLifecycleDiagnostic, PluginLifecycleOperationRecord};
 
 const MAX_OPERATION_BYTES: u64 = 1024 * 1024;
@@ -40,7 +39,7 @@ impl PluginLifecycleJournalStore {
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.state_root())
+        Self::new(paths.installation_state_root())
     }
 
     pub fn root(&self) -> &Path {
@@ -242,7 +241,7 @@ impl PluginLifecycleJournalStore {
     }
 
     fn package_directory(&self, scope: &PlanScope, package_id: &str) -> UseResult<PathBuf> {
-        if !valid_machine_id(&scope.id) {
+        if scope.validate().is_err() {
             return Err(path_identity_error());
         }
         let package_id = PluginPackageId::parse(package_id.to_string())?;
@@ -250,7 +249,7 @@ impl PluginLifecycleJournalStore {
             .as_str()
             .split_once('/')
             .ok_or_else(path_identity_error)?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+        let scope_digest = scope.storage_key().map_err(|_| path_identity_error())?;
         Ok(self
             .root
             .join(scope.kind.as_str())

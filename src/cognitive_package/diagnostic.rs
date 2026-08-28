@@ -596,10 +596,11 @@ impl CognitivePackageManager {
             (None, Some(active)) => diagnose_enablement_operation(self, package_id, active).await,
             (Some(_), Some(_)) => Err(diagnostic_state_error()),
             (None, None) => {
-                let reviewed = PluginHostProtocolStore::new(self.registry.paths().state_root())
-                    .get_enablement_diagnostic(&self.scope, &parsed_package_id)
-                    .await
-                    .map_err(|_| diagnostic_state_error())?;
+                let reviewed =
+                    PluginHostProtocolStore::new(self.registry.paths().installation_state_root())
+                        .get_enablement_diagnostic(self.scope(), &parsed_package_id)
+                        .await
+                        .map_err(|_| diagnostic_state_error())?;
                 if let Some((record, cancellation)) = reviewed {
                     if let Some(diagnostic) = diagnose_reviewed_enablement_operation(
                         self,
@@ -651,7 +652,7 @@ impl CognitivePackageManager {
                     "No retained pre-plan package download exists for this package and scope.",
                 )
             })?;
-        if attempt.scope != self.scope || attempt.root_package_id != package_id {
+        if attempt.scope != *self.scope() || attempt.root_package_id != package_id {
             return Err(diagnostic_state_error());
         }
         let download = project_download_attempt(self, &attempt).await?;
@@ -716,7 +717,7 @@ impl CognitivePackageManager {
                     "No retained pre-lock Registry resolution exists for this package and scope.",
                 )
             })?;
-        if attempt.scope != self.scope || attempt.root_package_id != package_id {
+        if attempt.scope != *self.scope() || attempt.root_package_id != package_id {
             return Err(diagnostic_state_error());
         }
         let registries = attempt
@@ -809,7 +810,7 @@ impl CognitivePackageManager {
         package_id: &str,
         pending: PendingPackageGraphOperation,
     ) -> UseResult<PluginOperationDiagnostic> {
-        if pending.envelope.plan.scope != self.scope {
+        if pending.envelope.plan.scope != *self.scope() {
             return Err(diagnostic_state_error());
         }
 
@@ -893,7 +894,7 @@ impl CognitivePackageManager {
         let diagnostic = PluginOperationDiagnostic {
             schema: PLUGIN_OPERATION_DIAGNOSTIC_SCHEMA.to_owned(),
             observed_at_ms: super::plan::now_ms().map_err(|_| diagnostic_state_error())?,
-            scope: self.scope.clone(),
+            scope: self.scope().clone(),
             package_id: package_id.to_owned(),
             registry,
             operation,

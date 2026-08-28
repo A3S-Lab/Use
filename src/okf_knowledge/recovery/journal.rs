@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use a3s_use_core::{PlanScope, UseError, UseResult};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tokio::fs;
 
 use super::{
@@ -552,7 +551,7 @@ impl RestoreOperationStore {
         plan_digest: &str,
     ) -> UseResult<RestoreOperationPaths> {
         let digest = digest_segment(plan_digest)?;
-        let directory = self.scope_directory(scope).join(digest);
+        let directory = self.scope_directory(scope)?.join(digest);
         Ok(RestoreOperationPaths {
             journal: directory.join("operation.json"),
             candidate: directory.join("candidate.sqlite3"),
@@ -563,9 +562,11 @@ impl RestoreOperationStore {
         })
     }
 
-    fn scope_directory(&self, scope: &PlanScope) -> PathBuf {
-        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
-        self.root.join(scope.kind.as_str()).join(scope_digest)
+    fn scope_directory(&self, scope: &PlanScope) -> UseResult<PathBuf> {
+        let scope_digest = scope.storage_key().map_err(|_| {
+            operation_invalid("The Knowledge restore installation identity is invalid.")
+        })?;
+        Ok(self.root.join(scope.kind.as_str()).join(scope_digest))
     }
 
     async fn ensure_operation_directory(

@@ -17,8 +17,8 @@ fn killed_host_protocol_upgrade_apply_replays_offline_without_reauthorization() 
     let home = temp.path().join("home");
     let authorization_marker = temp.path().join("unexpected-authorization.marker");
     let apply_request_path = temp.path().join("upgrade-apply-request.json");
-    let graph_path = home.join("state/package-graphs/acme/worker.json");
-    let snapshot_path = home.join("state/registry.json");
+    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -79,7 +79,8 @@ fn killed_host_protocol_upgrade_apply_replays_offline_without_reauthorization() 
     drop(host);
     drop(server);
 
-    let pending_path = home.join("state/operations/package-graphs/upgrade/acme/worker.json");
+    let pending_path =
+        managed_state_root(&home).join("operations/package-graphs/upgrade/acme/worker.json");
     let held_lifecycle_path = managed_lifecycle_journal_path(&home, "acme/leaf-00");
     let mut interrupted = spawn_host_apply_child(&home, &apply_request_path, &authorization_marker);
     let Some(grant_operation_path) = wait_for_grant_phase(&home, "upgrade", "prepared") else {

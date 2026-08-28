@@ -131,7 +131,7 @@ impl OkfKnowledgeSearchRequest {
 
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != OKF_KNOWLEDGE_SEARCH_REQUEST_SCHEMA
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || self.query.trim() != self.query
             || self.query.is_empty()
             || self.query.len() > MAX_QUERY_BYTES
@@ -259,18 +259,6 @@ fn validate_hit(hit: &OkfKnowledgeSearchHit, request: &OkfKnowledgeSearchRequest
         ));
     };
     citation.validate_for_projection(projection)
-}
-
-fn valid_machine_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 256
-        && value
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-        })
 }
 
 fn valid_sha256(value: &str) -> bool {

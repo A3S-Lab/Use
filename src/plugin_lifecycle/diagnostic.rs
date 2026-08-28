@@ -78,7 +78,9 @@ impl PluginLifecycleDiagnostic {
         latest: Option<&PluginLifecycleOperationRecord>,
         previous: Option<&PluginLifecycleOperationRecord>,
     ) -> UseResult<Self> {
-        super::model::valid_machine_id(&scope.id)
+        scope
+            .validate()
+            .is_ok()
             .then_some(())
             .ok_or_else(|| diagnostic_error("The lifecycle diagnostic scope is invalid."))?;
         PluginPackageId::parse(package_id.to_owned()).map_err(|_| {

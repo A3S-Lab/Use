@@ -76,7 +76,8 @@ For schema-v3 dependencies, the lock binds every selected version, dependency ed
 
 ## Operation diagnostics
 
-`a3s-use extension diagnose <publisher/name> --json` reads one exact retained
+`a3s-use extension diagnose <publisher/name> --scope-kind user --scope-id
+user/current --json` reads one exact retained
 planned/admitted/cancelled install, upgrade, or uninstall graph, one active
 admitted enable/disable operation, or the newest Host-reviewed pre-admission
 enable/disable plan or cancellation for the selected User or Workspace scope. It

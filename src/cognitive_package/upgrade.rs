@@ -51,7 +51,7 @@ impl CognitivePackageManager {
         let mut resolution_attempt = Some(
             self.resolution_attempt_store()
                 .begin(PendingPackageResolutionAttempt::new(
-                    self.scope.clone(),
+                    self.scope().clone(),
                     PluginOperationAction::Upgrade,
                     package_id,
                     requested_version,
@@ -121,7 +121,7 @@ impl CognitivePackageManager {
                     pending,
                     &candidate_lock,
                     graph.as_ref(),
-                    &self.scope,
+                    self.scope(),
                 )?;
                 pending.prior_package_lock.clone().ok_or_else(|| {
                     package_manager_error(
@@ -256,7 +256,7 @@ impl CognitivePackageManager {
                     .into_download(
                         &download_store,
                         PendingPackageDownloadAttempt::new(
-                            self.scope.clone(),
+                            self.scope().clone(),
                             PluginOperationAction::Upgrade,
                             candidate_lock.clone(),
                             selected_downloads.clone(),
@@ -294,7 +294,7 @@ impl CognitivePackageManager {
                 &pending,
                 &candidate_lock,
                 existing_graph.as_ref(),
-                &self.scope,
+                self.scope(),
             )?;
             for (package_id, prepared) in &prepared {
                 if pending.manifests.get(package_id) != Some(&prepared.manifest) {
@@ -452,7 +452,10 @@ impl CognitivePackageManager {
             let snapshot = self.registry.snapshot().await?;
             let grant_snapshot = self
                 .grant_store()
-                .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
+                .snapshot_scope(
+                    &self.scope().id,
+                    package_state_revision(snapshot.generation)?,
+                )
                 .await?;
             let generated = upgrade_operation(
                 &candidate_lock,
@@ -464,7 +467,7 @@ impl CognitivePackageManager {
                 &prior_generations,
                 root.receipt.descriptor_digest()?,
                 snapshot.generation,
-                &self.scope,
+                self.scope(),
                 now_ms()?,
                 &grant_snapshot,
                 self.authorization.as_ref(),
@@ -584,7 +587,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope: self.scope.clone(),
+                    scope: self.scope().clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),
@@ -689,7 +692,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope: self.scope.clone(),
+                    scope: self.scope().clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use a3s_use_core::{UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
+use a3s_use_core::{InstallationId, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -8,7 +8,7 @@ use super::{
     InstalledExtension,
 };
 
-pub const EXTENSION_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.extension-snapshot-cursor.v1";
+pub const EXTENSION_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.extension-snapshot-cursor.v2";
 
 /// Exact immutable package generation selected by one Registry publication.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -69,6 +69,7 @@ impl ExtensionSnapshotPackage {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionSnapshotCursor {
     pub schema: String,
+    pub installation: InstallationId,
     pub generation: u64,
     pub revision: String,
     pub packages: Vec<ExtensionSnapshotPackage>,
@@ -79,6 +80,7 @@ pub struct ExtensionSnapshotCursor {
 impl ExtensionSnapshotCursor {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != EXTENSION_SNAPSHOT_CURSOR_SCHEMA
+            || self.installation.validate().is_err()
             || !valid_canonical_sha256(&self.revision)
             || self.packages.len() > MAX_PLUGIN_PLAN_ITEMS
             || self.unleasable_routes.len() > MAX_PLUGIN_PLAN_ITEMS
@@ -146,6 +148,7 @@ impl ExtensionRegistrySnapshot {
         unleasable_routes.sort();
         let cursor = ExtensionSnapshotCursor {
             schema: EXTENSION_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+            installation: self.installation.clone(),
             generation: self.generation,
             revision: self.descriptor_digest()?,
             packages,
@@ -213,6 +216,12 @@ impl ExtensionRegistry {
         expected: &ExtensionSnapshotCursor,
     ) -> UseResult<Option<ExtensionSnapshotLease>> {
         expected.validate()?;
+        if expected.installation != *self.installation() {
+            return Err(UseError::new(
+                "use.extension.snapshot_scope_mismatch",
+                "The extension snapshot cursor belongs to a different installation.",
+            ));
+        }
         if !expected.is_fully_leasable() {
             return Err(UseError::new(
                 "use.extension.snapshot_unleasable",

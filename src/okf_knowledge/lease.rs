@@ -263,10 +263,16 @@ mod tests {
 
     async fn lease_fixture(generation: u64) -> LeaseFixture {
         let temporary = tempfile::tempdir().unwrap();
+        let scope = PlanScope {
+            kind: PlanScopeKind::Workspace,
+            id: "lease-test-workspace".to_owned(),
+        };
         let paths = ExtensionPaths::new(
             temporary.path().join("data"),
             temporary.path().join("state"),
-        );
+            scope.clone(),
+        )
+        .unwrap();
         let registry = ExtensionRegistry::new(paths.clone());
         let source = fixture_package_root();
         let candidate = ExtensionLifecyclePackage::prepare_local("acme/knowledge", &source, true)
@@ -281,10 +287,6 @@ mod tests {
         .unwrap();
         let surface = candidate.manifest().okf[0].clone();
         let files = load_okf_bundle_files(&surface, &source).await.unwrap();
-        let scope = PlanScope {
-            kind: PlanScopeKind::Workspace,
-            id: "lease-test-workspace".to_owned(),
-        };
         let stage_spec = OkfKnowledgeStageSpec {
             operation_id: format!("lease-stage-{generation}"),
             scope: scope.clone(),

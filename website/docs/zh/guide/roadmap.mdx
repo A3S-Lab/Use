@@ -17,7 +17,10 @@ production-ready。合约完成和测试通过只是实现证据，不是发布�
 | ------------------------------ | ---------------------------------------------------------------------------------------- |
 | 认知包 manifest                | schema 3                                                                                 |
 | 签名 catalog                   | `a3s.use.plugin-catalog.v3`                                                              |
-| installed receipt              | schema 4                                                                                 |
+| installed receipt              | schema 5                                                                                 |
+| Extension Registry snapshot    | schema 2                                                                                 |
+| Capability snapshot            | schema 3                                                                                 |
+| snapshot cursor                | `a3s.use.extension-snapshot-cursor.v2` / `a3s.use.capability-snapshot-cursor.v2`         |
 | operation plan                 | `a3s.use.plugin-operation-plan.v4`                                                       |
 | host capabilities              | `a3s.use.plugin-host-capabilities.v6`，protocol 6                                        |
 | Host managed scope             | `a3s.use.plugin-managed-scope.v2`                                                        |
@@ -33,7 +36,7 @@ production-ready。合约完成和测试通过只是实现证据，不是发布�
 | pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1`                                        |
 | pre-plan download diagnostic   | `a3s.use.plugin-download-attempt-diagnostic.v1`                                          |
 | enablement state/operation     | v2                                                                                       |
-| coordinated state backup       | `a3s.use.state-backup.v1`                                                                |
+| coordinated state backup       | `a3s.use.state-backup.v2`                                                                |
 | coordinated state restore plan | `a3s.use.state-restore-plan.v1`                                                          |
 | coordinated restore operation  | `a3s.use.state-restore-operation.v1`                                                     |
 | coordinated restore result     | `a3s.use.state-restore-result.v1`                                                        |
@@ -44,6 +47,10 @@ production-ready。合约完成和测试通过只是实现证据，不是发布�
 不会被当作兼容目标。遇到不支持的状态时 fail closed，并提示清理后重装。
 SemVer、`requires_use`、宿主 target 和 provider capability 检查仍是必须的
 正确性规则。
+
+领域包必须与 package manager 本身分离。当前阶段 `a3s-use-science` 不属于本仓库、
+workspace、runtime、CI 或 release graph；未来如需集成，必须与其他领域包一样通过
+公开包合约作为已签名 Registry package 分发。
 
 Host protocol v6 显式绑定 User 或 Workspace scope kind，并只从持久化 Host、
 graph、enablement 与 lifecycle 证据推导 operation phase 和有界 checkpoint 数。
@@ -56,6 +63,10 @@ durable Host outcome 才会报告 `Completed`。
 
 - Manifest v3 与 catalog v3 已覆盖命名 Tool、MCP、OKF、Flow、Skill、UI
   表面、包依赖、权限上限与精确 provenance。
+- `InstallationId(kind, id)` 已隔离 mutable package state、receipt、Grant、
+  binding、capability publication、backup/restore 和 lock。全局 Registry/TUF 与
+  可派生 artifact cache 不拥有 installation authority；A1 的单一 snapshot
+  收敛门禁仍保持开放。
 - 有界 resolver 会冻结一个 Registry/TUF package lock，前向准备依赖，一次
   发布图快照，再反向退休不再需要的包。
 - standalone CLI 会把有界 enabled Registry set 持久化为 canonical ACL，
@@ -129,7 +140,7 @@ durable Host outcome 才会报告 `Completed`。
   依赖图 install/upgrade/uninstall、Grant、standalone Flow preflight/生命周期
   和 OKF cutover 场景；还会在 upgrade 完成 cutover 后杀死进程，再重放已移除
   依赖的清理，且 capability generation 不会膨胀。
-- Windows x86_64 现已运行当前完整的非 Science workspace 测试；确定性的真实
+- Windows x86_64 现已运行当前完整的 workspace 测试；确定性的真实
   directory junction 回归测试证明 package 与持久状态信任边界会在遍历前拒绝
   Windows reparse point。Flow Runtime 覆盖还会在 Windows 上保留精确 generation、
   拒绝 artifact substitution 与被篡改或移动的 binding、按 scope kind 隔离相同

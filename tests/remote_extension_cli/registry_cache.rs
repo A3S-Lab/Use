@@ -181,7 +181,7 @@ fn registry_cache_policy_rejects_an_oversized_target_before_download() {
         "use.extension.registry_target_cache_policy_exceeded"
     );
     assert_eq!(target_request_count(&server), 0);
-    assert!(!home.join("state/extensions/acme/root.json").exists());
+    assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
 }
 
 #[cfg(any(unix, windows))]
@@ -219,6 +219,7 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
             "1.0.0",
             "--json",
         ])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .spawn()
         .unwrap();
@@ -244,6 +245,7 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
     let requests_before_diagnostic = server.requests().len();
     let active_diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -280,20 +282,19 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
     let partial_length = std::fs::metadata(&partial).unwrap().len();
     assert!(partial_length > 0 && partial_length < archive_bytes);
     assert!(!verified.exists());
-    assert!(!home.join("state/extensions/acme/root.json").exists());
-    assert!(!home.join("state/package-graphs/acme/root.json").exists());
-    assert!(!home
-        .join("state/operations/package-graphs/install/acme/root.json")
-        .exists());
-    assert!(!home.join("data/extensions/acme/root").exists());
+    assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
+    assert!(!scoped_state(&home, "package-graphs/acme/root.json").exists());
+    assert!(!scoped_state(&home, "operations/package-graphs/install/acme/root.json").exists());
+    assert!(!scoped_data(&home, "extensions/acme/root").exists());
 
-    let attempt_path = home.join("state/operations/package-downloads/install/acme/root.json");
+    let attempt_path = scoped_state(&home, "operations/package-downloads/install/acme/root.json");
     let retained_attempt = std::fs::read(&attempt_path).unwrap();
     let mut invalid_attempt: serde_json::Value = serde_json::from_slice(&retained_attempt).unwrap();
     invalid_attempt["credential"] = serde_json::json!("download-secret-sentinel-value");
     std::fs::write(&attempt_path, serde_json::to_vec(&invalid_attempt).unwrap()).unwrap();
     let invalid_diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -314,6 +315,7 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
 
     let retained_diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -340,10 +342,11 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
     );
     assert!(!partial.exists());
     assert!(verified.is_file());
-    assert!(home.join("state/extensions/acme/root.json").is_file());
-    assert!(home.join("state/package-graphs/acme/root.json").is_file());
+    assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
+    assert!(scoped_state(&home, "package-graphs/acme/root.json").is_file());
     let completed_diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();

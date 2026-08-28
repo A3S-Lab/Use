@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{
-    PlanPackageRole, PlannedPackageState, PlannedPackageTransition, PluginCatalogRecord,
-    PluginPlanningBundle, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
-    VerifiedPluginCatalogRecord,
+    InstallationId, PlanPackageRole, PlannedPackageState, PlannedPackageTransition,
+    PluginCatalogRecord, PluginPlanningBundle, PluginSurfaceKind, PluginSurfaceRef, UseError,
+    UseResult, VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -42,8 +42,8 @@ pub use snapshot_lease::{
     EXTENSION_SNAPSHOT_CURSOR_SCHEMA,
 };
 
-pub const EXTENSION_RECEIPT_SCHEMA_VERSION: u32 = 4;
-pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 1;
+pub const EXTENSION_RECEIPT_SCHEMA_VERSION: u32 = 5;
+pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 2;
 const WATCH_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +58,7 @@ pub enum ExtensionTrust {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionReceipt {
     pub schema_version: u32,
+    pub installation: InstallationId,
     pub package_id: String,
     pub component_id: String,
     pub route: String,
@@ -241,27 +242,34 @@ pub struct ExtensionRouteBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionRegistrySnapshot {
     pub schema_version: u32,
+    pub installation: InstallationId,
     pub generation: u64,
     pub routes: Vec<ExtensionRouteBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_cutovers: Vec<ExtensionRegistryCutoverRecord>,
 }
 
-impl Default for ExtensionRegistrySnapshot {
-    fn default() -> Self {
+impl ExtensionRegistrySnapshot {
+    pub fn empty(installation: InstallationId) -> UseResult<Self> {
+        installation.validate()?;
         Self {
             schema_version: REGISTRY_SCHEMA_VERSION,
+            installation,
             generation: 0,
             routes: Vec::new(),
             pending_cutovers: Vec::new(),
         }
+        .validated()
     }
-}
 
-impl ExtensionRegistrySnapshot {
+    fn validated(self) -> UseResult<Self> {
+        self.validate()?;
+        Ok(self)
+    }
+
     /// Canonical digest of the exact capability projection selected by one
     /// Registry generation. Pending operation metadata is deliberately
     /// excluded, so acknowledging a durable cutover cannot change capability
@@ -272,11 +280,13 @@ impl ExtensionRegistrySnapshot {
         #[serde(rename_all = "camelCase")]
         struct CapabilityProjection<'a> {
             schema_version: u32,
+            installation: &'a InstallationId,
             generation: u64,
             routes: &'a [ExtensionRouteBinding],
         }
         let projection = CapabilityProjection {
             schema_version: self.schema_version,
+            installation: &self.installation,
             generation: self.generation,
             routes: &self.routes,
         };
@@ -331,8 +341,8 @@ pub struct ExtensionRegistry {
 }
 
 impl ExtensionRegistry {
-    pub fn from_env() -> UseResult<Self> {
-        Ok(Self::new(ExtensionPaths::from_env()?))
+    pub fn from_env(installation: InstallationId) -> UseResult<Self> {
+        Ok(Self::new(ExtensionPaths::from_env(installation)?))
     }
 
     pub fn new(paths: ExtensionPaths) -> Self {
@@ -343,6 +353,10 @@ impl ExtensionRegistry {
         &self.paths
     }
 
+    pub fn installation(&self) -> &InstallationId {
+        self.paths.installation()
+    }
+
     /// Read the last durably published capability projection without
     /// reconciling receipts or writing Registry state.
     ///
@@ -350,7 +364,7 @@ impl ExtensionRegistry {
     /// become lifecycle recovery authority. Call [`Self::snapshot`] when the
     /// caller explicitly wants ordinary crash reconciliation semantics.
     pub async fn published_snapshot(&self) -> UseResult<ExtensionRegistrySnapshot> {
-        read_registry_snapshot(&self.paths.registry_snapshot_path()).await
+        read_registry_snapshot(&self.paths).await
     }
 
     /// Return the immutable route projection currently visible to consumers.
@@ -363,8 +377,7 @@ impl ExtensionRegistry {
         // The common read path is lock-free with respect to lifecycle writers.
         // Only a real receipt/publication mismatch needs the registry lock for
         // crash reconciliation.
-        let path = self.paths.registry_snapshot_path();
-        let published = read_registry_snapshot(&path).await?;
+        let published = read_registry_snapshot(&self.paths).await?;
         match self.list().await {
             Ok(installed) if published.routes == route_bindings(&installed) => {
                 return Ok(published)
@@ -389,12 +402,12 @@ impl ExtensionRegistry {
         let _lock = match RegistryLock::acquire(&self.paths.registry_lock_path()) {
             Ok(lock) => lock,
             Err(error) if error.code == "use.extension.busy" => {
-                return read_registry_snapshot(&path).await;
+                return read_registry_snapshot(&self.paths).await;
             }
             Err(error) => return Err(error),
         };
         let installed = self.list().await?;
-        let published = read_registry_snapshot(&path).await?;
+        let published = read_registry_snapshot(&self.paths).await?;
         let routes = route_bindings(&installed);
         if published.routes == routes {
             return Ok(published);
@@ -435,7 +448,7 @@ impl ExtensionRegistry {
             // Lifecycle mutations publish the immutable projection before
             // draining old calls. Reading it directly keeps watchers live even
             // while the mutation deliberately holds the registry write lock.
-            let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+            let published = read_registry_snapshot(&self.paths).await?;
             if published.generation > after_generation {
                 return Ok(Some(published));
             }
@@ -590,7 +603,7 @@ impl ExtensionRegistry {
         route: &str,
         host_version: &str,
     ) -> UseResult<Option<InstalledExtension>> {
-        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let published = read_registry_snapshot(&self.paths).await?;
         let Some(binding) = published
             .routes
             .iter()
@@ -623,7 +636,7 @@ impl ExtensionRegistry {
 
         // Re-read after locking so a concurrent disable cannot admit a call
         // using stale route metadata.
-        let published = read_registry_snapshot(&self.paths.registry_snapshot_path()).await?;
+        let published = read_registry_snapshot(&self.paths).await?;
         let Some(binding) = published.routes.iter().find(|binding| {
             binding.enabled && published_binding_matches_extension(binding, &candidate)
         }) else {
@@ -650,13 +663,13 @@ impl ExtensionRegistry {
         installed: &[InstalledExtension],
     ) -> UseResult<ExtensionRegistrySnapshot> {
         let routes = route_bindings(installed);
-        let path = self.paths.registry_snapshot_path();
-        let current = read_registry_snapshot(&path).await?;
+        let current = read_registry_snapshot(&self.paths).await?;
         if current.routes == routes {
             return Ok(current);
         }
         let snapshot = ExtensionRegistrySnapshot {
             schema_version: REGISTRY_SCHEMA_VERSION,
+            installation: self.installation().clone(),
             generation: current.generation.checked_add(1).ok_or_else(|| {
                 UseError::new(
                     "use.extension.generation_exhausted",
@@ -666,7 +679,7 @@ impl ExtensionRegistry {
             routes,
             pending_cutovers: current.pending_cutovers,
         };
-        write_registry_snapshot(&path, &snapshot).await?;
+        write_registry_snapshot(&self.paths, &snapshot).await?;
         Ok(snapshot)
     }
 
@@ -702,6 +715,18 @@ impl ExtensionRegistry {
                     "Extension receipt schema {} is obsolete; remove the pre-release state and reinstall the package.",
                     receipt.schema_version
                 ),
+            ));
+        }
+        receipt.installation.validate().map_err(|_| {
+            UseError::new(
+                "use.extension.receipt_invalid",
+                "The extension receipt installation identity is invalid.",
+            )
+        })?;
+        if receipt.installation != *self.installation() {
+            return Err(UseError::new(
+                "use.extension.receipt_scope_mismatch",
+                "The extension receipt belongs to a different installation.",
             ));
         }
         let generation = receipt.lifecycle_generation.ok_or_else(|| {

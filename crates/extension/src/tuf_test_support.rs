@@ -76,7 +76,7 @@ impl TestRepository {
         expires: &str,
     ) -> Self {
         let target = host_target();
-        let archive_name = format!("a3s-use-science-{package_version}-{target}.tar.gz");
+        let archive_name = format!("science-fixture-{package_version}-{target}.tar.gz");
         let target_name =
             format!("extensions/a3s/science/{package_version}/stable/{target}/{archive_name}");
         let (package_sha256, file_count, expanded_bytes, manifest) =

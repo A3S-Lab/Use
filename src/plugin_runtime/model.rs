@@ -91,7 +91,7 @@ impl RuntimeSurfaceContext {
                 "Runtime surface package and grant digests must be canonical SHA-256 values.",
             ));
         }
-        if !valid_machine_id(&self.scope.id) {
+        if self.scope.validate().is_err() {
             return Err(runtime_input_error(
                 "Runtime surface scope IDs must use the portable plan identity contract.",
             ));

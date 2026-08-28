@@ -14,7 +14,7 @@ fn killed_host_protocol_enable_apply_replays_publication_and_grant_cutover() {
     let home = temp.path().join("home");
     let authorization_marker = temp.path().join("unexpected-authorization.marker");
     let apply_request_path = temp.path().join("enable-apply-request.json");
-    let snapshot_path = home.join("state/registry.json");
+    let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -89,7 +89,7 @@ fn killed_host_protocol_enable_apply_replays_publication_and_grant_cutover() {
             child_output(&output)
         );
     };
-    let grant_store_lock = exclusive_lock(&home.join("state/grants/.store.lock"));
+    let grant_store_lock = exclusive_lock(&managed_state_root(&home).join("grants/.store.lock"));
     if grant_phase(&grant_operation_path).as_deref() != Some("prepared") {
         let process_status = interrupted.try_wait().unwrap();
         let grant = grant_phase(&grant_operation_path);
@@ -209,12 +209,9 @@ fn killed_host_protocol_enable_apply_replays_publication_and_grant_cutover() {
     assert!(!encoded.contains(home.to_str().unwrap()));
     assert!(!encoded.contains("idempotency"));
 
-    let enablement_scope_digest = format!(
-        "{:x}",
-        Sha256::digest(format!("workspace\n{MANAGED_SCOPE_ID}").as_bytes())
-    );
-    let enablement_state_path = home
-        .join("state/package-enablement/scopes")
+    let enablement_scope_digest = managed_installation().storage_key().unwrap();
+    let enablement_state_path = managed_state_root(&home)
+        .join("package-enablement/scopes")
         .join(enablement_scope_digest)
         .join(PACKAGE_ID)
         .join("state.json");

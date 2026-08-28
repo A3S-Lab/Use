@@ -28,7 +28,7 @@ pub(super) async fn configure_host_registry(
     server: &TestServer,
     repository: &TestRepository,
 ) {
-    RegistrySourceStore::new(ExtensionPaths::new(home.join("data"), home.join("state")))
+    RegistrySourceStore::new(use_paths(home))
         .add(RegistrySourceInput::new(
             "fixture",
             server.base_url(),
@@ -220,10 +220,11 @@ pub(super) fn host_manager(
     home: &Path,
     authorization_marker: &Path,
 ) -> CognitivePackageHostManager {
+    let scope = managed_host_scope();
     CognitivePackageHostManager::new(
-        managed_host_scope(),
+        scope.clone(),
         HOST_BUILD_ID,
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state"))),
+        ExtensionRegistry::new(extension_paths_for(home, scope.plan_scope())),
         Arc::new(StandaloneCognitivePackageLifecycleFactory::default()),
         Arc::new(ProcessAuthorization {
             marker: authorization_marker.to_owned(),

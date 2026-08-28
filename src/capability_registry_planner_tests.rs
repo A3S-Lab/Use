@@ -103,7 +103,8 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
     let registry =
         a3s_use_extension::ResolvedRemotePackage::from_verified_catalog(&verified).unwrap();
     let receipt = a3s_use_extension::ExtensionReceipt {
-        schema_version: 4,
+        schema_version: a3s_use_extension::EXTENSION_RECEIPT_SCHEMA_VERSION,
+        installation: crate::test_installation(),
         package_id: manifest.package_id.clone(),
         component_id: "use/acme/guide".to_owned(),
         route: manifest.route.clone(),
@@ -152,11 +153,13 @@ async fn plan_ready_projection_binds_receipt_and_named_surface_evidence() {
 
     let snapshot = CapabilityRegistrySnapshot {
         schema_version: CAPABILITY_REGISTRY_SCHEMA_VERSION,
+        installation: crate::test_installation(),
         generation: 23,
         revision: "e".repeat(64),
         capabilities: vec![binding.clone()],
         cursor: CapabilitySnapshotCursor {
             schema: CAPABILITY_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
+            installation: crate::test_installation(),
             generation: 23,
             revision: "e".repeat(64),
             registry_revision: format!("sha256:{}", "f".repeat(64)),

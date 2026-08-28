@@ -16,6 +16,8 @@ mod lifecycle_staging;
 #[cfg(windows)]
 #[path = "registry_tests/lifecycle_windows_contention.rs"]
 mod lifecycle_windows_contention;
+#[path = "registry_tests/scope_isolation.rs"]
+mod scope_isolation;
 #[path = "registry_tests/snapshot_lease.rs"]
 mod snapshot_lease;
 
@@ -30,7 +32,18 @@ fn published_generation_lease_is_send_and_sync() {
 }
 
 fn registry(root: &Path) -> ExtensionRegistry {
-    ExtensionRegistry::new(ExtensionPaths::new(root.join("data"), root.join("state")))
+    ExtensionRegistry::new(
+        ExtensionPaths::new(
+            root.join("data"),
+            root.join("state"),
+            a3s_use_core::InstallationId::new(
+                a3s_use_core::InstallationKind::User,
+                "extension-tests",
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+    )
 }
 
 async fn compatible_cognitive_package(root: &Path) {

@@ -284,6 +284,7 @@ impl StateRestoreManager {
         validate_owned_roots(&self.paths)?;
         let backup = StateBackupManager::verify_backup(backup_path).await?;
         validate_backup_platform(&backup)?;
+        require_backup_installation(&self.paths, &backup)?;
         let _maintenance = self.maintenance.acquire_exclusive().await?;
         let live = scan_state_for_restore(&self.paths, None)?;
         let authority_digest = validate_live_authority(&self.paths, &backup, &live).await?;
@@ -325,7 +326,7 @@ impl StateRestoreManager {
         // Existing operations can resume from their exact staged candidates
         // after the external source archive is lost. A still-present source is
         // always reverified and must match the durable plan.
-        let inspected = inspect_restore_backup(&backup_path).await;
+        let inspected = inspect_restore_backup(&self.paths, &backup_path).await;
         let rollback_inspected = inspect_optional_backup(&rollback_backup_path).await?;
         let maintenance = self.maintenance.acquire_exclusive().await?;
         let marker = self.operations.active().await?;
@@ -701,6 +702,19 @@ fn validate_backup_platform(backup: &StateBackupManifest) -> UseResult<()> {
     Ok(())
 }
 
+fn require_backup_installation(
+    paths: &ExtensionPaths,
+    backup: &StateBackupManifest,
+) -> UseResult<()> {
+    if backup.installation != *paths.installation() {
+        return Err(restore_error(
+            "use.state_restore_installation_mismatch",
+            "The state backup belongs to a different installation.",
+        ));
+    }
+    Ok(())
+}
+
 fn canonical_json<T: Serialize + ?Sized>(value: &T, label: &str) -> UseResult<Vec<u8>> {
     let mut bytes = Vec::new();
     let mut serializer =
@@ -724,9 +738,13 @@ fn valid_sha256(value: &str) -> bool {
     })
 }
 
-async fn inspect_restore_backup(path: &Path) -> UseResult<StateBackupManifest> {
+async fn inspect_restore_backup(
+    paths: &ExtensionPaths,
+    path: &Path,
+) -> UseResult<StateBackupManifest> {
     let backup = StateBackupManager::verify_backup(path).await?;
     validate_backup_platform(&backup)?;
+    require_backup_installation(paths, &backup)?;
     Ok(backup)
 }
 
@@ -762,6 +780,12 @@ fn validate_rollback_manifest(
     plan: &StateRestorePlan,
 ) -> UseResult<()> {
     validate_backup_platform(manifest)?;
+    if manifest.installation != plan.backup.installation {
+        return Err(restore_error(
+            "use.state_restore_rollback_mismatch",
+            "The rollback backup belongs to a different installation.",
+        ));
+    }
     let before = plan
         .actions
         .iter()

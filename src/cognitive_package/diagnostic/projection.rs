@@ -202,7 +202,7 @@ async fn observe_expected_downloads(
     if expected.is_empty() {
         return Err(diagnostic_state_error());
     }
-    let sources = RegistrySourceStore::new(manager.registry.paths().clone());
+    let sources = RegistrySourceStore::new(manager.registry.paths().use_paths().clone());
     let mut targets = Vec::with_capacity(expected.len());
     let mut expected_bytes = 0u64;
     let mut retained_bytes = 0u64;
@@ -289,7 +289,7 @@ async fn observe_expected_planning(
             targets: Vec::new(),
         });
     }
-    let sources = RegistrySourceStore::new(manager.registry.paths().clone());
+    let sources = RegistrySourceStore::new(manager.registry.paths().use_paths().clone());
     let mut targets = Vec::with_capacity(expected.len());
     let mut expected_bytes = 0u64;
     let mut retained_bytes = 0u64;
@@ -539,7 +539,7 @@ pub(super) async fn observe_lifecycle(
     let mut observed = Vec::new();
     for package_id in package_ids {
         let diagnostic = journal
-            .diagnose(&manager.scope, package_id)
+            .diagnose(manager.scope(), package_id)
             .await
             .map_err(|_| diagnostic_state_error())?;
         for operation in [diagnostic.latest, diagnostic.previous]

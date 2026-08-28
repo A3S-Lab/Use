@@ -676,10 +676,7 @@ mod tests {
     #[tokio::test]
     async fn upgrade_commits_a_disabled_candidate_while_the_prior_generation_stays_published() {
         let temp = tempfile::tempdir().unwrap();
-        let registry = ExtensionRegistry::new(a3s_use_extension::ExtensionPaths::new(
-            temp.path().join("data"),
-            temp.path().join("state"),
-        ));
+        let registry = ExtensionRegistry::new(crate::test_extension_paths(temp.path()));
         let package_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("crates/extension/fixtures/packages/plugin-v3-cognitive/package");
         let candidate =

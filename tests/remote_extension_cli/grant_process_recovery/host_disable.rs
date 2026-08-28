@@ -16,7 +16,7 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
     let home = temp.path().join("home");
     let authorization_marker = temp.path().join("unexpected-authorization.marker");
     let apply_request_path = temp.path().join("disable-apply-request.json");
-    let snapshot_path = home.join("state/registry.json");
+    let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -35,8 +35,10 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
     let installed_state_generation = installed.state.package_generation.unwrap();
     assert_eq!(installed.state.desired, PluginDesiredState::Enabled);
 
-    let extension_registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let extension_registry = ExtensionRegistry::new(extension_paths_for(
+        &home,
+        managed_host_scope().plan_scope(),
+    ));
     let installed_extension = runtime
         .block_on(extension_registry.get(PACKAGE_ID))
         .unwrap()
@@ -71,8 +73,8 @@ fn killed_host_protocol_disable_apply_replays_hide_drain_and_grant_retirement() 
     assert!(!authorization_marker.exists());
 
     let route_lock = exclusive_lock(
-        &home
-            .join("state/route-locks/acme/worker")
+        &managed_state_root(&home)
+            .join("route-locks/acme/worker")
             .join(format!("{lifecycle_generation:020}.lock")),
     );
     let mut interrupted = spawn_host_apply_child(&home, &apply_request_path, &authorization_marker);

@@ -280,7 +280,8 @@ and release descriptors before lifecycle admission. Required provider failure
 stays unpublished; there is no `PATH` lookup, unsigned native fallback, or
 provider substitution.
 
-The installed schema-v4 receipt retains the exact signed planning bundle after
+The installed schema-v5 receipt retains the exact installation ID and signed
+planning bundle after
 validating it against catalog, manifest, and package bytes. A host can therefore
 plan enablement after restart without fetching mutable Registry metadata. It
 persists the bundle, Grant snapshot, and provider generations with the reviewed
@@ -621,7 +622,8 @@ new state atomically and never migrates an unknown pre-release database. Its
 default policy allows 512 MiB of retained expanded content, 256 retained
 projections, 32 generations per surface, and 256 tombstones per complete
 scope. Hard ceilings are 8 GiB, 1,024 projections, 32 generations per surface,
-and 1,024 tombstones. `a3s-use knowledge usage --json` exposes non-secret
+and 1,024 tombstones. `a3s-use knowledge usage --scope-kind <user|workspace>
+--scope-id <id> --json` exposes non-secret
 scope-local usage and allocation evidence. `knowledge audit` checks SQLite,
 foreign keys, exact receipt/scope accounting, and FTS consistency. `knowledge
 backup` produces a non-overwriting `a3s.use.okf-knowledge-backup.v1` database
@@ -655,9 +657,10 @@ procedures remain release gates. The detailed boundary is
 documented in
 [OKF Knowledge operations](okf-knowledge-operations.md).
 
-`a3s-use knowledge restore-status --json` acquires the exclusive maintenance
-fence only long enough to read a coherent global marker and requested-scope
-inventory. Its `a3s.use.okf-knowledge-restore-diagnostic.v2` result contains no
+`a3s-use knowledge restore-status --scope-kind <user|workspace> --scope-id
+<id> --json` acquires the selected installation's exclusive maintenance fence
+only long enough to read its coherent marker and operation inventory. Its
+`a3s.use.okf-knowledge-restore-diagnostic.v2` result contains no
 paths or package content and reports at most 32 validated operation summaries,
 the active durable phase, reviewed binding-state digest and missing-binding
 count, unrecorded marker-handoff directory count, and remaining capacity. It
@@ -665,9 +668,11 @@ never rotates or deletes rollback evidence.
 
 ### Coordinated whole-installation backup
 
-`a3s-use state backup <path> --json` acquires the same exclusive maintenance
-fence used by restore and creates one `a3s.use.state-backup.v1` archive outside
-the live data/state roots. The manifest binds portable relative data/state
+`a3s-use state backup <path> --scope-kind <user|workspace> --scope-id <id>
+--json` acquires the same installation-specific exclusive maintenance fence
+used by restore and creates one `a3s.use.state-backup.v2` archive outside the
+live data/state roots. The manifest binds the exact installation, portable
+relative data/state
 paths, exact file lengths and SHA-256 digests, read-only and Unix-mode evidence,
 per-family accounting, the Registry generation/projection digest, and sorted
 installed-receipt digests. No clock value or source root enters the manifest,
@@ -699,8 +704,9 @@ remain release gates. The operator format and procedure are documented in
 
 ## Observability
 
-`a3s-use extension inspect <publisher/name> --json` currently exposes
-`a3s.use.plugin-lifecycle-diagnostic.v1` for the default User scope. The
+`a3s-use extension inspect <publisher/name> --scope-kind <user|workspace>
+--scope-id <id> --json` exposes `a3s.use.plugin-lifecycle-diagnostic.v1` for the
+explicitly selected installation. The
 projection reads the latest and previous records under the package-scoped
 journal lock and includes:
 
@@ -719,7 +725,8 @@ phase intents for a package. They share the graph `operationId` by design and
 remain distinct through `intentDigest`, action, generation, and artifact
 digests. Duplicate latest/previous intent digests fail closed.
 
-`a3s-use extension diagnose <publisher/name> --json` exposes
+`a3s-use extension diagnose <publisher/name> --scope-kind <user|workspace>
+--scope-id <id> --json` exposes
 `a3s.use.plugin-operation-diagnostic.v1` for one exact retained install,
 upgrade, or uninstall graph, active admitted enable/disable operation, or
 newest Host-reviewed enable/disable plan that has not been admitted in the

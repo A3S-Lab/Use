@@ -7,7 +7,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use a3s_use_core::{PlanQualifiedSurfaceRef, PlanScope, PluginSurfaceKind, UseError, UseResult};
 use a3s_use_extension::ExtensionPaths;
 use fs2::FileExt;
-use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
@@ -36,7 +35,7 @@ impl RuntimeBindingStore {
     }
 
     pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
-        Self::new(paths.state_root())
+        Self::new(paths.installation_state_root())
     }
 
     pub fn root(&self) -> &Path {
@@ -190,7 +189,7 @@ impl RuntimeBindingStore {
         surface: &PlanQualifiedSurfaceRef,
     ) -> UseResult<PathBuf> {
         validate_path_identity(scope, surface)?;
-        let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+        let scope_digest = scope.storage_key().map_err(|_| invalid_path_identity())?;
         let mut segments = surface.package_id.split('/');
         let publisher = segments.next().ok_or_else(invalid_path_identity)?;
         let package = segments.next().ok_or_else(invalid_path_identity)?;
@@ -635,7 +634,7 @@ async fn sync_parent(_parent: Option<&Path>) -> UseResult<()> {
 
 fn validate_path_identity(scope: &PlanScope, surface: &PlanQualifiedSurfaceRef) -> UseResult<()> {
     let package_segments = surface.package_id.split('/').collect::<Vec<_>>();
-    if !super::model::valid_machine_id(&scope.id)
+    if scope.validate().is_err()
         || surface.package_id.len() > 128
         || package_segments.len() != 2
         || package_segments

@@ -147,7 +147,7 @@ impl OkfKnowledgeBackupRetentionPlan {
     pub fn validate(&self) -> UseResult<()> {
         self.policy.validate()?;
         if self.schema != OKF_KNOWLEDGE_BACKUP_RETENTION_PLAN_SCHEMA
-            || !super::valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
         {
             return Err(retention_error(
                 "use.okf.knowledge_backup_retention_plan_invalid",
@@ -361,7 +361,7 @@ fn build_plan(
     policy: OkfKnowledgeBackupRetentionPolicy,
 ) -> UseResult<OkfKnowledgeBackupRetentionPlan> {
     policy.validate()?;
-    if !super::valid_machine_id(&scope.id) {
+    if scope.validate().is_err() {
         return Err(retention_error(
             "use.okf.knowledge_backup_retention_scope_invalid",
             "Knowledge backup retention requires one valid complete User or Workspace scope.",

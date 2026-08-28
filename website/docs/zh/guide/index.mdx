@@ -26,7 +26,7 @@ A3S Use 尚未发布受支持的产品版本，也未达到 production-ready。�
 | 托管宿主     | Runtime Service、HTTP MCP/Gateway、托管 Knowledge/UI 组合仍在开发                       |
 | 平台         | Linux/macOS 开发门禁；Windows 已测签名包生命周期，但仍未达到发布级一致性                |
 
-当前只接受一条预览协议基线。manifest v3、catalog v3、receipt v4、plan v4、
+当前只接受一条预览协议基线。manifest v3、catalog v3、receipt v5、plan v4、
 host protocol v6、managed scope v2、manager tools v4、pending graph v4、
 pre-lock resolution attempt/diagnostic v1、pre-plan download
 attempt/diagnostic v1，以及 enablement state/operation v2。过时的预览状态会被拒绝，
@@ -109,8 +109,10 @@ keyless Sigstore checksum bundle。installer 会在下载平台归档前 fail cl
 git clone https://github.com/A3S-Lab/Use.git
 cd Use
 cargo build --workspace --bins --locked
-./target/debug/a3s-use doctor --json
-./target/debug/a3s-use capability snapshot --json
+./target/debug/a3s-use doctor \
+  --scope-kind user --scope-id user/current --json
+./target/debug/a3s-use capability snapshot \
+  --scope-kind user --scope-id user/current --json
 ```
 
 在 Use checkout 内运行仓库门禁：
@@ -133,15 +135,20 @@ a3s-use registry source add packages \
   --json
 
 a3s-use install acme/research \
+  --scope-kind user \
+  --scope-id user/current \
   --registry-name packages \
   --version 2.0.0 \
   --json
 
 a3s-use upgrade acme/research \
+  --scope-kind user \
+  --scope-id user/current \
   --registry-name packages \
   --json
 
-a3s-use uninstall acme/research --json
+a3s-use uninstall acme/research \
+  --scope-kind user --scope-id user/current --json
 ```
 
 需要把 plan 审查与 mutation 分开时，使用一对一 Plugin Manager CLI。
@@ -150,19 +157,26 @@ a3s-use uninstall acme/research --json
 `--yes` 才表示确认：
 
 ```bash
-a3s-use plugin search research --kind tool --json
-a3s-use plugin inspect acme/research --version 2.0.0 --json
+a3s-use plugin search research --kind tool \
+  --scope-kind user --scope-id user/current --json
+a3s-use plugin inspect acme/research --version 2.0.0 \
+  --scope-kind user --scope-id user/current --json
 a3s-use plugin plan-install acme/research \
+  --scope-kind user \
+  --scope-id user/current \
   --registry-name packages \
   --version-requirement 2.0.0 \
   --surface tool/research \
   --json
 a3s-use plugin apply-plan \
+  --scope-kind user \
+  --scope-id user/current \
   --operation-id <operation-id> \
   --plan-digest sha256:<64-hex-digits> \
   --yes \
   --json
-a3s-use plugin plan-disable acme/research --json
+a3s-use plugin plan-disable acme/research \
+  --scope-kind user --scope-id user/current --json
 ```
 
 search、inspect、planning、精确 apply 与 replay 会在适用位置使用已验证 cache；
@@ -175,11 +189,13 @@ enablement plan，可以在不访问 Registry、也不修改恢复状态的前�
 操作证据：
 
 ```bash
-a3s-use extension diagnose acme/research --json
-a3s-use extension diagnose acme/research --history --json
+a3s-use extension diagnose acme/research \
+  --scope-kind user --scope-id user/current --json
+a3s-use extension diagnose acme/research --history \
+  --scope-kind user --scope-id user/current --json
 ```
 
-Workspace 诊断还必须提供
+选择 Workspace installation 时提供
 `--scope-kind workspace --scope-id <id>`。该命令报告 reviewed plan、
 Registry/TUF 与 cutover 状态、provider readiness、Grant phase、lifecycle
 publication/drain/rollback 证据和稳定的恢复建议。输出不会包含 path、Registry
@@ -217,23 +233,38 @@ TUF/cache state 和 installed provenance 会被保留。以上 Registry 值仅�
 对已经精确 promoted 的 OKF projection 执行带引用搜索：
 
 ```bash
-a3s-use knowledge search "retrieval policy" --limit 5 --json
-a3s-use knowledge audit --json
-a3s-use knowledge backup ./user.a3s-okf-backup --json
-a3s-use knowledge verify-backup ./user.a3s-okf-backup --json
-a3s-use knowledge backup-retention ./backups --json
-a3s-use knowledge plan-restore ./user.a3s-okf-backup --json
+a3s-use knowledge search "retrieval policy" --limit 5 \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge audit \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge backup ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge verify-backup ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge backup-retention ./backups \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge plan-restore ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
 a3s-use knowledge restore ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current \
   --plan-digest sha256:<reviewed-plan-digest> --yes --json
-a3s-use knowledge restore-status --json
-a3s-use state backup ./use-state.a3s-use-state-backup --json
-a3s-use state verify-backup ./use-state.a3s-use-state-backup --json
-a3s-use state backup-retention ./backups --max-backups 32 --max-bytes 2199023255552 --json
-a3s-use state plan-restore ./use-state.a3s-use-state-backup --json
+a3s-use knowledge restore-status \
+  --scope-kind user --scope-id user/current --json
+a3s-use state backup ./use-state.a3s-use-state-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use state verify-backup ./use-state.a3s-use-state-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use state backup-retention ./backups \
+  --scope-kind user --scope-id user/current \
+  --max-backups 32 --max-bytes 2199023255552 --json
+a3s-use state plan-restore ./use-state.a3s-use-state-backup \
+  --scope-kind user --scope-id user/current --json
 a3s-use state restore ./use-state.a3s-use-state-backup \
+  --scope-kind user --scope-id user/current \
   --rollback-backup ./pre-restore.a3s-use-state-backup \
   --plan-digest sha256:<reviewed-plan-digest> --yes --json
-a3s-use state restore-status --json
+a3s-use state restore-status \
+  --scope-kind user --scope-id user/current --json
 ```
 
 备份验证可以发现损坏，但不能重建 package、Registry、lifecycle 或 Grant
@@ -248,7 +279,7 @@ history 与剩余容量，不会轮换或改写 evidence。
 独立的 `state backup` 命令会在同一个独占 maintenance fence 内捕获已安装
 package root，以及所有 allowlisted Registry、generation、Grant、binding、
 lifecycle/package operation、Knowledge、enablement、Host Manager 与 Flow Runtime
-state family。确定性的 `a3s.use.state-backup.v1` manifest 只记录可移植相对路径、
+state family。确定性的 `a3s.use.state-backup.v2` manifest 只记录可移植相对路径、
 精确 length/SHA-256/mode、family accounting、Registry 和 installed receipt
 evidence。创建时会拒绝 active/partial work、link/reparse point、special file、
 未知 family 与不可移植路径，并在不可覆盖发布前重新扫描完整 inventory。

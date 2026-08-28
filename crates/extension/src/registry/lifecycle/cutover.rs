@@ -266,14 +266,13 @@ impl ExtensionRegistry {
     pub async fn complete_lifecycle_cutover(&self, idempotency_key: &str) -> UseResult<()> {
         canonical_sha256(idempotency_key.to_string(), "cutover idempotency key")?;
         let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
-        let path = self.paths.registry_snapshot_path();
-        let mut snapshot = read_registry_snapshot(&path).await?;
+        let mut snapshot = read_registry_snapshot(&self.paths).await?;
         let before = snapshot.pending_cutovers.len();
         snapshot
             .pending_cutovers
             .retain(|record| record.idempotency_key != idempotency_key);
         if snapshot.pending_cutovers.len() != before {
-            write_registry_snapshot(&path, &snapshot).await?;
+            write_registry_snapshot(&self.paths, &snapshot).await?;
         }
         Ok(())
     }
@@ -283,8 +282,7 @@ impl ExtensionRegistry {
         installed: &[InstalledExtension],
         request: &ExtensionLifecycleCutoverRequest,
     ) -> UseResult<ExtensionRegistrySnapshot> {
-        let path = self.paths.registry_snapshot_path();
-        let current = read_registry_snapshot(&path).await?;
+        let current = read_registry_snapshot(&self.paths).await?;
         if recorded_cutover(&current, request)?.is_some() {
             return Err(registry_cutover_conflict(
                 "The Registry cutover record already exists outside replay handling.",
@@ -308,6 +306,7 @@ impl ExtensionRegistry {
         })?;
         let mut snapshot = ExtensionRegistrySnapshot {
             schema_version: REGISTRY_SCHEMA_VERSION,
+            installation: self.installation().clone(),
             generation,
             routes,
             pending_cutovers: current.pending_cutovers,
@@ -323,7 +322,7 @@ impl ExtensionRegistry {
                 snapshot_digest,
             )?);
         snapshot.validate()?;
-        write_registry_snapshot(&path, &snapshot).await?;
+        write_registry_snapshot(&self.paths, &snapshot).await?;
         Ok(snapshot)
     }
 }

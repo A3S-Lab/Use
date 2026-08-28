@@ -18,7 +18,10 @@ The current preview accepts one contract line only:
 | ------------------------------ | ---------------------------------------------------------------------------------------- |
 | Cognitive-package manifest     | schema 3                                                                                 |
 | Signed catalog                 | `a3s.use.plugin-catalog.v3`                                                              |
-| Installed receipt              | schema 4                                                                                 |
+| Installed receipt              | schema 5                                                                                 |
+| Extension Registry snapshot    | schema 2                                                                                 |
+| Capability snapshot            | schema 3                                                                                 |
+| Snapshot cursors               | `a3s.use.extension-snapshot-cursor.v2` / `a3s.use.capability-snapshot-cursor.v2`         |
 | Operation plan                 | `a3s.use.plugin-operation-plan.v4`                                                       |
 | Host capabilities              | `a3s.use.plugin-host-capabilities.v6`, protocol 6                                        |
 | Host managed scope             | `a3s.use.plugin-managed-scope.v2`                                                        |
@@ -34,7 +37,7 @@ The current preview accepts one contract line only:
 | Pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1`                                        |
 | Pre-plan download diagnostic   | `a3s.use.plugin-download-attempt-diagnostic.v1`                                          |
 | Enablement state/operation     | v2                                                                                       |
-| Coordinated state backup       | `a3s.use.state-backup.v1`                                                                |
+| Coordinated state backup       | `a3s.use.state-backup.v2`                                                                |
 | Coordinated state restore plan | `a3s.use.state-restore-plan.v1`                                                          |
 | Coordinated restore operation  | `a3s.use.state-restore-operation.v1`                                                     |
 | Coordinated restore result     | `a3s.use.state-restore-result.v1`                                                        |
@@ -45,6 +48,11 @@ Before the first supported release, superseded preview schemas, APIs,
 receipts, and disk state are deleted rather than maintained. Unsupported state
 fails closed with cleanup and reinstall guidance. SemVer, `requires_use`,
 host target, and provider capability checks remain mandatory correctness rules.
+
+Domain packages remain outside the package manager itself. In the current
+phase, `a3s-use-science` is not part of this repository, workspace, runtime,
+CI, or release graph; a future integration must arrive as a signed Registry
+package through the same public package contract as any other domain package.
 
 Host protocol v6 binds an explicit User or Workspace scope kind and derives
 operation phases and bounded checkpoint counts only from durable Host, graph,
@@ -59,6 +67,10 @@ package, and only a durable Host outcome reports `Completed`.
 
 - Manifest v3 and catalog v3 cover named Tool, MCP, OKF, Flow, Skill, and UI
   surfaces, package dependencies, permission ceilings, and exact provenance.
+- `InstallationId(kind, id)` now partitions mutable package state, receipts,
+  Grants, bindings, capability publication, backup/restore, and locks. Global
+  Registry/TUF and derivable artifact caches own no installation authority;
+  the single-snapshot A1 convergence gate remains open.
 - The bounded resolver freezes one Registry/TUF package lock, prepares
   dependencies forward, publishes one graph snapshot, and retires unused
   packages in reverse.
@@ -144,7 +156,7 @@ package, and only a durable Host outcome reports `Completed`.
   OKF cutover scenarios through real `a3s-use` processes. It also replays
   removed-dependency cleanup after killing an upgrade post-cutover, without
   inflating the capability generation.
-- The complete current non-Science workspace suite now runs on Windows x86_64.
+- The complete current workspace suite now runs on Windows x86_64.
   A deterministic directory-junction regression proves package and durable
   state trust boundaries reject Windows reparse points before traversal. Flow
   Runtime coverage also retains exact generations, rejects artifact

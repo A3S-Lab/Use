@@ -360,13 +360,15 @@ impl CognitivePackageManager {
         request.validate()?;
         let store = self.enablement_store();
         let _operation_guard = store
-            .lock_operation(&self.scope, &request.operation_id)
+            .lock_operation(self.scope(), &request.operation_id)
             .await?;
-        let _package_guard = store.lock_package(&self.scope, &request.package_id).await?;
+        let _package_guard = store
+            .lock_package(self.scope(), &request.package_id)
+            .await?;
         let planned_at_ms = now_ms()?;
 
         if let Some(operation) = store
-            .get_operation(&self.scope, &request.operation_id)
+            .get_operation(self.scope(), &request.operation_id)
             .await?
         {
             if operation.request != *request {
@@ -386,7 +388,7 @@ impl CognitivePackageManager {
             .map(CognitivePackageEnablementPreparation::Outcome);
         }
 
-        let mut current = store.get_state(&self.scope, &request.package_id).await?;
+        let mut current = store.get_state(self.scope(), &request.package_id).await?;
         if let Some(pending) = current
             .as_ref()
             .filter(|state| state.active.is_some())
@@ -410,7 +412,7 @@ impl CognitivePackageManager {
         }
 
         if let Some(operation) = store
-            .get_operation(&self.scope, &request.operation_id)
+            .get_operation(self.scope(), &request.operation_id)
             .await?
         {
             if operation.request != *request {
@@ -436,7 +438,7 @@ impl CognitivePackageManager {
         self.lifecycle
             .validate_manifest_for_planning(&extension.manifest)?;
         let reconciled = reconcile_state(
-            &self.scope,
+            self.scope(),
             &request.package_id,
             current.as_ref(),
             &extension,
@@ -478,7 +480,10 @@ impl CognitivePackageManager {
 
         let grant_snapshot = self
             .grant_store()
-            .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
+            .snapshot_scope(
+                &self.scope().id,
+                package_state_revision(snapshot.generation)?,
+            )
             .await?;
         let receipt_digest = extension.receipt.descriptor_digest()?;
         let draft = enablement_draft(
@@ -513,7 +518,7 @@ impl CognitivePackageManager {
                 request: request.clone(),
                 planned_at_ms,
                 expires_at_ms,
-                scope: self.scope.clone(),
+                scope: self.scope().clone(),
                 state,
                 draft,
                 grant_snapshot,

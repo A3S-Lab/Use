@@ -16,8 +16,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let extension_registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let extension_registry = ExtensionRegistry::new(extension_paths(&home));
     let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
 
     let installed_result = manager
@@ -42,7 +41,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
     let installed = extension_registry.get("acme/root").await.unwrap().unwrap();
     let package_root = installed.receipt.package_root.clone();
     let artifact_generation = installed.receipt.lifecycle_generation.unwrap();
-    let graph_path = home.join("state/package-graphs/acme/root.json");
+    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
     let graph_before = std::fs::read(&graph_path).unwrap();
     let observed = manager.observe_package("acme/root").await.unwrap();
     assert_eq!(observed.package_generation, Some(artifact_generation));
@@ -55,7 +54,7 @@ async fn schema_v3_enablement_is_generation_checked_durable_and_non_destructive(
         false,
     )
     .unwrap();
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
     assert_eq!(
         apply_planned_enablement(&manager, &disable)
             .await
@@ -287,8 +286,7 @@ async fn enablement_planning_distinguishes_planned_no_change_and_completed_outco
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let extension_registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let extension_registry = ExtensionRegistry::new(extension_paths(&home));
     let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
     manager
         .install_remote(
@@ -414,9 +412,7 @@ fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
     );
 
     for package_id in ["acme/base", "acme/root"] {
-        let receipt_path = home
-            .join("state/extensions")
-            .join(format!("{package_id}.json"));
+        let receipt_path = scoped_state(&home, "extensions").join(format!("{package_id}.json"));
         let receipt: serde_json::Value =
             serde_json::from_slice(&std::fs::read(receipt_path).unwrap()).unwrap();
         assert_eq!(
@@ -435,8 +431,7 @@ fn schema_v3_install_resolves_and_activates_the_complete_dependency_graph() {
         serde_json::json!(["acme/root", "acme/base"])
     );
     for package_id in ["acme/base", "acme/root"] {
-        assert!(!home
-            .join("state/extensions")
+        assert!(!scoped_state(&home, "extensions")
             .join(format!("{package_id}.json"))
             .exists());
     }
@@ -525,8 +520,8 @@ fn schema_v3_uninstall_retains_a_dependency_owned_by_another_root() {
         first_removed["data"]["packageGraph"]["retainedPackages"],
         serde_json::json!(["acme/base"])
     );
-    assert!(home.join("state/extensions/acme/base.json").exists());
-    assert!(home.join("state/extensions/acme/second.json").exists());
+    assert!(scoped_state(&home, "extensions/acme/base.json").exists());
+    assert!(scoped_state(&home, "extensions/acme/second.json").exists());
 
     let second_removed = cognitive_uninstall(&home, "acme/second");
     assert!(second_removed.status.success(), "{second_removed:?}");
@@ -534,7 +529,7 @@ fn schema_v3_uninstall_retains_a_dependency_owned_by_another_root() {
         json(&second_removed)["data"]["packageGraph"]["removedPackages"],
         serde_json::json!(["acme/second", "acme/base"])
     );
-    assert!(!home.join("state/extensions/acme/base.json").exists());
+    assert!(!scoped_state(&home, "extensions/acme/base.json").exists());
 }
 
 #[tokio::test]
@@ -570,11 +565,8 @@ async fn schema_v3_manager_resolves_dependencies_from_host_injected_registries()
         home.join("state/remote-registries/dependency"),
     )
     .unwrap();
-    let manager = CognitivePackageManager::new(ExtensionRegistry::new(ExtensionPaths::new(
-        home.join("data"),
-        home.join("state"),
-    )))
-    .unwrap();
+    let manager =
+        CognitivePackageManager::new(ExtensionRegistry::new(extension_paths(&home))).unwrap();
 
     let installed = manager
         .install_remote(
@@ -662,6 +654,7 @@ fn schema_v3_cli_resolves_dependencies_from_the_persisted_source_set() {
             "1.0.0",
             "--json",
         ])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -702,10 +695,10 @@ fn schema_v3_install_rejects_state_reintroduced_after_cutover_evidence_was_retir
     let repository = TestRepository::with_targets(vec![root], 23, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let pending_path = home.join("state/operations/package-graphs/install/acme/root.json");
-    let graph_path = home.join("state/package-graphs/acme/root.json");
+    let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
+    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
 
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
     let interrupted = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(!interrupted.status.success(), "{interrupted:?}");
     assert_eq!(json(&interrupted)["error"]["code"], "use.extension.busy");

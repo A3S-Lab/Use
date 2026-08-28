@@ -150,7 +150,7 @@ impl PluginLifecycleIntent {
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != PLUGIN_LIFECYCLE_INTENT_SCHEMA
             || !valid_machine_id(&self.operation_id)
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || PluginPackageId::parse(self.package_id.clone()).is_err()
             || !valid_sha256(&self.plan_digest)
             || !valid_sha256(&self.package_digest)

@@ -29,7 +29,7 @@ pub use retention::{
     MAX_STATE_BACKUP_RETENTION_BYTES, MIN_STATE_BACKUP_RETENTION_BACKUPS,
 };
 
-pub const A3S_USE_STATE_BACKUP_SCHEMA: &str = "a3s.use.state-backup.v1";
+pub const A3S_USE_STATE_BACKUP_SCHEMA: &str = "a3s.use.state-backup.v2";
 pub const MAX_STATE_BACKUP_FILES: u64 = 100_000;
 pub const MAX_STATE_BACKUP_ENTRIES: u64 = 200_000;
 pub const MAX_STATE_BACKUP_BYTES: u64 = 64 * 1024 * 1024 * 1024;
@@ -58,7 +58,6 @@ pub enum StateBackupFamily {
     PackageGraph,
     Enablement,
     HostManager,
-    FlowRuntime,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +101,7 @@ pub struct StateBackupAuthority {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StateBackupManifest {
     pub schema: String,
+    pub installation: a3s_use_core::InstallationId,
     pub use_version: String,
     pub os: String,
     pub architecture: String,
@@ -248,7 +248,8 @@ impl StateBackupManager {
     ) -> UseResult<StateBackupRetentionPlan> {
         validate_owned_roots(&self.paths)?;
         let directory = retention::resolve_directory(directory.as_ref(), &self.paths)?;
-        tokio::task::spawn_blocking(move || retention::plan(&directory, policy))
+        let installation = self.paths.installation().clone();
+        tokio::task::spawn_blocking(move || retention::plan(&directory, &installation, policy))
             .await
             .map_err(|error| {
                 retention::retention_io(format!(
@@ -268,8 +269,9 @@ impl StateBackupManager {
         validate_owned_roots(&self.paths)?;
         let directory = retention::resolve_directory(directory.as_ref(), &self.paths)?;
         let expected_plan_digest = expected_plan_digest.into();
+        let installation = self.paths.installation().clone();
         tokio::task::spawn_blocking(move || {
-            retention::apply(&directory, policy, &expected_plan_digest)
+            retention::apply(&directory, &installation, policy, &expected_plan_digest)
         })
         .await
         .map_err(|error| {

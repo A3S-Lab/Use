@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{OkfBundleContract, UseError, UseResult};
 
+pub use super::installation::{PlanScope, PlanScopeKind};
 use super::{
     canonical_digest, canonical_json, contract_error, parse_contract, CatalogArchive,
     CatalogSurface, PluginPackageLock, PluginPermissionCeiling, PluginReleaseChannel,
@@ -54,29 +55,6 @@ pub enum PluginOperationAction {
     Upgrade,
     Enable,
     Disable,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlanScope {
-    pub kind: PlanScopeKind,
-    pub id: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum PlanScopeKind {
-    User,
-    Workspace,
-}
-
-impl PlanScopeKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::User => "user",
-            Self::Workspace => "workspace",
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

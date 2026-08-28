@@ -13,7 +13,7 @@ const WINDOWS_PERSIST_RETRY_DELAY: std::time::Duration = std::time::Duration::fr
 #[doc(hidden)]
 pub fn persist_temporary_replace_blocking(temporary: PathBuf, target: &Path) -> io::Result<()> {
     let temporary = tempfile::TempPath::try_from_path(temporary)?;
-    persist_temporary_path_blocking(temporary, target, replace)
+    persist_temporary_path_blocking(temporary, target, PersistMode::Replace)
 }
 
 /// Atomically publish a temporary path without replacing an existing target.
@@ -23,7 +23,7 @@ pub fn persist_temporary_replace_blocking(temporary: PathBuf, target: &Path) -> 
 #[doc(hidden)]
 pub fn persist_temporary_noclobber_blocking(temporary: PathBuf, target: &Path) -> io::Result<()> {
     let temporary = tempfile::TempPath::try_from_path(temporary)?;
-    persist_temporary_path_blocking(temporary, target, persist_noclobber)
+    persist_temporary_path_blocking(temporary, target, PersistMode::NoClobber)
 }
 
 /// Atomically publish an already-synced named temporary file without replacing
@@ -36,7 +36,7 @@ pub fn persist_named_temporary_noclobber_blocking(
     temporary: tempfile::NamedTempFile,
     target: &Path,
 ) -> io::Result<()> {
-    persist_temporary_path_blocking(temporary.into_temp_path(), target, persist_noclobber)
+    persist_temporary_path_blocking(temporary.into_temp_path(), target, PersistMode::NoClobber)
 }
 
 /// Rename a file or directory, retrying transient Windows sharing failures.
@@ -130,25 +130,35 @@ pub(crate) fn remove_dir_all_with_windows_retry_blocking(path: &Path) -> io::Res
     }
 }
 
+#[derive(Clone, Copy)]
+enum PersistMode {
+    Replace,
+    NoClobber,
+}
+
 fn persist_temporary_path_blocking(
     temporary: tempfile::TempPath,
     target: &Path,
-    persist: fn(tempfile::TempPath, &Path) -> Result<(), tempfile::PathPersistError>,
+    mode: PersistMode,
 ) -> io::Result<()> {
     #[cfg(windows)]
     {
         let started = std::time::Instant::now();
         let mut temporary = temporary;
         loop {
-            match persist(temporary, target) {
-                Ok(()) => return Ok(()),
+            match windows_persist(&temporary, target, mode) {
+                Ok(()) => {
+                    // The source name no longer exists. Disable TempPath's drop
+                    // cleanup so it cannot remove a file recreated at that name.
+                    temporary.disable_cleanup(true);
+                    return Ok(());
+                }
                 Err(error) => {
-                    if !windows_path_mutation_error_is_retryable(&error.error)
+                    if !windows_path_mutation_error_is_retryable(&error)
                         || started.elapsed() >= WINDOWS_PERSIST_RETRY_TIMEOUT
                     {
-                        return Err(error.error);
+                        return Err(error);
                     }
-                    temporary = error.path;
                     let remaining = WINDOWS_PERSIST_RETRY_TIMEOUT.saturating_sub(started.elapsed());
                     std::thread::sleep(WINDOWS_PERSIST_RETRY_DELAY.min(remaining));
                 }
@@ -157,19 +167,54 @@ fn persist_temporary_path_blocking(
     }
     #[cfg(not(windows))]
     {
-        persist(temporary, target).map_err(|error| error.error)
+        match mode {
+            PersistMode::Replace => temporary.persist(target),
+            PersistMode::NoClobber => temporary.persist_noclobber(target),
+        }
+        .map_err(|error| error.error)
     }
 }
 
-fn replace(temporary: tempfile::TempPath, target: &Path) -> Result<(), tempfile::PathPersistError> {
-    temporary.persist(target)
+#[cfg(windows)]
+fn windows_persist(temporary: &Path, target: &Path, mode: PersistMode) -> io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, SetFileAttributesW, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_TEMPORARY,
+        MOVEFILE_REPLACE_EXISTING,
+    };
+
+    let temporary = windows_extended_path(temporary)?;
+    let target = windows_extended_path(target)?;
+    unsafe {
+        // NamedTempFile marks files as temporary. Clear that attribute before
+        // publication so the persisted file has ordinary durability semantics.
+        if SetFileAttributesW(temporary.as_ptr(), FILE_ATTRIBUTE_NORMAL) == 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let flags = match mode {
+            PersistMode::Replace => MOVEFILE_REPLACE_EXISTING,
+            PersistMode::NoClobber => 0,
+        };
+        if MoveFileExW(temporary.as_ptr(), target.as_ptr(), flags) != 0 {
+            return Ok(());
+        }
+
+        let error = io::Error::last_os_error();
+        // Match tempfile's failure behavior. Cleanup still owns the source,
+        // and restoring the temporary attribute preserves that contract.
+        let _ = SetFileAttributesW(temporary.as_ptr(), FILE_ATTRIBUTE_TEMPORARY);
+        Err(error)
+    }
 }
 
-fn persist_noclobber(
-    temporary: tempfile::TempPath,
-    target: &Path,
-) -> Result<(), tempfile::PathPersistError> {
-    temporary.persist_noclobber(target)
+#[cfg(windows)]
+fn windows_extended_path(path: &Path) -> io::Result<Vec<u16>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let extended = a3s_use_core::windows_extended_length_path(path)?;
+    let mut extended: Vec<u16> = extended.as_os_str().encode_wide().collect();
+    extended.push(0);
+    Ok(extended)
 }
 
 #[cfg(windows)]
@@ -321,6 +366,31 @@ mod tests {
         drop(locked_temporary);
         activation.join().unwrap().unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), b"new".to_vec());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn persists_beyond_the_legacy_windows_path_limit() {
+        use std::os::windows::ffi::OsStrExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let mut nested = directory.path().to_path_buf();
+        while nested.as_os_str().encode_wide().count() < 300 {
+            nested.push("installation-0123456789abcdef");
+        }
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let target = nested.join("state.json");
+        let temporary = nested.join(".state.tmp");
+        assert!(target.as_os_str().encode_wide().count() > 260);
+
+        std::fs::write(&temporary, b"first").unwrap();
+        persist_temporary_noclobber_blocking(temporary.clone(), &target).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"first".to_vec());
+
+        std::fs::write(&temporary, b"second").unwrap();
+        persist_temporary_replace_blocking(temporary, &target).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"second".to_vec());
     }
 
     #[cfg(windows)]

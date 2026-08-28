@@ -1,6 +1,6 @@
 # A3S Use Roadmap
 
-Last updated: 2026-08-28
+Last updated: 2026-08-29
 
 ## Product status
 
@@ -38,10 +38,11 @@ publishes one capability generation, and retires unused generations in reverse.
    commits one complete scoped installation generation, never a collection of
    independently authoritative root-package graphs.
 2. **There is one current cognitive-package format.** Manifest v3, catalog v3,
-   receipt v4, plan v4, host protocol v6, managed scope v2, manager toolset v4,
-   pending graph v4, pre-lock resolution attempt/diagnostic v1, pre-plan
-   download attempt/diagnostic v1, and enablement state/operation v2 are the
-   only accepted baseline.
+   receipt v5, Extension Registry snapshot v2, capability snapshot v3, plan v4,
+   host protocol v6, managed scope v2, manager toolset v4, pending graph v4,
+   pre-lock resolution attempt/diagnostic v1, pre-plan download
+   attempt/diagnostic v1, and enablement state/operation v2 are the only
+   accepted baseline.
 3. **No pre-release compatibility debt.** Superseded schemas, receipts,
    metadata, APIs, and disk state are rejected. The user must clean the
    unsupported state and reinstall. No migration or fallback is inferred.
@@ -91,19 +92,25 @@ publishes one capability generation, and retires unused generations in reverse.
     `a3s-use` owns Registry formats and tooling; the Registry repository owns
     reviewed admission data, signed TUF metadata, and immutable published
     targets. Package source remains in each owning repository.
+17. **Domain packages stay outside the package manager.** `a3s-use-science` is
+    not an A3S Use workspace member, runtime dependency, CI target, or release
+    artifact. A future Science capability remains owned by its independent
+    repository and may integrate only as a signed Registry-distributed package.
 
 ## Architecture convergence program
 
 Status: release-critical, planned from the 2026-08-28 first-principles review.
 
 The current implementation has strong artifact verification, reviewed plans,
-immutable generations, drain, and crash-replay foundations. A0 now gives every
-accepted pre-A1 installation mutation one conservative global serial order and
-rejects stale publication generations. A0 is qualified on the declared
-five-platform CI matrix. The implementation is still not the target
-architecture: installation authority is only partly scoped, and a non-A3S agent
-cannot consume an exact leased capability without learning local execution
-details. A checked item
+immutable generations, drain, and crash-replay foundations. A0 gives every
+accepted mutation one serial order inside its exact installation and rejects
+stale publication generations. A1 now has one canonical `InstallationId` and
+scopes filesystem state, receipts, Registry and capability snapshots, leases,
+backup/restore, and maintenance/mutation locks by that identity. A0 is qualified
+on the declared five-platform CI matrix. The implementation is still not the
+target architecture: the scoped authority remains split across several stores,
+there is no single `InstallationSnapshot`, and a non-A3S agent cannot consume an
+exact leased capability without learning local execution details. A checked item
 elsewhere in this roadmap is implementation evidence; it does not waive the
 convergence gates below.
 
@@ -153,10 +160,10 @@ over A0 through A3.
   race: with `Y -> D` installed, one operation plans removing `Y` and `D`
   while another plans installing `X -> D`; no interleaving may publish `X`
   with `D` absent.
-- [x] Introduce one cross-process installation mutation lease. Use a
-  conservative global lease until A1 exists, then key it by
-  `(scope_kind, scope_id)`. Install, upgrade, uninstall, enable, and disable
-  are exclusive writers within that domain.
+- [x] Introduce one cross-process installation mutation lease keyed by
+  `(scope_kind, scope_id)`. Install, upgrade, uninstall, enable, and disable are
+  exclusive writers within that domain; another installation remains
+  independently available.
 - [x] Bind every reviewed mutation to the expected complete installation
   generation and make lifecycle publication an exact compare-and-swap from
   installation generation `G` to `G + 1`.
@@ -180,10 +187,11 @@ plan can publish a graph whose dependency closure is incomplete.
 
 Implementation evidence (2026-08-28):
 
-- `.installation-mutation.lock` is a cross-process, non-Tokio-blocking writer
-  fence held by install, upgrade, uninstall, enable, disable, and recovery from
-  live-state inspection through terminal persistence. State backup recognizes
-  it as excluded infrastructure rather than portable authority.
+- Each installation's `.installation-mutation.lock` is a cross-process,
+  non-Tokio-blocking writer fence held by install, upgrade, uninstall, enable,
+  disable, and recovery from live-state inspection through terminal
+  persistence. State backup recognizes it as excluded infrastructure rather
+  than portable authority.
 - The admitted pending graph record or active enablement record is the durable
   mutation owner after process exit. Graph and enablement recovery reject each
   other until the exact owner reaches a terminal state; no second ownership
@@ -207,14 +215,14 @@ Implementation evidence (2026-08-28):
 - [ ] Keep verified archives in a global content-addressed Artifact Store, but
   move selections, receipts, routes, enablement, Grants, provider bindings,
   and capability publication under an `InstallationId`.
-- [ ] Require scope in extension paths, receipts, routes, snapshots, and every
+- [x] Require scope in extension paths, receipts, routes, snapshots, and every
   `CapabilityRegistry` constructor. Remove implicit `User/current` projection.
 - [ ] Make the same package independently selectable at different versions in
   User and Workspace installations while safely sharing identical artifact
   bytes.
 - [ ] Replace route strings as identity with the canonical keys above. Routes
   remain optional display or CLI aliases and may not carry ownership.
-- [ ] Freeze the new contract versions together. Because Use is pre-release,
+- [x] Freeze the new contract versions together. Because Use is pre-release,
   reject superseded disk state with a documented clean-reinstall procedure
   instead of maintaining a second live authority model.
 - [ ] Prove apply, restart, snapshot, leased invocation, upgrade, and uninstall
@@ -223,6 +231,31 @@ Implementation evidence (2026-08-28):
 
 Exit gate: all lifecycle, authorization, and capability queries can be answered
 from one exact scoped installation generation plus immutable artifact evidence.
+
+Implementation evidence (foundational slice, 2026-08-29; exit gate remains
+open):
+
+- `InstallationId(kind, id)` is the sole installation identity. Its validated
+  kind and collision-resistant storage key partition every installation data
+  and state root; equal textual IDs in User and Workspace installations do not
+  alias.
+- Receipt v5, Extension Registry snapshot v2, capability snapshot v3, and both
+  snapshot cursor v2 contracts carry the exact installation and reject
+  cross-installation loading or lease acquisition. The CLI requires explicit
+  scope kind and ID for every installation-scoped command.
+- Registry source configuration, trust roots, TUF metadata/verified targets,
+  and derivable Flow compilation artifacts remain global inputs. Receipts,
+  routes, enablement, Grants, provider bindings, capability publication,
+  backup/restore, and both maintenance and mutation locks are installation
+  scoped. Installation backup rejects the global cache families.
+- Windows publication and SQLite/Flow access use a shared extended-length path
+  primitive. Native regressions cover long scoped roots, atomic publication,
+  same-text-ID scope-kind isolation, and independent installation locks.
+- The remaining A1 work is structural, not a hidden compatibility layer:
+  installed graph/root ownership must converge into one `InstallationSnapshot`,
+  immutable installed bytes must move behind the global Artifact Store, route
+  strings must cease carrying identity, and the complete two-installation
+  lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store
 
@@ -380,7 +413,7 @@ fixtures are frozen.
 | --- | --- |
 | Cognitive-package manifest | schema version 3 |
 | Signed catalog record | `a3s.use.plugin-catalog.v3` |
-| Installed receipt | schema version 4 |
+| Installed receipt | schema version 5 |
 | Package lock | `a3s.use.plugin-package-lock.v1` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
@@ -402,11 +435,13 @@ fixtures are frozen.
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
-| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v1` |
-| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v1` |
-| Coordinated Use state backup | `a3s.use.state-backup.v1` |
-| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v1` |
-| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v1` |
+| Extension Registry snapshot | schema version 2 |
+| Capability snapshot | schema version 3 |
+| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v2` |
+| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v2` |
+| Coordinated Use state backup | `a3s.use.state-backup.v2` |
+| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v2` |
+| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v2` |
 | Coordinated Use state restore plan | `a3s.use.state-restore-plan.v1` |
 | Coordinated Use state restore operation | `a3s.use.state-restore-operation.v1` |
 | Coordinated Use state restore result | `a3s.use.state-restore-result.v1` |
@@ -521,9 +556,9 @@ rejection. They are not supported decode paths.
 - [x] Self-contained release-backed Runtime Task binding and exact-generation
   dispatch with receipt-owned provider reconnection, restart reconstruction,
   stale-generation rejection, bounded output cleanup, and Registry lease drain.
-- [x] Capability snapshot v2 projection for exact scope/package/generation
+- [x] Capability snapshot v3 projection for exact installation/package/generation
   matched release-backed Runtime Tool Task bindings.
-- [x] Capability snapshot v2 projection for every exact extension MCP surface,
+- [x] Capability snapshot v3 projection for every exact extension MCP surface,
   preserving canonical IDs, collision-resistant host names, activation,
   package/file identity, bounded package-local stdio launch evidence, and
   credential-free managed HTTP binding evidence.
@@ -729,14 +764,14 @@ Status: in progress
 - [x] Run full workspace and real-process package lifecycle tests on Linux
   x86_64/arm64 and macOS arm64/x86_64. Native CI run
   [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)
-  passed the current non-Science workspace suite on all four targets from exact
+  passed the then-current Use-owned workspace suite on all four targets from exact
   `main` commit `40bc5593cbf58ca2da171d85ba578c2d6bd911c8` while the
   matching Windows job and general release gates also passed.
 - [x] Run signed Registry trust/lock, dependency-graph install/upgrade/uninstall,
   Grant, standalone Flow preflight/lifecycle, and OKF cutover scenarios through
   real `a3s-use` processes on Windows x86_64, including killed-process replay
   of removed-dependency cleanup without capability-generation inflation.
-- [x] Run the complete current non-Science workspace suite on Windows x86_64
+- [x] Run the complete current Use-owned workspace suite on Windows x86_64
   and reject directory junctions across package, Registry/cache, Grant,
   lifecycle, Runtime, Flow, and Knowledge trust boundaries. Flow Runtime
   qualification now also exercises exact-generation retention, artifact
@@ -897,10 +932,11 @@ Status: in progress
   trust boundary.
 - [ ] Define storage retention, quota, garbage collection, backup, and repair
   procedures for packages, cutover evidence, Grants, Flow history, UI state,
-  and OKF projections. A deterministic `a3s.use.state-backup.v1` whole-install
-  inventory now snapshots all allowlisted Use-owned families under one
-  exclusive maintenance fence, binds Registry generation/snapshot and installed
-  receipt digests, excludes locks, rejects nonterminal or unknown state, and
+  and OKF projections. A deterministic `a3s.use.state-backup.v2` exact-installation
+  inventory now snapshots all allowlisted installation-owned families under its
+  exclusive maintenance fence, binds the installation, Registry generation/snapshot,
+  and installed receipt digests, excludes locks and global Registry/TUF/Flow
+  caches, rejects nonterminal or unknown state, and
   verifies every payload offline without extraction. Signed-package real-process
   coverage proves path-free inventory and zero-network verification. Coordinated
   retention now verifies every managed whole-install archive under one external

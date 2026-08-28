@@ -16,7 +16,7 @@ pub(super) async fn pending_enablement(
 ) -> UseResult<Option<PendingCognitivePackageEnablement>> {
     let state = manager
         .enablement_store()
-        .get_state(&manager.scope, package_id)
+        .get_state(manager.scope(), package_id)
         .await
         .map_err(|_| diagnostic_state_error())?;
     Ok(state.and_then(|state| state.active))
@@ -37,7 +37,7 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
         .enablement_parts()
         .ok_or_else(diagnostic_state_error)?;
     if result.status != a3s_use_core::PluginHostEnablementPlanStatus::Planned
-        || request.scope.plan_scope() != manager.scope
+        || request.scope.plan_scope() != *manager.scope()
         || request.package_id != *package_id
         || result.package_id != *package_id
     {
@@ -50,7 +50,7 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
         PluginOperationAction::Disable
     };
     if envelope.plan.action != expected_action
-        || envelope.plan.scope != manager.scope
+        || envelope.plan.scope != *manager.scope()
         || envelope.plan.package_id != package_id.as_str()
     {
         return Err(diagnostic_state_error());
@@ -70,7 +70,7 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
 
     let enablement_store = manager.enablement_store();
     if let Some(completed) = enablement_store
-        .get_operation(&manager.scope, &envelope.plan.operation_id)
+        .get_operation(manager.scope(), &envelope.plan.operation_id)
         .await
         .map_err(|_| diagnostic_state_error())?
     {
@@ -81,7 +81,7 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
         return Ok(None);
     }
     let Some(current) = enablement_store
-        .get_state(&manager.scope, package_id)
+        .get_state(manager.scope(), package_id)
         .await
         .map_err(|_| diagnostic_state_error())?
     else {
@@ -173,7 +173,7 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
         PluginLifecycleIntentSpec {
             operation_id: envelope.plan.operation_id.clone(),
             plan_digest: envelope.plan_digest.clone(),
-            scope: manager.scope.clone(),
+            scope: manager.scope().clone(),
             package_id: package_id.to_string(),
             package_digest,
             manifest_digest,
@@ -254,7 +254,7 @@ pub(super) async fn diagnose_reviewed_enablement_operation(
         schema: PLUGIN_OPERATION_DIAGNOSTIC_SCHEMA.to_owned(),
         observed_at_ms: crate::cognitive_package::plan::now_ms()
             .map_err(|_| diagnostic_state_error())?,
-        scope: manager.scope.clone(),
+        scope: manager.scope().clone(),
         package_id: package_id.to_string(),
         registry,
         operation,
@@ -269,7 +269,7 @@ pub(in crate::cognitive_package) async fn diagnose_enablement_operation(
     active: PendingCognitivePackageEnablement,
 ) -> UseResult<PluginOperationDiagnostic> {
     let phase = PluginOperationDiagnosticPhase::Admitted;
-    if active.envelope.plan.scope != manager.scope
+    if active.envelope.plan.scope != *manager.scope()
         || active.request.package_id.as_str() != package_id
         || !matches!(
             active.envelope.plan.action,
@@ -370,7 +370,7 @@ pub(in crate::cognitive_package) async fn diagnose_enablement_operation(
         schema: PLUGIN_OPERATION_DIAGNOSTIC_SCHEMA.to_owned(),
         observed_at_ms: crate::cognitive_package::plan::now_ms()
             .map_err(|_| diagnostic_state_error())?,
-        scope: manager.scope.clone(),
+        scope: manager.scope().clone(),
         package_id: package_id.to_owned(),
         registry,
         operation,

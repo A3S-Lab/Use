@@ -76,8 +76,7 @@ async fn host_manager_fetches_only_media_bound_to_verified_presentation() {
     );
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("presentation-host-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    RegistrySourceStore::new(paths.clone())
+    RegistrySourceStore::new(use_paths(&home))
         .add(RegistrySourceInput::new(
             "fixture",
             server.base_url(),
@@ -96,6 +95,7 @@ async fn host_manager_fetches_only_media_bound_to_verified_presentation() {
         fence_generation: 11,
         fence_digest: format!("sha256:{}", "b".repeat(64)),
     };
+    let paths = managed_extension_paths(&home, &scope);
     let host = CognitivePackageHostManager::new(
         scope,
         "use:presentation-test",
@@ -167,8 +167,7 @@ async fn embedded_catalog_plan_apply_and_workspace_okf_lease_are_exact() {
     );
     let server = TestServer::start(repository.routes.clone());
     let home = temporary.path().join("embedded-host-home");
-    let paths = ExtensionPaths::new(home.join("data"), home.join("state"));
-    let sources = RegistrySourceStore::new(paths.clone());
+    let sources = RegistrySourceStore::new(use_paths(&home));
     sources
         .add(RegistrySourceInput::new(
             "fixture",
@@ -188,6 +187,7 @@ async fn embedded_catalog_plan_apply_and_workspace_okf_lease_are_exact() {
         fence_generation: 11,
         fence_digest: format!("sha256:{}", "b".repeat(64)),
     };
+    let paths = managed_extension_paths(&home, &scope);
     let host = CognitivePackageHostManager::new(
         scope.clone(),
         "use:embedded-test",

@@ -51,7 +51,7 @@ impl CognitivePackageManager {
         let mut resolution_attempt = Some(
             self.resolution_attempt_store()
                 .begin(PendingPackageResolutionAttempt::new(
-                    self.scope.clone(),
+                    self.scope().clone(),
                     PluginOperationAction::Install,
                     package_id,
                     requested_version,
@@ -195,7 +195,7 @@ impl CognitivePackageManager {
                 .into_download(
                     &download_store,
                     PendingPackageDownloadAttempt::new(
-                        self.scope.clone(),
+                        self.scope().clone(),
                         PluginOperationAction::Install,
                         lock.clone(),
                         selected_downloads.clone(),
@@ -257,7 +257,7 @@ impl CognitivePackageManager {
                     &surface_selections,
                     &manifests,
                     &changed_manifests,
-                    &self.scope,
+                    self.scope(),
                     self.authorization.as_ref(),
                 )?;
                 pending
@@ -266,7 +266,10 @@ impl CognitivePackageManager {
                 let snapshot = self.registry.snapshot().await?;
                 let grant_snapshot = self
                     .grant_store()
-                    .snapshot_scope(&self.scope.id, package_state_revision(snapshot.generation)?)
+                    .snapshot_scope(
+                        &self.scope().id,
+                        package_state_revision(snapshot.generation)?,
+                    )
                     .await?;
                 let generated = install_operation(
                     &lock,
@@ -274,7 +277,7 @@ impl CognitivePackageManager {
                     &surface_selections,
                     &manifests,
                     snapshot.generation,
-                    &self.scope,
+                    self.scope(),
                     now_ms()?,
                     &grant_snapshot,
                     self.authorization.as_ref(),
@@ -353,7 +356,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope: self.scope.clone(),
+                    scope: self.scope().clone(),
                     package_id: package_id.clone(),
                     package_digest: prepared.package.package_digest().to_string(),
                     manifest_digest: prepared.package.manifest_digest().to_string(),
@@ -519,7 +522,7 @@ impl CognitivePackageManager {
         self.authorization.verify_plan(&pending.envelope)?;
         if pending.envelope.plan.action != PluginOperationAction::Install
             || pending.envelope.package_lock.as_ref() != Some(lock)
-            || pending.envelope.plan.scope != self.scope
+            || pending.envelope.plan.scope != *self.scope()
         {
             return Err(package_manager_error(
                 "use.plugin.package_graph_busy",
@@ -580,7 +583,7 @@ impl CognitivePackageManager {
                 PluginLifecycleIntentSpec {
                     operation_id: pending.envelope.plan.operation_id.clone(),
                     plan_digest: pending.envelope.plan_digest.clone(),
-                    scope: self.scope.clone(),
+                    scope: self.scope().clone(),
                     package_id: package.package_id().to_string(),
                     package_digest: identity.package_digest().to_string(),
                     manifest_digest: identity.manifest_digest().to_string(),

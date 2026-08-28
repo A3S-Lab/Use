@@ -29,10 +29,14 @@ signature and cannot establish package authority by itself.
 
 ## Inspect storage
 
-Use the default User scope:
+Every Knowledge command requires an explicit installation. For example, inspect
+one User installation:
 
 ```bash
-a3s-use knowledge usage --json
+a3s-use knowledge usage \
+  --scope-kind user \
+  --scope-id user/alice \
+  --json
 ```
 
 Use one exact Workspace scope:
@@ -51,11 +55,13 @@ bytes. It does not read or print concept content.
 ## Audit a scope
 
 ```bash
-a3s-use knowledge audit --json
+a3s-use knowledge audit \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --json
 ```
 
-For a Workspace, include its exact `--scope-kind` and `--scope-id`. Audit holds
-the scope's shared lock and verifies:
+Audit holds the selected installation's shared lock and verifies:
 
 1. the current SQLite `user_version`;
 2. bounded SQLite integrity output;
@@ -217,7 +223,8 @@ a3s-use knowledge plan-restore ./workspace.a3s-okf-backup \
 ```
 
 The command changes no live Knowledge state. It verifies the archive offline,
-then holds the global maintenance fence while it proves all of the following:
+then holds the selected installation's maintenance fence while it proves all of
+the following:
 
 - the backup policy exactly equals the configured storage policy;
 - the current durable binding set is an exact subset of the backup projection
@@ -303,8 +310,9 @@ a3s-use knowledge restore-status \
   --json
 ```
 
-The `a3s.use.okf-knowledge-restore-diagnostic.v2` result reports any global
-active restore, including its exact scope, plan digest, and current `planned`,
+The `a3s.use.okf-knowledge-restore-diagnostic.v2` result reports any active
+restore for the selected installation, including its exact installation, plan
+digest, and current `planned`,
 `staged`, `bindings-restored`, `prior-moved`, `published`, or `completed`
 phase. It also returns the reviewed binding-state digest and missing-binding
 count, requested scope's canonically ordered history, retained

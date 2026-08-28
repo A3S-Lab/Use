@@ -29,7 +29,7 @@ release promise.
 | Platforms           | Linux/macOS development gates; Windows signed package lifecycles, not release parity                                          |
 
 Only the current preview contract line is accepted: manifest v3, catalog v3,
-receipt v4, plan v4, host protocol v6, managed scope v2, manager tools v4,
+receipt v5, plan v4, host protocol v6, managed scope v2, manager tools v4,
 pending graph v4, pre-lock resolution attempt/diagnostic v1, pre-plan download
 attempt/diagnostic v1, and enablement state/operation v2. Superseded preview
 state is rejected with cleanup and reinstall guidance.
@@ -119,8 +119,10 @@ Rust 1.85 or newer is required:
 git clone https://github.com/A3S-Lab/Use.git
 cd Use
 cargo build --workspace --bins --locked
-./target/debug/a3s-use doctor --json
-./target/debug/a3s-use capability snapshot --json
+./target/debug/a3s-use doctor \
+  --scope-kind user --scope-id user/current --json
+./target/debug/a3s-use capability snapshot \
+  --scope-kind user --scope-id user/current --json
 ```
 
 Run the repository gates from the Use checkout:
@@ -144,15 +146,20 @@ a3s-use registry source add packages \
   --json
 
 a3s-use install acme/research \
+  --scope-kind user \
+  --scope-id user/current \
   --registry-name packages \
   --version 2.0.0 \
   --json
 
 a3s-use upgrade acme/research \
+  --scope-kind user \
+  --scope-id user/current \
   --registry-name packages \
   --json
 
-a3s-use uninstall acme/research --json
+a3s-use uninstall acme/research \
+  --scope-kind user --scope-id user/current --json
 ```
 
 Use the one-to-one Plugin Manager surface when plan review and mutation must be
@@ -162,19 +169,26 @@ apply reopens only that durable pair and accepts confirmation only with explicit
 `--yes`:
 
 ```bash
-a3s-use plugin search research --kind tool --json
-a3s-use plugin inspect acme/research --version 2.0.0 --json
+a3s-use plugin search research --kind tool \
+  --scope-kind user --scope-id user/current --json
+a3s-use plugin inspect acme/research --version 2.0.0 \
+  --scope-kind user --scope-id user/current --json
 a3s-use plugin plan-install acme/research \
+  --scope-kind user \
+  --scope-id user/current \
   --registry-name packages \
   --version-requirement 2.0.0 \
   --surface tool/research \
   --json
 a3s-use plugin apply-plan \
+  --scope-kind user \
+  --scope-id user/current \
   --operation-id <operation-id> \
   --plan-digest sha256:<64-hex-digits> \
   --yes \
   --json
-a3s-use plugin plan-disable acme/research --json
+a3s-use plugin plan-disable acme/research \
+  --scope-kind user --scope-id user/current --json
 ```
 
 Search, inspection, planning, exact apply, and replay support verified-cache
@@ -188,11 +202,13 @@ reviewed but not admitted its newest enablement plan, inspect the path-free
 operation evidence without contacting the Registry or mutating recovery state:
 
 ```bash
-a3s-use extension diagnose acme/research --json
-a3s-use extension diagnose acme/research --history --json
+a3s-use extension diagnose acme/research \
+  --scope-kind user --scope-id user/current --json
+a3s-use extension diagnose acme/research --history \
+  --scope-kind user --scope-id user/current --json
 ```
 
-Workspace diagnostics additionally require
+Select a Workspace installation with
 `--scope-kind workspace --scope-id <id>`. The command reports the reviewed plan,
 Registry/TUF and cutover state, provider readiness, Grant phase, lifecycle
 publication/drain/rollback evidence, and stable recovery guidance. It excludes
@@ -234,23 +250,38 @@ the project does not advertise a public production Registry.
 Search an exact promoted OKF projection with citations:
 
 ```bash
-a3s-use knowledge search "retrieval policy" --limit 5 --json
-a3s-use knowledge audit --json
-a3s-use knowledge backup ./user.a3s-okf-backup --json
-a3s-use knowledge verify-backup ./user.a3s-okf-backup --json
-a3s-use knowledge backup-retention ./backups --json
-a3s-use knowledge plan-restore ./user.a3s-okf-backup --json
+a3s-use knowledge search "retrieval policy" --limit 5 \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge audit \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge backup ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge verify-backup ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge backup-retention ./backups \
+  --scope-kind user --scope-id user/current --json
+a3s-use knowledge plan-restore ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current --json
 a3s-use knowledge restore ./user.a3s-okf-backup \
+  --scope-kind user --scope-id user/current \
   --plan-digest sha256:<reviewed-plan-digest> --yes --json
-a3s-use knowledge restore-status --json
-a3s-use state backup ./use-state.a3s-use-state-backup --json
-a3s-use state verify-backup ./use-state.a3s-use-state-backup --json
-a3s-use state backup-retention ./backups --max-backups 32 --max-bytes 2199023255552 --json
-a3s-use state plan-restore ./use-state.a3s-use-state-backup --json
+a3s-use knowledge restore-status \
+  --scope-kind user --scope-id user/current --json
+a3s-use state backup ./use-state.a3s-use-state-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use state verify-backup ./use-state.a3s-use-state-backup \
+  --scope-kind user --scope-id user/current --json
+a3s-use state backup-retention ./backups \
+  --scope-kind user --scope-id user/current \
+  --max-backups 32 --max-bytes 2199023255552 --json
+a3s-use state plan-restore ./use-state.a3s-use-state-backup \
+  --scope-kind user --scope-id user/current --json
 a3s-use state restore ./use-state.a3s-use-state-backup \
+  --scope-kind user --scope-id user/current \
   --rollback-backup ./pre-restore.a3s-use-state-backup \
   --plan-digest sha256:<reviewed-plan-digest> --yes --json
-a3s-use state restore-status --json
+a3s-use state restore-status \
+  --scope-kind user --scope-id user/current --json
 ```
 
 Backup verification detects corruption but does not recreate package,
@@ -267,7 +298,7 @@ and capacity for the requested scope without rotating or rewriting evidence.
 The separate `state backup` command captures installed package roots and every
 allowlisted Registry, generation, Grant, binding, lifecycle/package-operation,
 Knowledge, enablement, Host Manager, and Flow Runtime state family under one
-exclusive maintenance fence. Its deterministic `a3s.use.state-backup.v1`
+exclusive maintenance fence. Its deterministic `a3s.use.state-backup.v2`
 manifest uses only portable relative paths and exact length/SHA-256/mode,
 family-accounting, Registry, and installed-receipt evidence. Creation rejects
 active or partial work, links/reparse points, special files, unknown families,

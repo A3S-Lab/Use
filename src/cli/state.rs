@@ -16,11 +16,12 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
             "state requires a backup, retention, plan-restore, restore, or restore-status command",
         )
     })?;
+    let installation = super::managed_scope_argument(args)?;
     match command {
         "backup" => {
             validate_backup_options(args)?;
             let path = required_path(args, command)?;
-            let manager = StateBackupManager::new(ExtensionPaths::from_env()?);
+            let manager = StateBackupManager::new(ExtensionPaths::from_env(installation.clone())?);
             let manifest = manager.backup(path).await?;
             let human = format!(
                 "Created a coordinated Use state backup with {} files and {} bytes ({}).",
@@ -32,23 +33,34 @@ pub(super) async fn run(args: &[String]) -> UseResult<CommandOutput> {
             validate_backup_options(args)?;
             let path = required_path(args, command)?;
             let manifest = StateBackupManager::verify_backup(path).await?;
+            if manifest.installation != installation {
+                return Err(UseError::new(
+                    "use.state_backup_installation_mismatch",
+                    "The state backup belongs to a different installation.",
+                ));
+            }
             let human = format!(
                 "Verified a coordinated Use state backup with {} files and {} bytes ({}).",
                 manifest.file_count, manifest.byte_count, manifest.inventory_digest
             );
             Ok(CommandOutput::success(human, encode_manifest(manifest)?))
         }
-        "backup-retention" => backup_retention(args, required_path(args, command)?).await,
-        "plan-restore" => plan_restore(args, required_path(args, command)?).await,
-        "restore" => restore(args, required_path(args, command)?).await,
-        "restore-status" => restore_status(args).await,
+        "backup-retention" => {
+            backup_retention(installation, args, required_path(args, command)?).await
+        }
+        "plan-restore" => plan_restore(installation, args, required_path(args, command)?).await,
+        "restore" => restore(installation, args, required_path(args, command)?).await,
+        "restore-status" => restore_status(installation, args).await,
         value => Err(usage_error(format!("unknown state command '{value}'"))),
     }
 }
 
-async fn restore_status(args: &[String]) -> UseResult<CommandOutput> {
+async fn restore_status(
+    installation: a3s_use_core::InstallationId,
+    args: &[String],
+) -> UseResult<CommandOutput> {
     validate_status_options(args)?;
-    let diagnostic = StateRestoreManager::new(ExtensionPaths::from_env()?)
+    let diagnostic = StateRestoreManager::new(ExtensionPaths::from_env(installation)?)
         .diagnose_restore()
         .await?;
     Ok(CommandOutput::success(
@@ -66,9 +78,13 @@ async fn restore_status(args: &[String]) -> UseResult<CommandOutput> {
     ))
 }
 
-async fn plan_restore(args: &[String], backup_path: PathBuf) -> UseResult<CommandOutput> {
+async fn plan_restore(
+    installation: a3s_use_core::InstallationId,
+    args: &[String],
+    backup_path: PathBuf,
+) -> UseResult<CommandOutput> {
     validate_backup_options(args)?;
-    let manager = StateRestoreManager::new(ExtensionPaths::from_env()?);
+    let manager = StateRestoreManager::new(ExtensionPaths::from_env(installation)?);
     let plan = manager.plan_restore(backup_path).await?;
     let plan_digest = plan.descriptor_digest()?;
     Ok(CommandOutput::success(
@@ -91,7 +107,11 @@ async fn plan_restore(args: &[String], backup_path: PathBuf) -> UseResult<Comman
     ))
 }
 
-async fn restore(args: &[String], backup_path: PathBuf) -> UseResult<CommandOutput> {
+async fn restore(
+    installation: a3s_use_core::InstallationId,
+    args: &[String],
+    backup_path: PathBuf,
+) -> UseResult<CommandOutput> {
     let options = restore_options(args)?;
     if !options.confirmed {
         return Err(usage_error(
@@ -104,7 +124,7 @@ async fn restore(args: &[String], backup_path: PathBuf) -> UseResult<CommandOutp
     let plan_digest = options
         .plan_digest
         .ok_or_else(|| usage_error("state restore requires --plan-digest <sha256>"))?;
-    let manager = StateRestoreManager::new(ExtensionPaths::from_env()?);
+    let manager = StateRestoreManager::new(ExtensionPaths::from_env(installation)?);
     let result = manager
         .apply_restore(backup_path, rollback_backup, &plan_digest)
         .await?;
@@ -135,10 +155,14 @@ fn required_path(args: &[String], command: &str) -> UseResult<PathBuf> {
         .ok_or_else(|| usage_error(format!("state {command} requires a path or directory")))
 }
 
-async fn backup_retention(args: &[String], directory: PathBuf) -> UseResult<CommandOutput> {
+async fn backup_retention(
+    installation: a3s_use_core::InstallationId,
+    args: &[String],
+    directory: PathBuf,
+) -> UseResult<CommandOutput> {
     let options = retention_options(args)?;
     let policy = StateBackupRetentionPolicy::new(options.max_backups, options.max_bytes)?;
-    let manager = StateBackupManager::new(ExtensionPaths::from_env()?);
+    let manager = StateBackupManager::new(ExtensionPaths::from_env(installation)?);
     if options.confirmed {
         let expected_plan_digest = options.plan_digest.ok_or_else(|| {
             usage_error(
@@ -189,10 +213,17 @@ fn validate_backup_options(args: &[String]) -> UseResult<()> {
         return Err(usage_error("state backup commands require a path"));
     }
     let mut json_seen = false;
-    for argument in &args[2..] {
-        match argument.as_str() {
-            "--json" if !json_seen => json_seen = true,
+    let mut index = 2;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--json" if !json_seen => {
+                json_seen = true;
+                index += 1;
+            }
             "--json" => return Err(usage_error("--json may be provided only once")),
+            "--scope-kind" | "--scope-id" => {
+                option_value(args, &mut index)?;
+            }
             value => {
                 return Err(usage_error(format!(
                     "unknown state backup option '{value}'"
@@ -205,10 +236,17 @@ fn validate_backup_options(args: &[String]) -> UseResult<()> {
 
 fn validate_status_options(args: &[String]) -> UseResult<()> {
     let mut json_seen = false;
-    for argument in &args[1..] {
-        match argument.as_str() {
-            "--json" if !json_seen => json_seen = true,
+    let mut index = 1;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--json" if !json_seen => {
+                json_seen = true;
+                index += 1;
+            }
             "--json" => return Err(usage_error("--json may be provided only once")),
+            "--scope-kind" | "--scope-id" => {
+                option_value(args, &mut index)?;
+            }
             value => {
                 return Err(usage_error(format!(
                     "unknown state restore-status option '{value}'"
@@ -272,6 +310,9 @@ fn restore_options(args: &[String]) -> UseResult<RestoreOptions> {
                 plan_digest = Some(value.clone());
                 index += 2;
             }
+            "--scope-kind" | "--scope-id" => {
+                option_value(args, &mut index)?;
+            }
             value => {
                 return Err(usage_error(format!(
                     "unknown state restore option '{value}'"
@@ -326,6 +367,9 @@ fn retention_options(args: &[String]) -> UseResult<RetentionOptions> {
                 plan_digest = Some(value.clone());
                 index += 2;
             }
+            "--scope-kind" | "--scope-id" => {
+                option_value(args, &mut index)?;
+            }
             value => {
                 return Err(usage_error(format!(
                     "unknown state backup-retention option '{value}'"
@@ -355,6 +399,15 @@ fn parse_integer_option(args: &[String], index: &mut usize, duplicate: bool) -> 
         .map_err(|_| usage_error(format!("{option} requires an unsigned integer")))?;
     *index += 2;
     Ok(parsed)
+}
+
+fn option_value(args: &[String], index: &mut usize) -> UseResult<()> {
+    let option = args[*index].as_str();
+    args.get(*index + 1)
+        .filter(|value| !value.starts_with('-'))
+        .ok_or_else(|| usage_error(format!("{option} requires a value")))?;
+    *index += 2;
+    Ok(())
 }
 
 fn encode_manifest(

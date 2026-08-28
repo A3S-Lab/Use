@@ -16,8 +16,8 @@ fn killed_host_protocol_uninstall_apply_replays_without_reauthorization() {
     let home = temp.path().join("home");
     let authorization_marker = temp.path().join("unexpected-authorization.marker");
     let apply_request_path = temp.path().join("uninstall-apply-request.json");
-    let graph_path = home.join("state/package-graphs/acme/worker.json");
-    let snapshot_path = home.join("state/registry.json");
+    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -65,7 +65,8 @@ fn killed_host_protocol_uninstall_apply_replays_without_reauthorization() {
     drop(host);
     drop(server);
 
-    let pending_path = home.join("state/operations/package-graphs/uninstall/acme/worker.json");
+    let pending_path =
+        managed_state_root(&home).join("operations/package-graphs/uninstall/acme/worker.json");
     let held_lifecycle_path = managed_lifecycle_journal_path(&home, "acme/leaf-00");
     let lifecycle_lock = exclusive_lock(&held_lifecycle_path.with_file_name(".operation.lock"));
     let mut interrupted = spawn_host_apply_child(&home, &apply_request_path, &authorization_marker);
@@ -148,8 +149,8 @@ fn killed_host_protocol_uninstall_apply_replays_without_reauthorization() {
     assert!(!pending_path.exists());
     assert!(!graph_path.exists());
     for package_id in &expected_package_ids {
-        assert!(!home
-            .join("state/extensions")
+        assert!(!managed_state_root(&home)
+            .join("extensions")
             .join(format!("{package_id}.json"))
             .exists());
     }

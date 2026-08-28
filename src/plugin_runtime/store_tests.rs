@@ -10,7 +10,6 @@ use a3s_use_core::{
     PlanEnforcementProfile, PlanQualifiedSurfaceRef, PlanScope, PlanScopeKind,
     PlannedProviderEvidence, PluginSurfaceKind, PluginSurfaceRef,
 };
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use super::test_support::{
@@ -532,7 +531,7 @@ fn binding_path(
     surface: &PlanQualifiedSurfaceRef,
     generation: u64,
 ) -> std::path::PathBuf {
-    let scope_digest = format!("{:x}", Sha256::digest(scope.id.as_bytes()));
+    let scope_digest = scope.storage_key().unwrap();
     store
         .root()
         .join(scope.kind.as_str())

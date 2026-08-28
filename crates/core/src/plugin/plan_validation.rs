@@ -12,7 +12,10 @@ use super::plan::{
 use super::validation::{
     strictly_sorted_unique, valid_machine_id, valid_package_id, valid_permission_name, valid_sha256,
 };
-use super::{PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_OPERATION_PLAN_SCHEMA_V4};
+use super::{
+    InstallationId, InstallationKind, PluginSurfaceKind, MAX_PLUGIN_PLAN_ITEMS,
+    PLUGIN_OPERATION_PLAN_SCHEMA_V4,
+};
 
 impl PluginOperationPlan {
     pub fn validate(&self) -> UseResult<()> {
@@ -54,10 +57,9 @@ impl PluginOperationPlan {
     }
 
     fn validate_scope(&self) -> UseResult<()> {
-        if !valid_machine_id(&self.scope.id) {
-            return Err(plan_error("The plugin operation scope is invalid."));
-        }
-        Ok(())
+        self.scope
+            .validate()
+            .map_err(|_| plan_error("The plugin operation installation is invalid."))
     }
 
     fn validate_authority_and_state(&self) -> UseResult<()> {
@@ -221,7 +223,7 @@ impl PluginOperationPlan {
             ));
         }
         for impact in &self.workspace_impacts {
-            if !valid_machine_id(&impact.scope_id)
+            if InstallationId::new(InstallationKind::Workspace, &impact.scope_id).is_err()
                 || impact
                     .grant_before_digest
                     .as_deref()

@@ -107,10 +107,7 @@ async fn history_store_accepts_repeated_textual_ids_and_rejects_unknown_fields()
     );
     assert_eq!(store.get(&first.scope, &first.package_id).await?.len(), 2);
 
-    let scope_digest = format!(
-        "{:x}",
-        Sha256::digest(format!("{}\n{}", first.scope.kind.as_str(), first.scope.id).as_bytes())
-    );
+    let scope_digest = first.scope.storage_key().unwrap();
     let path = temp
         .path()
         .join("operations/package-diagnostic-history/scopes")
@@ -145,10 +142,7 @@ async fn history_store_rejects_an_oversized_record() -> UseResult<()> {
             .await?
     );
 
-    let scope_digest = format!(
-        "{:x}",
-        Sha256::digest(format!("{}\n{}", first.scope.kind.as_str(), first.scope.id).as_bytes())
-    );
+    let scope_digest = first.scope.storage_key().unwrap();
     let path = temp
         .path()
         .join("operations/package-diagnostic-history/scopes")
@@ -182,10 +176,7 @@ async fn history_store_rejects_a_linked_record() -> UseResult<()> {
             .await?
     );
 
-    let scope_digest = format!(
-        "{:x}",
-        Sha256::digest(format!("{}\n{}", first.scope.kind.as_str(), first.scope.id).as_bytes())
-    );
+    let scope_digest = first.scope.storage_key().unwrap();
     let path = temp
         .path()
         .join("operations/package-diagnostic-history/scopes")

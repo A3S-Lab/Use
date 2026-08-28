@@ -20,7 +20,7 @@ impl RestoreOperationStore {
         &self,
         scope: &PlanScope,
     ) -> UseResult<RestoreOperationInventory> {
-        let scope_directory = self.scope_directory(scope);
+        let scope_directory = self.scope_directory(scope)?;
         let metadata = match fs::symlink_metadata(&scope_directory).await {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {

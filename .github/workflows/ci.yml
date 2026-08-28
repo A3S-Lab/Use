@@ -19,10 +19,8 @@ jobs:
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - run: cargo fmt --all -- --check
-      - run: cargo test --workspace --exclude a3s-use-science --all-features --locked
-      - name: Validate packaged Science extension
-        run: cargo test -p a3s-use-science --test integration --locked
-      - run: cargo clippy --workspace --exclude a3s-use-science --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --workspace --all-features --locked
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Re-run verified installer release gate
         run: cargo test -p a3s-use --test release_installers --locked
       - name: Re-run release supply-chain gate
@@ -80,9 +78,9 @@ jobs:
           toolchain: 1.96.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: Compile workspace tests
-        run: cargo test --workspace --exclude a3s-use-science --locked --no-run
+        run: cargo test --workspace --locked --no-run
       # Browser provider and driver validation runs in the independent A3S
       # Browser repository. Product-host, reboot, and external-contention
       # scenarios remain separate release gates.
-      - name: Run non-Science workspace tests
-        run: cargo test --workspace --exclude a3s-use-science --locked
+      - name: Run workspace tests
+        run: cargo test --workspace --locked

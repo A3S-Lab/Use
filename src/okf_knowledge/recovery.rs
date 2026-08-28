@@ -175,7 +175,7 @@ impl OkfKnowledgeRecoveryManager {
             lifecycle: PluginLifecycleJournalStore::from_extension_paths(paths),
             grants: WorkspaceGrantStore::from_extension_paths(paths),
             maintenance: StateMaintenanceLock::new(paths.state_root()),
-            operations: RestoreOperationStore::new(paths.state_root()),
+            operations: RestoreOperationStore::new(paths.installation_state_root()),
         }
     }
 

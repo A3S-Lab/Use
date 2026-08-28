@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{UseError, UseResult};
 
-use super::validation::{valid_machine_id, valid_package_id, valid_sha256};
+use super::validation::{valid_package_id, valid_sha256};
 use super::{
-    canonical_digest, canonical_json, contract_error, parse_contract, PlanActor,
-    PlanPolicyDecision, PluginPermissionCeiling, PLUGIN_WORKSPACE_GRANT_SCHEMA,
+    canonical_digest, canonical_json, contract_error, parse_contract, InstallationId,
+    InstallationKind, PlanActor, PlanPolicyDecision, PluginPermissionCeiling,
+    PLUGIN_WORKSPACE_GRANT_SCHEMA,
 };
 
 const GRANT_ERROR: &str = "use.plugin.grant_invalid";
@@ -89,7 +90,7 @@ impl PluginWorkspaceGrant {
     }
 
     pub fn validate_scope_id(scope_id: &str) -> UseResult<()> {
-        if !valid_machine_id(scope_id) {
+        if InstallationId::new(InstallationKind::Workspace, scope_id).is_err() {
             return Err(grant_error(
                 "The plugin workspace grant scope identity is invalid.",
             ));

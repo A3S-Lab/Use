@@ -58,7 +58,7 @@ impl ExtensionRegistryCutoverRecord {
 
 impl ExtensionRegistrySnapshot {
     pub(crate) fn validate(&self) -> UseResult<()> {
-        if self.schema_version != REGISTRY_SCHEMA_VERSION {
+        if self.schema_version != REGISTRY_SCHEMA_VERSION || self.installation.validate().is_err() {
             return Err(UseError::new(
                 "use.extension.registry_incompatible",
                 format!(

@@ -11,7 +11,7 @@ use crate::package::{
     activate_temporary_file, io_error, lock_is_contended, sync_parent_directory, unique_suffix,
 };
 use crate::remote::MAX_BOOTSTRAP_ROOT_BYTES;
-use crate::ExtensionPaths;
+use crate::UsePaths;
 
 use super::acl::{decode, RegistrySourcesDocument};
 
@@ -20,7 +20,7 @@ const MAX_REGISTRY_SOURCES_ACL_BYTES: u64 = 256 * 1024;
 pub(super) struct RegistrySourcesLock(File);
 
 impl RegistrySourcesLock {
-    pub(super) fn acquire(paths: &ExtensionPaths) -> UseResult<Self> {
+    pub(super) fn acquire(paths: &UsePaths) -> UseResult<Self> {
         let path = paths.registry_sources_lock_path();
         let parent = path
             .parent()
@@ -62,7 +62,7 @@ impl Drop for RegistrySourcesLock {
     }
 }
 
-pub(super) async fn load(paths: &ExtensionPaths) -> UseResult<RegistrySourcesDocument> {
+pub(super) async fn load(paths: &UsePaths) -> UseResult<RegistrySourcesDocument> {
     let path = paths.registry_sources_path();
     let metadata = match fs::symlink_metadata(&path).await {
         Ok(metadata) => metadata,
@@ -98,10 +98,7 @@ pub(super) async fn load(paths: &ExtensionPaths) -> UseResult<RegistrySourcesDoc
     decode(input, paths)
 }
 
-pub(super) async fn write(
-    paths: &ExtensionPaths,
-    document: &RegistrySourcesDocument,
-) -> UseResult<()> {
+pub(super) async fn write(paths: &UsePaths, document: &RegistrySourcesDocument) -> UseResult<()> {
     let path = paths.registry_sources_path();
     let parent = path
         .parent()
@@ -157,7 +154,7 @@ pub(super) async fn write(
 }
 
 pub(super) async fn import_trusted_root(
-    paths: &ExtensionPaths,
+    paths: &UsePaths,
     source: &Path,
     root_sha256: &str,
 ) -> UseResult<()> {

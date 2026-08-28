@@ -197,7 +197,7 @@ fn valid_binding_identity(surface: &PlanQualifiedSurfaceRef, scope: &PlanScope) 
             .iter()
             .all(|segment| valid_surface_segment(segment))
         && valid_surface_segment(&surface.surface.id)
-        && valid_machine_id(&scope.id)
+        && scope.validate().is_ok()
 }
 
 fn valid_runtime_unit_id(value: &str) -> bool {

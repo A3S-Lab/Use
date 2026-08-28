@@ -16,12 +16,10 @@ async fn coordinated_backup_is_path_free_deterministic_and_offline_verifiable() 
         b"portable tool bytes",
     )
     .unwrap();
-    std::fs::create_dir_all(paths.state_root().join("remote-registries/fixture/cache")).unwrap();
+    std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
     std::fs::write(
-        paths
-            .state_root()
-            .join("remote-registries/fixture/cache/timestamp.json"),
-        b"trusted cache bytes",
+        paths.state_root().join("bindings/runtime/fixture.json"),
+        b"provider binding bytes",
     )
     .unwrap();
     std::fs::write(paths.state_root().join(".installation-mutation.lock"), b"").unwrap();
@@ -94,7 +92,20 @@ async fn coordinated_backup_rejects_nonterminal_and_unknown_state() {
     std::fs::write(
         paths
             .state_root()
-            .join("remote-registries/fixture/cache/.target-1-1.tmp"),
+            .join("remote-registries/fixture/cache/timestamp.json"),
+        b"global cache must not be installation state",
+    )
+    .unwrap();
+    let error = StateBackupManager::new(paths.clone())
+        .backup(temporary.path().join("global-cache.a3s-use-state-backup"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.state_backup_layout_unsupported");
+
+    std::fs::remove_dir_all(paths.state_root().join("remote-registries")).unwrap();
+    std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
+    std::fs::write(
+        paths.state_root().join("bindings/runtime/.binding.tmp"),
         b"partial",
     )
     .unwrap();
@@ -104,7 +115,7 @@ async fn coordinated_backup_rejects_nonterminal_and_unknown_state() {
         .unwrap_err();
     assert_eq!(error.code, "use.state_backup_nonterminal");
 
-    std::fs::remove_dir_all(paths.state_root().join("remote-registries")).unwrap();
+    std::fs::remove_dir_all(paths.state_root().join("bindings")).unwrap();
     std::fs::create_dir_all(paths.state_root().join("unknown-family")).unwrap();
     std::fs::write(
         paths.state_root().join("unknown-family/evidence.json"),
@@ -168,12 +179,10 @@ async fn coordinated_backup_rejects_an_active_restore_and_links() {
 async fn backup_verification_rejects_tampering_and_creation_never_overwrites() {
     let temporary = tempfile::tempdir().unwrap();
     let paths = fixture_paths(temporary.path());
-    std::fs::create_dir_all(paths.state_root().join("registry-trust-roots/sha256")).unwrap();
+    std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
     std::fs::write(
-        paths
-            .state_root()
-            .join("registry-trust-roots/sha256/root.json"),
-        b"root",
+        paths.state_root().join("bindings/runtime/tool.json"),
+        b"binding",
     )
     .unwrap();
     let destination = temporary.path().join("state.a3s-use-state-backup");
@@ -212,12 +221,10 @@ async fn backup_verification_rejects_noncanonical_manifest_encoding() {
 
     let temporary = tempfile::tempdir().unwrap();
     let paths = fixture_paths(temporary.path());
-    std::fs::create_dir_all(paths.state_root().join("registry-trust-roots/sha256")).unwrap();
+    std::fs::create_dir_all(paths.state_root().join("bindings/runtime")).unwrap();
     std::fs::write(
-        paths
-            .state_root()
-            .join("registry-trust-roots/sha256/root.json"),
-        b"root",
+        paths.state_root().join("bindings/runtime/tool.json"),
+        b"binding",
     )
     .unwrap();
     let original_path = temporary.path().join("canonical.a3s-use-state-backup");
@@ -273,5 +280,5 @@ async fn coordinated_backup_waits_for_shared_state_users() {
 }
 
 fn fixture_paths(root: &Path) -> a3s_use_extension::ExtensionPaths {
-    a3s_use_extension::ExtensionPaths::new(root.join("data"), root.join("state"))
+    crate::test_extension_paths(root)
 }

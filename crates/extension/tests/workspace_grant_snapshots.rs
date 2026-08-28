@@ -1,11 +1,11 @@
 use a3s_use_core::{
-    PlanActor, PlanPolicyDecision, PluginPermissionCeiling, PluginWorkspaceGrant,
-    WorkspaceGrantAuthority, WorkspaceGrantEvidence, PLUGIN_WORKSPACE_GRANT_SCHEMA,
+    InstallationId, InstallationKind, PlanActor, PlanPolicyDecision, PluginPermissionCeiling,
+    PluginWorkspaceGrant, WorkspaceGrantAuthority, WorkspaceGrantEvidence,
+    PLUGIN_WORKSPACE_GRANT_SCHEMA,
 };
 use a3s_use_extension::{
     StoredWorkspaceGrant, WorkspaceGrantReceipt, WorkspaceGrantRevocation, WorkspaceGrantStore,
 };
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use tokio::fs;
 
@@ -203,7 +203,10 @@ fn record_path(
     package_id: &str,
     package_digest: &str,
 ) -> std::path::PathBuf {
-    let scope_digest = format!("{:x}", Sha256::digest(b"workspace-01"));
+    let scope_digest = InstallationId::new(InstallationKind::Workspace, "workspace-01")
+        .unwrap()
+        .storage_key()
+        .unwrap();
     let mut package_segments = package_id.split('/');
     store
         .root()

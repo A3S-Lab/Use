@@ -41,6 +41,10 @@ const MANAGED_SCOPE_ID: &str = "workspace:research";
 const PERMISSIONS: &[u8] =
     include_bytes!("../../crates/core/fixtures/plugins/permission-ceiling-v1.json");
 
+fn managed_extension_paths(home: &std::path::Path, scope: &PluginManagedScope) -> ExtensionPaths {
+    extension_paths_for(home, scope.plan_scope())
+}
+
 #[derive(Debug)]
 struct ConfirmAllPlans {
     authorization_count: Arc<AtomicUsize>,
@@ -269,12 +273,12 @@ pub(super) fn cognitive_tool_targets_version_with_dependencies_and_payload(
 
 async fn assert_granted(
     home: &std::path::Path,
-    scope_id: &str,
+    scope: &PlanScope,
     package_digest: &str,
     ceiling: &PluginPermissionCeiling,
 ) {
-    let record = WorkspaceGrantStore::new(home.join("state"))
-        .observe(scope_id, "acme/worker", package_digest)
+    let record = WorkspaceGrantStore::new(extension_paths_for(home, scope.clone()).state_root())
+        .observe(&scope.id, "acme/worker", package_digest)
         .await
         .unwrap()
         .unwrap();
@@ -286,9 +290,9 @@ async fn assert_granted(
     assert!(receipt.grant.authority.confirmation_digest.is_some());
 }
 
-async fn assert_revoked(home: &std::path::Path, scope_id: &str, package_digest: &str) {
-    let record = WorkspaceGrantStore::new(home.join("state"))
-        .observe(scope_id, "acme/worker", package_digest)
+async fn assert_revoked(home: &std::path::Path, scope: &PlanScope, package_digest: &str) {
+    let record = WorkspaceGrantStore::new(extension_paths_for(home, scope.clone()).state_root())
+        .observe(&scope.id, "acme/worker", package_digest)
         .await
         .unwrap()
         .unwrap();

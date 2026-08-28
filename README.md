@@ -93,8 +93,8 @@ The implementation and fixtures exercise the product model directly:
   accepted calls, and retires exact prior generations.
 - [`RuntimeTaskDispatcher`](src/plugin_runtime/task_dispatch.rs) reopens the
   exact v4 Task binding and provider selected at review time, while capability
-  snapshot v2 publishes only matching release-backed Tasks with complete
-  scope and lifecycle identity.
+  snapshot v3 publishes only matching release-backed Tasks with complete
+  installation and lifecycle identity.
 - [`SqliteOkfKnowledgeAdapter`](src/okf_knowledge/sqlite/mod.rs) stages,
   promotes, searches, reads, and removes scope-isolated OKF projections with
   exact package-generation citations, retained source Markdown, bounded
@@ -112,9 +112,9 @@ The implementation and fixtures exercise the product model directly:
 - Contract fixtures under [`crates/core/fixtures/plugins`](crates/core/fixtures/plugins/)
   freeze canonical JSON and SHA-256 digests for the current schemas.
 
-CI runs formatting, all non-Science workspace tests, Clippy,
+CI runs formatting, the complete A3S Use workspace tests, Clippy,
 release-container conformance, and platform jobs. The Windows preview gate now
-executes the complete current non-Science workspace suite, including a real
+executes the complete current workspace suite, including a real
 directory-junction regression for the shared reparse-point guard. The native
 Windows suite also proves Registry cutover-capacity rejection happens before
 any lifecycle-receipt replacement and that Box delegation preserves arguments,
@@ -268,8 +268,10 @@ build from source:
 git clone https://github.com/A3S-Lab/Use.git
 cd Use
 cargo build --workspace --bins --locked
-./target/debug/a3s-use doctor --json
-./target/debug/a3s-use capability snapshot --json
+./target/debug/a3s-use doctor \
+  --scope-kind user --scope-id user/alice --json
+./target/debug/a3s-use capability snapshot \
+  --scope-kind user --scope-id user/alice --json
 ```
 
 Rust embedding hosts can bind the same authoritative Extension Registry to the
@@ -299,7 +301,7 @@ a Run scope while Use lifecycle retirement waits for accepted work to drain.
 Dropping it only releases synchronous route locks; asynchronous cleanup remains
 explicitly owned by the Use lifecycle coordinator.
 
-The existing `capability snapshot --json` schema v2 remains the outer CLI
+The `capability snapshot --json` schema v3 remains the outer CLI
 envelope; the in-process cursor is deliberately not appended to that
 independently released schema. Additive managed-MCP, Skill identity, and UI
 dependency fields are explicit. Each extension MCP surface keeps its canonical
@@ -318,43 +320,43 @@ capability observation, built-in Browser/OCR routes, cited OKF search, and
 exact-scope Knowledge storage operations:
 
 ```text
-a3s-use install <publisher/name> [--registry-name <name>] [--offline] [--json]
-a3s-use upgrade <publisher/name> [--registry-name <name>] [--offline] [--json]
-a3s-use uninstall <publisher/name> [--json]
-a3s-use plugin search <query> [--kind <flow|mcp|okf|skill|tool|ui>] [--channel <stable|beta|nightly>] [--cursor <cursor>] [--limit <n>] [--offline] [--json]
-a3s-use plugin inspect <publisher/name> [--version <semver>] [--channel <stable|beta|nightly>] [--offline] [--json]
-a3s-use plugin list-installed [--cursor <cursor>] [--limit <n>] [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use plugin status <publisher/name> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use plugin plan-install <publisher/name> [--registry-name <name>] [--version-requirement <semver-range>] [--channel <stable|beta|nightly>] [--surface <kind/id>]... [--offline] [--json]
-a3s-use plugin plan-upgrade <publisher/name> [--version-requirement <semver-range>] [--channel <stable|beta|nightly>] [--surface <kind/id>]... [--offline] [--json]
-a3s-use plugin plan-uninstall <publisher/name> [--json]
-a3s-use plugin plan-enable|plan-disable <publisher/name> [--json]
-a3s-use plugin apply-plan --operation-id <id> --plan-digest <sha256> --yes [--json]
-a3s-use extension inspect <publisher/name> [--json]
-a3s-use extension diagnose <publisher/name> [--history] [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge search <query> [--limit <n>] [--json]
-a3s-use knowledge usage [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge audit [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge verify-backup <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge backup-retention <directory> [--max-backups <n>] [--max-bytes <n>] [--plan-digest <sha256> --yes] [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge plan-restore <path> [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge restore <path> --plan-digest <sha256> --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge restore-status [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
-a3s-use knowledge repair-search-index --yes [--scope-kind <user|workspace>] [--scope-id <id>] [--json]
+a3s-use install <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--registry-name <name>] [--offline] [--json]
+a3s-use upgrade <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--registry-name <name>] [--offline] [--json]
+a3s-use uninstall <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use plugin search <query> --scope-kind <user|workspace> --scope-id <id> [--kind <flow|mcp|okf|skill|tool|ui>] [--channel <stable|beta|nightly>] [--cursor <cursor>] [--limit <n>] [--offline] [--json]
+a3s-use plugin inspect <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--version <semver>] [--channel <stable|beta|nightly>] [--offline] [--json]
+a3s-use plugin list-installed --scope-kind <user|workspace> --scope-id <id> [--cursor <cursor>] [--limit <n>] [--json]
+a3s-use plugin status <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use plugin plan-install <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--registry-name <name>] [--version-requirement <semver-range>] [--channel <stable|beta|nightly>] [--surface <kind/id>]... [--offline] [--json]
+a3s-use plugin plan-upgrade <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--version-requirement <semver-range>] [--channel <stable|beta|nightly>] [--surface <kind/id>]... [--offline] [--json]
+a3s-use plugin plan-uninstall <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use plugin plan-enable|plan-disable <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use plugin apply-plan --operation-id <id> --plan-digest <sha256> --scope-kind <user|workspace> --scope-id <id> --yes [--json]
+a3s-use extension inspect <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use extension diagnose <publisher/name> --scope-kind <user|workspace> --scope-id <id> [--history] [--json]
+a3s-use knowledge search <query> --scope-kind <user|workspace> --scope-id <id> [--limit <n>] [--json]
+a3s-use knowledge usage --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use knowledge audit --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use knowledge backup <path> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use knowledge verify-backup <path> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use knowledge backup-retention <directory> --scope-kind <user|workspace> --scope-id <id> [--max-backups <n>] [--max-bytes <n>] [--plan-digest <sha256> --yes] [--json]
+a3s-use knowledge plan-restore <path> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use knowledge restore <path> --plan-digest <sha256> --scope-kind <user|workspace> --scope-id <id> --yes [--json]
+a3s-use knowledge restore-status --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use knowledge repair-search-index --scope-kind <user|workspace> --scope-id <id> --yes [--json]
 a3s-use registry source list [--json]
 a3s-use registry source add <name> (--url <https-url> | --github <owner/repository>) --trust-root <sha256> [source options] [--json]
 a3s-use registry source replace <name> (--url <https-url> | --github <owner/repository>) --trust-root <sha256> --expected-revision <sha256> --yes [source options] [--json]
 a3s-use registry source default|enable|disable|remove <name> --expected-revision <sha256> --yes [--json]
 a3s-use registry cache usage [--registry-name <name>] [--json]
 a3s-use registry cache prune [--registry-name <name>] [cache options] --yes [--json]
-a3s-use state backup <path> [--json]
-a3s-use state verify-backup <path> [--json]
-a3s-use state backup-retention <directory> [--max-backups <n>] [--max-bytes <n>] [--plan-digest <sha256> --yes] [--json]
-a3s-use state plan-restore <backup> [--json]
-a3s-use state restore <backup> --rollback-backup <external-path> --plan-digest <sha256> --yes [--json]
-a3s-use state restore-status [--json]
-a3s-use capability snapshot|watch [options] [--json]
+a3s-use state backup <path> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use state verify-backup <path> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use state backup-retention <directory> --scope-kind <user|workspace> --scope-id <id> [--max-backups <n>] [--max-bytes <n>] [--plan-digest <sha256> --yes] [--json]
+a3s-use state plan-restore <backup> --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use state restore <backup> --rollback-backup <external-path> --plan-digest <sha256> --scope-kind <user|workspace> --scope-id <id> --yes [--json]
+a3s-use state restore-status --scope-kind <user|workspace> --scope-id <id> [--json]
+a3s-use capability snapshot|watch --scope-kind <user|workspace> --scope-id <id> [options] [--json]
 ```
 
 Standalone Registry-backed `install`, `upgrade`, and `uninstall` now plan and
@@ -376,9 +378,20 @@ call does not imply user confirmation, and an `Ask` plan receives confirmation
 only at that explicit boundary. Exact apply and replay use the verified planning
 cache without Registry access. A3S Code CLI, TUI `/packages`, and the standard
 manager-v4 MCP now compose this same service without a presentation-owned plan,
-confirmation, or mutation path. The standalone manager is bound to the current
-User scope (`user/current`); a different explicit scope kind or ID is rejected
-rather than treated as authority to mint a Workspace manager.
+confirmation, or mutation path. Every standalone manager command requires an
+explicit User or Workspace installation. The selected `InstallationId` owns the
+manager and all mutable state; User and Workspace installations with the same
+textual ID remain distinct authority domains.
+
+The scoped layout is an intentional pre-release clean cutover, not a migration.
+If `use.installation.legacy_state_unsupported` is reported, stop old Use hosts,
+preserve the prior roots for incident review, and remove only the proven
+unscoped installation entries before reinstalling with explicit scope flags.
+These entries include `data/extensions` and the old state-level `extensions`,
+`registry.json`, generation, Grant, binding, lifecycle, Knowledge, graph,
+enablement, Host Manager, route-lock, and mutation-lock paths. Preserve global
+`registries.acl`, Registry trust roots, TUF metadata/targets, and global
+artifacts; they are inputs shared by the new installations.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -402,8 +415,8 @@ complete Registry/package/lifecycle/Grant authority and exact-subset binding
 inventory, binds the live main/WAL/SHM evidence, restores only missing binding
 files, preserves prior files, and resumes a six-state durable journal after
 process exit. Conflicting or newer binding evidence fails closed. `knowledge
-restore-status --json` reads the global
-active marker and the requested scope's bounded path-free history without a
+restore-status --json` reads the selected installation's active marker and
+bounded path-free history without a
 backup path or plan digest; it reports current phase, exact digests, retained
 directory count, unrecorded marker-handoff directories, and remaining capacity
 without changing restore or database evidence.
@@ -415,15 +428,16 @@ receipts, immutable package roots, lifecycle journals, and Grants remain
 exact. It cannot recreate those independent authorities. Broader authority
 recovery, clean-machine recovery, cross-platform operational drills, and
 whole-product rollback-evidence retention still require a procedure.
-Workspace operations require an
-explicit `--scope-id`; the CLI never guesses a current Workspace identity. See
+Every installation-scoped operation requires explicit `--scope-kind` and
+`--scope-id`; the CLI never guesses a current User or Workspace identity. See
 [OKF Knowledge operations](docs/okf-knowledge-operations.md).
 
-For a quiescent whole-installation inventory, `state backup` takes the
-exclusive maintenance fence and snapshots installed package roots together
+For a quiescent whole-installation inventory, `state backup` takes that
+installation's exclusive maintenance fence and snapshots installed package roots together
 with Registry, retained-generation, Grant, binding, lifecycle/package-operation,
-Knowledge, enablement, Host Manager, and Flow Runtime state. Its
-`a3s.use.state-backup.v1` manifest contains only portable relative paths,
+Knowledge, enablement, and Host Manager state. Its
+`a3s.use.state-backup.v2` manifest binds the exact installation and contains
+only portable relative paths,
 per-file length/SHA-256/mode evidence, family accounting, the Registry
 generation/digest, and sorted installed-receipt digests. Creation scans, copies
 with exact hashing, then rescans before non-overwriting publication. Locks are
@@ -437,7 +451,9 @@ external-directory lock, fully verifies every managed archive, and returns a
 path-free oldest-first plan that binds the exact file name, modification time,
 length, manifest digest, inventory digest, and Registry evidence. Confirmed
 apply accepts only the unchanged canonical `planDigest`, synchronizes each
-deletion, and always retains at least the newest two verified archives.
+deletion, filters archives by exact installation, and always retains at least
+the newest two verified archives. Global Registry source/trust/TUF state and
+derivable Flow compiled artifacts are deliberately outside this backup.
 `state plan-restore` builds a path-free Add/Replace/Remove/Retain review only
 when the backup exactly matches the current Use version, OS, architecture, and
 independently retained Registry/receipt/Grant authority. Confirmed `state
@@ -452,7 +468,7 @@ clean-machine recovery and operational disaster-recovery drills remain open. See
 [Coordinated state backup operations](docs/state-backup-operations.md).
 
 `extension inspect --json` includes the latest and previous durable lifecycle
-operations for the default User scope. The versioned diagnostic projection
+operations for the explicitly selected installation. The versioned diagnostic projection
 reports action, status, generation, artifact digests, checkpoint progress,
 bounded error codes, timings, and rollback evidence. It deliberately omits
 checkpoint idempotency keys, credentials, tokens, secret values, and
@@ -600,6 +616,8 @@ Example development install from the configured Registry:
 
 ```bash
 a3s-use install acme/research \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --registry-name packages \
   --version 2.0.0 \
   --json
@@ -609,6 +627,8 @@ When a lock was reviewed separately, bind apply to it:
 
 ```bash
 a3s-use install acme/research \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --registry-name packages \
   --package-lock-digest sha256:<64-hex-digits> \
   --json
@@ -625,6 +645,8 @@ installed again without network access:
 
 ```bash
 a3s-use install acme/research \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --registry-name packages \
   --version 2.0.0 \
   --offline \
@@ -637,6 +659,8 @@ cache:
 
 ```bash
 a3s-use upgrade acme/research \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --registry-name packages \
   --version 2.1.0 \
   --offline \
@@ -847,7 +871,11 @@ install, upgrade, and uninstall across process restarts:
 
 ```bash
 A3S_FLOW_NATIVE_TS_COMPILER=/opt/a3s/bin/a3s-flow-native-compiler \
-  a3s-use install acme/workflows --registry-name packages --json
+  a3s-use install acme/workflows \
+    --scope-kind workspace \
+    --scope-id workspace/acme-project \
+    --registry-name packages \
+    --json
 ```
 
 `CognitivePackageManager::new` remains provider-free and deterministic;
@@ -890,7 +918,7 @@ Current Registry rules:
   semantics and must retain the same provider ID, build, normalized
   capabilities, and enforcement. The final policy decision must also remain
   unchanged.
-- Installed schema-v4 receipts retain the exact signed planning bundle for
+- Installed schema-v5 receipts retain the exact installation ID and signed planning bundle for
   every executable package. Enablement can therefore be reviewed again after
   restart without consulting a mutable Registry, while catalog, manifest, and
   installed package bytes are still revalidated.
@@ -1089,7 +1117,7 @@ Only the following cognitive-package protocol line is accepted:
 | Package manifest | schema version `3` |
 | Registry source configuration | ACL schema version `1` |
 | Signed catalog record | `a3s.use.plugin-catalog.v3` |
-| Installed receipt | schema version `4` |
+| Installed receipt | schema version `5` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6` (protocol `6`) |
 | Host managed scope | `a3s.use.plugin-managed-scope.v2` |
@@ -1106,13 +1134,16 @@ Only the following cognitive-package protocol line is accepted:
 | Pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
 | Pre-plan download diagnostic | `a3s.use.plugin-download-attempt-diagnostic.v1` |
 | Enablement state / operation | `v2` / `v2` |
-| Capability snapshot | schema version `2` |
+| Extension Registry snapshot | schema version `2` |
+| Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v2` |
+| Capability snapshot | schema version `3` |
+| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v2` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
-| Coordinated Use state backup | `a3s.use.state-backup.v1` |
-| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v1` |
-| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v1` |
+| Coordinated Use state backup | `a3s.use.state-backup.v2` |
+| Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v2` |
+| Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v2` |
 | Coordinated Use state restore plan | `a3s.use.state-restore-plan.v1` |
 | Coordinated Use state restore operation | `a3s.use.state-restore-operation.v1` |
 | Coordinated Use state restore result | `a3s.use.state-restore-result.v1` |
@@ -1158,7 +1189,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Mixed native/managed provider planning | Implemented in Use and the shared A3S host path: unbound drafts, assigned-provider preflight, host policy, canonical Grant-bound final selection, durable planning bundles/Grant snapshots/provider generations, exact apply-time reconstruction, restart replay, and provider-drift rejection are tested |
 | Exact published-generation Knowledge lease | Implemented in the Use Registry and SQLite Knowledge host. Acquisition binds the complete capability projection to the installed package, manifest, OKF bundle, lifecycle generation, and route lock; one lease retains that generation across cited search/read, rejects new calls after hide, participates in drain, and fails closed on package or retained-content drift. A3S Code consumption remains an external integration task |
 | Standalone Task, stdio MCP, explicit A3S Flow preflight, Skill/UI, and SQLite/FTS5 OKF hosts | Implemented |
-| Managed Runtime receipt lifecycle | Self-contained release-backed Task templates support restart-safe exact-generation dispatch, receipt-owned provider reconnection, stale-generation rejection, and accepted-call drain. Capability snapshot v2 publishes only exact scope/package/generation-matched Task bindings with stable host tool identities. Service preparation now syncs a v1 provisioning receipt before Runtime apply, advances it through exact Runtime and Gateway evidence, and commits the v3 binding before deleting pending recovery authority. Tool and HTTP MCP bind failures, pre-apply rollback, candidate cleanup, and the final-binding/pending-receipt crash window replay without a second Runtime effect or residue. A test-binary subprocess matrix exits at all six nested provisioning windows for both Tool and HTTP MCP, then proves exact replay, terminal idempotence, and residue-free Gateway/Runtime removal. Typed endpoints, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are contract-tested. A3S CLI `main` commit `563e7e139740e845369f9102a2d47026733797a8` qualifies four real Linux Tool and MCP processes through production Box mapping, retained N/N+1 routing, standard MCP initialize, Gateway and lifecycle-host restart, drain, exact removal, and zero-residue checks. Confirmed same-generation provider loss now retires only the stale Gateway route and old binding receipt before exact Runtime reapply and publication of a newly allocated Gateway endpoint; interrupted route removal retains replay authority without stopping or removing the Runtime unit. Scoped Code Exec Task discovery and leased invocation are qualified at A3S CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7` and CI run [32797862154](https://github.com/A3S-Lab/CLI/actions/runs/32797862154). Real provider-process kill qualification, non-Linux providers, and cross-platform product-host recovery remain open |
+| Managed Runtime receipt lifecycle | Self-contained release-backed Task templates support restart-safe exact-generation dispatch, receipt-owned provider reconnection, stale-generation rejection, and accepted-call drain. Capability snapshot v3 publishes only exact installation/package/generation-matched Task bindings with stable host tool identities. Service preparation now syncs a v1 provisioning receipt before Runtime apply, advances it through exact Runtime and Gateway evidence, and commits the v3 binding before deleting pending recovery authority. Tool and HTTP MCP bind failures, pre-apply rollback, candidate cleanup, and the final-binding/pending-receipt crash window replay without a second Runtime effect or residue. A test-binary subprocess matrix exits at all six nested provisioning windows for both Tool and HTTP MCP, then proves exact replay, terminal idempotence, and residue-free Gateway/Runtime removal. Typed endpoints, drain-before-stop, route-remove-before-Runtime-remove, exact prior-generation retirement, and stopped-binding reauthorization are contract-tested. A3S CLI `main` commit `563e7e139740e845369f9102a2d47026733797a8` qualifies four real Linux Tool and MCP processes through production Box mapping, retained N/N+1 routing, standard MCP initialize, Gateway and lifecycle-host restart, drain, exact removal, and zero-residue checks. Confirmed same-generation provider loss now retires only the stale Gateway route and old binding receipt before exact Runtime reapply and publication of a newly allocated Gateway endpoint; interrupted route removal retains replay authority without stopping or removing the Runtime unit. Scoped Code Exec Task discovery and leased invocation are qualified at A3S CLI `main` commit `e77d318beba3cba7f193da8d83bb9ac5c46fc0f7` and CI run [32797862154](https://github.com/A3S-Lab/CLI/actions/runs/32797862154). Real provider-process kill qualification, non-Linux providers, and cross-platform product-host recovery remain open |
 | Scope-bounded OKF quota, retention, tombstone GC, SQLite compaction, and usage diagnostics | Implemented in the standalone Knowledge backend |
 | Scope-local OKF integrity audit, verified database backup and rotation, derived FTS repair, and authority-bound database/binding restore | Verified backups now use exact-scope, bounded oldest-first retention with canonical plan-digest confirmation, last-backup preservation, directory locking, stale-plan rejection, and fail-closed candidate validation. Restore is real-process tested, including missing database and missing exact-subset binding recovery, conflict rejection, main/WAL/SHM retention, binding-file and filesystem/journal process-exit windows, durable maintenance blocking, path-free restore-status diagnostics at every window, and terminal read-only replay. Missing Registry/package/lifecycle/Grant authority, clean-machine, coordinated cross-family, and whole-product recovery remain open |
 | Coordinated whole-installation backup, retention, and reviewed restore | Backup and retention are implemented under the exclusive maintenance fence with deterministic path-free manifests, exact Registry/receipt authority digests, allowlisted state families, scan/copy/rescan consistency, full payload verification, exact-plan retention, and two-generation preservation. Same-version/OS/architecture restore now requires exact independently retained Registry and Grant authority, an explicit verified rollback archive, path-free digest confirmation, link/reparse-safe candidate staging, seven durable journal phases, 15 subprocess-exit recovery boundaries, terminal replay, read-only status, and bounded crash-recoverable history. Missing-authority and clean-machine recovery plus cross-platform operational disaster-recovery drills remain open |
@@ -1177,13 +1208,13 @@ release claim.
 
 | Target | Current gate | Product status |
 | --- | --- | --- |
-| Linux x86_64 / arm64 | Full non-Science workspace CI plus release-container conformance | Development preview |
-| macOS arm64 / x86_64 | Current non-Science workspace build and tests | Development preview |
-| Windows x86_64 | Current non-Science workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, scanner-lock target promotion/cache/package-commit/upgrade-receipt/lifecycle-removal recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
+| Linux x86_64 / arm64 | Full A3S Use workspace CI plus release-container conformance | Development preview |
+| macOS arm64 / x86_64 | Current A3S Use workspace build and tests | Development preview |
+| Windows x86_64 | Current A3S Use workspace tests, native linked-state qualification across Registry/cache, package graph/diagnostics, lifecycle/Runtime/Flow, backup/restore, and OKF paths, scanner-lock target promotion/cache/package-commit/upgrade-receipt/lifecycle-removal recovery, signed Registry/graph/Grant/Flow/OKF CLI lifecycles, and killed-process cutover replay | Preview; full runtime/recovery matrix pending |
 
 Native CI run
 [32604181662](https://github.com/A3S-Lab/Use/actions/runs/32604181662)
-passed the current non-Science workspace and real-process integration suite on
+passed the current Use-owned workspace and real-process integration suite on
 all five targets from exact `main` commit
 `40bc5593cbf58ca2da171d85ba578c2d6bd911c8`. This establishes the current
 Use-owned platform baseline only; product-host, reboot, broader antivirus
@@ -1195,11 +1226,16 @@ coverage is not the same as production qualification.
 
 ## Repository layout
 
+`a3s-use-science` is intentionally not part of this repository, workspace,
+runtime, CI, or release. Domain-specific Science code remains independently
+owned and may be consumed later only as a signed package through the same
+Registry contract as any third-party capability. Test packages named
+`a3s/science` are synthetic Registry fixtures and do not link a Science crate.
+
 ```text
 Use/
 ├── crates/core/             canonical contracts, resolver, plans, grants
 ├── crates/extension/        ACL packages, TUF Registry, receipts, package store
-├── crates/science/          real cognitive-package fixture and tooling
 ├── src/cognitive_package/   reviewed package-graph application service
 ├── src/plugin_manager/      shared typed service and standard manager MCP
 ├── src/plugin_lifecycle/    durable six-surface lifecycle and host boundaries
@@ -1215,8 +1251,8 @@ Run checks from this repository, not from the A3S monorepo root:
 
 ```bash
 cargo fmt --all -- --check
-cargo test --workspace --exclude a3s-use-science --all-targets
-cargo clippy --workspace --exclude a3s-use-science --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo check -p a3s-use --no-default-features
 cargo check -p a3s-use --no-default-features --features extensions
 ```

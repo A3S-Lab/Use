@@ -3,22 +3,27 @@
 ## Purpose
 
 The coordinated backup captures one integrity-verifiable inventory of all
-currently supported A3S Use-owned package and state families. It supports
-corruption detection, retention by an external backup system, and reviewed
-same-version/OS/architecture recovery of a complete installation.
+currently supported A3S Use-owned package and state families for one explicit
+User or Workspace installation. It supports corruption detection, retention by
+an external backup system, and reviewed same-version/OS/architecture recovery
+of that exact installation.
 
 It does not migrate, sign, encrypt, or upload state. A backup never authorizes
-its own restore and cannot recreate missing Registry, package, lifecycle, or
-Grant authority. Restore requires the exact independently retained live
-Registry, installed-receipt, Registry-file, and Grant-file authority captured
-by the archive.
+its own restore and cannot recreate missing Registry projection, installed
+receipt, package, lifecycle, or Grant authority. Restore requires that exact
+installation authority to remain live and equal to the evidence captured by
+the archive. Global Registry source configuration, trust roots, TUF state, and
+derivable artifact caches are outside this backup boundary.
 
 ## Commands
 
 Create a backup outside `A3S_USE_HOME`, `A3S_DATA_HOME`, and `A3S_STATE_HOME`:
 
 ```bash
-a3s-use state backup ./backups/use-state.a3s-use-state-backup --json
+a3s-use state backup ./backups/use-state.a3s-use-state-backup \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --json
 ```
 
 Verify it without a Registry, network access, or the original Use home:
@@ -26,6 +31,8 @@ Verify it without a Registry, network access, or the original Use home:
 ```bash
 a3s-use state verify-backup \
   ./backups/use-state.a3s-use-state-backup \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --json
 ```
 
@@ -35,6 +42,8 @@ Review retention without deleting anything:
 a3s-use state backup-retention ./backups \
   --max-backups 32 \
   --max-bytes 2199023255552 \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --json
 ```
 
@@ -45,6 +54,8 @@ a3s-use state backup-retention ./backups \
   --max-backups 32 \
   --max-bytes 2199023255552 \
   --plan-digest sha256:<reviewed-plan-digest> \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --yes \
   --json
 ```
@@ -57,6 +68,8 @@ Review a whole-installation restore without changing state:
 ```bash
 a3s-use state plan-restore \
   ./backups/use-state.a3s-use-state-backup \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --json
 ```
 
@@ -68,6 +81,8 @@ a3s-use state restore \
   ./backups/use-state.a3s-use-state-backup \
   --rollback-backup ./backups/pre-restore-rollback.a3s-use-state-backup \
   --plan-digest sha256:<reviewed-plan-digest> \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
   --yes \
   --json
 ```
@@ -75,14 +90,19 @@ a3s-use state restore \
 Inspect active and retained restore evidence without a backup path or write:
 
 ```bash
-a3s-use state restore-status --json
+a3s-use state restore-status \
+  --scope-kind workspace \
+  --scope-id workspace/acme-project \
+  --json
 ```
 
 ## Consistency boundary
 
-Creation takes the global exclusive state-maintenance lock. Ordinary Registry,
-package, Grant, lifecycle, Runtime, Flow, and Knowledge operations use the
-shared side of that lock, so a backup cannot overlap a compliant mutation.
+Creation takes the exact installation's exclusive state-maintenance lock.
+Ordinary Registry, package, Grant, lifecycle, Runtime, Flow, and Knowledge
+operations for that installation use the shared side of the same lock, so a
+backup cannot overlap a compliant mutation. A different installation is an
+independent consistency domain and remains available.
 Backup publication also holds the external destination-directory lock shared
 with retention planning/apply, so a reviewed directory inventory cannot race
 with a compliant archive publication.
@@ -102,7 +122,7 @@ winner.
 | Family | Owned paths |
 | --- | --- |
 | Package content | `data/extensions/` |
-| Registry | receipts, `registry.json`, `registries.acl`, trusted roots, TUF metadata, verified target and planning caches |
+| Registry | installation receipts and `registry.json` |
 | Retained generations | `state/extension-generations/` |
 | Grants | active/revoked receipts, snapshots, and terminal Grant journals |
 | Bindings | Runtime, Flow, and Knowledge bindings |
@@ -111,10 +131,14 @@ winner.
 | Knowledge | SQLite main/WAL/SHM files and terminal restore evidence |
 | Package graph and enablement | installed graph, stable enablement state, and completed enablement operations |
 | Host Manager | reviewed requests, observations, cancellations, and outcomes |
-| Flow Runtime | compiler/runtime cache owned by Use |
 
 Cross-process lock files and route lease files are excluded. Empty directories
 do not create manifest entries.
+
+Global `registries.acl`, Registry trust roots, TUF metadata, verified target and
+planning caches, and the Flow compiled-artifact cache are deliberately excluded.
+They are shared or derivable inputs, not mutable authority owned by one
+installation.
 
 ## Archive format
 
@@ -129,10 +153,12 @@ canonical JSON manifest
 file payload bytes concatenated in manifest order
 ```
 
-The `a3s.use.state-backup.v1` manifest records:
+The fixed `V1` header is the binary framing version. The current
+`a3s.use.state-backup.v2` manifest records:
 
+- the exact installation kind and ID;
 - the producing Use version, OS, and architecture;
-- data/state root plus a portable relative path for every file;
+- a data/state root discriminator plus a portable relative path for every file;
 - exact length, SHA-256, read-only bit, and Unix mode where available;
 - total and per-family file/byte accounting and inventory digests;
 - the published Registry generation and projection digest; and
@@ -174,13 +200,14 @@ managed candidate. A malformed archive, link/reparse point, special file,
 non-portable file name, overlapping live Use root, or directory with more than
 4,096 inspected entries fails closed.
 
-The path-free `a3s.use.state-backup-retention-plan.v1` plan records only each
-archive's portable file name, exact modification time in nanoseconds, archive
-length, canonical manifest digest, inventory digest, Registry generation and
-digest, file count, and payload bytes. Modification time establishes the
-oldest-first order because the deterministic backup manifest deliberately has
-no clock value. The complete reviewed inventory and policy are covered by the
-canonical plan digest.
+The path-free `a3s.use.state-backup-retention-plan.v2` plan binds the selected
+installation and records only each matching archive's portable file name,
+exact modification time in nanoseconds, archive length, canonical manifest
+digest, inventory digest, Registry generation and digest, file count, and
+payload bytes. Verified archives for another installation are never selected.
+Modification time establishes the oldest-first order because the deterministic
+backup manifest deliberately has no clock value. The complete reviewed
+inventory and policy are covered by the canonical plan digest.
 
 Apply reacquires the directory lock, rebuilds and verifies the complete
 inventory, and requires the exact reviewed digest. It preflights every removal
@@ -196,9 +223,10 @@ assumption.
 
 ## Reviewed whole-installation restore
 
-`state plan-restore` fully verifies the archive, requires its exact current Use
-version, OS, and architecture, scans live state under the exclusive maintenance
-fence, and validates independent authority. Its canonical
+`state plan-restore` fully verifies the archive, requires its exact selected
+installation, current Use version, OS, and architecture, scans that
+installation's live state under the exclusive maintenance fence, and validates
+independent authority. Its canonical
 `a3s.use.state-restore-plan.v1` output contains no archive, rollback, data-root,
 or state-root path. It classifies every allowlisted file as Add, Replace,
 Remove, or Retain and binds the backup manifest, before/after inventories,

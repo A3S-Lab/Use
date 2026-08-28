@@ -57,7 +57,7 @@ pub struct OkfKnowledgeBackupManifest {
 impl OkfKnowledgeBackupManifest {
     pub(crate) fn validate(&self) -> UseResult<OkfKnowledgeStoragePolicy> {
         if self.schema != OKF_KNOWLEDGE_BACKUP_SCHEMA
-            || !super::valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || self.created_at_ms == 0
             || self.database_bytes == 0
             || self.database_bytes > MAX_BACKUP_DATABASE_BYTES

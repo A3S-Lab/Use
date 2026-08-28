@@ -31,8 +31,7 @@ async fn schema_v3_upgrade_advances_enablement_state_without_reusing_artifact_ge
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let extension_registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let extension_registry = ExtensionRegistry::new(extension_paths(&home));
     let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
     manager
         .install_remote(
@@ -147,9 +146,7 @@ fn schema_v3_cli_upgrade_publishes_the_candidate_graph_and_reports_exact_transit
         upgraded["data"]["packageGraph"]["plan"]["plan"]["action"],
         "upgrade"
     );
-    assert!(!home
-        .join("state/operations/package-downloads/upgrade/acme/root.json")
-        .exists());
+    assert!(!scoped_state(&home, "operations/package-downloads/upgrade/acme/root.json").exists());
 
     let replay = cognitive_registry_upgrade(
         &next_server,
@@ -189,13 +186,10 @@ async fn schema_v3_cli_upgrade_uses_only_verified_cached_targets_when_offline() 
 
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
-    let configured = a3s_use_extension::RegistrySourceStore::new(ExtensionPaths::new(
-        home.join("data"),
-        home.join("state"),
-    ))
-    .resolve(Some("fixture"))
-    .await
-    .unwrap();
+    let configured = a3s_use_extension::RegistrySourceStore::new(use_paths(&home))
+        .resolve(Some("fixture"))
+        .await
+        .unwrap();
     let trusted = configured.root().clone();
     prepare_remote_package(&trusted, "acme/root", Some("1.1.0"), "stable", None)
         .await
@@ -268,7 +262,7 @@ fn schema_v3_cli_upgrade_reuses_an_exact_dependency_owned_by_another_root() {
     assert!(owner.status.success(), "{owner:?}");
     let first = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(first.status.success(), "{first:?}");
-    let shared_receipt_path = home.join("state/extensions/acme/shared.json");
+    let shared_receipt_path = scoped_state(&home, "extensions/acme/shared.json");
     let shared_receipt_before = std::fs::read(&shared_receipt_path).unwrap();
     let target_requests_before = target_request_count(&server);
 
@@ -345,10 +339,10 @@ fn schema_v3_cli_upgrade_removes_an_unreferenced_dependency_node() {
 
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
-    let obsolete_receipt = home.join("state/extensions/acme/obsolete.json");
+    let obsolete_receipt = scoped_state(&home, "extensions/acme/obsolete.json");
     assert!(obsolete_receipt.exists());
     let generation_before = serde_json::from_slice::<serde_json::Value>(
-        &std::fs::read(home.join("state/registry.json")).unwrap(),
+        &std::fs::read(scoped_state(&home, "registry.json")).unwrap(),
     )
     .unwrap()["generation"]
         .as_u64()
@@ -388,13 +382,14 @@ fn schema_v3_cli_upgrade_removes_an_unreferenced_dependency_node() {
     assert!(!obsolete_receipt.exists());
 
     let snapshot: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(home.join("state/registry.json")).unwrap()).unwrap();
+        serde_json::from_slice(&std::fs::read(scoped_state(&home, "registry.json")).unwrap())
+            .unwrap();
     assert_eq!(snapshot["generation"], generation_before + 1);
     assert!(snapshot["routes"].as_array().is_some_and(|routes| routes
         .iter()
         .all(|route| route["packageId"] != "acme/obsolete")));
     let graph: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(home.join("state/package-graphs/acme/root.json")).unwrap(),
+        &std::fs::read(scoped_state(&home, "package-graphs/acme/root.json")).unwrap(),
     )
     .unwrap();
     assert!(graph["packageLock"]["packages"]
@@ -489,9 +484,10 @@ fn schema_v3_cli_upgrade_retains_a_removed_node_owned_by_another_root() {
         .is_some_and(|packages| packages.iter().any(|package| {
             package["packageId"] == "acme/obsolete" && package["change"] == "retain"
         })));
-    assert!(home.join("state/extensions/acme/obsolete.json").exists());
+    assert!(scoped_state(&home, "extensions/acme/obsolete.json").exists());
     let snapshot: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(home.join("state/registry.json")).unwrap()).unwrap();
+        serde_json::from_slice(&std::fs::read(scoped_state(&home, "registry.json")).unwrap())
+            .unwrap();
     assert!(snapshot["routes"].as_array().is_some_and(|routes| routes
         .iter()
         .any(|route| route["packageId"] == "acme/obsolete" && route["enabled"] == true)));
@@ -550,8 +546,8 @@ fn schema_v3_cli_upgrade_rejects_replacing_a_dependency_locked_by_another_root()
     assert!(first.status.success(), "{first:?}");
     let second = cognitive_registry_install(&server, &repository, &home, "acme/second", &[]);
     assert!(second.status.success(), "{second:?}");
-    let snapshot_before = std::fs::read(home.join("state/registry.json")).unwrap();
-    let receipt_before = std::fs::read(home.join("state/extensions/acme/base.json")).unwrap();
+    let snapshot_before = std::fs::read(scoped_state(&home, "registry.json")).unwrap();
+    let receipt_before = std::fs::read(scoped_state(&home, "extensions/acme/base.json")).unwrap();
 
     let upgraded =
         cognitive_registry_upgrade(&server, &repository, &home, "acme/first", "1.1.0", &[]);
@@ -561,16 +557,14 @@ fn schema_v3_cli_upgrade_rejects_replacing_a_dependency_locked_by_another_root()
         "use.plugin.package_graph_shared_upgrade_required"
     );
     assert_eq!(
-        std::fs::read(home.join("state/registry.json")).unwrap(),
+        std::fs::read(scoped_state(&home, "registry.json")).unwrap(),
         snapshot_before
     );
     assert_eq!(
-        std::fs::read(home.join("state/extensions/acme/base.json")).unwrap(),
+        std::fs::read(scoped_state(&home, "extensions/acme/base.json")).unwrap(),
         receipt_before
     );
-    assert!(!home
-        .join("state/operations/package-graphs/upgrade/acme/first.json")
-        .exists());
+    assert!(!scoped_state(&home, "operations/package-graphs/upgrade/acme/first.json").exists());
 }
 
 #[tokio::test]
@@ -641,8 +635,7 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         home.join("state/remote-registries/third"),
     )
     .unwrap();
-    let extension_registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let extension_registry = ExtensionRegistry::new(extension_paths(&home));
     let manager = CognitivePackageManager::new(extension_registry.clone()).unwrap();
     let installed = manager
         .install_remote(
@@ -700,11 +693,9 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         .await
         .unwrap()
         .is_none());
-    assert!(!home
-        .join("state/operations/package-graphs/upgrade/acme/root.json")
-        .exists());
+    assert!(!scoped_state(&home, "operations/package-graphs/upgrade/acme/root.json").exists());
     let graph: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(home.join("state/package-graphs/acme/root.json")).unwrap(),
+        &std::fs::read(scoped_state(&home, "package-graphs/acme/root.json")).unwrap(),
     )
     .unwrap();
     let root_graph = graph["packageLock"]["packages"]
@@ -729,7 +720,7 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
     assert!(!replay.changed);
     assert!(replay.plan.is_none());
 
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
     let interrupted = manager
         .upgrade_remote(
             &third_registry,
@@ -743,9 +734,7 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         .unwrap_err();
     assert_eq!(interrupted.code, "use.extension.busy");
     assert_eq!(interrupted.details["rollbackCode"], "use.extension.busy");
-    assert!(home
-        .join("state/operations/package-graphs/upgrade/acme/root.json")
-        .exists());
+    assert!(scoped_state(&home, "operations/package-graphs/upgrade/acme/root.json").exists());
     FileExt::unlock(&registry_lock).unwrap();
     drop(registry_lock);
 
@@ -764,9 +753,7 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         recovered.code,
         "use.plugin.package_graph_upgrade_rolled_back"
     );
-    assert!(!home
-        .join("state/operations/package-graphs/upgrade/acme/root.json")
-        .exists());
+    assert!(!scoped_state(&home, "operations/package-graphs/upgrade/acme/root.json").exists());
     assert_eq!(
         extension_registry
             .get("acme/root")

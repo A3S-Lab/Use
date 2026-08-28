@@ -366,7 +366,7 @@ async fn catalog_v3_static_package_has_no_planning_target_download() {
     let archive = extension_archive(PACKAGE_VERSION);
     let target = host_target().unwrap();
     let archive_target = format!(
-        "extensions/a3s/science/{PACKAGE_VERSION}/stable/{target}/a3s-use-science-{PACKAGE_VERSION}-{target}.tar.gz"
+        "extensions/a3s/science/{PACKAGE_VERSION}/stable/{target}/science-fixture-{PACKAGE_VERSION}-{target}.tar.gz"
     );
     let mut catalog = PluginCatalogRecord::from_json(COMPLETE_CATALOG).unwrap();
     catalog.schema = PLUGIN_CATALOG_SCHEMA_V3.to_owned();
@@ -559,7 +559,7 @@ fn planning_test_repository(
     let archive = extension_archive(PACKAGE_VERSION);
     let target = host_target().unwrap();
     let archive_target = format!(
-        "extensions/a3s/science/{PACKAGE_VERSION}/stable/{target}/a3s-use-science-{PACKAGE_VERSION}-{target}.tar.gz"
+        "extensions/a3s/science/{PACKAGE_VERSION}/stable/{target}/science-fixture-{PACKAGE_VERSION}-{target}.tar.gz"
     );
     let planning_target =
         format!("extensions/a3s/science/{PACKAGE_VERSION}/stable/{target}/planning-v1.json");

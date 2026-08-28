@@ -35,8 +35,7 @@ async fn interrupted_graph_durably_blocks_enablement_admission_until_recovery() 
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let registry = ExtensionRegistry::new(extension_paths(&home));
     let manager = CognitivePackageManager::new(registry.clone()).unwrap();
     manager
         .install_remote(
@@ -112,7 +111,7 @@ async fn interrupted_graph_durably_blocks_enablement_admission_until_recovery() 
         }),
     )
     .unwrap();
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
     let interrupted = applying
         .install_cached(
             &trusted,
@@ -182,8 +181,7 @@ async fn interrupted_enablement_durably_blocks_graph_admission_until_recovery() 
         home.join("state/remote-registries/fixture"),
     )
     .unwrap();
-    let registry =
-        ExtensionRegistry::new(ExtensionPaths::new(home.join("data"), home.join("state")));
+    let registry = ExtensionRegistry::new(extension_paths(&home));
     let manager = CognitivePackageManager::new(registry.clone()).unwrap();
     manager
         .install_remote(
@@ -238,7 +236,7 @@ async fn interrupted_enablement_durably_blocks_graph_admission_until_recovery() 
             confirmed_by: disable_plan.plan.authority.actor,
             confirmed_at_ms: disable_plan.plan.created_at_ms + 1,
         });
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
     let interrupted = manager
         .apply_enablement(&disable, disable_plan.clone(), disable_confirmation.clone())
         .await

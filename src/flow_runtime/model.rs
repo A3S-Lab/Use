@@ -75,7 +75,7 @@ impl FlowRuntimeBinding {
 
     pub fn validate(&self) -> UseResult<()> {
         if self.schema != FLOW_RUNTIME_BINDING_SCHEMA
-            || !valid_machine_id(&self.scope.id)
+            || self.scope.validate().is_err()
             || PluginPackageId::parse(self.surface.package_id.clone()).is_err()
             || self.surface.surface.kind != PluginSurfaceKind::Flow
             || !valid_segment(&self.surface.surface.id)
@@ -239,18 +239,6 @@ pub(crate) async fn digest_artifact(path: &Path) -> UseResult<String> {
         ));
     }
     Ok(format!("sha256:{:x}", hasher.finalize()))
-}
-
-pub(crate) fn valid_machine_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 256
-        && value
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b':' | b'/' | b'@')
-        })
 }
 
 pub(crate) fn valid_segment(value: &str) -> bool {

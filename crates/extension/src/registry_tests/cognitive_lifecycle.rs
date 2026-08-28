@@ -75,7 +75,10 @@ async fn lifecycle_receipts_require_exact_selected_surface_evidence() {
         .await
         .unwrap();
     let installed = registry.get("acme/cognitive").await.unwrap().unwrap();
-    assert_eq!(installed.receipt.schema_version, 4);
+    assert_eq!(
+        installed.receipt.schema_version,
+        EXTENSION_RECEIPT_SCHEMA_VERSION
+    );
     assert_eq!(installed.selected_surfaces().unwrap(), selected_surfaces);
     assert!(!installed.surfaces().contains(&"ui"));
 
@@ -99,7 +102,7 @@ async fn lifecycle_receipts_require_exact_selected_surface_evidence() {
         },
         {
             let mut receipt = current.clone();
-            receipt["schemaVersion"] = serde_json::json!(3);
+            receipt["schemaVersion"] = serde_json::json!(EXTENSION_RECEIPT_SCHEMA_VERSION - 1);
             (
                 "superseded schema",
                 receipt,
@@ -154,7 +157,10 @@ async fn lifecycle_snapshot_cannot_steal_the_reviewed_atomic_cutover() {
         .await
         .unwrap();
     assert!(committed.changed);
-    assert_eq!(committed.extension.receipt.schema_version, 4);
+    assert_eq!(
+        committed.extension.receipt.schema_version,
+        EXTENSION_RECEIPT_SCHEMA_VERSION
+    );
     assert_eq!(committed.extension.receipt.lifecycle_generation, Some(7));
     assert!(!committed.extension.receipt.enabled);
     assert_eq!(
@@ -243,7 +249,7 @@ async fn lifecycle_snapshot_does_not_reconcile_during_state_restore_maintenance(
     let snapshot_path = registry.paths().registry_snapshot_path();
     let mut stale = registry.snapshot().await.unwrap();
     stale.routes[0].surfaces.pop();
-    crate::registry_io::write_registry_snapshot(&snapshot_path, &stale)
+    crate::registry_io::write_registry_snapshot(registry.paths(), &stale)
         .await
         .unwrap();
 

@@ -49,6 +49,7 @@ fn killed_planning_target_download_is_diagnostic_and_hands_off_without_a_gap() {
             "1.0.0",
             "--json",
         ])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .spawn()
         .unwrap();
@@ -74,6 +75,7 @@ fn killed_planning_target_download_is_diagnostic_and_hands_off_without_a_gap() {
     let requests_before_diagnostic = server.requests().len();
     let active = Command::new(binary())
         .args(["extension", "diagnose", "acme/worker", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -116,12 +118,11 @@ fn killed_planning_target_download_is_diagnostic_and_hands_off_without_a_gap() {
     let partial_length = std::fs::metadata(&partial).unwrap().len();
     assert!(partial_length > 0 && partial_length < planning_bytes);
     assert!(!verified.exists());
-    assert!(!home
-        .join("state/operations/package-graphs/install/acme/worker.json")
-        .exists());
+    assert!(!scoped_state(&home, "operations/package-graphs/install/acme/worker.json").exists());
 
     let retained = Command::new(binary())
         .args(["extension", "diagnose", "acme/worker", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();
@@ -145,15 +146,16 @@ fn killed_planning_target_download_is_diagnostic_and_hands_off_without_a_gap() {
     );
     assert!(!partial.exists());
     assert!(verified.is_file());
-    assert!(!home
-        .join("state/operations/package-downloads/install/acme/worker.json")
-        .exists());
-    assert!(home
-        .join("state/operations/package-graphs/install/acme/worker.json")
-        .is_file());
+    assert!(!scoped_state(
+        &home,
+        "operations/package-downloads/install/acme/worker.json"
+    )
+    .exists());
+    assert!(scoped_state(&home, "operations/package-graphs/install/acme/worker.json").is_file());
 
     let handed_off = Command::new(binary())
         .args(["extension", "diagnose", "acme/worker", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();

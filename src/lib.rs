@@ -1,7 +1,20 @@
 //! Typed facade for A3S application capabilities.
 
-/// Stable user-level scope shared by standalone and embedded package hosts.
-pub const COGNITIVE_PACKAGE_DEFAULT_SCOPE: &str = "user/current";
+#[cfg(test)]
+pub(crate) fn test_installation() -> a3s_use_core::InstallationId {
+    a3s_use_core::InstallationId::new(a3s_use_core::InstallationKind::User, "user/current")
+        .expect("the fixed test installation must be valid")
+}
+
+#[cfg(all(test, feature = "extensions"))]
+pub(crate) fn test_extension_paths(root: &std::path::Path) -> a3s_use_extension::ExtensionPaths {
+    a3s_use_extension::ExtensionPaths::new(
+        root.join("data"),
+        root.join("state"),
+        test_installation(),
+    )
+    .expect("the fixed test installation paths must be valid")
+}
 
 #[cfg(feature = "browser")]
 mod browser_cli;

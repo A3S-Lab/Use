@@ -8,7 +8,7 @@ fn schema_v3_install_reclaims_abandoned_package_commit_staging() {
     let repository = TestRepository::with_targets(vec![package], 83, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let package_parent = home.join("data/extensions/acme/root");
+    let package_parent = scoped_data(&home, "extensions/acme/root");
     let abandoned = package_parent.join(".lifecycle-staging-interrupted");
     std::fs::create_dir_all(abandoned.join("nested")).unwrap();
     std::fs::write(abandoned.join("nested/partial"), b"partial package copy").unwrap();
@@ -17,7 +17,7 @@ fn schema_v3_install_reclaims_abandoned_package_commit_staging() {
 
     assert!(installed.status.success(), "{installed:?}");
     assert!(!abandoned.exists());
-    assert!(home.join("state/extensions/acme/root.json").is_file());
+    assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
     assert!(std::fs::read_dir(&package_parent).unwrap().all(|entry| {
         !entry
             .unwrap()
@@ -45,10 +45,10 @@ fn schema_v3_uninstall_rejects_recovery_when_exact_graph_evidence_was_deleted() 
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
 
-    let root_receipt = home.join("state/extensions/acme/root.json");
-    let base_receipt = home.join("state/extensions/acme/base.json");
-    let pending_path = home.join("state/operations/package-graphs/uninstall/acme/root.json");
-    let graph_path = home.join("state/package-graphs/acme/root.json");
+    let root_receipt = scoped_state(&home, "extensions/acme/root.json");
+    let base_receipt = scoped_state(&home, "extensions/acme/base.json");
+    let pending_path = scoped_state(&home, "operations/package-graphs/uninstall/acme/root.json");
+    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
     assert!(root_receipt.exists());
     assert!(base_receipt.exists());
     std::fs::remove_file(&graph_path).unwrap();
@@ -83,11 +83,11 @@ fn schema_v3_uninstall_rejects_missing_generation_without_durable_cutover() {
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
 
-    let selected_receipt = home.join("state/extensions/acme/root.json");
-    let graph_path = home.join("state/package-graphs/acme/root.json");
-    let pending_path = home.join("state/operations/package-graphs/uninstall/acme/root.json");
-    let snapshot_path = home.join("state/registry.json");
-    let registry_lock = exclusive_lock(&home.join("state/extensions/.registry.lock"));
+    let selected_receipt = scoped_state(&home, "extensions/acme/root.json");
+    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let pending_path = scoped_state(&home, "operations/package-graphs/uninstall/acme/root.json");
+    let snapshot_path = scoped_state(&home, "registry.json");
+    let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));
     let interrupted = cognitive_uninstall(&home, "acme/root");
     assert!(!interrupted.status.success(), "{interrupted:?}");
     assert_eq!(json(&interrupted)["error"]["code"], "use.extension.busy");
@@ -146,21 +146,19 @@ fn schema_v3_upgrade_replays_removed_node_cleanup_without_generation_inflation()
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
 
-    let snapshot_path = home.join("state/registry.json");
-    let obsolete_receipt = home.join("state/extensions/acme/obsolete.json");
-    let pending_path = home.join("state/operations/package-graphs/upgrade/acme/root.json");
+    let snapshot_path = scoped_state(&home, "registry.json");
+    let obsolete_receipt = scoped_state(&home, "extensions/acme/obsolete.json");
+    let pending_path = scoped_state(&home, "operations/package-graphs/upgrade/acme/root.json");
     let snapshot_before: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
     let obsolete_installed: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&obsolete_receipt).unwrap()).unwrap();
     let obsolete_generation = obsolete_installed["lifecycleGeneration"].as_u64().unwrap();
     let obsolete_sha256 = obsolete_installed["packageSha256"].as_str().unwrap();
-    let obsolete_retained_receipt = home
-        .join("state/extension-generations/acme/obsolete")
+    let obsolete_retained_receipt = scoped_state(&home, "extension-generations/acme/obsolete")
         .join(format!("{obsolete_generation:020}-{obsolete_sha256}.json"));
     let route_lock = exclusive_lock(
-        &home
-            .join("state/route-locks/acme/obsolete")
+        &scoped_state(&home, "route-locks/acme/obsolete")
             .join(format!("{obsolete_generation:020}.lock")),
     );
 
@@ -174,6 +172,7 @@ fn schema_v3_upgrade_replays_removed_node_cleanup_without_generation_inflation()
             "1.1.0",
             "--json",
         ])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .spawn()
         .unwrap();
@@ -273,28 +272,27 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
     let installed = cognitive_registry_install(&server, &repository, &home, "acme/root", &[]);
     assert!(installed.status.success(), "{installed:?}");
 
-    let selected_receipt = home.join("state/extensions/acme/root.json");
+    let selected_receipt = scoped_state(&home, "extensions/acme/root.json");
     let installed_receipt: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&selected_receipt).unwrap()).unwrap();
     let lifecycle_generation = installed_receipt["lifecycleGeneration"].as_u64().unwrap();
     let package_sha256 = installed_receipt["packageSha256"].as_str().unwrap();
-    let retained_receipt = home
-        .join("state/extension-generations/acme/root")
+    let retained_receipt = scoped_state(&home, "extension-generations/acme/root")
         .join(format!("{lifecycle_generation:020}-{package_sha256}.json"));
-    let pending_path = home.join("state/operations/package-graphs/uninstall/acme/root.json");
-    let snapshot_path = home.join("state/registry.json");
+    let pending_path = scoped_state(&home, "operations/package-graphs/uninstall/acme/root.json");
+    let snapshot_path = scoped_state(&home, "registry.json");
     let snapshot_before: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
 
     let lifecycle_path = lifecycle_journal_path(&home, "acme/root");
     let lifecycle_lock = exclusive_lock(&lifecycle_path.with_file_name(".operation.lock"));
     let route_lock = exclusive_lock(
-        &home
-            .join("state/route-locks/acme/root")
+        &scoped_state(&home, "route-locks/acme/root")
             .join(format!("{lifecycle_generation:020}.lock")),
     );
     let mut interrupted = Command::new(binary())
         .args(["uninstall", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .spawn()
         .unwrap();
@@ -363,6 +361,7 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
 
     let mut recovery = Command::new(binary())
         .args(["uninstall", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -417,6 +416,7 @@ fn schema_v3_uninstall_replays_cutover_drain_and_removal_after_real_process_kill
 
     let diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
+        .for_test_installation()
         .env("A3S_USE_HOME", &home)
         .output()
         .unwrap();

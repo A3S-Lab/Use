@@ -147,7 +147,7 @@ fn readable_segment(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use a3s_runtime::contract::NetworkMode;
-    use a3s_use_core::{PlanEnforcementProfile, PlanScopeKind, PlannedProviderEvidence};
+    use a3s_use_core::{PlanEnforcementProfile, PlannedProviderEvidence};
     use a3s_use_extension::{ExtensionManifest, ExtensionReceipt, ExtensionTrust};
 
     use crate::plugin_runtime::{
@@ -194,7 +194,8 @@ extension "acme/research" {
             .collect::<Vec<_>>();
         selected_surfaces.sort();
         let receipt = ExtensionReceipt {
-            schema_version: 4,
+            schema_version: a3s_use_extension::EXTENSION_RECEIPT_SCHEMA_VERSION,
+            installation: crate::test_installation(),
             package_id: manifest.package_id.clone(),
             component_id: "use/acme/research".to_string(),
             route: manifest.route.clone(),
@@ -215,10 +216,7 @@ extension "acme/research" {
     }
 
     fn scope() -> PlanScope {
-        PlanScope {
-            kind: PlanScopeKind::User,
-            id: crate::cognitive_package::COGNITIVE_PACKAGE_DEFAULT_SCOPE.to_string(),
-        }
+        crate::test_installation()
     }
 
     fn task_binding(

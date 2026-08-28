@@ -22,24 +22,20 @@ const STATE_DIRECTORIES: &[&str] = &[
     "bindings",
     "extension-generations",
     "extensions",
-    "flow-runtime",
     "grants",
     "knowledge",
     "operations",
     "package-enablement",
     "package-graphs",
     "plugin-host-manager",
-    "registry-trust-roots",
-    "remote-registries",
     "route-locks",
 ];
 
-const STATE_FILES: &[&str] = &["registries.acl", "registry.json"];
+const STATE_FILES: &[&str] = &["registry.json"];
 const STATE_ROOT_LOCKS: &[&str] = &[
     ".installation-mutation.lock",
     ".maintenance.lock",
     ".package-graph.lock",
-    ".registries.lock",
 ];
 
 const OPERATION_DIRECTORIES: &[&str] = &[
@@ -485,11 +481,7 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
             "The backup manifest contains an unknown data family.",
         )),
         StateBackupRoot::State => match first {
-            "extensions"
-            | "registry.json"
-            | "registries.acl"
-            | "remote-registries"
-            | "registry-trust-roots" => Ok(StateBackupFamily::Registry),
+            "extensions" | "registry.json" => Ok(StateBackupFamily::Registry),
             "extension-generations" => Ok(StateBackupFamily::RetainedGenerations),
             "grants" => Ok(StateBackupFamily::Grants),
             "bindings" => Ok(StateBackupFamily::Bindings),
@@ -510,7 +502,6 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
             "package-graphs" => Ok(StateBackupFamily::PackageGraph),
             "package-enablement" => Ok(StateBackupFamily::Enablement),
             "plugin-host-manager" => Ok(StateBackupFamily::HostManager),
-            "flow-runtime" => Ok(StateBackupFamily::FlowRuntime),
             "route-locks" => Err(state_backup_invalid(
                 "The backup manifest must not contain route lock files.",
             )),

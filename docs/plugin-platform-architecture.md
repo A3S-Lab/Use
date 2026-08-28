@@ -449,10 +449,11 @@ authority is removed. Restart therefore replays the same Runtime/Gateway
 effect, reconciles the safe both-files window, or completes candidate cleanup;
 it never infers a unit or route from package files.
 
-Capability snapshot schema v2 contains complete `PlanScope`, package/surface
-identity, generation, desired/observed state, readiness, dependencies, and
-evidence digests. A release-backed Tool Task enters `toolTasks` only when its
-v4 binding matches the published package digest, scope, surface, and lifecycle
+Capability snapshot schema v3 contains the exact `InstallationId`,
+package/surface identity, generation, desired/observed state, readiness,
+dependencies, and evidence digests. A release-backed Tool Task enters
+`toolTasks` only when its v4 binding matches the published package digest,
+installation, surface, and lifecycle
 generation. The projection carries a stable host tool name, original command,
 bounded argv contract metadata, exact lifecycle identity, and reviewed provider
 ID; missing or mismatched bindings remain unpublished. Watchers resume by
@@ -472,9 +473,9 @@ Mismatched or missing Runtime/Gateway initialize evidence leaves the surface
 unpublished.
 
 For admission that spans more than one package, the injected
-`CapabilityRegistry` derives `a3s.use.capability-snapshot-cursor.v1`. It binds
-that capability revision to the exact Extension Registry digest and sorted
-package, manifest, and lifecycle generations. Acquisition takes every shared
+`CapabilityRegistry` derives `a3s.use.capability-snapshot-cursor.v2`. It binds
+the exact installation and capability revision to the Extension Registry digest
+and sorted package, manifest, and lifecycle generations. Acquisition takes every shared
 route lease in canonical order and rechecks the publication only after the
 complete batch is held. A concurrent cutover, hidden or contended generation,
 digest drift, or enabled non-lifecycle route yields no partial lease. The
@@ -492,7 +493,12 @@ read into an unbounded mutation queue.
 
 ## Storage model
 
-Use owns separate roots for:
+Use separates global immutable/derivable inputs from installation authority.
+The global roots contain Registry source configuration, TUF metadata and
+verified targets, and content-addressed compiled artifacts. They cannot contain
+selection, activation, or authorization state.
+
+Each `InstallationId(kind, id)` owns separate roots for:
 
 - immutable package generations;
 - selected and retained receipts;
@@ -504,9 +510,17 @@ Use owns separate roots for:
 - Runtime provisioning, Runtime/Flow/OKF/static bindings; and
 - capability projections and enablement state.
 
-Every path is derived from normalized identity, bounded, and checked against
-symlink/reparse-point traversal. Atomic replacement syncs the file and parent
-directory where supported. Tests must leave no temporary roots or locks.
+Every scoped path is derived from the validated installation kind and a
+collision-resistant key over kind plus ID. Every path is bounded and checked
+against symlink/reparse-point traversal. Atomic replacement syncs the file and
+parent directory where supported. Windows state publication uses extended-length
+native paths where required. Tests must leave no temporary roots or locks.
+
+The pre-A1 unscoped package/state layout is rejected rather than ignored or
+migrated. Operators must preserve it for review, remove only independently
+proven legacy installation entries, and reinstall into an explicit identity.
+Global Registry source configuration, trust/TUF caches, and artifact inputs are
+not legacy installation state and remain intact.
 
 Unknown pre-release state is never migrated. The error instructs cleanup and
 reinstallation with the current build.

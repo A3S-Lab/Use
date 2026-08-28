@@ -3,7 +3,6 @@ mod r0_cross_project_support;
 use std::path::Path;
 
 use a3s_use_core::{PluginPackageLock, PluginReleaseChannel};
-use a3s_use_extension::ExtensionRegistrySnapshot;
 use olpc_cjson::CanonicalFormatter;
 use r0_cross_project_support::{
     canonical_digest, read_fixture, verify_fixture_package, Contract, ContractError,
@@ -69,6 +68,17 @@ struct RevisionFixture {
     generation: u64,
     revision_digest: String,
     reference_digest: String,
+}
+
+/// Frozen A3S Use 0.3.0 Registry snapshot used only to verify the historical
+/// cross-project digest. Production decoding intentionally accepts only the
+/// current installation-bound Registry snapshot contract.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegistrySnapshotFixture {
+    schema_version: u32,
+    generation: u64,
+    routes: Vec<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -263,7 +273,7 @@ fn use_recomputes_candidate_lock_registry_and_generation_evidence() {
     let package_lock_digest = package_lock.descriptor_digest().unwrap();
     assert_eq!(package_lock_digest, contract.generation.package_lock_digest);
     assert_eq!(package_lock.root_package_id, contract.candidate.package_id);
-    let snapshot: ExtensionRegistrySnapshot = read_json(root, "fixtures/registry-snapshot.json");
+    let snapshot: RegistrySnapshotFixture = read_json(root, "fixtures/registry-snapshot.json");
     let snapshot_digest = use_descriptor_digest(&snapshot);
     assert_eq!(
         snapshot_digest,
