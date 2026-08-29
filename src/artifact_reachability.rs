@@ -1,22 +1,35 @@
-//! Global, path-free Artifact Store reference evidence.
+//! Global, path-free Artifact Store reachability evidence.
 //!
 //! Reference state remains owned by Registry sources, installations, and
-//! durable operations. This module derives a fresh immutable view under the
+//! durable operations. Physical state remains owned by the Artifact Store.
+//! This module derives fresh immutable reference and joined views under the
 //! global collection guard; it never creates a second mutable authority.
 
 use std::collections::BTreeMap;
 
 use a3s_use_core::{InstallationId, UseError, UseResult};
-use a3s_use_extension::{ArtifactKind, RegistrySourceStore, UsePaths};
+use a3s_use_extension::{ArtifactCollectionGuard, ArtifactKind, RegistrySourceStore, UsePaths};
 use serde::{Deserialize, Serialize};
 
 mod installation;
+mod joined;
+mod quota;
 #[cfg(test)]
 mod tests;
 
+pub use joined::{
+    ArtifactMeasurementStatus, ArtifactPhysicalEvidence, ArtifactReachabilityEntry,
+    ArtifactReachabilityInventory, ArtifactReferenceOwner, ArtifactStorageUsage,
+    ARTIFACT_REACHABILITY_INVENTORY_SCHEMA,
+};
+pub use quota::{
+    ArtifactStorageQuotaAssessment, ArtifactStorageQuotaPolicy,
+    MAX_ARTIFACT_STORAGE_QUOTA_ARTIFACTS,
+};
+
 pub const ARTIFACT_REFERENCE_INVENTORY_SCHEMA: &str = "a3s.use.artifact-reference-inventory.v1";
 
-const MAX_ARTIFACT_REFERENCE_FACTS: u64 = 1_000_000;
+pub(super) const MAX_ARTIFACT_REFERENCE_FACTS: u64 = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -70,8 +83,30 @@ impl ArtifactReachabilityInspector {
     pub async fn inspect_references(&self) -> UseResult<ArtifactReferenceInventory> {
         let artifact_store = self.paths.artifact_store();
         let collection = artifact_store.acquire_collection().await?;
+        self.inspect_references_under_collection(&collection).await
+    }
+
+    /// Join logical references and physical Artifact Store evidence in one
+    /// guarded collection pass. New references and physical publication are
+    /// frozen; concurrent retirement can only leave conservative extra owners.
+    /// The result grants no deletion authority and does not claim that content
+    /// bytes match their path digest.
+    pub async fn inspect_reachability(&self) -> UseResult<ArtifactReachabilityInventory> {
+        let artifact_store = self.paths.artifact_store();
+        let collection = artifact_store.acquire_collection().await?;
+        let references = self
+            .inspect_references_under_collection(&collection)
+            .await?;
+        let physical = artifact_store.inspect_inventory(&collection).await?;
+        joined::join(references, physical)
+    }
+
+    async fn inspect_references_under_collection(
+        &self,
+        collection: &ArtifactCollectionGuard,
+    ) -> UseResult<ArtifactReferenceInventory> {
         let registry = RegistrySourceStore::new(self.paths.clone())
-            .inspect_artifact_references(&collection)
+            .inspect_artifact_references(collection)
             .await?;
         let mut accumulator = ReferenceAccumulator::default();
         for reference in registry.references {
@@ -195,17 +230,8 @@ impl ReferenceAccumulator {
     }
 }
 
-fn validate_reference(reference: &RawArtifactReference) -> UseResult<()> {
-    let valid_digest = reference
-        .digest
-        .strip_prefix("sha256:")
-        .is_some_and(|digest| {
-            digest.len() == 64
-                && digest
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-        });
-    if !valid_digest
+pub(super) fn validate_reference(reference: &RawArtifactReference) -> UseResult<()> {
+    if !valid_artifact_digest(&reference.digest)
         || reference.expected_bytes == Some(0)
         || reference.expected_files == Some(0)
         || (reference.kind == ArtifactKind::Blob && reference.expected_files.is_some())
@@ -224,7 +250,7 @@ fn validate_reference(reference: &RawArtifactReference) -> UseResult<()> {
     Ok(())
 }
 
-fn merge_expectation(
+pub(super) fn merge_expectation(
     current: Option<u64>,
     candidate: Option<u64>,
     label: &str,
@@ -236,6 +262,15 @@ fn merge_expectation(
         (Some(value), _) | (_, Some(value)) => Ok(Some(value)),
         (None, None) => Ok(None),
     }
+}
+
+pub(super) fn valid_artifact_digest(value: &str) -> bool {
+    value.strip_prefix("sha256:").is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    })
 }
 
 pub(crate) fn reference_invalid(message: impl Into<String>) -> UseError {

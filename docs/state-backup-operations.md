@@ -141,9 +141,9 @@ Global `registries.acl`, Registry trust roots, TUF metadata, verified target and
 planning caches, expanded packages under `data/artifacts`, and the Flow
 compiled-artifact cache are deliberately excluded. They are shared or
 derivable inputs, not mutable authority owned by one installation. Global
-reference inventory covers every installation and durable operation, but
-unreferenced artifacts remain retained until physical joining, audit, quota,
-and confirmed deletion are implemented.
+reachability inventory joins every installation and durable operation with
+physical evidence and checked usage, but unreferenced artifacts remain retained
+until audit, hard quota admission, and confirmed deletion are implemented.
 
 ## Archive format
 

@@ -20,6 +20,8 @@ const CATALOG: &[u8] =
     include_bytes!("../../crates/core/fixtures/plugins/catalog-record-okf-v3.json");
 const MANIFEST: &str = include_str!("../../crates/extension/fixtures/manifests/plugin-v3-okf.acl");
 
+mod joined_tests;
+
 fn assert_send_sync<T: Send + Sync>() {}
 
 #[test]
@@ -203,6 +205,67 @@ async fn global_inventory_joins_path_free_references_across_installations() {
     let object = value.as_object().unwrap();
     assert_eq!(object.len(), 2);
     assert!(!value.to_string().contains("packageRoot"));
+
+    let joined = inspector.inspect_reachability().await.unwrap();
+    assert_eq!(joined.schema, ARTIFACT_REACHABILITY_INVENTORY_SCHEMA);
+    assert_eq!(joined.artifacts.len(), 1);
+    assert_eq!(joined.artifacts[0].digest, digest);
+    assert_eq!(joined.artifacts[0].references.len(), 6);
+    assert!(joined.artifacts[0].physical.is_none());
+    assert_eq!(
+        joined.artifacts[0].measurement_status,
+        ArtifactMeasurementStatus::Unavailable
+    );
+    assert_eq!(joined.usage.artifact_keys, 1);
+    assert_eq!(joined.usage.referenced_artifacts, 1);
+    assert_eq!(joined.usage.physical_artifacts, 0);
+    assert_eq!(joined.usage.missing_referenced_artifacts, 1);
+    assert!(!serde_json::to_string(&joined)
+        .unwrap()
+        .contains("packageRoot"));
+}
+
+#[tokio::test]
+async fn joined_inventory_reports_unreferenced_physical_content_without_authorizing_deletion() {
+    let temporary = tempfile::tempdir().unwrap();
+    let roots = UsePaths::new(
+        temporary.path().join("data"),
+        temporary.path().join("state"),
+    );
+    let digest = digest('9');
+    let content = roots
+        .artifact_store()
+        .expanded_package_path(&digest)
+        .unwrap();
+    fs::create_dir_all(&content).await.unwrap();
+    fs::write(content.join("payload.bin"), b"data")
+        .await
+        .unwrap();
+
+    let inventory = ArtifactReachabilityInspector::new(roots)
+        .inspect_reachability()
+        .await
+        .unwrap();
+
+    assert_eq!(inventory.artifacts.len(), 1);
+    let artifact = &inventory.artifacts[0];
+    assert_eq!(artifact.kind, ArtifactKind::ExpandedPackage);
+    assert_eq!(artifact.digest, digest);
+    assert!(artifact.references.is_empty());
+    assert_eq!(
+        artifact.physical.as_ref().unwrap().state,
+        a3s_use_extension::ArtifactPhysicalState::Complete
+    );
+    assert_eq!(
+        artifact.measurement_status,
+        ArtifactMeasurementStatus::Unspecified
+    );
+    assert_eq!(inventory.usage.unreferenced_artifacts, 1);
+    assert_eq!(inventory.usage.unreferenced_content_bytes, 4);
+    assert!(serde_json::to_value(inventory)
+        .unwrap()
+        .get("deletionAuthorized")
+        .is_none());
 }
 
 #[tokio::test]

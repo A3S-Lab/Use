@@ -16,7 +16,9 @@ use crate::package::{io_error, MAX_PACKAGE_BYTES, MAX_PACKAGE_FILES};
 pub const ARTIFACT_STORE_INVENTORY_SCHEMA: &str = "a3s.use.artifact-store-inventory.v1";
 
 const MAX_ARTIFACT_SHARDS: usize = 256;
-const MAX_ARTIFACT_INVENTORY_ENTRIES: usize = 100_000;
+/// Maximum digest containers accepted by one physical Artifact Store scan.
+/// Downstream accounting and quota projections use the same bound.
+pub const MAX_ARTIFACT_STORE_INVENTORY_ENTRIES: usize = 100_000;
 const MAX_ARTIFACT_INVENTORY_TREE_ENTRIES: usize = 1_000_000;
 
 /// Physical content tier in the global Artifact Store.
@@ -101,7 +103,7 @@ impl InventoryBudget {
             .artifacts
             .checked_add(1)
             .ok_or_else(|| inventory_limit("The Artifact Store artifact inventory overflowed."))?;
-        if self.artifacts > MAX_ARTIFACT_INVENTORY_ENTRIES {
+        if self.artifacts > MAX_ARTIFACT_STORE_INVENTORY_ENTRIES {
             return Err(inventory_limit(
                 "The Artifact Store exceeds its bounded artifact inventory.",
             ));

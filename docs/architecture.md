@@ -50,7 +50,7 @@ ownership boundaries stabilize.
 | --- | --- | --- |
 | Package aggregate | One manifest generation owns Tool, MCP, OKF, Flow, Skill, and UI surfaces; dependency preparation and retirement are ordered around one cutover. | Correct foundation. A surface must not become an independently installed mini-package. |
 | Trust and planning | TUF provenance, exact SemVer locks, read-only planning, explicit confirmation, generation compare-and-swap, and crash replay are enforced. | Correct foundation. Keep source transport, trust evidence, and package identity separate. |
-| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. Guarded, bounded, path-free inventories now report physical content and aggregate Registry, installation, receipt, pending-graph, and nonterminal lifecycle references. Source observations and resumable partials remain source-scoped; physical joining, quota, quarantine, rehydration, and garbage collection are not implemented. | Partially correct. Complete the physical join and explicit audit/repair/GC policy before deleting or replacing shared bytes. |
+| Immutable bytes | Expanded packages and verified raw archive, planning, and media targets use global content-addressed Artifact Store tiers shared across sources and installations. A guarded, bounded, path-free joined inventory captures physical content plus Registry, installation, receipt, pending-graph, and nonterminal lifecycle references in one collection pass, conservatively retaining owners retired during inspection; it derives checked storage usage and supports bounded quota assessment. Source observations and resumable partials remain source-scoped; hard quota admission, quarantine, rehydration, and garbage collection are not implemented. | Partially correct. Complete concurrency-safe quota admission and the explicit audit/repair/GC policy before deleting or replacing shared bytes. |
 | Installation authority | `InstallationSnapshot` owns desired roots, the unified resolved graph, per-package enablement, and selected-surface publication intent. Receipts, Registry package bindings, recovery projections, Grants, provider bindings, operations, and materialized publication metadata still live in separate stores. | Critical debt. A2 must make related control facts transactional in one Control Store; filesystem sagas remain only for external provider effects. |
 | Agent contract | The current serializable `CapabilityBinding` contains `packageRoot`, executable/release paths, Skill paths, and asset paths. | Critical portability debt. A3 must expose opaque `InvocationRef`, `ArtifactRef`, and `EndpointRef` contracts through the Capability MCP Gateway. |
 | Identity | Registry ownership, accepted-call leases, cursors, and Tool/MCP host names use scoped package/generation/surface keys. The optional manifest `route` is retained only as a human alias; duplicates are legal and explicit alias lookup rejects ambiguity. | Corrected A1 foundation. Aliases may improve presentation but must never enter ownership or cursor identity. |
@@ -110,9 +110,10 @@ are serialized by one digest mutation lock across installations. User and
 Workspace receipts may reference the same directory while retaining independent
 lifecycle generations and publication state. Uninstall retires only scoped
 authority and never deletes shared bytes. Installation backup excludes the
-global store. The global reference inventory now proves which installations and
-nonterminal operations retain each digest, but unreferenced expanded content is
-still retained until physical joining, audit, quota, and confirmed deletion are
+global store. The joined reachability inventory now captures which installations
+and nonterminal operations retain each digest together with its physical
+measurements and checked usage. Unreferenced expanded content is still retained
+until audit, concurrency-safe quota admission, and confirmed deletion are
 implemented.
 
 Verified archives, executable planning targets, and presentation media now use
@@ -133,10 +134,13 @@ unknown or incomplete source state. Global reference v1 joins those facts with
 every installed selection, current and retained receipt, non-cancelled package
 graph, and applying or rolling-back lifecycle journal. It validates source and
 installation identity, rejects conflicting physical expectations, and retains
-missing-content references. These reports do not rehash or join physical
-content. No collector may delete shared raw or expanded bytes until physical
-state, quota, confirmation, corruption quarantine, and verified rehydration are
-implemented without replacing an admitted generation in place.
+missing-content references. Joined reachability v1 captures those reference and
+physical facts under the same exclusive guard, reports metadata expectation
+status, and derives checked storage usage plus bounded quota assessment. It does
+not rehash content, reserve capacity against concurrent publication, or grant
+deletion authority. No collector may delete shared raw or expanded bytes until
+hard quota admission, confirmation, corruption quarantine, and verified
+rehydration are implemented without replacing an admitted generation in place.
 
 Every Runtime, Flow, OKF binding/SQLite, and lifecycle journal store captures
 one `InstallationId` at construction. Scope fields retained in receipts and
