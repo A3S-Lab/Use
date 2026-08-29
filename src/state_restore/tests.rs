@@ -185,6 +185,41 @@ async fn apply_creates_exact_rollback_publishes_inventory_and_replays_terminally
 }
 
 #[tokio::test]
+async fn global_collection_blocks_restore_state_publication() {
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = fixture_paths(temporary.path());
+    let file = paths.state_root().join("knowledge/value.bin");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, b"candidate").unwrap();
+    let backup_path = temporary.path().join("candidate.a3s-use-state-backup");
+    StateBackupManager::new(paths.clone())
+        .backup(&backup_path)
+        .await
+        .unwrap();
+    std::fs::write(&file, b"live").unwrap();
+    let manager = StateRestoreManager::new(paths.clone());
+    let plan = manager.plan_restore(&backup_path).await.unwrap();
+    let plan_digest = plan.descriptor_digest().unwrap();
+    let rollback_path = temporary.path().join("rollback.a3s-use-state-backup");
+    let collection = paths.artifact_store().acquire_collection().await.unwrap();
+    let mut restore = Box::pin(manager.apply_restore(&backup_path, &rollback_path, &plan_digest));
+
+    tokio::select! {
+        result = &mut restore => {
+            panic!("restore publication crossed the active collection boundary: {result:?}")
+        }
+        () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+    }
+    assert_eq!(std::fs::read(&file).unwrap(), b"live");
+    assert!(!rollback_path.exists());
+
+    drop(collection);
+    let result = restore.await.unwrap();
+    assert!(result.changed);
+    assert_eq!(std::fs::read(file).unwrap(), b"candidate");
+}
+
+#[tokio::test]
 async fn no_change_apply_does_not_create_a_rollback_or_operation() {
     let temporary = tempfile::tempdir().unwrap();
     let paths = fixture_paths(temporary.path());

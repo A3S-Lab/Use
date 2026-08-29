@@ -225,9 +225,10 @@ Implementation evidence (2026-08-28):
   resumable partials in the Registry source datastore. Blob commit is
   digest-locked, no-clobber, handle-rehashed, and durable before observation
   publication; source prune never deletes global bytes.
-- [ ] Introduce one global cross-source/cross-installation/cross-operation
-  reachability inventory, quota, and confirmed garbage-collection policy
-  before deleting any raw blob or expanded tree.
+- [x] Introduce one global cross-source/cross-installation/cross-operation
+  reference inventory before deleting any raw blob or expanded tree.
+- [ ] Join global references with physical inventory, enforce quota, and require
+  an explicit confirmed garbage-collection policy before deletion.
 - [ ] Add explicit global artifact audit, quarantine, and verified
   rehydration. Corruption must fail closed and preserve forensic evidence; it
   must not silently replace bytes underneath an admitted generation.
@@ -321,9 +322,8 @@ open):
   regular-file bytes and files, bounds the complete traversal, and rejects
   unknown layout, links/reparse points, and special files. This is physical
   evidence only: it neither infers reachability nor verifies path digests and
-  grants no deletion authority. Cross-state reference aggregation, quota,
-  confirmed GC, audit, quarantine, and rehydration remain open, so both
-  Artifact Store checklist items remain unchecked.
+  grants no deletion authority. Physical joining, quota, confirmed GC, audit,
+  quarantine, and rehydration remain open.
 - `RegistrySourceStore::inspect_artifact_references` now derives the first
   reference-source inventory under that exact exclusive guard. Its path-free
   v1 evidence scans every preserved Registry datastore, including a source no
@@ -331,7 +331,19 @@ open):
   with its signed byte expectation. Unknown layouts, missing cache locks,
   links/reparse points, malformed observations, and traversal bounds fail
   closed. This inventory is one input to—not a replacement for—the still-open
-  global installation/operation aggregation and physical join.
+  global reference view's physical join and deletion policy.
+- `ArtifactReachabilityInspector::inspect_references` now derives the path-free
+  `a3s.use.artifact-reference-inventory.v1` view under the same exclusive
+  global guard. It validates every installation storage key and identity, then
+  aggregates Registry observations, installed selections, current and retained
+  receipts, non-cancelled package-graph operations, and applying/rolling-back
+  lifecycle journals. Source locks are joined without nesting unrelated locks;
+  unknown state, links/reparse points, malformed or unbounded records, and
+  conflicting physical expectations fail closed. Missing physical content does
+  not erase a durable reference. Whole-installation restore now enters global
+  reference admission before its maintenance lock and publication, closing the
+  restore-to-collector race. Physical join, quota, audit, and confirmed deletion
+  remain open.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove

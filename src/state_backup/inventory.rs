@@ -14,37 +14,10 @@ use super::{
     MAX_STATE_BACKUP_ENTRIES, MAX_STATE_BACKUP_FILES, MAX_STATE_BACKUP_FILE_BYTES,
     MAX_STATE_BACKUP_PATH_BYTES,
 };
+use crate::installation_state_layout;
 
 const MAX_STATE_BACKUP_DEPTH: usize = 32;
 const READ_BUFFER_BYTES: usize = 128 * 1024;
-
-const STATE_DIRECTORIES: &[&str] = &[
-    "bindings",
-    "extension-generations",
-    "extensions",
-    "generation-leases",
-    "grants",
-    "knowledge",
-    "operations",
-    "package-enablement",
-    "plugin-host-manager",
-];
-
-const STATE_FILES: &[&str] = &["installation-snapshot.json", "registry.json"];
-const STATE_ROOT_LOCKS: &[&str] = &[
-    ".installation-mutation.lock",
-    ".maintenance.lock",
-    ".package-graph.lock",
-];
-
-const OPERATION_DIRECTORIES: &[&str] = &[
-    "package-diagnostic-history",
-    "package-downloads",
-    "package-graphs",
-    "package-resolutions",
-    "plugins",
-    "state-restores",
-];
 
 #[derive(Debug)]
 struct ScannedFile {
@@ -310,19 +283,12 @@ fn validate_layout(root: StateBackupRoot, relative: &Path, directory: bool) -> U
     }
     let mut components = relative.components();
     let first = normal_component(components.next())?;
-    if components.next().is_none() {
-        let supported = if directory {
-            STATE_DIRECTORIES.binary_search(&first).is_ok()
-        } else {
-            STATE_FILES.binary_search(&first).is_ok()
-                || STATE_ROOT_LOCKS.binary_search(&first).is_ok()
-                || first == ACTIVE_STATE_RESTORE_MARKER
-        };
-        if !supported {
-            return Err(state_backup_layout_unsupported(
-                "The Use state root contains an unknown top-level state family.",
-            ));
-        }
+    if components.next().is_none()
+        && !installation_state_layout::supported_root_entry(first, directory)
+    {
+        return Err(state_backup_layout_unsupported(
+            "The Use state root contains an unknown top-level state family.",
+        ));
     }
     let parts = relative
         .components()
@@ -330,7 +296,7 @@ fn validate_layout(root: StateBackupRoot, relative: &Path, directory: bool) -> U
         .collect::<UseResult<Vec<_>>>()?;
     if parts.first() == Some(&"operations")
         && parts.len() >= 2
-        && OPERATION_DIRECTORIES.binary_search(&parts[1]).is_err()
+        && !installation_state_layout::supported_operation_directory(parts[1])
     {
         return Err(state_backup_layout_unsupported(
             "The Use operations root contains an unknown state family.",
@@ -338,7 +304,7 @@ fn validate_layout(root: StateBackupRoot, relative: &Path, directory: bool) -> U
     }
     if parts.first() == Some(&"bindings")
         && parts.len() >= 2
-        && !matches!(parts[1], "flow" | "knowledge" | "runtime")
+        && !installation_state_layout::supported_binding_directory(parts[1])
     {
         return Err(state_backup_layout_unsupported(
             "The Use binding root contains an unknown state family.",
@@ -366,7 +332,7 @@ fn excluded_lock(root: StateBackupRoot, relative: &Path) -> bool {
         return false;
     };
     if relative.components().count() == 1 {
-        return STATE_ROOT_LOCKS.binary_search(&name).is_ok();
+        return installation_state_layout::excluded_root_lock(name);
     }
     name.ends_with(".lock")
 }

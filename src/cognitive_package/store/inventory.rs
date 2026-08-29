@@ -1,7 +1,7 @@
 use std::io;
 use std::path::Path;
 
-use a3s_use_core::{PluginOperationAction, UseResult};
+use a3s_use_core::{InstallationId, PluginOperationAction, PluginPackageLock, UseResult};
 use tokio::fs;
 
 use super::{
@@ -103,4 +103,33 @@ pub(super) async fn read_pending_operations_locked(
         }
     }
     Ok(operations)
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PendingPackageGraphArtifactReferences {
+    pub(crate) installation: InstallationId,
+    pub(crate) cancelled: bool,
+    pub(crate) package_locks: Vec<PluginPackageLock>,
+}
+
+/// Project durable graph operations into the minimum reference-bearing shape
+/// needed by global reachability. The private operation schema remains owned
+/// by the package-graph store.
+pub(crate) async fn inspect_pending_artifact_references_locked(
+    root: &Path,
+) -> UseResult<Vec<PendingPackageGraphArtifactReferences>> {
+    let operations = read_pending_operations_locked(root).await?;
+    let mut references = Vec::with_capacity(operations.len());
+    for operation in operations {
+        let mut package_locks = Vec::new();
+        package_locks.extend(operation.envelope.package_lock.iter().cloned());
+        package_locks.extend(operation.prior_package_lock.iter().cloned());
+        package_locks.extend(operation.envelope.prior_package_lock.iter().cloned());
+        references.push(PendingPackageGraphArtifactReferences {
+            installation: operation.envelope.plan.scope.clone(),
+            cancelled: operation.phase() == super::PackageGraphOperationPhase::Cancelled,
+            package_locks,
+        });
+    }
+    Ok(references)
 }

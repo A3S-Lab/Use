@@ -492,9 +492,10 @@ Source cleanup discards resumable progress and logical observation capacity. It
 never removes global raw blobs or expanded artifacts, receipts, Grants,
 bindings, capability state, or journals. Cached TUF metadata may recreate a
 source observation after rehashing an existing exact blob. Partial downloads
-are not offline evidence and never authorize package staging. Global
-reachability, quota, confirmed GC, audit, quarantine, and verified rehydration
-remain release work.
+are not offline evidence and never authorize package staging. Global reference
+inventory now covers Registry observations plus every installation and durable
+reference-bearing operation. Physical joining, quota, confirmed GC, audit,
+quarantine, and verified rehydration remain release work.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being

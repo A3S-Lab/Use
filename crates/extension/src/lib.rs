@@ -60,14 +60,14 @@ pub use plugin_manifest::{
     ToolSurface, ToolTaskSource, ToolTaskSurface, ToolWorkload,
 };
 pub use registry::{
-    validate_catalog_manifest_binding, ExtensionGenerationLease,
+    validate_catalog_manifest_binding, ExtensionArtifactReference, ExtensionGenerationLease,
     ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
     ExtensionLifecycleResult, ExtensionLifecycleRollbackResult, ExtensionPackageBinding,
     ExtensionReceipt, ExtensionRegistry, ExtensionRegistryCutoverRecord, ExtensionRegistrySnapshot,
     ExtensionSnapshotCursor, ExtensionSnapshotLease, ExtensionSnapshotPackage, ExtensionTrust,
     InstalledExtension, UninstallResult, EXTENSION_RECEIPT_SCHEMA_VERSION,
     EXTENSION_REGISTRY_CUTOVER_SCHEMA, EXTENSION_SNAPSHOT_CURSOR_SCHEMA,
-    MAX_PENDING_REGISTRY_CUTOVERS,
+    MAX_EXTENSION_RECEIPT_BYTES, MAX_PENDING_REGISTRY_CUTOVERS,
 };
 pub use registry_sources::{
     GitHubRegistryRepository, RegistryArtifactReference, RegistryArtifactReferenceInventory,

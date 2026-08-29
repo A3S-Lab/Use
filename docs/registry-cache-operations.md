@@ -106,7 +106,8 @@ source's logical byte bound. It checks the source partial filesystem for the
 remaining download bytes plus the reserve and checks the operation staging
 filesystem before copying a completed blob. Source observation deletion can
 release logical policy capacity, but it does not claim to release physical
-Artifact Store space. Global blob quota and cross-source reachability GC remain
+Artifact Store space. Global blob reference inventory is implemented; physical
+joining, quota, and confirmed cross-source GC remain
 an explicit roadmap item.
 
 Interrupted downloads are retained as

@@ -1,6 +1,39 @@
 use super::*;
 
 #[tokio::test]
+async fn receipt_reference_survives_missing_physical_content() {
+    let temporary = tempfile::tempdir().unwrap();
+    let source = temporary.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 6);
+    let registry = registry(temporary.path());
+    let installed = registry
+        .commit_lifecycle_package(&identity, &candidate)
+        .await
+        .unwrap()
+        .extension;
+    let package_root = installed.receipt.package_root.clone();
+    fs::remove_dir_all(&package_root).await.unwrap();
+
+    let reference = installed
+        .receipt
+        .artifact_reference(&registry.paths().artifact_store())
+        .unwrap();
+
+    assert_eq!(reference.digest, identity.package_digest());
+    assert!(!package_root.exists());
+    assert!(registry.get("acme/cognitive").await.is_err());
+}
+
+#[tokio::test]
 async fn registry_tuf_receipts_require_verified_catalog_evidence() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("cognitive");

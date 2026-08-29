@@ -4,9 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use a3s_use_core::{
-    InstallationId, PlanPackageRole, PlannedPackageState, PlannedPackageTransition,
-    PluginCatalogRecord, PluginPlanningBundle, PluginSurfaceKind, PluginSurfaceRef, UseError,
-    UseResult, VerifiedPluginCatalogRecord,
+    InstallationId, PluginCatalogRecord, PluginSurfaceKind, PluginSurfaceRef, UseError, UseResult,
+    VerifiedPluginCatalogRecord,
 };
 use fs2::FileExt;
 use olpc_cjson::CanonicalFormatter;
@@ -17,18 +16,20 @@ use tokio::fs;
 use super::digest::package_sha256;
 use super::generation_lease::{deadline_after, open_generation_lock};
 use super::package::{
-    io_error, lock_is_contended, owned_package_path, read_manifest, sha256, validate_surface_files,
-    RegistryLock,
+    io_error, lock_is_contended, read_manifest, sha256, validate_surface_files, RegistryLock,
 };
 use super::registry_io::{read_registry_snapshot, write_registry_snapshot};
 use super::remote::ResolvedRemotePackage;
 use super::state_maintenance::StateMaintenanceLock;
 use super::{ExtensionManifest, ExtensionPaths};
 
+mod artifact_reference;
 mod cutover;
 mod lifecycle;
+mod receipt;
 mod snapshot_lease;
 
+pub use artifact_reference::ExtensionArtifactReference;
 pub use cutover::{
     ExtensionRegistryCutoverRecord, EXTENSION_REGISTRY_CUTOVER_SCHEMA,
     MAX_PENDING_REGISTRY_CUTOVERS,
@@ -37,196 +38,17 @@ pub use lifecycle::{
     ExtensionLifecycleGraphPublication, ExtensionLifecycleIdentity, ExtensionLifecyclePackage,
     ExtensionLifecycleResult, ExtensionLifecycleRollbackResult,
 };
+pub use receipt::{
+    ExtensionReceipt, ExtensionTrust, InstalledExtension, EXTENSION_RECEIPT_SCHEMA_VERSION,
+    MAX_EXTENSION_RECEIPT_BYTES,
+};
 pub use snapshot_lease::{
     ExtensionSnapshotCursor, ExtensionSnapshotLease, ExtensionSnapshotPackage,
     EXTENSION_SNAPSHOT_CURSOR_SCHEMA,
 };
 
-pub const EXTENSION_RECEIPT_SCHEMA_VERSION: u32 = 6;
 pub(super) const REGISTRY_SCHEMA_VERSION: u32 = 3;
 const WATCH_INTERVAL: Duration = Duration::from_millis(50);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ExtensionTrust {
-    LocalExplicit,
-    ReleaseBundle,
-    RegistryTuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ExtensionReceipt {
-    pub schema_version: u32,
-    pub installation: InstallationId,
-    pub package_id: String,
-    pub component_id: String,
-    /// Optional human-facing alias retained from the admitted manifest.
-    /// Package ownership is carried only by the scoped lifecycle identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub route_alias: Option<String>,
-    pub version: String,
-    pub package_root: PathBuf,
-    pub manifest_sha256: String,
-    pub package_sha256: Option<String>,
-    pub trust: ExtensionTrust,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub registry: Option<ResolvedRemotePackage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub verified_catalog: Option<VerifiedPluginCatalogRecord>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub planning_bundle: Option<PluginPlanningBundle>,
-    /// Exact resolved surface set selected by the immutable lifecycle plan.
-    pub selected_surfaces: Vec<PluginSurfaceRef>,
-    pub installed_at_unix: u64,
-    pub enabled: bool,
-    pub lifecycle_generation: Option<u64>,
-}
-
-impl ExtensionReceipt {
-    /// Canonical identity of the complete installed ownership and provenance
-    /// record. Secret values are not part of extension receipts.
-    pub fn descriptor_digest(&self) -> UseResult<String> {
-        let mut bytes = Vec::new();
-        let mut serializer =
-            serde_json::Serializer::with_formatter(&mut bytes, CanonicalFormatter::new());
-        self.serialize(&mut serializer).map_err(|error| {
-            UseError::new(
-                "use.extension.receipt_invalid",
-                format!("Failed to encode the canonical extension receipt: {error}"),
-            )
-        })?;
-        Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstalledExtension {
-    pub receipt: ExtensionReceipt,
-    pub manifest: ExtensionManifest,
-}
-
-impl InstalledExtension {
-    pub fn surfaces(&self) -> Vec<&'static str> {
-        let selected = self
-            .receipt
-            .selected_surfaces
-            .iter()
-            .map(|surface| surface.kind)
-            .collect::<std::collections::BTreeSet<_>>();
-        [
-            (PluginSurfaceKind::Tool, "tool"),
-            (PluginSurfaceKind::Mcp, "mcp"),
-            (PluginSurfaceKind::Okf, "okf"),
-            (PluginSurfaceKind::Flow, "flow"),
-            (PluginSurfaceKind::Skill, "skill"),
-            (PluginSurfaceKind::Ui, "ui"),
-        ]
-        .into_iter()
-        .filter_map(|(kind, name)| selected.contains(&kind).then_some(name))
-        .collect()
-    }
-
-    /// Return the exact surface set selected by the reviewed lifecycle plan.
-    pub fn selected_surfaces(&self) -> UseResult<Vec<PluginSurfaceRef>> {
-        let selected = self.receipt.selected_surfaces.clone();
-        validate_surface_selection(
-            &self.manifest,
-            self.receipt.verified_catalog.as_ref(),
-            &selected,
-        )?;
-        Ok(selected)
-    }
-
-    pub fn enabled(&self) -> bool {
-        self.receipt.enabled
-    }
-
-    pub fn supports_use_version(&self, version: &str) -> bool {
-        self.manifest.supports_use_version(version).unwrap_or(false)
-    }
-
-    /// Return the verified package-planning evidence retained by this
-    /// installed package after checking its internal receipt bindings.
-    pub fn plan_ready_catalog(&self) -> UseResult<&VerifiedPluginCatalogRecord> {
-        let catalog = self.receipt.verified_catalog.as_ref().ok_or_else(|| {
-            plan_evidence_error(
-                "The installed extension does not retain verified package-planning evidence.",
-            )
-        })?;
-        if self.receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION
-            || self.receipt.trust != ExtensionTrust::RegistryTuf
-        {
-            return Err(plan_evidence_error(
-                "The installed extension receipt is not plan-ready registry state.",
-            ));
-        }
-        validate_catalog_binding(
-            catalog,
-            self.receipt.registry.as_ref(),
-            &self.manifest,
-            &self.receipt.manifest_sha256,
-            self.receipt.package_sha256.as_deref().ok_or_else(|| {
-                plan_evidence_error("The cognitive-package receipt omitted its package digest.")
-            })?,
-        )?;
-        Ok(catalog)
-    }
-
-    /// Return the signed executable-planning target retained at installation.
-    ///
-    /// Static packages legitimately return `None`. A package whose catalog
-    /// declares executable planning must retain the exact validated bundle so
-    /// enablement can be reviewed offline without consulting a mutable
-    /// Registry again.
-    pub fn plan_ready_planning_bundle(&self) -> UseResult<Option<&PluginPlanningBundle>> {
-        let catalog = self.plan_ready_catalog()?;
-        match (&catalog.record.planning, &self.receipt.planning_bundle) {
-            (None, None) => Ok(None),
-            (Some(_), Some(bundle)) => {
-                bundle.validate_catalog_binding(catalog)?;
-                Ok(Some(bundle))
-            }
-            _ => Err(plan_evidence_error(
-                "The installed extension receipt does not retain its exact signed planning bundle.",
-            )),
-        }
-    }
-
-    /// Resolve the exact installed package state using active surfaces
-    /// observed by the capability snapshot.
-    pub fn planned_state(
-        &self,
-        active_surfaces: &[PluginSurfaceRef],
-    ) -> UseResult<PlannedPackageState> {
-        self.plan_ready_catalog()?.selected_state(active_surfaces)
-    }
-
-    pub fn remove_transition(
-        &self,
-        role: PlanPackageRole,
-        active_surfaces: &[PluginSurfaceRef],
-    ) -> UseResult<PlannedPackageTransition> {
-        self.plan_ready_catalog()?
-            .remove_transition(role, active_surfaces)
-    }
-
-    pub fn replace_transition(
-        &self,
-        candidate: &VerifiedPluginCatalogRecord,
-        role: PlanPackageRole,
-        active_surfaces: &[PluginSurfaceRef],
-        requested_surfaces: &[PluginSurfaceRef],
-    ) -> UseResult<PlannedPackageTransition> {
-        candidate.replace_transition(
-            self.plan_ready_catalog()?,
-            role,
-            active_surfaces,
-            requested_surfaces,
-        )
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -693,21 +515,7 @@ impl ExtensionRegistry {
     }
 
     async fn load_receipt(&self, receipt_path: &Path) -> UseResult<InstalledExtension> {
-        let metadata = fs::symlink_metadata(receipt_path)
-            .await
-            .map_err(|error| io_error("inspect extension receipt", receipt_path, error))?;
-        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
-            return Err(UseError::new(
-                "use.extension.receipt_invalid",
-                format!(
-                    "Extension receipt '{}' is not an owned regular file.",
-                    receipt_path.display()
-                ),
-            ));
-        }
-        let bytes = fs::read(receipt_path)
-            .await
-            .map_err(|error| io_error("read extension receipt", receipt_path, error))?;
+        let bytes = artifact_reference::read_extension_receipt_bytes(receipt_path).await?;
         let receipt: ExtensionReceipt = serde_json::from_slice(&bytes).map_err(|error| {
             UseError::new(
                 "use.extension.receipt_invalid",
@@ -717,114 +525,23 @@ impl ExtensionRegistry {
                 ),
             )
         })?;
-        if receipt.schema_version != EXTENSION_RECEIPT_SCHEMA_VERSION {
-            return Err(UseError::new(
-                "use.extension.receipt_incompatible",
-                format!(
-                    "Extension receipt schema {} is obsolete; remove the pre-release state and reinstall the package.",
-                    receipt.schema_version
-                ),
-            ));
-        }
-        receipt.installation.validate().map_err(|_| {
-            UseError::new(
-                "use.extension.receipt_invalid",
-                "The extension receipt installation identity is invalid.",
-            )
-        })?;
+        let artifact_reference = receipt.artifact_reference(&self.paths.artifact_store())?;
         if receipt.installation != *self.installation() {
             return Err(UseError::new(
                 "use.extension.receipt_scope_mismatch",
                 "The extension receipt belongs to a different installation.",
             ));
         }
-        let generation = receipt.lifecycle_generation.ok_or_else(|| {
-            UseError::new(
-                "use.extension.lifecycle_receipt_invalid",
-                "A cognitive-package receipt omitted its generation.",
-            )
-        })?;
-        let expected_package_sha256 = receipt.package_sha256.as_deref().ok_or_else(|| {
-            UseError::new(
-                "use.extension.lifecycle_receipt_invalid",
-                "A cognitive-package receipt omitted its package digest.",
-            )
-        })?;
-        if generation == 0
-            || expected_package_sha256.len() != 64
-            || !expected_package_sha256
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-        {
-            return Err(UseError::new(
-                "use.extension.lifecycle_receipt_invalid",
-                format!(
-                    "Extension receipt for '{}' has an invalid generation or package digest.",
-                    receipt.package_id
-                ),
-            ));
-        }
-        match (
-            receipt.trust,
-            receipt.registry.as_ref(),
-            receipt.verified_catalog.as_ref(),
-            receipt.planning_bundle.as_ref(),
-        ) {
-            (ExtensionTrust::LocalExplicit | ExtensionTrust::ReleaseBundle, None, None, None) => {}
-            (ExtensionTrust::RegistryTuf, Some(registry), Some(catalog), planning_bundle) => {
-                registry.validate_provenance()?;
-                if registry.package_id != receipt.package_id || registry.version != receipt.version
-                {
-                    return Err(UseError::new(
-                        "use.extension.receipt_invalid",
-                        format!(
-                            "Registry provenance for '{}' does not match its receipt.",
-                            receipt.package_id
-                        ),
-                    ));
-                }
-                if !catalog.record.is_package_plan_ready() {
-                    return Err(UseError::new(
-                        "use.extension.receipt_invalid",
-                        format!(
-                            "Extension receipt for '{}' contains non-plan-ready catalog evidence.",
-                            receipt.package_id
-                        ),
-                    ));
-                }
-                if catalog.record.planning.is_some() != planning_bundle.is_some() {
-                    return Err(UseError::new(
-                        "use.extension.receipt_invalid",
-                        format!(
-                            "Extension receipt for '{}' does not retain its signed planning target.",
-                            receipt.package_id
-                        ),
-                    )
-                    .with_suggestion("Reinstall the cognitive package from its trusted Registry."));
-                }
-            }
-            _ => {
-                return Err(UseError::new(
-                    "use.extension.receipt_invalid",
-                    format!(
-                        "Extension receipt for '{}' has inconsistent trust provenance.",
-                        receipt.package_id
-                    ),
-                ))
-            }
-        }
+        let expected_package_sha256 = artifact_reference
+            .digest
+            .strip_prefix("sha256:")
+            .ok_or_else(|| {
+                UseError::new(
+                    "use.extension.lifecycle_receipt_invalid",
+                    "A cognitive-package receipt has an invalid package digest.",
+                )
+            })?;
         let package_id = normalize_package_id(&receipt.package_id)?;
-        if receipt.component_id != format!("use/{package_id}")
-            || !owned_package_path(&self.paths, &receipt.package_root, expected_package_sha256)
-        {
-            return Err(UseError::new(
-                "use.extension.ownership_invalid",
-                format!(
-                    "Receipt for '{}' has invalid ownership metadata.",
-                    package_id
-                ),
-            ));
-        }
         self.paths
             .artifact_store()
             .validate_expanded_package_path(expected_package_sha256, &receipt.package_root)

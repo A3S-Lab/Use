@@ -140,9 +140,10 @@ do not create manifest entries.
 Global `registries.acl`, Registry trust roots, TUF metadata, verified target and
 planning caches, expanded packages under `data/artifacts`, and the Flow
 compiled-artifact cache are deliberately excluded. They are shared or
-derivable inputs, not mutable authority owned by one installation. Unreferenced
-expanded artifacts are retained until a future global collector can prove
-reachability across every installation and durable operation.
+derivable inputs, not mutable authority owned by one installation. Global
+reference inventory covers every installation and durable operation, but
+unreferenced artifacts remain retained until physical joining, audit, quota,
+and confirmed deletion are implemented.
 
 ## Archive format
 
@@ -247,6 +248,11 @@ rollback destination. Before publishing the active marker or changing live
 state, it either creates a non-overwriting coordinated rollback archive of the
 reviewed live inventory or verifies an existing archive as an exact match.
 A mismatched rollback archive is never replaced.
+
+Restore apply enters global Artifact Store reference admission before taking
+the installation maintenance lock and holds it through publication and resume.
+An exclusive global collector therefore cannot miss references introduced by a
+restored snapshot, receipt, or nonterminal operation.
 
 Only Add and Replace payloads are staged beneath digest-named hidden candidate
 roots. Candidate and publication traversal rejects symbolic links, Windows

@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-use super::registry::ExtensionReceipt;
+use super::registry::{ExtensionReceipt, MAX_EXTENSION_RECEIPT_BYTES};
 use super::state_maintenance::{StateMaintenanceGuard, StateMaintenanceLock};
 use super::{ArtifactReferenceAdmission, ArtifactStore, ExtensionManifest, ExtensionPaths};
 
@@ -254,6 +254,12 @@ pub(crate) async fn write_receipt(
             format!("Failed to encode extension receipt: {error}"),
         )
     })?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_EXTENSION_RECEIPT_BYTES {
+        return Err(UseError::new(
+            "use.extension.receipt_invalid",
+            "The encoded extension receipt exceeds its durable byte bound.",
+        ));
+    }
     let mut options = fs::OpenOptions::new();
     options.create_new(true).write(true);
     let mut file = options
@@ -360,18 +366,6 @@ pub(crate) async fn sync_parent_directory(parent: &Path, label: &str) -> UseResu
 #[cfg(not(unix))]
 pub(crate) async fn sync_parent_directory(_parent: &Path, _label: &str) -> UseResult<()> {
     Ok(())
-}
-
-pub(crate) fn owned_package_path(
-    paths: &ExtensionPaths,
-    candidate: &Path,
-    package_sha256: &str,
-) -> bool {
-    candidate.is_absolute()
-        && candidate
-            == paths
-                .artifact_store()
-                .expanded_package_path_from_sha256(package_sha256)
 }
 
 pub(crate) fn sha256(bytes: &[u8]) -> String {

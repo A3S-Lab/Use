@@ -252,6 +252,28 @@ async fn global_collection_blocks_new_durable_operation_references() {
 }
 
 #[tokio::test]
+async fn pending_inventory_projects_only_reference_bearing_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = PendingPackageGraphStore::new(&state_root);
+    let package_lock = package_lock("1.0.0", '1');
+    let operation = install_pending(&package_lock);
+    store.put(&operation).await.unwrap();
+
+    let _lock = acquire_existing_package_graph_lock_shared(&state_root)
+        .await
+        .unwrap();
+    let references =
+        inspect_pending_artifact_references_locked(&state_root.join("operations/package-graphs"))
+            .await
+            .unwrap();
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].installation, scope());
+    assert!(!references[0].cancelled);
+    assert_eq!(references[0].package_locks, vec![package_lock]);
+}
+
+#[tokio::test]
 async fn pending_store_serializes_all_actions_for_one_root() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");
@@ -409,6 +431,17 @@ async fn pending_store_persists_exact_cancellation_before_host_projection() {
         cancelled.cancellation_request_id.as_deref(),
         Some("cancel:test:0001")
     );
+
+    let _lock = acquire_existing_package_graph_lock_shared(&state_root)
+        .await
+        .unwrap();
+    let references =
+        inspect_pending_artifact_references_locked(&state_root.join("operations/package-graphs"))
+            .await
+            .unwrap();
+    assert_eq!(references.len(), 1);
+    assert!(references[0].cancelled);
+    drop(_lock);
 
     let restarted = PendingPackageGraphStore::new(&state_root);
     assert_eq!(
