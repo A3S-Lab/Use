@@ -566,6 +566,34 @@ async fn installation_bound_store_rejects_another_scope_kind() {
     assert!(!operation_directory(&store, &workspace_scope).exists());
 }
 
+#[tokio::test]
+async fn begin_enters_global_reference_admission_before_publishing_a_journal() {
+    let temp = tempfile::tempdir().unwrap();
+    let installation = workspace_scope();
+    let paths = a3s_use_extension::ExtensionPaths::new(
+        temp.path().join("data"),
+        temp.path().join("state"),
+        installation,
+    )
+    .unwrap();
+    let store = PluginLifecycleJournalStore::from_extension_paths(&paths);
+    let intent = intent("install:acme-guide:admission");
+    let collection = paths.artifact_store().acquire_collection().await.unwrap();
+
+    let pending_store = store.clone();
+    let pending_intent = intent.clone();
+    let begin = tokio::spawn(async move { pending_store.begin(&pending_intent).await });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(!begin.is_finished());
+    assert!(!operation_directory(&store, &intent.scope).exists());
+
+    drop(collection);
+    begin.await.unwrap().unwrap();
+    assert!(operation_directory(&store, &intent.scope)
+        .join("active.json")
+        .is_file());
+}
+
 fn workspace_scope() -> PlanScope {
     PlanScope {
         kind: PlanScopeKind::Workspace,

@@ -10,8 +10,14 @@ use crate::{
 };
 
 mod acl;
+mod artifact_references;
 mod github;
 mod io;
+
+pub use artifact_references::{
+    RegistryArtifactReference, RegistryArtifactReferenceInventory,
+    REGISTRY_ARTIFACT_REFERENCE_INVENTORY_SCHEMA,
+};
 
 pub use github::{
     GitHubRegistryRepository, DEFAULT_GITHUB_REGISTRY_PATH, DEFAULT_GITHUB_REGISTRY_REF,
@@ -133,6 +139,15 @@ impl RegistrySourceStore {
 
     pub async fn snapshot(&self) -> UseResult<RegistrySourceSnapshot> {
         Ok(io::load(&self.paths).await?.snapshot())
+    }
+
+    /// Derive every durable Registry blob reference, including references in
+    /// preserved datastores no longer selected by current source config.
+    pub async fn inspect_artifact_references(
+        &self,
+        collection: &crate::ArtifactCollectionGuard,
+    ) -> UseResult<RegistryArtifactReferenceInventory> {
+        artifact_references::inspect(&self.paths, collection).await
     }
 
     /// Observe one exact target in the immutable datastore selected by retained

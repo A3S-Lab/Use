@@ -309,10 +309,11 @@ open):
   reclaimed only while holding the digest lock.
 - A global cross-process reachability boundary now separates shared reference
   admission from exclusive maintenance. Raw-target observations, lifecycle
-  receipts, installation snapshots, and durable package-graph operations must
-  acquire a store-bound shared admission before their subordinate lock and
-  atomic publication. Incomplete network downloads release admission until the
-  bounded blob-commit/observation transaction. This closes the collector TOCTOU
+  receipts, applying/rolling-back lifecycle journals, installation snapshots,
+  and durable package-graph operations must acquire a store-bound shared
+  admission before their subordinate lock and atomic publication. Incomplete
+  network downloads release admission until the bounded
+  blob-commit/observation transaction. This closes the collector TOCTOU
   prerequisite.
 - `ArtifactStore::inspect_inventory` now uses the exact store-bound exclusive
   guard to enumerate both physical tiers deterministically. Its path-free v1
@@ -323,6 +324,14 @@ open):
   grants no deletion authority. Cross-state reference aggregation, quota,
   confirmed GC, audit, quarantine, and rehydration remain open, so both
   Artifact Store checklist items remain unchecked.
+- `RegistrySourceStore::inspect_artifact_references` now derives the first
+  reference-source inventory under that exact exclusive guard. Its path-free
+  v1 evidence scans every preserved Registry datastore, including a source no
+  longer selected by current config, and reports each canonical blob digest
+  with its signed byte expectation. Unknown layouts, missing cache locks,
+  links/reparse points, malformed observations, and traversal bounds fail
+  closed. This inventory is one input to—not a replacement for—the still-open
+  global installation/operation aggregation and physical join.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove

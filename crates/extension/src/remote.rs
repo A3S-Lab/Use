@@ -641,6 +641,12 @@ pub(crate) async fn observe_verified_target_cache_entry(
     .await
 }
 
+pub(crate) async fn inspect_registry_artifact_references(
+    datastore: &Path,
+) -> UseResult<Vec<(String, u64)>> {
+    target_cache::inspect_registry_artifact_references(datastore).await
+}
+
 /// Remove stale writes, resumable partials, and the oldest source observations
 /// until the configured per-Registry logical-byte, entry, and source free-space
 /// bounds are satisfied. Global Artifact Store blobs are never removed.

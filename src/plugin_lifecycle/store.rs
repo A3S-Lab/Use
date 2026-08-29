@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use a3s_use_core::{InstallationId, PlanScope, PluginPackageId, UseError, UseResult};
-use a3s_use_extension::{ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock};
+use a3s_use_extension::{
+    ArtifactStore, ExtensionPaths, StateMaintenanceGuard, StateMaintenanceLock,
+};
 use fs2::FileExt;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -28,20 +30,35 @@ static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginLifecycleJournalStore {
     installation: InstallationId,
+    artifact_store: ArtifactStore,
     state_root: PathBuf,
     root: PathBuf,
 }
 
 impl PluginLifecycleJournalStore {
-    /// Construct a store over an already installation-scoped state root.
-    pub fn new(state_root: impl Into<PathBuf>, installation: InstallationId) -> UseResult<Self> {
+    #[cfg(test)]
+    pub(crate) fn new(
+        state_root: impl Into<PathBuf>,
+        installation: InstallationId,
+    ) -> UseResult<Self> {
         installation.validate()?;
-        Ok(Self::from_parts(state_root.into(), installation))
+        let state_root = state_root.into();
+        let artifact_store = a3s_use_extension::UsePaths::new(
+            state_root.join(".test-data"),
+            state_root.join(".test-global-state"),
+        )
+        .artifact_store();
+        Ok(Self::from_parts(state_root, installation, artifact_store))
     }
 
-    fn from_parts(state_root: PathBuf, installation: InstallationId) -> Self {
+    fn from_parts(
+        state_root: PathBuf,
+        installation: InstallationId,
+        artifact_store: ArtifactStore,
+    ) -> Self {
         Self {
             installation,
+            artifact_store,
             root: state_root.join("operations").join("plugins"),
             state_root,
         }
@@ -51,6 +68,7 @@ impl PluginLifecycleJournalStore {
         Self::from_parts(
             paths.installation_state_root(),
             paths.installation().clone(),
+            paths.artifact_store(),
         )
     }
 
@@ -67,6 +85,10 @@ impl PluginLifecycleJournalStore {
         intent: &PluginLifecycleIntent,
     ) -> UseResult<PluginLifecycleOperationRecord> {
         intent.validate()?;
+        // This journal publishes a durable expanded-package reference. Enter
+        // the global admission boundary before the installation-scoped lock so
+        // collection cannot miss a newly active lifecycle operation.
+        let _artifact_admission = self.artifact_store.acquire_reference_admission().await?;
         let directory = self.package_directory(&intent.scope, &intent.package_id)?;
         let _lock = acquire_lock(&self.state_root, &directory).await?;
         let active_path = directory.join("active.json");

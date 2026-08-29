@@ -430,15 +430,17 @@ unreferenced expanded trees. Safe deletion requires a future global
 reachability model across every installation and durable operation. A
 cross-process shared/exclusive boundary now prevents future inventory and
 collection from racing raw-target observations, lifecycle receipts,
-installation snapshots, or pending graph operations. Source observations and
-resumable partials remain Registry-source scoped; their verified bytes use the
-global Blob tier. The library exposes a bounded, deterministic, path-free
-physical inventory under the exact exclusive store guard. It reports canonical
-content and abandoned staging separately and fails closed on unknown layout,
-links/reparse points, special files, or traversal limits. `complete` is only a
-physical publication state; digest audit, cross-source/cross-installation/
-cross-operation reachability, quota, confirmation, and deletion are not yet
-implemented.
+applying lifecycle journals, installation snapshots, or pending graph
+operations. Source observations and resumable partials remain Registry-source
+scoped; their verified bytes use the global Blob tier. The library exposes a
+bounded, deterministic, path-free physical inventory under the exact exclusive
+store guard. It reports canonical content and abandoned staging separately and
+fails closed on unknown layout, links/reparse points, special files, or
+traversal limits. A separate path-free Registry reference inventory derives
+every canonical blob observation from all preserved source datastores,
+including replaced sources, under the same guard. `complete` is only a physical
+publication state; installation/operation aggregation, physical joining,
+digest audit, quota, confirmation, and deletion are not yet implemented.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -1198,6 +1200,7 @@ Only the following cognitive-package protocol line is accepted:
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
 | Artifact Store physical inventory | `a3s.use.artifact-store-inventory.v1` |
+| Registry artifact reference inventory | `a3s.use.registry-artifact-reference-inventory.v1` |
 | Coordinated Use state backup | `a3s.use.state-backup.v2` |
 | Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v2` |
 | Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v2` |
@@ -1230,7 +1233,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
-| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive admission boundary prevents maintenance from racing durable reference publication. A bounded path-free physical v1 inventory reports canonical content and abandoned staging without claiming digest validity, reachability, or deletion authority; cross-state reachability, quota/confirmed GC, audit, quarantine, and verified rehydration remain open |
+| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive admission boundary prevents maintenance from racing durable reference publication, including applying lifecycle journals. A bounded path-free physical v1 inventory reports canonical content and abandoned staging. A separate path-free Registry-reference v1 inventory derives canonical blob observations from every preserved source datastore and fails closed on unknown or unbounded state. Neither claims digest validity or deletion authority; installation/operation aggregation, physical joining, quota/confirmed GC, audit, quarantine, and verified rehydration remain open |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |
