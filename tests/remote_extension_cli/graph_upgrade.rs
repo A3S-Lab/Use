@@ -393,9 +393,11 @@ fn schema_v3_cli_upgrade_removes_an_unreferenced_dependency_node() {
         &std::fs::read(scoped_state(&home, "installation-snapshot.json")).unwrap(),
     )
     .unwrap();
-    assert!(graph["packages"].as_array().is_some_and(|packages| packages
-        .iter()
-        .all(|package| { package["catalog"]["record"]["packageId"] != "acme/obsolete" })));
+    assert!(graph["packages"]
+        .as_array()
+        .is_some_and(|packages| packages.iter().all(|package| {
+            package["package"]["catalog"]["record"]["packageId"] != "acme/obsolete"
+        })));
 
     let replayed =
         cognitive_registry_upgrade(&server, &repository, &home, "acme/root", "1.1.0", &[]);
@@ -704,9 +706,12 @@ async fn schema_v3_manager_upgrades_one_exact_graph_and_retires_the_prior_genera
         .as_array()
         .unwrap()
         .iter()
-        .find(|package| package["catalog"]["record"]["packageId"] == "acme/root")
+        .find(|package| package["package"]["catalog"]["record"]["packageId"] == "acme/root")
         .unwrap();
-    assert_eq!(root_graph["catalog"]["record"]["version"], "1.1.0");
+    assert_eq!(
+        root_graph["package"]["catalog"]["record"]["version"],
+        "1.1.0"
+    );
 
     let replay = manager
         .upgrade_remote(

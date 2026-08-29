@@ -182,7 +182,7 @@ fn graph_package_versions(graph: &serde_json::Value) -> std::collections::BTreeM
         .unwrap()
         .iter()
         .map(|package| {
-            let record = &package["catalog"]["record"];
+            let record = &package["package"]["catalog"]["record"];
             (
                 record["packageId"].as_str().unwrap().to_owned(),
                 record["version"].as_str().unwrap().to_owned(),

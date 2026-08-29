@@ -1,4 +1,7 @@
-use a3s_use_core::{PlanScope, PlanScopeKind, PluginPackageId};
+use a3s_use_core::{
+    InstallationId, InstallationKind, InstallationSnapshot, PlanScope, PlanScopeKind,
+    PluginPackageId, PluginPackageLockHost,
+};
 use tokio::fs;
 use tokio::time::{timeout, Duration};
 
@@ -17,6 +20,17 @@ fn package_id() -> PluginPackageId {
     PluginPackageId::parse("acme/calendar").unwrap()
 }
 
+fn installation_snapshot() -> InstallationSnapshot {
+    InstallationSnapshot::from_root_locks(
+        InstallationId::new(InstallationKind::Workspace, "workspace:test").unwrap(),
+        1,
+        PluginPackageLockHost::new("linux-x86_64", "0.3.4").unwrap(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap()
+}
+
 #[tokio::test]
 async fn enablement_state_rejects_tampered_and_unbounded_records() {
     let temp = tempfile::tempdir().unwrap();
@@ -24,9 +38,11 @@ async fn enablement_state_rejects_tampered_and_unbounded_records() {
     let store = CognitivePackageEnablementStore::new(&state_root);
     let scope = scope();
     let package_id = package_id();
+    let installation_snapshot = installation_snapshot();
     let state = StoredCognitivePackageEnablement::new(
         scope.clone(),
         package_id.to_string(),
+        &installation_snapshot,
         1,
         None,
         false,
@@ -36,6 +52,31 @@ async fn enablement_state_rejects_tampered_and_unbounded_records() {
     store.put_state(&state).await.unwrap();
 
     let path = store.state_path(&scope, &package_id).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).await.unwrap()).unwrap();
+    assert_eq!(value["installationGeneration"], 1);
+    assert_eq!(
+        value["installationSnapshotDigest"],
+        installation_snapshot.descriptor_digest().unwrap()
+    );
+    value["schema"] = serde_json::json!("a3s.use.cognitive-package-enablement-state.v2");
+    fs::write(&path, serde_json::to_vec_pretty(&value).unwrap())
+        .await
+        .unwrap();
+    let error = store.get_state(&scope, &package_id).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.package_enablement_store_invalid");
+
+    store.put_state(&state).await.unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).await.unwrap()).unwrap();
+    value["installationSnapshotDigest"] = serde_json::json!("sha256:ABC");
+    fs::write(&path, serde_json::to_vec_pretty(&value).unwrap())
+        .await
+        .unwrap();
+    let error = store.get_state(&scope, &package_id).await.unwrap_err();
+    assert_eq!(error.code, "use.plugin.package_enablement_store_invalid");
+
+    store.put_state(&state).await.unwrap();
     let mut value: serde_json::Value =
         serde_json::from_slice(&fs::read(&path).await.unwrap()).unwrap();
     value["stateGeneration"] = serde_json::json!(0);

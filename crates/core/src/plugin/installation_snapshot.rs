@@ -9,10 +9,10 @@ use crate::{UseError, UseResult};
 use super::validation::valid_package_id;
 use super::{
     InstallationId, LockedPluginPackage, PluginPackageLock, PluginPackageLockHost,
-    MAX_PLUGIN_PLAN_ITEMS, PLUGIN_PACKAGE_LOCK_SCHEMA,
+    PluginSurfaceRef, MAX_PLUGIN_PLAN_ITEMS, PLUGIN_PACKAGE_LOCK_SCHEMA,
 };
 
-pub const INSTALLATION_SNAPSHOT_SCHEMA: &str = "a3s.use.installation-snapshot.v1";
+pub const INSTALLATION_SNAPSHOT_SCHEMA: &str = "a3s.use.installation-snapshot.v2";
 pub const MAX_INSTALLATION_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_INSTALLATION_ROOTS: usize = MAX_PLUGIN_PLAN_ITEMS;
 pub const MAX_INSTALLATION_PACKAGES: usize = MAX_PLUGIN_PLAN_ITEMS * 8;
@@ -27,6 +27,21 @@ pub struct InstallationRootSelection {
     pub installed_at_ms: u64,
 }
 
+/// One package selected by an installation generation, including the desired
+/// activation and exact capability-publication surface set.
+///
+/// The immutable catalog node selects package bytes and dependency edges.
+/// `enabled` and `selected_surfaces` are desired intent; lifecycle receipts
+/// and capability routes are observations of whether providers applied it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InstallationPackageSelection {
+    pub package: LockedPluginPackage,
+    pub state_generation: u64,
+    pub enabled: bool,
+    pub selected_surfaces: Vec<PluginSurfaceRef>,
+}
+
 /// Canonical installed-selection authority for one User or Workspace installation.
 ///
 /// `roots` is the desired root set. `packages` is the single resolved graph:
@@ -39,7 +54,7 @@ pub struct InstallationSnapshot {
     pub generation: u64,
     pub host: PluginPackageLockHost,
     pub roots: Vec<InstallationRootSelection>,
-    pub packages: Vec<LockedPluginPackage>,
+    pub packages: Vec<InstallationPackageSelection>,
 }
 
 impl InstallationRootSelection {
@@ -62,6 +77,55 @@ impl InstallationRootSelection {
     }
 }
 
+impl InstallationPackageSelection {
+    pub fn new(
+        package: LockedPluginPackage,
+        state_generation: u64,
+        enabled: bool,
+        selected_surfaces: Vec<PluginSurfaceRef>,
+    ) -> UseResult<Self> {
+        let selection = Self {
+            package,
+            state_generation,
+            enabled,
+            selected_surfaces,
+        };
+        selection.validate()?;
+        Ok(selection)
+    }
+
+    pub fn package_id(&self) -> &str {
+        self.package.package_id()
+    }
+
+    pub fn validate(&self) -> UseResult<()> {
+        self.package.catalog.validate().map_err(|_| {
+            snapshot_error("An installation package has invalid verified catalog evidence.")
+        })?;
+        if self.state_generation == 0 || self.selected_surfaces.is_empty() {
+            return Err(snapshot_error(
+                "An installation package has invalid state generation or publication intent.",
+            ));
+        }
+        let resolved = self
+            .package
+            .catalog
+            .selected_state(&self.selected_surfaces)
+            .map_err(|_| snapshot_error("An installation package has invalid publication intent."))?
+            .release
+            .surfaces
+            .into_iter()
+            .map(|surface| surface.reference())
+            .collect::<Vec<_>>();
+        if resolved != self.selected_surfaces {
+            return Err(snapshot_error(
+                "An installation package publication intent is not an exact surface closure.",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl InstallationSnapshot {
     /// Build one canonical graph from independently resolved root closures.
     ///
@@ -72,10 +136,13 @@ impl InstallationSnapshot {
         generation: u64,
         host: PluginPackageLockHost,
         roots: Vec<(InstallationRootSelection, PluginPackageLock)>,
+        package_selections: Vec<InstallationPackageSelection>,
     ) -> UseResult<Self> {
-        if roots.len() > MAX_INSTALLATION_ROOTS {
+        if roots.len() > MAX_INSTALLATION_ROOTS
+            || package_selections.len() > MAX_INSTALLATION_PACKAGES
+        {
             return Err(snapshot_error(
-                "The installation snapshot exceeds its root bound.",
+                "The installation snapshot exceeds its root or package bound.",
             ));
         }
         let mut root_selections = BTreeMap::new();
@@ -117,13 +184,35 @@ impl InstallationSnapshot {
             }
         }
 
+        let mut selections = BTreeMap::new();
+        for selection in package_selections {
+            selection.validate()?;
+            let package_id = selection.package_id().to_owned();
+            if selections.insert(package_id, selection).is_some() {
+                return Err(snapshot_error(
+                    "An installation package selection appears more than once.",
+                ));
+            }
+        }
+        if selections.len() != packages.len()
+            || packages.iter().any(|(package_id, package)| {
+                selections
+                    .get(package_id)
+                    .is_none_or(|selection| &selection.package != package)
+            })
+        {
+            return Err(snapshot_error(
+                "Installation package selections must exactly match the resolved graph.",
+            ));
+        }
+
         let snapshot = Self {
             schema: INSTALLATION_SNAPSHOT_SCHEMA.to_owned(),
             installation,
             generation,
             host,
             roots: root_selections.into_values().collect(),
-            packages: packages.into_values().collect(),
+            packages: selections.into_values().collect(),
         };
         snapshot.validate()?;
         Ok(snapshot)
@@ -175,11 +264,14 @@ impl InstallationSnapshot {
         for root in &self.roots {
             root.validate()?;
         }
+        for package in &self.packages {
+            package.validate()?;
+        }
 
         let packages = self
             .packages
             .iter()
-            .map(|package| (package.package_id(), package))
+            .map(|selection| (selection.package_id(), selection))
             .collect::<BTreeMap<_, _>>();
         let mut reachable = BTreeSet::new();
         for root in &self.roots {
@@ -201,6 +293,23 @@ impl InstallationSnapshot {
             return Err(snapshot_error(
                 "The installation graph contains a package unreachable from every desired root.",
             ));
+        }
+        for selection in &self.packages {
+            if !selection.enabled {
+                continue;
+            }
+            for dependency in &selection.package.dependencies {
+                if packages
+                    .get(dependency.package_id.as_str())
+                    .is_none_or(|dependency| !dependency.enabled)
+                {
+                    return Err(snapshot_dependency_disabled(format!(
+                        "Enabled package '{}' requires disabled dependency '{}'.",
+                        selection.package_id(),
+                        dependency.package_id
+                    )));
+                }
+            }
         }
         Ok(())
     }
@@ -236,9 +345,53 @@ impl InstallationSnapshot {
         let packages = self
             .packages
             .iter()
-            .map(|package| (package.package_id(), package))
+            .map(|selection| (selection.package_id(), selection))
             .collect::<BTreeMap<_, _>>();
         self.package_lock_unchecked(root_package_id, &packages)
+    }
+
+    /// Return one exact selected package and its desired activation intent.
+    pub fn package_selection(&self, package_id: &str) -> Option<&InstallationPackageSelection> {
+        self.packages
+            .binary_search_by(|selection| selection.package_id().cmp(package_id))
+            .ok()
+            .map(|index| &self.packages[index])
+    }
+
+    /// Build the next installation generation for one package enablement
+    /// transition using the package-local state generation as its CAS token.
+    ///
+    /// `Ok(None)` means the exact requested desired state already holds.
+    pub fn transition_package_enablement(
+        &self,
+        package_id: &str,
+        expected_state_generation: u64,
+        enabled: bool,
+    ) -> UseResult<Option<Self>> {
+        self.validate()?;
+        let index = self
+            .packages
+            .binary_search_by(|selection| selection.package_id().cmp(package_id))
+            .map_err(|_| snapshot_error("The selected package is absent from the installation."))?;
+        let current = &self.packages[index];
+        if current.state_generation != expected_state_generation {
+            return Err(snapshot_generation_changed());
+        }
+        if current.enabled == enabled {
+            return Ok(None);
+        }
+        let mut replacement = self.clone();
+        replacement.generation = replacement
+            .generation
+            .checked_add(1)
+            .ok_or_else(snapshot_generation_exhausted)?;
+        replacement.packages[index].state_generation = replacement.packages[index]
+            .state_generation
+            .checked_add(1)
+            .ok_or_else(snapshot_generation_exhausted)?;
+        replacement.packages[index].enabled = enabled;
+        replacement.validate()?;
+        Ok(Some(replacement))
     }
 
     /// Reconstruct every root closure in canonical root order.
@@ -247,7 +400,7 @@ impl InstallationSnapshot {
         let packages = self
             .packages
             .iter()
-            .map(|package| (package.package_id(), package))
+            .map(|selection| (selection.package_id(), selection))
             .collect::<BTreeMap<_, _>>();
         self.roots
             .iter()
@@ -263,7 +416,7 @@ impl InstallationSnapshot {
     fn package_lock_unchecked(
         &self,
         root_package_id: &str,
-        packages: &BTreeMap<&str, &LockedPluginPackage>,
+        packages: &BTreeMap<&str, &InstallationPackageSelection>,
     ) -> UseResult<Option<PluginPackageLock>> {
         if !self
             .roots
@@ -278,13 +431,14 @@ impl InstallationSnapshot {
             if !reachable.insert(package_id.clone()) {
                 continue;
             }
-            let package = packages.get(package_id.as_str()).ok_or_else(|| {
+            let selection = packages.get(package_id.as_str()).ok_or_else(|| {
                 snapshot_error(format!(
                     "Package '{package_id}' is absent from the installation graph."
                 ))
             })?;
             pending.extend(
-                package
+                selection
+                    .package
                     .dependencies
                     .iter()
                     .map(|dependency| dependency.package_id.clone()),
@@ -297,8 +451,8 @@ impl InstallationSnapshot {
             packages: self
                 .packages
                 .iter()
-                .filter(|package| reachable.contains(package.package_id()))
-                .cloned()
+                .filter(|selection| reachable.contains(selection.package_id()))
+                .map(|selection| selection.package.clone())
                 .collect(),
         }))
     }
@@ -306,4 +460,22 @@ impl InstallationSnapshot {
 
 fn snapshot_error(message: impl Into<String>) -> UseError {
     UseError::new(SNAPSHOT_ERROR, message)
+}
+
+fn snapshot_generation_changed() -> UseError {
+    UseError::new(
+        "use.installation.snapshot_generation_changed",
+        "The installation package state generation changed before cutover.",
+    )
+}
+
+fn snapshot_generation_exhausted() -> UseError {
+    UseError::new(
+        "use.installation.snapshot_generation_exhausted",
+        "The installation snapshot or package state generation is exhausted.",
+    )
+}
+
+fn snapshot_dependency_disabled(message: impl Into<String>) -> UseError {
+    UseError::new("use.installation.snapshot_dependency_disabled", message)
 }

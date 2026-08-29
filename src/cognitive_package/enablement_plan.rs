@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::enablement::{
-    project_installed_state, reconcile_state, CognitivePackageEnablementRequest,
-    CognitivePackageEnablementResult,
+    project_installed_state, reconcile_state, require_materialized_enablement,
+    CognitivePackageEnablementRequest, CognitivePackageEnablementResult,
 };
 use super::enablement_store::operation_conflict;
 use super::plan::{
@@ -432,9 +432,10 @@ impl CognitivePackageManager {
             .map(CognitivePackageEnablementPreparation::Outcome);
         }
 
-        let (extension, locked_package) = self
+        let (extension, package_selection, installation_snapshot) = self
             .required_enablement_extension(&request.package_id)
             .await?;
+        require_materialized_enablement(&extension, &package_selection)?;
         self.lifecycle
             .validate_manifest_for_planning(&extension.manifest)?;
         let reconciled = reconcile_state(
@@ -442,6 +443,8 @@ impl CognitivePackageManager {
             &request.package_id,
             current.as_ref(),
             &extension,
+            &installation_snapshot,
+            &package_selection,
             planned_at_ms,
         )?;
         if reconciled.state_generation != request.expected_package_generation {
@@ -463,8 +466,7 @@ impl CognitivePackageManager {
         }
 
         let snapshot = self.registry.snapshot().await?;
-        let state =
-            project_installed_state(&extension, reconciled.state_generation, &snapshot, None)?;
+        let state = project_installed_state(&extension, &package_selection, &snapshot, None)?;
         if current.as_ref() != Some(&reconciled) {
             store.put_state(&reconciled).await?;
         }
@@ -477,6 +479,18 @@ impl CognitivePackageManager {
             .map(Box::new)
             .map(CognitivePackageEnablementPreparation::Outcome);
         }
+        installation_snapshot
+            .transition_package_enablement(
+                request.package_id.as_str(),
+                request.expected_package_generation,
+                request.enabled,
+            )?
+            .ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_enablement_plan_stale",
+                    "The requested enablement state no longer changes installation intent.",
+                )
+            })?;
 
         let grant_snapshot = self
             .grant_store()
@@ -488,8 +502,8 @@ impl CognitivePackageManager {
         let receipt_digest = extension.receipt.descriptor_digest()?;
         let draft = enablement_draft(
             request,
-            &locked_package,
-            &extension.selected_surfaces()?,
+            &package_selection.package,
+            &package_selection.selected_surfaces,
             receipt_digest.clone(),
             snapshot.generation,
         )?;
@@ -524,8 +538,8 @@ impl CognitivePackageManager {
                 grant_snapshot,
                 planning_bundles,
                 installed_generations,
-                selected_surfaces: extension.selected_surfaces()?,
-                package: locked_package,
+                selected_surfaces: package_selection.selected_surfaces,
+                package: package_selection.package,
                 manifest: extension.manifest,
                 receipt_digest,
                 registry_generation: snapshot.generation,

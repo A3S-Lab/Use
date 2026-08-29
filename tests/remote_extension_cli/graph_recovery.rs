@@ -268,7 +268,7 @@ fn graph_package_ids(graph: &serde_json::Value) -> std::collections::BTreeSet<St
         .unwrap()
         .iter()
         .map(|package| {
-            package["catalog"]["record"]["packageId"]
+            package["package"]["catalog"]["record"]["packageId"]
                 .as_str()
                 .unwrap()
                 .to_owned()

@@ -38,12 +38,12 @@ publishes one capability generation, and retires unused generations in reverse.
    commits one complete scoped installation generation, never a collection of
    independently authoritative root-package graphs.
 2. **There is one current cognitive-package format.** Manifest v3, catalog v3,
-   receipt v5, Installation Snapshot v1, Extension Registry snapshot v2,
-   capability snapshot v3, plan v4,
+   receipt v5, Installation Snapshot v2, Extension Registry snapshot v2,
+   capability snapshot v4, plan v4,
    host protocol v6, managed scope v2, manager toolset v4, pending graph v4,
    pre-lock resolution attempt/diagnostic v1, pre-plan download
-   attempt/diagnostic v1, and enablement state/operation v2 are the only
-   accepted baseline.
+   attempt/diagnostic v1, enablement recovery projection v3, and enablement
+   operation v3 are the only accepted baseline.
 3. **No pre-release compatibility debt.** Superseded schemas, receipts,
    metadata, APIs, and disk state are rejected. The user must clean the
    unsupported state and reinstall. No migration or fallback is inferred.
@@ -109,9 +109,10 @@ stale publication generations. A1 now has one canonical `InstallationId` and
 scopes filesystem state, receipts, Registry and capability snapshots, leases,
 backup/restore, and maintenance/mutation locks by that identity. A0 is qualified
 on the declared five-platform CI matrix. The implementation is still not the
-target architecture: one `InstallationSnapshot` now owns the desired root set
-and unified resolved graph, but enablement, receipts, Grants, bindings, and
-publication authority remain split across several stores, and a non-A3S agent
+target architecture: one `InstallationSnapshot` now owns the desired root set,
+unified resolved graph, per-package enablement, and selected-surface
+publication intent, but receipts, Grants, bindings, operation checkpoints, and
+materialized publication state remain split across several stores, and a non-A3S agent
 cannot consume an exact leased capability without learning local execution
 details. A checked item elsewhere in this roadmap is implementation evidence;
 it does not waive the convergence gates below.
@@ -230,7 +231,7 @@ Implementation evidence (2026-08-28):
 - [ ] Add explicit global artifact audit, quarantine, and verified
   rehydration. Corruption must fail closed and preserve forensic evidence; it
   must not silently replace bytes underneath an admitted generation.
-- [ ] Bind enablement and capability-publication intent to the exact
+- [x] Bind enablement and capability-publication intent to the exact
   `InstallationSnapshot` generation instead of reconciling separate mutable
   authorities.
 - [x] Require scope in extension paths, receipts, routes, snapshots, and every
@@ -261,8 +262,9 @@ open):
   kind and collision-resistant storage key partition every installation data
   and state root; equal textual IDs in User and Workspace installations do not
   alias.
-- Receipt v5, Extension Registry snapshot v2, capability snapshot v3, and both
-  snapshot cursor v2 contracts carry the exact installation and reject
+- Receipt v5, Extension Registry snapshot v2, capability snapshot v4, and the
+  extension cursor v2/capability cursor v3 contracts carry the exact
+  installation and reject
   cross-installation loading or lease acquisition. The CLI requires explicit
   scope kind and ID for every installation-scoped command.
 - Registry source configuration, trust roots, TUF metadata, target observations
@@ -279,11 +281,14 @@ open):
 - Windows publication and SQLite/Flow access use a shared extended-length path
   primitive. Native regressions cover long scoped roots, atomic publication,
   same-text-ID scope-kind isolation, and independent installation locks.
-- `a3s.use.installation-snapshot.v1` is the only installed-selection
-  authority. It binds the exact `InstallationId`, a monotonic generation, one
-  resolution host, a sorted desired root set, and one unique package node per
-  ID. Root locks are derived closures; conflicting shared selections and
-  orphan nodes fail closed. Removing the final root retains an empty next
+- `a3s.use.installation-snapshot.v2` is the only installed-selection and
+  desired-activation authority. It binds the exact `InstallationId`, a
+  monotonic installation generation, one resolution host, a sorted desired
+  root set, and one unique package selection per ID. Each selection carries
+  the immutable lock node, monotonic package state generation, desired
+  enablement, and exact selected-surface closure. Root locks are derived;
+  conflicting shared selections, disabled dependencies of enabled packages,
+  and orphan nodes fail closed. Removing the final root retains an empty next
   generation so authority never resets.
 - Installed-selection persistence is one atomic
   `state/installation-snapshot.json` file. The former per-root
@@ -303,10 +308,15 @@ open):
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove
   reachability across every installation and durable operation.
+- Enable and disable use package-state compare-and-swap inside the next
+  Installation Snapshot generation. Receipts, Registry routes, and the v3
+  enablement file are applied evidence or crash-recovery projections; none can
+  independently select desired state. The projection binds the exact
+  installation generation and digest, and capability snapshot v4 plus cursor
+  v3 expose the same binding before any selected surface can publish.
 - The remaining A1 work is structural, not a hidden compatibility layer: the
   global blob and expanded-tree tiers still need one safe
-  reachability/quota/audit/quarantine/rehydration/GC model; enablement and
-  publication intent must join the installation generation; route strings must
+  reachability/quota/audit/quarantine/rehydration/GC model; route strings must
   cease carrying identity; and the complete two-installation lifecycle/lease
   matrix must pass.
 
@@ -468,7 +478,7 @@ fixtures are frozen.
 | Signed catalog record | `a3s.use.plugin-catalog.v3` |
 | Installed receipt | schema version 5 |
 | Package lock | `a3s.use.plugin-package-lock.v1` |
-| Installation snapshot | `a3s.use.installation-snapshot.v1` |
+| Installation snapshot | `a3s.use.installation-snapshot.v2` |
 | Operation plan | `a3s.use.plugin-operation-plan.v4` |
 | Host capabilities | `a3s.use.plugin-host-capabilities.v6`, protocol 6 |
 | Host managed scope | `a3s.use.plugin-managed-scope.v2` |
@@ -484,14 +494,14 @@ fixtures are frozen.
 | Operation history | `a3s.use.plugin-operation-history.v1` / `a3s.use.plugin-operation-history-diagnostic.v1` |
 | Pre-lock resolution diagnostic | `a3s.use.plugin-resolution-attempt-diagnostic.v1` |
 | Pre-plan download diagnostic | `a3s.use.plugin-download-attempt-diagnostic.v1` |
-| Enablement state | `a3s.use.cognitive-package-enablement-state.v2` |
-| Enablement operation | `a3s.use.cognitive-package-enablement-operation.v2` |
+| Enablement recovery projection | `a3s.use.cognitive-package-enablement-projection.v3` |
+| Enablement operation | `a3s.use.cognitive-package-enablement-operation.v3` |
 | Runtime Task binding | `a3s.use.runtime-task-binding.v4` |
 | Runtime Service provisioning | `a3s.use.runtime-service-provisioning.v1` |
 | Runtime Service binding | `a3s.use.runtime-service-binding.v3` |
 | Extension Registry snapshot | schema version 2 |
-| Capability snapshot | schema version 3 |
-| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v2` |
+| Capability snapshot | schema version 4 |
+| Capability snapshot cursor | `a3s.use.capability-snapshot-cursor.v3` |
 | Extension snapshot cursor | `a3s.use.extension-snapshot-cursor.v2` |
 | Coordinated Use state backup | `a3s.use.state-backup.v2` |
 | Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v2` |
@@ -610,9 +620,9 @@ rejection. They are not supported decode paths.
 - [x] Self-contained release-backed Runtime Task binding and exact-generation
   dispatch with receipt-owned provider reconnection, restart reconstruction,
   stale-generation rejection, bounded output cleanup, and Registry lease drain.
-- [x] Capability snapshot v3 projection for exact installation/package/generation
+- [x] Capability snapshot v4 projection for exact installation/package/generation
   matched release-backed Runtime Tool Task bindings.
-- [x] Capability snapshot v3 projection for every exact extension MCP surface,
+- [x] Capability snapshot v4 projection for every exact extension MCP surface,
   preserving canonical IDs, collision-resistant host names, activation,
   package/file identity, bounded package-local stdio launch evidence, and
   credential-free managed HTTP binding evidence.

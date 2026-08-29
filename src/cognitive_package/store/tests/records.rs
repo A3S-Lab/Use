@@ -8,10 +8,19 @@ async fn installation_snapshot_replace_is_cas_idempotent_and_advances_generation
     let prior = package_lock("1.0.0", '1');
     let candidate = package_lock("2.0.0", '2');
 
-    assert!(store.put(&prior, 1).await.unwrap());
+    assert!(store
+        .put(&prior, 1, package_selections(&prior, 1, true))
+        .await
+        .unwrap());
     assert_eq!(store.snapshot().await.unwrap().unwrap().generation, 1);
     let error = store
-        .replace(&prior.root_package_id, &digest('0'), &candidate, 2)
+        .replace(
+            &prior.root_package_id,
+            &digest('0'),
+            &candidate,
+            2,
+            package_selections(&candidate, 2, true),
+        )
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
@@ -23,11 +32,23 @@ async fn installation_snapshot_replace_is_cas_idempotent_and_advances_generation
 
     let prior_digest = prior.descriptor_digest().unwrap();
     assert!(store
-        .replace(&prior.root_package_id, &prior_digest, &candidate, 2,)
+        .replace(
+            &prior.root_package_id,
+            &prior_digest,
+            &candidate,
+            2,
+            package_selections(&candidate, 2, true),
+        )
         .await
         .unwrap());
     assert!(!store
-        .replace(&prior.root_package_id, &prior_digest, &candidate, 3,)
+        .replace(
+            &prior.root_package_id,
+            &prior_digest,
+            &candidate,
+            3,
+            package_selections(&candidate, 2, true),
+        )
         .await
         .unwrap());
     assert_eq!(store.snapshot().await.unwrap().unwrap().generation, 2);
@@ -48,7 +69,10 @@ async fn installation_snapshot_read_rejects_generation_tampering() {
     let state_root = temp.path().join("state");
     let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
     let lock = package_lock("1.0.0", '1');
-    store.put(&lock, 1).await.unwrap();
+    store
+        .put(&lock, 1, package_selections(&lock, 1, true))
+        .await
+        .unwrap();
     let path = store.path();
     let mut value: serde_json::Value =
         serde_json::from_slice(&fs::read(&path).await.unwrap()).unwrap();
@@ -67,7 +91,10 @@ async fn empty_installation_snapshot_accepts_a_new_resolution_host() {
     let state_root = temp.path().join("state");
     let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
     let prior = package_lock("1.0.0", '1');
-    store.put(&prior, 1).await.unwrap();
+    store
+        .put(&prior, 1, package_selections(&prior, 1, true))
+        .await
+        .unwrap();
     store
         .remove(&prior.root_package_id, &prior.descriptor_digest().unwrap())
         .await
@@ -77,7 +104,10 @@ async fn empty_installation_snapshot_accepts_a_new_resolution_host() {
     replacement.host = PluginPackageLockHost::new("linux-x86_64", "0.3.5").unwrap();
     replacement.validate().unwrap();
 
-    assert!(store.put(&replacement, 3).await.unwrap());
+    assert!(store
+        .put(&replacement, 3, package_selections(&replacement, 3, true))
+        .await
+        .unwrap());
     let snapshot = store.snapshot().await.unwrap().unwrap();
     assert_eq!(snapshot.generation, 3);
     assert_eq!(snapshot.host, replacement.host);
@@ -93,7 +123,10 @@ async fn installation_snapshot_rejects_another_scope_kind_at_the_same_root() {
     let state_root = temp.path().join("state");
     let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
     let lock = package_lock("1.0.0", '1');
-    store.put(&lock, 1).await.unwrap();
+    store
+        .put(&lock, 1, package_selections(&lock, 1, true))
+        .await
+        .unwrap();
 
     let other = InstallationSnapshotStore::new(
         &state_root,
@@ -105,6 +138,75 @@ async fn installation_snapshot_rejects_another_scope_kind_at_the_same_root() {
     .unwrap();
     let error = other.get(&lock.root_package_id).await.unwrap_err();
     assert_eq!(error.code, "use.installation.identity_mismatch");
+}
+
+#[tokio::test]
+async fn installation_snapshot_enablement_cutover_is_package_cas_and_global_generation() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
+    let lock = package_lock("1.0.0", '1');
+    store
+        .put(&lock, 1, package_selections(&lock, 7, true))
+        .await
+        .unwrap();
+
+    let (disabled, changed) = store
+        .complete_package_enablement(&lock.root_package_id, 7, false)
+        .await
+        .unwrap();
+    assert!(changed);
+    assert_eq!(disabled.generation, 2);
+    assert_eq!(
+        disabled
+            .package_selection(&lock.root_package_id)
+            .unwrap()
+            .state_generation,
+        8
+    );
+    let (replayed, changed) = store
+        .complete_package_enablement(&lock.root_package_id, 7, false)
+        .await
+        .unwrap();
+    assert!(!changed);
+    assert_eq!(replayed, disabled);
+
+    let error = store
+        .complete_package_enablement(&lock.root_package_id, 7, true)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.installation.snapshot_generation_changed");
+}
+
+#[tokio::test]
+async fn graph_cutover_cannot_change_retained_package_enablement() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
+    let prior = package_lock("1.0.0", '1');
+    store
+        .put(&prior, 1, package_selections(&prior, 4, true))
+        .await
+        .unwrap();
+
+    let error = store
+        .put(&prior, 2, package_selections(&prior, 5, false))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.package_graph_reconcile_required");
+
+    let candidate = package_lock("2.0.0", '2');
+    let error = store
+        .replace(
+            &prior.root_package_id,
+            &prior.descriptor_digest().unwrap(),
+            &candidate,
+            2,
+            package_selections(&candidate, 5, false),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
 }
 
 #[tokio::test]

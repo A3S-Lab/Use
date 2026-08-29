@@ -13,7 +13,8 @@ use a3s_use_core::{
 };
 #[cfg(feature = "extensions")]
 use a3s_use_core::{
-    PlanQualifiedSurfaceRef, PluginSurfaceKind, INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
+    InstallationSnapshot, PlanQualifiedSurfaceRef, PluginSurfaceKind,
+    INSTALLED_PLUGIN_PLAN_EVIDENCE_SCHEMA,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -31,7 +32,7 @@ mod managed_mcp;
 use managed_mcp::mcp_evidence_from_store;
 #[path = "capability_registry/lease.rs"]
 mod lease;
-use lease::ExtensionCursorEvidence;
+use lease::CapabilityUpstreamEvidence;
 pub use lease::{
     acquire_snapshot_lease, CapabilityPackageGeneration, CapabilitySnapshotCursor,
     CapabilitySnapshotLease, CAPABILITY_SNAPSHOT_CURSOR_SCHEMA,
@@ -58,7 +59,7 @@ use crate::{
     plugin_runtime::RuntimeBindingStore,
 };
 
-pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 3;
+pub const CAPABILITY_REGISTRY_SCHEMA_VERSION: u32 = 4;
 pub const UI_DEPENDENCY_EVIDENCE_SCHEMA: &str = "a3s.use.ui-dependency-evidence.v1";
 #[cfg(feature = "extensions")]
 const PLANNER_EVIDENCE_SCHEMA_VERSION: u32 = 1;
@@ -71,6 +72,10 @@ const MAX_FLOW_SOURCE_BYTES: u64 = 4 * 1024 * 1024;
 pub struct CapabilityRegistrySnapshot {
     pub schema_version: u32,
     pub installation: InstallationId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installation_generation: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installation_snapshot_digest: Option<String>,
     pub generation: u64,
     pub revision: String,
     pub capabilities: Vec<CapabilityBinding>,
@@ -144,11 +149,18 @@ impl CapabilityRegistry {
         validate_unique_tool_task_names(&capabilities)?;
         validate_unique_mcp_server_names(&capabilities)?;
 
-        let revision = revision(self.installation(), &capabilities)?;
+        let revision = revision(
+            self.installation(),
+            extension_cursor.installation_generation(),
+            extension_cursor.installation_snapshot_digest(),
+            &capabilities,
+        )?;
         let cursor = CapabilitySnapshotCursor::from_projection(&revision, extension_cursor)?;
         Ok(CapabilityRegistrySnapshot {
             schema_version: CAPABILITY_REGISTRY_SCHEMA_VERSION,
             installation: self.installation().clone(),
+            installation_generation: cursor.installation_generation,
+            installation_snapshot_digest: cursor.installation_snapshot_digest.clone(),
             generation: cursor.generation,
             revision,
             capabilities,
@@ -676,9 +688,18 @@ fn box_capability() -> CapabilityBinding {
 
 fn revision(
     installation: &InstallationId,
+    installation_generation: Option<u64>,
+    installation_snapshot_digest: Option<&str>,
     capabilities: &[CapabilityBinding],
 ) -> UseResult<String> {
-    let bytes = serde_json::to_vec(&(installation, capabilities)).map_err(|error| {
+    let bytes = serde_json::to_vec(&(
+        "a3s.use.capability-revision.v4",
+        installation,
+        installation_generation,
+        installation_snapshot_digest,
+        capabilities,
+    ))
+    .map_err(|error| {
         UseError::new(
             "use.capability.snapshot_invalid",
             format!("Failed to encode the capability snapshot: {error}"),
@@ -840,16 +861,22 @@ fn skill_io_error(action: &str, path: &Path, error: std::io::Error) -> UseError 
 #[cfg(feature = "extensions")]
 async fn stable_extensions(
     registry: &a3s_use_extension::ExtensionRegistry,
-) -> UseResult<(ExtensionCursorEvidence, Vec<CapabilityBinding>)> {
+) -> UseResult<(CapabilityUpstreamEvidence, Vec<CapabilityBinding>)> {
+    let installation_store =
+        crate::cognitive_package::InstallationSnapshotStore::from_extension_paths(registry.paths());
     for _ in 0..MAX_STABLE_SNAPSHOT_ATTEMPTS {
+        let installation_before = installation_store.current().await?;
         let before = registry.snapshot().await?;
-        let Some(capabilities) = project_extensions(registry, &before).await? else {
+        let Some(capabilities) =
+            project_extensions(registry, &before, installation_before.as_ref()).await?
+        else {
             continue;
         };
         let after = registry.snapshot().await?;
-        if before == after {
+        let installation_after = installation_store.current().await?;
+        if before == after && installation_before == installation_after {
             return Ok((
-                ExtensionCursorEvidence::from_snapshot(&before)?,
+                CapabilityUpstreamEvidence::from_snapshot(&before, installation_before.as_ref())?,
                 capabilities,
             ));
         }
@@ -864,9 +891,9 @@ async fn stable_extensions(
 #[cfg(not(feature = "extensions"))]
 async fn stable_extensions(
     installation: &InstallationId,
-) -> UseResult<(ExtensionCursorEvidence, Vec<CapabilityBinding>)> {
+) -> UseResult<(CapabilityUpstreamEvidence, Vec<CapabilityBinding>)> {
     Ok((
-        ExtensionCursorEvidence::empty(installation.clone()),
+        CapabilityUpstreamEvidence::empty(installation.clone()),
         Vec::new(),
     ))
 }
@@ -875,6 +902,7 @@ async fn stable_extensions(
 async fn project_extensions(
     registry: &a3s_use_extension::ExtensionRegistry,
     snapshot: &a3s_use_extension::ExtensionRegistrySnapshot,
+    installation: Option<&InstallationSnapshot>,
 ) -> UseResult<Option<Vec<CapabilityBinding>>> {
     let mut capabilities = Vec::with_capacity(snapshot.routes.len());
     for route in &snapshot.routes {
@@ -899,7 +927,31 @@ async fn project_extensions(
         {
             return Ok(None);
         }
-        capabilities.push(project_extension(&extension, surfaces, registry.paths()).await?);
+        let desired_enabled = match installation
+            .and_then(|snapshot| snapshot.package_selection(&receipt.package_id))
+        {
+            Some(selection) => {
+                if selection.package.catalog != *extension.plan_ready_catalog()?
+                    || selection.selected_surfaces != extension.selected_surfaces()?
+                {
+                    return Err(UseError::new(
+                        "use.capability.installation_snapshot_invalid",
+                        "A lifecycle-managed route disagrees with its installation package selection.",
+                    ));
+                }
+                selection.enabled
+            }
+            None if receipt.verified_catalog.is_some() => {
+                return Err(UseError::new(
+                    "use.capability.installation_snapshot_invalid",
+                    "A lifecycle-managed capability route is absent from the installation snapshot.",
+                ));
+            }
+            None => receipt.enabled,
+        };
+        capabilities.push(
+            project_extension(&extension, surfaces, desired_enabled, registry.paths()).await?,
+        );
     }
     Ok(Some(capabilities))
 }
@@ -908,6 +960,7 @@ async fn project_extensions(
 async fn project_extension(
     extension: &a3s_use_extension::InstalledExtension,
     surfaces: Vec<String>,
+    desired_enabled: bool,
     paths: &a3s_use_extension::ExtensionPaths,
 ) -> UseResult<CapabilityBinding> {
     let scope = paths.installation().clone();
@@ -952,14 +1005,17 @@ async fn project_extension(
             ));
         }
     }
-    project_extension_for_host_with_flow_observations(
+    project_extension_for_host_with_evidence(
         extension,
         surfaces,
-        env!("CARGO_PKG_VERSION"),
-        &host_observations,
-        &knowledge_evidence.bindings,
-        &runtime_task_evidence.projections,
-        &mcp_evidence.projections,
+        CapabilityHostProjectionContext {
+            desired_enabled,
+            host_version: env!("CARGO_PKG_VERSION"),
+            host_observations: &host_observations,
+            knowledge_bindings: &knowledge_evidence.bindings,
+            runtime_tasks: &runtime_task_evidence.projections,
+            mcp_projections: &mcp_evidence.projections,
+        },
     )
     .await
 }
@@ -971,39 +1027,53 @@ async fn project_extension_for_host(
     surfaces: Vec<String>,
     host_version: &str,
 ) -> UseResult<CapabilityBinding> {
-    project_extension_for_host_with_flow_observations(
+    project_extension_for_host_with_evidence(
         extension,
         surfaces,
-        host_version,
-        &SurfaceObservations::new(),
-        &[],
-        &[],
-        &[],
+        CapabilityHostProjectionContext {
+            desired_enabled: extension.receipt.enabled,
+            host_version,
+            host_observations: &SurfaceObservations::new(),
+            knowledge_bindings: &[],
+            runtime_tasks: &[],
+            mcp_projections: &[],
+        },
     )
     .await
 }
 
 #[cfg(feature = "extensions")]
-async fn project_extension_for_host_with_flow_observations(
+struct CapabilityHostProjectionContext<'a> {
+    desired_enabled: bool,
+    host_version: &'a str,
+    host_observations: &'a SurfaceObservations,
+    knowledge_bindings: &'a [OkfKnowledgeBinding],
+    runtime_tasks: &'a [ToolTaskProjection],
+    mcp_projections: &'a [McpServerProjection],
+}
+
+#[cfg(feature = "extensions")]
+async fn project_extension_for_host_with_evidence(
     extension: &a3s_use_extension::InstalledExtension,
     surfaces: Vec<String>,
-    host_version: &str,
-    host_observations: &SurfaceObservations,
-    knowledge_bindings: &[OkfKnowledgeBinding],
-    runtime_tasks: &[ToolTaskProjection],
-    mcp_projections: &[McpServerProjection],
+    context: CapabilityHostProjectionContext<'_>,
 ) -> UseResult<CapabilityBinding> {
     let receipt = &extension.receipt;
-    let compatible = extension.supports_use_version(host_version);
-    let observations =
-        surface_observations(extension, receipt.enabled && compatible, host_observations).await?;
-    let knowledge_observations = knowledge_bindings
+    let compatible = extension.supports_use_version(context.host_version);
+    let observations = surface_observations(
+        extension,
+        context.desired_enabled && receipt.enabled && compatible,
+        context.host_observations,
+    )
+    .await?;
+    let knowledge_observations = context
+        .knowledge_bindings
         .iter()
         .map(|binding| (binding.receipt.clone(), binding.observation.clone()))
         .collect::<Vec<_>>();
     let reconciliation = Some(reconcile_with_runtime_and_knowledge(
         &extension.manifest,
-        if receipt.enabled {
+        if context.desired_enabled {
             PluginDesiredState::Enabled
         } else {
             PluginDesiredState::InstalledDisabled
@@ -1013,7 +1083,8 @@ async fn project_extension_for_host_with_flow_observations(
         None,
         &knowledge_observations,
     )?);
-    let active = receipt.enabled
+    let active = context.desired_enabled
+        && receipt.enabled
         && compatible
         && reconciliation
             .as_ref()
@@ -1053,13 +1124,15 @@ async fn project_extension_for_host_with_flow_observations(
     };
     if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
         mcp_servers.extend(
-            mcp_projections
+            context
+                .mcp_projections
                 .iter()
                 .filter(|projection| snapshot.publishes(PluginSurfaceKind::Mcp, &projection.id))
                 .cloned(),
         );
         tool_tasks.extend(
-            runtime_tasks
+            context
+                .runtime_tasks
                 .iter()
                 .filter(|task| snapshot.publishes(PluginSurfaceKind::Tool, &task.surface_id))
                 .cloned(),
@@ -1087,7 +1160,7 @@ async fn project_extension_for_host_with_flow_observations(
         }
     }
     if let Some(snapshot) = reconciliation.as_ref().filter(|_| active) {
-        for binding in knowledge_bindings {
+        for binding in context.knowledge_bindings {
             if snapshot.publishes(PluginSurfaceKind::Okf, &binding.receipt.surface.surface.id) {
                 knowledge.push(OkfCapabilityProjection::from_promoted(
                     &binding.receipt,
@@ -1143,7 +1216,8 @@ async fn project_extension_for_host_with_flow_observations(
             });
         }
     }
-    let planner_evidence = plugin_planner_evidence(extension, reconciliation.as_ref())?;
+    let planner_evidence =
+        plugin_planner_evidence(extension, context.desired_enabled, reconciliation.as_ref())?;
     Ok(CapabilityBinding {
         id: receipt.component_id.clone(),
         route: receipt.route.clone(),
@@ -1373,6 +1447,7 @@ async fn knowledge_evidence_from_store(
 #[cfg(feature = "extensions")]
 fn plugin_planner_evidence(
     extension: &a3s_use_extension::InstalledExtension,
+    desired_enabled: bool,
     reconciliation: Option<&SurfaceReconcileSnapshot>,
 ) -> UseResult<Option<PluginPlannerEvidence>> {
     if extension.manifest.schema_version != 3 {
@@ -1434,7 +1509,7 @@ fn plugin_planner_evidence(
         manifest_sha256: format!("sha256:{}", extension.receipt.manifest_sha256),
         receipt_digest: extension.receipt.descriptor_digest()?,
         catalog_record_digest: catalog.provenance.catalog_record_digest.clone(),
-        desired_enabled: extension.receipt.enabled,
+        desired_enabled,
         selected_surfaces,
     }))
 }
@@ -1472,7 +1547,6 @@ fn installed_plugin_plan_evidence_from_snapshot(
         || summary.manifest_sha256.as_str() != manifest_sha256.unwrap_or_default()
         || summary.receipt_digest != receipt_digest
         || summary.catalog_record_digest != catalog.provenance.catalog_record_digest
-        || summary.desired_enabled != receipt.enabled
     {
         return Err(UseError::new(
             "use.capability.planner_evidence_invalid",
@@ -1639,8 +1713,10 @@ extension "acme/workflow" {
     async fn built_ins_are_projected_without_extension_identity() {
         let installation = crate::test_installation();
         let snapshot = snapshot(installation.clone()).await.unwrap();
-        assert_eq!(snapshot.schema_version, 3);
+        assert_eq!(snapshot.schema_version, 4);
         assert_eq!(snapshot.installation, installation);
+        assert!(snapshot.installation_generation.is_none());
+        assert!(snapshot.installation_snapshot_digest.is_none());
         let browser = snapshot
             .capabilities
             .iter()
@@ -1710,10 +1786,38 @@ extension "acme/workflow" {
 
         let mut capability = box_capability();
         capability.skills = vec![first];
-        let first_revision = revision(&crate::test_installation(), &[capability.clone()]).unwrap();
+        let first_revision = revision(
+            &crate::test_installation(),
+            None,
+            None,
+            &[capability.clone()],
+        )
+        .unwrap();
         capability.skills = vec![second];
-        let second_revision = revision(&crate::test_installation(), &[capability]).unwrap();
+        let second_revision =
+            revision(&crate::test_installation(), None, None, &[capability]).unwrap();
         assert_ne!(first_revision, second_revision);
+    }
+
+    #[test]
+    fn installation_snapshot_evidence_is_part_of_the_capability_revision() {
+        let capability = box_capability();
+        let first = revision(
+            &crate::test_installation(),
+            Some(4),
+            Some(&format!("sha256:{}", "a".repeat(64))),
+            std::slice::from_ref(&capability),
+        )
+        .unwrap();
+        let second = revision(
+            &crate::test_installation(),
+            Some(5),
+            Some(&format!("sha256:{}", "b".repeat(64))),
+            &[capability],
+        )
+        .unwrap();
+
+        assert_ne!(first, second);
     }
 
     #[tokio::test]
@@ -1748,13 +1852,26 @@ extension "acme/workflow" {
             }],
             order: 120,
         }];
-        let first_revision = revision(&crate::test_installation(), &[capability.clone()]).unwrap();
+        let first_revision = revision(
+            &crate::test_installation(),
+            None,
+            None,
+            &[capability.clone()],
+        )
+        .unwrap();
         capability.activity_bar[0].entry = second;
-        let second_revision = revision(&crate::test_installation(), &[capability.clone()]).unwrap();
+        let second_revision = revision(
+            &crate::test_installation(),
+            None,
+            None,
+            &[capability.clone()],
+        )
+        .unwrap();
         assert_ne!(first_revision, second_revision);
 
         capability.activity_bar[0].dependencies[0].id = "science-v2".to_string();
-        let dependency_revision = revision(&crate::test_installation(), &[capability]).unwrap();
+        let dependency_revision =
+            revision(&crate::test_installation(), None, None, &[capability]).unwrap();
         assert_ne!(second_revision, dependency_revision);
     }
 
@@ -1817,18 +1934,21 @@ extension "acme/workflow" {
             .await
             .unwrap();
         assert!(evidence.failures.is_empty());
-        let binding = project_extension_for_host_with_flow_observations(
+        let binding = project_extension_for_host_with_evidence(
             &extension,
             extension
                 .surfaces()
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),
-            "0.3.0",
-            &SurfaceObservations::new(),
-            &evidence.bindings,
-            &[],
-            &[],
+            CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &SurfaceObservations::new(),
+                knowledge_bindings: &evidence.bindings,
+                runtime_tasks: &[],
+                mcp_projections: &[],
+            },
         )
         .await
         .unwrap();
@@ -1897,6 +2017,53 @@ extension "acme/workflow" {
             json["reconciliation"]["surfaces"][0]["surface"]["id"],
             "guide"
         );
+    }
+
+    #[cfg(feature = "extensions")]
+    #[tokio::test]
+    async fn installation_intent_withholds_an_enabled_receipt_from_publication() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("skills").join("guide").join("SKILL.md");
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&path, b"# Guide\n").await.unwrap();
+        let manifest = a3s_use_extension::ExtensionManifest::parse_acl(SKILL_ONLY_PLUGIN).unwrap();
+        let mut extension = installed_extension(manifest, temp.path().to_path_buf(), true);
+        extension.receipt.package_sha256 = Some("a".repeat(64));
+        extension.receipt.lifecycle_generation = Some(7);
+
+        let binding = project_extension_for_host_with_evidence(
+            &extension,
+            extension
+                .surfaces()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            CapabilityHostProjectionContext {
+                desired_enabled: false,
+                host_version: "0.3.0",
+                host_observations: &SurfaceObservations::new(),
+                knowledge_bindings: &[],
+                runtime_tasks: &[],
+                mcp_projections: &[],
+            },
+        )
+        .await
+        .unwrap();
+        let reconciliation = binding.reconciliation.as_ref().unwrap();
+
+        assert!(extension.receipt.enabled);
+        assert!(!binding.enabled);
+        assert!(binding.skills.is_empty());
+        assert_eq!(
+            reconciliation.desired,
+            PluginDesiredState::InstalledDisabled
+        );
+        assert!(reconciliation
+            .surfaces
+            .iter()
+            .all(|surface| !surface.published));
     }
 
     #[cfg(feature = "extensions")]
@@ -2033,14 +2200,17 @@ extension "acme/workflow" {
             },
             SurfaceObservedState::Prepared,
         );
-        let binding = project_extension_for_host_with_flow_observations(
+        let binding = project_extension_for_host_with_evidence(
             &extension,
             surfaces,
-            "0.3.0",
-            &flow_observations,
-            &[],
-            &[],
-            &[],
+            CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &flow_observations,
+                knowledge_bindings: &[],
+                runtime_tasks: &[],
+                mcp_projections: &[],
+            },
         )
         .await
         .unwrap();
@@ -2206,18 +2376,21 @@ extension "acme/workflow" {
             },
             SurfaceObservedState::Prepared,
         );
-        let binding = project_extension_for_host_with_flow_observations(
+        let binding = project_extension_for_host_with_evidence(
             &extension,
             extension
                 .surfaces()
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            "0.3.0",
-            &flow_observations,
-            &[],
-            &[],
-            &[],
+            CapabilityHostProjectionContext {
+                desired_enabled: extension.receipt.enabled,
+                host_version: "0.3.0",
+                host_observations: &flow_observations,
+                knowledge_bindings: &[],
+                runtime_tasks: &[],
+                mcp_projections: &[],
+            },
         )
         .await
         .unwrap();

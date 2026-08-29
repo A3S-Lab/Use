@@ -131,7 +131,7 @@ winner.
 | Package operations | terminal resolution diagnostics and retained operation history; pending graph/download records are rejected |
 | Knowledge | SQLite main/WAL/SHM files and terminal restore evidence |
 | Installation snapshot | `state/installation-snapshot.json` |
-| Package enablement | stable enablement state and completed enablement operations |
+| Package enablement | snapshot-bound recovery projections and completed enablement operations |
 | Host Manager | reviewed requests, observations, cancellations, and outcomes |
 
 Cross-process lock files and route lease files are excluded. Empty directories

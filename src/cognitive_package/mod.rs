@@ -52,10 +52,8 @@ use std::sync::Arc;
 use crate::plugin_lifecycle::PluginLifecycleCoordinator;
 use download_attempt::PackageDownloadAttemptStore;
 use resolution_attempt::PackageResolutionAttemptStore;
-use store::{
-    InstallationSnapshotStore, PackageGraphOperationPhase, PendingPackageGraphOperation,
-    PendingPackageGraphStore,
-};
+pub(crate) use store::InstallationSnapshotStore;
+use store::{PackageGraphOperationPhase, PendingPackageGraphOperation, PendingPackageGraphStore};
 
 pub use diagnostic::{
     PluginDownloadAttemptDiagnostic, PluginDownloadAttemptPhase, PluginDownloadDiagnosticStatus,

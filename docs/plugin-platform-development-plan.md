@@ -104,7 +104,7 @@ Status: in progress
   reconnection, stale-generation rejection, and an accepted-call Registry
   lease held through capture and cleanup.
 - [x] Publish exact installation/package/generation-matched Runtime Tool Tasks
-  through capability snapshot schema v3; omit missing or mismatched bindings.
+  through capability snapshot schema v4; omit missing or mismatched bindings.
 - [x] Require explicit owner evidence for every required Tool, MCP, Flow, OKF,
   Skill, and UI surface before atomically publishing the capability generation.
 - [x] Persist `a3s.use.runtime-service-provisioning.v1` before apply, retain

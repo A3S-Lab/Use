@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use a3s_use_core::{
-    PlanScope, PluginOperationAction, PluginReleaseChannel, PluginSurfaceRef, UseResult,
+    InstallationPackageSelection, PlanScope, PluginOperationAction, PluginReleaseChannel,
+    PluginSurfaceRef, UseResult,
 };
 use a3s_use_extension::{
     ExtensionLifecycleIdentity, ExtensionLifecyclePackage, ExtensionManifest, InstalledExtension,
@@ -134,7 +135,17 @@ impl CognitivePackageManager {
                 self.replay_published_install(&lock, pending, &installed)
                     .await?;
             }
-            self.snapshot_store().put(&lock, now_ms()?).await?;
+            let selections = install_snapshot_selections(
+                &self.snapshot_store(),
+                &lock,
+                &surface_selections,
+                pending.as_ref().map(|pending| &pending.generations),
+                &installed,
+            )
+            .await?;
+            self.snapshot_store()
+                .put(&lock, now_ms()?, selections)
+                .await?;
             if let Some(pending) = &pending {
                 self.retain_and_remove_graph_operation(
                     &pending_store,
@@ -399,7 +410,17 @@ impl CognitivePackageManager {
                     .await?;
             }
         }
-        self.snapshot_store().put(&lock, now_ms()?).await?;
+        let selections = install_snapshot_selections(
+            &self.snapshot_store(),
+            &lock,
+            &surface_selections,
+            Some(&pending.generations),
+            &installed,
+        )
+        .await?;
+        self.snapshot_store()
+            .put(&lock, now_ms()?, selections)
+            .await?;
         self.retain_and_remove_graph_operation(
             &pending_store,
             &pending,
@@ -736,6 +757,56 @@ fn install_surface_selections(
                 }
             };
             Ok((package.package_id().to_string(), selected))
+        })
+        .collect()
+}
+
+async fn install_snapshot_selections(
+    store: &super::store::InstallationSnapshotStore,
+    lock: &a3s_use_core::PluginPackageLock,
+    surface_selections: &BTreeMap<String, Vec<PluginSurfaceRef>>,
+    changed_generations: Option<&BTreeMap<String, u64>>,
+    installed: &BTreeMap<String, InstalledExtension>,
+) -> UseResult<Vec<InstallationPackageSelection>> {
+    let current = store.current().await?;
+    lock.packages
+        .iter()
+        .map(|package| {
+            let package_id = package.package_id();
+            let selected_surfaces = surface_selections.get(package_id).cloned().ok_or_else(|| {
+                package_manager_error(
+                    "use.plugin.package_graph_invalid",
+                    "A package snapshot cutover omitted its publication surface intent.",
+                )
+            })?;
+            let state_generation = changed_generations
+                .and_then(|generations| generations.get(package_id).copied())
+                .or_else(|| {
+                    current
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.package_selection(package_id))
+                        .filter(|selection| selection.package == *package)
+                        .map(|selection| selection.state_generation)
+                })
+                .or_else(|| {
+                    installed
+                        .get(package_id)
+                        .and_then(|extension| extension.receipt.lifecycle_generation)
+                })
+                .ok_or_else(|| {
+                    package_manager_error(
+                        "use.plugin.package_generation_changed",
+                        format!(
+                            "Package '{package_id}' has no exact state generation for installation snapshot cutover."
+                        ),
+                    )
+                })?;
+            InstallationPackageSelection::new(
+                package.clone(),
+                state_generation,
+                true,
+                selected_surfaces,
+            )
         })
         .collect()
 }

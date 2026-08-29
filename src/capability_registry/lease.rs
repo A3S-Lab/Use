@@ -1,6 +1,8 @@
 use std::fmt;
 use std::sync::Arc;
 
+#[cfg(feature = "extensions")]
+use a3s_use_core::InstallationSnapshot;
 use a3s_use_core::{InstallationId, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS};
 use serde::{Deserialize, Serialize};
 #[cfg(not(feature = "extensions"))]
@@ -8,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use super::CapabilityRegistrySnapshot;
 
-pub const CAPABILITY_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.capability-snapshot-cursor.v2";
+pub const CAPABILITY_SNAPSHOT_CURSOR_SCHEMA: &str = "a3s.use.capability-snapshot-cursor.v3";
 
 /// Exact Use-owned package generation projected into a capability snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -32,6 +34,10 @@ pub struct CapabilityPackageGeneration {
 pub struct CapabilitySnapshotCursor {
     pub schema: String,
     pub installation: InstallationId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installation_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installation_snapshot_digest: Option<String>,
     pub generation: u64,
     pub revision: String,
     pub registry_revision: String,
@@ -43,16 +49,18 @@ pub struct CapabilitySnapshotCursor {
 impl CapabilitySnapshotCursor {
     pub(super) fn from_projection(
         revision: &str,
-        extension: ExtensionCursorEvidence,
+        upstream: CapabilityUpstreamEvidence,
     ) -> UseResult<Self> {
         let cursor = Self {
             schema: CAPABILITY_SNAPSHOT_CURSOR_SCHEMA.to_owned(),
-            installation: extension.installation,
-            generation: extension.generation,
+            installation: upstream.installation,
+            installation_generation: upstream.installation_generation,
+            installation_snapshot_digest: upstream.installation_snapshot_digest,
+            generation: upstream.generation,
             revision: revision.to_owned(),
-            registry_revision: extension.registry_revision,
-            packages: extension.packages,
-            unleasable_routes: extension.unleasable_routes,
+            registry_revision: upstream.registry_revision,
+            packages: upstream.packages,
+            unleasable_routes: upstream.unleasable_routes,
         };
         cursor.validate()?;
         Ok(cursor)
@@ -63,6 +71,12 @@ impl CapabilitySnapshotCursor {
             cursor_error("The capability snapshot cursor installation identity is invalid.")
         })?;
         if self.schema != CAPABILITY_SNAPSHOT_CURSOR_SCHEMA
+            || self.installation_generation.is_some() != self.installation_snapshot_digest.is_some()
+            || self.installation_generation == Some(0)
+            || self
+                .installation_snapshot_digest
+                .as_ref()
+                .is_some_and(|digest| !valid_canonical_sha256(digest))
             || !valid_lower_sha256(&self.revision)
             || !valid_canonical_sha256(&self.registry_revision)
             || self.packages.len() > MAX_PLUGIN_PLAN_ITEMS
@@ -219,22 +233,37 @@ pub(super) async fn acquire_snapshot_lease_from(
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ExtensionCursorEvidence {
+pub(super) struct CapabilityUpstreamEvidence {
     installation: InstallationId,
+    installation_generation: Option<u64>,
+    installation_snapshot_digest: Option<String>,
     generation: u64,
     registry_revision: String,
     packages: Vec<CapabilityPackageGeneration>,
     unleasable_routes: Vec<String>,
 }
 
-impl ExtensionCursorEvidence {
+impl CapabilityUpstreamEvidence {
+    pub(super) fn installation_generation(&self) -> Option<u64> {
+        self.installation_generation
+    }
+
+    pub(super) fn installation_snapshot_digest(&self) -> Option<&str> {
+        self.installation_snapshot_digest.as_deref()
+    }
+
     #[cfg(feature = "extensions")]
     pub(super) fn from_snapshot(
         snapshot: &a3s_use_extension::ExtensionRegistrySnapshot,
+        installation: Option<&InstallationSnapshot>,
     ) -> UseResult<Self> {
         let cursor = snapshot.cursor()?;
         Ok(Self {
             installation: cursor.installation,
+            installation_generation: installation.map(|snapshot| snapshot.generation),
+            installation_snapshot_digest: installation
+                .map(InstallationSnapshot::descriptor_digest)
+                .transpose()?,
             generation: cursor.generation,
             registry_revision: cursor.revision,
             packages: cursor
@@ -250,6 +279,8 @@ impl ExtensionCursorEvidence {
     pub(super) fn empty(installation: InstallationId) -> Self {
         Self {
             installation,
+            installation_generation: None,
+            installation_snapshot_digest: None,
             generation: 0,
             registry_revision: format!(
                 "sha256:{:x}",
@@ -305,6 +336,8 @@ mod tests {
                 "capability-tests",
             )
             .unwrap(),
+            installation_generation: Some(5),
+            installation_snapshot_digest: Some(format!("sha256:{}", "e".repeat(64))),
             generation: 7,
             revision: "a".repeat(64),
             registry_revision: format!("sha256:{}", "b".repeat(64)),
@@ -339,6 +372,20 @@ mod tests {
             "use.capability.snapshot_cursor_invalid"
         );
 
+        let mut missing_installation_digest = cursor();
+        missing_installation_digest.installation_snapshot_digest = None;
+        assert_eq!(
+            missing_installation_digest.validate().unwrap_err().code,
+            "use.capability.snapshot_cursor_invalid"
+        );
+
+        let mut malformed_installation_digest = cursor();
+        malformed_installation_digest.installation_snapshot_digest = Some("sha256:ABC".to_owned());
+        assert_eq!(
+            malformed_installation_digest.validate().unwrap_err().code,
+            "use.capability.snapshot_cursor_invalid"
+        );
+
         let mut empty_route = cursor();
         empty_route.unleasable_routes.push(String::new());
         assert_eq!(
@@ -364,18 +411,21 @@ mod tests {
     }
 
     #[test]
-    fn internal_cursor_does_not_change_capability_snapshot_v3_json() {
+    fn internal_cursor_is_omitted_from_capability_snapshot_v4_json() {
         let cursor = cursor();
         let snapshot = CapabilityRegistrySnapshot {
             schema_version: super::super::CAPABILITY_REGISTRY_SCHEMA_VERSION,
             installation: cursor.installation.clone(),
+            installation_generation: cursor.installation_generation,
+            installation_snapshot_digest: cursor.installation_snapshot_digest.clone(),
             generation: cursor.generation,
             revision: cursor.revision.clone(),
             capabilities: vec![super::super::box_capability()],
             cursor,
         };
         let json = serde_json::to_value(snapshot).unwrap();
-        assert_eq!(json["schemaVersion"], 3);
+        assert_eq!(json["schemaVersion"], 4);
+        assert_eq!(json["installationGeneration"], 5);
         assert_eq!(json["generation"], 7);
         assert!(json.get("cursor").is_none());
     }

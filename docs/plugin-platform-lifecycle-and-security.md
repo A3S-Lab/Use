@@ -152,7 +152,11 @@ snapshot evidence is an error, not permission to infer an uninstall set.
 ## Enable and disable
 
 Enablement changes desired visibility without changing package bytes or the
-dependency lock. It uses a separate monotonic state generation.
+dependency lock. The package selection inside Installation Snapshot v2 owns
+the monotonic state generation, desired enablement, and exact selected-surface
+closure. Receipts and routes are applied observations; the v3 enablement file
+is a snapshot-generation-bound recovery projection, not another desired-state
+store.
 
 ### Planning
 
@@ -170,6 +174,7 @@ verify exact installed artifact and receipt
 → prepare surfaces dependency-forward
 → publish exact package generation through durable cutover
 → commit Grant cutover
+→ compare-and-swap the next Installation Snapshot generation
 → store terminal result
 ```
 
@@ -182,6 +187,7 @@ verify exact installed artifact and receipt
 → drain calls admitted by prior generation
 → revoke prior Grant
 → stop surfaces reverse-order
+→ compare-and-swap the next Installation Snapshot generation
 → store terminal result
 ```
 
@@ -195,6 +201,13 @@ Visibility mutation is owned by cutover-aware host methods. Each returns:
 - package-keyed lifecycle evidence;
 - Registry generation before and after; and
 - exact immutable snapshot digest.
+
+Capability snapshot v4 and cursor v3 then join that Registry evidence with the
+same stable Installation Snapshot generation and digest. Publication requires
+the snapshot's desired enablement and selected surfaces as well as matching
+receipt, route, provider, and readiness observations. A receipt or route can
+therefore never publish a capability that the installation generation did not
+select.
 
 Host traits do not contain a fallback publisher. A host unable to prove the
 cutover cannot implement the current trait.

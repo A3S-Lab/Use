@@ -449,9 +449,10 @@ authority is removed. Restart therefore replays the same Runtime/Gateway
 effect, reconciles the safe both-files window, or completes candidate cleanup;
 it never infers a unit or route from package files.
 
-Capability snapshot schema v3 contains the exact `InstallationId`,
-package/surface identity, generation, desired/observed state, readiness,
-dependencies, and evidence digests. A release-backed Tool Task enters
+Capability snapshot schema v4 contains the exact `InstallationId`, current
+Installation Snapshot generation and digest, package/surface identity,
+generation, desired/observed state, readiness, dependencies, and evidence
+digests. A release-backed Tool Task enters
 `toolTasks` only when its v4 binding matches the published package digest,
 installation, surface, and lifecycle
 generation. The projection carries a stable host tool name, original command,
@@ -473,10 +474,11 @@ Mismatched or missing Runtime/Gateway initialize evidence leaves the surface
 unpublished.
 
 For admission that spans more than one package, the injected
-`CapabilityRegistry` derives `a3s.use.capability-snapshot-cursor.v2`. It binds
-the exact installation and capability revision to the Extension Registry digest
-and sorted package, manifest, and lifecycle generations. Acquisition takes every shared
-route lease in canonical order and rechecks the publication only after the
+`CapabilityRegistry` derives `a3s.use.capability-snapshot-cursor.v3`. It binds
+the exact installation, Installation Snapshot generation and digest, and
+capability revision to the Extension Registry digest and sorted package,
+manifest, and lifecycle generations. Acquisition takes every shared route
+lease in canonical order and rechecks both snapshot authorities only after the
 complete batch is held. A concurrent cutover, hidden or contended generation,
 digest drift, or enabled non-lifecycle route yields no partial lease. The
 non-clone `CapabilitySnapshotLease` is `Send + Sync`; Code may own it for a Run
