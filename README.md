@@ -427,9 +427,12 @@ installations may point to the same exact tree while retaining independent
 receipts, generations, enablement, Grants, bindings, and leases. Use rehashes
 content before publication and use, but it does not yet garbage-collect
 unreferenced expanded trees. Safe deletion requires a future global
-reachability model across every installation and durable operation. Verified
-archive, planning, and media caches remain content-addressed per Registry source
-until that global policy exists.
+reachability model across every installation and durable operation. A
+cross-process shared/exclusive boundary now prevents future inventory and
+collection from racing raw-target observations, lifecycle receipts,
+installation snapshots, or pending graph operations. Source observations and
+resumable partials remain Registry-source scoped; their verified bytes use the
+global Blob tier. Inventory, policy, and deletion are not exposed yet.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -1220,7 +1223,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
-| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. Global reachability, quota/GC, audit, quarantine, and verified rehydration are still open |
+| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive admission boundary prevents future maintenance from racing durable reference publication; global inventory, quota/GC, audit, quarantine, and verified rehydration are still open |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |

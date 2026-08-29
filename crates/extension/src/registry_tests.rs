@@ -172,9 +172,16 @@ async fn bind_remote_catalog_receipt(
     receipt.trust = ExtensionTrust::RegistryTuf;
     receipt.registry = Some(ResolvedRemotePackage::from_verified_catalog(catalog).unwrap());
     receipt.verified_catalog = Some(catalog.clone());
-    write_receipt(&registry.paths().receipt_path(package_id), &receipt)
-        .await
-        .unwrap();
+    let artifact_store = registry.paths().artifact_store();
+    let artifact_admission = artifact_store.acquire_reference_admission().await.unwrap();
+    write_receipt(
+        &artifact_store,
+        &artifact_admission,
+        &registry.paths().receipt_path(package_id),
+        &receipt,
+    )
+    .await
+    .unwrap();
 }
 
 fn lifecycle_identity(

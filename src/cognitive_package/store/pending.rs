@@ -5,13 +5,17 @@ use a3s_use_core::{
     PlanPackageChangeKind, PluginOperationAction, PluginOperationPlanEnvelope, PluginPackageId,
     PluginPackageLock, UseError, UseResult, MAX_PLUGIN_PLAN_ITEMS,
 };
-use a3s_use_extension::{validate_catalog_manifest_binding, ExtensionManifest};
+use a3s_use_extension::{
+    validate_catalog_manifest_binding, ArtifactStore, ExtensionManifest, ExtensionPaths,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::fs;
 
 use super::super::{grant::PackageGraphAuthorization, package_manager_error};
 use super::inventory::read_pending_operations_locked;
+#[cfg(test)]
+use super::test_artifact_store;
 use super::{
     acquire_lock, action_name, path_error, path_identity_error, pending_record_path, read_optional,
     store_error, sync_parent, validate_existing_directory_chain, write_new,
@@ -385,17 +389,34 @@ fn manifest_record_digests(
 
 #[derive(Debug, Clone)]
 pub(in crate::cognitive_package) struct PendingPackageGraphStore {
+    artifact_store: ArtifactStore,
     state_root: PathBuf,
     root: PathBuf,
 }
 
 impl PendingPackageGraphStore {
+    #[cfg(test)]
     pub fn new(state_root: impl Into<PathBuf>) -> Self {
         let state_root = state_root.into();
+        let artifact_store = test_artifact_store(&state_root);
+        Self::from_parts(state_root, artifact_store)
+    }
+
+    pub fn from_extension_paths(paths: &ExtensionPaths) -> Self {
+        Self::from_parts(paths.installation_state_root(), paths.artifact_store())
+    }
+
+    fn from_parts(state_root: PathBuf, artifact_store: ArtifactStore) -> Self {
         Self {
+            artifact_store,
             root: state_root.join("operations").join("package-graphs"),
             state_root,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn artifact_store(&self) -> &ArtifactStore {
+        &self.artifact_store
     }
 
     pub async fn get(
@@ -491,6 +512,7 @@ impl PendingPackageGraphStore {
 
     pub async fn put(&self, value: &PendingPackageGraphOperation) -> UseResult<bool> {
         value.validate()?;
+        let _artifact_admission = self.artifact_store.acquire_reference_admission().await?;
         let _guard = acquire_lock(&self.state_root).await?;
         for action in [
             PluginOperationAction::Install,

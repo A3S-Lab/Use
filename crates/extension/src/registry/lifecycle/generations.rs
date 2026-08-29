@@ -15,7 +15,7 @@ use crate::registry::{
     verify_package_integrity, ExtensionPackageBinding, ExtensionReceipt, ExtensionRegistry,
     InstalledExtension,
 };
-use crate::ExtensionPaths;
+use crate::{ArtifactReferenceAdmission, ArtifactStore, ExtensionPaths};
 
 const MAX_RETAINED_LIFECYCLE_GENERATIONS: usize = 32;
 const MAX_RETAINED_RECEIPT_ENTRIES: usize = 64;
@@ -58,6 +58,8 @@ impl ExtensionRegistry {
             ));
         }
 
+        let artifact_store = self.paths().artifact_store();
+        let artifact_admission = artifact_store.acquire_reference_admission().await?;
         let _lock = crate::package::RegistryLock::acquire_for_mutation(self.paths()).await?;
         let snapshot_before = crate::registry_io::read_registry_snapshot(self.paths()).await?;
         let mut changed = candidates
@@ -131,7 +133,13 @@ impl ExtensionRegistry {
             for (candidate, _, replacement) in &mutations {
                 let receipt_path = self.paths().receipt_path(candidate.package_id());
                 if let Some(replacement) = replacement {
-                    write_receipt(&receipt_path, replacement).await?;
+                    write_receipt(
+                        &artifact_store,
+                        &artifact_admission,
+                        &receipt_path,
+                        replacement,
+                    )
+                    .await?;
                 } else {
                     remove_file_with_windows_retry(
                         receipt_path.clone(),
@@ -150,7 +158,13 @@ impl ExtensionRegistry {
         .await;
         if let Err(error) = mutation_result {
             for (_, original, _) in mutations.iter().rev() {
-                write_receipt(&self.paths().receipt_path(&original.package_id), original).await?;
+                write_receipt(
+                    &artifact_store,
+                    &artifact_admission,
+                    &self.paths().receipt_path(&original.package_id),
+                    original,
+                )
+                .await?;
             }
             return Err(error);
         }
@@ -162,8 +176,13 @@ impl ExtensionRegistry {
             Ok(installed) => installed,
             Err(error) => {
                 for (_, original, _) in mutations.iter().rev() {
-                    write_receipt(&self.paths().receipt_path(&original.package_id), original)
-                        .await?;
+                    write_receipt(
+                        &artifact_store,
+                        &artifact_admission,
+                        &self.paths().receipt_path(&original.package_id),
+                        original,
+                    )
+                    .await?;
                 }
                 return Err(error);
             }
@@ -172,8 +191,13 @@ impl ExtensionRegistry {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 for (_, original, _) in mutations.iter().rev() {
-                    write_receipt(&self.paths().receipt_path(&original.package_id), original)
-                        .await?;
+                    write_receipt(
+                        &artifact_store,
+                        &artifact_admission,
+                        &self.paths().receipt_path(&original.package_id),
+                        original,
+                    )
+                    .await?;
                 }
                 return Err(error);
             }
@@ -253,6 +277,8 @@ impl ExtensionRegistry {
                 "A lifecycle rollback must bind newer candidate and exact prior generations of one package.",
             ));
         }
+        let artifact_store = self.paths().artifact_store();
+        let artifact_admission = artifact_store.acquire_reference_admission().await?;
         let _lock = crate::package::RegistryLock::acquire_for_mutation(self.paths()).await?;
         let published = crate::registry_io::read_registry_snapshot(self.paths()).await?;
         if published
@@ -282,6 +308,8 @@ impl ExtensionRegistry {
                         )
                     })?;
                 write_receipt(
+                    &artifact_store,
+                    &artifact_admission,
                     &self.paths().receipt_path(prior.package_id()),
                     &prior_extension.receipt,
                 )
@@ -328,6 +356,8 @@ impl ExtensionRegistry {
 
     pub(super) async fn retain_lifecycle_receipt(
         &self,
+        artifact_store: &ArtifactStore,
+        artifact_admission: &ArtifactReferenceAdmission,
         identity: &ExtensionLifecycleIdentity,
         receipt: &ExtensionReceipt,
     ) -> UseResult<bool> {
@@ -359,12 +389,14 @@ impl ExtensionRegistry {
         {
             return Err(retained_generation_limit_error());
         }
-        write_receipt(&path, receipt).await?;
+        write_receipt(artifact_store, artifact_admission, &path, receipt).await?;
         Ok(true)
     }
 
     pub(super) async fn update_retained_lifecycle_receipt(
         &self,
+        artifact_store: &ArtifactStore,
+        artifact_admission: &ArtifactReferenceAdmission,
         identity: &ExtensionLifecycleIdentity,
         expected: &ExtensionReceipt,
         replacement: &ExtensionReceipt,
@@ -400,7 +432,7 @@ impl ExtensionRegistry {
                 "The retained lifecycle receipt changed before its visibility update.",
             ));
         }
-        write_receipt(&path, replacement).await
+        write_receipt(artifact_store, artifact_admission, &path, replacement).await
     }
 
     pub(super) async fn remove_retained_receipt(

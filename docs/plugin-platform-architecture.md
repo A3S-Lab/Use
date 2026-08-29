@@ -512,9 +512,12 @@ content is stored at
 `data/artifacts/expanded-packages/sha256/<prefix>/<digest>/content`; one
 cross-process digest lock makes concurrent installations converge on the same
 complete content identity. Registry-source observations, partials, metadata,
-and provenance remain source-scoped. The raw-blob and expanded-tree tiers still
-need one cross-source and cross-installation reachability, quota, and
-garbage-collection policy. Shared-content corruption currently fails closed;
+and provenance remain source-scoped. A store-bound shared admission is required
+when source observations, lifecycle receipts, installation snapshots, or
+durable operations publish Artifact Store references; exclusive maintenance
+therefore cannot race a new reference. The raw-blob and expanded-tree tiers
+still need one cross-source and cross-installation inventory, quota, and
+confirmed garbage-collection policy. Shared-content corruption currently fails closed;
 explicit quarantine and verified rehydration remain part of that global policy
 rather than an implicit overwrite performed by one source or installation.
 

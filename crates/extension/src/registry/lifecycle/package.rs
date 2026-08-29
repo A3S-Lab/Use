@@ -15,7 +15,7 @@ use crate::registry::{
 use crate::remote::{DownloadedRemotePackage, ResolvedRemotePackage};
 use crate::source::{prepare_package_source, PreparedPackageSource};
 use crate::surface_files::validate_planning_bundle_package_binding;
-use crate::{ArtifactStore, ExtensionManifest};
+use crate::{ArtifactReferenceAdmission, ArtifactStore, ExtensionManifest};
 
 #[cfg(all(test, windows))]
 pub(crate) type BeforeCandidateCommitHook = Box<dyn FnOnce(&Path) + Send>;
@@ -301,8 +301,10 @@ pub(super) async fn commit_candidate_root(
     candidate: &ExtensionLifecyclePackage,
     target: &Path,
     artifact_store: &ArtifactStore,
+    artifact_admission: &ArtifactReferenceAdmission,
     package_sha256: &str,
 ) -> UseResult<()> {
+    artifact_admission.ensure_store(artifact_store)?;
     if target != artifact_store.expanded_package_path_from_sha256(package_sha256) {
         return Err(lifecycle_state_error(
             "The expanded-package target does not match its Artifact Store digest.",

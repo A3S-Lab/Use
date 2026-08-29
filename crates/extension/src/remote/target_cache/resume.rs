@@ -75,13 +75,14 @@ impl ResumableTarget {
         policy: VerifiedTargetCachePolicy,
     ) -> UseResult<Self> {
         let expected_sha256 = validated_evidence(expected_length, expected_sha256)?;
+        let artifact_admission = artifact_store.acquire_reference_admission().await?;
         let lock = acquire_target_cache_lock(datastore, true)?;
         let cache_directory = ensure_cache_directory(datastore).await?;
         let partial_path = cache_directory.join(partial_name(&expected_sha256));
         let observation =
             record::read_observation(&cache_directory, &expected_sha256, expected_length).await?;
         let global_blob = artifact_store
-            .open_blob(&expected_sha256, expected_length)
+            .open_blob(&artifact_admission, &expected_sha256, expected_length)
             .await?;
         if observation.is_some() && global_blob.is_none() {
             return Err(target_cache_error(
@@ -159,7 +160,12 @@ impl ResumableTarget {
                 })?;
                 run_before_blob_commit_hook(&partial_path);
                 let verified = artifact_store
-                    .commit_blob(&mut partial, expected_length, &expected_sha256)
+                    .commit_blob(
+                        &artifact_admission,
+                        &mut partial,
+                        expected_length,
+                        &expected_sha256,
+                    )
                     .await?;
                 record::write_observation(&cache_directory, &expected_sha256, expected_length)
                     .await?;
@@ -324,9 +330,21 @@ impl ResumableTarget {
             return Err(error);
         }
         run_before_blob_commit_hook(&self.partial_path);
+        let artifact_admission = match self.artifact_store.acquire_reference_admission().await {
+            Ok(admission) => admission,
+            Err(error) => {
+                self.partial = Some(partial);
+                return Err(error);
+            }
+        };
         let verified = match self
             .artifact_store
-            .commit_blob(&mut partial, self.expected_length, &self.expected_sha256)
+            .commit_blob(
+                &artifact_admission,
+                &mut partial,
+                self.expected_length,
+                &self.expected_sha256,
+            )
             .await
         {
             Ok(verified) => verified,
@@ -497,6 +515,71 @@ mod tests {
         test_artifact_store(datastore)
             .blob_path(&format!("sha256:{digest}"))
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn global_collection_blocks_new_target_reference_publication() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let artifact_store = test_artifact_store(datastore);
+        let collection = artifact_store.acquire_collection().await.unwrap();
+        let digest = "a".repeat(64);
+        let policy = VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap();
+        let mut publication = Box::pin(ResumableTarget::begin(
+            datastore,
+            &artifact_store,
+            1,
+            &digest,
+            policy,
+        ));
+
+        tokio::select! {
+            _ = &mut publication => {
+                panic!("target publication crossed the active collection boundary")
+            }
+            () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+        }
+        assert!(!datastore.join("verified-targets").exists());
+
+        drop(collection);
+        let target = publication.await.unwrap();
+        assert!(!target.is_ready());
+    }
+
+    #[tokio::test]
+    async fn incomplete_download_releases_admission_until_atomic_blob_commit() {
+        let temporary = tempfile::tempdir().unwrap();
+        let datastore = temporary.path();
+        let artifact_store = test_artifact_store(datastore);
+        let body = b"bounded admission";
+        let digest = format!("{:x}", Sha256::digest(body));
+        let mut target = ResumableTarget::begin(
+            datastore,
+            &artifact_store,
+            body.len() as u64,
+            &digest,
+            VerifiedTargetCachePolicy::new(1024, 4, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+        target.append(body).await.unwrap();
+
+        let collection = artifact_store.acquire_collection().await.unwrap();
+        let mut publication = Box::pin(target.commit("use.extension.registry_target_invalid"));
+        tokio::select! {
+            result = &mut publication => {
+                panic!("blob commit crossed the active collection boundary: {result:?}")
+            }
+            () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+        }
+
+        drop(collection);
+        publication.await.unwrap();
+        assert!(target.is_ready());
+        assert!(
+            record::observation_path(&datastore.join("verified-targets/sha256"), &digest,)
+                .is_file()
+        );
     }
 
     #[tokio::test]

@@ -30,9 +30,16 @@ async fn registry_tuf_receipts_require_verified_catalog_evidence() {
     receipt.trust = ExtensionTrust::RegistryTuf;
     receipt.registry = Some(ResolvedRemotePackage::from_verified_catalog(&catalog).unwrap());
     receipt.verified_catalog = None;
-    write_receipt(&registry.paths().receipt_path("acme/cognitive"), &receipt)
-        .await
-        .unwrap();
+    let artifact_store = registry.paths().artifact_store();
+    let artifact_admission = artifact_store.acquire_reference_admission().await.unwrap();
+    write_receipt(
+        &artifact_store,
+        &artifact_admission,
+        &registry.paths().receipt_path("acme/cognitive"),
+        &receipt,
+    )
+    .await
+    .unwrap();
 
     let error = registry.get("acme/cognitive").await.unwrap_err();
     assert_eq!(error.code, "use.extension.receipt_invalid");
