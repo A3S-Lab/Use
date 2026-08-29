@@ -520,10 +520,12 @@ exclusive guard now also authorizes a deterministic, path-free, bounded
 physical inventory of canonical content and abandoned staging across both
 tiers. A separate Registry-reference inventory derives every blob observation
 from all preserved source datastores and rejects unknown, linked, incomplete,
-or unbounded state. These reports are not yet a joined reference graph, digest
-audit, or deletion plan. The tiers still need one cross-installation and
-cross-operation aggregation, physical join, quota, and confirmed
-garbage-collection policy. Shared-content corruption currently fails closed;
+or unbounded state. Global reference v1 aggregates those observations with all
+installation snapshots, current and retained receipts, non-cancelled graph
+operations, and applying or rolling-back lifecycle journals under the same
+exclusive guard. It remains path-free, preserves missing references, and fails
+on identity or physical-expectation conflicts. The tiers still need the
+physical join, quota, and confirmed garbage-collection policy. Shared-content corruption currently fails closed;
 explicit quarantine and verified rehydration remain part of that global policy
 rather than an implicit overwrite performed by one source or installation.
 

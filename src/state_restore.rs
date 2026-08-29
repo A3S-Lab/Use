@@ -329,6 +329,11 @@ impl StateRestoreManager {
         // always reverified and must match the durable plan.
         let inspected = inspect_restore_backup(&self.paths, &backup_path).await;
         let rollback_inspected = inspect_optional_backup(&rollback_backup_path).await?;
+        let _artifact_admission = self
+            .paths
+            .artifact_store()
+            .acquire_reference_admission()
+            .await?;
         let maintenance = self.maintenance.acquire_exclusive().await?;
         let marker = self.operations.active().await?;
         if marker

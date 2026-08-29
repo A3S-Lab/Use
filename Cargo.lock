@@ -59,6 +59,7 @@ dependencies = [
  "flate2",
  "fs2",
  "getrandom 0.3.4",
+ "libc",
  "olpc-cjson",
  "pulldown-cmark",
  "reqwest 0.12.28",

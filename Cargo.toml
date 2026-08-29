@@ -75,6 +75,7 @@ extensions = [
     "dep:a3s-runtime",
     "dep:async-trait",
     "dep:fs2",
+    "dep:libc",
     "dep:olpc-cjson",
     "dep:pulldown-cmark",
     "dep:rusqlite",
@@ -118,6 +119,9 @@ url.workspace = true
 rmcp = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Console"], optional = true }

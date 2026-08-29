@@ -52,7 +52,10 @@ use std::sync::Arc;
 use crate::plugin_lifecycle::PluginLifecycleCoordinator;
 use download_attempt::PackageDownloadAttemptStore;
 use resolution_attempt::PackageResolutionAttemptStore;
-pub(crate) use store::InstallationSnapshotStore;
+pub(crate) use store::{
+    acquire_existing_package_graph_lock_shared, inspect_pending_artifact_references_locked,
+    InstallationSnapshotStore, PendingPackageGraphArtifactReferences,
+};
 use store::{PackageGraphOperationPhase, PendingPackageGraphOperation, PendingPackageGraphStore};
 
 pub use diagnostic::{

@@ -22,6 +22,9 @@ use super::package_manager_error;
 mod inventory;
 mod pending;
 
+pub(crate) use inventory::{
+    inspect_pending_artifact_references_locked, PendingPackageGraphArtifactReferences,
+};
 pub(super) use pending::{
     PackageGraphOperationPhase, PendingPackageGraphOperation, PendingPackageGraphStore,
 };
@@ -647,6 +650,61 @@ async fn acquire_lock(state_root: &Path) -> UseResult<StdFile> {
     .map_err(|error| {
         store_error(format!(
             "Failed to join the package graph lock task: {error}"
+        ))
+    })?
+}
+
+pub(crate) async fn acquire_existing_package_graph_lock_shared(
+    state_root: &Path,
+) -> UseResult<StdFile> {
+    let path = state_root.join(".package-graph.lock");
+    let metadata = fs::symlink_metadata(&path)
+        .await
+        .map_err(|error| path_error("inspect package graph inventory lock", &path, error))?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+        || !metadata.is_file()
+        || metadata.len() > 4 * 1024
+    {
+        return Err(path_identity_error());
+    }
+    tokio::task::spawn_blocking(move || {
+        let mut options = StdOpenOptions::new();
+        options.create(false).truncate(false).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt as _;
+            const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+            const FILE_SHARE_READ: u32 = 0x0000_0001;
+            const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+            options
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+                .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE);
+        }
+        let file = options
+            .open(&path)
+            .map_err(|error| path_error("open package graph inventory lock", &path, error))?;
+        let metadata = file.metadata().map_err(|error| {
+            path_error("inspect opened package graph inventory lock", &path, error)
+        })?;
+        if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
+            || !metadata.is_file()
+            || metadata.len() > 4 * 1024
+        {
+            return Err(path_identity_error());
+        }
+        FileExt::lock_shared(&file)
+            .map_err(|error| path_error("lock package graph inventory", &path, error))?;
+        Ok(file)
+    })
+    .await
+    .map_err(|error| {
+        store_error(format!(
+            "Failed to join the package graph inventory lock task: {error}"
         ))
     })?
 }

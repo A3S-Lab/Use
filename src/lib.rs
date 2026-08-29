@@ -16,6 +16,8 @@ pub(crate) fn test_extension_paths(root: &std::path::Path) -> a3s_use_extension:
     .expect("the fixed test installation paths must be valid")
 }
 
+#[cfg(feature = "extensions")]
+pub mod artifact_reachability;
 #[cfg(feature = "browser")]
 mod browser_cli;
 #[cfg(feature = "browser")]
@@ -31,6 +33,8 @@ mod extension_cli;
 mod first_use;
 #[cfg(feature = "extensions")]
 pub mod flow_runtime;
+#[cfg(feature = "extensions")]
+mod installation_state_layout;
 #[cfg(feature = "extensions")]
 pub mod plugin_lifecycle;
 #[cfg(feature = "extensions")]

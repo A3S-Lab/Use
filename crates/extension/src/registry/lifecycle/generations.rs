@@ -13,13 +13,12 @@ use crate::package::{
 };
 use crate::registry::{
     verify_package_integrity, ExtensionPackageBinding, ExtensionReceipt, ExtensionRegistry,
-    InstalledExtension,
+    InstalledExtension, MAX_EXTENSION_RECEIPT_BYTES,
 };
 use crate::{ArtifactReferenceAdmission, ArtifactStore, ExtensionPaths};
 
 const MAX_RETAINED_LIFECYCLE_GENERATIONS: usize = 32;
 const MAX_RETAINED_RECEIPT_ENTRIES: usize = 64;
-const MAX_RETAINED_RECEIPT_BYTES: u64 = 1024 * 1024;
 
 impl ExtensionRegistry {
     /// Restore all exact prior receipts and discard every unpublished graph
@@ -505,7 +504,7 @@ impl ExtensionRegistry {
             if name.starts_with(".receipt-") && name.ends_with(".tmp") {
                 if a3s_use_core::metadata_is_link_or_reparse_point(&metadata)
                     || !metadata.is_file()
-                    || metadata.len() > MAX_RETAINED_RECEIPT_BYTES
+                    || metadata.len() > MAX_EXTENSION_RECEIPT_BYTES
                 {
                     return Err(path_identity_error());
                 }
@@ -647,7 +646,7 @@ fn validate_receipt_metadata(metadata: &std::fs::Metadata) -> UseResult<()> {
     if a3s_use_core::metadata_is_link_or_reparse_point(metadata)
         || !metadata.is_file()
         || metadata.len() == 0
-        || metadata.len() > MAX_RETAINED_RECEIPT_BYTES
+        || metadata.len() > MAX_EXTENSION_RECEIPT_BYTES
     {
         return Err(path_identity_error());
     }

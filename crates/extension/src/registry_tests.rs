@@ -29,6 +29,53 @@ fn published_generation_lease_is_send_and_sync() {
 
     assert_send_sync::<ExtensionGenerationLease>();
     assert_send_sync::<ExtensionSnapshotLease>();
+    assert_send_sync::<ExtensionArtifactReference>();
+}
+
+#[tokio::test]
+async fn receipt_writer_rejects_an_oversized_record_before_publication() {
+    let temporary = tempfile::tempdir().unwrap();
+    let registry = registry(temporary.path());
+    let artifact_store = registry.paths().artifact_store();
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let receipt = ExtensionReceipt {
+        schema_version: EXTENSION_RECEIPT_SCHEMA_VERSION,
+        installation: registry.installation().clone(),
+        package_id: "acme/oversized".to_owned(),
+        component_id: "use/acme/oversized".to_owned(),
+        route_alias: None,
+        version: "1.0.0".to_owned(),
+        package_root: artifact_store.expanded_package_path(&digest).unwrap(),
+        manifest_sha256: "b".repeat(64),
+        package_sha256: Some("a".repeat(64)),
+        trust: ExtensionTrust::LocalExplicit,
+        registry: None,
+        verified_catalog: None,
+        planning_bundle: None,
+        selected_surfaces: vec![PluginSurfaceRef {
+            kind: PluginSurfaceKind::Skill,
+            id: "x".repeat(MAX_EXTENSION_RECEIPT_BYTES as usize),
+        }],
+        installed_at_unix: 1,
+        enabled: true,
+        lifecycle_generation: Some(1),
+    };
+    let path = temporary.path().join("oversized-receipt.json");
+    let admission = artifact_store.acquire_reference_admission().await.unwrap();
+
+    let error = write_receipt(&artifact_store, &admission, &path, &receipt)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.code, "use.extension.receipt_invalid");
+    assert!(!path.exists());
+    assert!(std::fs::read_dir(temporary.path())
+        .unwrap()
+        .all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".receipt-")));
 }
 
 fn registry(root: &Path) -> ExtensionRegistry {
