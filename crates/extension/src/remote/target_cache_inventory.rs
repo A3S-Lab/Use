@@ -69,6 +69,19 @@ pub(super) async fn inspect_cache(cache_directory: &Path) -> UseResult<CacheStat
     Ok(stats(&inventory, available_space(cache_directory).await?))
 }
 
+pub(super) async fn inspect_artifact_references(
+    cache_directory: &Path,
+) -> UseResult<Vec<(String, u64)>> {
+    let inventory = scan_cache(cache_directory).await?;
+    let mut references = inventory
+        .observations
+        .into_iter()
+        .map(|entry| (format!("sha256:{}", entry.digest), entry.bytes))
+        .collect::<Vec<_>>();
+    references.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(references)
+}
+
 pub(super) async fn admit_target_write(
     cache_directory: &Path,
     digest: &str,

@@ -119,17 +119,20 @@ the global sharded Blob tier. Registry-source datastores retain only canonical
 source observations, TUF freshness/provenance, and resumable partials. This is
 still not a complete Artifact Store. One cross-process shared/exclusive
 boundary now serializes durable raw-target observations, lifecycle receipts,
-installation snapshots, and pending graph operations against future
-maintenance. Admissions bind to the exact Artifact Store and precede
-subordinate source or installation locks; incomplete downloads do not hold the
-boundary while waiting on the network. Under its store-bound exclusive guard,
-the v1 physical inventory now enumerates both tiers deterministically, separates
-canonical content from abandoned staging, accounts files and bytes, and rejects
-unowned or unbounded layout. It deliberately does not rehash content or infer
-references. No collector may delete shared raw or expanded bytes until a
-separate global reachability view covers every source, installation, and durable
-operation, enforces quota, quarantines corruption, and rehydrates verified bytes
-without replacing an admitted generation in place.
+applying lifecycle journals, installation snapshots, and pending graph
+operations against future maintenance. Admissions bind to the exact Artifact
+Store and precede subordinate source or installation locks; incomplete
+downloads do not hold the boundary while waiting on the network. Under its
+store-bound exclusive guard, the v1 physical inventory now enumerates both
+tiers deterministically, separates canonical content from abandoned staging,
+accounts files and bytes, and rejects unowned or unbounded layout. The separate
+Registry-reference v1 inventory derives canonical blob observations from every
+preserved source datastore, including replaced sources, and fails closed on
+unknown or incomplete source state. These reports do not rehash content or
+jointly infer reachability. No collector may delete shared raw or expanded
+bytes until a separate global view also covers every installation and durable
+operation, joins physical state, enforces quota, quarantines corruption, and
+rehydrates verified bytes without replacing an admitted generation in place.
 
 Every Runtime, Flow, OKF binding/SQLite, and lifecycle journal store captures
 one `InstallationId` at construction. Scope fields retained in receipts and

@@ -113,6 +113,64 @@ pub(super) async fn inspect_registry_target_cache(
     Ok(usage(registry, stats))
 }
 
+pub(super) async fn inspect_registry_artifact_references(
+    datastore: &Path,
+) -> UseResult<Vec<(String, u64)>> {
+    let targets = datastore.join(VERIFIED_TARGETS_DIRECTORY);
+    let metadata = match fs::symlink_metadata(&targets).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(io_error(
+                "inspect verified target references",
+                &targets,
+                error,
+            ))
+        }
+    };
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
+        return Err(target_cache_error(
+            "use.extension.registry_target_cache_invalid",
+            "The verified target reference root must be a real directory.",
+        ));
+    }
+
+    let _lock = acquire_existing_target_cache_lock(datastore)?;
+    let mut entries = fs::read_dir(&targets)
+        .await
+        .map_err(|error| io_error("read verified target reference root", &targets, error))?;
+    let entry = entries
+        .next_entry()
+        .await
+        .map_err(|error| io_error("read verified target reference entry", &targets, error))?
+        .ok_or_else(|| {
+            target_cache_error(
+                "use.extension.registry_target_cache_invalid",
+                "The verified target reference root omits its SHA-256 directory.",
+            )
+        })?;
+    if entry.file_name() != SHA256_DIRECTORY {
+        return Err(target_cache_error(
+            "use.extension.registry_target_cache_invalid",
+            "The verified target reference root contains an unknown digest algorithm.",
+        ));
+    }
+    let cache_directory = entry.path();
+    inspect_real_directory(&cache_directory, "SHA-256 target reference cache").await?;
+    if entries
+        .next_entry()
+        .await
+        .map_err(|error| io_error("read verified target reference entry", &targets, error))?
+        .is_some()
+    {
+        return Err(target_cache_error(
+            "use.extension.registry_target_cache_invalid",
+            "The verified target reference root contains an unexpected entry.",
+        ));
+    }
+    super::target_cache_inventory::inspect_artifact_references(&cache_directory).await
+}
+
 pub(super) async fn prune_registry_target_cache(
     registry: &TrustedRegistry,
 ) -> UseResult<VerifiedTargetCachePruneResult> {
@@ -323,6 +381,33 @@ fn acquire_target_cache_lock(datastore: &Path, exclusive: bool) -> UseResult<Tar
             "use.extension.registry_busy",
             format!(
                 "Another process is accessing the verified Registry target cache '{}': {error}",
+                datastore.display()
+            ),
+        )
+    })?;
+    Ok(TargetCacheLock(file))
+}
+
+fn acquire_existing_target_cache_lock(datastore: &Path) -> UseResult<TargetCacheLock> {
+    let path = datastore.join(TARGET_CACHE_LOCK);
+    let metadata = std::fs::symlink_metadata(&path)
+        .map_err(|error| io_error("inspect verified target reference lock", &path, error))?;
+    if a3s_use_core::metadata_is_link_or_reparse_point(&metadata) || !metadata.is_file() {
+        return Err(target_cache_error(
+            "use.extension.registry_target_cache_invalid",
+            "The verified target reference lock must be a regular file.",
+        ));
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .map_err(|error| io_error("open verified target reference lock", &path, error))?;
+    FileExt::try_lock_shared(&file).map_err(|error| {
+        UseError::new(
+            "use.extension.registry_busy",
+            format!(
+                "Another process is changing Registry target references '{}': {error}",
                 datastore.display()
             ),
         )

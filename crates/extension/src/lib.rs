@@ -70,10 +70,11 @@ pub use registry::{
     MAX_PENDING_REGISTRY_CUTOVERS,
 };
 pub use registry_sources::{
-    GitHubRegistryRepository, RegistrySource, RegistrySourceInput, RegistrySourceMutation,
-    RegistrySourceSnapshot, RegistrySourceStore, ResolvedRegistrySources,
-    DEFAULT_GITHUB_REGISTRY_PATH, DEFAULT_GITHUB_REGISTRY_REF, MAX_CONFIGURED_REGISTRY_SOURCES,
-    REGISTRY_SOURCE_CONFIG_SCHEMA_VERSION,
+    GitHubRegistryRepository, RegistryArtifactReference, RegistryArtifactReferenceInventory,
+    RegistrySource, RegistrySourceInput, RegistrySourceMutation, RegistrySourceSnapshot,
+    RegistrySourceStore, ResolvedRegistrySources, DEFAULT_GITHUB_REGISTRY_PATH,
+    DEFAULT_GITHUB_REGISTRY_REF, MAX_CONFIGURED_REGISTRY_SOURCES,
+    REGISTRY_ARTIFACT_REFERENCE_INVENTORY_SCHEMA, REGISTRY_SOURCE_CONFIG_SCHEMA_VERSION,
 };
 pub use release_bundle::{
     inspect_release_bundle, ReleaseBundlePackage, RELEASE_BUNDLE_SCHEMA_VERSION,
