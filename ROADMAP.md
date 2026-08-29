@@ -313,8 +313,16 @@ open):
   acquire a store-bound shared admission before their subordinate lock and
   atomic publication. Incomplete network downloads release admission until the
   bounded blob-commit/observation transaction. This closes the collector TOCTOU
-  prerequisite, but no inventory, quota decision, quarantine, or deletion API
-  is exposed yet; the two Artifact Store checklist items remain open.
+  prerequisite.
+- `ArtifactStore::inspect_inventory` now uses the exact store-bound exclusive
+  guard to enumerate both physical tiers deterministically. Its path-free v1
+  report distinguishes canonical `content` from abandoned staging, accounts
+  regular-file bytes and files, bounds the complete traversal, and rejects
+  unknown layout, links/reparse points, and special files. This is physical
+  evidence only: it neither infers reachability nor verifies path digests and
+  grants no deletion authority. Cross-state reference aggregation, quota,
+  confirmed GC, audit, quarantine, and rehydration remain open, so both
+  Artifact Store checklist items remain unchecked.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove

@@ -311,7 +311,7 @@ pub(super) async fn commit_candidate_root(
         ));
     }
     let _artifact_lock = artifact_store
-        .acquire_expanded_package_mutation(package_sha256)
+        .acquire_expanded_package_mutation(artifact_admission, package_sha256)
         .await?;
     let parent = target.parent().ok_or_else(|| {
         lifecycle_state_error("The lifecycle package root has no owned parent directory.")
