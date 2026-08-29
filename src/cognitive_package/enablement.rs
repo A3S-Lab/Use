@@ -774,8 +774,8 @@ impl CognitivePackageManager {
         }
         let catalog = extension.plan_ready_catalog()?;
         let mut owned = None;
-        for graph in self.graph_store().list().await? {
-            if let Some(locked) = graph.package_lock.package(package_id.as_str()) {
+        for lock in self.snapshot_store().list().await? {
+            if let Some(locked) = lock.package(package_id.as_str()) {
                 if &locked.catalog != catalog {
                     return Err(enablement_error(
                         "use.plugin.package_enablement_state_invalid",

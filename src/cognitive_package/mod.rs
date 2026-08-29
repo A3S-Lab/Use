@@ -53,7 +53,7 @@ use crate::plugin_lifecycle::PluginLifecycleCoordinator;
 use download_attempt::PackageDownloadAttemptStore;
 use resolution_attempt::PackageResolutionAttemptStore;
 use store::{
-    InstalledPackageGraphStore, PackageGraphOperationPhase, PendingPackageGraphOperation,
+    InstallationSnapshotStore, PackageGraphOperationPhase, PendingPackageGraphOperation,
     PendingPackageGraphStore,
 };
 
@@ -357,11 +357,7 @@ impl CognitivePackageManager {
         &self,
         root_package_id: &str,
     ) -> UseResult<Option<PluginPackageLock>> {
-        Ok(self
-            .graph_store()
-            .get(root_package_id)
-            .await?
-            .map(|graph| graph.package_lock))
+        self.snapshot_store().get(root_package_id).await
     }
 
     /// Snapshot every exact dependency lock currently owned by A3S Use.
@@ -370,17 +366,11 @@ impl CognitivePackageManager {
     /// lets an embedding host retain shared dependencies during reviewed graph
     /// upgrades and removals without parsing Use-owned state files.
     pub async fn installed_package_locks(&self) -> UseResult<Vec<PluginPackageLock>> {
-        Ok(self
-            .graph_store()
-            .list()
-            .await?
-            .into_iter()
-            .map(|graph| graph.package_lock)
-            .collect())
+        self.snapshot_store().list().await
     }
 
-    fn graph_store(&self) -> InstalledPackageGraphStore {
-        InstalledPackageGraphStore::new(self.registry.paths().installation_state_root())
+    fn snapshot_store(&self) -> InstallationSnapshotStore {
+        InstallationSnapshotStore::from_extension_paths(self.registry.paths())
     }
 
     fn pending_store(&self) -> PendingPackageGraphStore {

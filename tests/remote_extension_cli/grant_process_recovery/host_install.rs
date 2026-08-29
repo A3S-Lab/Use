@@ -64,7 +64,7 @@ fn killed_host_protocol_install_apply_replays_offline_without_reauthorization() 
 
     let pending_path =
         managed_state_root(&home).join("operations/package-graphs/install/acme/worker.json");
-    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let graph_path = managed_state_root(&home).join("installation-snapshot.json");
     let snapshot_path = managed_state_root(&home).join("registry.json");
     let held_lifecycle_path = managed_lifecycle_journal_path(&home, "acme/leaf-00");
     let mut interrupted = spawn_host_apply_child(&home, &apply_request_path, &authorization_marker);

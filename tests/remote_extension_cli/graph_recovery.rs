@@ -39,7 +39,7 @@ fn killed_graph_publication_replays_exact_cutover_offline_without_generation_inf
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
     let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
-    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let graph_path = scoped_state(&home, "installation-snapshot.json");
     let snapshot_path = scoped_state(&home, "registry.json");
     let held_journal = lifecycle_journal_path(&home, "acme/leaf-00");
 
@@ -263,7 +263,7 @@ fn route_package_ids(snapshot: &serde_json::Value) -> std::collections::BTreeSet
 }
 
 fn graph_package_ids(graph: &serde_json::Value) -> std::collections::BTreeSet<String> {
-    graph["packageLock"]["packages"]
+    graph["packages"]
         .as_array()
         .unwrap()
         .iter()

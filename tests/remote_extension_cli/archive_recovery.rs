@@ -68,7 +68,7 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     assert!(!partial.exists());
     assert!(verified.is_file());
     assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
-    assert!(!scoped_state(&home, "package-graphs/acme/root.json").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
     assert!(!scoped_state(&home, "operations/package-graphs/install/acme/root.json").exists());
     assert!(!scoped_data(&home, "extensions/acme/root").exists());
 
@@ -80,7 +80,7 @@ fn killed_registry_archive_extraction_retries_offline_without_partial_publicatio
     assert!(!partial.exists());
     assert!(verified.is_file());
     assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
-    assert!(scoped_state(&home, "package-graphs/acme/root.json").is_file());
+    assert!(scoped_state(&home, "installation-snapshot.json").is_file());
     assert!(scoped_data(&home, "extensions/acme/root").is_dir());
 }
 
@@ -100,7 +100,7 @@ fn killed_lifecycle_package_copy_reclaims_staging_and_replays_exact_install() {
     let package_parent = scoped_data(&home, "extensions/acme/root");
     let pending_path = scoped_state(&home, "operations/package-graphs/install/acme/root.json");
     let receipt_path = scoped_state(&home, "extensions/acme/root.json");
-    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let graph_path = scoped_state(&home, "installation-snapshot.json");
     let lifecycle_path = lifecycle_journal_path(&home, "acme/root");
 
     configure_registry(&server, &repository, &home, &[]);
@@ -207,12 +207,17 @@ fn killed_package_removal_replays_partial_directory_without_generation_inflation
     let retained_receipt = scoped_state(&home, "extension-generations/acme/root")
         .join(format!("{generation:020}-{package_sha256}.json"));
     let pending_path = scoped_state(&home, "operations/package-graphs/uninstall/acme/root.json");
-    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let graph_path = scoped_state(&home, "installation-snapshot.json");
     let snapshot_path = scoped_state(&home, "registry.json");
     let lifecycle_path = lifecycle_journal_path(&home, "acme/root");
     let generation_before =
         serde_json::from_slice::<serde_json::Value>(&std::fs::read(&snapshot_path).unwrap())
             .unwrap()["generation"]
+            .as_u64()
+            .unwrap();
+    let installation_generation_before =
+        serde_json::from_slice::<serde_json::Value>(&std::fs::read(&graph_path).unwrap()).unwrap()
+            ["generation"]
             .as_u64()
             .unwrap();
 
@@ -265,7 +270,20 @@ fn killed_package_removal_replays_partial_directory_without_generation_inflation
     assert!(recovered.status.success(), "{recovered:?}");
     assert!(!package_root.exists());
     assert!(!pending_path.exists());
-    assert!(!graph_path.exists());
+    let installation_snapshot: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&graph_path).unwrap()).unwrap();
+    assert_eq!(
+        installation_snapshot["generation"],
+        installation_generation_before + 1
+    );
+    assert!(installation_snapshot["roots"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(installation_snapshot["packages"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     let lifecycle: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&lifecycle_path).unwrap()).unwrap();
     assert_eq!(lifecycle["status"], "completed");

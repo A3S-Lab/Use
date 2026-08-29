@@ -48,7 +48,7 @@ fn schema_v3_uninstall_rejects_recovery_when_exact_graph_evidence_was_deleted() 
     let root_receipt = scoped_state(&home, "extensions/acme/root.json");
     let base_receipt = scoped_state(&home, "extensions/acme/base.json");
     let pending_path = scoped_state(&home, "operations/package-graphs/uninstall/acme/root.json");
-    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let graph_path = scoped_state(&home, "installation-snapshot.json");
     assert!(root_receipt.exists());
     assert!(base_receipt.exists());
     std::fs::remove_file(&graph_path).unwrap();
@@ -84,7 +84,7 @@ fn schema_v3_uninstall_rejects_missing_generation_without_durable_cutover() {
     assert!(installed.status.success(), "{installed:?}");
 
     let selected_receipt = scoped_state(&home, "extensions/acme/root.json");
-    let graph_path = scoped_state(&home, "package-graphs/acme/root.json");
+    let graph_path = scoped_state(&home, "installation-snapshot.json");
     let pending_path = scoped_state(&home, "operations/package-graphs/uninstall/acme/root.json");
     let snapshot_path = scoped_state(&home, "registry.json");
     let registry_lock = exclusive_lock(&scoped_state(&home, "extensions/.registry.lock"));

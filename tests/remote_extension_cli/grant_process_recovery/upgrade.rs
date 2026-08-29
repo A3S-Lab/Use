@@ -15,7 +15,7 @@ fn killed_managed_upgrade_replays_graph_and_grant_cutover_without_reauthorizatio
     let repository = TestRepository::with_targets(targets, 109, FUTURE);
     let server = TestServer::start(repository.routes.clone());
     let home = temp.path().join("home");
-    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let graph_path = managed_state_root(&home).join("installation-snapshot.json");
     let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let baseline_marker = temp.path().join("baseline-authorization.marker");

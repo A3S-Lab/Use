@@ -134,7 +134,7 @@ impl CognitivePackageManager {
                 self.replay_published_install(&lock, pending, &installed)
                     .await?;
             }
-            self.graph_store().put(&lock, now_ms()?).await?;
+            self.snapshot_store().put(&lock, now_ms()?).await?;
             if let Some(pending) = &pending {
                 self.retain_and_remove_graph_operation(
                     &pending_store,
@@ -399,7 +399,7 @@ impl CognitivePackageManager {
                     .await?;
             }
         }
-        self.graph_store().put(&lock, now_ms()?).await?;
+        self.snapshot_store().put(&lock, now_ms()?).await?;
         self.retain_and_remove_graph_operation(
             &pending_store,
             &pending,

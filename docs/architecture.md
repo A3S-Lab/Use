@@ -185,8 +185,9 @@ search/inspect verified metadata
 ```
 
 Upgrade carries both the prior and candidate lock. The candidate lock cannot
-authorize retirement of the installed graph. A prior generation may be marked
-hidden only after its exact route is absent from the published Registry.
+authorize retirement of the prior installed selection. A prior generation may
+be marked hidden only after its exact route is absent from the published
+Registry.
 
 Every external mutation uses stable operation, package, surface, and
 generation idempotency evidence. Before publication, recovery may roll back

@@ -17,7 +17,7 @@ fn killed_host_protocol_upgrade_apply_replays_offline_without_reauthorization() 
     let home = temp.path().join("home");
     let authorization_marker = temp.path().join("unexpected-authorization.marker");
     let apply_request_path = temp.path().join("upgrade-apply-request.json");
-    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let graph_path = managed_state_root(&home).join("installation-snapshot.json");
     let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()

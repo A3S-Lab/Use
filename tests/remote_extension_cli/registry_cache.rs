@@ -283,7 +283,7 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
     assert!(partial_length > 0 && partial_length < archive_bytes);
     assert!(!verified.exists());
     assert!(!scoped_state(&home, "extensions/acme/root.json").exists());
-    assert!(!scoped_state(&home, "package-graphs/acme/root.json").exists());
+    assert!(!scoped_state(&home, "installation-snapshot.json").exists());
     assert!(!scoped_state(&home, "operations/package-graphs/install/acme/root.json").exists());
     assert!(!scoped_data(&home, "extensions/acme/root").exists());
 
@@ -343,7 +343,7 @@ fn killed_registry_download_resumes_without_publishing_partial_state() {
     assert!(!partial.exists());
     assert!(verified.is_file());
     assert!(scoped_state(&home, "extensions/acme/root.json").is_file());
-    assert!(scoped_state(&home, "package-graphs/acme/root.json").is_file());
+    assert!(scoped_state(&home, "installation-snapshot.json").is_file());
     let completed_diagnostic = Command::new(binary())
         .args(["extension", "diagnose", "acme/root", "--json"])
         .for_test_installation()

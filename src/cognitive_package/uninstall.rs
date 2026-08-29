@@ -11,9 +11,7 @@ use crate::plugin_lifecycle::{
 };
 
 use super::plan::{now_ms, package_state_revision, state_surface_refs, uninstall_operation};
-use super::store::{
-    InstalledPackageGraph, PackageGraphOperationPhase, PendingPackageGraphOperation,
-};
+use super::store::{PackageGraphOperationPhase, PendingPackageGraphOperation};
 use super::{
     installed_matches_lock, package_manager_error, CognitivePackageManager,
     CognitivePackageUninstallResult, UninstallDisposition,
@@ -24,17 +22,17 @@ impl CognitivePackageManager {
         &self,
         root_package_id: &str,
     ) -> UseResult<Option<PluginPackageLock>> {
-        let graph = self.graph_store().get(root_package_id).await?;
+        let graph = self.snapshot_store().get(root_package_id).await?;
         let pending = self
             .pending_store()
             .get(PluginOperationAction::Uninstall, root_package_id)
             .await?;
         match (graph, pending) {
             (Some(graph), Some(pending)) => {
-                validate_pending_lock(&pending, &graph.package_lock, self.scope())?;
-                Ok(Some(graph.package_lock))
+                validate_pending_lock(&pending, &graph, self.scope())?;
+                Ok(Some(graph))
             }
-            (Some(graph), None) => Ok(Some(graph.package_lock)),
+            (Some(graph), None) => Ok(Some(graph)),
             (None, Some(pending)) => {
                 pending.validate()?;
                 let lock = pending.envelope.package_lock.ok_or_else(|| {
@@ -56,7 +54,7 @@ impl CognitivePackageManager {
     }
 
     pub async fn owns_installed_root(&self, root_package_id: &str) -> UseResult<bool> {
-        if self.graph_store().get(root_package_id).await?.is_some() {
+        if self.snapshot_store().get(root_package_id).await?.is_some() {
             return Ok(true);
         }
         Ok(self
@@ -77,24 +75,18 @@ impl CognitivePackageManager {
         let _mutation = self.installation_mutation_lock().acquire().await?;
         self.require_graph_mutation_domain(PluginOperationAction::Uninstall, root_package_id)
             .await?;
-        let graph_store = self.graph_store();
+        let snapshot_store = self.snapshot_store();
         let pending_store = self.pending_store();
         let existing_pending = pending_store
             .get(PluginOperationAction::Uninstall, root_package_id)
             .await?;
-        let graph = graph_store.get(root_package_id).await?;
+        let graph = snapshot_store.get(root_package_id).await?;
         let (lock, lock_digest) = match (&graph, &existing_pending) {
             (Some(graph), Some(pending)) => {
-                validate_pending_lock(pending, &graph.package_lock, self.scope())?;
-                (
-                    graph.package_lock.clone(),
-                    graph.package_lock_digest.clone(),
-                )
+                validate_pending_lock(pending, graph, self.scope())?;
+                (graph.clone(), graph.descriptor_digest()?)
             }
-            (Some(graph), None) => (
-                graph.package_lock.clone(),
-                graph.package_lock_digest.clone(),
-            ),
+            (Some(graph), None) => (graph.clone(), graph.descriptor_digest()?),
             (None, Some(pending)) => {
                 pending.validate()?;
                 let lock = pending.envelope.package_lock.clone().ok_or_else(|| {
@@ -129,7 +121,7 @@ impl CognitivePackageManager {
             if pending.phase() == PackageGraphOperationPhase::Planned {
                 require_fresh_installed_closure(&lock, &installed)?;
                 let live_dispositions = self
-                    .uninstall_dispositions(&lock, &graph_store.list().await?)
+                    .uninstall_dispositions(&lock, &snapshot_store.list().await?)
                     .await?;
                 if pending_dispositions(&pending)? != live_dispositions {
                     return Err(package_manager_error(
@@ -142,7 +134,7 @@ impl CognitivePackageManager {
         } else {
             let exact = require_fresh_installed_closure(&lock, &installed)?;
             let dispositions = self
-                .uninstall_dispositions(&lock, &graph_store.list().await?)
+                .uninstall_dispositions(&lock, &snapshot_store.list().await?)
                 .await?;
             let root = exact.get(root_package_id).ok_or_else(|| {
                 package_manager_error(
@@ -316,7 +308,7 @@ impl CognitivePackageManager {
                     .await?;
             }
         }
-        graph_store.remove(root_package_id, &lock_digest).await?;
+        snapshot_store.remove(root_package_id, &lock_digest).await?;
         self.retain_and_remove_graph_operation(
             &pending_store,
             &pending,
@@ -376,19 +368,18 @@ impl CognitivePackageManager {
     async fn uninstall_dispositions(
         &self,
         lock: &a3s_use_core::PluginPackageLock,
-        graphs: &[InstalledPackageGraph],
+        installed_locks: &[PluginPackageLock],
     ) -> UseResult<BTreeMap<String, UninstallDisposition>> {
         let closure = lock
             .packages
             .iter()
             .map(|package| package.package_id().to_string())
             .collect::<BTreeSet<_>>();
-        let mut retained = graphs
+        let mut retained = installed_locks
             .iter()
-            .filter(|graph| graph.package_lock.root_package_id != lock.root_package_id)
-            .flat_map(|graph| {
-                graph
-                    .package_lock
+            .filter(|installed_lock| installed_lock.root_package_id != lock.root_package_id)
+            .flat_map(|installed_lock| {
+                installed_lock
                     .packages
                     .iter()
                     .map(|package| package.package_id().to_string())

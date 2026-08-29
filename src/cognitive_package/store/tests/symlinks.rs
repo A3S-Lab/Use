@@ -1,21 +1,42 @@
 use super::*;
 
 #[tokio::test]
-async fn installed_graph_reads_reject_a_linked_publisher_directory() {
+async fn installation_snapshot_reads_reject_a_linked_record() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");
     let external = temp.path().join("external");
     fs::create_dir_all(&external).await.unwrap();
-    fs::write(external.join("root.json"), b"{}").await.unwrap();
-    let graph_root = state_root.join("package-graphs");
-    fs::create_dir_all(&graph_root).await.unwrap();
-    crate::test_filesystem::create_directory_link(&external, &graph_root.join("acme"));
+    fs::create_dir_all(&state_root).await.unwrap();
+    crate::test_filesystem::create_directory_link(
+        &external,
+        &state_root.join("installation-snapshot.json"),
+    );
 
-    let error = InstalledPackageGraphStore::new(&state_root)
+    let error = InstallationSnapshotStore::new(&state_root, scope())
+        .unwrap()
         .get("acme/root")
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.plugin.package_graph_store_invalid");
+}
+
+#[tokio::test]
+async fn installation_snapshot_rejects_the_legacy_per_root_layout() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    fs::create_dir_all(state_root.join("package-graphs"))
+        .await
+        .unwrap();
+
+    let error = InstallationSnapshotStore::new(&state_root, scope())
+        .unwrap()
+        .get("acme/root")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        "use.installation.snapshot_legacy_state_unsupported"
+    );
 }
 
 #[tokio::test]

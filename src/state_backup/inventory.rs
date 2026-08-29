@@ -26,12 +26,11 @@ const STATE_DIRECTORIES: &[&str] = &[
     "knowledge",
     "operations",
     "package-enablement",
-    "package-graphs",
     "plugin-host-manager",
     "route-locks",
 ];
 
-const STATE_FILES: &[&str] = &["registry.json"];
+const STATE_FILES: &[&str] = &["installation-snapshot.json", "registry.json"];
 const STATE_ROOT_LOCKS: &[&str] = &[
     ".installation-mutation.lock",
     ".maintenance.lock",
@@ -498,8 +497,8 @@ pub(super) fn expected_family(root: StateBackupRoot, path: &str) -> UseResult<St
                     "The backup manifest contains an unknown operation family.",
                 )),
             },
+            "installation-snapshot.json" => Ok(StateBackupFamily::PackageGraph),
             "knowledge" => Ok(StateBackupFamily::Knowledge),
-            "package-graphs" => Ok(StateBackupFamily::PackageGraph),
             "package-enablement" => Ok(StateBackupFamily::Enablement),
             "plugin-host-manager" => Ok(StateBackupFamily::HostManager),
             "route-locks" => Err(state_backup_invalid(

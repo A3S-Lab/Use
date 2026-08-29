@@ -16,7 +16,7 @@ fn killed_host_protocol_uninstall_apply_replays_without_reauthorization() {
     let home = temp.path().join("home");
     let authorization_marker = temp.path().join("unexpected-authorization.marker");
     let apply_request_path = temp.path().join("uninstall-apply-request.json");
-    let graph_path = managed_state_root(&home).join("package-graphs/acme/worker.json");
+    let graph_path = managed_state_root(&home).join("installation-snapshot.json");
     let snapshot_path = managed_state_root(&home).join("registry.json");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -147,7 +147,14 @@ fn killed_host_protocol_uninstall_apply_replays_without_reauthorization() {
     );
     assert_completed_lifecycles(&home);
     assert!(!pending_path.exists());
-    assert!(!graph_path.exists());
+    let installation_snapshot = read_json(&graph_path).unwrap();
+    assert_eq!(installation_snapshot["generation"], 2);
+    assert!(installation_snapshot["roots"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+    assert!(installation_snapshot["packages"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
     for package_id in &expected_package_ids {
         assert!(!managed_state_root(&home)
             .join("extensions")
