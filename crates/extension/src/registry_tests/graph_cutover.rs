@@ -46,9 +46,16 @@ async fn lifecycle_graph_publication_is_one_cutover_and_recovers_partial_receipt
     // complete dependency closure reached the snapshot commit point.
     let mut partial = registry.get("acme/base").await.unwrap().unwrap().receipt;
     partial.enabled = true;
-    write_receipt(&registry.paths().receipt_path("acme/base"), &partial)
-        .await
-        .unwrap();
+    let artifact_store = registry.paths().artifact_store();
+    let artifact_admission = artifact_store.acquire_reference_admission().await.unwrap();
+    write_receipt(
+        &artifact_store,
+        &artifact_admission,
+        &registry.paths().receipt_path("acme/base"),
+        &partial,
+    )
+    .await
+    .unwrap();
     let guarded = registry.snapshot().await.unwrap();
     assert_eq!(guarded, before);
     assert!(registry

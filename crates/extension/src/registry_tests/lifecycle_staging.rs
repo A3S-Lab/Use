@@ -33,6 +33,42 @@ async fn lifecycle_commit_reclaims_abandoned_physical_staging_directories() {
     assert!(target.is_dir());
 }
 
+#[tokio::test]
+async fn global_collection_blocks_new_lifecycle_receipt_publication() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("cognitive");
+    compatible_cognitive_package(&source).await;
+    let candidate = ExtensionLifecyclePackage::prepare_local_for_host_version(
+        "acme/cognitive",
+        &source,
+        true,
+        "0.3.0",
+    )
+    .await
+    .unwrap();
+    let identity = lifecycle_identity(&candidate, 16);
+    let registry = registry(temp.path());
+    let artifact_store = registry.paths().artifact_store();
+    let collection = artifact_store.acquire_collection().await.unwrap();
+    let target = registry.lifecycle_package_root(&identity);
+    let receipt = registry.paths().receipt_path(identity.package_id());
+    let mut publication = Box::pin(registry.commit_lifecycle_package(&identity, &candidate));
+
+    tokio::select! {
+        result = &mut publication => {
+            panic!("lifecycle publication crossed the active collection boundary: {result:?}")
+        }
+        () = tokio::time::sleep(Duration::from_millis(100)) => {}
+    }
+    assert!(!target.exists());
+    assert!(!receipt.exists());
+
+    drop(collection);
+    assert!(publication.await.unwrap().changed);
+    assert!(target.is_dir());
+    assert!(receipt.is_file());
+}
+
 #[cfg(windows)]
 #[tokio::test]
 async fn lifecycle_commit_waits_for_a_transient_scanner_lock_on_abandoned_staging() {

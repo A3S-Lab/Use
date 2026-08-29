@@ -40,6 +40,7 @@ use crate::package::{
     RegistryLock,
 };
 use crate::registry_io::{read_registry_snapshot, write_registry_snapshot};
+use crate::{ArtifactReferenceAdmission, ArtifactStore};
 
 impl ExtensionRegistry {
     pub fn lifecycle_package_root(&self, identity: &ExtensionLifecycleIdentity) -> PathBuf {
@@ -85,6 +86,8 @@ impl ExtensionRegistry {
             candidate.verified_catalog.as_ref(),
             &selected_surfaces,
         )?;
+        let artifact_store = self.paths.artifact_store();
+        let artifact_admission = artifact_store.acquire_reference_admission().await?;
         let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let mut retained_created = None;
         let mut retained_candidate = None;
@@ -192,13 +195,19 @@ impl ExtensionRegistry {
         commit_candidate_root(
             candidate,
             &target,
-            &self.paths.artifact_store(),
+            &artifact_store,
+            &artifact_admission,
             identity.package_sha256(),
         )
         .await?;
         if let Some((retained_identity, receipt)) = retained_candidate {
             let retained = self
-                .retain_lifecycle_receipt(&retained_identity, &receipt)
+                .retain_lifecycle_receipt(
+                    &artifact_store,
+                    &artifact_admission,
+                    &retained_identity,
+                    &receipt,
+                )
                 .await;
             let created = match retained {
                 Ok(retained) => retained,
@@ -228,7 +237,14 @@ impl ExtensionRegistry {
             lifecycle_generation: Some(identity.generation),
         };
         let receipt_path = self.paths.receipt_path(identity.package_id());
-        if let Err(error) = write_receipt(&receipt_path, &receipt).await {
+        if let Err(error) = write_receipt(
+            &artifact_store,
+            &artifact_admission,
+            &receipt_path,
+            &receipt,
+        )
+        .await
+        {
             let committed = self
                 .get(identity.package_id())
                 .await
@@ -242,6 +258,7 @@ impl ExtensionRegistry {
                 return Err(error);
             }
         }
+        drop(artifact_admission);
 
         // Candidate commit is staging, not publication. Keeping every new
         // generation out of the immutable package snapshot prevents a later
@@ -597,6 +614,8 @@ impl ExtensionRegistry {
             }
         }
 
+        let artifact_store = self.paths.artifact_store();
+        let artifact_admission = artifact_store.acquire_reference_admission().await?;
         let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let snapshot_before = read_registry_snapshot(&self.paths).await?;
         let recorded_cutover = cutover_request
@@ -817,7 +836,11 @@ impl ExtensionRegistry {
         }
 
         let moved_removed = self
-            .retain_removed_lifecycle_packages(&removed_extensions)
+            .retain_removed_lifecycle_packages(
+                &artifact_store,
+                &artifact_admission,
+                &removed_extensions,
+            )
             .await?;
         let originals = extensions
             .iter()
@@ -834,14 +857,25 @@ impl ExtensionRegistry {
             }
             extension.receipt.enabled = true;
             if let Err(error) = write_receipt(
+                &artifact_store,
+                &artifact_admission,
                 &self.paths.receipt_path(&extension.receipt.package_id),
                 &extension.receipt,
             )
             .await
             {
-                self.restore_lifecycle_receipts(&written_receipts).await?;
-                self.restore_removed_lifecycle_packages(&moved_removed)
-                    .await?;
+                self.restore_lifecycle_receipts(
+                    &artifact_store,
+                    &artifact_admission,
+                    &written_receipts,
+                )
+                .await?;
+                self.restore_removed_lifecycle_packages(
+                    &artifact_store,
+                    &artifact_admission,
+                    &moved_removed,
+                )
+                .await?;
                 return Err(error);
             }
             written_receipts.push(original.clone());
@@ -850,9 +884,18 @@ impl ExtensionRegistry {
         let mut installed = match self.list().await {
             Ok(installed) => installed,
             Err(error) => {
-                self.restore_lifecycle_receipts(&written_receipts).await?;
-                self.restore_removed_lifecycle_packages(&moved_removed)
-                    .await?;
+                self.restore_lifecycle_receipts(
+                    &artifact_store,
+                    &artifact_admission,
+                    &written_receipts,
+                )
+                .await?;
+                self.restore_removed_lifecycle_packages(
+                    &artifact_store,
+                    &artifact_admission,
+                    &moved_removed,
+                )
+                .await?;
                 return Err(error);
             }
         };
@@ -871,9 +914,14 @@ impl ExtensionRegistry {
         let snapshot = match snapshot_result {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                self.restore_lifecycle_receipts(&originals).await?;
-                self.restore_removed_lifecycle_packages(&moved_removed)
+                self.restore_lifecycle_receipts(&artifact_store, &artifact_admission, &originals)
                     .await?;
+                self.restore_removed_lifecycle_packages(
+                    &artifact_store,
+                    &artifact_admission,
+                    &moved_removed,
+                )
+                .await?;
                 write_registry_snapshot(&self.paths, &snapshot_before).await?;
                 return Err(error);
             }
@@ -896,6 +944,8 @@ impl ExtensionRegistry {
 
     async fn retain_removed_lifecycle_packages(
         &self,
+        artifact_store: &ArtifactStore,
+        artifact_admission: &ArtifactReferenceAdmission,
         removed: &[RemovedLifecyclePackage],
     ) -> UseResult<Vec<RemovedLifecyclePackage>> {
         let mut moved = Vec::new();
@@ -903,10 +953,16 @@ impl ExtensionRegistry {
             let mut hidden = package.extension.receipt.clone();
             hidden.enabled = false;
             if let Err(error) = self
-                .retain_lifecycle_receipt(&package.identity, &hidden)
+                .retain_lifecycle_receipt(
+                    artifact_store,
+                    artifact_admission,
+                    &package.identity,
+                    &hidden,
+                )
                 .await
             {
-                self.restore_removed_lifecycle_packages(&moved).await?;
+                self.restore_removed_lifecycle_packages(artifact_store, artifact_admission, &moved)
+                    .await?;
                 return Err(error);
             }
             moved.push(package.clone());
@@ -917,7 +973,8 @@ impl ExtensionRegistry {
             )
             .await
             {
-                self.restore_removed_lifecycle_packages(&moved).await?;
+                self.restore_removed_lifecycle_packages(artifact_store, artifact_admission, &moved)
+                    .await?;
                 return Err(error);
             }
             if let Err(error) = sync_parent_directory(
@@ -928,7 +985,8 @@ impl ExtensionRegistry {
             )
             .await
             {
-                self.restore_removed_lifecycle_packages(&moved).await?;
+                self.restore_removed_lifecycle_packages(artifact_store, artifact_admission, &moved)
+                    .await?;
                 return Err(error);
             }
         }
@@ -937,10 +995,14 @@ impl ExtensionRegistry {
 
     async fn restore_removed_lifecycle_packages(
         &self,
+        artifact_store: &ArtifactStore,
+        artifact_admission: &ArtifactReferenceAdmission,
         moved: &[RemovedLifecyclePackage],
     ) -> UseResult<()> {
         for package in moved.iter().rev() {
             write_receipt(
+                artifact_store,
+                artifact_admission,
                 &self.paths.receipt_path(package.identity.package_id()),
                 &package.extension.receipt,
             )
@@ -950,9 +1012,20 @@ impl ExtensionRegistry {
         Ok(())
     }
 
-    async fn restore_lifecycle_receipts(&self, receipts: &[ExtensionReceipt]) -> UseResult<()> {
+    async fn restore_lifecycle_receipts(
+        &self,
+        artifact_store: &ArtifactStore,
+        artifact_admission: &ArtifactReferenceAdmission,
+        receipts: &[ExtensionReceipt],
+    ) -> UseResult<()> {
         for receipt in receipts {
-            write_receipt(&self.paths.receipt_path(&receipt.package_id), receipt).await?;
+            write_receipt(
+                artifact_store,
+                artifact_admission,
+                &self.paths.receipt_path(&receipt.package_id),
+                receipt,
+            )
+            .await?;
         }
         Ok(())
     }

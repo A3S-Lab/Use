@@ -8,7 +8,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use super::{
     artifact_store_error, validate_real_directory, validate_sha256, ArtifactMutationLock,
-    ArtifactStore, CONTENT_DIRECTORY, MUTATION_LOCK, SHA256_DIRECTORY,
+    ArtifactReferenceAdmission, ArtifactStore, CONTENT_DIRECTORY, MUTATION_LOCK, SHA256_DIRECTORY,
 };
 use crate::package::{
     io_error, remove_file_with_windows_retry, sync_parent_directory, unique_suffix,
@@ -90,9 +90,11 @@ impl ArtifactStore {
     /// Open and reverify an existing global blob without following links.
     pub(crate) async fn open_blob(
         &self,
+        admission: &ArtifactReferenceAdmission,
         sha256: &str,
         expected_length: u64,
     ) -> UseResult<Option<ArtifactBlob>> {
+        admission.ensure_store(self)?;
         validate_blob_evidence(sha256, expected_length)?;
         let path = self.blob_path_from_sha256(sha256);
         if !self
@@ -124,10 +126,12 @@ impl ArtifactStore {
     /// overwritten, including when corruption is detected.
     pub(crate) async fn commit_blob(
         &self,
+        admission: &ArtifactReferenceAdmission,
         source: &mut fs::File,
         expected_length: u64,
         sha256: &str,
     ) -> UseResult<ArtifactBlob> {
+        admission.ensure_store(self)?;
         validate_blob_evidence(sha256, expected_length)?;
         let container = self.blob_container(sha256);
         self.ensure_container(&container, "blob artifact").await?;

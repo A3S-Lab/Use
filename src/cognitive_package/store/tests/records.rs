@@ -210,6 +210,48 @@ async fn graph_cutover_cannot_change_retained_package_enablement() {
 }
 
 #[tokio::test]
+async fn global_collection_blocks_new_installation_snapshot_references() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = InstallationSnapshotStore::new(&state_root, scope()).unwrap();
+    let collection = store.artifact_store.acquire_collection().await.unwrap();
+    let lock = package_lock("1.0.0", '1');
+    let mut publication = Box::pin(store.put(&lock, 1, package_selections(&lock, 1, true)));
+
+    tokio::select! {
+        result = &mut publication => {
+            panic!("snapshot publication crossed the active collection boundary: {result:?}")
+        }
+        () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+    }
+    assert!(!store.path().exists());
+
+    drop(collection);
+    assert!(publication.await.unwrap());
+}
+
+#[tokio::test]
+async fn global_collection_blocks_new_durable_operation_references() {
+    let temp = tempfile::tempdir().unwrap();
+    let state_root = temp.path().join("state");
+    let store = PendingPackageGraphStore::new(&state_root);
+    let collection = store.artifact_store().acquire_collection().await.unwrap();
+    let lock = package_lock("1.0.0", '1');
+    let operation = install_pending(&lock);
+    let mut publication = Box::pin(store.put(&operation));
+
+    tokio::select! {
+        result = &mut publication => {
+            panic!("operation publication crossed the active collection boundary: {result:?}")
+        }
+        () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+    }
+
+    drop(collection);
+    assert!(publication.await.unwrap());
+}
+
+#[tokio::test]
 async fn pending_store_serializes_all_actions_for_one_root() {
     let temp = tempfile::tempdir().unwrap();
     let state_root = temp.path().join("state");

@@ -307,6 +307,14 @@ open):
   path before package integrity is rechecked. Link/reparse substitution fails
   closed. Interrupted writes use bounded `.artifact-staging-*` trees and are
   reclaimed only while holding the digest lock.
+- A global cross-process reachability boundary now separates shared reference
+  admission from exclusive maintenance. Raw-target observations, lifecycle
+  receipts, installation snapshots, and durable package-graph operations must
+  acquire a store-bound shared admission before their subordinate lock and
+  atomic publication. Incomplete network downloads release admission until the
+  bounded blob-commit/observation transaction. This closes the collector TOCTOU
+  prerequisite, but no inventory, quota decision, quarantine, or deletion API
+  is exposed yet; the two Artifact Store checklist items remain open.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove

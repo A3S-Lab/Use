@@ -117,7 +117,12 @@ is retained deliberately.
 Verified archives, executable planning targets, and presentation media now use
 the global sharded Blob tier. Registry-source datastores retain only canonical
 source observations, TUF freshness/provenance, and resumable partials. This is
-still not a complete Artifact Store: no collector may delete shared raw or
+still not a complete Artifact Store. One cross-process shared/exclusive
+boundary now serializes durable raw-target observations, lifecycle receipts,
+installation snapshots, and pending graph operations against future
+maintenance. Admissions bind to the exact Artifact Store and precede
+subordinate source or installation locks; incomplete downloads do not hold the
+boundary while waiting on the network. No collector may delete shared raw or
 expanded bytes until one global inventory can prove reachability across every
 installation and durable operation, enforce quota, quarantine corruption, and
 rehydrate verified bytes without replacing an admitted generation in place.

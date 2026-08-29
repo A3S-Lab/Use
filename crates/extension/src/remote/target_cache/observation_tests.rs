@@ -36,8 +36,9 @@ async fn exact_target_observation_reports_missing_partial_and_complete_bytes() {
     let source = temporary.path().join("target.part");
     fs::write(&source, body).await.unwrap();
     let mut source = fs::File::open(source).await.unwrap();
+    let artifact_admission = artifact_store.acquire_reference_admission().await.unwrap();
     artifact_store
-        .commit_blob(&mut source, body.len() as u64, &digest)
+        .commit_blob(&artifact_admission, &mut source, body.len() as u64, &digest)
         .await
         .unwrap();
     record::write_observation(&cache, &digest, body.len() as u64)

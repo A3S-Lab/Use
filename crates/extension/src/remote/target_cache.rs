@@ -48,11 +48,15 @@ pub(super) async fn stage_cached_target(
     let expected_sha256 = validated_evidence(expected_length, expected_sha256)?;
     validate_staging_file_name(file_name)?;
     ensure_datastore_directory(registry.datastore()).await?;
+    let artifact_admission = registry
+        .artifact_store()
+        .acquire_reference_admission()
+        .await?;
     let _lock = acquire_target_cache_lock(registry.datastore(), true)?;
     let cache_directory = ensure_cache_directory(registry.datastore()).await?;
     let mut blob = registry
         .artifact_store()
-        .open_blob(&expected_sha256, expected_length)
+        .open_blob(&artifact_admission, &expected_sha256, expected_length)
         .await?
         .ok_or_else(|| {
             target_cache_error(
@@ -92,6 +96,7 @@ pub(super) async fn stage_cached_target(
     )
     .await?;
     record::write_observation(&cache_directory, &expected_sha256, expected_length).await?;
+    drop(artifact_admission);
     let target = temporary.path().join(file_name);
     blob.stage_into(&target).await?;
     Ok((temporary, target))

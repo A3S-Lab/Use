@@ -43,7 +43,7 @@ mod workspace_grant_snapshot;
 #[cfg(test)]
 mod workspace_grant_tests;
 
-pub use artifact_store::ArtifactStore;
+pub use artifact_store::{ArtifactCollectionGuard, ArtifactReferenceAdmission, ArtifactStore};
 #[doc(hidden)]
 pub use atomic_file::{
     persist_named_temporary_noclobber_blocking, persist_temporary_noclobber_blocking,

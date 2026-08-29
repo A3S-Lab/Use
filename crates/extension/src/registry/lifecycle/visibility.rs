@@ -63,6 +63,8 @@ impl ExtensionRegistry {
         cutover_request: Option<&ExtensionLifecycleCutoverRequest>,
         require_already_hidden: bool,
     ) -> UseResult<ExtensionLifecycleGraphPublication> {
+        let artifact_store = self.paths.artifact_store();
+        let artifact_admission = artifact_store.acquire_reference_admission().await?;
         let _lock = RegistryLock::acquire_for_mutation(&self.paths).await?;
         let selected = self.get(identity.package_id()).await?;
         let selected_is_exact = selected
@@ -166,13 +168,21 @@ impl ExtensionRegistry {
             extension.receipt.enabled = enabled;
             if selected_is_exact {
                 write_receipt(
+                    &artifact_store,
+                    &artifact_admission,
                     &self.paths.receipt_path(identity.package_id()),
                     &extension.receipt,
                 )
                 .await?;
             } else {
-                self.update_retained_lifecycle_receipt(identity, &previous, &extension.receipt)
-                    .await?;
+                self.update_retained_lifecycle_receipt(
+                    &artifact_store,
+                    &artifact_admission,
+                    identity,
+                    &previous,
+                    &extension.receipt,
+                )
+                .await?;
             }
         }
         let snapshot = if selected_is_exact && (changed || published_exact) {

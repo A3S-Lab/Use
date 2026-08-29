@@ -9,8 +9,10 @@ use tokio::fs;
 use crate::package::{io_error, lock_is_contended};
 
 mod blob;
+mod reachability;
 
 pub(crate) use blob::ArtifactBlob;
+pub use reachability::{ArtifactCollectionGuard, ArtifactReferenceAdmission};
 
 const EXPANDED_PACKAGES_DIRECTORY: &str = "expanded-packages";
 const SHA256_DIRECTORY: &str = "sha256";
@@ -283,5 +285,46 @@ mod tests {
     fn artifact_store_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<ArtifactStore>();
+        assert_send_sync::<ArtifactReferenceAdmission>();
+        assert_send_sync::<ArtifactCollectionGuard>();
+    }
+
+    #[tokio::test]
+    async fn collection_excludes_reference_admission_until_the_guard_is_released() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::from_data_root(&temporary.path().join("data"));
+        let admission = store.acquire_reference_admission().await.unwrap();
+
+        let error = store.acquire_collection().await.unwrap_err();
+        assert_eq!(error.code, "use.artifact_store.busy");
+
+        drop(admission);
+        let _collection = store.acquire_collection().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reference_admissions_share_the_global_reachability_boundary() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::from_data_root(&temporary.path().join("data"));
+
+        let first = store.acquire_reference_admission().await.unwrap();
+        let second = store.acquire_reference_admission().await.unwrap();
+        drop((first, second));
+
+        let collection = store.acquire_collection().await.unwrap();
+        let error = store.acquire_reference_admission().await.unwrap_err();
+        assert_eq!(error.code, "use.artifact_store.busy");
+        drop(collection);
+    }
+
+    #[tokio::test]
+    async fn reference_admission_is_bound_to_one_artifact_store() {
+        let temporary = tempfile::tempdir().unwrap();
+        let first = ArtifactStore::from_data_root(&temporary.path().join("first"));
+        let second = ArtifactStore::from_data_root(&temporary.path().join("second"));
+        let admission = first.acquire_reference_admission().await.unwrap();
+
+        let error = admission.ensure_store(&second).unwrap_err();
+        assert_eq!(error.code, "use.artifact_store.admission_mismatch");
     }
 }

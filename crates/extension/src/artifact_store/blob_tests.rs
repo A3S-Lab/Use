@@ -34,10 +34,12 @@ async fn identical_commits_converge_on_one_global_blob() {
     fs::write(&second_path, body).await.unwrap();
     let mut first = fs::File::open(&first_path).await.unwrap();
     let mut second = fs::File::open(&second_path).await.unwrap();
+    let first_admission = store.acquire_reference_admission().await.unwrap();
+    let second_admission = store.acquire_reference_admission().await.unwrap();
 
     let (first, second) = tokio::join!(
-        store.commit_blob(&mut first, body.len() as u64, &sha256),
-        store.commit_blob(&mut second, body.len() as u64, &sha256)
+        store.commit_blob(&first_admission, &mut first, body.len() as u64, &sha256),
+        store.commit_blob(&second_admission, &mut second, body.len() as u64, &sha256)
     );
     let first = first.unwrap();
     let second = second.unwrap();
@@ -63,8 +65,9 @@ async fn corrupted_global_blob_is_never_replaced_during_commit() {
     let source_path = temporary.path().join("source.part");
     fs::write(&source_path, body).await.unwrap();
     let mut source = fs::File::open(&source_path).await.unwrap();
+    let admission = store.acquire_reference_admission().await.unwrap();
     let blob = store
-        .commit_blob(&mut source, body.len() as u64, &sha256)
+        .commit_blob(&admission, &mut source, body.len() as u64, &sha256)
         .await
         .unwrap();
     let blob_path = blob.path().to_path_buf();
@@ -73,7 +76,7 @@ async fn corrupted_global_blob_is_never_replaced_during_commit() {
     let mut source = fs::File::open(&source_path).await.unwrap();
 
     let error = store
-        .commit_blob(&mut source, body.len() as u64, &sha256)
+        .commit_blob(&admission, &mut source, body.len() as u64, &sha256)
         .await
         .unwrap_err();
     assert_eq!(error.code, "use.artifact_store.blob_invalid");
@@ -94,9 +97,10 @@ async fn linked_blob_ancestor_is_rejected_before_external_writes() {
     let source_path = temporary.path().join("source.part");
     fs::write(&source_path, body).await.unwrap();
     let mut source = fs::File::open(&source_path).await.unwrap();
+    let admission = store.acquire_reference_admission().await.unwrap();
 
     let error = store
-        .commit_blob(&mut source, body.len() as u64, &sha256)
+        .commit_blob(&admission, &mut source, body.len() as u64, &sha256)
         .await
         .unwrap_err();
 

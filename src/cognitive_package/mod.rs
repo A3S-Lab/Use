@@ -372,7 +372,7 @@ impl CognitivePackageManager {
     }
 
     fn pending_store(&self) -> PendingPackageGraphStore {
-        PendingPackageGraphStore::new(self.registry.paths().installation_state_root())
+        PendingPackageGraphStore::from_extension_paths(self.registry.paths())
     }
 
     fn download_attempt_store(&self) -> PackageDownloadAttemptStore {

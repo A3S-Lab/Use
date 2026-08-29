@@ -9,7 +9,9 @@ use a3s_use_core::{
     PluginOperationAction, PluginPackageId, PluginPackageLock, UseError, UseResult,
     MAX_INSTALLATION_SNAPSHOT_BYTES,
 };
-use a3s_use_extension::ExtensionPaths;
+#[cfg(test)]
+use a3s_use_extension::UsePaths;
+use a3s_use_extension::{ArtifactStore, ExtensionPaths};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -35,6 +37,7 @@ const LEGACY_INSTALLED_GRAPHS_DIRECTORY: &str = "package-graphs";
 /// conflicting selections beneath different roots.
 #[derive(Debug, Clone)]
 pub(crate) struct InstallationSnapshotStore {
+    artifact_store: ArtifactStore,
     installation: InstallationId,
     state_root: PathBuf,
     path: PathBuf,
@@ -45,11 +48,18 @@ impl InstallationSnapshotStore {
     #[cfg(test)]
     fn new(state_root: impl Into<PathBuf>, installation: InstallationId) -> UseResult<Self> {
         installation.validate()?;
-        Ok(Self::from_parts(state_root.into(), installation))
+        let state_root = state_root.into();
+        let artifact_store = test_artifact_store(&state_root);
+        Ok(Self::from_parts(state_root, installation, artifact_store))
     }
 
-    fn from_parts(state_root: PathBuf, installation: InstallationId) -> Self {
+    fn from_parts(
+        state_root: PathBuf,
+        installation: InstallationId,
+        artifact_store: ArtifactStore,
+    ) -> Self {
         Self {
+            artifact_store,
             installation,
             path: state_root.join(INSTALLATION_SNAPSHOT_FILE),
             legacy_root: state_root.join(LEGACY_INSTALLED_GRAPHS_DIRECTORY),
@@ -61,6 +71,7 @@ impl InstallationSnapshotStore {
         Self::from_parts(
             paths.installation_state_root(),
             paths.installation().clone(),
+            paths.artifact_store(),
         )
     }
 
@@ -83,6 +94,7 @@ impl InstallationSnapshotStore {
         lock.validate()?;
         validate_candidate_selections(lock, &package_selections)?;
         let selection = InstallationRootSelection::new(&lock.root_package_id, installed_at_ms)?;
+        let _artifact_admission = self.artifact_store.acquire_reference_admission().await?;
         let _guard = acquire_lock(&self.state_root).await?;
         reject_legacy_graph_layout(&self.legacy_root).await?;
         let current = self.read_snapshot_file().await?;
@@ -164,6 +176,7 @@ impl InstallationSnapshotStore {
             ));
         }
         let selection = InstallationRootSelection::new(root_package_id, installed_at_ms)?;
+        let _artifact_admission = self.artifact_store.acquire_reference_admission().await?;
         let _guard = acquire_lock(&self.state_root).await?;
         reject_legacy_graph_layout(&self.legacy_root).await?;
         let snapshot = self.read_snapshot_file().await?.ok_or_else(|| {
@@ -321,6 +334,15 @@ impl InstallationSnapshotStore {
         }
         Ok(snapshot)
     }
+}
+
+#[cfg(test)]
+fn test_artifact_store(state_root: &Path) -> ArtifactStore {
+    let data_root = state_root
+        .parent()
+        .unwrap_or(state_root)
+        .join("artifact-data");
+    UsePaths::new(data_root, state_root).artifact_store()
 }
 
 fn snapshot_root_locks(

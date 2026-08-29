@@ -11,7 +11,7 @@ use tokio::io::AsyncWriteExt;
 
 use super::registry::ExtensionReceipt;
 use super::state_maintenance::{StateMaintenanceGuard, StateMaintenanceLock};
-use super::{ExtensionManifest, ExtensionPaths};
+use super::{ArtifactReferenceAdmission, ArtifactStore, ExtensionManifest, ExtensionPaths};
 
 pub(crate) const MANIFEST_NAME: &str = "a3s-use-extension.acl";
 pub(crate) const MAX_PACKAGE_FILES: usize = 10_000;
@@ -231,7 +231,13 @@ pub(crate) async fn copy_package(source: &Path, target: &Path) -> UseResult<()> 
     Ok(())
 }
 
-pub(crate) async fn write_receipt(path: &Path, receipt: &ExtensionReceipt) -> UseResult<()> {
+pub(crate) async fn write_receipt(
+    artifact_store: &ArtifactStore,
+    artifact_admission: &ArtifactReferenceAdmission,
+    path: &Path,
+    receipt: &ExtensionReceipt,
+) -> UseResult<()> {
+    artifact_admission.ensure_store(artifact_store)?;
     let parent = path.parent().ok_or_else(|| {
         UseError::new(
             "use.extension.receipt_invalid",

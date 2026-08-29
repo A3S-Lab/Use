@@ -348,9 +348,15 @@ async fn missing_global_blob_does_not_mutate_source_cache_during_cached_staging(
     let source_path = temp.path().join("retained.part");
     tokio::fs::write(&source_path, retained).await.unwrap();
     let mut source = tokio::fs::File::open(&source_path).await.unwrap();
+    let artifact_admission = artifact_store.acquire_reference_admission().await.unwrap();
     drop(
         artifact_store
-            .commit_blob(&mut source, retained.len() as u64, &retained_digest)
+            .commit_blob(
+                &artifact_admission,
+                &mut source,
+                retained.len() as u64,
+                &retained_digest,
+            )
             .await
             .unwrap(),
     );

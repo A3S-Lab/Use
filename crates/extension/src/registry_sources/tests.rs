@@ -248,10 +248,21 @@ async fn source_replacement_changes_identity_without_rewriting_an_old_datastore(
     let source = temporary.path().join("old-target.part");
     std::fs::write(&source, archive).unwrap();
     let mut source = tokio::fs::File::open(&source).await.unwrap();
+    let artifact_admission = first
+        .root()
+        .artifact_store()
+        .acquire_reference_admission()
+        .await
+        .unwrap();
     first
         .root()
         .artifact_store()
-        .commit_blob(&mut source, archive.len() as u64, &archive_digest)
+        .commit_blob(
+            &artifact_admission,
+            &mut source,
+            archive.len() as u64,
+            &archive_digest,
+        )
         .await
         .unwrap();
     std::fs::write(
