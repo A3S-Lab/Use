@@ -524,8 +524,12 @@ or unbounded state. Global reference v1 aggregates those observations with all
 installation snapshots, current and retained receipts, non-cancelled graph
 operations, and applying or rolling-back lifecycle journals under the same
 exclusive guard. It remains path-free, preserves missing references, and fails
-on identity or physical-expectation conflicts. The tiers still need the
-physical join, quota, and confirmed garbage-collection policy. Shared-content corruption currently fails closed;
+on identity or physical-expectation conflicts. Joined reachability v1 captures
+the physical and logical inventories before releasing that guard, preserves
+their orthogonal evidence in one row per artifact, and derives checked storage
+usage plus bounded quota assessment. It does not reserve concurrent capacity or
+authorize deletion. The tiers still need hard quota admission and a confirmed
+garbage-collection policy. Shared-content corruption currently fails closed;
 explicit quarantine and verified rehydration remain part of that global policy
 rather than an implicit overwrite performed by one source or installation.
 

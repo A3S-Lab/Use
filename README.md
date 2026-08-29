@@ -442,9 +442,16 @@ including replaced sources, under the same guard. The global path-free
 with every installation snapshot, current and retained receipt, non-cancelled
 package-graph operation, and applying or rolling-back lifecycle journal. It
 validates installation identity and source layout, rejects conflicting physical
-expectations, and retains references even when content is missing. `complete`
-is only a physical publication state; physical joining, digest audit, quota,
-confirmation, and deletion are not yet implemented.
+expectations, and retains references even when content is missing. The joined
+`a3s.use.artifact-reachability-inventory.v1` view captures that logical evidence
+and the physical inventory in one guarded collection pass. New publication is
+frozen; reference retirement can only leave conservative extra owners. One row
+per artifact keeps owners, physical measurements, expectation status, and
+checked global storage usage distinct. A bounded operator quota assessment
+reports excess bytes or containers but neither reserves concurrent capacity nor
+authorizes deletion. `complete` remains only a physical publication state;
+digest audit, hard quota admission, confirmation, and deletion are not yet
+implemented.
 
 The default Knowledge policy bounds each complete User or Workspace scope to
 512 MiB of receipt-accounted expanded content, 256 retained projections, 32
@@ -752,9 +759,10 @@ observation remain usable and retry removes the redundant partial without a
 network transfer. Source prune removes stale writes, then inactive partials,
 then the oldest observations. It releases logical source-policy capacity but
 never deletes global blobs, installed artifacts, receipts, generations, or
-journals. Global references are now inventoried across sources, installations,
-and operations; physical joining, global quota/GC, audit, quarantine, and
-verified rehydration remain explicit release work.
+journals. Global references are now joined with physical evidence and bounded
+quota assessment across sources, installations, and operations; hard quota
+admission, confirmed GC, audit, quarantine, and verified rehydration remain
+explicit release work.
 
 Inspect cache usage without making a Registry request:
 
@@ -1207,6 +1215,7 @@ Only the following cognitive-package protocol line is accepted:
 | Artifact Store physical inventory | `a3s.use.artifact-store-inventory.v1` |
 | Registry artifact reference inventory | `a3s.use.registry-artifact-reference-inventory.v1` |
 | Global artifact reference inventory | `a3s.use.artifact-reference-inventory.v1` |
+| Joined artifact reachability inventory | `a3s.use.artifact-reachability-inventory.v1` |
 | Coordinated Use state backup | `a3s.use.state-backup.v2` |
 | Coordinated Use state backup retention plan | `a3s.use.state-backup-retention-plan.v2` |
 | Coordinated Use state backup retention result | `a3s.use.state-backup-retention-result.v2` |
@@ -1239,7 +1248,7 @@ migrated. Delete the unsupported state and reinstall with the current build.
 | Signed catalog-v3, TUF verification, durable replaceable Registry sources, and opt-in public-endpoint SSRF policy | Implemented in the engine and standalone CLI; managed hosts must select the strict policy for untrusted tenant endpoints |
 | Shared Plugin Manager service, CLI, TUI, and manager MCP | The typed application service implements search, inspect, stable installed listing, status, install/upgrade/uninstall and enable/disable planning, durable plan reopening, and digest-only apply over one Host Manager. Its standard MCP adapter exposes exactly toolset v4 and requires injected trusted confirmation evidence. Standalone Registry-backed compatibility mutations use the service without breaking existing JSON fields, while the one-to-one `plugin` CLI exposes all ten operations, exact typed results, explicit digest-bound `--yes` apply, durable replay, and zero-network cached apply. A3S Code CLI, TUI `/packages`, and the product-host manager MCP compose this same service. Human CLI/TUI presentation now derives the exact plan, graph, source, permissions, and confirmation boundary from the immutable envelope without changing machine JSON; product-host E2E remains open |
 | Registry target observations, explicit offline install/upgrade, bounded source working set, resumable downloads, usage, and confirmed source cleanup | Implemented with interruption, range, tamper, and zero-network tests; cleanup never claims global blob reclamation |
-| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive admission boundary prevents maintenance or whole-installation restore from racing durable reference publication. A bounded path-free physical v1 inventory reports canonical content and abandoned staging. Registry-reference v1 scans every preserved source datastore; global reference v1 adds all installations, current/retained receipts, non-cancelled graph operations, and nonterminal lifecycle journals, rejecting unknown state and cross-source physical-expectation conflicts while preserving missing-content references. None claims digest validity or deletion authority; physical joining, quota/confirmed GC, audit, quarantine, and verified rehydration remain open |
+| Global raw-blob and expanded-package Artifact Store | Raw verified targets and expanded trees are sharded by SHA-256 under one global root, committed under cross-process digest locks, link/reparse checked, shared across Registry sources and installations, retained across source prune and scoped uninstall, and excluded from installation backup. A store-bound shared/exclusive admission boundary prevents maintenance or whole-installation restore from racing durable reference publication. Physical v1 inventories canonical content and staging; Registry-reference v1 scans every preserved source datastore; global reference v1 adds all installations and reference-bearing operations. Joined reachability v1 captures those logical and physical facts in one guarded pass, preserves conservative extra owners if retirement races inspection, preserves missing content, reports expectation mismatches and checked storage usage, and supports bounded quota assessment. It grants no digest validity, concurrent quota reservation, or deletion authority; hard quota admission, confirmed GC, audit, quarantine, and verified rehydration remain open |
 | Signed native Tool/stdio MCP planning and post-download manifest binding | Implemented and contract-tested |
 | Bounded SemVer dependency resolution and exact locks | Implemented |
 | Install, upgrade, uninstall graph ordering | Implemented |

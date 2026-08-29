@@ -450,9 +450,12 @@ Status: pending
 - [x] Define bounded path-free cross-state reference inventory across every
   source, installation, receipt generation, pending graph, and nonterminal
   lifecycle operation.
-- Join reference and physical inventories, then define quota, audit,
-  quarantine, verified rehydration, and confirmed GC. Neither inventory alone
-  grants deletion authority.
+- [x] Join reference and physical inventories in one guarded collection pass,
+  conservatively retain owners retired during inspection, derive checked global
+  storage usage, and expose bounded quota assessment.
+- Define concurrency-safe hard quota admission, audit, quarantine, verified
+  rehydration, and confirmed GC. Joined evidence and quota assessment grant no
+  deletion authority.
 - Treat the implemented standalone OKF scope quota/GC, integrity audit,
   non-overwriting verified database backup, exact-plan oldest-first backup
   rotation, derived FTS repair, and authority-bound database plus

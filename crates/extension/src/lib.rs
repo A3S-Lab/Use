@@ -46,7 +46,7 @@ mod workspace_grant_tests;
 pub use artifact_store::{
     ArtifactCollectionGuard, ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState,
     ArtifactReferenceAdmission, ArtifactStore, ArtifactStoreInventory,
-    ARTIFACT_STORE_INVENTORY_SCHEMA,
+    ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
 };
 #[doc(hidden)]
 pub use atomic_file::{

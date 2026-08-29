@@ -494,8 +494,11 @@ bindings, capability state, or journals. Cached TUF metadata may recreate a
 source observation after rehashing an existing exact blob. Partial downloads
 are not offline evidence and never authorize package staging. Global reference
 inventory now covers Registry observations plus every installation and durable
-reference-bearing operation. Physical joining, quota, confirmed GC, audit,
-quarantine, and verified rehydration remain release work.
+reference-bearing operation. The joined view adds physical evidence, checked
+usage, and bounded quota assessment under the same guarded collection pass.
+Concurrent retirement may leave conservative extra owners. Hard
+quota admission, confirmed GC, audit, quarantine, and verified rehydration
+remain release work.
 
 A real-process failure test terminates installation after the complete target
 has entered the verified cache but while a high-entry archive is still being

@@ -227,8 +227,10 @@ Implementation evidence (2026-08-28):
   publication; source prune never deletes global bytes.
 - [x] Introduce one global cross-source/cross-installation/cross-operation
   reference inventory before deleting any raw blob or expanded tree.
-- [ ] Join global references with physical inventory, enforce quota, and require
-  an explicit confirmed garbage-collection policy before deletion.
+- [x] Join global references with physical inventory in one guarded collection
+  pass and expose checked usage plus bounded quota assessment.
+- [ ] Enforce hard quota with a concurrency-safe reservation protocol and
+  require an explicit confirmed garbage-collection policy before deletion.
 - [ ] Add explicit global artifact audit, quarantine, and verified
   rehydration. Corruption must fail closed and preserve forensic evidence; it
   must not silently replace bytes underneath an admitted generation.
@@ -330,8 +332,8 @@ open):
   longer selected by current config, and reports each canonical blob digest
   with its signed byte expectation. Unknown layouts, missing cache locks,
   links/reparse points, malformed observations, and traversal bounds fail
-  closed. This inventory is one input to—not a replacement for—the still-open
-  global reference view's physical join and deletion policy.
+  closed. This inventory is one input to—not a replacement for—the global
+  joined view and its still-open audit and deletion policy.
 - `ArtifactReachabilityInspector::inspect_references` now derives the path-free
   `a3s.use.artifact-reference-inventory.v1` view under the same exclusive
   global guard. It validates every installation storage key and identity, then
@@ -342,8 +344,17 @@ open):
   conflicting physical expectations fail closed. Missing physical content does
   not erase a durable reference. Whole-installation restore now enters global
   reference admission before its maintenance lock and publication, closing the
-  restore-to-collector race. Physical join, quota, audit, and confirmed deletion
-  remain open.
+  restore-to-collector race.
+- `ArtifactReachabilityInspector::inspect_reachability` now joins logical and
+  physical evidence while retaining the same exclusive guard. Its path-free
+  `a3s.use.artifact-reachability-inventory.v1` output has one canonical row per
+  `(kind, digest)`, keeps reference owners separate from physical state,
+  classifies only metadata expectation availability/match, and derives checked
+  global storage usage. Reference retirement may leave conservative extra
+  owners. A bounded quota assessment reports observed excess but deliberately
+  provides neither concurrent capacity reservation nor deletion authority.
+  Hard quota admission, digest audit, quarantine, rehydration, and confirmed
+  deletion remain open.
 - Upgrade, rollback, and uninstall retire installation-scoped authority but do
   not delete global content. Installation backup excludes global artifacts.
   Unreferenced expanded trees are retained until a global collector can prove
@@ -363,8 +374,8 @@ open):
   alias-only projection change cannot evade snapshot consistency.
 - The remaining A1 work is structural, not a hidden compatibility layer: the
   global blob and expanded-tree tiers still need one safe
-  reachability/quota/audit/quarantine/rehydration/GC model, and the complete
-  two-installation lifecycle/lease matrix must pass.
+  quota-admission/audit/quarantine/rehydration/confirmed-GC model, and the
+  complete two-installation lifecycle/lease matrix must pass.
 
 ### A2 - Consolidate mutable authority in a Control Store
 

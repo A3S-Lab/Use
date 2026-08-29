@@ -15,7 +15,7 @@ mod reachability;
 pub(crate) use blob::ArtifactBlob;
 pub use inventory::{
     ArtifactInventoryEntry, ArtifactKind, ArtifactPhysicalState, ArtifactStoreInventory,
-    ARTIFACT_STORE_INVENTORY_SCHEMA,
+    ARTIFACT_STORE_INVENTORY_SCHEMA, MAX_ARTIFACT_STORE_INVENTORY_ENTRIES,
 };
 pub use reachability::{ArtifactCollectionGuard, ArtifactReferenceAdmission};
 
